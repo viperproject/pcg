@@ -114,7 +114,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn is_leaf_edge(
         &self,
         edge: &BorrowsEdge<'tcx>,
-        _repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         edge.kind
             .blocked_by_places(repacker)

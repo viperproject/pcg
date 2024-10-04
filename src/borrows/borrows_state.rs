@@ -83,7 +83,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        _repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         if self.graph.join(&other.graph, self_block, other_block, repacker) {
