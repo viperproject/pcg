@@ -21,13 +21,10 @@ use std::{
     ops::Deref,
 };
 
-use rustc_interface::{
-    borrowck::borrow_set::BorrowSet,
-    middle::{
+use rustc_interface::middle::{
         mir::Location,
         ty::{self, TyCtxt},
-    },
-};
+    };
 
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 
@@ -376,7 +373,6 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
 pub struct PCSGraphConstructor<'a, 'tcx> {
     summary: &'a CapabilitySummary<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
-    borrow_set: &'a BorrowSet<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
     repacker: PlaceRepacker<'a, 'tcx>,
 }
@@ -413,12 +409,10 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
         summary: &'a CapabilitySummary<'tcx>,
         repacker: PlaceRepacker<'a, 'tcx>,
         borrows_domain: &'a BorrowsState<'tcx>,
-        borrow_set: &'a BorrowSet<'tcx>,
     ) -> Self {
         Self {
             summary,
             borrows_domain,
-            borrow_set,
             constructor: GraphConstructor::new(repacker),
             repacker,
         }
@@ -447,11 +441,6 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             last_node = node.clone();
         }
         node
-    }
-
-    fn insert_place(&mut self, place: Place<'tcx>) -> NodeId {
-        self.constructor
-            .insert_place_node(place, None, self.capability_for_place(place))
     }
 
     fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {

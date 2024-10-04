@@ -2,10 +2,7 @@ use std::collections::HashSet;
 
 use rustc_interface::{
     ast::Mutability,
-    middle::{
-        mir::{BasicBlock, Location},
-        ty::TyCtxt,
-    },
+    middle::mir::{BasicBlock, Location},
 };
 
 use crate::{
@@ -13,9 +10,9 @@ use crate::{
         borrows_state::BorrowsState,
         domain::{MaybeOldPlace, Reborrow},
     },
-    combined_pcs::{ProjectionEdge, UnblockAction},
+    combined_pcs::UnblockAction,
     rustc_interface,
-    utils::{Place, PlaceRepacker, PlaceSnapshot},
+    utils::{PlaceRepacker, PlaceSnapshot},
     visualization::generate_unblock_dot_graph,
 };
 
@@ -36,13 +33,13 @@ pub struct UnblockGraph<'tcx> {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-enum UnblockHistoryAction<'tcx> {
+pub enum UnblockHistoryAction<'tcx> {
     UnblockPlace(ReborrowBlockedPlace<'tcx>),
     KillReborrow(Reborrow<'tcx>),
 }
 
 #[derive(Clone, Debug)]
-struct UnblockHistory<'tcx>(Vec<UnblockHistoryAction<'tcx>>);
+pub struct UnblockHistory<'tcx>(Vec<UnblockHistoryAction<'tcx>>);
 
 impl<'tcx> std::fmt::Display for UnblockHistory<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

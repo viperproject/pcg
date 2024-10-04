@@ -1,11 +1,8 @@
 use rustc_interface::{
     ast::Mutability,
-    data_structures::{
-        fx::{FxHashMap, FxHashSet},
-        graph::dominators::Dominators,
-    },
+    data_structures::fx::FxHashSet,
     hir::def_id::DefId,
-    middle::mir::{self, tcx::PlaceTy, BasicBlock, Local, Location, PlaceElem},
+    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem},
     middle::ty::{self, GenericArgsRef, RegionVid, TyCtxt},
 };
 

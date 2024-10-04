@@ -22,16 +22,7 @@ use std::{
 };
 
 use dot::escape_html;
-use rustc_interface::{
-    borrowck::{
-        borrow_set::BorrowSet,
-        consumers::{BorrowIndex, PoloniusInput},
-    },
-    middle::{
-        mir::{BasicBlock, Location},
-        ty::RegionVid,
-    },
-};
+use rustc_interface::middle::mir::Location;
 
 use self::{
     dot_graph::{
@@ -158,23 +149,6 @@ enum NodeType {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum ReferenceEdgeType {
-    RustcBorrow(BorrowIndex, RegionVid),
-    PCS,
-}
-
-impl std::fmt::Display for ReferenceEdgeType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::RustcBorrow(borrow_index, region_vid) => {
-                write!(f, "{:?}: {:?}", borrow_index, region_vid)
-            }
-            Self::PCS => write!(f, "PCS"),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum GraphEdge {
     AbstractEdge {
         blocked: NodeId,
@@ -280,10 +254,9 @@ pub fn generate_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
     summary: &CapabilitySummary<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
-    borrow_set: &BorrowSet<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain, borrow_set);
+    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {}: {}", file_path, e);

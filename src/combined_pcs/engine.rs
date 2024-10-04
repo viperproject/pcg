@@ -10,13 +10,11 @@ use std::{
     rc::Rc,
 };
 
-use itertools::Itertools;
 use rustc_interface::{
     borrowck::{
         borrow_set::BorrowSet,
         consumers::{self, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
     },
-    data_structures::fx::FxHashSet,
     dataflow::{Analysis, AnalysisDomain},
     index::{Idx, IndexVec},
     middle::{
@@ -36,7 +34,6 @@ use crate::{
     free_pcs::engine::FpcsEngine,
     rustc_interface,
     utils::PlaceRepacker,
-    visualization::generate_dot_graph,
 };
 
 use super::{domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs};

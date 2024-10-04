@@ -1,6 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    ops::ControlFlow,
+    collections::BTreeSet,
     rc::Rc,
 };
 
@@ -14,7 +13,7 @@ use rustc_interface::{
     },
     middle::{
         mir::{
-            visit::Visitor, AggregateKind, Body, BorrowKind, Const, Location, Operand, Place,
+            visit::Visitor, AggregateKind, Body, Const, Location, Operand, Place,
             Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
         },
         ty::{
@@ -70,7 +69,8 @@ pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
     preparing: bool,
     region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     debug_ctx: Option<DebugCtx>,
-    output_facts: &'mir PoloniusOutput,
+#[allow(dead_code)]
+output_facts: &'mir PoloniusOutput,
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {

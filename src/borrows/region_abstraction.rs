@@ -4,7 +4,7 @@ use crate::{rustc_interface, utils::Place};
 
 use super::{
     domain::{
-        AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget,
+        AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget,
         AbstractionType, MaybeOldPlace, ReborrowBlockedPlace,
     },
     latest::Latest,

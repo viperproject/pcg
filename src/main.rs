@@ -1,18 +1,11 @@
 #![feature(rustc_private)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
-use std::{cmp::Ordering, fs::File};
+use std::fs::File;
 
 use std::cell::RefCell;
 
-use itertools::Itertools;
-use pcs::visualization::dot_graph::{
-    DotEdge, DotGraph, DotLabel, DotNode, EdgeDirection, EdgeOptions,
-};
-use pcs::visualization::dot_graph::{DotStringAttr, DotSubgraph};
 use pcs::{combined_pcs::BodyWithBorrowckFacts, run_combined_pcs, rustc_interface};
-use regex::Regex;
 use rustc_interface::{
     borrowck::consumers,
     data_structures::fx::FxHashMap,
@@ -20,8 +13,7 @@ use rustc_interface::{
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config, Queries},
     middle::{
-        mir::{BasicBlock, Location},
-        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck, ExternProviders},
+        query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
         ty::TyCtxt,
         util::Providers,
     },

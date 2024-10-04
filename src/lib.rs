@@ -16,7 +16,6 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-use std::fs::create_dir_all;
 
 use borrows::{
     borrows_graph::Conditioned, borrows_visitor::DebugCtx, deref_expansion::DerefExpansion,
@@ -33,7 +32,7 @@ use serde_json::json;
 use utils::PlaceRepacker;
 use visualization::mir_graph::generate_json_from_mir;
 
-use crate::{borrows::domain::ToJsonWithRepacker, visualization::generate_dot_graph};
+use crate::borrows::domain::ToJsonWithRepacker;
 
 pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     'mir,

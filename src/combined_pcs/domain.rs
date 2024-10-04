@@ -13,22 +13,18 @@ use std::{
 };
 
 use rustc_interface::{
-    dataflow::fmt::DebugWithContext,
-    dataflow::JoinSemiLattice,
-    middle::mir,
-    middle::mir::{BasicBlock, Location},
+    dataflow::fmt::DebugWithContext, dataflow::JoinSemiLattice, middle::mir,
+    middle::mir::BasicBlock,
 };
 
 use crate::{
     borrows::{
-        borrows_visitor::DebugCtx,
         domain::{MaybeOldPlace, ReborrowBlockedPlace},
         engine::BorrowsDomain,
         unblock_graph::UnblockGraph,
     },
     free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary, HasPrepare},
     rustc_interface,
-    utils::SnapshotLocation,
     visualization::generate_dot_graph,
     RECORD_PCS,
 };
@@ -147,7 +143,8 @@ impl DotGraphs {
         std::fs::write(
             filename,
             serde_json::to_string_pretty(&iterations_json).unwrap(),
-        );
+        )
+        .unwrap();
     }
 }
 
@@ -232,9 +229,9 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                 self.cgx.rp,
                 fpcs,
                 borrows,
-                self.cgx.mir.borrow_set.as_ref(),
                 &filename,
-            );
+            )
+            .unwrap();
         }
     }
 

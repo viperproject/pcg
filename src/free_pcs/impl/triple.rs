@@ -23,10 +23,6 @@ pub(crate) struct Triple<'tcx> {
 }
 
 impl<'tcx> Triple<'tcx> {
-    pub fn new(pre: Condition<'tcx>, post: Condition<'tcx>) -> Self {
-        Self { pre, post }
-    }
-
     pub fn pre(&self) -> &Condition<'tcx> {
         &self.pre
     }
@@ -110,16 +106,6 @@ fn get_place_to_expand_to<'b, 'tcx>(
         }
     }
     return place.into();
-}
-
-fn belongs_to_reborrow_dag<'b, 'tcx>(
-    place: Place<'tcx>,
-    repacker: PlaceRepacker<'b, 'tcx>,
-) -> bool {
-    place.iter_projections().any(|(place, elem)| {
-        let place: Place<'tcx> = place.into();
-        elem == ProjectionElem::Deref && !place.ty(repacker).ty.is_box()
-    })
 }
 
 impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
@@ -302,31 +288,5 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
             _ => todo!("{terminator:?}"),
         };
         self.triple(Stage::Main, t);
-    }
-}
-
-trait ProducesCapability {
-    fn capability(&self) -> CapabilityKind;
-}
-
-impl ProducesCapability for Rvalue<'_> {
-    fn capability(&self) -> CapabilityKind {
-        use Rvalue::*;
-        match self {
-            Use(_)
-            | Repeat(_, _)
-            | Ref(_, _, _)
-            | ThreadLocalRef(_)
-            | Len(_)
-            | Cast(_, _, _)
-            | BinaryOp(_, _)
-            | NullaryOp(_, _)
-            | UnaryOp(_, _)
-            | Discriminant(_)
-            | Aggregate(_, _)
-            | CopyForDeref(_) => CapabilityKind::Exclusive,
-            ShallowInitBox(_, _) => CapabilityKind::ShallowExclusive,
-            _ => todo!(),
-        }
     }
 }

@@ -1,6 +1,5 @@
 use rustc_interface::{
     ast::Mutability,
-    borrowck::consumers::BorrowIndex,
     data_structures::fx::FxHashSet,
     dataflow::JoinSemiLattice,
     middle::mir::{self, BasicBlock, Location},
@@ -73,13 +72,6 @@ impl<'tcx> RegionProjectionMember<'tcx> {
 pub struct BorrowsState<'tcx> {
     pub latest: Latest,
     graph: BorrowsGraph<'tcx>,
-}
-
-fn subtract_deref_expansions<'tcx>(
-    from: &FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
-    to: &FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
-) -> FxHashSet<Conditioned<DerefExpansion<'tcx>>> {
-    from.difference(to).cloned().collect()
 }
 
 impl<'tcx> BorrowsState<'tcx> {
@@ -215,7 +207,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &self,
         place: ReborrowBlockedPlace<'tcx>,
     ) -> Option<MaybeOldPlace<'tcx>> {
-        let mut edges = self.edges_blocking(place).collect::<Vec<_>>();
+        let edges = self.edges_blocking(place).collect::<Vec<_>>();
         if edges.len() != 1 {
             return None;
         }

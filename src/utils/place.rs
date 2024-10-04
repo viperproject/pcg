@@ -31,7 +31,6 @@ use crate::{
 };
 
 use super::{debug_info::DebugInfo, PlaceRepacker};
-use itertools::Itertools;
 
 #[derive(Clone, Copy, Deref, DerefMut)]
 pub struct Place<'tcx>(
@@ -202,7 +201,7 @@ impl<'tcx> Place<'tcx> {
     /// +   `is_prefix(x.f, x.f) == false`
     /// +   `is_prefix(x.f, x.f.g) == true`
     /// +   `is_prefix(x.f, x.f.g.h) == false`
-    pub(crate) fn is_prefix_exact(self, place: Self) -> bool {
+    pub fn is_prefix_exact(self, place: Self) -> bool {
         self.0.projection.len() + 1 == place.0.projection.len()
             && Self::partial_cmp(self, place)
                 .map(|o| o == PlaceOrdering::Prefix)

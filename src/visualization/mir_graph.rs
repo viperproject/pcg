@@ -62,7 +62,6 @@ fn format_bin_op(op: &BinOp) -> String {
         BinOp::AddWithOverflow => "+".to_string(),
         BinOp::SubWithOverflow => "-".to_string(),
         BinOp::MulWithOverflow => "*".to_string(),
-        _ => todo!(),
     }
 }
 
