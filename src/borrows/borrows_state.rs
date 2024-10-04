@@ -90,14 +90,15 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn join<'mir>(
         &mut self,
         other: &Self,
-        post_block: BasicBlock,
+        self_block: BasicBlock,
+        other_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if self.graph.join(&other.graph, post_block, repacker) {
+        if self.graph.join(&other.graph, self_block, other_block, repacker) {
             changed = true;
         }
-        if self.latest.join(&other.latest, post_block) {
+        if self.latest.join(&other.latest, self_block) {
             // TODO: Setting changed to true prevents divergence for loops,
             // think about how latest should work in loops
 

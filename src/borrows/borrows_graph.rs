@@ -191,53 +191,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub fn loop_abstraction_subgraph_from(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        from: Conditioned<Reborrow<'tcx>>,
-    ) -> Option<BorrowsGraph<'tcx>> {
-        let mut queue = self
-            .reborrows()
-            .into_iter()
-            .filter(|other| {
-                other.value.assigned_place == from.value.assigned_place
-                    && !other
-                        .conditions
-                        .mutually_exclusive(&from.conditions, &repacker.body().basic_blocks)
-            })
-            .collect::<Vec<_>>();
-        if queue.len() == 1 {
-            return None;
-        }
-        // panic!("Queue: {:?}", queue);
-        let mut subgraph = BorrowsGraph::new();
-        while let Some(other) = queue.pop() {
-            let edge = other.clone().to_borrows_edge();
-            if subgraph.insert(edge) {
-                if let Some(old_place) = other.value.blocked_place.as_local()
-                    && old_place.is_old()
-                {
-                    let blocked = self.reborrows_blocked_by(old_place);
-                    queue.extend(blocked);
-                }
-            }
-        }
-        Some(subgraph)
-    }
-    pub fn loop_abstraction_subgraph(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<BorrowsGraph<'tcx>> {
-        for r1 in self.reborrows().into_iter() {
-            if self.is_leaf_edge(&r1.clone().to_borrows_edge(), repacker) {
-                if let Some(graph) = self.loop_abstraction_subgraph_from(repacker, r1) {
-                    return Some(graph);
-                }
-            }
-        }
-        return None;
-    }
-
     pub fn root_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowsEdge<'tcx>> {
         self.0
             .iter()
@@ -371,7 +324,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn join(
         &mut self,
         other: &Self,
-        post_block: BasicBlock,
+        self_block: BasicBlock,
+        other_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
@@ -394,13 +348,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        // if post_block.as_usize() == 1 {
-        // TODO
-        while let Some(subgraph_to_abstract) = self.loop_abstraction_subgraph(repacker) {
-            changed = true;
-            self.abstract_subgraph(post_block, subgraph_to_abstract, repacker);
-        }
-        // }
         changed
     }
 

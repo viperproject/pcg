@@ -96,20 +96,16 @@ impl<'tcx> ReborrowAction<'tcx> {
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
-        if !self.is_initialized() {
-            self.after = other.after.clone();
-            return other.is_initialized();
-        } else {
-            let mut other_after = other.after.clone();
+        let mut other_after = other.after.clone();
 
-            // For edges in the other graph that actually belong to it,
-            // add the path condition that leads them to this block
-            let pc = PathCondition::new(other.block(), self.block());
-            other_after.add_path_condition(pc);
+        // For edges in the other graph that actually belong to it,
+        // add the path condition that leads them to this block
+        let pc = PathCondition::new(other.block(), self.block());
+        other_after.add_path_condition(pc);
 
-            // Overlay both graphs
-            self.after.join(&other_after, self.block(), self.repacker)
-        }
+        // Overlay both graphs
+        self.after
+           .join(&other_after, self.block(), other.block(), self.repacker)
     }
 }
 
