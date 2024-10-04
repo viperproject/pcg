@@ -1,7 +1,6 @@
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    dataflow::JoinSemiLattice,
     middle::mir::{self, BasicBlock, Location},
     middle::ty::{self, TyCtxt},
 };
@@ -84,7 +83,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        _repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         if self.graph.join(&other.graph, self_block, other_block, repacker) {
@@ -270,7 +269,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn bridge(
         &self,
         to: &Self,
-        debug_ctx: DebugCtx,
+        _debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> ReborrowBridge<'tcx> {
         let added_reborrows: FxHashSet<Conditioned<Reborrow<'tcx>>> = to

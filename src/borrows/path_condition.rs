@@ -122,7 +122,7 @@ pub enum PathConditions {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PathConditions {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         match self {
             PathConditions::AtBlock(b) => json!({
                 "type": "AtBlock",
@@ -185,8 +185,8 @@ impl PathConditions {
                 false
             }
             (PathConditions::Paths(p1), PathConditions::Paths(p2)) => p1.join(p2),
-            (PathConditions::AtBlock(b), PathConditions::Paths(p)) => false, // TODO: check
-            (PathConditions::Paths(p), PathConditions::AtBlock(b)) => false, // TODO: check
+            (PathConditions::AtBlock(_b), PathConditions::Paths(_p)) => false, // TODO: check
+            (PathConditions::Paths(_p), PathConditions::AtBlock(_b)) => false, // TODO: check
         }
     }
 

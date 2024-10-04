@@ -143,7 +143,7 @@ impl<'tcx> AbstractionInputTarget<'tcx> {
         match self {
             AbstractionTarget::Place(p) => match p {
                 ReborrowBlockedPlace::Local(maybe_old_place) => maybe_old_place == place,
-                ReborrowBlockedPlace::Remote(local) => false,
+                ReborrowBlockedPlace::Remote(_local) => false,
             },
             AbstractionTarget::RegionProjection(_p) => false,
         }

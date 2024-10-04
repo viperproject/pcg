@@ -18,7 +18,7 @@ use crate::{
 use std::{
     collections::HashSet,
     fs::File,
-    io::{self, Write},
+    io::{self},
 };
 
 use dot::escape_html;

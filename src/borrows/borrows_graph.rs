@@ -96,7 +96,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind {
-                BorrowsEdgeKind::Reborrow(reborrow) => {
+                BorrowsEdgeKind::Reborrow(_reborrow) => {
                     if reborrow.assigned_place == place {
                         Some(Conditioned {
                             conditions: edge.conditions.clone(),
@@ -114,7 +114,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn is_leaf_edge(
         &self,
         edge: &BorrowsEdge<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        _repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         edge.kind
             .blocked_by_places(repacker)
@@ -155,15 +155,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 BorrowsEdgeKind::Reborrow(reborrow) => {
                     // assert!(!reborrow.blocked_place.is_old())
                 }
-                BorrowsEdgeKind::DerefExpansion(deref_expansion) => {}
-                BorrowsEdgeKind::RegionAbstraction(abstraction_edge) => {}
-                BorrowsEdgeKind::RegionProjectionMember(region_projection_member) => {}
+                BorrowsEdgeKind::DerefExpansion(_deref_expansion) => {}
+                BorrowsEdgeKind::RegionAbstraction(_abstraction_edge) => {}
+                BorrowsEdgeKind::RegionProjectionMember(_region_projection_member) => {}
             }
         }
 
         for abstraction_edge in self.abstraction_edges().into_iter() {
             match abstraction_edge.value.abstraction_type {
-                AbstractionType::FunctionCall(function_call_abstraction) => {}
+                AbstractionType::FunctionCall(_function_call_abstraction) => {}
                 AbstractionType::Loop(loop_abstraction) => {
                     for input in loop_abstraction.inputs() {
                         match input {
@@ -198,7 +198,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ReborrowBlockedPlace::Local(maybe_old_place) => {
                         self.is_root(*maybe_old_place, repacker)
                     }
-                    ReborrowBlockedPlace::Remote(local) => true,
+                    ReborrowBlockedPlace::Remote(_local) => true,
                 })
             })
             .cloned()
@@ -314,7 +314,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             self.roots_blocked_by(maybe_old_place, repacker)
                         }
                     }
-                    ReborrowBlockedPlace::Remote(local) => vec![p].into_iter().collect(),
+                    ReborrowBlockedPlace::Remote(_local) => vec![p].into_iter().collect(),
                 })
             })
             .collect()
@@ -323,12 +323,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn join(
         &mut self,
         other: &Self,
-        self_block: BasicBlock,
-        other_block: BasicBlock,
+        _self_block: BasicBlock,
+        _other_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        let len = self.0.len();
         let our_edges = self.0.clone();
         for other_edge in other.0.iter() {
             match our_edges.iter().find(|e| e.kind() == other_edge.kind()) {
@@ -408,7 +407,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, debug_ctx: DebugCtx) -> bool {
+    pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
         self.0.remove(edge)
     }
 
@@ -504,7 +503,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         } else {
             DerefExpansion::borrowed(place, expansion, location, repacker)
         };
-        let result = self.insert(BorrowsEdge {
+        let _result = self.insert(BorrowsEdge {
             conditions: PathConditions::new(location.block),
             kind: BorrowsEdgeKind::DerefExpansion(de),
         });
