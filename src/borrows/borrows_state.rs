@@ -109,7 +109,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn remove_edge_and_set_latest(
         &mut self,
         edge: &BorrowsEdge<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        _repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
         if !edge.is_shared_borrow() {

@@ -96,7 +96,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind {
-                BorrowsEdgeKind::Reborrow(_reborrow) => {
+                BorrowsEdgeKind::Reborrow(reborrow) => {
                     if reborrow.assigned_place == place {
                         Some(Conditioned {
                             conditions: edge.conditions.clone(),
@@ -152,7 +152,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn assert_invariants_satisfied(&self, repacker: PlaceRepacker<'_, 'tcx>) {
         for root_edge in self.root_edges(repacker) {
             match root_edge.kind {
-                BorrowsEdgeKind::Reborrow(reborrow) => {
+                BorrowsEdgeKind::Reborrow(_reborrow) => {
                     // assert!(!reborrow.blocked_place.is_old())
                 }
                 BorrowsEdgeKind::DerefExpansion(_deref_expansion) => {}
@@ -325,7 +325,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         _self_block: BasicBlock,
         _other_block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        _repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         let our_edges = self.0.clone();
