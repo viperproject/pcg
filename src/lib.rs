@@ -10,6 +10,7 @@
 
 pub mod borrows;
 pub mod combined_pcs;
+pub mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
 pub mod rustc_interface;

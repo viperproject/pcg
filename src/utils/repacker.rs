@@ -11,7 +11,7 @@ use rustc_interface::{
     middle::{
         mir::{
             tcx::PlaceTy, Body, HasLocalDecls, Local, Mutability, Place as MirPlace, PlaceElem,
-            ProjectionElem,
+            ProjectionElem, BasicBlock,
         },
         ty::{Region, RegionVid, Ty, TyCtxt, TyKind},
     },
@@ -59,6 +59,14 @@ pub struct PlaceRepacker<'a, 'tcx: 'a> {
 impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     pub fn new(mir: &'a Body<'tcx>, tcx: TyCtxt<'tcx>) -> Self {
         Self { mir, tcx }
+    }
+
+    pub fn is_back_edge(&self,
+        from: BasicBlock,
+        to: BasicBlock,
+    ) -> bool {
+        self.mir.basic_blocks.dominators().dominates(to, from) &&
+        self.mir.basic_blocks[from].terminator().successors().any(|s| s == to)
     }
 
     pub fn num_args(self) -> usize {

@@ -1,13 +1,13 @@
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Location},
+    middle::mir::{self, BasicBlock, Local, Location},
     middle::ty::{Region, TyCtxt},
 };
 use serde_json::json;
 
 use crate::{
-    rustc_interface,
+    coupling, rustc_interface,
     utils::{Place, PlaceRepacker},
 };
 
@@ -23,6 +23,12 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
 };
+
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+enum CGNode<'tcx> {
+    Local(Place<'tcx>),
+    Remote(Local),
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowsEdge<'tcx>>);
 
@@ -126,6 +132,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut candidates = self.0.clone();
         candidates.retain(|edge| self.is_leaf_edge(edge, repacker));
         candidates
+    }
+
+    pub fn leaf_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeOldPlace<'tcx>> {
+        self.leaf_edges(repacker)
+            .into_iter()
+            .flat_map(|edge| edge.blocked_by_places(repacker).into_iter())
+            .collect()
     }
 
     pub fn num_paths_between(
@@ -320,15 +333,97 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
+    fn construct_coupling_graph(
+        &self,
+        leaf_nodes: FxHashSet<MaybeOldPlace<'tcx>>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> coupling::Graph<CGNode<'tcx>> {
+        let mut coupling_graph = coupling::Graph::new();
+
+        fn add_edges_from<'tcx>(
+            bg: &BorrowsGraph<'tcx>,
+            coupling_graph: &mut coupling::Graph<CGNode<'tcx>>,
+            from: Place<'tcx>,
+            curr: MaybeOldPlace<'tcx>,
+            repacker: PlaceRepacker<'_, 'tcx>,
+        ) {
+            let edges = bg.edges_blocked_by(curr, repacker);
+            for edge in edges {
+                match edge.kind {
+                    BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.blocked_place {
+                        ReborrowBlockedPlace::Local(MaybeOldPlace::Current { place }) => {
+                            coupling_graph.add_edge(CGNode::Local(from), CGNode::Local(place));
+                            add_edges_from(
+                                bg,
+                                coupling_graph,
+                                place.into(),
+                                place.into(),
+                                repacker,
+                            );
+                        }
+                        ReborrowBlockedPlace::Local(old_place) => {
+                            add_edges_from(bg, coupling_graph, from, old_place, repacker)
+                        }
+                        ReborrowBlockedPlace::Remote(local) => {
+                            coupling_graph.add_edge(CGNode::Local(from), CGNode::Remote(local));
+                        }
+                    },
+                    BorrowsEdgeKind::DerefExpansion(de) => {
+                        // if de.base().is_current() { let base_place = de.base().place();
+                        //     coupling_graph.add_edge(CGNode::Local(from), CGNode::Local(base_place));
+                        //     add_edges_from(
+                        //         bg,
+                        //         coupling_graph,
+                        //         base_place,
+                        //         base_place.into(),
+                        //         repacker,
+                        //     );
+                        // } else {
+                        add_edges_from(bg, coupling_graph, from, de.base(), repacker);
+                        // }
+                    }
+                    BorrowsEdgeKind::RegionAbstraction(_) => todo!(),
+                    BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
+                }
+            }
+        };
+        for node in leaf_nodes {
+            match node {
+                MaybeOldPlace::Current { place } => {
+                    add_edges_from(self, &mut coupling_graph, place, node, repacker)
+                }
+                MaybeOldPlace::OldPlace(old_place) => unreachable!(),
+            }
+        }
+        coupling_graph
+    }
+
     pub fn join(
         &mut self,
         other: &Self,
-        _self_block: BasicBlock,
-        _other_block: BasicBlock,
-        _repacker: PlaceRepacker<'_, 'tcx>,
+        self_block: BasicBlock,
+        other_block: BasicBlock,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         let our_edges = self.0.clone();
+        // if repacker.is_back_edge(other_block, self_block) {
+        //     let self_leaf_nodes = self.leaf_nodes(repacker);
+        //     let other_leaf_nodes = other.leaf_nodes(repacker);
+        //     let self_coupling_graph = self.construct_coupling_graph(self_leaf_nodes, repacker);
+        //     let other_coupling_graph = other.construct_coupling_graph(other_leaf_nodes, repacker);
+        //     eprintln!("{:?}", self.leaf_nodes(repacker));
+        //     eprintln!("{:?}", other.leaf_nodes(repacker));
+        //     self_coupling_graph.render_with_imgcat().unwrap();
+        //     other_coupling_graph.render_with_imgcat().unwrap();
+        //     eprintln!("{:?}", self_coupling_graph);
+        //     eprintln!("{:?}", other_coupling_graph);
+        //     // let hypergraph = coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
+        //     panic!(
+        //         "back edge encountered in join from {:?} -> {:?}",
+        //         other_block, self_block
+        //     );
+        // }
         for other_edge in other.0.iter() {
             match our_edges.iter().find(|e| e.kind() == other_edge.kind()) {
                 Some(our_edge) => {
