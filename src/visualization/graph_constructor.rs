@@ -114,11 +114,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 
     fn to_graph(self) -> Graph {
-        Graph::new(
-            self.nodes,
-            self.edges,
-            self.region_clusters,
-        )
+        Graph::new(self.nodes, self.edges, self.region_clusters)
     }
 
     fn place_node_id(&mut self, place: Place<'tcx>, location: Option<SnapshotLocation>) -> NodeId {
@@ -217,8 +213,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 .collect(),
             min_rank_nodes: Some(input_nodes),
         };
-        self.region_clusters
-            .insert(cluster);
+        self.region_clusters.insert(cluster);
     }
 
     fn insert_remote_node(&mut self, local: Local) -> NodeId {

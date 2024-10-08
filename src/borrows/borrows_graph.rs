@@ -415,6 +415,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
+
+        // Optimization
+        if repacker
+            .body()
+            .basic_blocks
+            .dominators()
+            .dominates(other_block, self_block)
+        {
+            if other != self {
+                *self = other.clone();
+                return true;
+            } else {
+                return false;
+            }
+        }
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
@@ -444,6 +459,24 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 None => {
                     self.insert(other_edge.clone());
                     changed = true;
+                }
+            }
+        }
+        let mut finished = false;
+        while !finished {
+            finished = true;
+            for leaf_node in self.leaf_nodes(repacker) {
+                eprintln!(
+                    "{:?} <- {:?} Check {:?}",
+                    self_block, other_block, leaf_node
+                );
+                if !other.leaf_nodes(repacker).contains(&leaf_node) {
+                    for edge in self.edges_blocked_by(leaf_node.into(), repacker) {
+                        eprintln!("Remove {:?}", edge);
+                        finished = false;
+                        self.remove(&edge, DebugCtx::Other);
+                        changed = true;
+                    }
                 }
             }
         }

@@ -111,6 +111,15 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
                             {
                                 if let ty::RegionKind::ReVar(region_vid) = region.kind() {
                                     if !live_origins.contains(&region_vid.into()) {
+                                        for edge in bg.edges_blocked_by(place.into(), self.repacker)
+                                        {
+                                            match edge.kind() {
+                                                BorrowsEdgeKind::DerefExpansion(_) => {
+                                                    self.to_remove.insert(edge);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
                                         self.add_edges_from(bg, new_path_edges, from, place.into());
                                         continue;
                                     }
