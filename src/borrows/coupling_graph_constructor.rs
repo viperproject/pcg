@@ -7,8 +7,8 @@ use crate::{
         borrowck::consumers::{LocationTable, PoloniusOutput},
         data_structures::fx::FxHashSet,
         middle::{
-            mir::{self, BasicBlock, Local, Location},
-            ty::{Region, TyCtxt},
+            mir::{self, BasicBlock, Local, Location, PlaceElem},
+            ty::{self, Region, TyCtxt},
         },
     },
     utils::{Place, PlaceRepacker},
@@ -105,9 +105,20 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
                                     block: self.block,
                                     statement_index: 0,
                                 }));
-                        eprintln!("reborrow region: {:?}", reborrow.region);
+                        if let Some((ref_place, PlaceElem::Deref)) = place.last_projection() {
+                            if let ty::TyKind::Ref(region, _, _) =
+                                ref_place.ty(self.repacker).ty.kind()
+                            {
+                                if let ty::RegionKind::ReVar(region_vid) = region.kind() {
+                                    if !live_origins.contains(&region_vid.into()) {
+                                        self.add_edges_from(bg, new_path_edges, from, place.into());
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                         self.coupling_graph
-                            .add_edge(CGNode::Local(from), CGNode::Local(place));
+                            .add_edge(CGNode::Local(from), CGNode::Local(place.into()));
                         self.to_remove.extend(new_path_edges);
                         self.add_edges_from(bg, FxHashSet::default(), place.into(), place.into());
                     }

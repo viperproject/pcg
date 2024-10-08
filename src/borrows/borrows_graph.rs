@@ -348,6 +348,63 @@ impl<'tcx> BorrowsGraph<'tcx> {
         constructor.construct_coupling_graph(self, leaf_nodes)
     }
 
+    fn join_loop(
+        &mut self,
+        other: &Self,
+        self_block: BasicBlock,
+        exit_block: BasicBlock,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        output_facts: &PoloniusOutput,
+        location_table: &LocationTable,
+    ) -> bool {
+        let self_leaf_nodes = self.leaf_nodes(repacker);
+        let other_leaf_nodes = other.leaf_nodes(repacker);
+        let (self_coupling_graph, self_to_remove) = self.construct_coupling_graph(
+            output_facts,
+            location_table,
+            repacker,
+            exit_block,
+            self_leaf_nodes,
+        );
+        let (other_coupling_graph, _) = other.construct_coupling_graph(
+            output_facts,
+            location_table,
+            repacker,
+            exit_block,
+            other_leaf_nodes,
+        );
+        // self_coupling_graph.render_with_imgcat().unwrap();
+        // other_coupling_graph.render_with_imgcat().unwrap();
+        let hypergraph = coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
+        // eprintln!("Result: {:?}", hypergraph);
+        let mut changed = false;
+        for edge in self_to_remove.iter() {
+            if self.remove(edge, DebugCtx::Other) {
+                changed = true;
+            }
+        }
+        for edge in hypergraph.edges() {
+            let abstraction = LoopAbstraction::new(
+                AbstractionBlockEdge::new(
+                    edge.rhs()
+                        .iter()
+                        .map(|n| n.to_abstraction_input_target())
+                        .collect(),
+                    edge.lhs()
+                        .iter()
+                        .map(|n| n.to_abstraction_output_target())
+                        .collect(),
+                ),
+                self_block,
+            )
+            .to_borrows_edge(PathConditions::new(self_block));
+            if self.insert(abstraction) {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     pub fn join(
         &mut self,
         other: &Self,
@@ -359,65 +416,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         let mut changed = false;
         let our_edges = self.0.clone();
-        if false && repacker.is_back_edge(other_block, self_block) {
-            let self_leaf_nodes = self.leaf_nodes(repacker);
-            let other_leaf_nodes = other.leaf_nodes(repacker);
+        if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
-            if exit_blocks.len() != 1 {
-                panic!("exit blocks: {:?}", exit_blocks);
-            }
-            let (self_coupling_graph, self_to_remove) = self.construct_coupling_graph(
-                output_facts,
-                location_table,
-                repacker,
-                exit_blocks[0],
-                self_leaf_nodes,
-            );
-            let (other_coupling_graph, _) = other.construct_coupling_graph(
-                output_facts,
-                location_table,
-                repacker,
-                exit_blocks[0],
-                other_leaf_nodes,
-            );
-            eprintln!("{:?}", self.leaf_nodes(repacker));
-            eprintln!("{:?}", other.leaf_nodes(repacker));
-            self_coupling_graph.render_with_imgcat().unwrap();
-            other_coupling_graph.render_with_imgcat().unwrap();
-            eprintln!("{:?}", self_coupling_graph);
-            eprintln!("{:?}", other_coupling_graph);
-            let hypergraph =
-                coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
-            eprintln!("{:?}", hypergraph);
-            for edge in self_to_remove.iter() {
-                if self.remove(edge, DebugCtx::Other) {
-                    changed = true;
-                }
-            }
-            for edge in hypergraph.edges() {
-                let abstraction = LoopAbstraction::new(
-                    AbstractionBlockEdge::new(
-                        edge.rhs()
-                            .iter()
-                            .map(|n| n.to_abstraction_input_target())
-                            .collect(),
-                        edge.lhs()
-                            .iter()
-                            .map(|n| n.to_abstraction_output_target())
-                            .collect(),
-                    ),
+            if exit_blocks.len() == 1 {
+                return self.join_loop(
+                    other,
                     self_block,
-                )
-                .to_borrows_edge(PathConditions::new(self_block));
-                if self.insert(abstraction) {
-                    changed = true;
-                }
+                    exit_blocks[0],
+                    repacker,
+                    output_facts,
+                    location_table,
+                );
             }
-            return changed;
-            // panic!(
-            //     "back edge encountered in join from {:?} -> {:?}",
-            //     other_block, self_block
-            // );
+            // TODO: Handle multiple exit blocks
         }
         for other_edge in other.0.iter() {
             match our_edges.iter().find(|e| e.kind() == other_edge.kind()) {

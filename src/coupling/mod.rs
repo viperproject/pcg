@@ -334,18 +334,11 @@ where
         let mut n_queue = VecDeque::from(n_stack);
 
         while let Some(n) = n_queue.pop_front() {
-            println!("Processing node: {:?}", n);
 
             if let Some((g1_prime, g2_prime, w)) = obtain(n.clone(), g1.clone(), g2.clone()) {
                 g1 = g1_prime;
                 g2 = g2_prime;
                 g.add_hyperedge(w.clone());
-                eprintln!("g1");
-                g1.render_with_imgcat().unwrap();
-                eprintln!("g2");
-                g2.render_with_imgcat().unwrap();
-                eprintln!("w: {:?}", w);
-                println!("Added hyperedge to G. Breaking out of inner loop.");
                 continue 'outer;
             }
         }

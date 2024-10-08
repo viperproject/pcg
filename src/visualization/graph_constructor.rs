@@ -70,7 +70,7 @@ struct GraphConstructor<'mir, 'tcx> {
     remote_nodes: IdLookup<Local>,
     place_nodes: IdLookup<(Place<'tcx>, Option<SnapshotLocation>)>,
     region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
-    region_clusters: HashMap<Location, GraphCluster>,
+    region_clusters: HashSet<GraphCluster>,
     nodes: Vec<GraphNode>,
     edges: HashSet<GraphEdge>,
     repacker: PlaceRepacker<'mir, 'tcx>,
@@ -106,7 +106,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             remote_nodes: IdLookup::new('a'),
             place_nodes: IdLookup::new('p'),
             region_projection_nodes: IdLookup::new('r'),
-            region_clusters: HashMap::new(),
+            region_clusters: HashSet::new(),
             nodes: vec![],
             edges: HashSet::new(),
             repacker,
@@ -117,7 +117,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         Graph::new(
             self.nodes,
             self.edges,
-            self.region_clusters.into_values().collect(),
+            self.region_clusters,
         )
     }
 
@@ -179,13 +179,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 
     fn insert_region_abstraction(&mut self, region_abstraction: &AbstractionEdge<'tcx>) {
-        if self
-            .region_clusters
-            .contains_key(&region_abstraction.location())
-        {
-            return;
-        }
-
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 
@@ -225,7 +218,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             min_rank_nodes: Some(input_nodes),
         };
         self.region_clusters
-            .insert(region_abstraction.location(), cluster);
+            .insert(cluster);
     }
 
     fn insert_remote_node(&mut self, local: Local) -> NodeId {
