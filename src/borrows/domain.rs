@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -19,7 +21,7 @@ pub struct LoopAbstraction<'tcx> {
 
 impl<'tcx> LoopAbstraction<'tcx> {
     pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
-        self.edges.iter().map(|edge| edge.input).collect()
+        self.edges.iter().flat_map(|edge| edge.inputs()).collect()
     }
 
     pub fn edges(&self) -> &Vec<AbstractionBlockEdge<'tcx>> {
@@ -108,23 +110,49 @@ pub enum AbstractionType<'tcx> {
     Loop(LoopAbstraction<'tcx>),
 }
 
-#[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
-    pub input: AbstractionInputTarget<'tcx>,
-    pub output: AbstractionOutputTarget<'tcx>,
+    inputs: Vec<AbstractionInputTarget<'tcx>>,
+    outputs: Vec<AbstractionOutputTarget<'tcx>>,
 }
 
+impl<'tcx> PartialEq for AbstractionBlockEdge<'tcx> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inputs() == other.inputs() && self.outputs() == other.outputs()
+    }
+}
+
+impl<'tcx> Eq for AbstractionBlockEdge<'tcx> {}
+
 impl<'tcx> AbstractionBlockEdge<'tcx> {
-    pub fn new(input: AbstractionInputTarget<'tcx>, output: AbstractionOutputTarget<'tcx>) -> Self {
-        Self { input, output }
+    pub fn new(
+        inputs: HashSet<AbstractionInputTarget<'tcx>>,
+        outputs: HashSet<AbstractionOutputTarget<'tcx>>,
+    ) -> Self {
+        Self {
+            inputs: inputs.into_iter().collect(),
+            outputs: outputs.into_iter().collect(),
+        }
+    }
+
+    pub fn outputs(&self) -> HashSet<AbstractionOutputTarget<'tcx>> {
+        self.outputs.clone().into_iter().collect()
+    }
+
+    pub fn inputs(&self) -> HashSet<AbstractionInputTarget<'tcx>> {
+        self.inputs.clone().into_iter().collect()
     }
 
     pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut result = vec![];
-        if let Some(place) = self.input.mut_place() {
-            result.push(place);
+        for input in self.inputs.iter_mut() {
+            if let Some(place) = input.mut_place() {
+                result.push(place);
+            }
         }
-        result.push(self.output.mut_place());
+        for output in self.outputs.iter_mut() {
+            result.push(output.mut_place());
+        }
         result
     }
 }
@@ -210,16 +238,23 @@ impl<'tcx> AbstractionType<'tcx> {
     }
 
     pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
-        self.edges().into_iter().map(|edge| edge.input).collect()
+        self.edges()
+            .into_iter()
+            .flat_map(|edge| edge.inputs())
+            .collect()
     }
     pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
-        self.edges().into_iter().map(|edge| edge.output).collect()
+        self.edges()
+            .into_iter()
+            .flat_map(|edge| edge.outputs())
+            .collect()
     }
 
     pub fn blocks_places(&self) -> FxHashSet<ReborrowBlockedPlace<'tcx>> {
         self.edges()
             .into_iter()
-            .flat_map(|edge| match edge.input {
+            .flat_map(|edge| edge.inputs())
+            .flat_map(|input| match input {
                 AbstractionTarget::Place(p) => Some(p),
                 AbstractionTarget::RegionProjection(_) => None,
             })
@@ -229,7 +264,7 @@ impl<'tcx> AbstractionType<'tcx> {
     pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
         match self {
             AbstractionType::FunctionCall(c) => {
-                c.edges.iter().map(|(_, edge)| edge).copied().collect()
+                c.edges.iter().map(|(_, edge)| edge).cloned().collect()
             }
             AbstractionType::Loop(c) => c.edges.clone(),
         }
@@ -238,7 +273,8 @@ impl<'tcx> AbstractionType<'tcx> {
     pub fn blocker_places(&self) -> FxHashSet<MaybeOldPlace<'tcx>> {
         self.edges()
             .into_iter()
-            .flat_map(|edge| match edge.output {
+            .flat_map(|edge| edge.outputs())
+            .flat_map(|output| match output {
                 AbstractionTarget::Place(p) => Some(p),
                 AbstractionTarget::RegionProjection(_) => None,
             })

@@ -22,9 +22,9 @@ use std::{
 };
 
 use rustc_interface::middle::{
-        mir::Location,
-        ty::{self, TyCtxt},
-    };
+    mir::Location,
+    ty::{self, TyCtxt},
+};
 
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 
@@ -190,14 +190,23 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let mut output_nodes = BTreeSet::new();
 
         for edge in region_abstraction.edges() {
-            let input = self.insert_abstraction_input_target(edge.input);
-            let output = self.insert_abstraction_output_target(edge.output);
-            input_nodes.insert(input);
-            output_nodes.insert(output);
-            self.edges.insert(GraphEdge::AbstractEdge {
-                blocked: input,
-                blocking: output,
-            });
+            for input in edge.inputs() {
+                let input = self.insert_abstraction_input_target(input);
+                input_nodes.insert(input);
+            }
+            for output in edge.outputs() {
+                let output = self.insert_abstraction_output_target(output);
+                output_nodes.insert(output);
+            }
+            for input in &input_nodes {
+                for output in &output_nodes {
+                    // TODO: Color or Label edges
+                    self.edges.insert(GraphEdge::AbstractEdge {
+                        blocked: *input,
+                        blocking: *output,
+                    });
+                }
+            }
         }
 
         assert!(!input_nodes.is_empty());
@@ -351,7 +360,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     path_conditions: format!("{}", edge.conditions()),
                 });
             }
-            BorrowsEdgeKind::RegionAbstraction(abstraction) => {
+            BorrowsEdgeKind::Abstraction(abstraction) => {
                 let _r = self.constructor().insert_region_abstraction(abstraction);
             }
             BorrowsEdgeKind::RegionProjectionMember(member) => {

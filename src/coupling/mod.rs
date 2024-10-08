@@ -176,6 +176,12 @@ impl<N: Ord> HyperEdge<N> {
     fn new(lhs: BTreeSet<N>, rhs: BTreeSet<N>) -> Self {
         HyperEdge { lhs, rhs }
     }
+    pub fn lhs(&self) -> &BTreeSet<N> {
+        &self.lhs
+    }
+    pub fn rhs(&self) -> &BTreeSet<N> {
+        &self.rhs
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +198,10 @@ impl<N: Ord> HyperGraph<N> {
 
     fn add_hyperedge(&mut self, hyperedge: HyperEdge<N>) {
         self.hyperedges.insert(hyperedge);
+    }
+
+    pub fn edges(&self) -> impl Iterator<Item = &HyperEdge<N>> {
+        self.hyperedges.iter()
     }
 }
 

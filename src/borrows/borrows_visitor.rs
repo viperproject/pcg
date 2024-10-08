@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeSet,
-    rc::Rc,
-};
+use std::{collections::BTreeSet, rc::Rc};
 
 use rustc_interface::{
     ast::Mutability,
@@ -13,8 +10,8 @@ use rustc_interface::{
     },
     middle::{
         mir::{
-            visit::Visitor, AggregateKind, Body, Const, Location, Operand, Place,
-            Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+            visit::Visitor, AggregateKind, Body, Const, Location, Operand, Place, Rvalue,
+            Statement, StatementKind, Terminator, TerminatorKind,
         },
         ty::{
             self, EarlyBinder, Region, RegionKind, RegionVid, TyCtxt, TypeVisitable, TypeVisitor,
@@ -69,8 +66,8 @@ pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
     preparing: bool,
     region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     debug_ctx: Option<DebugCtx>,
-#[allow(dead_code)]
-output_facts: &'mir PoloniusOutput,
+    #[allow(dead_code)]
+    output_facts: &'mir PoloniusOutput,
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
@@ -209,10 +206,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             let input_place = input_place.project_deref(self.repacker());
                             edges.push((
                                 idx,
-                                AbstractionBlockEdge {
-                                    input: AbstractionTarget::Place(input_place.into()),
-                                    output,
-                                },
+                                AbstractionBlockEdge::new(
+                                    vec![AbstractionTarget::Place(input_place.into())].into_iter().collect(),
+                                    vec![output].into_iter().collect(),
+                                ),
                             ));
                         }
                     }
@@ -230,12 +227,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 ) {
                     edges.push((
                         idx,
-                        AbstractionBlockEdge {
-                            input: AbstractionTarget::RegionProjection(
+                        AbstractionBlockEdge::new(
+                            vec![AbstractionTarget::RegionProjection(
                                 input_place.region_projection(lifetime_idx, self.repacker()),
-                            ),
-                            output,
-                        },
+                            )]
+                            .into_iter()
+                            .collect(),
+                            vec![output].into_iter().collect(),
+                        ),
                     ));
                 }
             }
@@ -449,7 +448,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 _ => {}
             }
         }
-
 
         if !self.preparing && !self.before {
             match &statement.kind {

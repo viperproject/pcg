@@ -170,7 +170,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                             to_keep.remove(edge);
                         }
                     }
-                    UnblockEdgeType::RegionAbstraction(abstraction_edge) => {
+                    UnblockEdgeType::Abstraction(abstraction_edge) => {
                         if is_leaf_abstraction(&abstraction_edge.abstraction_type) {
                             push_action(UnblockAction::TerminateAbstraction(
                                 abstraction_edge.location(),
@@ -256,7 +256,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                         );
                     }
                 }
-                BorrowsEdgeKind::RegionAbstraction(abstraction) => {
+                BorrowsEdgeKind::Abstraction(abstraction) => {
                     for place in abstraction.abstraction_type.blocker_places() {
                         self.unblock_place_internal(
                             place.into(),

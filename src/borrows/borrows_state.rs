@@ -213,7 +213,7 @@ impl<'tcx> BorrowsState<'tcx> {
         match edges[0].kind() {
             BorrowsEdgeKind::Reborrow(reborrow) => Some(reborrow.assigned_place),
             BorrowsEdgeKind::DerefExpansion(_) => todo!(),
-            BorrowsEdgeKind::RegionAbstraction(_) => todo!(),
+            BorrowsEdgeKind::Abstraction(_) => todo!(),
             BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
         }
     }

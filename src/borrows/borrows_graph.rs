@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -7,6 +9,7 @@ use rustc_interface::{
 use serde_json::json;
 
 use crate::{
+    borrows::domain::AbstractionInputTarget,
     coupling, rustc_interface,
     utils::{Place, PlaceRepacker},
 };
@@ -29,6 +32,19 @@ enum CGNode<'tcx> {
     Local(Place<'tcx>),
     Remote(Local),
 }
+
+impl Ord for CGNode<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd for CGNode<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(format!("{:?}", self).cmp(&format!("{:?}", other)))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowsEdge<'tcx>>);
 
@@ -53,7 +69,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind {
-                BorrowsEdgeKind::RegionAbstraction(abstraction) => Some(Conditioned {
+                BorrowsEdgeKind::Abstraction(abstraction) => Some(Conditioned {
                     conditions: edge.conditions.clone(),
                     value: abstraction.clone(),
                 }),
@@ -169,7 +185,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     // assert!(!reborrow.blocked_place.is_old())
                 }
                 BorrowsEdgeKind::DerefExpansion(_deref_expansion) => {}
-                BorrowsEdgeKind::RegionAbstraction(_abstraction_edge) => {}
+                BorrowsEdgeKind::Abstraction(_abstraction_edge) => {}
                 BorrowsEdgeKind::RegionProjectionMember(_region_projection_member) => {}
             }
         }
@@ -295,8 +311,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .filter(|blocked_root| !blocked_root.is_old())
                             .map(|blocked_root| {
                                 AbstractionBlockEdge::new(
-                                    AbstractionTarget::Place(blocked_root),
-                                    AbstractionTarget::Place(place),
+                                    vec![AbstractionTarget::Place(blocked_root)]
+                                        .into_iter()
+                                        .collect(),
+                                    vec![AbstractionTarget::Place(place)].into_iter().collect(),
                                 )
                             })
                             .collect::<Vec<_>>()
@@ -337,65 +355,84 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         leaf_nodes: FxHashSet<MaybeOldPlace<'tcx>>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> coupling::Graph<CGNode<'tcx>> {
+    ) -> (coupling::Graph<CGNode<'tcx>>, FxHashSet<BorrowsEdge<'tcx>>) {
         let mut coupling_graph = coupling::Graph::new();
+        let mut to_remove = FxHashSet::default();
 
         fn add_edges_from<'tcx>(
             bg: &BorrowsGraph<'tcx>,
             coupling_graph: &mut coupling::Graph<CGNode<'tcx>>,
+            to_remove: &mut FxHashSet<BorrowsEdge<'tcx>>,
+            path_edges: FxHashSet<BorrowsEdge<'tcx>>,
             from: Place<'tcx>,
             curr: MaybeOldPlace<'tcx>,
             repacker: PlaceRepacker<'_, 'tcx>,
         ) {
             let edges = bg.edges_blocked_by(curr, repacker);
             for edge in edges {
+                let mut new_path_edges = path_edges.clone();
+                new_path_edges.insert(edge.clone());
                 match edge.kind {
                     BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.blocked_place {
                         ReborrowBlockedPlace::Local(MaybeOldPlace::Current { place }) => {
                             coupling_graph.add_edge(CGNode::Local(from), CGNode::Local(place));
+                            to_remove.extend(new_path_edges);
                             add_edges_from(
                                 bg,
                                 coupling_graph,
+                                to_remove,
+                                FxHashSet::default(),
                                 place.into(),
                                 place.into(),
                                 repacker,
                             );
                         }
-                        ReborrowBlockedPlace::Local(old_place) => {
-                            add_edges_from(bg, coupling_graph, from, old_place, repacker)
-                        }
+                        ReborrowBlockedPlace::Local(old_place) => add_edges_from(
+                            bg,
+                            coupling_graph,
+                            to_remove,
+                            new_path_edges,
+                            from,
+                            old_place,
+                            repacker,
+                        ),
                         ReborrowBlockedPlace::Remote(local) => {
+                            to_remove.extend(new_path_edges);
                             coupling_graph.add_edge(CGNode::Local(from), CGNode::Remote(local));
                         }
                     },
                     BorrowsEdgeKind::DerefExpansion(de) => {
-                        // if de.base().is_current() { let base_place = de.base().place();
-                        //     coupling_graph.add_edge(CGNode::Local(from), CGNode::Local(base_place));
-                        //     add_edges_from(
-                        //         bg,
-                        //         coupling_graph,
-                        //         base_place,
-                        //         base_place.into(),
-                        //         repacker,
-                        //     );
-                        // } else {
-                        add_edges_from(bg, coupling_graph, from, de.base(), repacker);
-                        // }
+                        add_edges_from(
+                            bg,
+                            coupling_graph,
+                            to_remove,
+                            new_path_edges,
+                            from,
+                            de.base(),
+                            repacker,
+                        );
                     }
-                    BorrowsEdgeKind::RegionAbstraction(_) => todo!(),
+                    BorrowsEdgeKind::Abstraction(_) => todo!(),
                     BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
                 }
             }
-        };
+        }
+
         for node in leaf_nodes {
             match node {
-                MaybeOldPlace::Current { place } => {
-                    add_edges_from(self, &mut coupling_graph, place, node, repacker)
-                }
+                MaybeOldPlace::Current { place } => add_edges_from(
+                    self,
+                    &mut coupling_graph,
+                    &mut to_remove,
+                    FxHashSet::default(),
+                    place,
+                    node,
+                    repacker,
+                ),
                 MaybeOldPlace::OldPlace(old_place) => unreachable!(),
             }
         }
-        coupling_graph
+        (coupling_graph, to_remove)
     }
 
     pub fn join(
@@ -410,15 +447,32 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // if repacker.is_back_edge(other_block, self_block) {
         //     let self_leaf_nodes = self.leaf_nodes(repacker);
         //     let other_leaf_nodes = other.leaf_nodes(repacker);
-        //     let self_coupling_graph = self.construct_coupling_graph(self_leaf_nodes, repacker);
-        //     let other_coupling_graph = other.construct_coupling_graph(other_leaf_nodes, repacker);
+        //     let (self_coupling_graph, self_to_remove) =
+        //         self.construct_coupling_graph(self_leaf_nodes, repacker);
+        //     let (other_coupling_graph, _) =
+        //         other.construct_coupling_graph(other_leaf_nodes, repacker);
         //     eprintln!("{:?}", self.leaf_nodes(repacker));
         //     eprintln!("{:?}", other.leaf_nodes(repacker));
         //     self_coupling_graph.render_with_imgcat().unwrap();
         //     other_coupling_graph.render_with_imgcat().unwrap();
         //     eprintln!("{:?}", self_coupling_graph);
         //     eprintln!("{:?}", other_coupling_graph);
-        //     // let hypergraph = coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
+        //     let hypergraph =
+        //         coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
+        //     eprintln!("{:?}", hypergraph);
+        //     for edge in self_to_remove.iter() {
+        //         self.remove(edge, DebugCtx::Other);
+        //     }
+        //     for edge in hypergraph.edges() {
+        //         // let edge = LoopAbstraction::new(vec![AbstractionBlockEdge {
+        //         //     input: AbstractionInputTarget::Place(edge.from),
+        //         //     output: AbstractionOutputTarget::Place(edge.to),
+        //         // }], self_block);
+        //         // self.insert(AbstractionEdge::new(AbstractionType::Loop(edge)).to_borrows_edge(PathConditions::new(self_block)));
+        //         // let edge = BorrowsEdge::new(
+        //         // self.insert(edge.clone());
+        //         // changed = true;
+        //     }
         //     panic!(
         //         "back edge encountered in join from {:?} -> {:?}",
         //         other_block, self_block
@@ -494,7 +548,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn remove_abstraction_at(&mut self, location: Location) {
         self.0.retain(|edge| {
-            if let BorrowsEdgeKind::RegionAbstraction(abstraction) = &edge.kind {
+            if let BorrowsEdgeKind::Abstraction(abstraction) = &edge.kind {
                 abstraction.location() != location
             } else {
                 true
@@ -618,7 +672,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     vec
                 }
                 BorrowsEdgeKind::DerefExpansion(de) => vec![de.mut_base()],
-                BorrowsEdgeKind::RegionAbstraction(ra) => ra.maybe_old_places(),
+                BorrowsEdgeKind::Abstraction(ra) => ra.maybe_old_places(),
                 BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
             };
             let mut changed = false;
@@ -739,7 +793,7 @@ impl<'tcx> BorrowsEdge<'tcx> {
 pub enum BorrowsEdgeKind<'tcx> {
     Reborrow(Reborrow<'tcx>),
     DerefExpansion(DerefExpansion<'tcx>),
-    RegionAbstraction(AbstractionEdge<'tcx>),
+    Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
 
@@ -755,9 +809,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         match self {
             BorrowsEdgeKind::Reborrow(reborrow) => reborrow.make_place_old(place, latest),
             BorrowsEdgeKind::DerefExpansion(de) => de.make_place_old(place, latest),
-            BorrowsEdgeKind::RegionAbstraction(abstraction) => {
-                abstraction.make_place_old(place, latest)
-            }
+            BorrowsEdgeKind::Abstraction(abstraction) => abstraction.make_place_old(place, latest),
             BorrowsEdgeKind::RegionProjectionMember(member) => member.make_place_old(place, latest),
         }
     }
@@ -780,7 +832,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                 vec![reborrow.blocked_place].into_iter().collect()
             }
             BorrowsEdgeKind::DerefExpansion(de) => vec![de.base().into()].into_iter().collect(),
-            BorrowsEdgeKind::RegionAbstraction(ra) => {
+            BorrowsEdgeKind::Abstraction(ra) => {
                 ra.blocks_places().into_iter().map(|p| p.into()).collect()
             }
             BorrowsEdgeKind::RegionProjectionMember(member) => match member.direction {
@@ -802,7 +854,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                 vec![reborrow.assigned_place].into_iter().collect()
             }
             BorrowsEdgeKind::DerefExpansion(de) => de.expansion(repacker).into_iter().collect(),
-            BorrowsEdgeKind::RegionAbstraction(ra) => ra.blocked_by_places(),
+            BorrowsEdgeKind::Abstraction(ra) => ra.blocked_by_places(),
             BorrowsEdgeKind::RegionProjectionMember(member) => match member.direction {
                 RegionProjectionMemberDirection::PlaceIsRegionInput => {
                     vec![member.projection.place].into_iter().collect()
@@ -832,7 +884,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionEdge<'tcx> {
     fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx> {
         BorrowsEdge {
             conditions,
-            kind: BorrowsEdgeKind::RegionAbstraction(self),
+            kind: BorrowsEdgeKind::Abstraction(self),
         }
     }
 }
