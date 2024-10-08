@@ -1,4 +1,5 @@
 use rustc_interface::{
+    borrowck::consumers::{LocationTable, PoloniusOutput},
     ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock, Location},
@@ -83,10 +84,20 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        output_facts: &PoloniusOutput,
+        location_table: &LocationTable,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if self.graph.join(&other.graph, self_block, other_block, repacker) {
+        if self.graph.join(
+                &other.graph,
+                self_block,
+                other_block,
+                output_facts,
+                location_table,
+                repacker,
+            )
+        {
             changed = true;
         }
         if self.latest.join(&other.latest, self_block) {

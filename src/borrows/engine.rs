@@ -104,8 +104,14 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         other_after.add_path_condition(pc);
 
         // Overlay both graphs
-        self.after
-           .join(&other_after, self.block(), other.block(), self.repacker)
+        self.after.join(
+            &other_after,
+            self.block(),
+            other.block(),
+            self.output_facts.as_ref(),
+            self.location_table.as_ref(),
+            self.repacker,
+        )
     }
 }
 
@@ -188,6 +194,8 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub after: BorrowsState<'tcx>,
     pub block: Option<BasicBlock>,
     pub repacker: PlaceRepacker<'mir, 'tcx>,
+    pub output_facts: Rc<PoloniusOutput>,
+    pub location_table: Rc<LocationTable>,
 }
 
 impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
@@ -236,7 +244,12 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         })
     }
 
-    pub fn new(repacker: PlaceRepacker<'mir, 'tcx>, block: Option<BasicBlock>) -> Self {
+    pub fn new(
+        repacker: PlaceRepacker<'mir, 'tcx>,
+        output_facts: Rc<PoloniusOutput>,
+        location_table: Rc<LocationTable>,
+        block: Option<BasicBlock>,
+    ) -> Self {
         Self {
             before_start: BorrowsState::new(),
             before_after: BorrowsState::new(),
@@ -244,6 +257,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             after: BorrowsState::new(),
             block,
             repacker,
+            output_facts,
+            location_table,
         }
     }
 

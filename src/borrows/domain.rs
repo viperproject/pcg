@@ -15,20 +15,31 @@ use crate::{
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    edges: Vec<AbstractionBlockEdge<'tcx>>,
+    edge: AbstractionBlockEdge<'tcx>,
     block: BasicBlock,
+}
+
+impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
+    fn to_borrows_edge(self, path_conditions: PathConditions) -> BorrowsEdge<'tcx> {
+        BorrowsEdge::new(
+            super::borrows_graph::BorrowsEdgeKind::Abstraction(AbstractionEdge {
+                abstraction_type: AbstractionType::Loop(self),
+            }),
+            path_conditions,
+        )
+    }
 }
 
 impl<'tcx> LoopAbstraction<'tcx> {
     pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
-        self.edges.iter().flat_map(|edge| edge.inputs()).collect()
+        self.edge.inputs().into_iter().collect()
     }
 
-    pub fn edges(&self) -> &Vec<AbstractionBlockEdge<'tcx>> {
-        &self.edges
+    pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
+        vec![self.edge.clone()]
     }
-    pub fn new(edges: Vec<AbstractionBlockEdge<'tcx>>, block: BasicBlock) -> Self {
-        Self { edges, block }
+    pub fn new(edge: AbstractionBlockEdge<'tcx>, block: BasicBlock) -> Self {
+        Self { edge, block }
     }
 
     pub fn location(&self) -> Location {
@@ -39,10 +50,7 @@ impl<'tcx> LoopAbstraction<'tcx> {
     }
 
     pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.edges
-            .iter_mut()
-            .flat_map(|edge| edge.maybe_old_places())
-            .collect()
+        self.edge.maybe_old_places()
     }
 }
 
@@ -266,7 +274,7 @@ impl<'tcx> AbstractionType<'tcx> {
             AbstractionType::FunctionCall(c) => {
                 c.edges.iter().map(|(_, edge)| edge).cloned().collect()
             }
-            AbstractionType::Loop(c) => c.edges.clone(),
+            AbstractionType::Loop(c) => c.edges().clone(),
         }
     }
 
@@ -433,8 +441,11 @@ use crate::utils::PlaceRepacker;
 use serde_json::json;
 
 use super::{
+    borrows_graph::{BorrowsEdge, ToBorrowsEdge},
     borrows_visitor::{extract_nested_lifetimes, get_vid},
     latest::Latest,
+    path_condition::PathConditions,
+    region_abstraction::AbstractionEdge,
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]

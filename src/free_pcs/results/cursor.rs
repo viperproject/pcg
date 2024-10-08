@@ -50,10 +50,6 @@ impl<'mir, 'tcx> HasCgContext<'mir, 'tcx> for PcsEngine<'mir, 'tcx> {
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub trait HasPrepare {
-    fn prepare(&self);
-}
-
 pub trait HasExtra<T> {
     type ExtraBridge;
     type BridgeCtx;
@@ -88,7 +84,7 @@ impl<
         'mir,
         'tcx,
         T,
-        D: HasFpcs<'mir, 'tcx> + HasExtra<T, BridgeCtx = TyCtxt<'tcx>> + HasPrepare,
+        D: HasFpcs<'mir, 'tcx> + HasExtra<T, BridgeCtx = TyCtxt<'tcx>>,
         E: Analysis<'tcx, Domain = D>,
     > FreePcsAnalysis<'mir, 'tcx, T, D, E>
 {
@@ -106,7 +102,6 @@ impl<
     // }
 
     pub fn analysis_for_bb(&mut self, block: BasicBlock) {
-        self.cursor.get().prepare();
         self.cursor.seek_to_block_start(block);
         let end_stmt = self.body().terminator_loc(block).successor_within_block();
         self.curr_stmt = Some(Location {

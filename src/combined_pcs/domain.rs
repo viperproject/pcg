@@ -23,7 +23,7 @@ use crate::{
         engine::BorrowsDomain,
         unblock_graph::UnblockGraph,
     },
-    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary, HasPrepare},
+    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
     rustc_interface,
     visualization::generate_dot_graph,
     RECORD_PCS,
@@ -66,14 +66,6 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
     dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
 
     dot_output_dir: Option<String>,
-
-    fixpoint_reached: Cell<bool>,
-}
-
-impl<'a, 'tcx> HasPrepare for PlaceCapabilitySummary<'a, 'tcx> {
-    fn prepare(&self) {
-        self.mark_fixpoint_reached();
-    }
 }
 
 /// Outermost Vec can be considered a map StatementIndex -> Vec<BTreeMap<DataflowStmtPhase, String>>
@@ -149,10 +141,6 @@ impl DotGraphs {
 }
 
 impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
-    pub fn mark_fixpoint_reached(&self) {
-        self.fixpoint_reached.set(true);
-    }
-
     pub fn is_initialized(&self) -> bool {
         self.block.is_some()
     }
@@ -225,13 +213,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                 }
             };
 
-            generate_dot_graph(
-                self.cgx.rp,
-                fpcs,
-                borrows,
-                &filename,
-            )
-            .unwrap();
+            generate_dot_graph(self.cgx.rp, fpcs, borrows, &filename).unwrap();
         }
     }
 
@@ -242,7 +224,12 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(cgx.rp, block);
+        let borrows = BorrowsDomain::new(
+            cgx.rp,
+            cgx.mir.output_facts.clone().unwrap(),
+            cgx.mir.location_table.clone().unwrap(),
+            block,
+        );
         Self {
             cgx,
             block,
@@ -250,7 +237,6 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             borrows,
             dot_graphs,
             dot_output_dir,
-            fixpoint_reached: Cell::new(false),
         }
     }
 }

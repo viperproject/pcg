@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use rustc_interface::{
     ast::Mutability,
+    borrowck::consumers::{LocationTable, PoloniusOutput},
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock, Local, Location},
     middle::ty::{Region, TyCtxt},
@@ -17,33 +18,16 @@ use crate::{
 use super::{
     borrows_state::{RegionProjectionMember, RegionProjectionMemberDirection},
     borrows_visitor::DebugCtx,
+    coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
     deref_expansion::DerefExpansion,
     domain::{
-        AbstractionBlockEdge, AbstractionTarget, AbstractionType, LoopAbstraction, MaybeOldPlace,
-        Reborrow, ReborrowBlockedPlace, ToJsonWithRepacker,
+        AbstractionBlockEdge, AbstractionOutputTarget, AbstractionTarget, AbstractionType,
+        LoopAbstraction, MaybeOldPlace, Reborrow, ReborrowBlockedPlace, ToJsonWithRepacker,
     },
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
 };
-
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-enum CGNode<'tcx> {
-    Local(Place<'tcx>),
-    Remote(Local),
-}
-
-impl Ord for CGNode<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-impl PartialOrd for CGNode<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(format!("{:?}", self).cmp(&format!("{:?}", other)))
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowsEdge<'tcx>>);
@@ -288,46 +272,46 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    pub fn abstract_subgraph(
-        &mut self,
-        block: BasicBlock,
-        subgraph: BorrowsGraph<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        self.assert_invariants_satisfied(repacker);
-        for edge in subgraph.edges() {
-            self.remove(edge, DebugCtx::Other);
-        }
-        let edges = subgraph
-            .leaf_edges(repacker)
-            .into_iter()
-            .flat_map(|edge| {
-                edge.blocked_by_places(repacker)
-                    .into_iter()
-                    .flat_map(|place| {
-                        let blocked_roots = subgraph.roots_blocked_by(place, repacker);
-                        blocked_roots
-                            .into_iter()
-                            .filter(|blocked_root| !blocked_root.is_old())
-                            .map(|blocked_root| {
-                                AbstractionBlockEdge::new(
-                                    vec![AbstractionTarget::Place(blocked_root)]
-                                        .into_iter()
-                                        .collect(),
-                                    vec![AbstractionTarget::Place(place)].into_iter().collect(),
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                    })
-            })
-            .collect();
-        let abstraction = LoopAbstraction::new(edges, block);
-        self.insert(
-            AbstractionEdge::new(AbstractionType::Loop(abstraction))
-                .to_borrows_edge(PathConditions::new(block)),
-        );
-        self.assert_invariants_satisfied(repacker);
-    }
+    // pub fn abstract_subgraph(
+    //     &mut self,
+    //     block: BasicBlock,
+    //     subgraph: BorrowsGraph<'tcx>,
+    //     repacker: PlaceRepacker<'_, 'tcx>,
+    // ) {
+    //     self.assert_invariants_satisfied(repacker);
+    //     for edge in subgraph.edges() {
+    //         self.remove(edge, DebugCtx::Other);
+    //     }
+    //     let edges = subgraph
+    //         .leaf_edges(repacker)
+    //         .into_iter()
+    //         .flat_map(|edge| {
+    //             edge.blocked_by_places(repacker)
+    //                 .into_iter()
+    //                 .flat_map(|place| {
+    //                     let blocked_roots = subgraph.roots_blocked_by(place, repacker);
+    //                     blocked_roots
+    //                         .into_iter()
+    //                         .filter(|blocked_root| !blocked_root.is_old())
+    //                         .map(|blocked_root| {
+    //                             AbstractionBlockEdge::new(
+    //                                 vec![AbstractionTarget::Place(blocked_root)]
+    //                                     .into_iter()
+    //                                     .collect(),
+    //                                 vec![AbstractionTarget::Place(place)].into_iter().collect(),
+    //                             )
+    //                         })
+    //                         .collect::<Vec<_>>()
+    //                 })
+    //         })
+    //         .collect();
+    //     let abstraction = LoopAbstraction::new(edges, block);
+    //     self.insert(
+    //         AbstractionEdge::new(AbstractionType::Loop(abstraction))
+    //             .to_borrows_edge(PathConditions::new(block)),
+    //     );
+    //     self.assert_invariants_satisfied(repacker);
+    // }
 
     pub fn roots_blocked_by(
         &self,
@@ -353,86 +337,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn construct_coupling_graph(
         &self,
-        leaf_nodes: FxHashSet<MaybeOldPlace<'tcx>>,
+        output_facts: &PoloniusOutput,
+        location_table: &LocationTable,
         repacker: PlaceRepacker<'_, 'tcx>,
+        block: BasicBlock,
+        leaf_nodes: FxHashSet<MaybeOldPlace<'tcx>>,
     ) -> (coupling::Graph<CGNode<'tcx>>, FxHashSet<BorrowsEdge<'tcx>>) {
-        let mut coupling_graph = coupling::Graph::new();
-        let mut to_remove = FxHashSet::default();
-
-        fn add_edges_from<'tcx>(
-            bg: &BorrowsGraph<'tcx>,
-            coupling_graph: &mut coupling::Graph<CGNode<'tcx>>,
-            to_remove: &mut FxHashSet<BorrowsEdge<'tcx>>,
-            path_edges: FxHashSet<BorrowsEdge<'tcx>>,
-            from: Place<'tcx>,
-            curr: MaybeOldPlace<'tcx>,
-            repacker: PlaceRepacker<'_, 'tcx>,
-        ) {
-            let edges = bg.edges_blocked_by(curr, repacker);
-            for edge in edges {
-                let mut new_path_edges = path_edges.clone();
-                new_path_edges.insert(edge.clone());
-                match edge.kind {
-                    BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.blocked_place {
-                        ReborrowBlockedPlace::Local(MaybeOldPlace::Current { place }) => {
-                            coupling_graph.add_edge(CGNode::Local(from), CGNode::Local(place));
-                            to_remove.extend(new_path_edges);
-                            add_edges_from(
-                                bg,
-                                coupling_graph,
-                                to_remove,
-                                FxHashSet::default(),
-                                place.into(),
-                                place.into(),
-                                repacker,
-                            );
-                        }
-                        ReborrowBlockedPlace::Local(old_place) => add_edges_from(
-                            bg,
-                            coupling_graph,
-                            to_remove,
-                            new_path_edges,
-                            from,
-                            old_place,
-                            repacker,
-                        ),
-                        ReborrowBlockedPlace::Remote(local) => {
-                            to_remove.extend(new_path_edges);
-                            coupling_graph.add_edge(CGNode::Local(from), CGNode::Remote(local));
-                        }
-                    },
-                    BorrowsEdgeKind::DerefExpansion(de) => {
-                        add_edges_from(
-                            bg,
-                            coupling_graph,
-                            to_remove,
-                            new_path_edges,
-                            from,
-                            de.base(),
-                            repacker,
-                        );
-                    }
-                    BorrowsEdgeKind::Abstraction(_) => todo!(),
-                    BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
-                }
-            }
-        }
-
-        for node in leaf_nodes {
-            match node {
-                MaybeOldPlace::Current { place } => add_edges_from(
-                    self,
-                    &mut coupling_graph,
-                    &mut to_remove,
-                    FxHashSet::default(),
-                    place,
-                    node,
-                    repacker,
-                ),
-                MaybeOldPlace::OldPlace(old_place) => unreachable!(),
-            }
-        }
-        (coupling_graph, to_remove)
+        let constructor =
+            CouplingGraphConstructor::new(output_facts, location_table, repacker, block);
+        constructor.construct_coupling_graph(self, leaf_nodes)
     }
 
     pub fn join(
@@ -440,44 +353,72 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        output_facts: &PoloniusOutput,
+        location_table: &LocationTable,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         let our_edges = self.0.clone();
-        // if repacker.is_back_edge(other_block, self_block) {
-        //     let self_leaf_nodes = self.leaf_nodes(repacker);
-        //     let other_leaf_nodes = other.leaf_nodes(repacker);
-        //     let (self_coupling_graph, self_to_remove) =
-        //         self.construct_coupling_graph(self_leaf_nodes, repacker);
-        //     let (other_coupling_graph, _) =
-        //         other.construct_coupling_graph(other_leaf_nodes, repacker);
-        //     eprintln!("{:?}", self.leaf_nodes(repacker));
-        //     eprintln!("{:?}", other.leaf_nodes(repacker));
-        //     self_coupling_graph.render_with_imgcat().unwrap();
-        //     other_coupling_graph.render_with_imgcat().unwrap();
-        //     eprintln!("{:?}", self_coupling_graph);
-        //     eprintln!("{:?}", other_coupling_graph);
-        //     let hypergraph =
-        //         coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
-        //     eprintln!("{:?}", hypergraph);
-        //     for edge in self_to_remove.iter() {
-        //         self.remove(edge, DebugCtx::Other);
-        //     }
-        //     for edge in hypergraph.edges() {
-        //         // let edge = LoopAbstraction::new(vec![AbstractionBlockEdge {
-        //         //     input: AbstractionInputTarget::Place(edge.from),
-        //         //     output: AbstractionOutputTarget::Place(edge.to),
-        //         // }], self_block);
-        //         // self.insert(AbstractionEdge::new(AbstractionType::Loop(edge)).to_borrows_edge(PathConditions::new(self_block)));
-        //         // let edge = BorrowsEdge::new(
-        //         // self.insert(edge.clone());
-        //         // changed = true;
-        //     }
-        //     panic!(
-        //         "back edge encountered in join from {:?} -> {:?}",
-        //         other_block, self_block
-        //     );
-        // }
+        if false && repacker.is_back_edge(other_block, self_block) {
+            let self_leaf_nodes = self.leaf_nodes(repacker);
+            let other_leaf_nodes = other.leaf_nodes(repacker);
+            let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
+            if exit_blocks.len() != 1 {
+                panic!("exit blocks: {:?}", exit_blocks);
+            }
+            let (self_coupling_graph, self_to_remove) = self.construct_coupling_graph(
+                output_facts,
+                location_table,
+                repacker,
+                exit_blocks[0],
+                self_leaf_nodes,
+            );
+            let (other_coupling_graph, _) = other.construct_coupling_graph(
+                output_facts,
+                location_table,
+                repacker,
+                exit_blocks[0],
+                other_leaf_nodes,
+            );
+            eprintln!("{:?}", self.leaf_nodes(repacker));
+            eprintln!("{:?}", other.leaf_nodes(repacker));
+            self_coupling_graph.render_with_imgcat().unwrap();
+            other_coupling_graph.render_with_imgcat().unwrap();
+            eprintln!("{:?}", self_coupling_graph);
+            eprintln!("{:?}", other_coupling_graph);
+            let hypergraph =
+                coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
+            eprintln!("{:?}", hypergraph);
+            for edge in self_to_remove.iter() {
+                if self.remove(edge, DebugCtx::Other) {
+                    changed = true;
+                }
+            }
+            for edge in hypergraph.edges() {
+                let abstraction = LoopAbstraction::new(
+                    AbstractionBlockEdge::new(
+                        edge.rhs()
+                            .iter()
+                            .map(|n| n.to_abstraction_input_target())
+                            .collect(),
+                        edge.lhs()
+                            .iter()
+                            .map(|n| n.to_abstraction_output_target())
+                            .collect(),
+                    ),
+                    self_block,
+                )
+                .to_borrows_edge(PathConditions::new(self_block));
+                if self.insert(abstraction) {
+                    changed = true;
+                }
+            }
+            return changed;
+            // panic!(
+            //     "back edge encountered in join from {:?} -> {:?}",
+            //     other_block, self_block
+            // );
+        }
         for other_edge in other.0.iter() {
             match our_edges.iter().find(|e| e.kind() == other_edge.kind()) {
                 Some(our_edge) => {

@@ -8,3 +8,4 @@ pub mod latest;
 pub mod path_condition;
 pub mod region_abstraction;
 pub mod unblock_graph;
+pub mod coupling_graph_constructor;
