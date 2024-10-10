@@ -222,107 +222,7 @@ where
     }
 }
 
-fn simple_triangle() -> (Graph<Node>, Graph<Node>) {
-    // Create graphs G1 and G2
-    let mut g1 = Graph::new();
-    let mut g2 = Graph::new();
-
-    // Build Graph 1
-    // x1 -> a -> b -> x
-    g1.add_edges(vec!["x1", "a", "x"]);
-    // y1 -> c -> y
-    g1.add_edges(vec!["y1", "y"]);
-
-    // Build Graph 2
-    // x1 -> c -> a -> x
-    g2.add_edges(vec!["x1", "x"]);
-    // y1 -> b -> y
-    g2.add_edges(vec!["y1", "a", "y"]);
-
-    (g1, g2)
-}
-
-fn triangle() -> (Graph<Node>, Graph<Node>) {
-    // Create graphs G1 and G2
-    let mut g1 = Graph::new();
-    let mut g2 = Graph::new();
-
-    // Build Graph 1
-    // x1 -> a -> b -> x
-    g1.add_edges(vec!["x1", "a", "b", "x"]);
-    // y1 -> c -> y
-    g1.add_edges(vec!["y1", "c", "y"]);
-
-    // Build Graph 2
-    // x1 -> c -> a -> x
-    g2.add_edges(vec!["x1", "c", "a", "x"]);
-    // y1 -> b -> y
-    g2.add_edges(vec!["y1", "b", "y"]);
-
-    (g1, g2)
-}
-fn acbd() -> (Graph<&'static str>, Graph<&'static str>) {
-    // Create graphs G1 and G2
-    let mut g1 = Graph::new();
-    let mut g2 = Graph::new();
-
-    // Build Graph 1
-    // x1 -> a -> b -> x
-    g1.add_edges(vec!["x1", "a", "b", "x"]);
-    // y1 -> c -> d -> y
-    g1.add_edges(vec!["y1", "c", "d", "y"]);
-
-    // Build Graph 2
-    // x1 -> c -> a -> x
-    g2.add_edges(vec!["x1", "a", "c", "x"]);
-    // y1 -> d -> b -> y
-    g2.add_edges(vec!["y1", "b", "d", "y"]);
-
-    (g1, g2)
-}
-
-fn cadb() -> (Graph<&'static str>, Graph<&'static str>) {
-    // Create graphs G1 and G2
-    let mut g1 = Graph::new();
-    let mut g2 = Graph::new();
-
-    // Build Graph 1
-    // x1 -> a -> b -> x
-    g1.add_edges(vec!["x1", "a", "b", "x"]);
-    // y1 -> c -> d -> y
-    g1.add_edges(vec!["y1", "c", "d", "y"]);
-
-    // Build Graph 2
-    // x1 -> c -> a -> x
-    g2.add_edges(vec!["x1", "c", "a", "x"]);
-    // y1 -> d -> b -> y
-    g2.add_edges(vec!["y1", "d", "b", "y"]);
-
-    (g1, g2)
-}
-
-// fn main() {
-//     // Create graphs G1 and G2
-//     let (mut g1, mut g2) = simple_triangle();
-//     // Run the coupling algorithm
-//     let g = coupling_algorithm(&mut g1, &mut g2);
-
-//     println!("Resulting HyperGraph G:");
-//     for (i, hyperedge) in g.hyperedges.iter().enumerate() {
-//         println!(
-//             "Hyperedge {}: {:?} -> {:?}",
-//             i, hyperedge.lhs, hyperedge.rhs
-//         );
-//     }
-
-//     // Optionally, generate DOT representations
-//     let dot_g1 = g1.to_dot_petgraph();
-//     let dot_g2 = g2.to_dot_petgraph();
-//     println!("DOT Representation of G1:\n{}", dot_g1);
-//     println!("DOT Representation of G2:\n{}", dot_g2);
-// }
-
-pub fn coupling_algorithm<N>(mut g1: Graph<N>, mut g2: Graph<N>) -> HyperGraph<N>
+pub fn coupling_algorithm<N>(mut g1: Graph<N>, mut g2: Graph<N>) -> Option<HyperGraph<N>>
 where
     N: Eq + Hash + Clone + Copy + Ord + fmt::Debug,
 {
@@ -334,18 +234,19 @@ where
         let mut n_queue = VecDeque::from(n_stack);
 
         while let Some(n) = n_queue.pop_front() {
-
             if let Some((g1_prime, g2_prime, w)) = obtain(n.clone(), g1.clone(), g2.clone()) {
+                eprintln!("Obtain candidate {:?}", n);
+                eprintln!("Result: {:?}", w);
                 g1 = g1_prime;
                 g2 = g2_prime;
                 g.add_hyperedge(w.clone());
                 continue 'outer;
             }
         }
-        panic!("No progress made in the inner loop. Exiting.");
+        return None;
     }
 
-    g
+    Some(g)
 }
 
 fn init_hypergraph<N>(n: &N, mut g: Graph<N>) -> Option<(HyperEdge<N>, Graph<N>)>
@@ -534,11 +435,133 @@ where
 mod tests {
     use super::*;
 
+    fn complex() -> (Graph<Node>, Graph<Node>) {
+        // Create graphs G1 and G2
+        let mut g1 = Graph::new();
+        let mut g2 = Graph::new();
+
+        g1.add_edges(vec!["x", "n", "xp"]);
+        g1.add_edges(vec!["y", "z", "np"]);
+
+        g2.add_edges(vec!["x", "np", "n"]);
+        g2.add_edges(vec!["y", "z", "xp"]);
+
+        (g1, g2)
+    }
+
+    fn simple_triangle() -> (Graph<Node>, Graph<Node>) {
+        // Create graphs G1 and G2
+        let mut g1 = Graph::new();
+        let mut g2 = Graph::new();
+
+        // Build Graph 1
+        // x1 -> a -> b -> x
+        g1.add_edges(vec!["x1", "a", "x"]);
+        // y1 -> c -> y
+        g1.add_edges(vec!["y1", "y"]);
+
+        // Build Graph 2
+        // x1 -> c -> a -> x
+        g2.add_edges(vec!["x1", "x"]);
+        // y1 -> b -> y
+        g2.add_edges(vec!["y1", "a", "y"]);
+
+        (g1, g2)
+    }
+
+    fn triangle() -> (Graph<Node>, Graph<Node>) {
+        // Create graphs G1 and G2
+        let mut g1 = Graph::new();
+        let mut g2 = Graph::new();
+
+        // Build Graph 1
+        // x1 -> a -> b -> x
+        g1.add_edges(vec!["x1", "a", "b", "x"]);
+        // y1 -> c -> y
+        g1.add_edges(vec!["y1", "c", "y"]);
+
+        // Build Graph 2
+        // x1 -> c -> a -> x
+        g2.add_edges(vec!["x1", "c", "a", "x"]);
+        // y1 -> b -> y
+        g2.add_edges(vec!["y1", "b", "y"]);
+
+        (g1, g2)
+    }
+    fn acbd() -> (Graph<&'static str>, Graph<&'static str>) {
+        // Create graphs G1 and G2
+        let mut g1 = Graph::new();
+        let mut g2 = Graph::new();
+
+        // Build Graph 1
+        // x1 -> a -> b -> x
+        g1.add_edges(vec!["x1", "a", "b", "x"]);
+        // y1 -> c -> d -> y
+        g1.add_edges(vec!["y1", "c", "d", "y"]);
+
+        // Build Graph 2
+        // x1 -> c -> a -> x
+        g2.add_edges(vec!["x1", "a", "c", "x"]);
+        // y1 -> d -> b -> y
+        g2.add_edges(vec!["y1", "b", "d", "y"]);
+
+        (g1, g2)
+    }
+
+    fn cadb() -> (Graph<&'static str>, Graph<&'static str>) {
+        // Create graphs G1 and G2
+        let mut g1 = Graph::new();
+        let mut g2 = Graph::new();
+
+        // Build Graph 1
+        // x1 -> a -> b -> x
+        g1.add_edges(vec!["x1", "a", "b", "x"]);
+        // y1 -> c -> d -> y
+        g1.add_edges(vec!["y1", "c", "d", "y"]);
+
+        // Build Graph 2
+        // x1 -> c -> a -> x
+        g2.add_edges(vec!["x1", "c", "a", "x"]);
+        // y1 -> d -> b -> y
+        g2.add_edges(vec!["y1", "d", "b", "y"]);
+
+        (g1, g2)
+    }
+
+    #[test]
+    fn test_coupling_complex() {
+        let (mut g1, mut g2) = complex();
+
+        let hypergraph = coupling_algorithm(g1, g2).unwrap();
+        let expected_hyperedges = vec![
+            HyperEdge::new(
+                ["n"].iter().cloned().collect(),  // lhs
+                ["xp"].iter().cloned().collect(), // rhs
+            ),
+            HyperEdge::new(
+                ["np"].iter().cloned().collect(),
+                ["n"].iter().cloned().collect(),
+            ),
+            HyperEdge::new(
+                ["x", "z"].iter().cloned().collect(),
+                ["np"].iter().cloned().collect(),
+            ),
+            HyperEdge::new(
+                ["y"].iter().cloned().collect(),
+                ["z"].iter().cloned().collect(),
+            ),
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+        assert_eq!(hypergraph.hyperedges, expected_hyperedges);
+    }
+
     #[test]
     fn test_coupling_acbd() {
         let (mut g1, mut g2) = acbd();
 
-        let hypergraph = coupling_algorithm(&mut g1, &mut g2);
+        let hypergraph = coupling_algorithm(g1, g2).unwrap();
 
         let expected_hyperedges = vec![
             HyperEdge::new(
@@ -568,7 +591,7 @@ mod tests {
     fn test_coupling_cadb() {
         let (mut g1, mut g2) = cadb();
 
-        let hypergraph = coupling_algorithm(&mut g1, &mut g2);
+        let hypergraph = coupling_algorithm(g1, g2).unwrap();
 
         let expected_hyperedges = vec![
             HyperEdge::new(
@@ -597,7 +620,7 @@ mod tests {
     fn test_coupling_simple_triangle() {
         let (mut g1, mut g2) = simple_triangle();
 
-        let hypergraph = coupling_algorithm(&mut g1, &mut g2);
+        let hypergraph = coupling_algorithm(g1, g2).unwrap();
 
         let expected_hyperedges = vec![
             HyperEdge::new(
@@ -619,7 +642,7 @@ mod tests {
     fn test_coupling_triangle() {
         let (mut g1, mut g2) = triangle();
 
-        let hypergraph = coupling_algorithm(&mut g1, &mut g2);
+        let hypergraph = coupling_algorithm(g1, g2).unwrap();
 
         let expected_hyperedges = vec![
             HyperEdge::new(

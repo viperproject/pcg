@@ -375,7 +375,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         );
         // self_coupling_graph.render_with_imgcat().unwrap();
         // other_coupling_graph.render_with_imgcat().unwrap();
-        let hypergraph = coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph);
+        let hypergraph = coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph).unwrap();
         // eprintln!("Result: {:?}", hypergraph);
         let mut changed = false;
         for edge in self_to_remove.iter() {
