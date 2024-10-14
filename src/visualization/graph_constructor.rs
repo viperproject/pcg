@@ -259,13 +259,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             NodeType::ReborrowingDagNode { label, location }
         };
         if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
-            for lifetime in extract_nested_lifetimes(place.ty(self.repacker).ty) {
-                let region_projection = RegionProjection {
-                    place: MaybeOldPlace::Current {
-                        place: place.clone(),
-                    },
-                    region: get_vid(&lifetime).unwrap(),
-                };
+            for region_projection in place.region_projections(self.repacker) {
                 self.insert_region_projection_node(region_projection);
             }
         }
