@@ -108,14 +108,19 @@ fn get_place_to_expand_to<'b, 'tcx>(
             return curr_place;
         }
 
+        let place_ty = curr_place.ty(repacker);
+
         // For some reason the field projection may yield a different lifetime parameter
         // what is expected based on the ADT definition and substs.
         // We use the ADT definition because it will ensure that in the PCS the lifetime parameter
         // of all fields relates to the parameter of their parent struct.
-        if false && let (ProjectionElem::Field(field_idx, _), ty::TyKind::Adt(def, substs)) =
-            (elem, curr_place.ty(repacker).ty.kind())
+        if let (ProjectionElem::Field(field_idx, _), ty::TyKind::Adt(def, substs)) =
+            (elem, place_ty.ty.kind())
         {
-            let variant = def.non_enum_variant();
+            let variant = match place_ty.variant_index {
+                Some(v) => def.variant(v),
+                None => def.non_enum_variant(),
+            };
             let expected_ty = variant.fields[*field_idx].ty(repacker.tcx(), substs);
             curr_place =
                 curr_place.mk_place_elem(ProjectionElem::Field(*field_idx, expected_ty), repacker);
