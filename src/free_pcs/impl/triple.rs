@@ -4,9 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::middle::mir::{
-    visit::Visitor, Local, Location, Operand, ProjectionElem, Rvalue, Statement, StatementKind,
-    Terminator, TerminatorKind, RETURN_PLACE,
+use rustc_interface::middle::{
+    mir::{
+        visit::Visitor, Local, Location, Operand, ProjectionElem, Rvalue, Statement, StatementKind,
+        Terminator, TerminatorKind, RETURN_PLACE,
+    },
+    ty,
 };
 
 use crate::{
@@ -99,13 +102,28 @@ fn get_place_to_expand_to<'b, 'tcx>(
     place: Place<'tcx>,
     repacker: PlaceRepacker<'b, 'tcx>,
 ) -> Place<'tcx> {
-    for (place, elem) in place.iter_projections() {
-        let place: Place<'tcx> = place.into();
-        if elem == ProjectionElem::Deref && place.ty(repacker).ty.is_ref() {
-            return place;
+    let mut curr_place: Place<'tcx> = place.local.into();
+    for elem in place.projection {
+        if *elem == ProjectionElem::Deref && curr_place.ty(repacker).ty.is_ref() {
+            return curr_place;
+        }
+
+        // For some reason the field projection may yield a different lifetime parameter
+        // what is expected based on the ADT definition and substs.
+        // We use the ADT definition because it will ensure that in the PCS the lifetime parameter
+        // of all fields relates to the parameter of their parent struct.
+        if false && let (ProjectionElem::Field(field_idx, _), ty::TyKind::Adt(def, substs)) =
+            (elem, curr_place.ty(repacker).ty.kind())
+        {
+            let variant = def.non_enum_variant();
+            let expected_ty = variant.fields[*field_idx].ty(repacker.tcx(), substs);
+            curr_place =
+                curr_place.mk_place_elem(ProjectionElem::Field(*field_idx, expected_ty), repacker);
+        } else {
+            curr_place = curr_place.mk_place_elem(*elem, repacker);
         }
     }
-    return place.into();
+    return curr_place;
 }
 
 impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
@@ -144,12 +162,16 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
             | Aggregate(_, _)
             | ShallowInitBox(_, _) => {}
 
-            &Ref(_, _, place)
-            | &Len(place)
-            | &Discriminant(place)
-            | &CopyForDeref(place) => {
+            &Ref(_, _, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
                 let place: Place<'tcx> = place.into();
                 let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
+                eprintln!(
+                    "expand for rvalue {:?}: {:?} to {:?}: {:?}",
+                    rvalue,
+                    rvalue.ty(self.repacker.body(), self.repacker.tcx()),
+                    place_to_expand_to,
+                    place_to_expand_to.ty(self.repacker)
+                );
                 self.triple(
                     Stage::Before,
                     Triple {
@@ -166,7 +188,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
         self.super_statement(statement, location);
         use StatementKind::*;
         let t = match &statement.kind {
-            &Assign(box (place, ref _rvalue)) => {
+            &Assign(box (place, _)) => {
                 let place: Place<'_> = place.into();
                 let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
                 let cond = Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive);

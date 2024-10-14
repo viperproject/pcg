@@ -221,6 +221,16 @@ impl<'tcx> Place<'tcx> {
         let mut expanded = Vec::new();
         while self.projection.len() < to.projection.len() {
             let (new_minuend, places, kind) = self.expand_one_level(to, repacker);
+            eprintln!(
+                "expanded {:?}: {:?} to {:?}: {:?}",
+                self,
+                self.ty(repacker),
+                new_minuend,
+                new_minuend.ty(repacker)
+            );
+            for place in places.iter() {
+                eprintln!("  {:?}: {:?}", place, place.ty(repacker));
+            }
             expanded.push((self, new_minuend, kind));
             place_set.extend(places);
             self = new_minuend;
@@ -331,6 +341,14 @@ impl<'tcx> Place<'tcx> {
             | ProjectionElem::OpaqueCast(..) => (Vec::new(), ProjectionRefKind::Other),
             ProjectionElem::Subtype(_) => todo!(),
         };
+        for p in other_places.iter() {
+            assert!(
+                p.projection.len() == self.projection.len() + 1,
+                "expanded place {:?} is not a direct child of {:?}",
+                p,
+                self,
+            );
+        }
         (new_current_place, other_places, kind)
     }
 

@@ -435,6 +435,20 @@ where
 mod tests {
     use super::*;
 
+    fn complex2() -> (Graph<Node>, Graph<Node>) {
+        // Create graphs G1 and G2
+        let mut g1 = Graph::new();
+        let mut g2 = Graph::new();
+
+        g1.add_edges(vec!["d", "c", "b", "a", "x"]);
+        g1.add_edges(vec!["e", "f"]);
+
+        g2.add_edges(vec!["d", "e", "c", "b", "x"]);
+        g2.add_edges(vec!["a", "f"]);
+
+        (g1, g2)
+    }
+
     fn complex() -> (Graph<Node>, Graph<Node>) {
         // Create graphs G1 and G2
         let mut g1 = Graph::new();
@@ -526,6 +540,39 @@ mod tests {
         g2.add_edges(vec!["y1", "d", "b", "y"]);
 
         (g1, g2)
+    }
+
+    #[test]
+    fn test_coupling_complex2() {
+        let (mut g1, mut g2) = complex2();
+
+        let hypergraph = coupling_algorithm(g1, g2).unwrap();
+        let expected_hyperedges = vec![
+            HyperEdge::new(
+                ["a"].iter().cloned().collect(),      // lhs
+                ["f", "x"].iter().cloned().collect(), // rhs
+            ),
+            HyperEdge::new(
+                ["b"].iter().cloned().collect(),
+                ["a"].iter().cloned().collect(),
+            ),
+            HyperEdge::new(
+                ["c"].iter().cloned().collect(),
+                ["b"].iter().cloned().collect(),
+            ),
+            HyperEdge::new(
+                ["d"].iter().cloned().collect(),
+                ["e"].iter().cloned().collect(),
+            ),
+            HyperEdge::new(
+                ["e"].iter().cloned().collect(),
+                ["c"].iter().cloned().collect(),
+            ),
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+        assert_eq!(hypergraph.hyperedges, expected_hyperedges);
     }
 
     #[test]

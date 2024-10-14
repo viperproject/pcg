@@ -91,6 +91,13 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let related = self.find_all_related(to, None);
         match related.relation {
             PlaceOrdering::Prefix => {
+                eprintln!(
+                    "expand for prefix {:?}: {:?} to {:?}: {:?}",
+                    related.get_only_from(),
+                    related.get_only_from().ty(repacker),
+                    related.to,
+                    related.to.ty(repacker)
+                );
                 self.expand(related.get_only_from(), related.to, repacker);
             }
             PlaceOrdering::Equal => (),
