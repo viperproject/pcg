@@ -25,7 +25,7 @@ use rustc_interface::{
 use crate::{
     borrows::{
         borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
-        domain::{MaybeOldPlace, RegionProjection},
+        domain::MaybeOldPlace, region_projection::RegionProjection,
     },
     rustc_interface,
 };

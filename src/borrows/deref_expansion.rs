@@ -9,8 +9,9 @@ use crate::{
 };
 
 use super::{
-    domain::{MaybeOldPlace, RegionProjection, ToJsonWithRepacker},
+    domain::{MaybeOldPlace, ToJsonWithRepacker},
     latest::Latest,
+    region_projection::RegionProjection,
 };
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowDerefExpansion<'tcx> {

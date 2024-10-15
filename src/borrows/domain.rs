@@ -22,7 +22,7 @@ pub struct LoopAbstraction<'tcx> {
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
     fn to_borrows_edge(self, path_conditions: PathConditions) -> BorrowsEdge<'tcx> {
         BorrowsEdge::new(
-            super::borrows_graph::BorrowsEdgeKind::Abstraction(AbstractionEdge {
+            super::borrows_edge::BorrowsEdgeKind::Abstraction(AbstractionEdge {
                 abstraction_type: AbstractionType::Loop(self),
             }),
             path_conditions,
@@ -461,11 +461,12 @@ use crate::utils::PlaceRepacker;
 use serde_json::json;
 
 use super::{
-    borrows_graph::{BorrowsEdge, ToBorrowsEdge},
+    borrows_edge::{BorrowsEdge, ToBorrowsEdge},
     borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
     latest::Latest,
     path_condition::PathConditions,
     region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
@@ -650,40 +651,5 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Reborrow<'tcx> {
             "assigned_place": self.assigned_place.to_json(repacker),
             "is_mut": self.mutability == Mutability::Mut
         })
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
-pub struct RegionProjection<'tcx> {
-    pub place: MaybeOldPlace<'tcx>,
-    pub region: RegionVid,
-}
-
-impl<'tcx> RegionProjection<'tcx> {
-    pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
-        Self { place, region }
-    }
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        self.place.make_place_old(place, latest);
-    }
-    pub fn index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
-        self.place
-            .place()
-            .projection_index(self.region, repacker)
-            .unwrap()
-    }
-
-    pub fn connections_between_places(
-        source: MaybeOldPlace<'tcx>,
-        dest: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
-        let mut edges = FxHashSet::default();
-        for rp in source.region_projections(repacker) {
-            for erp in dest.region_projections(repacker) {
-                edges.insert((rp, erp));
-            }
-        }
-        edges
     }
 }

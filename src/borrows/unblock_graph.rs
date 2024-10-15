@@ -7,6 +7,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
+        borrows_edge::{ToBorrowsEdge},
         borrows_state::BorrowsState,
         domain::{MaybeOldPlace, Reborrow},
     },
@@ -17,9 +18,7 @@ use crate::{
 };
 
 use super::{
-    borrows_graph::{BorrowsEdge, BorrowsEdgeKind, Conditioned},
-    domain::{AbstractionType, MaybeRemotePlace},
-    region_abstraction::AbstractionEdge,
+    borrows_edge::{BorrowsEdge, BorrowsEdgeKind}, borrows_graph::Conditioned, domain::{AbstractionType, MaybeRemotePlace}, region_abstraction::AbstractionEdge
 };
 
 type UnblockEdge<'tcx> = BorrowsEdge<'tcx>;

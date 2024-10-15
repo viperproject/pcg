@@ -1,14 +1,9 @@
 use crate::{
     borrows::{
-        borrows_graph::{BorrowsEdge, BorrowsEdgeKind},
-        borrows_state::BorrowsState,
-        borrows_visitor::{extract_nested_lifetimes, get_vid},
-        domain::{
+        borrows_edge::{BorrowsEdge, BorrowsEdgeKind}, borrows_state::BorrowsState, borrows_visitor::{extract_nested_lifetimes, get_vid}, domain::{
             AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget, MaybeOldPlace,
-            MaybeRemotePlace, RegionProjection,
-        },
-        region_abstraction::AbstractionEdge,
-        unblock_graph::UnblockGraph,
+            MaybeRemotePlace,
+        }, region_abstraction::AbstractionEdge, region_projection::RegionProjection, unblock_graph::UnblockGraph
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     rustc_interface::{self, middle::mir::Local},

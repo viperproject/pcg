@@ -15,7 +15,8 @@ use crate::{
 };
 
 use super::{
-    borrows_graph::{BorrowsEdge, BorrowsEdgeKind, BorrowsGraph},
+    borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
+    borrows_graph::BorrowsGraph,
     domain::{
         AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace,
     },

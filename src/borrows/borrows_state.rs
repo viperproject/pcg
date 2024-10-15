@@ -15,13 +15,15 @@ use crate::{
 };
 
 use super::{
-    borrows_graph::{BorrowsEdge, BorrowsEdgeKind, BorrowsGraph, Conditioned, ToBorrowsEdge},
+    borrows_edge::{BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
+    borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow, RegionProjection},
+    domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
+    region_projection::{HasRegionProjections, RegionProjection},
     unblock_graph::UnblockGraph,
 };
 
@@ -37,6 +39,12 @@ pub struct RegionProjectionMember<'tcx> {
     pub projection: RegionProjection<'tcx>,
     location: Location,
     pub direction: RegionProjectionMemberDirection,
+}
+
+impl<'tcx> HasRegionProjections<'tcx> for RegionProjectionMember<'tcx> {
+    fn region_projections(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
+        vec![&mut self.projection]
+    }
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
