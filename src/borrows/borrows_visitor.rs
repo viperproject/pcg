@@ -462,9 +462,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                     match field.ty(self.body, self.tcx).kind() {
                                         ty::TyKind::Ref(region, _, _) => {
                                             for proj in target.region_projections(self.repacker()) {
-                                                if self
-                                                    .outlives(get_vid(region).unwrap(), proj.region)
-                                                {
+                                                if self.outlives(
+                                                    get_vid(region).unwrap(),
+                                                    proj.region(),
+                                                ) {
                                                     let operand_place: utils::Place<'tcx> =
                                                         field.place().unwrap().into();
                                                     let operand_place = MaybeOldPlace::new(
@@ -495,7 +496,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             let target: utils::Place<'tcx> = (*target).into();
                             if matches!(from.ty(self.repacker()).ty.kind(), ty::TyKind::Ref(_, _, r) if r.is_mut())
                             {
-                                self.state.after.change_maybe_old_place(
+                                self.state.after.change_pcs_elem(
                                     MaybeOldPlace::new(
                                         from.project_deref(self.repacker()),
                                         Some(self.state.after.get_latest(&from)),
@@ -510,13 +511,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 .into_iter()
                                 .enumerate()
                             {
-                                self.state
-                                    .after
-                                    .change_maybe_old_place(moved_place, target.into());
+                                self.state.after.change_pcs_elem(
+                                    p,
+                                    target.region_projection(idx, repacker).into(),
+                                );
                             }
-                            self.state
-                                .after
-                                .change_maybe_old_place(moved_place, target.into());
                             self.state.after.delete_descendants_of(
                                 MaybeOldPlace::Current { place: from },
                                 repacker,

@@ -21,7 +21,7 @@ use super::{
         AbstractionBlockEdge, AbstractionTarget, AbstractionType, LoopAbstraction, MaybeOldPlace,
         MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
     },
-    has_pcs_elem::HasPcsElems,
+    has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
@@ -480,22 +480,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub fn change_region_projection(
-        &mut self,
-        old_projection: RegionProjection<'tcx>,
-        new_projection: RegionProjection<'tcx>,
-    ) -> bool {
-        todo!()
-    }
-
-    pub fn change_maybe_old_place(
-        &mut self,
-        old_place: MaybeOldPlace<'tcx>,
-        new_place: MaybeOldPlace<'tcx>,
-    ) -> bool {
-        self.mut_pcs_elems::<MaybeOldPlace<'tcx>>(|place| {
-            if *place == old_place {
-                *place = new_place;
+    pub fn change_pcs_elem<T: 'tcx>(&mut self, old: T, new: T) -> bool
+    where
+        T: PartialEq + Clone,
+        BorrowsEdge<'tcx>: HasPcsElems<T>,
+    {
+        self.mut_pcs_elems(|thing| {
+            if *thing == old {
+                *thing = new.clone();
                 true
             } else {
                 false
@@ -650,7 +642,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
     where
-        BorrowsEdgeKind<'tcx>: HasPcsElems<T>,
+        BorrowsEdge<'tcx>: HasPcsElems<T>,
     {
         self.mut_edges(|edge| {
             let mut changed = false;

@@ -158,7 +158,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 label: format!(
                     "{}↓{:?}",
                     projection.place.to_short_string(self.repacker),
-                    projection.region
+                    projection.region()
                 ),
             },
         };

@@ -7,7 +7,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_edge::{ToBorrowsEdge},
+        borrows_edge::ToBorrowsEdge,
         borrows_state::BorrowsState,
         domain::{MaybeOldPlace, Reborrow},
     },
@@ -18,7 +18,10 @@ use crate::{
 };
 
 use super::{
-    borrows_edge::{BorrowsEdge, BorrowsEdgeKind}, borrows_graph::Conditioned, domain::{AbstractionType, MaybeRemotePlace}, region_abstraction::AbstractionEdge
+    borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
+    borrows_graph::Conditioned,
+    domain::{AbstractionType, MaybeRemotePlace},
+    region_abstraction::AbstractionEdge,
 };
 
 type UnblockEdge<'tcx> = BorrowsEdge<'tcx>;
@@ -74,7 +77,6 @@ impl<'tcx> UnblockHistory<'tcx> {
 }
 
 impl<'tcx> UnblockGraph<'tcx> {
-
     pub fn has_error(&self) -> bool {
         self.error
     }
@@ -280,8 +282,8 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         for edge in borrows.reborrow_edges_reserved_at(location) {
-                self.unblock_place(edge.value.assigned_place.into(), borrows, repacker);
-                self.add_dependency(edge.to_borrows_edge());
+            self.unblock_place(edge.value.assigned_place.into(), borrows, repacker);
+            self.add_dependency(edge.to_borrows_edge());
         }
     }
 

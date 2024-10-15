@@ -197,16 +197,6 @@ impl<'tcx> AbstractionInputTarget<'tcx> {
             AbstractionTarget::RegionProjection(_p) => false,
         }
     }
-
-    pub fn mut_place(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            AbstractionTarget::Place(bp) => match bp {
-                MaybeRemotePlace::Local(ref mut maybe_old_place) => Some(maybe_old_place),
-                MaybeRemotePlace::Remote(_) => None,
-            },
-            AbstractionTarget::RegionProjection(p) => Some(&mut p.place),
-        }
-    }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionOutputTarget<'tcx> {
@@ -227,42 +217,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionInputTarget<'tcx> {
     }
 }
 
-impl<'tcx> AbstractionOutputTarget<'tcx> {
-    pub fn mut_place(&mut self) -> &mut MaybeOldPlace<'tcx> {
-        match self {
-            AbstractionTarget::Place(p) => p,
-            AbstractionTarget::RegionProjection(p) => &mut p.place,
-        }
-    }
-}
-
-impl<'tcx, T: HasPlaces<'tcx>> AbstractionTarget<'tcx, T> {
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        match self {
-            AbstractionTarget::Place(p) => p.make_place_old(place, latest),
-            AbstractionTarget::RegionProjection(p) => p.make_place_old(place, latest),
-        }
-    }
-
-    // pub fn region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> RegionVid {
-    //     match self {
-    //         AbstractionTarget::Place(p) => {
-    //             let prefix = p.place().prefix_place(repacker);
-    //             match prefix.unwrap().ty(repacker).ty.kind() {
-    //                 ty::Ref(region, _, _) => match region.kind() {
-    //                     ty::RegionKind::ReVar(v) => v,
-    //                     _ => unreachable!(),
-    //                 },
-    //                 _ => unreachable!(),
-    //             }
-    //         }
-    //         AbstractionTarget::RegionProjection(p) => p.region,
-    //     }
-    // }
-}
-
 impl<'tcx> AbstractionType<'tcx> {
-
     pub fn location(&self) -> Location {
         match self {
             AbstractionType::FunctionCall(c) => c.location,
@@ -317,12 +272,6 @@ impl<'tcx> AbstractionType<'tcx> {
     pub fn blocks(&self, place: MaybeRemotePlace<'tcx>) -> bool {
         self.blocks_places().contains(&place)
     }
-
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        for p in self.pcs_elems() {
-            p.make_place_old(place, latest);
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
@@ -374,16 +323,18 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         idx: usize,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx> {
-        RegionProjection::new(self.region_projections(repacker)[idx].region, self.clone())
+        self.region_projections(repacker)[idx]
     }
 
     pub fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
-        extract_lifetimes(self.ty(repacker).ty)
+        let place = self.with_inherent_region(repacker);
+        // TODO: What if no VID?
+        extract_lifetimes(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new(get_vid(region).unwrap(), self.clone()))
+            .flat_map(|region| get_vid(region).map(|vid| RegionProjection::new(vid, place)))
             .collect()
     }
 
@@ -529,13 +480,6 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        match self {
-            MaybeRemotePlace::Local(p) => p.make_place_old(place, latest),
-            MaybeRemotePlace::Remote(_) => {}
-        }
-    }
-
     pub fn as_local(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(*p),
@@ -650,11 +594,6 @@ impl<'tcx> Reborrow<'tcx> {
 
     pub fn reserve_location(&self) -> Location {
         self.reserve_location
-    }
-
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        self.blocked_place.make_place_old(place, latest);
-        self.assigned_place.make_place_old(place, latest);
     }
 
     pub fn assiged_place_region_vid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionVid> {

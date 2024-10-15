@@ -1,3 +1,5 @@
+use std::backtrace;
+
 use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionVid};
 
 use crate::utils::{Place, PlaceRepacker};
@@ -8,21 +10,27 @@ use super::{domain::MaybeOldPlace, latest::Latest};
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub struct RegionProjection<'tcx> {
     pub place: MaybeOldPlace<'tcx>,
-    pub region: RegionVid,
+    region: RegionVid,
 }
 
 impl<'tcx> RegionProjection<'tcx> {
     pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
         Self { place, region }
     }
+
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
         self.place.make_place_old(place, latest);
     }
+
     pub fn index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
         self.place
             .place()
             .projection_index(self.region, repacker)
             .unwrap()
+    }
+
+    pub fn region(&self) -> RegionVid {
+        self.region
     }
 
     pub fn connections_between_places(

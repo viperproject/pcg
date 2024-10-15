@@ -25,7 +25,8 @@ use rustc_interface::{
 use crate::{
     borrows::{
         borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
-        domain::MaybeOldPlace, region_projection::RegionProjection,
+        domain::MaybeOldPlace,
+        region_projection::RegionProjection,
     },
     rustc_interface,
 };
@@ -91,23 +92,14 @@ impl<'tcx> Place<'tcx> {
         idx: usize,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx> {
-        RegionProjection::new(
-            self.region_projections(repacker)[idx].region,
-            self.clone().into(),
-        )
+        self.region_projections(repacker)[idx]
     }
 
     pub fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
-        // TODO: What if no VID?
-        extract_lifetimes(self.ty(repacker).ty)
-            .iter()
-            .flat_map(|region| {
-                get_vid(region).map(|vid| RegionProjection::new(vid, self.clone().into()))
-            })
-            .collect()
+        MaybeOldPlace::Current { place: self.clone() }.region_projections(repacker)
     }
     pub fn projection_index(
         &self,

@@ -57,19 +57,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut places = vec![&mut self.projection.place];
-        match self.place {
-            MaybeRemotePlace::Local(ref mut p) => places.push(p),
-            MaybeRemotePlace::Remote(_) => {}
-        }
-        places
-    }
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        self.place.make_place_old(place, latest);
-        self.projection.make_place_old(place, latest);
-    }
-
     pub fn projection_index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
         self.projection.index(repacker)
     }
@@ -133,21 +120,12 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-    pub fn change_region_projection(
-        &mut self,
-        old_projection: RegionProjection<'tcx>,
-        new_projection: RegionProjection<'tcx>,
-    ) {
-        self.graph
-            .change_region_projection(old_projection, new_projection);
-    }
-
-    pub fn change_maybe_old_place(
-        &mut self,
-        old_place: MaybeOldPlace<'tcx>,
-        new_place: MaybeOldPlace<'tcx>,
-    ) -> bool {
-        self.graph.change_maybe_old_place(old_place, new_place)
+    pub fn change_pcs_elem<T: 'tcx>(&mut self, old: T, new: T) -> bool
+    where
+        T: PartialEq + Clone,
+        BorrowsEdge<'tcx>: HasPcsElems<T>,
+    {
+        self.graph.change_pcs_elem(old, new)
     }
 
     pub fn remove_edge_and_set_latest(

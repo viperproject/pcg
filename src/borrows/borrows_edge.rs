@@ -14,7 +14,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection::{RegionProjection},
+    region_projection::RegionProjection,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -75,10 +75,6 @@ impl<'tcx> BorrowsEdge<'tcx> {
     ) -> FxHashSet<MaybeOldPlace<'tcx>> {
         self.kind.blocked_by_places(repacker)
     }
-
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        self.kind.make_place_old(place, latest);
-    }
 }
 
 impl<'tcx, T> HasPcsElems<T> for BorrowsEdge<'tcx>
@@ -89,7 +85,6 @@ where
         self.kind.pcs_elems()
     }
 }
-
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowsEdgeKind<'tcx> {
@@ -120,7 +115,7 @@ where
             BorrowsEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
             BorrowsEdgeKind::Reborrow(reborrow) => reborrow.pcs_elems(),
             BorrowsEdgeKind::DerefExpansion(deref_expansion) => deref_expansion.pcs_elems(),
-            BorrowsEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems()
+            BorrowsEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
         }
     }
 }
@@ -130,15 +125,6 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         match self {
             BorrowsEdgeKind::Reborrow(reborrow) => reborrow.mutability == Mutability::Not,
             _ => false,
-        }
-    }
-
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        match self {
-            BorrowsEdgeKind::Reborrow(reborrow) => reborrow.make_place_old(place, latest),
-            BorrowsEdgeKind::DerefExpansion(de) => de.make_place_old(place, latest),
-            BorrowsEdgeKind::Abstraction(abstraction) => abstraction.make_place_old(place, latest),
-            BorrowsEdgeKind::RegionProjectionMember(member) => member.make_place_old(place, latest),
         }
     }
 
