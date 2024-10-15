@@ -6,8 +6,7 @@ use super::{
     domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget,
         AbstractionType, MaybeOldPlace, MaybeRemotePlace,
-    },
-    latest::Latest,
+    }, has_pcs_elem::HasPcsElems, latest::Latest
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -15,11 +14,13 @@ pub struct AbstractionEdge<'tcx> {
     pub abstraction_type: AbstractionType<'tcx>,
 }
 
-impl<'tcx> AbstractionEdge<'tcx> {
-    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.abstraction_type.maybe_old_places()
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionEdge<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        self.abstraction_type.pcs_elems()
     }
+}
 
+impl<'tcx> AbstractionEdge<'tcx> {
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
         self.abstraction_type.make_place_old(place, latest);
     }

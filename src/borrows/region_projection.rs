@@ -2,6 +2,7 @@ use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionV
 
 use crate::utils::{Place, PlaceRepacker};
 
+use super::has_pcs_elem::HasPcsElems;
 use super::{domain::MaybeOldPlace, latest::Latest};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
@@ -39,19 +40,8 @@ impl<'tcx> RegionProjection<'tcx> {
     }
 }
 
-pub trait HasRegionProjections<'tcx> {
-    fn region_projections(&mut self) -> Vec<&mut RegionProjection<'tcx>>;
-
-    fn mut_region_projections(
-        &mut self,
-        mut f: impl FnMut(&mut RegionProjection<'tcx>) -> bool,
-    ) -> bool {
-        let mut changed = false;
-        for p in self.region_projections() {
-            if f(p) {
-                changed = true;
-            }
-        }
-        changed
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        vec![&mut self.place]
     }
 }

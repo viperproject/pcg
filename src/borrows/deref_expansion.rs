@@ -10,6 +10,7 @@ use crate::{
 
 use super::{
     domain::{MaybeOldPlace, ToJsonWithRepacker},
+    has_pcs_elem::HasPcsElems,
     latest::Latest,
     region_projection::RegionProjection,
 };
@@ -33,10 +34,25 @@ impl<'tcx> BorrowDerefExpansion<'tcx> {
     }
 }
 
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowDerefExpansion<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        vec![&mut self.base]
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum DerefExpansion<'tcx> {
     OwnedExpansion { base: MaybeOldPlace<'tcx> },
     BorrowExpansion(BorrowDerefExpansion<'tcx>),
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for DerefExpansion<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            DerefExpansion::OwnedExpansion { base } => vec![base],
+            DerefExpansion::BorrowExpansion(e) => e.pcs_elems(),
+        }
+    }
 }
 
 impl<'tcx> DerefExpansion<'tcx> {

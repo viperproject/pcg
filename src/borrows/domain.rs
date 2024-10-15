@@ -48,9 +48,11 @@ impl<'tcx> LoopAbstraction<'tcx> {
             statement_index: 0,
         }
     }
+}
 
-    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.edge.maybe_old_places()
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for LoopAbstraction<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        self.edge.pcs_elems()
     }
 }
 
@@ -65,14 +67,16 @@ pub struct FunctionCallAbstraction<'tcx> {
     edges: Vec<(usize, AbstractionBlockEdge<'tcx>)>,
 }
 
-impl<'tcx> FunctionCallAbstraction<'tcx> {
-    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for FunctionCallAbstraction<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         self.edges
             .iter_mut()
-            .flat_map(|(_, edge)| edge.maybe_old_places())
+            .flat_map(|(_, edge)| edge.pcs_elems())
             .collect()
     }
+}
 
+impl<'tcx> FunctionCallAbstraction<'tcx> {
     pub fn def_id(&self) -> DefId {
         self.def_id
     }
@@ -118,6 +122,15 @@ pub enum AbstractionType<'tcx> {
     Loop(LoopAbstraction<'tcx>),
 }
 
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionType<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            AbstractionType::FunctionCall(c) => c.pcs_elems(),
+            AbstractionType::Loop(c) => c.pcs_elems(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
     inputs: Vec<AbstractionInputTarget<'tcx>>,
@@ -150,16 +163,16 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
     pub fn inputs(&self) -> HashSet<AbstractionInputTarget<'tcx>> {
         self.inputs.clone().into_iter().collect()
     }
+}
 
-    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut result = vec![];
         for input in self.inputs.iter_mut() {
-            if let Some(place) = input.mut_place() {
-                result.push(place);
-            }
+            result.extend(input.pcs_elems());
         }
         for output in self.outputs.iter_mut() {
-            result.push(output.mut_place());
+            result.extend(output.pcs_elems());
         }
         result
     }
@@ -192,6 +205,24 @@ impl<'tcx> AbstractionInputTarget<'tcx> {
                 MaybeRemotePlace::Remote(_) => None,
             },
             AbstractionTarget::RegionProjection(p) => Some(&mut p.place),
+        }
+    }
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionOutputTarget<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            AbstractionTarget::Place(p) => vec![p],
+            AbstractionTarget::RegionProjection(p) => p.pcs_elems(),
+        }
+    }
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionInputTarget<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            AbstractionTarget::Place(p) => p.pcs_elems(),
+            AbstractionTarget::RegionProjection(p) => p.pcs_elems(),
         }
     }
 }
@@ -231,12 +262,6 @@ impl<'tcx, T: HasPlaces<'tcx>> AbstractionTarget<'tcx, T> {
 }
 
 impl<'tcx> AbstractionType<'tcx> {
-    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            AbstractionType::FunctionCall(c) => c.maybe_old_places(),
-            AbstractionType::Loop(c) => c.maybe_old_places(),
-        }
-    }
 
     pub fn location(&self) -> Location {
         match self {
@@ -294,7 +319,7 @@ impl<'tcx> AbstractionType<'tcx> {
     }
 
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        for p in self.maybe_old_places() {
+        for p in self.pcs_elems() {
             p.make_place_old(place, latest);
         }
     }
@@ -463,6 +488,7 @@ use serde_json::json;
 use super::{
     borrows_edge::{BorrowsEdge, ToBorrowsEdge},
     borrows_visitor::{extract_lifetimes, get_vid},
+    has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::PathConditions,
     region_abstraction::AbstractionEdge,
@@ -478,6 +504,15 @@ pub enum MaybeRemotePlace<'tcx> {
     /// The blocked place that a borrows in function inputs; e.g for a function
     /// `f(&mut x)` the blocked place is `Remote(x)`
     Remote(mir::Local),
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            MaybeRemotePlace::Local(p) => vec![p],
+            MaybeRemotePlace::Remote(_) => vec![],
+        }
+    }
 }
 
 impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
@@ -547,6 +582,14 @@ pub struct Reborrow<'tcx> {
     reserve_location: Location,
 
     pub region: ty::Region<'tcx>,
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for Reborrow<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        let mut vec = vec![&mut self.assigned_place];
+        vec.extend(self.blocked_place.pcs_elems());
+        vec
+    }
 }
 
 impl<'tcx> Reborrow<'tcx> {

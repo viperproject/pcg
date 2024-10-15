@@ -20,10 +20,11 @@ use super::{
     borrows_visitor::DebugCtx,
     deref_expansion::DerefExpansion,
     domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
+    has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection::{HasRegionProjections, RegionProjection},
+    region_projection::RegionProjection,
     unblock_graph::UnblockGraph,
 };
 
@@ -41,9 +42,17 @@ pub struct RegionProjectionMember<'tcx> {
     pub direction: RegionProjectionMemberDirection,
 }
 
-impl<'tcx> HasRegionProjections<'tcx> for RegionProjectionMember<'tcx> {
-    fn region_projections(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
+impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for RegionProjectionMember<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         vec![&mut self.projection]
+    }
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        let mut vec = self.place.pcs_elems();
+        vec.extend(self.projection.pcs_elems());
+        vec
     }
 }
 

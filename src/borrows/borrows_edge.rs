@@ -1,8 +1,4 @@
-use rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
-    middle::mir::{BasicBlock},
-};
+use rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet, middle::mir::BasicBlock};
 
 use crate::{
     rustc_interface,
@@ -13,13 +9,12 @@ use super::{
     borrows_graph::Conditioned,
     borrows_state::{RegionProjectionMember, RegionProjectionMemberDirection},
     deref_expansion::DerefExpansion,
-    domain::{
-        MaybeOldPlace, MaybeRemotePlace, Reborrow,
-    },
+    domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
+    has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection::{HasRegionProjections, RegionProjection},
+    region_projection::{RegionProjection},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -86,6 +81,16 @@ impl<'tcx> BorrowsEdge<'tcx> {
     }
 }
 
+impl<'tcx, T> HasPcsElems<T> for BorrowsEdge<'tcx>
+where
+    BorrowsEdgeKind<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
+        self.kind.pcs_elems()
+    }
+}
+
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowsEdgeKind<'tcx> {
     Reborrow(Reborrow<'tcx>),
@@ -94,11 +99,28 @@ pub enum BorrowsEdgeKind<'tcx> {
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
 
-impl<'tcx> HasRegionProjections<'tcx> for BorrowsEdgeKind<'tcx> {
-    fn region_projections(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
+impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowsEdgeKind<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         match self {
-            BorrowsEdgeKind::RegionProjectionMember(member) => member.region_projections(),
+            BorrowsEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
             _ => vec![],
+        }
+    }
+}
+
+impl<'tcx, T> HasPcsElems<T> for BorrowsEdgeKind<'tcx>
+where
+    Reborrow<'tcx>: HasPcsElems<T>,
+    RegionProjectionMember<'tcx>: HasPcsElems<T>,
+    DerefExpansion<'tcx>: HasPcsElems<T>,
+    AbstractionEdge<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
+        match self {
+            BorrowsEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
+            BorrowsEdgeKind::Reborrow(reborrow) => reborrow.pcs_elems(),
+            BorrowsEdgeKind::DerefExpansion(deref_expansion) => deref_expansion.pcs_elems(),
+            BorrowsEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems()
         }
     }
 }

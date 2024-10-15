@@ -18,9 +18,10 @@ use super::{
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
     deref_expansion::DerefExpansion,
     domain::{
-        AbstractionBlockEdge, AbstractionTarget, AbstractionType,
-        LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
+        AbstractionBlockEdge, AbstractionTarget, AbstractionType, LoopAbstraction, MaybeOldPlace,
+        MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
     },
+    has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
@@ -492,7 +493,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         old_place: MaybeOldPlace<'tcx>,
         new_place: MaybeOldPlace<'tcx>,
     ) -> bool {
-        self.mut_maybe_old_places(|place| {
+        self.mut_pcs_elems::<MaybeOldPlace<'tcx>>(|place| {
             if *place == old_place {
                 *place = new_place;
                 true
@@ -647,61 +648,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ));
     }
 
-    fn mut_region_projections(
-        &mut self,
-        f: impl FnMut(&mut MaybeOldPlace<'tcx>) -> bool,
-    ) -> bool {
-        todo!()
-        // self.mut_edges(|edge| {
-        //     let maybe_old_places: Vec<&mut MaybeOldPlace<'tcx>> = match edge.mut_kind() {
-        //         BorrowsEdgeKind::Reborrow(reborrow) => {
-        //             let mut vec = vec![&mut reborrow.assigned_place];
-        //             if let ReborrowBlockedPlace::Local(p) = &mut reborrow.blocked_place {
-        //                 vec.push(p);
-        //             }
-        //             vec
-        //         }
-        //         BorrowsEdgeKind::DerefExpansion(de) => vec![de.mut_base()],
-        //         BorrowsEdgeKind::Abstraction(ra) => ra.maybe_old_places(),
-        //         BorrowsEdgeKind::RegionProjectionMember(rpm) => rpm.maybe_old_places(),
-        //     };
-        //     let mut changed = false;
-        //     for p in maybe_old_places {
-        //         if f(p) {
-        //             changed = true;
-        //         }
-        //     }
-        //     changed
-        // })
-    }
-
-    fn mut_maybe_old_places(
-        &mut self,
-        mut f: impl FnMut(&mut MaybeOldPlace<'tcx>) -> bool,
-    ) -> bool {
+    fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
+    where
+        BorrowsEdgeKind<'tcx>: HasPcsElems<T>,
+    {
         self.mut_edges(|edge| {
-            let maybe_old_places: Vec<&mut MaybeOldPlace<'tcx>> = match edge.mut_kind() {
-                BorrowsEdgeKind::Reborrow(reborrow) => {
-                    let mut vec = vec![&mut reborrow.assigned_place];
-                    if let MaybeRemotePlace::Local(p) = &mut reborrow.blocked_place {
-                        vec.push(p);
-                    }
-                    vec
-                }
-                BorrowsEdgeKind::DerefExpansion(de) => vec![de.mut_base()],
-                BorrowsEdgeKind::Abstraction(ra) => ra.maybe_old_places(),
-                BorrowsEdgeKind::RegionProjectionMember(rpm) => rpm.maybe_old_places(),
-            };
             let mut changed = false;
-            for p in maybe_old_places {
-                if f(p) {
+            for rp in edge.pcs_elems() {
+                if f(rp) {
                     changed = true;
                 }
             }
             changed
         })
     }
-    fn mut_edges(&mut self, mut f: impl FnMut(&mut BorrowsEdge<'tcx>) -> bool) -> bool {
+
+    fn mut_edges<'slf>(&'slf mut self, mut f: impl FnMut(&mut BorrowsEdge<'tcx>) -> bool) -> bool {
         let mut changed = false;
         self.0 = self
             .0
