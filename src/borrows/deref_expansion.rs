@@ -14,6 +14,8 @@ use super::{
     latest::Latest,
     region_projection::RegionProjection,
 };
+
+/// An expansion of a place in the PCS
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowDerefExpansion<'tcx> {
     base: MaybeOldPlace<'tcx>,
@@ -42,14 +44,18 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowDerefExpansion<'tcx> {
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum DerefExpansion<'tcx> {
+    /// An expansion of a place in the FPCS
     OwnedExpansion { base: MaybeOldPlace<'tcx> },
+    /// An expansion of a place in the PCS
     BorrowExpansion(BorrowDerefExpansion<'tcx>),
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for DerefExpansion<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
-            DerefExpansion::OwnedExpansion { base } => vec![base],
+            DerefExpansion::OwnedExpansion { base, .. } => {
+                vec![base]
+            }
             DerefExpansion::BorrowExpansion(e) => e.pcs_elems(),
         }
     }
@@ -80,13 +86,6 @@ impl<'tcx> DerefExpansion<'tcx> {
 
     pub fn is_owned_expansion(&self) -> bool {
         matches!(self, DerefExpansion::OwnedExpansion { .. })
-    }
-
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
-        match self {
-            DerefExpansion::OwnedExpansion { base, .. } => base.make_place_old(place, latest),
-            DerefExpansion::BorrowExpansion(e) => e.base.make_place_old(place, latest),
-        }
     }
 
     pub fn borrow_expansion(&self) -> Option<&BorrowDerefExpansion<'tcx>> {
@@ -164,5 +163,20 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for DerefExpansion<'tcx> {
             "base": self.base().to_json(repacker),
             "expansion": self.expansion(repacker).iter().map(|p| p.to_json(repacker)).collect::<Vec<_>>(),
         })
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub enum DerefSource<'tcx> {
+    Place(MaybeOldPlace<'tcx>),
+    RegionProjection(RegionProjection<'tcx>),
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for DerefSource<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            DerefSource::Place(p) => vec![p],
+            DerefSource::RegionProjection(p) => p.pcs_elems(),
+        }
     }
 }

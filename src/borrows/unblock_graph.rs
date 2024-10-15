@@ -29,9 +29,6 @@ type UnblockEdgeType<'tcx> = BorrowsEdgeKind<'tcx>;
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
-
-    /// For debugging only, record whether an error occurred
-    error: bool,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -40,6 +37,8 @@ pub enum UnblockHistoryAction<'tcx> {
     KillReborrow(Reborrow<'tcx>),
 }
 
+/// A history of the actions occurring in the construction of the unblock graph.
+/// This should only be used for debugging
 #[derive(Clone, Debug)]
 pub struct UnblockHistory<'tcx>(Vec<UnblockHistoryAction<'tcx>>);
 
@@ -77,9 +76,6 @@ impl<'tcx> UnblockHistory<'tcx> {
 }
 
 impl<'tcx> UnblockGraph<'tcx> {
-    pub fn has_error(&self) -> bool {
-        self.error
-    }
     pub fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
         self.edges.iter()
     }
@@ -94,7 +90,6 @@ impl<'tcx> UnblockGraph<'tcx> {
     pub fn new() -> Self {
         Self {
             edges: HashSet::new(),
-            error: false,
         }
     }
 
@@ -282,8 +277,10 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         for edge in borrows.reborrow_edges_reserved_at(location) {
-            self.unblock_place(edge.value.assigned_place.into(), borrows, repacker);
-            self.add_dependency(edge.to_borrows_edge());
+            if !edge.value.blocked_place.is_old() {
+                self.unblock_place(edge.value.assigned_place.into(), borrows, repacker);
+                self.add_dependency(edge.to_borrows_edge());
+            }
         }
     }
 
@@ -295,8 +292,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         mut history: UnblockHistory<'tcx>,
     ) {
         if !history.record(UnblockHistoryAction::KillReborrow(reborrow.value.clone())) {
-            self.error = true;
-            return;
+            panic!("bug");
         }
         self.unblock_place_internal(
             reborrow.value.assigned_place.into(),

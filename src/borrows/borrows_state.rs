@@ -165,6 +165,10 @@ impl<'tcx> BorrowsState<'tcx> {
             .collect()
     }
 
+    /// Collapses nodes using the following rules:
+    /// - If a node is only blocked by old leaves, then the node should be collapsed
+    /// - If a PCS node's expansion is only leaves, the node should be collapsed
+    /// This function performs such collapses until a fixpoint is reached
     pub fn minimize(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
         loop {
             let to_remove = self
@@ -447,9 +451,6 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
     ) -> bool {
         let mut changed = false;
-        if graph.has_error() {
-            eprintln!("{:?} unblock graph has error", location);
-        }
         for action in graph.actions(repacker) {
             match action {
                 crate::combined_pcs::UnblockAction::TerminateReborrow {

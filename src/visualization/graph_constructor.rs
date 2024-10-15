@@ -1,9 +1,15 @@
 use crate::{
     borrows::{
-        borrows_edge::{BorrowsEdge, BorrowsEdgeKind}, borrows_state::BorrowsState, domain::{
+        borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
+        borrows_state::BorrowsState,
+        deref_expansion::DerefExpansion,
+        domain::{
             AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget, MaybeOldPlace,
             MaybeRemotePlace,
-        }, region_abstraction::AbstractionEdge, region_projection::RegionProjection, unblock_graph::UnblockGraph
+        },
+        region_abstraction::AbstractionEdge,
+        region_projection::RegionProjection,
+        unblock_graph::UnblockGraph,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     rustc_interface::{self, middle::mir::Local},
@@ -312,15 +318,38 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn draw_borrows_edge(&mut self, edge: &BorrowsEdge<'tcx>) {
         match edge.kind() {
             BorrowsEdgeKind::DerefExpansion(deref_expansion) => {
-                let base = self.insert_maybe_old_place(deref_expansion.base());
-                for place in deref_expansion.expansion(self.repacker()) {
-                    let place = self.insert_maybe_old_place(place);
-                    self.constructor()
-                        .edges
-                        .insert(GraphEdge::DerefExpansionEdge {
-                            source: base,
-                            target: place,
-                        });
+                let base_node = self.insert_maybe_old_place(deref_expansion.base());
+                match deref_expansion {
+                    DerefExpansion::OwnedExpansion { base, .. } => {
+                        let target =
+                            self.insert_maybe_old_place(base.project_deref(self.repacker()));
+                        self.constructor()
+                            .edges
+                            .insert(GraphEdge::DerefExpansionEdge {
+                                source: base_node,
+                                target,
+                            });
+                        let base_rp = base.region_projection(0, self.repacker());
+                        let base_rp_node =
+                            self.constructor().insert_region_projection_node(base_rp);
+                        self.constructor()
+                            .edges
+                            .insert(GraphEdge::DerefExpansionEdge {
+                                source: base_rp_node,
+                                target,
+                            });
+                    }
+                    _ => {
+                        for place in deref_expansion.expansion(self.repacker()) {
+                            let place = self.insert_maybe_old_place(place);
+                            self.constructor()
+                                .edges
+                                .insert(GraphEdge::DerefExpansionEdge {
+                                    source: base_node,
+                                    target: place,
+                                });
+                        }
+                    }
                 }
             }
             BorrowsEdgeKind::Reborrow(reborrow) => {
@@ -338,7 +367,10 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     let assigned_place = self.constructor().insert_region_projection_node(e2);
                     self.constructor()
                         .edges
-                        .insert(GraphEdge::RegionProjectionBorrowEdge { borrowed_place, assigned_place });
+                        .insert(GraphEdge::RegionProjectionBorrowEdge {
+                            borrowed_place,
+                            assigned_place,
+                        });
                 }
             }
             BorrowsEdgeKind::Abstraction(abstraction) => {

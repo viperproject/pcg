@@ -25,7 +25,6 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection::RegionProjection,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,6 +115,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
+    /// All edges that are not blocked by any other edge
     pub fn is_leaf_edge(
         &self,
         edge: &BorrowsEdge<'tcx>,
