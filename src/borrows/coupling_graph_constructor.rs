@@ -163,7 +163,9 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
                 MaybeOldPlace::Current { place } => {
                     self.add_edges_from(bg, FxHashSet::default(), place, node)
                 }
-                MaybeOldPlace::OldPlace(_) => unreachable!(),
+                MaybeOldPlace::OldPlace(_) => {
+                    // TODO
+                }
             }
         }
         (self.coupling_graph, self.to_remove)

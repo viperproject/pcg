@@ -219,7 +219,6 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     fn report_error(&mut self) {
         panic!("Error in unblock graph");
-        // self.error = true;
     }
 
     fn unblock_place_internal(
@@ -267,6 +266,14 @@ impl<'tcx> UnblockGraph<'tcx> {
                     // TODO
                 }
             }
+        }
+        match place {
+            MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
+                for reborrow in borrows.reborrows_blocking_prefix_of(place) {
+                    self.kill_reborrow(reborrow, borrows, repacker);
+                }
+            },
+            _ => {}
         }
     }
 

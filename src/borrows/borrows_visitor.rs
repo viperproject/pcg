@@ -338,7 +338,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             match operand {
                 Operand::Move(place) => {
                     self.state.after.set_latest((*place).into(), location);
-                    eprintln!("{:?} make_place_old {:?}", location, (*place));
                     self.state.after.make_place_old(
                         (*place).into(),
                         PlaceRepacker::new(self.body, self.tcx),
@@ -383,19 +382,19 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
         self.super_statement(statement, location);
         if self.preparing {
-            let mut g = UnblockGraph::new();
+            // let mut g = UnblockGraph::new();
 
-            for loan in self.loans_invalidated_at(location, self.before) {
-                let borrow = &self.borrow_set[loan];
-                g.kill_reborrows_reserved_at(
-                    borrow.reserve_location,
-                    &self.state.after,
-                    self.repacker(),
-                );
-            }
+            // for loan in self.loans_invalidated_at(location, self.before) {
+            //     let borrow = &self.borrow_set[loan];
+            //     g.kill_reborrows_reserved_at(
+            //         borrow.reserve_location,
+            //         &self.state.after,
+            //         self.repacker(),
+            //     );
+            // }
 
-            let repacker = PlaceRepacker::new(self.body, self.tcx);
-            self.state.after.apply_unblock_graph(g, repacker, location);
+            // let repacker = PlaceRepacker::new(self.body, self.tcx);
+            // self.state.after.apply_unblock_graph(g, repacker, location);
         }
 
         // Will be included as start bridge ops

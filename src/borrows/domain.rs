@@ -576,9 +576,7 @@ impl<'tcx> Reborrow<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<MaybeOldPlace<'tcx>> {
         match self.blocked_place {
-            MaybeRemotePlace::Local(maybe_old_place) => {
-                Some(maybe_old_place.prefix_place(repacker).unwrap())
-            }
+            MaybeRemotePlace::Local(maybe_old_place) => maybe_old_place.prefix_place(repacker),
             MaybeRemotePlace::Remote(local) => Some(MaybeOldPlace::Current {
                 place: local.into(),
             }),

@@ -463,13 +463,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         while !finished {
             finished = true;
             for leaf_node in self.leaf_nodes(repacker) {
-                eprintln!(
-                    "{:?} <- {:?} Check {:?}",
-                    self_block, other_block, leaf_node
-                );
                 if !other.leaf_nodes(repacker).contains(&leaf_node) {
                     for edge in self.edges_blocked_by(leaf_node.into(), repacker) {
-                        eprintln!("Remove {:?}", edge);
                         finished = false;
                         self.remove(&edge, DebugCtx::Other);
                         changed = true;

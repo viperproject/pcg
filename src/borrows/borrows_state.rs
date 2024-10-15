@@ -210,6 +210,21 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.filter_for_path(path);
     }
 
+    pub fn reborrows_blocking_prefix_of(
+        &self,
+        place: Place<'tcx>,
+    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+        self.reborrows()
+            .into_iter()
+            .filter(|rb| match rb.value.blocked_place {
+                MaybeRemotePlace::Local(MaybeOldPlace::Current {
+                    place: blocked_place,
+                }) => blocked_place.is_prefix(place),
+                _ => false,
+            })
+            .collect()
+    }
+
     pub fn delete_descendants_of(
         &mut self,
         place: MaybeOldPlace<'tcx>,
@@ -385,19 +400,13 @@ impl<'tcx> BorrowsState<'tcx> {
         let mut ug = UnblockGraph::new();
         let repacker = PlaceRepacker::new(body, tcx);
         let graph_edges = self.graph_edges().cloned().collect::<Vec<_>>();
-        eprintln!("{:?}: ensure_expansion_to_exactly: {:?}", location, place);
         for p in graph_edges {
             match p.kind() {
                 BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.assigned_place {
                     MaybeOldPlace::Current {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) => {
-                        eprintln!("Check if {:?} is a prefix of {:?}", place, assigned_place);
                         for ra in place.region_projections(repacker) {
-                            eprintln!(
-                                "adding region projection member edge: {:?} -> {:?}",
-                                reborrow.blocked_place, ra
-                            );
                             self.add_region_projection_member(RegionProjectionMember::new(
                                 reborrow.blocked_place,
                                 ra,
@@ -406,12 +415,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             ));
                         }
                     }
-                    _ => {
-                        eprintln!(
-                            "ap: {:?}, bp {:?}, place {:?}",
-                            reborrow.assigned_place, reborrow.blocked_place, place,
-                        );
-                    }
+                    _ => {}
                 },
                 _ => {}
             }
