@@ -207,7 +207,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             edges.push((
                                 idx,
                                 AbstractionBlockEdge::new(
-                                    vec![AbstractionTarget::Place(input_place.into())].into_iter().collect(),
+                                    vec![AbstractionTarget::Place(input_place.into())]
+                                        .into_iter()
+                                        .collect(),
                                     vec![output].into_iter().collect(),
                                 ),
                             ));
@@ -327,20 +329,21 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         self.super_operand(operand, location);
         if self.before && self.preparing {
             match operand {
+                Operand::Copy(place) | Operand::Move(place) => {
+                    let place: utils::Place<'tcx> = (*place).into();
+                    self.ensure_expansion_to_exactly(place, location);
+                }
+                _ => {}
+            }
+            match operand {
                 Operand::Move(place) => {
                     self.state.after.set_latest((*place).into(), location);
+                    eprintln!("{:?} make_place_old {:?}", location, (*place));
                     self.state.after.make_place_old(
                         (*place).into(),
                         PlaceRepacker::new(self.body, self.tcx),
                         None,
                     );
-                }
-                _ => {}
-            }
-            match operand {
-                Operand::Copy(place) | Operand::Move(place) => {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    self.ensure_expansion_to_exactly(place, location);
                 }
                 _ => {}
             }
@@ -432,12 +435,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     let repacker = PlaceRepacker::new(self.body, self.tcx);
-                    // if place.ty(repacker).ty.is_ref() {
                     self.state
                         .after
                         .make_place_old(place, repacker, self.debug_ctx);
                     self.state.after.trim_old_leaves(repacker, location);
-                    // }
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
@@ -473,7 +474,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                                     );
                                                     self.state.after.add_region_projection_member(
                                                         RegionProjectionMember::new(
-                                                            operand_place,
+                                                            operand_place.into(),
                                                             proj,
                                                             location,
                                                             RegionProjectionMemberDirection::PlaceIsRegionInput,
@@ -502,6 +503,20 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                     target.project_deref(repacker).into(),
                                 );
                             }
+                            let moved_place =
+                                MaybeOldPlace::new(from, Some(self.state.after.get_latest(&from)));
+                            for (idx, p) in moved_place
+                                .region_projections(repacker)
+                                .into_iter()
+                                .enumerate()
+                            {
+                                self.state
+                                    .after
+                                    .change_maybe_old_place(moved_place, target.into());
+                            }
+                            self.state
+                                .after
+                                .change_maybe_old_place(moved_place, target.into());
                             self.state.after.delete_descendants_of(
                                 MaybeOldPlace::Current { place: from },
                                 repacker,

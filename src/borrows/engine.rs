@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    borrows_state::BorrowsState, borrows_visitor::BorrowsVisitor, domain::ReborrowBlockedPlace,
+    borrows_state::BorrowsState, borrows_visitor::BorrowsVisitor, domain::MaybeRemotePlace,
     path_condition::PathCondition,
 };
 use super::{
@@ -269,7 +269,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             {
                 let arg_place: Place<'tcx> = arg.into();
                 self.after.add_reborrow(
-                    ReborrowBlockedPlace::Remote(arg),
+                    MaybeRemotePlace::Remote(arg),
                     arg_place.project_deref(self.repacker),
                     *mutability,
                     Location::START,

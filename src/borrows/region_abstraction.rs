@@ -5,7 +5,7 @@ use crate::{rustc_interface, utils::Place};
 use super::{
     domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget,
-        AbstractionType, MaybeOldPlace, ReborrowBlockedPlace,
+        AbstractionType, MaybeOldPlace, MaybeRemotePlace,
     },
     latest::Latest,
 };
@@ -40,11 +40,11 @@ impl<'tcx> AbstractionEdge<'tcx> {
         self.abstraction_type.outputs()
     }
 
-    pub fn blocks(&self, place: ReborrowBlockedPlace<'tcx>) -> bool {
+    pub fn blocks(&self, place: MaybeRemotePlace<'tcx>) -> bool {
         self.abstraction_type.blocks(place)
     }
 
-    pub fn blocks_places(&self) -> FxHashSet<ReborrowBlockedPlace<'tcx>> {
+    pub fn blocks_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.abstraction_type.blocks_places()
     }
 

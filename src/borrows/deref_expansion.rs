@@ -1,11 +1,17 @@
 use serde_json::json;
 
 use crate::{
-    rustc_interface::middle::mir::{Location, PlaceElem},
+    rustc_interface::{
+        data_structures::fx::FxHashSet,
+        middle::mir::{Location, PlaceElem},
+    },
     utils::{Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation},
 };
 
-use super::{domain::{MaybeOldPlace, ToJsonWithRepacker}, latest::Latest};
+use super::{
+    domain::{MaybeOldPlace, RegionProjection, ToJsonWithRepacker},
+    latest::Latest,
+};
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowDerefExpansion<'tcx> {
     base: MaybeOldPlace<'tcx>,
@@ -33,6 +39,21 @@ pub enum DerefExpansion<'tcx> {
 }
 
 impl<'tcx> DerefExpansion<'tcx> {
+    pub fn region_projection_edges(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
+        let mut edges = FxHashSet::default();
+        for rp in self.expansion(repacker).iter() {
+            edges.extend(RegionProjection::connections_between_places(
+                self.base(),
+                rp.clone(),
+                repacker,
+            ));
+        }
+        edges
+    }
+
     pub fn mut_base(&mut self) -> &mut MaybeOldPlace<'tcx> {
         match self {
             DerefExpansion::OwnedExpansion { base, .. } => base,

@@ -17,7 +17,7 @@ use crate::{
 use super::{
     borrows_graph::{BorrowsEdge, BorrowsEdgeKind, BorrowsGraph},
     domain::{
-        AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, ReborrowBlockedPlace,
+        AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace,
     },
 };
 
@@ -32,7 +32,7 @@ impl<'tcx> CGNode<'tcx> {
         match self {
             CGNode::Local(place) => AbstractionInputTarget::Place((*place).into()),
             CGNode::Remote(local) => {
-                AbstractionInputTarget::Place(ReborrowBlockedPlace::Remote(*local))
+                AbstractionInputTarget::Place(MaybeRemotePlace::Remote(*local))
             }
         }
     }
@@ -98,7 +98,7 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
             new_path_edges.insert(edge.clone());
             match edge.kind() {
                 BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.blocked_place {
-                    ReborrowBlockedPlace::Local(MaybeOldPlace::Current { place }) => {
+                    MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
                         let live_origins =
                             self.output_facts
                                 .origins_live_at(self.location_table.start_index(Location {
@@ -131,10 +131,10 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
                         self.to_remove.extend(new_path_edges);
                         self.add_edges_from(bg, FxHashSet::default(), place.into(), place.into());
                     }
-                    ReborrowBlockedPlace::Local(old_place) => {
+                    MaybeRemotePlace::Local(old_place) => {
                         self.add_edges_from(bg, new_path_edges, from, old_place)
                     }
-                    ReborrowBlockedPlace::Remote(local) => {
+                    MaybeRemotePlace::Remote(local) => {
                         self.to_remove.extend(new_path_edges);
                         self.coupling_graph
                             .add_edge(CGNode::Local(from), CGNode::Remote(local));
@@ -146,7 +146,9 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
                 BorrowsEdgeKind::Abstraction(_) => {
                     // TODO
                 }
-                BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
+                BorrowsEdgeKind::RegionProjectionMember(_) => {
+                    // TODO
+                }
             }
         }
     }

@@ -34,4 +34,18 @@ impl<'tcx> PlaceSnapshot<'tcx> {
             at: self.at,
         }
     }
+
+    pub fn prefix_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PlaceSnapshot<'tcx>> {
+        self.place.prefix_place(repacker).map(|p| PlaceSnapshot {
+            place: p,
+            at: self.at,
+        })
+    }
+
+    pub fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceSnapshot<'tcx> {
+        PlaceSnapshot {
+            place: self.place.with_inherent_region(repacker),
+            at: self.at,
+        }
+    }
 }

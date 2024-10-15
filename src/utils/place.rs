@@ -17,14 +17,14 @@ use rustc_interface::{
     ast::Mutability,
     middle::{
         mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
-        ty::{RegionVid, Ty, TyCtxt, TyKind},
+        ty::{self, RegionVid, Ty, TyCtxt, TyKind},
     },
     target::abi::VariantIdx,
 };
 
 use crate::{
     borrows::{
-        borrows_visitor::{extract_nested_lifetimes, get_vid},
+        borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
         domain::{MaybeOldPlace, RegionProjection},
     },
     rustc_interface,
@@ -56,6 +56,36 @@ impl<'tcx> Place<'tcx> {
         Some(Place::new(prefix.local, &prefix.projection))
     }
 
+    /// In MIR, if a place is a field projection, then the type of the place
+    /// will be the determined by the last projection. If the type of that place
+    /// is a reference, it appears that the associated region is not necessarily
+    /// the same as the one given by the parent struct.
+    ///
+    /// In the case that this place is a reference-typed field projection, this function
+    /// returns a new place with the same data, but with the region of the reference determined
+    /// by the parent struct. Otherwise, the place is returned unchanged.
+    pub fn with_inherent_region(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+        if self.projection.is_empty() {
+            return self;
+        }
+        let base_place = Place::new(self.local, &self.projection[..self.projection.len() - 1]);
+        let base_place_ty = base_place.ty(repacker);
+
+        if let Some(elem) = self.projection.last()
+            && let ProjectionElem::Field(field_idx, _) = elem
+            && let ty::TyKind::Adt(def, substs) = base_place_ty.ty.kind()
+        {
+            let variant = match base_place_ty.variant_index {
+                Some(v) => def.variant(v),
+                None => def.non_enum_variant(),
+            };
+            let expected_ty = variant.fields[*field_idx].ty(repacker.tcx(), substs);
+            base_place.mk_place_elem(ProjectionElem::Field(*field_idx, expected_ty), repacker)
+        } else {
+            self
+        }
+    }
+
     pub fn region_projection(
         &self,
         idx: usize,
@@ -71,9 +101,12 @@ impl<'tcx> Place<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
-        extract_nested_lifetimes(self.ty(repacker).ty)
+        // TODO: What if no VID?
+        extract_lifetimes(self.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new(get_vid(region).unwrap(), self.clone().into()))
+            .flat_map(|region| {
+                get_vid(region).map(|vid| RegionProjection::new(vid, self.clone().into()))
+            })
             .collect()
     }
     pub fn projection_index(

@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     borrows_graph::{BorrowsEdge, BorrowsEdgeKind, Conditioned},
-    domain::{AbstractionType, ReborrowBlockedPlace},
+    domain::{AbstractionType, MaybeRemotePlace},
     region_abstraction::AbstractionEdge,
 };
 
@@ -34,7 +34,7 @@ pub struct UnblockGraph<'tcx> {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum UnblockHistoryAction<'tcx> {
-    UnblockPlace(ReborrowBlockedPlace<'tcx>),
+    UnblockPlace(MaybeRemotePlace<'tcx>),
     KillReborrow(Reborrow<'tcx>),
 }
 
@@ -98,7 +98,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     }
 
     pub fn for_place(
-        place: ReborrowBlockedPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
         state: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
@@ -204,7 +204,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     ) {
         for place in &abstraction.value.blocks_places() {
             match place {
-                ReborrowBlockedPlace::Local(MaybeOldPlace::OldPlace(p)) => {
+                MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(p)) => {
                     self.trim_old_leaves_from(borrows, p.clone(), repacker)
                 }
                 _ => {}
@@ -214,7 +214,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     }
     pub fn unblock_place(
         &mut self,
-        place: ReborrowBlockedPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
@@ -228,7 +228,7 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     fn unblock_place_internal(
         &mut self,
-        place: ReborrowBlockedPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         mut history: UnblockHistory<'tcx>,
@@ -323,7 +323,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     ) {
         for reborrow in borrows.reborrows_blocked_by(MaybeOldPlace::OldPlace(place)) {
             match reborrow.value.blocked_place {
-                ReborrowBlockedPlace::Local(MaybeOldPlace::OldPlace(p)) => {
+                MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(p)) => {
                     self.trim_old_leaves_from(borrows, p.clone(), repacker)
                 }
                 _ => {}

@@ -143,13 +143,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
             "Mutable reference {:?} should be expanded in reborrowing dag, not PCS",
             from
         );
-        eprintln!(
-            "expanding {:?}: {:?} to {:?}: {:?}",
-            from,
-            from.ty(repacker),
-            to,
-            to.ty(repacker)
-        );
         debug_assert!(!self.contains_key(&to));
         let (expanded, mut others) = from.expand(to, repacker);
         let mut perm = self.remove(&from).unwrap();

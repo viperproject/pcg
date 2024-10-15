@@ -5,7 +5,7 @@ use crate::{
         borrows_visitor::{extract_nested_lifetimes, get_vid},
         domain::{
             AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget, MaybeOldPlace,
-            ReborrowBlockedPlace, RegionProjection,
+            MaybeRemotePlace, RegionProjection,
         },
         region_abstraction::AbstractionEdge,
         unblock_graph::UnblockGraph,
@@ -130,10 +130,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     fn insert_abstraction_input_target(&mut self, target: AbstractionInputTarget<'tcx>) -> NodeId {
         match target {
             AbstractionTarget::Place(place) => match place {
-                ReborrowBlockedPlace::Local(place) => {
+                MaybeRemotePlace::Local(place) => {
                     self.insert_place_node(place.place(), place.location(), None)
                 }
-                ReborrowBlockedPlace::Remote(local) => self.insert_remote_node(local),
+                MaybeRemotePlace::Remote(local) => self.insert_remote_node(local),
             },
             AbstractionTarget::RegionProjection(projection) => {
                 self.insert_region_projection_node(projection)
@@ -296,10 +296,10 @@ impl<'mir, 'tcx> PlaceGrapher<'mir, 'tcx> for UnblockGraphConstructor<'mir, 'tcx
             .insert_place_node(place.place(), place.location(), None)
     }
 
-    fn insert_reborrow_blocked_place(&mut self, place: ReborrowBlockedPlace<'tcx>) -> NodeId {
+    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
         match place {
-            ReborrowBlockedPlace::Local(place) => self.insert_maybe_old_place(place),
-            ReborrowBlockedPlace::Remote(local) => self.constructor.insert_remote_node(local),
+            MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
+            MaybeRemotePlace::Remote(local) => self.constructor.insert_remote_node(local),
         }
     }
 
@@ -313,7 +313,7 @@ impl<'mir, 'tcx> PlaceGrapher<'mir, 'tcx> for UnblockGraphConstructor<'mir, 'tcx
 }
 
 trait PlaceGrapher<'mir, 'tcx: 'mir> {
-    fn insert_reborrow_blocked_place(&mut self, place: ReborrowBlockedPlace<'tcx>) -> NodeId;
+    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId;
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId;
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
@@ -332,7 +332,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 }
             }
             BorrowsEdgeKind::Reborrow(reborrow) => {
-                let borrowed_place = self.insert_reborrow_blocked_place(reborrow.blocked_place);
+                let borrowed_place = self.insert_maybe_remote_place(reborrow.blocked_place);
                 let assigned_place = self.insert_maybe_old_place(reborrow.assigned_place);
                 self.constructor().edges.insert(GraphEdge::ReborrowEdge {
                     borrowed_place,
@@ -341,12 +341,19 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     region: format!("{:?}", reborrow.region),
                     path_conditions: format!("{}", edge.conditions()),
                 });
+                for (e1, e2) in reborrow.region_projection_edges(self.repacker()) {
+                    let borrowed_place = self.constructor().insert_region_projection_node(e1);
+                    let assigned_place = self.constructor().insert_region_projection_node(e2);
+                    self.constructor()
+                        .edges
+                        .insert(GraphEdge::RegionProjectionBorrowEdge { borrowed_place, assigned_place });
+                }
             }
             BorrowsEdgeKind::Abstraction(abstraction) => {
                 let _r = self.constructor().insert_region_abstraction(abstraction);
             }
             BorrowsEdgeKind::RegionProjectionMember(member) => {
-                let place = self.insert_maybe_old_place(member.place);
+                let place = self.insert_maybe_remote_place(member.place);
                 let region_projection = self
                     .constructor()
                     .insert_region_projection_node(member.projection);
@@ -387,10 +394,10 @@ impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
         &mut self.constructor
     }
 
-    fn insert_reborrow_blocked_place(&mut self, place: ReborrowBlockedPlace<'tcx>) -> NodeId {
+    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
         match place {
-            ReborrowBlockedPlace::Local(place) => self.insert_maybe_old_place(place),
-            ReborrowBlockedPlace::Remote(local) => self.constructor.insert_remote_node(local),
+            MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
+            MaybeRemotePlace::Remote(local) => self.constructor.insert_remote_node(local),
         }
     }
 }
@@ -421,9 +428,23 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
         }
         let mut projection = place.projection;
         let mut last_node = node;
+        let mut last_place = place.into();
         while !projection.is_empty() {
             projection = &projection[..projection.len() - 1];
             let place = Place::new(place.local, &projection);
+            let connections = RegionProjection::connections_between_places(
+                place.into(),
+                last_place,
+                self.repacker,
+            );
+            for (rp1, rp2) in connections {
+                let source = self.constructor.insert_region_projection_node(rp1);
+                let target = self.constructor.insert_region_projection_node(rp2);
+                self.constructor
+                    .edges
+                    .insert(GraphEdge::ProjectionEdge { source, target });
+            }
+            last_place = place.into();
             let node = self.constructor.insert_place_node(place, None, None);
             self.constructor.edges.insert(GraphEdge::ProjectionEdge {
                 source: node,

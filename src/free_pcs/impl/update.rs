@@ -9,24 +9,29 @@ use crate::{
     utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
 };
 
-use super::{CapabilitySummary, triple::{Condition, Triple}};
+use super::{
+    triple::{Condition, Triple},
+    CapabilitySummary,
+};
 
 impl<'tcx> CapabilitySummary<'tcx> {
     pub(crate) fn requires(&mut self, cond: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
         match cond {
             Condition::Unchanged => {}
-            Condition::Unalloc(_) => {},
+            Condition::Unalloc(_) => {}
             Condition::AllocateOrDeallocate(local) => {
                 match &mut self[local] {
-                    cap@CapabilityLocal::Unallocated => {
+                    cap @ CapabilityLocal::Unallocated => {
                         // A bit of an unusual case: we're at a StorageDead but
                         // already deallocated. Allocate now so that the
                         // precondition of SD can be met, but we'll catch this in
                         // `bridge` and emit a IgnoreSD op.
                         *cap = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
                     }
-                    CapabilityLocal::Allocated(_) =>
-                        self.requires(Condition::Capability(local.into(), CapabilityKind::Write), repacker),
+                    CapabilityLocal::Allocated(_) => self.requires(
+                        Condition::Capability(local.into(), CapabilityKind::Write),
+                        repacker,
+                    ),
                 }
             }
             Condition::Capability(place, cap) => {
@@ -43,10 +48,16 @@ impl<'tcx> CapabilitySummary<'tcx> {
         match t.pre() {
             Condition::Unchanged => {}
             Condition::Unalloc(local) => {
-                assert!(self[*local].is_unallocated(), "local: {local:?}, fpcs: {self:?}\n");
+                assert!(
+                    self[*local].is_unallocated(),
+                    "local: {local:?}, fpcs: {self:?}\n"
+                );
             }
             Condition::AllocateOrDeallocate(local) => {
-                assert_eq!(self[*local].get_allocated_mut()[&(*local).into()], CapabilityKind::Write);
+                assert_eq!(
+                    self[*local].get_allocated_mut()[&(*local).into()],
+                    CapabilityKind::Write
+                );
             }
             Condition::Capability(place, cap) => {
                 match cap {
@@ -73,31 +84,23 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 self[*local] = CapabilityLocal::Unallocated;
             }
             Condition::AllocateOrDeallocate(local) => {
-                self[*local] = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(*local));
+                self[*local] =
+                    CapabilityLocal::Allocated(CapabilityProjections::new_uninit(*local));
             }
             Condition::Capability(place, cap) => {
-                self[place.local].get_allocated_mut().update_cap(*place, *cap);
+                self[place.local]
+                    .get_allocated_mut()
+                    .update_cap(*place, *cap);
             }
         }
     }
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
-    pub(super) fn repack(
-        &mut self,
-        to: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
+    pub(super) fn repack(&mut self, to: Place<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
         let related = self.find_all_related(to, None);
         match related.relation {
             PlaceOrdering::Prefix => {
-                eprintln!(
-                    "expand for prefix {:?}: {:?} to {:?}: {:?}",
-                    related.get_only_from(),
-                    related.get_only_from().ty(repacker),
-                    related.to,
-                    related.to.ty(repacker)
-                );
                 self.expand(related.get_only_from(), related.to, repacker);
             }
             PlaceOrdering::Equal => (),

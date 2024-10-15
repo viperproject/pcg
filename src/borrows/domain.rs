@@ -171,15 +171,15 @@ pub enum AbstractionTarget<'tcx, T> {
     RegionProjection(RegionProjection<'tcx>),
 }
 
-pub type AbstractionInputTarget<'tcx> = AbstractionTarget<'tcx, ReborrowBlockedPlace<'tcx>>;
+pub type AbstractionInputTarget<'tcx> = AbstractionTarget<'tcx, MaybeRemotePlace<'tcx>>;
 pub type AbstractionOutputTarget<'tcx> = AbstractionTarget<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> AbstractionInputTarget<'tcx> {
     pub fn blocks(&self, place: &MaybeOldPlace<'tcx>) -> bool {
         match self {
             AbstractionTarget::Place(p) => match p {
-                ReborrowBlockedPlace::Local(maybe_old_place) => maybe_old_place == place,
-                ReborrowBlockedPlace::Remote(_local) => false,
+                MaybeRemotePlace::Local(maybe_old_place) => maybe_old_place == place,
+                MaybeRemotePlace::Remote(_local) => false,
             },
             AbstractionTarget::RegionProjection(_p) => false,
         }
@@ -188,8 +188,8 @@ impl<'tcx> AbstractionInputTarget<'tcx> {
     pub fn mut_place(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
         match self {
             AbstractionTarget::Place(bp) => match bp {
-                ReborrowBlockedPlace::Local(ref mut maybe_old_place) => Some(maybe_old_place),
-                ReborrowBlockedPlace::Remote(_) => None,
+                MaybeRemotePlace::Local(ref mut maybe_old_place) => Some(maybe_old_place),
+                MaybeRemotePlace::Remote(_) => None,
             },
             AbstractionTarget::RegionProjection(p) => Some(&mut p.place),
         }
@@ -258,7 +258,7 @@ impl<'tcx> AbstractionType<'tcx> {
             .collect()
     }
 
-    pub fn blocks_places(&self) -> FxHashSet<ReborrowBlockedPlace<'tcx>> {
+    pub fn blocks_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.edges()
             .into_iter()
             .flat_map(|edge| edge.inputs())
@@ -289,7 +289,7 @@ impl<'tcx> AbstractionType<'tcx> {
             .collect()
     }
 
-    pub fn blocks(&self, place: ReborrowBlockedPlace<'tcx>) -> bool {
+    pub fn blocks(&self, place: MaybeRemotePlace<'tcx>) -> bool {
         self.blocks_places().contains(&place)
     }
 
@@ -314,6 +314,12 @@ impl<'tcx> From<mir::Place<'tcx>> for MaybeOldPlace<'tcx> {
     }
 }
 
+impl<'tcx> From<PlaceSnapshot<'tcx>> for MaybeOldPlace<'tcx> {
+    fn from(snapshot: PlaceSnapshot<'tcx>) -> Self {
+        Self::OldPlace(snapshot)
+    }
+}
+
 impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -324,6 +330,20 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        match self {
+            MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.with_inherent_region(repacker).into(),
+        }
+    }
+
+    pub fn prefix_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+        match self {
+            MaybeOldPlace::Current { place } => Some(place.prefix_place(repacker)?.into()),
+            MaybeOldPlace::OldPlace(snapshot) => Some(snapshot.prefix_place(repacker)?.into()),
+        }
+    }
+
     pub fn region_projection(
         &self,
         idx: usize,
@@ -336,7 +356,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
-        extract_nested_lifetimes(self.ty(repacker).ty)
+        extract_lifetimes(self.ty(repacker).ty)
             .iter()
             .map(|region| RegionProjection::new(get_vid(region).unwrap(), self.clone()))
             .collect()
@@ -442,14 +462,14 @@ use serde_json::json;
 
 use super::{
     borrows_graph::{BorrowsEdge, ToBorrowsEdge},
-    borrows_visitor::{extract_nested_lifetimes, get_vid},
+    borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
     latest::Latest,
     path_condition::PathConditions,
     region_abstraction::AbstractionEdge,
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
-pub enum ReborrowBlockedPlace<'tcx> {
+pub enum MaybeRemotePlace<'tcx> {
     /// Reborrows from a place that has a name in the program, e.g for a
     /// reborrow x = &mut (*y), the blocked place is `Local(*y)`
     Local(MaybeOldPlace<'tcx>),
@@ -459,51 +479,51 @@ pub enum ReborrowBlockedPlace<'tcx> {
     Remote(mir::Local),
 }
 
-impl<'tcx> std::fmt::Display for ReborrowBlockedPlace<'tcx> {
+impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReborrowBlockedPlace::Local(p) => write!(f, "{}", p),
-            ReborrowBlockedPlace::Remote(l) => write!(f, "Remote({:?})", l),
+            MaybeRemotePlace::Local(p) => write!(f, "{}", p),
+            MaybeRemotePlace::Remote(l) => write!(f, "Remote({:?})", l),
         }
     }
 }
 
-impl<'tcx> ReborrowBlockedPlace<'tcx> {
+impl<'tcx> MaybeRemotePlace<'tcx> {
     pub fn is_old(&self) -> bool {
-        matches!(self, ReborrowBlockedPlace::Local(p) if p.is_old())
+        matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
         match self {
-            ReborrowBlockedPlace::Local(p) => p.make_place_old(place, latest),
-            ReborrowBlockedPlace::Remote(_) => {}
+            MaybeRemotePlace::Local(p) => p.make_place_old(place, latest),
+            MaybeRemotePlace::Remote(_) => {}
         }
     }
 
     pub fn as_local(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
-            ReborrowBlockedPlace::Local(p) => Some(*p),
-            ReborrowBlockedPlace::Remote(_) => None,
+            MaybeRemotePlace::Local(p) => Some(*p),
+            MaybeRemotePlace::Remote(_) => None,
         }
     }
 
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         match self {
-            ReborrowBlockedPlace::Local(p) => p.to_json(repacker),
-            ReborrowBlockedPlace::Remote(_) => todo!(),
+            MaybeRemotePlace::Local(p) => p.to_json(repacker),
+            MaybeRemotePlace::Remote(_) => todo!(),
         }
     }
 }
 
-impl<'tcx> From<MaybeOldPlace<'tcx>> for ReborrowBlockedPlace<'tcx> {
+impl<'tcx> From<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
     fn from(place: MaybeOldPlace<'tcx>) -> Self {
-        ReborrowBlockedPlace::Local(place)
+        MaybeRemotePlace::Local(place)
     }
 }
 
-impl<'tcx> From<Place<'tcx>> for ReborrowBlockedPlace<'tcx> {
+impl<'tcx> From<Place<'tcx>> for MaybeRemotePlace<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
-        ReborrowBlockedPlace::Local(place.into())
+        MaybeRemotePlace::Local(place.into())
     }
 }
 
@@ -518,7 +538,7 @@ impl<'tcx> std::fmt::Display for Reborrow<'tcx> {
 }
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct Reborrow<'tcx> {
-    pub blocked_place: ReborrowBlockedPlace<'tcx>,
+    pub blocked_place: MaybeRemotePlace<'tcx>,
     pub assigned_place: MaybeOldPlace<'tcx>,
     pub mutability: Mutability,
 
@@ -530,7 +550,7 @@ pub struct Reborrow<'tcx> {
 
 impl<'tcx> Reborrow<'tcx> {
     pub fn new(
-        blocked_place: ReborrowBlockedPlace<'tcx>,
+        blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: MaybeOldPlace<'tcx>,
         mutability: Mutability,
         reservation_location: Location,
@@ -543,6 +563,45 @@ impl<'tcx> Reborrow<'tcx> {
             reserve_location: reservation_location,
             region,
         }
+    }
+
+    pub fn region_projection_edges(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
+        if let (Some(blocked_place_prefix), Some(assigned_place_prefix)) = (
+            self.blocked_place_prefix(repacker),
+            self.assigned_place_prefix(repacker),
+        ) {
+            RegionProjection::connections_between_places(
+                blocked_place_prefix.with_inherent_region(repacker),
+                assigned_place_prefix.with_inherent_region(repacker),
+                repacker,
+            )
+        } else {
+            FxHashSet::default()
+        }
+    }
+
+    fn blocked_place_prefix(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<MaybeOldPlace<'tcx>> {
+        match self.blocked_place {
+            MaybeRemotePlace::Local(maybe_old_place) => {
+                Some(maybe_old_place.prefix_place(repacker).unwrap())
+            }
+            MaybeRemotePlace::Remote(local) => Some(MaybeOldPlace::Current {
+                place: local.into(),
+            }),
+        }
+    }
+
+    fn assigned_place_prefix(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<MaybeOldPlace<'tcx>> {
+        self.assigned_place.prefix_place(repacker)
     }
 
     pub fn reserve_location(&self) -> Location {
@@ -612,5 +671,19 @@ impl<'tcx> RegionProjection<'tcx> {
             .place()
             .projection_index(self.region, repacker)
             .unwrap()
+    }
+
+    pub fn connections_between_places(
+        source: MaybeOldPlace<'tcx>,
+        dest: MaybeOldPlace<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
+        let mut edges = FxHashSet::default();
+        for rp in source.region_projections(repacker) {
+            for erp in dest.region_projections(repacker) {
+                edges.insert((rp, erp));
+            }
+        }
+        edges
     }
 }

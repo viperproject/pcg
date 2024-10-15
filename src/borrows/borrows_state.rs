@@ -1,6 +1,6 @@
 use rustc_interface::{
-    borrowck::consumers::{LocationTable, PoloniusOutput},
     ast::Mutability,
+    borrowck::consumers::{LocationTable, PoloniusOutput},
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock, Location},
     middle::ty::{self, TyCtxt},
@@ -18,7 +18,7 @@ use super::{
     borrows_graph::{BorrowsEdge, BorrowsEdgeKind, BorrowsGraph, Conditioned, ToBorrowsEdge},
     borrows_visitor::DebugCtx,
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, Reborrow, ReborrowBlockedPlace, RegionProjection},
+    domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow, RegionProjection},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
@@ -33,13 +33,21 @@ pub enum RegionProjectionMemberDirection {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {
-    pub place: MaybeOldPlace<'tcx>,
+    pub place: MaybeRemotePlace<'tcx>,
     pub projection: RegionProjection<'tcx>,
     location: Location,
     pub direction: RegionProjectionMemberDirection,
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
+    pub fn maybe_old_places(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        let mut places = vec![&mut self.projection.place];
+        match self.place {
+            MaybeRemotePlace::Local(ref mut p) => places.push(p),
+            MaybeRemotePlace::Remote(_) => {}
+        }
+        places
+    }
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
         self.place.make_place_old(place, latest);
         self.projection.make_place_old(place, latest);
@@ -54,7 +62,7 @@ impl<'tcx> RegionProjectionMember<'tcx> {
     }
 
     pub fn new(
-        place: MaybeOldPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
         projection: RegionProjection<'tcx>,
         location: Location,
         direction: RegionProjectionMemberDirection,
@@ -90,14 +98,13 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let mut changed = false;
         if self.graph.join(
-                &other.graph,
-                self_block,
-                other_block,
-                output_facts,
-                location_table,
-                repacker,
-            )
-        {
+            &other.graph,
+            self_block,
+            other_block,
+            output_facts,
+            location_table,
+            repacker,
+        ) {
             changed = true;
         }
         if self.latest.join(&other.latest, self_block) {
@@ -107,6 +114,15 @@ impl<'tcx> BorrowsState<'tcx> {
             // changed = true;
         }
         changed
+    }
+
+    pub fn change_region_projection(
+        &mut self,
+        old_projection: RegionProjection<'tcx>,
+        new_projection: RegionProjection<'tcx>,
+    ) {
+        self.graph
+            .change_region_projection(old_projection, new_projection);
     }
 
     pub fn change_maybe_old_place(
@@ -126,7 +142,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if !edge.is_shared_borrow() {
             for place in edge.blocked_places() {
                 match place {
-                    ReborrowBlockedPlace::Local(MaybeOldPlace::Current { place }) => {
+                    MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
                         self.set_latest(place, location)
                     }
                     _ => {}
@@ -201,22 +217,20 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
-        let mut changed = false;
         let edges = self
             .edges_blocking(place.into())
             .cloned()
             .collect::<Vec<_>>();
+        if edges.is_empty() {
+            return false;
+        }
         for edge in edges {
-            changed = true;
             self.remove_edge_and_set_latest(&edge, repacker, location);
         }
-        changed
+        true
     }
 
-    pub fn get_place_blocking(
-        &self,
-        place: ReborrowBlockedPlace<'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
+    pub fn get_place_blocking(&self, place: MaybeRemotePlace<'tcx>) -> Option<MaybeOldPlace<'tcx>> {
         let edges = self.edges_blocking(place).collect::<Vec<_>>();
         if edges.len() != 1 {
             return None;
@@ -231,7 +245,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub fn edges_blocking(
         &self,
-        place: ReborrowBlockedPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
     ) -> impl Iterator<Item = &BorrowsEdge<'tcx>> {
         self.graph.edges_blocking(place)
     }
@@ -353,7 +367,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub fn get_abstractions_blocking(
         &self,
-        place: ReborrowBlockedPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
     ) -> Vec<Conditioned<AbstractionEdge<'tcx>>> {
         self.region_abstractions()
             .iter()
@@ -371,6 +385,38 @@ impl<'tcx> BorrowsState<'tcx> {
     ) {
         let mut ug = UnblockGraph::new();
         let repacker = PlaceRepacker::new(body, tcx);
+        let graph_edges = self.graph_edges().cloned().collect::<Vec<_>>();
+        eprintln!("{:?}: ensure_expansion_to_exactly: {:?}", location, place);
+        for p in graph_edges {
+            match p.kind() {
+                BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.assigned_place {
+                    MaybeOldPlace::Current {
+                        place: assigned_place,
+                    } if place.is_prefix(assigned_place) => {
+                        eprintln!("Check if {:?} is a prefix of {:?}", place, assigned_place);
+                        for ra in place.region_projections(repacker) {
+                            eprintln!(
+                                "adding region projection member edge: {:?} -> {:?}",
+                                reborrow.blocked_place, ra
+                            );
+                            self.add_region_projection_member(RegionProjectionMember::new(
+                                reborrow.blocked_place,
+                                ra,
+                                location,
+                                RegionProjectionMemberDirection::PlaceIsRegionInput,
+                            ));
+                        }
+                    }
+                    _ => {
+                        eprintln!(
+                            "ap: {:?}, bp {:?}, place {:?}",
+                            reborrow.assigned_place, reborrow.blocked_place, place,
+                        );
+                    }
+                },
+                _ => {}
+            }
+        }
         ug.unblock_place(place.into(), self, repacker);
         self.apply_unblock_graph(ug, repacker, location);
 
@@ -379,10 +425,7 @@ impl<'tcx> BorrowsState<'tcx> {
             .ensure_deref_expansion_to_at_least(place.into(), body, tcx, location);
     }
 
-    pub fn roots(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<ReborrowBlockedPlace<'tcx>> {
+    pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.graph.roots(repacker)
     }
 
@@ -488,7 +531,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub fn add_reborrow(
         &mut self,
-        blocked_place: ReborrowBlockedPlace<'tcx>,
+        blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: Place<'tcx>,
         mutability: Mutability,
         location: Location,

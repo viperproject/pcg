@@ -28,7 +28,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        domain::{AbstractionType, MaybeOldPlace, ReborrowBlockedPlace},
+        domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
         engine::BorrowsEngine,
     },
     free_pcs::engine::FpcsEngine,
@@ -213,7 +213,7 @@ pub enum UnblockAction<'tcx> {
     TerminateAbstraction(Location, AbstractionType<'tcx>),
     TerminateReborrow {
         reserve_location: Location,
-        blocked_place: ReborrowBlockedPlace<'tcx>,
+        blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: MaybeOldPlace<'tcx>,
         is_mut: bool,
     },
