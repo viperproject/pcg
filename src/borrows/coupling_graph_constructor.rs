@@ -3,12 +3,11 @@ use std::cmp::Ordering;
 use crate::{
     coupling,
     rustc_interface::{
-        ast::Mutability,
         borrowck::consumers::{LocationTable, PoloniusOutput},
         data_structures::fx::FxHashSet,
         middle::{
-            mir::{self, BasicBlock, Local, Location, PlaceElem},
-            ty::{self, Region, TyCtxt},
+            mir::{BasicBlock, Local, Location, PlaceElem},
+            ty::{self},
         },
     },
     utils::{Place, PlaceRepacker},

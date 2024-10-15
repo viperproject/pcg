@@ -6,7 +6,7 @@
 
 use itertools::Itertools;
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::BTreeMap,
     fmt::{Debug, Formatter, Result},
     rc::Rc,

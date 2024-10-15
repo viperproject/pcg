@@ -2,32 +2,29 @@ use rustc_interface::{
     ast::Mutability,
     borrowck::consumers::{LocationTable, PoloniusOutput},
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Local, Location},
+    middle::mir::{self, BasicBlock, Location},
     middle::ty::{Region, TyCtxt},
 };
 use serde_json::json;
-use std::cmp::Ordering;
 
 use crate::{
-    borrows::domain::AbstractionInputTarget,
     coupling, rustc_interface,
     utils::{Place, PlaceRepacker},
 };
 
 use super::{
     borrows_edge::{BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
-    borrows_state::{RegionProjectionMember, RegionProjectionMemberDirection},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
     deref_expansion::DerefExpansion,
     domain::{
-        AbstractionBlockEdge, AbstractionOutputTarget, AbstractionTarget, AbstractionType,
+        AbstractionBlockEdge, AbstractionTarget, AbstractionType,
         LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
     },
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection::{HasRegionProjections, RegionProjection},
+    region_projection::RegionProjection,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -652,7 +649,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn mut_region_projections(
         &mut self,
-        mut f: impl FnMut(&mut MaybeOldPlace<'tcx>) -> bool,
+        f: impl FnMut(&mut MaybeOldPlace<'tcx>) -> bool,
     ) -> bool {
         todo!()
         // self.mut_edges(|edge| {

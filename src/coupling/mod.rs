@@ -363,7 +363,7 @@ where
     Some((w, g))
 }
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::process::{Command, Stdio};
 
 impl<N> Graph<N>

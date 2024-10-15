@@ -1,6 +1,6 @@
 use crate::{
     borrows::{
-        borrows_edge::{BorrowsEdge, BorrowsEdgeKind}, borrows_state::BorrowsState, borrows_visitor::{extract_nested_lifetimes, get_vid}, domain::{
+        borrows_edge::{BorrowsEdge, BorrowsEdgeKind}, borrows_state::BorrowsState, domain::{
             AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget, MaybeOldPlace,
             MaybeRemotePlace,
         }, region_abstraction::AbstractionEdge, region_projection::RegionProjection, unblock_graph::UnblockGraph
@@ -12,14 +12,11 @@ use crate::{
 };
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashSet},
     ops::Deref,
 };
 
-use rustc_interface::middle::{
-    mir::Location,
-    ty::{self, TyCtxt},
-};
+use rustc_interface::middle::ty::{self, TyCtxt};
 
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 

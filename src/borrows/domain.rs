@@ -462,7 +462,7 @@ use serde_json::json;
 
 use super::{
     borrows_edge::{BorrowsEdge, ToBorrowsEdge},
-    borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
+    borrows_visitor::{extract_lifetimes, get_vid},
     latest::Latest,
     path_condition::PathConditions,
     region_abstraction::AbstractionEdge,

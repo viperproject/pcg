@@ -1,28 +1,20 @@
 use rustc_interface::{
     ast::Mutability,
-    borrowck::consumers::{LocationTable, PoloniusOutput},
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Local, Location},
-    middle::ty::{Region, TyCtxt},
+    middle::mir::{BasicBlock},
 };
-use serde_json::json;
-use std::cmp::Ordering;
 
 use crate::{
-    borrows::domain::AbstractionInputTarget,
-    coupling, rustc_interface,
+    rustc_interface,
     utils::{Place, PlaceRepacker},
 };
 
 use super::{
     borrows_graph::Conditioned,
     borrows_state::{RegionProjectionMember, RegionProjectionMemberDirection},
-    borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
     deref_expansion::DerefExpansion,
     domain::{
-        AbstractionBlockEdge, AbstractionOutputTarget, AbstractionTarget, AbstractionType,
-        LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
+        MaybeOldPlace, MaybeRemotePlace, Reborrow,
     },
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
