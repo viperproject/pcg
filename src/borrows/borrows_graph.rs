@@ -455,7 +455,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
-            if false && exit_blocks.len() == 1 {
+            if exit_blocks.len() >= 1 {
                 return self.join_loop(
                     other,
                     self_block,
@@ -564,6 +564,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, debug_ctx: DebugCtx) -> bool {
+        match edge.kind() {
+            BorrowsEdgeKind::Abstraction(abstraction) => {
+                eprintln!(
+                    "{:?} Removing abstraction at {:?}",
+                    debug_ctx,
+                    abstraction.location()
+                );
+                eprintln!("{}", std::backtrace::Backtrace::capture());
+            }
+            _ => {}
+        }
         self.0.remove(edge)
     }
 

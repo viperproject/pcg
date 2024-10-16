@@ -264,7 +264,7 @@ impl<'tcx> AbstractionType<'tcx> {
             .flat_map(|edge| edge.outputs())
             .flat_map(|output| match output {
                 AbstractionTarget::Place(p) => Some(p),
-                AbstractionTarget::RegionProjection(_) => None,
+                AbstractionTarget::RegionProjection(p) => Some(p.place),
             })
             .collect()
     }

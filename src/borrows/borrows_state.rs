@@ -87,7 +87,6 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }
@@ -313,7 +312,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn bridge(
         &self,
         to: &Self,
-        _debug_ctx: DebugCtx,
+        debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> ReborrowBridge<'tcx> {
         let added_reborrows: FxHashSet<Conditioned<Reborrow<'tcx>>> = to
@@ -342,6 +341,8 @@ impl<'tcx> BorrowsState<'tcx> {
 
         for abstraction in self.region_abstractions() {
             if !to.region_abstractions().contains(&abstraction) {
+                eprintln!("{:?} Killing abstraction {:?}", debug_ctx, abstraction);
+                eprintln!("Region abstractions: {:?}", to.region_abstractions());
                 ug.kill_abstraction(self, abstraction, repacker);
             }
         }
