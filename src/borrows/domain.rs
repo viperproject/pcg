@@ -4,7 +4,7 @@ use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
     hir::def_id::DefId,
-    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem},
+    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK},
     middle::ty::{self, GenericArgsRef, RegionVid, TyCtxt},
 };
 
@@ -280,6 +280,14 @@ pub enum MaybeOldPlace<'tcx> {
     OldPlace(PlaceSnapshot<'tcx>),
 }
 
+impl<'tcx> From<mir::Local> for MaybeOldPlace<'tcx> {
+    fn from(local: mir::Local) -> Self {
+        Self::Current {
+            place: local.into(),
+        }
+    }
+}
+
 impl<'tcx> From<mir::Place<'tcx>> for MaybeOldPlace<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
         Self::Current {
@@ -323,7 +331,19 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         idx: usize,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx> {
-        self.region_projections(repacker)[idx]
+        let region_projections = self.region_projections(repacker);
+        if idx < region_projections.len() {
+            region_projections[idx]
+        } else {
+            panic!(
+                "Region projection index {:?} out of bounds for place {:?}",
+                idx, self
+            );
+        }
+    }
+
+    pub fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.region_projections(repacker).len() > 0
     }
 
     pub fn region_projections(
@@ -454,7 +474,26 @@ pub enum MaybeRemotePlace<'tcx> {
 
     /// The blocked place that a borrows in function inputs; e.g for a function
     /// `f(&mut x)` the blocked place is `Remote(x)`
-    Remote(mir::Local),
+    Remote(RemotePlace),
+}
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+pub struct RemotePlace {
+    local: mir::Local,
+}
+
+impl RemotePlace {
+    pub fn region_projections<'tcx>(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<RegionProjection<'tcx>> {
+        let maybe_old_place =
+            MaybeOldPlace::new(self.local.into(), Some(SnapshotLocation::Join(START_BLOCK)));
+        maybe_old_place.region_projections(repacker)
+    }
+
+    pub fn assigned_local(self) -> mir::Local {
+        self.local
+    }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
@@ -476,11 +515,14 @@ impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
+    pub fn place_assigned_to_local(local: mir::Local) -> Self {
+        MaybeRemotePlace::Remote(RemotePlace { local })
+    }
     pub fn is_old(&self) -> bool {
         matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
-    pub fn as_local(&self) -> Option<MaybeOldPlace<'tcx>> {
+    pub fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(*p),
             MaybeRemotePlace::Remote(_) => None,
@@ -491,6 +533,13 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
             MaybeRemotePlace::Remote(_) => todo!(),
+        }
+    }
+
+    pub fn mir_local(&self) -> mir::Local {
+        match self {
+            MaybeRemotePlace::Local(p) => p.place().local,
+            MaybeRemotePlace::Remote(remote_place) => remote_place.assigned_local(),
         }
     }
 }
@@ -553,32 +602,14 @@ impl<'tcx> Reborrow<'tcx> {
         }
     }
 
-    pub fn region_projection_edges(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
-        if let (Some(blocked_place_prefix), Some(assigned_place_prefix)) = (
-            self.blocked_place_prefix(repacker),
-            self.assigned_place_prefix(repacker),
-        ) {
-            RegionProjection::connections_between_places(
-                blocked_place_prefix.with_inherent_region(repacker),
-                assigned_place_prefix.with_inherent_region(repacker),
-                repacker,
-            )
-        } else {
-            FxHashSet::default()
-        }
-    }
-
     fn blocked_place_prefix(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<MaybeOldPlace<'tcx>> {
         match self.blocked_place {
             MaybeRemotePlace::Local(maybe_old_place) => maybe_old_place.prefix_place(repacker),
-            MaybeRemotePlace::Remote(local) => Some(MaybeOldPlace::Current {
-                place: local.into(),
+            MaybeRemotePlace::Remote(remote_place) => Some(MaybeOldPlace::Current {
+                place: remote_place.assigned_local().into(),
             }),
         }
     }

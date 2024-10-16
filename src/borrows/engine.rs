@@ -269,7 +269,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             {
                 let arg_place: Place<'tcx> = arg.into();
                 self.after.add_reborrow(
-                    MaybeRemotePlace::Remote(arg),
+                    MaybeRemotePlace::place_assigned_to_local(arg),
                     arg_place.project_deref(self.repacker),
                     *mutability,
                     Location::START,

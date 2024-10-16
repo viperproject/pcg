@@ -174,7 +174,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                     vec![member.projection.place].into_iter().collect()
                 }
                 RegionProjectionMemberDirection::PlaceIsRegionOutput => {
-                    vec![member.place.as_local().unwrap()].into_iter().collect()
+                    vec![member.place.as_local_place().unwrap()].into_iter().collect()
                 }
             },
         }

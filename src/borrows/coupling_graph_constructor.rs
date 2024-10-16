@@ -16,34 +16,19 @@ use crate::{
 use super::{
     borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
     borrows_graph::BorrowsGraph,
-    domain::{
-        AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace,
-    },
+    domain::{AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace},
+    region_projection::RegionProjection,
 };
 
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-pub enum CGNode<'tcx> {
-    Local(Place<'tcx>),
-    Remote(Local),
-}
+pub type CGNode<'tcx> = RegionProjection<'tcx>;
 
 impl<'tcx> CGNode<'tcx> {
     pub fn to_abstraction_input_target(&self) -> AbstractionInputTarget<'tcx> {
-        match self {
-            CGNode::Local(place) => AbstractionInputTarget::Place((*place).into()),
-            CGNode::Remote(local) => {
-                AbstractionInputTarget::Place(MaybeRemotePlace::Remote(*local))
-            }
-        }
+        AbstractionInputTarget::RegionProjection(*self)
     }
 
     pub fn to_abstraction_output_target(&self) -> AbstractionOutputTarget<'tcx> {
-        match self {
-            CGNode::Local(place) => AbstractionOutputTarget::Place((*place).into()),
-            CGNode::Remote(_) => {
-                unreachable!()
-            }
-        }
+        AbstractionOutputTarget::RegionProjection(*self)
     }
 }
 
@@ -87,68 +72,26 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
 
     fn add_edges_from(
         &mut self,
-        bg: &BorrowsGraph<'tcx>,
-        path_edges: FxHashSet<BorrowsEdge<'tcx>>,
-        from: Place<'tcx>,
-        curr: MaybeOldPlace<'tcx>,
+        bg: &coupling::Graph<CGNode<'tcx>>,
+        bottom_connect: RegionProjection<'tcx>,
+        upper_candidate: RegionProjection<'tcx>,
     ) {
-        let edges = bg.edges_blocked_by(curr, self.repacker);
-        for edge in edges {
-            let mut new_path_edges = path_edges.clone();
-            new_path_edges.insert(edge.clone());
-            match edge.kind() {
-                BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.blocked_place {
-                    MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
-                        let live_origins =
-                            self.output_facts
-                                .origins_live_at(self.location_table.start_index(Location {
-                                    block: self.block,
-                                    statement_index: 0,
-                                }));
-                        if let Some((ref_place, PlaceElem::Deref)) = place.last_projection() {
-                            if let ty::TyKind::Ref(region, _, _) =
-                                ref_place.ty(self.repacker).ty.kind()
-                            {
-                                if let ty::RegionKind::ReVar(region_vid) = region.kind() {
-                                    if !live_origins.contains(&region_vid.into()) {
-                                        for edge in bg.edges_blocked_by(place.into(), self.repacker)
-                                        {
-                                            match edge.kind() {
-                                                BorrowsEdgeKind::DerefExpansion(_) => {
-                                                    self.to_remove.insert(edge);
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                        self.add_edges_from(bg, new_path_edges, from, place.into());
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                        self.coupling_graph
-                            .add_edge(CGNode::Local(from), CGNode::Local(place.into()));
-                        self.to_remove.extend(new_path_edges);
-                        self.add_edges_from(bg, FxHashSet::default(), place.into(), place.into());
-                    }
-                    MaybeRemotePlace::Local(old_place) => {
-                        self.add_edges_from(bg, new_path_edges, from, old_place)
-                    }
-                    MaybeRemotePlace::Remote(local) => {
-                        self.to_remove.extend(new_path_edges);
-                        self.coupling_graph
-                            .add_edge(CGNode::Local(from), CGNode::Remote(local));
-                    }
-                },
-                BorrowsEdgeKind::DerefExpansion(de) => {
-                    self.add_edges_from(bg, new_path_edges, from, de.base());
-                }
-                BorrowsEdgeKind::Abstraction(_) => {
-                    // TODO
-                }
-                BorrowsEdgeKind::RegionProjectionMember(_) => {
-                    // TODO
-                }
+        let nodes = bg.nodes_pointing_to(upper_candidate);
+        if nodes.is_empty() {
+            self.coupling_graph.add_edge(upper_candidate, bottom_connect);
+        }
+        for node in nodes {
+            let live_origins = self
+                .output_facts
+                .origins_live_at(self.location_table.start_index(Location {
+                    block: self.block,
+                    statement_index: 0,
+                }));
+            if node.place.is_old() || !live_origins.contains(&node.region().into()) {
+                self.add_edges_from(bg, bottom_connect, node);
+            } else {
+                self.coupling_graph.add_edge(upper_candidate, bottom_connect);
+                self.add_edges_from(bg, bottom_connect, node);
             }
         }
     }
@@ -156,17 +99,12 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
     pub fn construct_coupling_graph(
         mut self,
         bg: &BorrowsGraph<'tcx>,
-        leaf_nodes: FxHashSet<MaybeOldPlace<'tcx>>,
     ) -> (coupling::Graph<CGNode<'tcx>>, FxHashSet<BorrowsEdge<'tcx>>) {
-        for node in leaf_nodes {
-            match node {
-                MaybeOldPlace::Current { place } => {
-                    self.add_edges_from(bg, FxHashSet::default(), place, node)
-                }
-                MaybeOldPlace::OldPlace(_) => {
-                    // TODO
-                }
-            }
+        let full_graph = bg.region_projection_graph(self.repacker);
+        full_graph.render_with_imgcat().unwrap();
+        for node in full_graph.leaf_nodes() {
+            eprintln!("leaf: {:?}", node);
+            self.add_edges_from(&full_graph, node, node)
         }
         (self.coupling_graph, self.to_remove)
     }

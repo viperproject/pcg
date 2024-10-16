@@ -43,19 +43,49 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowDerefExpansion<'tcx> {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct OwnedExpansion<'tcx> {
+    base: MaybeOldPlace<'tcx>,
+}
+
+impl<'tcx> OwnedExpansion<'tcx> {
+    pub fn new(base: MaybeOldPlace<'tcx>) -> Self {
+        Self { base }
+    }
+
+    pub fn base(&self) -> MaybeOldPlace<'tcx> {
+        self.base
+    }
+
+    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        self.base.project_deref(repacker)
+    }
+
+    pub fn base_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> RegionProjection<'tcx> {
+        self.base.region_projection(0, repacker)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum DerefExpansion<'tcx> {
     /// An expansion of a place in the FPCS
-    OwnedExpansion { base: MaybeOldPlace<'tcx> },
+    OwnedExpansion(OwnedExpansion<'tcx>),
     /// An expansion of a place in the PCS
     BorrowExpansion(BorrowDerefExpansion<'tcx>),
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for OwnedExpansion<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        vec![&mut self.base]
+    }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for DerefExpansion<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
-            DerefExpansion::OwnedExpansion { base, .. } => {
-                vec![base]
-            }
+            DerefExpansion::OwnedExpansion(owned) => owned.pcs_elems(),
             DerefExpansion::BorrowExpansion(e) => e.pcs_elems(),
         }
     }
@@ -79,7 +109,7 @@ impl<'tcx> DerefExpansion<'tcx> {
 
     pub fn mut_base(&mut self) -> &mut MaybeOldPlace<'tcx> {
         match self {
-            DerefExpansion::OwnedExpansion { base, .. } => base,
+            DerefExpansion::OwnedExpansion(owned) => &mut owned.base,
             DerefExpansion::BorrowExpansion(e) => &mut e.base,
         }
     }
@@ -117,15 +147,15 @@ impl<'tcx> DerefExpansion<'tcx> {
 
     pub fn base(&self) -> MaybeOldPlace<'tcx> {
         match self {
-            DerefExpansion::OwnedExpansion { base, .. } => *base,
+            DerefExpansion::OwnedExpansion(owned) => owned.base(),
             DerefExpansion::BorrowExpansion(e) => e.base,
         }
     }
 
     pub fn set_base(&mut self, base: MaybeOldPlace<'tcx>) {
         match self {
-            DerefExpansion::OwnedExpansion { base: b, .. } => {
-                *b = base;
+            DerefExpansion::OwnedExpansion(owned) => {
+                owned.base = base;
             }
             DerefExpansion::BorrowExpansion(e) => {
                 e.base = base;
@@ -151,7 +181,7 @@ impl<'tcx> DerefExpansion<'tcx> {
 
     pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<MaybeOldPlace<'tcx>> {
         match self {
-            DerefExpansion::OwnedExpansion { base, .. } => vec![base.project_deref(repacker)],
+            DerefExpansion::OwnedExpansion(owned) => vec![owned.expansion(repacker)],
             DerefExpansion::BorrowExpansion(e) => e.expansion(repacker),
         }
     }

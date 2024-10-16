@@ -87,6 +87,11 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+
+    pub fn graph(&self) -> &BorrowsGraph<'tcx> {
+        &self.graph
+    }
+
     pub fn assert_invariants_satisfied(&self, repacker: PlaceRepacker<'_, 'tcx>) {
         self.graph.assert_invariants_satisfied(repacker);
     }

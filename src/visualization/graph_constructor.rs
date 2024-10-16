@@ -1,11 +1,12 @@
 use crate::{
     borrows::{
         borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
+        borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         deref_expansion::DerefExpansion,
         domain::{
             AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget, MaybeOldPlace,
-            MaybeRemotePlace,
+            MaybeRemotePlace, RemotePlace,
         },
         region_abstraction::AbstractionEdge,
         region_projection::RegionProjection,
@@ -18,6 +19,7 @@ use crate::{
 };
 
 use std::{
+    borrow::Borrow,
     collections::{BTreeSet, HashSet},
     ops::Deref,
 };
@@ -65,7 +67,7 @@ impl GraphCluster {
 }
 
 struct GraphConstructor<'mir, 'tcx> {
-    remote_nodes: IdLookup<Local>,
+    remote_nodes: IdLookup<RemotePlace>,
     place_nodes: IdLookup<(Place<'tcx>, Option<SnapshotLocation>)>,
     region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
     region_clusters: HashSet<GraphCluster>,
@@ -214,15 +216,15 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         self.region_clusters.insert(cluster);
     }
 
-    fn insert_remote_node(&mut self, local: Local) -> NodeId {
-        if let Some(id) = self.remote_nodes.existing_id(&local) {
+    fn insert_remote_node(&mut self, remote_place: RemotePlace) -> NodeId {
+        if let Some(id) = self.remote_nodes.existing_id(&remote_place) {
             return id;
         }
-        let id = self.remote_nodes.node_id(&local);
+        let id = self.remote_nodes.node_id(&remote_place);
         let node = GraphNode {
             id,
             node_type: NodeType::ReborrowingDagNode {
-                label: format!("Target of input {:?}", local),
+                label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
             },
         };
@@ -282,7 +284,7 @@ impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
 
     pub fn construct_graph(mut self) -> Graph {
         for edge in self.unblock_graph.edges().cloned().collect::<Vec<_>>() {
-            self.draw_borrows_edge(&edge);
+            self.draw_borrows_edge(&edge, None);
         }
         self.constructor.to_graph()
     }
@@ -315,21 +317,20 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId;
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
-    fn draw_borrows_edge(&mut self, edge: &BorrowsEdge<'tcx>) {
+    fn draw_borrows_edge(&mut self, edge: &BorrowsEdge<'tcx>, graph: Option<&BorrowsGraph<'tcx>>) {
         match edge.kind() {
             BorrowsEdgeKind::DerefExpansion(deref_expansion) => {
                 let base_node = self.insert_maybe_old_place(deref_expansion.base());
                 match deref_expansion {
-                    DerefExpansion::OwnedExpansion { base, .. } => {
-                        let target =
-                            self.insert_maybe_old_place(base.project_deref(self.repacker()));
+                    DerefExpansion::OwnedExpansion(owned) => {
+                        let target = self.insert_maybe_old_place(owned.expansion(self.repacker()));
                         self.constructor()
                             .edges
                             .insert(GraphEdge::DerefExpansionEdge {
                                 source: base_node,
                                 target,
                             });
-                        let base_rp = base.region_projection(0, self.repacker());
+                        let base_rp = owned.base_region_projection(self.repacker());
                         let base_rp_node =
                             self.constructor().insert_region_projection_node(base_rp);
                         self.constructor()
@@ -362,7 +363,9 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     region: format!("{:?}", reborrow.region),
                     path_conditions: format!("{}", edge.conditions()),
                 });
-                for (e1, e2) in reborrow.region_projection_edges(self.repacker()) {
+                if let Some(graph) = graph
+                    && let Some((e1, e2)) = graph.region_projection_edge(reborrow, self.repacker())
+                {
                     let borrowed_place = self.constructor().insert_region_projection_node(e1);
                     let assigned_place = self.constructor().insert_region_projection_node(e2);
                     self.constructor()
@@ -509,7 +512,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             }
         }
         for edge in self.borrows_domain.graph_edges() {
-            self.draw_borrows_edge(edge);
+            self.draw_borrows_edge(edge, Some(self.borrows_domain.graph()));
         }
 
         self.constructor.to_graph()

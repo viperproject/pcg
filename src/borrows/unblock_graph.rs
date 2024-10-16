@@ -299,7 +299,8 @@ impl<'tcx> UnblockGraph<'tcx> {
         mut history: UnblockHistory<'tcx>,
     ) {
         if !history.record(UnblockHistoryAction::KillReborrow(reborrow.value.clone())) {
-            panic!("bug");
+            self.report_error();
+            return;
         }
         self.unblock_place_internal(
             reborrow.value.assigned_place.into(),

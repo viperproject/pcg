@@ -116,7 +116,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .ensure_expansion_to_exactly(self.tcx, self.body, place, location)
     }
 
-    fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
+    fn _loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
         let location = if start {
             self.location_table.start_index(location)
         } else {
@@ -381,21 +381,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             self.minimize(location);
         }
         self.super_statement(statement, location);
-        if self.preparing {
-            // let mut g = UnblockGraph::new();
-
-            // for loan in self.loans_invalidated_at(location, self.before) {
-            //     let borrow = &self.borrow_set[loan];
-            //     g.kill_reborrows_reserved_at(
-            //         borrow.reserve_location,
-            //         &self.state.after,
-            //         self.repacker(),
-            //     );
-            // }
-
-            // let repacker = PlaceRepacker::new(self.body, self.tcx);
-            // self.state.after.apply_unblock_graph(g, repacker, location);
-        }
 
         // Will be included as start bridge ops
         if self.preparing && self.before {

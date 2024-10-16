@@ -1,6 +1,6 @@
 use petgraph::dot::{Config, Dot};
 use petgraph::graphmap::DiGraphMap;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::fmt;
 use std::hash::Hash;
 
@@ -15,7 +15,7 @@ struct Edge<N> {
 
 #[derive(Clone, Debug)]
 pub struct Graph<N> {
-    adjacency: HashMap<N, HashSet<N>>, // Node -> Set of adjacent nodes (LHS -> RHS)
+    edges: HashSet<(N, N)>, // Set of edges (from, to)
 }
 impl<N> Graph<N>
 where
@@ -24,10 +24,8 @@ where
     /// Converts the custom Graph into a petgraph DiGraphMap
     fn to_petgraph(&self) -> DiGraphMap<N, ()> {
         let mut graph = DiGraphMap::<N, ()>::new();
-        for (from, tos) in &self.adjacency {
-            for to in tos {
-                graph.add_edge(from.clone(), to.clone(), ());
-            }
+        for (from, to) in &self.edges {
+            graph.add_edge(*from, *to, ());
         }
         graph
     }
@@ -35,12 +33,59 @@ where
 
 impl<N> Graph<N>
 where
-    N: Eq + Hash + Clone + Copy + fmt::Debug,
+    N: Eq + Hash + Clone + Copy + fmt::Debug
 {
     pub fn new() -> Self {
         Graph {
-            adjacency: HashMap::new(),
+            edges: HashSet::new(),
         }
+    }
+
+    pub fn edges(&self) -> impl Iterator<Item = &(N, N)> {
+        self.edges.iter()
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        let mut new_edges = self.edges.clone();
+        new_edges.extend(other.edges.iter().cloned());
+        Graph {
+            edges: new_edges,
+        }
+    }
+
+    pub fn transitive_reduction(&self) -> Self {
+        let mut reduction = self.clone();
+
+        // For each edge (u, v) in the graph
+        for &(u, v) in &self.edges {
+            // Skip if there's no need to process (u, v)
+            if u == v {
+                continue;
+            }
+
+            // Perform BFS to find all nodes reachable from 'v'
+            let mut visited = HashSet::new();
+            let mut queue = VecDeque::new();
+            queue.push_back(v);
+            visited.insert(v);
+
+            while let Some(current) = queue.pop_front() {
+                // If there's a direct edge from 'u' to 'current', and 'current' is not 'v'
+                if current != v && reduction.has_edge(&u, &current) {
+                    // Remove the redundant edge (u, current)
+                    reduction.remove_edge(&u, &current);
+                }
+
+                for &(from, to) in &self.edges {
+                    if from == current && !visited.contains(&to) {
+                        visited.insert(to);
+                        queue.push_back(to);
+                    }
+                }
+            }
+        }
+
+        reduction
     }
 
     fn to_dot_petgraph(&self) -> String {
@@ -69,33 +114,18 @@ where
         F: Fn(N) -> T,
         T: Eq + Hash + Clone + Copy + Ord + fmt::Debug,
     {
-        let mut new_adjacency = HashMap::new();
-        for (node, neighbors) in &self.adjacency {
-            let new_node = f(*node);
-            let new_neighbors = neighbors.iter().map(|n| f(*n)).collect();
-            new_adjacency.insert(new_node, new_neighbors);
-        }
+        let new_edges = self.edges.iter().map(|(from, to)| (f(*from), f(*to))).collect();
         Graph {
-            adjacency: new_adjacency,
+            edges: new_edges,
         }
     }
 
     fn has_edges(&self) -> bool {
-        for neighbors in self.adjacency.values() {
-            if !neighbors.is_empty() {
-                return true;
-            }
-        }
-        false
+        !self.edges.is_empty()
     }
 
     pub fn add_edge(&mut self, from: N, to: N) {
-        self.adjacency
-            .entry(from.clone())
-            .or_insert_with(HashSet::new)
-            .insert(to.clone());
-        // Ensure the 'to' node is in the adjacency map, even if it has no outgoing edges
-        self.adjacency.entry(to).or_insert_with(HashSet::new);
+        self.edges.insert((from, to));
     }
 
     /// Adds edges between consecutive nodes in the provided path.
@@ -113,42 +143,34 @@ where
     }
 
     fn remove_edge(&mut self, from: &N, to: &N) {
-        if let Some(neighbors) = self.adjacency.get_mut(from) {
-            neighbors.remove(to);
-            // Keep 'from' node in adjacency even if it has no more outgoing edges
-        }
+        self.edges.remove(&(*from, *to));
     }
 
-    /// Checks if a node is a leaf (i.e., has no incoming edges)
+    /// Checks if a node is a leaf (i.e., has no outgoing edges)
     fn is_leaf(&self, node: &N) -> bool {
-        !self
-            .adjacency
-            .values()
-            .any(|neighbors| neighbors.contains(node))
+        !self.edges.iter().any(|(from, _)| from == node)
     }
 
     fn is_disconnected(&self, node: &N) -> bool {
-        self.is_leaf(node) && self.adjacency.get(node).map_or(true, HashSet::is_empty)
+        self.is_leaf(node) && !self.edges.iter().any(|(_, to)| to == node)
     }
 
     fn remove_node(&mut self, node: &N) {
-        self.adjacency.remove(node);
-        for neighbors in self.adjacency.values_mut() {
-            neighbors.remove(node);
-        }
+        self.edges.retain(|(from, to)| from != node && to != node);
     }
 
     /// Returns all nodes in the graph
     fn get_all_nodes(&self) -> HashSet<N> {
-        let mut nodes = self.adjacency.keys().cloned().collect::<HashSet<_>>();
-        for neighbors in self.adjacency.values() {
-            nodes.extend(neighbors.clone());
+        let mut nodes = HashSet::new();
+        for (from, to) in &self.edges {
+            nodes.insert(*from);
+            nodes.insert(*to);
         }
         nodes
     }
 
     /// Returns the leaf nodes (nodes with no incoming edges)
-    fn get_leaf_nodes(&self) -> Vec<N> {
+    pub fn leaf_nodes(&self) -> Vec<N> {
         let all_nodes = self.get_all_nodes();
         all_nodes
             .into_iter()
@@ -158,11 +180,20 @@ where
 
     /// Checks if there is an edge from `from` to `to`
     fn has_edge(&self, from: &N, to: &N) -> bool {
-        if let Some(neighbors) = self.adjacency.get(from) {
-            neighbors.contains(to)
-        } else {
-            false
-        }
+        self.edges.contains(&(*from, *to))
+    }
+
+    pub fn nodes_pointing_to(&self, node: N) -> HashSet<N> {
+        self.edges
+            .iter()
+            .filter_map(|(from, to)| {
+                if to == &node {
+                    Some(*from)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -210,13 +241,8 @@ where
     N: Eq + Hash + Clone + fmt::Display + Copy + Ord + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (from, tos) in &self.adjacency {
-            if tos.is_empty() {
-                writeln!(f, "{} -> []", from)?;
-            } else {
-                let to_nodes: Vec<_> = tos.iter().collect();
-                writeln!(f, "{} -> {:?}", from, to_nodes)?;
-            }
+        for (from, to) in &self.edges {
+            writeln!(f, "{} -> {}", from, to)?;
         }
         Ok(())
     }
@@ -260,9 +286,9 @@ where
     } else {
         // Collect candidates to avoid borrowing issues
         let candidates: Vec<N> = g
-            .adjacency
+            .edges
             .iter()
-            .filter(|(n_prime, neighbors)| neighbors.contains(n) && g.is_leaf(n_prime))
+            .filter(|(n_prime, to)| to == n && g.is_leaf(n_prime))
             .map(|(n_prime, _)| n_prime.clone())
             .collect();
 
@@ -347,15 +373,13 @@ where
         return None; // Return failure
     }
 
-    if let Some(neighbors) = g.adjacency.get(n) {
-        if !neighbors.is_empty() {
-            // There is an edge n -> n' in G
-            let n_prime = neighbors.iter().next().unwrap().clone();
-            g.remove_edge(n, &n_prime);
-            g.remove_node(n);
-            w.rhs.insert(n_prime.clone());
-            return Some((w, g));
-        }
+    if let Some((_, n_prime)) = g.edges.iter().find(|(from, _)| from == n) {
+        // There is an edge n -> n' in G
+        let n_prime = n_prime.clone();
+        g.remove_edge(n, &n_prime);
+        g.remove_node(n);
+        w.rhs.insert(n_prime.clone());
+        return Some((w, g));
     }
 
     // Remove n from G

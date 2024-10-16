@@ -2,21 +2,21 @@ use rustc_interface::{
     ast::Mutability,
     borrowck::consumers::{LocationTable, PoloniusOutput},
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Location},
+    middle::mir::{self, BasicBlock, Location, START_BLOCK},
     middle::ty::{Region, TyCtxt},
 };
 use serde_json::json;
 
 use crate::{
     coupling, rustc_interface,
-    utils::{Place, PlaceRepacker},
+    utils::{Place, PlaceRepacker, SnapshotLocation},
 };
 
 use super::{
     borrows_edge::{BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
-    deref_expansion::DerefExpansion,
+    deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
         AbstractionBlockEdge, AbstractionTarget, AbstractionType, LoopAbstraction, MaybeOldPlace,
         MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
@@ -25,6 +25,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,6 +46,41 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn edges(&self) -> impl Iterator<Item = &BorrowsEdge<'tcx>> {
         self.0.iter()
+    }
+
+    pub fn region_projection_graph(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> coupling::Graph<RegionProjection<'tcx>> {
+        let mut graph = coupling::Graph::new();
+        for edge in self.0.iter() {
+            if let BorrowsEdgeKind::Reborrow(reborrow) = &edge.kind() {
+                if let Some((from, to)) = self.region_projection_edge(reborrow, repacker) {
+                    graph.add_edge(from, to);
+                }
+            }
+        }
+        graph
+    }
+
+    pub fn region_projection_edge(
+        &self,
+        reborrow: &Reborrow<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
+        fn to_rp<'tcx>(
+            place: MaybeOldPlace<'tcx>,
+            repacker: PlaceRepacker<'_, 'tcx>,
+        ) -> Option<RegionProjection<'tcx>> {
+            let rp_place = MaybeOldPlace::new(place.place().local.into(), place.location());
+            rp_place.region_projections(repacker).get(0).cloned()
+        }
+        let from = match reborrow.blocked_place {
+            MaybeRemotePlace::Local(maybe_old_place) => to_rp(maybe_old_place, repacker),
+            MaybeRemotePlace::Remote(local) => local.region_projections(repacker).get(0).cloned(),
+        }?;
+        let to = to_rp(reborrow.assigned_place, repacker)?;
+        Some((from, to))
     }
 
     pub fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
@@ -152,7 +188,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 if blocked_place == blocked {
                     count += 1;
                 } else {
-                    if let Some(blocked_place) = blocked_place.as_local() {
+                    if let Some(blocked_place) = blocked_place.as_local_place() {
                         count += self.num_paths_between(blocked_place, blocked, repacker);
                     }
                 }
@@ -182,7 +218,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             AbstractionTarget::Place(MaybeRemotePlace::Local(place)) => {
                                 if place.is_old() {
                                     for rb in self.reborrows_blocked_by(place) {
-                                        if let Some(local_place) = rb.value.blocked_place.as_local()
+                                        if let Some(local_place) =
+                                            rb.value.blocked_place.as_local_place()
                                         {
                                             assert!(
                                                 !local_place.is_old(),
@@ -337,11 +374,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         location_table: &LocationTable,
         repacker: PlaceRepacker<'_, 'tcx>,
         block: BasicBlock,
-        leaf_nodes: FxHashSet<MaybeOldPlace<'tcx>>,
     ) -> (coupling::Graph<CGNode<'tcx>>, FxHashSet<BorrowsEdge<'tcx>>) {
         let constructor =
             CouplingGraphConstructor::new(output_facts, location_table, repacker, block);
-        constructor.construct_coupling_graph(self, leaf_nodes)
+        constructor.construct_coupling_graph(self)
     }
 
     fn join_loop(
@@ -353,43 +389,31 @@ impl<'tcx> BorrowsGraph<'tcx> {
         output_facts: &PoloniusOutput,
         location_table: &LocationTable,
     ) -> bool {
-        let self_leaf_nodes = self.leaf_nodes(repacker);
-        let other_leaf_nodes = other.leaf_nodes(repacker);
-        let (self_coupling_graph, self_to_remove) = self.construct_coupling_graph(
-            output_facts,
-            location_table,
-            repacker,
-            exit_block,
-            self_leaf_nodes,
-        );
-        let (other_coupling_graph, _) = other.construct_coupling_graph(
-            output_facts,
-            location_table,
-            repacker,
-            exit_block,
-            other_leaf_nodes,
-        );
-        // self_coupling_graph.render_with_imgcat().unwrap();
-        // other_coupling_graph.render_with_imgcat().unwrap();
-        let hypergraph =
-            coupling::coupling_algorithm(self_coupling_graph, other_coupling_graph).unwrap();
-        // eprintln!("Result: {:?}", hypergraph);
+        eprintln!("Attempt join loop {:?} -> {:?}", self_block, exit_block);
+        let (self_coupling_graph, self_to_remove) =
+            self.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
+        let (other_coupling_graph, _) =
+            other.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
+        self_coupling_graph.render_with_imgcat().unwrap();
+        other_coupling_graph.render_with_imgcat().unwrap();
+        let result = self_coupling_graph
+            .union(&other_coupling_graph)
+            .transitive_reduction();
+        result.render_with_imgcat().unwrap();
         let mut changed = false;
         for edge in self_to_remove.iter() {
             if self.remove(edge, DebugCtx::Other) {
                 changed = true;
             }
         }
-        for edge in hypergraph.edges() {
+        for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
-                    edge.rhs()
-                        .iter()
-                        .map(|n| n.to_abstraction_input_target())
+                    vec![blocked.to_abstraction_input_target()]
+                        .into_iter()
                         .collect(),
-                    edge.lhs()
-                        .iter()
-                        .map(|n| n.to_abstraction_output_target())
+                    vec![assigned.to_abstraction_output_target()]
+                        .into_iter()
                         .collect(),
                 ),
                 self_block,
@@ -427,10 +451,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 return false;
             }
         }
+        eprintln!("borrows graph join {:?} -> {:?}", self_block, other_block);
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
-            if exit_blocks.len() == 1 {
+            if false && exit_blocks.len() == 1 {
                 return self.join_loop(
                     other,
                     self_block,
@@ -438,6 +463,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     repacker,
                     output_facts,
                     location_table,
+                );
+            } else {
+                eprintln!(
+                    "borrows graph join {:?} -> {:?}: multiple exit blocks {:?}",
+                    self_block, other_block, exit_blocks
                 );
             }
             // TODO: Handle multiple exit blocks
@@ -625,7 +655,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             assert!(p.projection.len() > place.place().projection.len());
         }
         let de = if place.place().is_owned(repacker.body(), repacker.tcx()) {
-            DerefExpansion::OwnedExpansion { base: place }
+            let owned_expansion = OwnedExpansion::new(place);
+            DerefExpansion::OwnedExpansion(owned_expansion)
         } else {
             DerefExpansion::borrowed(place, expansion, location, repacker)
         };
