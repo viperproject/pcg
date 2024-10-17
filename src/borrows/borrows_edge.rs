@@ -1,20 +1,16 @@
 use rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet, middle::mir::BasicBlock};
 
-use crate::{
-    rustc_interface,
-    utils::{Place, PlaceRepacker},
-};
+use crate::{rustc_interface, utils::PlaceRepacker};
 
 use super::{
     borrows_graph::Conditioned,
-    borrows_state::{RegionProjectionMember, RegionProjectionMemberDirection},
     deref_expansion::DerefExpansion,
     domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
     has_pcs_elem::HasPcsElems,
-    latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
     region_projection::RegionProjection,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -174,7 +170,9 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                     vec![member.projection.place].into_iter().collect()
                 }
                 RegionProjectionMemberDirection::PlaceIsRegionOutput => {
-                    vec![member.place.as_local_place().unwrap()].into_iter().collect()
+                    vec![member.place.as_local_place().unwrap()]
+                        .into_iter()
+                        .collect()
                 }
             },
         }

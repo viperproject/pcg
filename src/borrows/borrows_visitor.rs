@@ -21,7 +21,6 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_state::RegionProjectionMember,
         domain::{AbstractionBlockEdge, AbstractionTarget},
         region_abstraction::AbstractionEdge,
     },
@@ -29,12 +28,11 @@ use crate::{
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
 
+use super::{domain::MaybeOldPlace, region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection}, unblock_graph::UnblockGraph};
 use super::{
-    borrows_state::RegionProjectionMemberDirection,
     domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
     engine::{BorrowsDomain, BorrowsEngine},
 };
-use super::{domain::MaybeOldPlace, unblock_graph::UnblockGraph};
 
 #[derive(Debug, Clone, Copy)]
 pub enum DebugCtx {
