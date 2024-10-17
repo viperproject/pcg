@@ -109,7 +109,7 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
 pub trait HasPlaces<'tcx> {
     fn places_mut(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>>;
 
-    fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
+    fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {
         for p in self.places_mut() {
             p.make_place_old(place, latest);
         }
@@ -451,11 +451,11 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             }
         )
     }
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
+    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {
         if self.is_current() && place.is_prefix(self.place()) {
             *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
                 place: self.place(),
-                at: latest.get(&self.place()),
+                at: latest.get(self.place()),
             });
         }
     }

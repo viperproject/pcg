@@ -173,6 +173,10 @@ enum GraphEdge {
         place: NodeId,
         region_projection: NodeId,
     },
+    RegionProjectionToDerefExpansionEdge {
+        region_projection: NodeId,
+        deref: NodeId,
+    },
     RegionProjectionBorrowEdge {
         borrowed_place: NodeId,
         assigned_place: NodeId,
@@ -206,6 +210,15 @@ impl GraphEdge {
             } => DotEdge {
                 from: borrowed_place.to_string(),
                 to: assigned_place.to_string(),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_color("orange".to_string()),
+            },
+            GraphEdge::RegionProjectionToDerefExpansionEdge {
+                region_projection,
+                deref,
+            } => DotEdge {
+                from: region_projection.to_string(),
+                to: deref.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string()),
             },

@@ -18,7 +18,7 @@ impl<'tcx> RegionProjection<'tcx> {
         Self { place, region }
     }
 
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest) {
+    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {
         self.place.make_place_old(place, latest);
     }
 

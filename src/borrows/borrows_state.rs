@@ -30,7 +30,7 @@ use super::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BorrowsState<'tcx> {
-    pub latest: Latest,
+    pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
 }
 
@@ -415,10 +415,10 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     pub fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) {
-        self.latest.insert(place.local, location.into());
+        self.latest.insert(place, location.into());
     }
 
-    pub fn get_latest(&self, place: &Place<'tcx>) -> SnapshotLocation {
+    pub fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
         self.latest.get(place)
     }
 

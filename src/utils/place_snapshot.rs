@@ -11,6 +11,12 @@ pub enum SnapshotLocation {
     Join(BasicBlock),
 }
 
+impl SnapshotLocation {
+    pub fn start() -> Self {
+        SnapshotLocation::Location(Location::START)
+    }
+}
+
 impl From<Location> for SnapshotLocation {
     fn from(loc: Location) -> Self {
         SnapshotLocation::Location(loc)

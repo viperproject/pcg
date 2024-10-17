@@ -5,9 +5,9 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use rustc_interface::middle::mir::{
-        visit::Visitor, Local, Location, Operand, ProjectionElem, Rvalue, Statement, StatementKind,
-        Terminator, TerminatorKind, RETURN_PLACE,
-    };
+    visit::Visitor, Local, Location, Operand, ProjectionElem, Rvalue, Statement, StatementKind,
+    Terminator, TerminatorKind, RETURN_PLACE,
+};
 
 use crate::{
     free_pcs::CapabilityKind,
@@ -176,10 +176,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
                 let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
                 let pre = Condition::Capability(place_to_expand_to, CapabilityKind::Write);
                 let post = Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive);
-                Triple {
-                    pre,
-                    post,
-                }
+                Triple { pre, post }
             }
             &FakeRead(box (_, place)) => Triple {
                 pre: Condition::capability(

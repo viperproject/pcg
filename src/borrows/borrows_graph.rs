@@ -257,7 +257,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
         _debug_ctx: Option<DebugCtx>,
     ) {
         self.mut_edges(|edge| {

@@ -28,7 +28,11 @@ use crate::{
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
 
-use super::{domain::MaybeOldPlace, region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection}, unblock_graph::UnblockGraph};
+use super::{
+    domain::MaybeOldPlace,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    unblock_graph::UnblockGraph,
+};
 use super::{
     domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
     engine::{BorrowsDomain, BorrowsEngine},
@@ -189,7 +193,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             };
             let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                 input_place,
-                self.state.after.get_latest(&input_place),
+                self.state.after.get_latest(input_place),
             ));
             let ty = match ty.kind() {
                 ty::TyKind::Ref(region, ty, m) => {
@@ -481,13 +485,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 self.state.after.change_pcs_elem(
                                     MaybeOldPlace::new(
                                         from.project_deref(self.repacker()),
-                                        Some(self.state.after.get_latest(&from)),
+                                        Some(self.state.after.get_latest(from)),
                                     ),
                                     target.project_deref(repacker).into(),
                                 );
                             }
                             let moved_place =
-                                MaybeOldPlace::new(from, Some(self.state.after.get_latest(&from)));
+                                MaybeOldPlace::new(from, Some(self.state.after.get_latest(from)));
                             for (idx, p) in moved_place
                                 .region_projections(repacker)
                                 .into_iter()

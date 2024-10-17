@@ -333,12 +333,12 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                         let base_rp = owned.base_region_projection(self.repacker());
                         let base_rp_node =
                             self.constructor().insert_region_projection_node(base_rp);
-                        self.constructor()
-                            .edges
-                            .insert(GraphEdge::DerefExpansionEdge {
-                                source: base_rp_node,
-                                target,
-                            });
+                        self.constructor().edges.insert(
+                            GraphEdge::RegionProjectionToDerefExpansionEdge {
+                                region_projection: base_rp_node,
+                                deref: target,
+                            },
+                        );
                     }
                     _ => {
                         for place in deref_expansion.expansion(self.repacker()) {
