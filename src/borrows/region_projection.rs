@@ -46,6 +46,14 @@ impl<'tcx> RegionProjection<'tcx> {
         }
         edges
     }
+
+    pub fn prefix_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx>> {
+        let prefix = self.place.prefix_place(repacker)?;
+        Some(RegionProjection::new(self.region, prefix))
+    }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx> {

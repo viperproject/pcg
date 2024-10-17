@@ -155,6 +155,25 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
+    fn insert_region_projection_and_ancestors(
+        &mut self,
+        projection: RegionProjection<'tcx>,
+    ) -> NodeId {
+        let node = self.insert_region_projection_node(projection);
+        let mut last_node = node;
+        let mut last_projection = projection;
+        while let Some(projection) = last_projection.prefix_projection(self.repacker) {
+            let node = self.insert_region_projection_node(projection);
+            self.edges.insert(GraphEdge::ProjectionEdge {
+                source: node,
+                target: last_node,
+            });
+            last_node = node;
+            last_projection = projection;
+        }
+        node
+    }
+
     fn insert_region_projection_node(&mut self, projection: RegionProjection<'tcx>) -> NodeId {
         if let Some(id) = self.region_projection_nodes.existing_id(&projection) {
             return id;
@@ -260,7 +279,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         };
         if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
             for region_projection in place.region_projections(self.repacker) {
-                self.insert_region_projection_node(region_projection);
+                self.insert_region_projection_and_ancestors(region_projection);
             }
         }
         let node = GraphNode { id, node_type };
@@ -331,8 +350,9 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                                 target,
                             });
                         let base_rp = owned.base_region_projection(self.repacker());
-                        let base_rp_node =
-                            self.constructor().insert_region_projection_node(base_rp);
+                        let base_rp_node = self
+                            .constructor()
+                            .insert_region_projection_and_ancestors(base_rp);
                         self.constructor().edges.insert(
                             GraphEdge::RegionProjectionToDerefExpansionEdge {
                                 region_projection: base_rp_node,
@@ -465,8 +485,8 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 self.repacker,
             );
             for (rp1, rp2) in connections {
-                let source = self.constructor.insert_region_projection_node(rp1);
-                let target = self.constructor.insert_region_projection_node(rp2);
+                let source = self.constructor.insert_region_projection_and_ancestors(rp1);
+                let target = self.constructor.insert_region_projection_and_ancestors(rp2);
                 self.constructor
                     .edges
                     .insert(GraphEdge::ProjectionEdge { source, target });
