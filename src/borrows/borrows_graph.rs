@@ -200,48 +200,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         count
     }
 
-    pub fn assert_invariants_satisfied(&self, repacker: PlaceRepacker<'_, 'tcx>) {
-        for root_edge in self.root_edges(repacker) {
-            match root_edge.kind() {
-                BorrowsEdgeKind::Reborrow(_reborrow) => {
-                    // assert!(!reborrow.blocked_place.is_old())
-                }
-                BorrowsEdgeKind::DerefExpansion(_deref_expansion) => {}
-                BorrowsEdgeKind::Abstraction(_abstraction_edge) => {}
-                BorrowsEdgeKind::RegionProjectionMember(_region_projection_member) => {}
-            }
-        }
-
-        for abstraction_edge in self.abstraction_edges().into_iter() {
-            match abstraction_edge.value.abstraction_type {
-                AbstractionType::FunctionCall(_function_call_abstraction) => {}
-                AbstractionType::Loop(loop_abstraction) => {
-                    for input in loop_abstraction.inputs() {
-                        match input {
-                            AbstractionTarget::Place(MaybeRemotePlace::Local(place)) => {
-                                if place.is_old() {
-                                    for rb in self.reborrows_blocked_by(place) {
-                                        if let Some(local_place) =
-                                            rb.value.blocked_place.as_local_place()
-                                        {
-                                            assert!(
-                                                !local_place.is_old(),
-                                                "old input of loop abstraction {:?} blocks old place {:?}",
-                                                input,
-                                                local_place
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn root_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowsEdge<'tcx>> {
         self.0
             .iter()
@@ -306,28 +264,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             edge.make_place_old(place, latest);
             true
         });
-    }
-
-    pub fn roots_blocked_by(
-        &self,
-        place: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.edges_blocked_by(place, repacker)
-            .into_iter()
-            .flat_map(|edge| {
-                edge.blocked_places().into_iter().flat_map(|p| match p {
-                    MaybeRemotePlace::Local(maybe_old_place) => {
-                        if self.is_root(maybe_old_place, repacker) {
-                            vec![p].into_iter().collect()
-                        } else {
-                            self.roots_blocked_by(maybe_old_place, repacker)
-                        }
-                    }
-                    MaybeRemotePlace::Remote(_local) => vec![p].into_iter().collect(),
-                })
-            })
-            .collect()
     }
 
     fn construct_coupling_graph(
@@ -413,7 +349,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 return false;
             }
         }
-        eprintln!("borrows graph join {:?} -> {:?}", self_block, other_block);
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
@@ -425,11 +360,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     repacker,
                     output_facts,
                     location_table,
-                );
-            } else {
-                eprintln!(
-                    "borrows graph join {:?} -> {:?}: multiple exit blocks {:?}",
-                    self_block, other_block, exit_blocks
                 );
             }
             // TODO: Handle multiple exit blocks

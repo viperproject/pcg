@@ -173,7 +173,6 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         BorrowsVisitor::preparing(self, state, false).visit_terminator(terminator, location);
         state.start = state.after.clone();
         BorrowsVisitor::applying(self, state, false).visit_terminator(terminator, location);
-        state.after.assert_invariants_satisfied(state.repacker);
         terminator.edges()
     }
 

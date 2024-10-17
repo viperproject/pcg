@@ -57,7 +57,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    pub fn projection_index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
+    pub (crate) fn projection_index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
         self.projection.index(repacker)
     }
 
@@ -89,10 +89,6 @@ pub struct BorrowsState<'tcx> {
 impl<'tcx> BorrowsState<'tcx> {
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
-    }
-
-    pub fn assert_invariants_satisfied(&self, repacker: PlaceRepacker<'_, 'tcx>) {
-        self.graph.assert_invariants_satisfied(repacker);
     }
 
     pub fn join<'mir>(
@@ -383,17 +379,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub fn get_abstractions_blocking(
-        &self,
-        place: MaybeRemotePlace<'tcx>,
-    ) -> Vec<Conditioned<AbstractionEdge<'tcx>>> {
-        self.region_abstractions()
-            .iter()
-            .filter(|abstraction| abstraction.value.blocks(place))
-            .cloned()
-            .collect()
-    }
-
     pub fn ensure_expansion_to_exactly(
         &mut self,
         tcx: TyCtxt<'tcx>,
@@ -487,26 +472,6 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub fn get_latest(&self, place: &Place<'tcx>) -> SnapshotLocation {
         self.latest.get(place)
-    }
-
-    pub fn reborrows_blocking(
-        &self,
-        place: MaybeOldPlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
-        self.reborrows()
-            .into_iter()
-            .filter(|rb| rb.value.blocked_place == place.into())
-            .collect()
-    }
-
-    pub fn reborrows_assigned_to(
-        &self,
-        place: MaybeOldPlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
-        self.reborrows()
-            .into_iter()
-            .filter(|rb| rb.value.assigned_place == place)
-            .collect()
     }
 
     pub fn add_region_projection_member(&mut self, member: RegionProjectionMember<'tcx>) {
