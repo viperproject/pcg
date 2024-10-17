@@ -24,7 +24,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_visitor::{extract_lifetimes, extract_nested_lifetimes, get_vid},
+        borrows_visitor::{extract_nested_lifetimes, get_vid},
         domain::MaybeOldPlace,
         region_projection::RegionProjection,
     },
@@ -99,8 +99,16 @@ impl<'tcx> Place<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
-        MaybeOldPlace::Current { place: self.clone() }.region_projections(repacker)
+        MaybeOldPlace::Current {
+            place: self.clone(),
+        }
+        .region_projections(repacker)
     }
+
+    pub fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.region_projections(repacker).len() > 0
+    }
+
     pub fn projection_index(
         &self,
         vid: RegionVid,
@@ -325,6 +333,19 @@ impl<'tcx> Place<'tcx> {
         } else {
             None
         }
+    }
+
+    pub fn nearest_owned_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+        if self.is_owned(repacker.body(), repacker.tcx) {
+            return self;
+        }
+        for (place, _) in self.iter_projections().rev() {
+            let place: Self = place.into();
+            if place.is_owned(repacker.body(), repacker.tcx) {
+                return place;
+            }
+        }
+        unreachable!()
     }
 
     pub fn debug_info(&self) -> DebugInfo<'static> {

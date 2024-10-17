@@ -176,7 +176,7 @@ enum GraphEdge {
     RegionProjectionBorrowEdge {
         borrowed_place: NodeId,
         assigned_place: NodeId,
-    }
+    },
 }
 
 impl GraphEdge {
@@ -200,11 +200,14 @@ impl GraphEdge {
                     .with_color("orange".to_string())
                     .with_label(format!("{} - {}", region, path_conditions)),
             },
-            GraphEdge::RegionProjectionBorrowEdge { borrowed_place, assigned_place } => DotEdge {
+            GraphEdge::RegionProjectionBorrowEdge {
+                borrowed_place,
+                assigned_place,
+            } => DotEdge {
                 from: borrowed_place.to_string(),
                 to: assigned_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
-                    .with_color("orange".to_string())
+                    .with_color("orange".to_string()),
             },
             GraphEdge::DerefExpansionEdge { source, target } => DotEdge {
                 from: source.to_string(),
@@ -222,7 +225,8 @@ impl GraphEdge {
             } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
-                options: EdgeOptions::directed(EdgeDirection::Forward),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_color("purple".to_string()),
             },
         }
     }

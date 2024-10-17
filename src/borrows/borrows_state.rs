@@ -341,8 +341,6 @@ impl<'tcx> BorrowsState<'tcx> {
 
         for abstraction in self.region_abstractions() {
             if !to.region_abstractions().contains(&abstraction) {
-                eprintln!("{:?} Killing abstraction {:?}", debug_ctx, abstraction);
-                eprintln!("Region abstractions: {:?}", to.region_abstractions());
                 ug.kill_abstraction(self, abstraction, repacker);
             }
         }
@@ -411,7 +409,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowsEdgeKind::Reborrow(reborrow) => match reborrow.assigned_place {
                     MaybeOldPlace::Current {
                         place: assigned_place,
-                    } if place.is_prefix(assigned_place) => {
+                    } if place.is_prefix(assigned_place) && !place.is_ref(body, tcx) => {
                         for ra in place.region_projections(repacker) {
                             self.add_region_projection_member(RegionProjectionMember::new(
                                 reborrow.blocked_place,

@@ -326,6 +326,14 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
+    pub fn nearest_owned_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        let mut result = self.clone();
+        for p in result.pcs_elems() {
+            *p = p.nearest_owned_place(repacker);
+        }
+        result
+    }
+
     pub fn region_projection(
         &self,
         idx: usize,
@@ -505,6 +513,15 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
     }
 }
 
+impl<'tcx> HasPcsElems<Place<'tcx>> for MaybeOldPlace<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut Place<'tcx>> {
+        match self {
+            MaybeOldPlace::Current { place } => vec![place],
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.pcs_elems(),
+        }
+    }
+}
+
 impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -600,25 +617,6 @@ impl<'tcx> Reborrow<'tcx> {
             reserve_location: reservation_location,
             region,
         }
-    }
-
-    fn blocked_place_prefix(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
-        match self.blocked_place {
-            MaybeRemotePlace::Local(maybe_old_place) => maybe_old_place.prefix_place(repacker),
-            MaybeRemotePlace::Remote(remote_place) => Some(MaybeOldPlace::Current {
-                place: remote_place.assigned_local().into(),
-            }),
-        }
-    }
-
-    fn assigned_place_prefix(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
-        self.assigned_place.prefix_place(repacker)
     }
 
     pub fn reserve_location(&self) -> Location {

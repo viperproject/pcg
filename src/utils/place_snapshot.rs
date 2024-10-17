@@ -1,4 +1,7 @@
-use crate::rustc_interface::middle::mir::{BasicBlock, Location};
+use crate::{
+    borrows::has_pcs_elem::HasPcsElems,
+    rustc_interface::middle::mir::{BasicBlock, Location},
+};
 
 use super::{Place, PlaceRepacker};
 
@@ -47,5 +50,11 @@ impl<'tcx> PlaceSnapshot<'tcx> {
             place: self.place.with_inherent_region(repacker),
             at: self.at,
         }
+    }
+}
+
+impl<'tcx> HasPcsElems<Place<'tcx>> for PlaceSnapshot<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut Place<'tcx>> {
+        vec![&mut self.place]
     }
 }

@@ -72,8 +72,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             place: MaybeOldPlace<'tcx>,
             repacker: PlaceRepacker<'_, 'tcx>,
         ) -> Option<RegionProjection<'tcx>> {
-            let rp_place = MaybeOldPlace::new(place.place().local.into(), place.location());
-            rp_place.region_projections(repacker).get(0).cloned()
+            place
+                .nearest_owned_place(repacker)
+                .region_projections(repacker)
+                .get(0)
+                .cloned()
         }
         let from = match reborrow.blocked_place {
             MaybeRemotePlace::Local(maybe_old_place) => to_rp(maybe_old_place, repacker),
@@ -305,47 +308,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    // pub fn abstract_subgraph(
-    //     &mut self,
-    //     block: BasicBlock,
-    //     subgraph: BorrowsGraph<'tcx>,
-    //     repacker: PlaceRepacker<'_, 'tcx>,
-    // ) {
-    //     self.assert_invariants_satisfied(repacker);
-    //     for edge in subgraph.edges() {
-    //         self.remove(edge, DebugCtx::Other);
-    //     }
-    //     let edges = subgraph
-    //         .leaf_edges(repacker)
-    //         .into_iter()
-    //         .flat_map(|edge| {
-    //             edge.blocked_by_places(repacker)
-    //                 .into_iter()
-    //                 .flat_map(|place| {
-    //                     let blocked_roots = subgraph.roots_blocked_by(place, repacker);
-    //                     blocked_roots
-    //                         .into_iter()
-    //                         .filter(|blocked_root| !blocked_root.is_old())
-    //                         .map(|blocked_root| {
-    //                             AbstractionBlockEdge::new(
-    //                                 vec![AbstractionTarget::Place(blocked_root)]
-    //                                     .into_iter()
-    //                                     .collect(),
-    //                                 vec![AbstractionTarget::Place(place)].into_iter().collect(),
-    //                             )
-    //                         })
-    //                         .collect::<Vec<_>>()
-    //                 })
-    //         })
-    //         .collect();
-    //     let abstraction = LoopAbstraction::new(edges, block);
-    //     self.insert(
-    //         AbstractionEdge::new(AbstractionType::Loop(abstraction))
-    //             .to_borrows_edge(PathConditions::new(block)),
-    //     );
-    //     self.assert_invariants_satisfied(repacker);
-    // }
-
     pub fn roots_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
@@ -564,17 +526,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, debug_ctx: DebugCtx) -> bool {
-        match edge.kind() {
-            BorrowsEdgeKind::Abstraction(abstraction) => {
-                eprintln!(
-                    "{:?} Removing abstraction at {:?}",
-                    debug_ctx,
-                    abstraction.location()
-                );
-                eprintln!("{}", std::backtrace::Backtrace::capture());
-            }
-            _ => {}
-        }
         self.0.remove(edge)
     }
 
