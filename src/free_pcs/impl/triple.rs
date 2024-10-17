@@ -174,10 +174,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
             &Assign(box (place, _)) => {
                 let place: Place<'_> = place.into();
                 let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
-                let cond = Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive);
+                let pre = Condition::Capability(place_to_expand_to, CapabilityKind::Write);
+                let post = Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive);
                 Triple {
-                    pre: cond.clone(),
-                    post: cond,
+                    pre,
+                    post,
                 }
             }
             &FakeRead(box (_, place)) => Triple {
