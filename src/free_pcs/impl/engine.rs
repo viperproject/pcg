@@ -6,11 +6,9 @@
 
 use rustc_interface::{
     dataflow::{Analysis, AnalysisDomain},
-    middle::{
-        mir::{
-            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location,
-            Statement, Terminator, TerminatorEdges,
-        },
+    middle::mir::{
+        visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location,
+        Statement, Terminator, TerminatorEdges,
     },
 };
 
@@ -18,8 +16,9 @@ use crate::{
     rustc_interface, utils::PlaceRepacker
 };
 
-use super::{triple::{Stage, TripleWalker}, FreePlaceCapabilitySummary};
+use super::{triple::TripleWalker, FreePlaceCapabilitySummary};
 
+#[derive(Clone, Copy)]
 pub struct FpcsEngine<'a, 'tcx>(pub PlaceRepacker<'a, 'tcx>);
 
 impl<'a, 'tcx> AnalysisDomain<'tcx> for FpcsEngine<'a, 'tcx> {
@@ -42,10 +41,9 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        TripleWalker::prepare(&mut state.after, self.0, Stage::Before).visit_statement(statement, location);
-        state.before_start = state.after.clone();
-        TripleWalker::apply(&mut state.after, self.0, Stage::Before).visit_statement(statement, location);
-        state.before_after = state.after.clone();
+        let mut tw = TripleWalker::default();
+        tw.visit_statement(statement, location);
+        self.apply_before(state, tw, location);
     }
     fn apply_statement_effect(
         &mut self,
@@ -53,9 +51,9 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        TripleWalker::prepare(&mut state.after, self.0, Stage::Main).visit_statement(statement, location);
-        state.start = state.after.clone();
-        TripleWalker::apply(&mut state.after, self.0, Stage::Main).visit_statement(statement, location);
+        let mut tw = TripleWalker::default();
+        tw.visit_statement(statement, location);
+        self.apply_main(state, tw, location);
     }
 
     fn apply_before_terminator_effect(
@@ -64,10 +62,9 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
-        TripleWalker::prepare(&mut state.after, self.0, Stage::Before).visit_terminator(terminator, location);
-        state.before_start = state.after.clone();
-        TripleWalker::apply(&mut state.after, self.0, Stage::Before).visit_terminator(terminator, location);
-        state.before_after = state.after.clone();
+        let mut tw = TripleWalker::default();
+        tw.visit_terminator(terminator, location);
+        self.apply_before(state, tw, location);
     }
     fn apply_terminator_effect<'mir>(
         &mut self,
@@ -75,9 +72,9 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
-        TripleWalker::prepare(&mut state.after, self.0, Stage::Main).visit_terminator(terminator, location);
-        state.start = state.after.clone();
-        TripleWalker::apply(&mut state.after, self.0, Stage::Main).visit_terminator(terminator, location);
+        let mut tw = TripleWalker::default();
+        tw.visit_terminator(terminator, location);
+        self.apply_main(state, tw, location);
         terminator.edges()
     }
 
@@ -88,5 +85,39 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         _return_places: CallReturnPlaces<'_, 'tcx>,
     ) {
         // Nothing to do here
+    }
+}
+
+impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
+    fn apply_before(self, state: &mut FreePlaceCapabilitySummary<'a, 'tcx>, tw: TripleWalker<'tcx>, _location: Location) {
+        // Repack for operands
+        state.pre_operands = state.post_main.clone();
+        for &triple in &tw.operand_triples {
+            let triple = triple.replace_place(self.0);
+            state.pre_operands.requires(triple.pre(), self.0);
+        }
+
+        // Apply operands effects
+        state.post_operands = state.pre_operands.clone();
+        for triple in tw.operand_triples {
+            let triple = triple.replace_place(self.0);
+            state.post_operands.ensures(triple, self.0);
+        }
+    }
+
+    fn apply_main(self, state: &mut FreePlaceCapabilitySummary<'a, 'tcx>, tw: TripleWalker<'tcx>, _location: Location) {
+        // Repack for main
+        state.pre_main = state.post_operands.clone();
+        for &triple in &tw.main_triples {
+            let triple = triple.replace_place(self.0);
+            state.pre_main.requires(triple.pre(), self.0);
+        }
+
+        // Apply main effects
+        state.post_main = state.pre_main.clone();
+        for triple in tw.main_triples {
+            let triple = triple.replace_place(self.0);
+            state.post_main.ensures(triple, self.0);
+        }
     }
 }

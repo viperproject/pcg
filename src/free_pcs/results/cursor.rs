@@ -120,7 +120,7 @@ impl<
     }
 
     pub fn initial_state(&self) -> &CapabilitySummary<'tcx> {
-        &self.cursor.get().get_curr_fpcs().after
+        &self.cursor.get().get_curr_fpcs().post_main
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -132,7 +132,7 @@ impl<
 
         let state = self.cursor.get();
 
-        let after = state.get_curr_fpcs().after.clone();
+        let after = state.get_curr_fpcs().post_main.clone();
         let extra_after = state.get_extra();
 
         self.cursor.seek_after_primary_effect(location);
@@ -147,10 +147,10 @@ impl<
         let result = FreePcsLocation {
             location,
             states: CapabilitySummaries {
-                before_start: curr_fpcs.before_start.clone(),
-                before_after: curr_fpcs.before_after.clone(),
-                start: curr_fpcs.start.clone(),
-                after: curr_fpcs.after.clone(),
+                before_start: curr_fpcs.pre_operands.clone(),
+                before_after: curr_fpcs.post_operands.clone(),
+                start: curr_fpcs.pre_main.clone(),
+                after: curr_fpcs.post_main.clone(),
             },
             repacks_start,
             repacks_middle,
@@ -188,12 +188,12 @@ impl<
                         statement_index: 0,
                     },
                     states: CapabilitySummaries {
-                        before_start: to.before_start.clone(),
-                        before_after: to.before_after.clone(),
-                        start: to.start.clone(),
-                        after: to.after.clone(),
+                        before_start: to.pre_operands.clone(),
+                        before_after: to.post_operands.clone(),
+                        start: to.pre_main.clone(),
+                        after: to.post_main.clone(),
                     },
-                    repacks_start: state.after.bridge(&to.after, rp),
+                    repacks_start: state.post_main.bridge(&to.post_main, rp),
                     repacks_middle: Vec::new(),
                     extra: entry_set.get_extra(),
                     extra_start: D::bridge_terminator(&extra, extra_to, succ, rp.tcx()),

@@ -17,4 +17,3 @@ pub use fpcs::*;
 pub(crate) use local::*;
 pub use bridge::*;
 pub use place::*;
-pub use triple::*;

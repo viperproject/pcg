@@ -42,11 +42,17 @@ impl Default for CapabilityLocal<'_> {
 }
 
 impl<'tcx> CapabilityLocal<'tcx> {
+    pub fn get_allocated(&self) -> &CapabilityProjections<'tcx> {
+        match self {
+            Self::Allocated(cps) => cps,
+            Self::Unallocated => panic!("Expected allocated local"),
+        }
+    }
     pub fn get_allocated_mut(&mut self) -> &mut CapabilityProjections<'tcx> {
-        let Self::Allocated(cps) = self else {
-            panic!("Expected allocated local")
-        };
-        cps
+        match self {
+            Self::Allocated(cps) => cps,
+            Self::Unallocated => panic!("Expected allocated local"),
+        }
     }
     pub fn new(local: Local, perm: CapabilityKind) -> Self {
         Self::Allocated(CapabilityProjections::new(local, perm))

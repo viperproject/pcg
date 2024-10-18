@@ -234,7 +234,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         state.borrows.after.ensure_deref_expansions_to_fpcs(
             self.cgx.rp.tcx(),
             self.cgx.rp.body(),
-            &state.fpcs.after,
+            &state.fpcs.post_main,
             location,
         );
         self.borrows
@@ -261,7 +261,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         state.borrows.after.ensure_deref_expansions_to_fpcs(
             self.cgx.rp.tcx(),
             self.cgx.rp.body(),
-            &state.fpcs.after,
+            &state.fpcs.post_main,
             location,
         );
         self.borrows
