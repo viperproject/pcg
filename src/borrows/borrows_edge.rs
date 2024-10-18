@@ -218,8 +218,8 @@ impl<'tcx> ToBorrowsEdge<'tcx> for RegionProjectionMember<'tcx> {
     }
 }
 
-impl<'tcx, T: ToBorrowsEdge<'tcx>> Conditioned<T> {
-    pub fn to_borrows_edge(self) -> BorrowsEdge<'tcx> {
+impl<'tcx, T: ToBorrowsEdge<'tcx>> Into<BorrowsEdge<'tcx>> for Conditioned<T> {
+    fn into(self) -> BorrowsEdge<'tcx> {
         self.value.to_borrows_edge(self.conditions)
     }
 }

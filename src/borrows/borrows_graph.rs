@@ -131,6 +131,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
             _ => false,
         })
     }
+    pub fn reborrows_blocking(
+        &self,
+        place: MaybeRemotePlace<'tcx>,
+    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+        self.0
+            .iter()
+            .filter_map(|edge| match &edge.kind() {
+                BorrowsEdgeKind::Reborrow(reborrow) => {
+                    if reborrow.blocked_place == place {
+                        Some(Conditioned {
+                            conditions: edge.conditions().clone(),
+                            value: reborrow.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
 
     pub fn reborrows_blocked_by(
         &self,
@@ -272,7 +293,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         location_table: &LocationTable,
         repacker: PlaceRepacker<'_, 'tcx>,
         block: BasicBlock,
-    ) -> (coupling::Graph<CGNode<'tcx>>, FxHashSet<BorrowsEdge<'tcx>>) {
+    ) -> coupling::Graph<CGNode<'tcx>> {
         let constructor =
             CouplingGraphConstructor::new(output_facts, location_table, repacker, block);
         constructor.construct_coupling_graph(self)
@@ -288,9 +309,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         location_table: &LocationTable,
     ) -> bool {
         eprintln!("Attempt join loop {:?} -> {:?}", self_block, exit_block);
-        let (self_coupling_graph, self_to_remove) =
+        let self_coupling_graph =
             self.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
-        let (other_coupling_graph, _) =
+        let other_coupling_graph =
             other.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
         self_coupling_graph.render_with_imgcat().unwrap();
         other_coupling_graph.render_with_imgcat().unwrap();
@@ -299,11 +320,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .transitive_reduction();
         result.render_with_imgcat().unwrap();
         let mut changed = false;
-        for edge in self_to_remove.iter() {
-            if self.remove(edge, DebugCtx::Other) {
-                changed = true;
-            }
-        }
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
@@ -318,6 +334,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             )
             .to_borrows_edge(PathConditions::new(self_block));
             if self.insert(abstraction) {
+                changed = true;
+            }
+            for borrow in self.reborrows_blocking(blocked.place.project_deref(repacker).into()) {
+                self.remove(&borrow.into(), DebugCtx::Other);
                 changed = true;
             }
         }

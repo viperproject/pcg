@@ -380,7 +380,7 @@ impl<'tcx> BorrowsState<'tcx> {
             return false;
         }
         for edge in edges_to_remove {
-            self.remove_edge_and_set_latest(&edge.to_borrows_edge(), repacker, kill_location);
+            self.remove_edge_and_set_latest(&edge.into(), repacker, kill_location);
         }
         true
     }

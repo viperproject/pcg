@@ -206,7 +206,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                 _ => {}
             }
         }
-        self.add_dependency(abstraction.to_borrows_edge());
+        self.add_dependency(abstraction.into());
     }
     pub fn unblock_place(
         &mut self,
@@ -272,7 +272,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                 for reborrow in borrows.reborrows_blocking_prefix_of(place) {
                     self.kill_reborrow(reborrow, borrows, repacker);
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -286,7 +286,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         for edge in borrows.reborrow_edges_reserved_at(location) {
             if !edge.value.blocked_place.is_old() {
                 self.unblock_place(edge.value.assigned_place.into(), borrows, repacker);
-                self.add_dependency(edge.to_borrows_edge());
+                self.add_dependency(edge.into());
             }
         }
     }
@@ -308,7 +308,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             repacker,
             history,
         );
-        self.add_dependency(reborrow.to_borrows_edge());
+        self.add_dependency(reborrow.into());
     }
 
     pub fn kill_reborrow(

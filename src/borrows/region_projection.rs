@@ -1,4 +1,4 @@
-use std::backtrace;
+use std::{backtrace, fmt};
 
 use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionVid};
 
@@ -11,6 +11,12 @@ use super::{domain::MaybeOldPlace, latest::Latest};
 pub struct RegionProjection<'tcx> {
     pub place: MaybeOldPlace<'tcx>,
     region: RegionVid,
+}
+
+impl<'tcx> fmt::Display for RegionProjection<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}↓{:?}", self.place, self.region)
+    }
 }
 
 impl<'tcx> RegionProjection<'tcx> {

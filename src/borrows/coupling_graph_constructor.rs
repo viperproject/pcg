@@ -4,19 +4,14 @@ use crate::{
     coupling,
     rustc_interface::{
         borrowck::consumers::{LocationTable, PoloniusOutput},
-        data_structures::fx::FxHashSet,
-        middle::{
-            mir::{BasicBlock, Local, Location, PlaceElem},
-            ty::{self},
-        },
+        middle::mir::{BasicBlock, Location},
     },
-    utils::{Place, PlaceRepacker},
+    utils::PlaceRepacker,
 };
 
 use super::{
-    borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
     borrows_graph::BorrowsGraph,
-    domain::{AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace},
+    domain::{AbstractionInputTarget, AbstractionOutputTarget},
     region_projection::RegionProjection,
 };
 
@@ -49,7 +44,6 @@ pub struct CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     block: BasicBlock,
     coupling_graph: coupling::Graph<CGNode<'tcx>>,
-    to_remove: FxHashSet<BorrowsEdge<'tcx>>,
     location_table: &'mir LocationTable,
 }
 
@@ -65,7 +59,6 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
             repacker,
             block,
             coupling_graph: coupling::Graph::new(),
-            to_remove: FxHashSet::default(),
             location_table,
         }
     }
@@ -78,7 +71,8 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
     ) {
         let nodes = bg.nodes_pointing_to(upper_candidate);
         if nodes.is_empty() {
-            self.coupling_graph.add_edge(upper_candidate, bottom_connect);
+            self.coupling_graph
+                .add_edge(upper_candidate, bottom_connect);
         }
         for node in nodes {
             let live_origins = self
@@ -90,8 +84,8 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
             if node.place.is_old() || !live_origins.contains(&node.region().into()) {
                 self.add_edges_from(bg, bottom_connect, node);
             } else {
-                self.coupling_graph.add_edge(upper_candidate, bottom_connect);
-                self.add_edges_from(bg, bottom_connect, node);
+                self.coupling_graph.add_edge(node, bottom_connect);
+                self.add_edges_from(bg, node, node);
             }
         }
     }
@@ -99,13 +93,13 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
     pub fn construct_coupling_graph(
         mut self,
         bg: &BorrowsGraph<'tcx>,
-    ) -> (coupling::Graph<CGNode<'tcx>>, FxHashSet<BorrowsEdge<'tcx>>) {
+    ) -> coupling::Graph<CGNode<'tcx>> {
         let full_graph = bg.region_projection_graph(self.repacker);
         full_graph.render_with_imgcat().unwrap();
         for node in full_graph.leaf_nodes() {
             eprintln!("leaf: {:?}", node);
             self.add_edges_from(&full_graph, node, node)
         }
-        (self.coupling_graph, self.to_remove)
+        self.coupling_graph
     }
 }
