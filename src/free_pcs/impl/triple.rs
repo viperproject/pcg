@@ -15,82 +15,55 @@ use crate::{
     utils::{Place, PlaceRepacker},
 };
 
-use super::CapabilitySummary;
-
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Triple<'tcx> {
     pre: Condition<'tcx>,
-    post: Condition<'tcx>,
+    post: Option<Condition<'tcx>>,
 }
 
 impl<'tcx> Triple<'tcx> {
-    pub fn pre(&self) -> &Condition<'tcx> {
-        &self.pre
+    pub fn pre(self) -> Condition<'tcx> {
+        self.pre
     }
-    pub fn post(&self) -> &Condition<'tcx> {
-        &self.post
+    pub fn post(self) -> Option<Condition<'tcx>> {
+        self.post
+    }
+
+    /// Replace all places in the `Condition` with ones that are just above the
+    /// first dereference of a ref.
+    pub fn replace_place<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
+        Self {
+            pre: self.pre.replace_place(repacker),
+            post: self.post.map(|c| c.replace_place(repacker)),
+        }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Condition<'tcx> {
     Capability(Place<'tcx>, CapabilityKind),
     AllocateOrDeallocate(Local),
     Unalloc(Local),
-    Unchanged,
+    Return,
 }
 
 impl<'tcx> Condition<'tcx> {
-    fn capability(place: Place<'tcx>, kind: CapabilityKind) -> Condition<'tcx> {
-        Condition::Capability(place, kind)
+    fn new<T: Into<Place<'tcx>>>(place: T, capability: CapabilityKind) -> Condition<'tcx> {
+        Condition::Capability(place.into(), capability)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stage {
-    Before,
-    Main,
-}
-
-pub(crate) struct TripleWalker<'a, 'b, 'tcx> {
-    pub(crate) summary: &'a mut CapabilitySummary<'tcx>,
-    repacker: PlaceRepacker<'b, 'tcx>,
-    stage: Stage,
-    preparing: bool,
-}
-
-impl<'a, 'b, 'tcx> TripleWalker<'a, 'b, 'tcx> {
-    pub(crate) fn prepare(
-        summary: &'a mut CapabilitySummary<'tcx>,
-        repacker: PlaceRepacker<'b, 'tcx>,
-        stage: Stage,
-    ) -> Self {
-        Self {
-            summary,
-            repacker,
-            stage,
-            preparing: true,
-        }
+    fn exclusive<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+        Self::new(place, CapabilityKind::Exclusive)
     }
-    pub(crate) fn apply(
-        summary: &'a mut CapabilitySummary<'tcx>,
-        repacker: PlaceRepacker<'b, 'tcx>,
-        stage: Stage,
-    ) -> Self {
-        Self {
-            summary,
-            repacker,
-            stage,
-            preparing: false,
-        }
+    fn write<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+        Self::new(place, CapabilityKind::Write)
     }
-    fn triple(&mut self, stage: Stage, t: Triple<'tcx>) {
-        if stage != self.stage {
-            return;
-        }
-        if self.preparing {
-            self.summary.requires(t.pre, self.repacker);
-        } else {
-            self.summary.ensures(t, self.repacker);
+
+    pub fn replace_place<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
+        match self {
+            Condition::Capability(place, kind) => {
+                Condition::Capability(get_place_to_expand_to(place, repacker), kind)
+            }
+            _ => self,
         }
     }
 }
@@ -116,26 +89,29 @@ fn get_place_to_expand_to<'b, 'tcx>(
     return curr_place;
 }
 
-impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
+#[derive(Debug, Default)]
+pub(crate) struct TripleWalker<'tcx> {
+    /// Evaluate all Operands/Rvalues
+    pub(crate) operand_triples: Vec<Triple<'tcx>>,
+    /// Evaluate all other statements/terminators
+    pub(crate) main_triples: Vec<Triple<'tcx>>,
+}
+
+impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
-        let t = match *operand {
-            Operand::Copy(place) => {
-                let place: Place<'tcx> = place.into();
-                let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
-                let pre = Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive);
-                Triple {
-                    pre,
-                    post: Condition::Unchanged,
-                }
-            }
+        let triple = match *operand {
+            Operand::Copy(place) => Triple {
+                pre: Condition::exclusive(place),
+                post: None,
+            },
             Operand::Move(place) => Triple {
-                pre: Condition::Capability(place.into(), CapabilityKind::Exclusive),
-                post: Condition::Capability(place.into(), CapabilityKind::Write),
+                pre: Condition::exclusive(place),
+                post: Some(Condition::write(place)),
             },
             Operand::Constant(..) => return,
         };
-        self.triple(Stage::Before, t)
+        self.operand_triples.push(triple);
     }
 
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
@@ -153,15 +129,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
             | ShallowInitBox(_, _) => {}
 
             &Ref(_, _, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
-                let place: Place<'tcx> = place.into();
-                let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
-                self.triple(
-                    Stage::Before,
-                    Triple {
-                        pre: Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive),
-                        post: Condition::Unchanged,
-                    },
-                )
+                let triple = Triple {
+                    pre: Condition::exclusive(place),
+                    post: None,
+                };
+                self.operand_triples.push(triple);
             }
             _ => todo!(),
         }
@@ -171,62 +143,39 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
         self.super_statement(statement, location);
         use StatementKind::*;
         let t = match &statement.kind {
-            &Assign(box (place, _)) => {
-                let place: Place<'_> = place.into();
-                let place_to_expand_to = get_place_to_expand_to(place, self.repacker);
-                let pre = Condition::Capability(place_to_expand_to, CapabilityKind::Write);
-                let post = Condition::Capability(place_to_expand_to, CapabilityKind::Exclusive);
-                Triple { pre, post }
-            }
+            &Assign(box (place, ref rvalue)) => Triple {
+                pre: Condition::write(place),
+                post: Some(Condition::new(place, rvalue.capability())),
+            },
             &FakeRead(box (_, place)) => Triple {
-                pre: Condition::capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Exclusive,
-                ),
-                post: Condition::Unchanged,
+                pre: Condition::exclusive(place),
+                post: None,
             },
-            &PlaceMention(box place) => Triple {
-                pre: Condition::capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Write,
-                ),
-                post: Condition::Unchanged,
-            },
+            // Looking into `rustc` it seems that `PlaceMention` is effectively ignored.
+            &PlaceMention(_) => return,
             &SetDiscriminant { box place, .. } => Triple {
-                pre: Condition::capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Exclusive,
-                ),
-                post: Condition::Unchanged,
+                pre: Condition::exclusive(place),
+                post: None,
             },
             &Deinit(box place) => Triple {
-                pre: Condition::capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Exclusive,
-                ),
-                post: Condition::capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Write,
-                ),
+                pre: Condition::exclusive(place),
+                post: Some(Condition::write(place)),
             },
             &StorageLive(local) => Triple {
                 pre: Condition::Unalloc(local),
-                post: Condition::AllocateOrDeallocate(local),
+                post: Some(Condition::AllocateOrDeallocate(local)),
             },
             &StorageDead(local) => Triple {
                 pre: Condition::AllocateOrDeallocate(local),
-                post: Condition::Unalloc(local),
+                post: Some(Condition::Unalloc(local)),
             },
             &Retag(_, box place) => Triple {
-                pre: Condition::capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Exclusive,
-                ),
-                post: Condition::Unchanged,
+                pre: Condition::exclusive(place),
+                post: None,
             },
             AscribeUserType(..) | Coverage(..) | Intrinsic(..) | ConstEvalCounter | Nop => return,
         };
-        self.triple(Stage::Main, t);
+        self.main_triples.push(t);
     }
 
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
@@ -241,55 +190,52 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, '_, 'tcx> {
             | Assert { .. }
             | FalseEdge { .. }
             | FalseUnwind { .. } => return,
-            Return => {
-                let always_live = self.repacker.always_live_locals();
-                for local in 0..self.repacker.local_count() {
-                    let local = Local::from_usize(local);
-                    let pre = if local == RETURN_PLACE {
-                        Condition::Capability(RETURN_PLACE.into(), CapabilityKind::Exclusive)
-                    } else if always_live.contains(local) {
-                        Condition::Capability(local.into(), CapabilityKind::Write)
-                    } else {
-                        Condition::Unalloc(local)
-                    };
-                    self.triple(
-                        Stage::Main,
-                        Triple {
-                            pre,
-                            post: Condition::Unchanged,
-                        },
-                    );
-                }
-                return;
-            }
+            Return => Triple {
+                pre: Condition::Return,
+                post: Some(Condition::write(RETURN_PLACE)),
+            },
             &Drop { place, .. } => Triple {
-                pre: Condition::Capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Write,
-                ),
-                post: Condition::Capability(
-                    get_place_to_expand_to(place.into(), self.repacker),
-                    CapabilityKind::Write,
-                ),
+                pre: Condition::write(place),
+                post: None,
             },
             &Call { destination, .. } => Triple {
-                pre: Condition::Capability(
-                    get_place_to_expand_to(destination.into(), self.repacker),
-                    CapabilityKind::Write,
-                ),
-                post: Condition::Capability(
-                    get_place_to_expand_to(destination.into(), self.repacker),
-                    CapabilityKind::Exclusive,
-                ),
+                pre: Condition::write(destination),
+                post: Some(Condition::exclusive(destination)),
             },
             &Yield { resume_arg, .. } => Triple {
-                pre: Condition::Capability(resume_arg.into(), CapabilityKind::Write),
-                post: Condition::Capability(resume_arg.into(), CapabilityKind::Exclusive),
+                pre: Condition::write(resume_arg),
+                post: Some(Condition::exclusive(resume_arg)),
             },
             InlineAsm { .. } => todo!("{terminator:?}"),
             CoroutineDrop => todo!(),
             _ => todo!("{terminator:?}"),
         };
-        self.triple(Stage::Main, t);
+        self.main_triples.push(t);
+    }
+}
+
+trait ProducesCapability {
+    fn capability(&self) -> CapabilityKind;
+}
+
+impl ProducesCapability for Rvalue<'_> {
+    fn capability(&self) -> CapabilityKind {
+        use Rvalue::*;
+        match self {
+            Use(_)
+            | Repeat(_, _)
+            | Ref(_, _, _)
+            | RawPtr(_, _)
+            | ThreadLocalRef(_)
+            | Len(_)
+            | Cast(_, _, _)
+            | BinaryOp(_, _)
+            | NullaryOp(_, _)
+            | UnaryOp(_, _)
+            | Discriminant(_)
+            | Aggregate(_, _)
+            | CopyForDeref(_) => CapabilityKind::Exclusive,
+            ShallowInitBox(_, _) => CapabilityKind::ShallowExclusive,
+        }
     }
 }

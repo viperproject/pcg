@@ -7,6 +7,7 @@
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
+    rustc_interface::middle::mir::{Local, RETURN_PLACE},
 };
 
 use super::{
@@ -17,7 +18,6 @@ use super::{
 impl<'tcx> CapabilitySummary<'tcx> {
     pub(crate) fn requires(&mut self, cond: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
         match cond {
-            Condition::Unchanged => {}
             Condition::Unalloc(_) => {}
             Condition::AllocateOrDeallocate(local) => {
                 match &mut self[local] {
@@ -42,20 +42,34 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     cp.insert(place, cap);
                 };
             }
+            Condition::Return => {
+                let always_live = repacker.always_live_locals();
+                for local in 0..repacker.local_count() {
+                    let local = Local::from_usize(local);
+                    let pre = if local == RETURN_PLACE {
+                        Condition::Capability(RETURN_PLACE.into(), CapabilityKind::Exclusive)
+                    } else if always_live.contains(local) {
+                        Condition::Capability(local.into(), CapabilityKind::Write)
+                    } else {
+                        Condition::Unalloc(local)
+                    };
+                    self.requires(pre, repacker);
+                }
+            }
         }
     }
-    pub(crate) fn ensures(&mut self, t: Triple<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
-        match t.pre() {
-            Condition::Unchanged => {}
+
+    fn check_pre_satisfied(&self, pre: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+        match pre {
             Condition::Unalloc(local) => {
                 assert!(
-                    self[*local].is_unallocated(),
+                    self[local].is_unallocated(),
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
             }
             Condition::AllocateOrDeallocate(local) => {
                 assert_eq!(
-                    self[*local].get_allocated_mut()[&(*local).into()],
+                    self[local].get_allocated()[&local.into()],
                     CapabilityKind::Write
                 );
             }
@@ -74,23 +88,43 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
 
-                let _cp = self[place.local].get_allocated_mut();
+                let _cp = self[place.local].get_allocated();
                 // assert_eq!(cp[&place], *cap); // TODO: is this too strong for shallow exclusive?
             }
+            Condition::Return => {
+                let always_live = repacker.always_live_locals();
+                for local in 0..repacker.local_count() {
+                    let local = Local::from_usize(local);
+                    let pre = if local == RETURN_PLACE {
+                        Condition::Capability(RETURN_PLACE.into(), CapabilityKind::Exclusive)
+                    } else if always_live.contains(local) {
+                        Condition::Capability(local.into(), CapabilityKind::Write)
+                    } else {
+                        Condition::Unalloc(local)
+                    };
+                    self.check_pre_satisfied(pre, repacker);
+                }
+            }
         }
-        match t.post() {
-            Condition::Unchanged => {}
+    }
+    pub(crate) fn ensures(&mut self, t: Triple<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+        self.check_pre_satisfied(t.pre(), repacker);
+        let Some(post) = t.post() else {
+            return;
+        };
+        match post {
+            Condition::Return => unreachable!(),
             Condition::Unalloc(local) => {
-                self[*local] = CapabilityLocal::Unallocated;
+                self[local] = CapabilityLocal::Unallocated;
             }
             Condition::AllocateOrDeallocate(local) => {
-                self[*local] =
-                    CapabilityLocal::Allocated(CapabilityProjections::new_uninit(*local));
+                self[local] =
+                    CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
             }
             Condition::Capability(place, cap) => {
                 self[place.local]
                     .get_allocated_mut()
-                    .update_cap(*place, *cap);
+                    .update_cap(place, cap);
             }
         }
     }

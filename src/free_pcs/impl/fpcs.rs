@@ -22,27 +22,27 @@ use super::{CapabilityKind, RepackingBridgeSemiLattice, engine::FpcsEngine};
 
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub before_start: CapabilitySummary<'tcx>,
-    pub before_after: CapabilitySummary<'tcx>,
-    pub start: CapabilitySummary<'tcx>,
-    pub after: CapabilitySummary<'tcx>,
+    pub pre_operands: CapabilitySummary<'tcx>,
+    pub post_operands: CapabilitySummary<'tcx>,
+    pub pre_main: CapabilitySummary<'tcx>,
+    pub post_main: CapabilitySummary<'tcx>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
         let after = CapabilitySummary::default(repacker.local_count());
         Self {
             repacker,
-            before_start: CapabilitySummary::empty(),
-            before_after: CapabilitySummary::empty(),
-            start: CapabilitySummary::empty(),
-            after,
+            pre_operands: CapabilitySummary::empty(),
+            post_operands: CapabilitySummary::empty(),
+            pre_main: CapabilitySummary::empty(),
+            post_main: after,
         }
     }
     pub fn initialize_as_start_block(&mut self) {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(self.repacker.body().arg_count);
-        for (local, cap) in self.after.iter_enumerated_mut() {
+        for (local, cap) in self.post_main.iter_enumerated_mut() {
             let new_cap = if local == return_local {
                 // Return local is allocated but uninitialized
                 CapabilityLocal::new(local, CapabilityKind::Write)
@@ -61,8 +61,8 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     }
 
     pub fn repack_ops(&self, previous: &CapabilitySummary<'tcx>) -> (Vec<RepackOp<'tcx>>, Vec<RepackOp<'tcx>>) {
-        let from_prev = previous.bridge(&self.before_start, self.repacker);
-        let middle = self.before_after.bridge(&self.start, self.repacker);
+        let from_prev = previous.bridge(&self.pre_operands, self.repacker);
+        let middle = self.post_operands.bridge(&self.pre_main, self.repacker);
         (from_prev, middle)
     }
 }
@@ -71,23 +71,23 @@ impl Clone for FreePlaceCapabilitySummary<'_, '_> {
     fn clone(&self) -> Self {
         Self {
             repacker: self.repacker,
-            before_start: self.before_start.clone(),
-            before_after: self.before_after.clone(),
-            start: self.start.clone(),
-            after: self.after.clone(),
+            pre_operands: self.pre_operands.clone(),
+            post_operands: self.post_operands.clone(),
+            pre_main: self.pre_main.clone(),
+            post_main: self.post_main.clone(),
         }
     }
 }
 impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.after == other.after
+        self.post_main == other.post_main
     }
 }
 impl Eq for FreePlaceCapabilitySummary<'_, '_> {}
 
 impl Debug for FreePlaceCapabilitySummary<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.after.fmt(f)
+        self.post_main.fmt(f)
     }
 }
 impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -97,17 +97,17 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
         _ctxt: &FpcsEngine<'a, 'tcx>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        let (from_prev, middle) = self.repack_ops(&old.after);
+        let (from_prev, middle) = self.repack_ops(&old.post_main);
         if !from_prev.is_empty() {
             writeln!(f, "{from_prev:?}")?;
         }
-        CapabilitySummaryCompare(&self.before_start, &old.after, "").fmt(f)?;
-        CapabilitySummaryCompare(&self.before_after, &self.before_start, "ARGUMENTS:\n").fmt(f)?;
+        CapabilitySummaryCompare(&self.pre_operands, &old.post_main, "").fmt(f)?;
+        CapabilitySummaryCompare(&self.post_operands, &self.pre_operands, "ARGUMENTS:\n").fmt(f)?;
         if !middle.is_empty() {
             writeln!(f, "{middle:?}")?;
         }
-        CapabilitySummaryCompare(&self.start, &self.before_after, "").fmt(f)?;
-        CapabilitySummaryCompare(&self.after, &self.start, "STATEMENT:\n").fmt(f)?;
+        CapabilitySummaryCompare(&self.pre_main, &self.post_operands, "").fmt(f)?;
+        CapabilitySummaryCompare(&self.post_main, &self.pre_main, "STATEMENT:\n").fmt(f)?;
         Ok(())
     }
 }

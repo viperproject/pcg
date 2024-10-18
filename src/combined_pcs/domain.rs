@@ -202,14 +202,14 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
             let (fpcs, borrows) = match phase {
                 DataflowStmtPhase::Initial | DataflowStmtPhase::BeforeStart => {
-                    (&self.fpcs.before_start, &self.borrows.before_start)
+                    (&self.fpcs.pre_operands, &self.borrows.before_start)
                 }
                 DataflowStmtPhase::BeforeAfter => {
-                    (&self.fpcs.before_after, &self.borrows.before_after)
+                    (&self.fpcs.post_operands, &self.borrows.before_after)
                 }
-                DataflowStmtPhase::Start => (&self.fpcs.start, &self.borrows.start),
+                DataflowStmtPhase::Start => (&self.fpcs.pre_main, &self.borrows.start),
                 DataflowStmtPhase::After | DataflowStmtPhase::Join(_) => {
-                    (&self.fpcs.after, &self.borrows.after)
+                    (&self.fpcs.post_main, &self.borrows.after)
                 }
             };
 
@@ -264,7 +264,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         let mut g = UnblockGraph::new();
         for root in self.borrows.after.roots(self.cgx.rp) {
             if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root }) = root {
-                match &self.fpcs.after[root.local] {
+                match &self.fpcs.post_main[root.local] {
                     CapabilityLocal::Unallocated => {
                         g.unblock_place(root.into(), &self.borrows.after, self.cgx.rp);
                     }
