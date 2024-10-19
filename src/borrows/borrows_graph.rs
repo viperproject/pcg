@@ -313,12 +313,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
         let other_coupling_graph =
             other.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
-        self_coupling_graph.render_with_imgcat().unwrap();
-        other_coupling_graph.render_with_imgcat().unwrap();
+        self_coupling_graph.render_with_imgcat();
+        other_coupling_graph.render_with_imgcat();
         let result = self_coupling_graph
             .union(&other_coupling_graph)
             .transitive_reduction();
-        result.render_with_imgcat().unwrap();
+        result.render_with_imgcat();
         let mut changed = false;
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(

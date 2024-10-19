@@ -54,6 +54,11 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
     ) -> Self {
+        assert!(
+            polonius_output.dump_enabled,
+            "Polonius dump is not enabled. This is likely because you aren't using the forked \
+            version of Rust that enables it. See the README for more information."
+        );
         Self {
             output_facts: polonius_output,
             repacker,
@@ -95,7 +100,6 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
         bg: &BorrowsGraph<'tcx>,
     ) -> coupling::Graph<CGNode<'tcx>> {
         let full_graph = bg.region_projection_graph(self.repacker);
-        full_graph.render_with_imgcat().unwrap();
         for node in full_graph.leaf_nodes() {
             eprintln!("leaf: {:?}", node);
             self.add_edges_from(&full_graph, node, node)

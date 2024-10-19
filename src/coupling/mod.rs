@@ -48,9 +48,7 @@ where
     pub fn union(&self, other: &Self) -> Self {
         let mut new_edges = self.edges.clone();
         new_edges.extend(other.edges.iter().cloned());
-        Graph {
-            edges: new_edges,
-        }
+        Graph { edges: new_edges }
     }
 
     pub fn transitive_reduction(&self) -> Self {
@@ -114,10 +112,12 @@ where
         F: Fn(N) -> T,
         T: Eq + Hash + Clone + Copy + Ord + fmt::Debug,
     {
-        let new_edges = self.edges.iter().map(|(from, to)| (f(*from), f(*to))).collect();
-        Graph {
-            edges: new_edges,
-        }
+        let new_edges = self
+            .edges
+            .iter()
+            .map(|(from, to)| (f(*from), f(*to)))
+            .collect();
+        Graph { edges: new_edges }
     }
 
     fn has_edges(&self) -> bool {
@@ -186,13 +186,7 @@ where
     pub fn nodes_pointing_to(&self, node: N) -> HashSet<N> {
         self.edges
             .iter()
-            .filter_map(|(from, to)| {
-                if to == &node {
-                    Some(*from)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(from, to)| if to == &node { Some(*from) } else { None })
             .collect()
     }
 }
@@ -255,63 +249,62 @@ impl<N> Graph<N>
 where
     N: Eq + Hash + Clone + Copy + fmt::Display,
 {
-    /// Renders the graph using `dot` and displays it using `imgcat` without using temporary files.
+    /// Renders the graph using `dot` and displays it using `imgcat`.
     /// Requires `dot` and `imgcat` to be installed and available in the system PATH.
-    pub fn render_with_imgcat(&self) -> std::io::Result<()> {
-        // Generate DOT representation
-        let dot = self.to_dot_petgraph();
+    /// If either is not installed, this function effectively does nothing.
+    pub fn render_with_imgcat(&self) {
+        fn go<N: Eq + Hash + Clone + Copy + fmt::Display>(
+            graph: &Graph<N>,
+        ) -> Result<(), std::io::Error> {
+            let dot = graph.to_dot_petgraph();
 
-        // Spawn 'dot' command, with stdin piped and stdout piped
-        let mut dot_process = Command::new("dot")
-            .args(&["-Tpng"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
+            let mut dot_process = Command::new("dot")
+                .args(&["-Tpng"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()?;
 
-        {
-            // Write the DOT content to 'dot's stdin
-            let stdin = dot_process
+            let dot_stdin = dot_process
                 .stdin
                 .as_mut()
                 .expect("Failed to open dot stdin");
-            stdin.write_all(dot.as_bytes())?;
-        }
+            dot_stdin.write_all(dot.as_bytes())?;
 
-        // Read the output from 'dot'
-        let dot_output = dot_process.wait_with_output()?;
+            let dot_output = dot_process.wait_with_output()?;
 
-        if !dot_output.status.success() {
-            eprintln!("Error: dot command failed");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "dot command failed",
-            ));
-        }
+            if !dot_output.status.success() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "dot command failed",
+                ));
+            }
 
-        // Now, feed the output into 'imgcat'
-        let mut imgcat_process = Command::new("imgcat")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::inherit()) // Pass through imgcat's stdout to the terminal
-            .spawn()?;
+            let mut imgcat_process = Command::new("imgcat")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::inherit())
+                .spawn()?;
 
-        {
-            let stdin = imgcat_process
+            let imgcat_stdin = imgcat_process
                 .stdin
                 .as_mut()
                 .expect("Failed to open imgcat stdin");
-            stdin.write_all(&dot_output.stdout)?;
+            imgcat_stdin.write_all(&dot_output.stdout)?;
+
+            let imgcat_status = imgcat_process.wait()?;
+
+            if !imgcat_status.success() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "imgcat command failed",
+                ));
+            }
+
+            Ok(())
         }
 
-        let imgcat_status = imgcat_process.wait()?;
-
-        if !imgcat_status.success() {
-            eprintln!("Error: imgcat command failed");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "imgcat command failed",
-            ));
-        }
-
-        Ok(())
+        // This function is just for debugging, so we don't care if it fails
+        go(self).unwrap_or_else(|e| {
+            eprintln!("Error rendering graph: {}", e);
+        });
     }
 }
