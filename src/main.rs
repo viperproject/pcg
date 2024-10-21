@@ -115,25 +115,24 @@ impl driver::Callbacks for PcsCallbacks {
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
         queries.global_ctxt().unwrap().enter(run_pcs_on_all_fns);
-        Compilation::Stop
+        if std::env::var("CARGO").is_ok() {
+            Compilation::Continue
+        } else {
+            Compilation::Stop
+        }
     }
 }
 
 
 
 fn main() {
-    let mut rustc_args = vec![
-        "--cfg=prusti".to_string(),
-        "--edition=2018".to_string(),
-        "-Zpolonius=next".to_string(),
-        "-L".to_string(),
-        "dependency=../prusti-dev/target/verify/debug/deps".to_string(),
-    ];
-    rustc_args.push("-Zcrate-attr=feature(register_tool)".to_owned());
-    rustc_args.push("-Zcrate-attr=register_tool(prusti)".to_owned());
-    rustc_args.push("-Zcrate-attr=feature(stmt_expr_attributes)".to_owned());
-
+    let mut rustc_args = Vec::new();
+    if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
+        rustc_args.push("--edition=2018".to_string());
+    }
+    rustc_args.push("-Zpolonius=next".to_string());
     rustc_args.extend(std::env::args().skip(1));
+
     let mut callbacks = PcsCallbacks;
     driver::RunCompiler::new(&rustc_args, &mut callbacks)
         .run()

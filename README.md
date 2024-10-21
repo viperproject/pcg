@@ -33,3 +33,7 @@ To view the visualization
 
 Once the server is running, you can keep it running and analyze other files
 (e.g. `cargo run [FILENAME2].rs`). Just refresh the page to see updated results.
+
+To run on the top crates use:
+
+`cargo test --package pcs --test top_crates -- top_crates --exact --show-output`
