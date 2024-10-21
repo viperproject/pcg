@@ -86,7 +86,7 @@ fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: PlaceRepacker<'_, 'tc
 fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> String {
     match rvalue {
         Rvalue::Use(operand) => format_operand(operand, repacker),
-        Rvalue::Repeat(_, _) => todo!(),
+        Rvalue::Repeat(operand, c) => format!("repeat {} {}", format_operand(operand, repacker), c),
         Rvalue::Ref(_region, kind, place) => {
             let kind = match kind {
                 mir::BorrowKind::Shared => "",
@@ -94,6 +94,13 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
                 mir::BorrowKind::Fake(_) => todo!(),
             };
             format!("&{} {}", kind, format_place(place, repacker))
+        }
+        Rvalue::RawPtr(kind, place) => {
+            let kind = match kind {
+                mir::Mutability::Mut => "mut",
+                mir::Mutability::Not => "const",
+            };
+            format!("*{} {}", kind, format_place(place, repacker))
         }
         Rvalue::ThreadLocalRef(_) => todo!(),
         Rvalue::Len(_) => todo!(),

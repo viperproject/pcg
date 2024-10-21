@@ -423,7 +423,7 @@ impl<'tcx> Place<'tcx> {
                         .into(),
                 );
             }
-            ty => unreachable!("ty={:?}", ty),
+            ty => unreachable!("ty={:?} ({self:?})", ty),
         }
         places
     }

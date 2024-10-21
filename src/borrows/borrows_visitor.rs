@@ -566,7 +566,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | Aggregate(_, _)
             | ShallowInitBox(_, _) => {}
 
-            &Ref(_, _, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
+            &Ref(_, _, place) | &RawPtr(_, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
                 if self.before && self.preparing && !place.is_owned(self.body, self.tcx) {
                     self.ensure_expansion_to_exactly(place, location);

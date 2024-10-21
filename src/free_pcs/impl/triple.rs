@@ -128,14 +128,14 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             | Aggregate(_, _)
             | ShallowInitBox(_, _) => {}
 
-            &Ref(_, _, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
+            &Ref(_, _, place) | &RawPtr(_, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
                 let triple = Triple {
                     pre: Condition::exclusive(place),
                     post: None,
                 };
                 self.operand_triples.push(triple);
             }
-            _ => todo!(),
+            _ => todo!("{rvalue:?}"),
         }
     }
 

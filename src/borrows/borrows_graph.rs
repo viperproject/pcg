@@ -523,25 +523,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn ensure_deref_expansion_to_at_least(
         &mut self,
-        place: Place<'tcx>,
+        to_place: Place<'tcx>,
         body: &mir::Body<'tcx>,
         tcx: TyCtxt<'tcx>,
         location: Location,
     ) {
         let mut in_dag = false;
-        for (place, elem) in place.iter_projections() {
+        let repacker = PlaceRepacker::new(&body, tcx);
+        for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
             if place.is_ref(body, tcx) {
                 in_dag = true;
             }
-            let expansion = match elem {
-                mir::ProjectionElem::Downcast(_, _) | // For downcast we can't blindly expand since we don't know which instance, use this specific one
-                mir::ProjectionElem::Deref // For Box we don't want to expand fields because it's actually an ADT w/ a ptr inside
-                        => {
-                            vec![place.project_deeper(&[elem], tcx).into()]
-                        }
-                        _ => place.expand_field(None, PlaceRepacker::new(&body, tcx)),
-                    };
+            let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
+            expansion.push(target);
             if in_dag {
                 let origin_place = place.into();
                 if !self.contains_deref_expansion_from(&origin_place) {
