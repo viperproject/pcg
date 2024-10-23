@@ -91,7 +91,7 @@ export type ReborrowBridge = {
 
 export type PathData = {
   heap: Record<string, { value: string; ty: string; old: boolean }>;
-  pcs: string[];
+  pcs: string;
   borrow_actions_start: BorrowAction[];
   borrow_actions_mid: BorrowAction[];
   reborrow_start: ReborrowBridge;

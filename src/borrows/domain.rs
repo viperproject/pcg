@@ -4,7 +4,9 @@ use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
     hir::def_id::DefId,
-    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK},
+    middle::mir::{
+        self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, ProjectionElem, START_BLOCK,
+    },
     middle::ty::{self, GenericArgsRef, RegionVid, TyCtxt},
 };
 
@@ -102,16 +104,6 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
             def_id,
             substs,
             edges,
-        }
-    }
-}
-
-pub trait HasPlaces<'tcx> {
-    fn places_mut(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>>;
-
-    fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {
-        for p in self.places_mut() {
-            p.make_place_old(place, latest);
         }
     }
 }
@@ -312,6 +304,12 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn last_projection(&self) -> Option<(Place<'tcx>, PlaceElem<'tcx>)> {
+        match self {
+            MaybeOldPlace::Current { place } => place.last_projection(),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.place.last_projection(),
+        }
+    }
     pub fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
