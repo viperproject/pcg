@@ -302,6 +302,12 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
             .apply_terminator_effect(&mut state.borrows, terminator, location);
         self.fpcs
             .apply_terminator_effect(&mut state.fpcs, terminator, location);
+        state.borrows.after.ensure_deref_expansions_to_fpcs(
+            self.cgx.rp.tcx(),
+            self.cgx.rp.body(),
+            &state.fpcs.post_main,
+            location,
+        );
         self.generate_dot_graph(state, DataflowStmtPhase::Start, location.statement_index);
         self.generate_dot_graph(state, DataflowStmtPhase::After, location.statement_index);
         terminator.edges()

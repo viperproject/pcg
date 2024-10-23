@@ -5,8 +5,8 @@ use crate::{
         borrows_state::BorrowsState,
         deref_expansion::DerefExpansion,
         domain::{
-            AbstractionInputTarget, AbstractionOutputTarget, AbstractionTarget, MaybeOldPlace,
-            MaybeRemotePlace, RemotePlace,
+            AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace,
+            RemotePlace,
         },
         region_abstraction::AbstractionEdge,
         region_projection::RegionProjection,
@@ -128,31 +128,14 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 
     fn insert_abstraction_input_target(&mut self, target: AbstractionInputTarget<'tcx>) -> NodeId {
-        match target {
-            AbstractionTarget::Place(place) => match place {
-                MaybeRemotePlace::Local(place) => {
-                    self.insert_place_node(place.place(), place.location(), None)
-                }
-                MaybeRemotePlace::Remote(local) => self.insert_remote_node(local),
-            },
-            AbstractionTarget::RegionProjection(projection) => {
-                self.insert_region_projection_node(projection)
-            }
-        }
+        self.insert_region_projection_node(target)
     }
 
     fn insert_abstraction_output_target(
         &mut self,
         target: AbstractionOutputTarget<'tcx>,
     ) -> NodeId {
-        match target {
-            AbstractionTarget::Place(place) => {
-                self.insert_place_node(place.place(), place.location(), None)
-            }
-            AbstractionTarget::RegionProjection(projection) => {
-                self.insert_region_projection_node(projection)
-            }
-        }
+        self.insert_region_projection_node(target)
     }
 
     fn insert_region_projection_and_ancestors(
@@ -349,16 +332,19 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                                 source: base_node,
                                 target,
                             });
-                        let base_rp = owned.base_region_projection(self.repacker());
-                        let base_rp_node = self
-                            .constructor()
-                            .insert_region_projection_and_ancestors(base_rp);
-                        self.constructor().edges.insert(
-                            GraphEdge::RegionProjectionToDerefExpansionEdge {
-                                region_projection: base_rp_node,
-                                deref: target,
-                            },
-                        );
+                        // TODO: Region could be erased and we can't handle that yet
+                        if owned.base().has_region_projections(self.repacker()) {
+                            let base_rp = owned.base_region_projection(self.repacker());
+                            let base_rp_node = self
+                                .constructor()
+                                .insert_region_projection_and_ancestors(base_rp);
+                            self.constructor().edges.insert(
+                                GraphEdge::RegionProjectionToDerefExpansionEdge {
+                                    region_projection: base_rp_node,
+                                    deref: target,
+                                },
+                            );
+                        }
                     }
                     _ => {
                         for place in deref_expansion.expansion(self.repacker()) {
@@ -375,25 +361,20 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
             }
             BorrowsEdgeKind::Reborrow(reborrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(reborrow.blocked_place);
-                let assigned_place = self.insert_maybe_old_place(reborrow.assigned_place);
-                self.constructor().edges.insert(GraphEdge::ReborrowEdge {
-                    borrowed_place,
-                    assigned_place,
-                    location: reborrow.reserve_location(),
-                    region: format!("{:?}", reborrow.region),
-                    path_conditions: format!("{}", edge.conditions()),
-                });
-                if let Some(graph) = graph
-                    && let Some((e1, e2)) = graph.region_projection_edge(reborrow, self.repacker())
+                // TODO: Region could be erased and we can't handle that yet
+                if let Some(assigned_region_projection) =
+                    reborrow.assigned_region_projection(self.repacker())
                 {
-                    let borrowed_place = self.constructor().insert_region_projection_node(e1);
-                    let assigned_place = self.constructor().insert_region_projection_node(e2);
-                    self.constructor()
-                        .edges
-                        .insert(GraphEdge::RegionProjectionBorrowEdge {
-                            borrowed_place,
-                            assigned_place,
-                        });
+                    let assigned_place = self
+                        .constructor()
+                        .insert_region_projection_and_ancestors(assigned_region_projection);
+                    self.constructor().edges.insert(GraphEdge::ReborrowEdge {
+                        borrowed_place,
+                        assigned_place,
+                        location: reborrow.reserve_location(),
+                        region: format!("{:?}", reborrow.region),
+                        path_conditions: format!("{}", edge.conditions()),
+                    });
                 }
             }
             BorrowsEdgeKind::Abstraction(abstraction) => {

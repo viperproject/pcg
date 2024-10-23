@@ -20,10 +20,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::{
-        domain::{AbstractionBlockEdge, AbstractionTarget},
-        region_abstraction::AbstractionEdge,
-    },
+    borrows::{domain::AbstractionBlockEdge, region_abstraction::AbstractionEdge},
     rustc_interface,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
@@ -205,15 +202,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             sig.output(),
                             destination.into(),
                         ) {
-                            let input_place = input_place.project_deref(self.repacker());
-                            edges.push((
-                                idx,
-                                AbstractionBlockEdge::new(
-                                    vec![AbstractionTarget::Place(input_place.into())]
-                                        .into_iter()
-                                        .collect(),
-                                    vec![output].into_iter().collect(),
-                                ),
+                            edges.push(AbstractionBlockEdge::new(
+                                vec![input_place.region_projection(0, self.repacker())]
+                                    .into_iter()
+                                    .collect(),
+                                vec![output].into_iter().collect(),
                             ));
                         }
                     }
@@ -229,17 +222,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     sig.output(),
                     destination.into(),
                 ) {
-                    edges.push((
-                        idx,
+                    edges.push(
                         AbstractionBlockEdge::new(
-                            vec![AbstractionTarget::RegionProjection(
-                                input_place.region_projection(lifetime_idx, self.repacker()),
-                            )]
-                            .into_iter()
-                            .collect(),
+                            vec![input_place.region_projection(lifetime_idx, self.repacker())]
+                                .into_iter()
+                                .collect(),
                             vec![output].into_iter().collect(),
-                        ),
-                    ));
+                        )
+                    );
                 }
             }
         }
@@ -271,9 +261,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         let output_ty = match output_ty.kind() {
             ty::TyKind::Ref(output_lifetime, ty, Mutability::Mut) => {
                 if outlives_in_param_env(input_lifetime, *output_lifetime, param_env) {
-                    result.push(AbstractionTarget::Place(
-                        output_place.project_deref(self.repacker()).into(),
-                    ));
+                    result.push(output_place.region_projection(0, self.repacker()));
                 }
                 *ty
             }
@@ -283,9 +271,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             extract_lifetimes(output_ty).into_iter().enumerate()
         {
             if outlives_in_param_env(input_lifetime, output_lifetime, param_env) {
-                result.push(AbstractionTarget::RegionProjection(
-                    output_place.region_projection(output_lifetime_idx, self.repacker()),
-                ));
+                result.push(output_place.region_projection(output_lifetime_idx, self.repacker()));
             }
         }
         result
@@ -566,7 +552,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | Aggregate(_, _)
             | ShallowInitBox(_, _) => {}
 
-            &Ref(_, _, place) | &RawPtr(_, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
+            &Ref(_, _, place)
+            | &RawPtr(_, place)
+            | &Len(place)
+            | &Discriminant(place)
+            | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
                 if self.before && self.preparing && !place.is_owned(self.body, self.tcx) {
                     self.ensure_expansion_to_exactly(place, location);

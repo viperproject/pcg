@@ -3,6 +3,7 @@ use rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 use crate::rustc_interface;
 
 use super::{
+    borrows_edge::BlockedNode,
     domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
         MaybeOldPlace, MaybeRemotePlace,
@@ -30,24 +31,16 @@ impl<'tcx> AbstractionEdge<'tcx> {
         self.abstraction_type.location()
     }
 
+    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
+        self.inputs().into_iter().map(|i| i.into()).collect()
+    }
+
     pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
         self.abstraction_type.inputs()
     }
 
     pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
         self.abstraction_type.outputs()
-    }
-
-    pub fn blocks(&self, place: MaybeRemotePlace<'tcx>) -> bool {
-        self.abstraction_type.blocks(place)
-    }
-
-    pub fn blocks_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.abstraction_type.blocks_places()
-    }
-
-    pub fn blocked_by_places(&self) -> FxHashSet<MaybeOldPlace<'tcx>> {
-        self.abstraction_type.blocker_places()
     }
 
     pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {

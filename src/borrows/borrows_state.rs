@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    borrows_edge::{BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
+    borrows_edge::{BlockedNode, BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
     deref_expansion::DerefExpansion,
@@ -79,11 +79,11 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn remove_edge_and_set_latest(
         &mut self,
         edge: &BorrowsEdge<'tcx>,
-        _repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
         if !edge.is_shared_borrow() {
-            for place in edge.blocked_places() {
+            for place in edge.blocked_places(repacker) {
                 match place {
                     MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
                         self.set_latest(place, location)
@@ -124,9 +124,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 .edges()
                 .filter(|edge| {
                     let is_old_unblocked = edge
-                        .blocked_by_places(repacker)
+                        .blocked_by_nodes(repacker)
                         .iter()
-                        .all(|p| p.is_old() && !self.graph.has_edge_blocking((*p).into()));
+                        .all(|p| p.is_old() && !self.graph.has_edge_blocking(repacker, *p));
                     is_old_unblocked
                         || match &edge.kind() {
                             BorrowsEdgeKind::DerefExpansion(de) => {
@@ -134,7 +134,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                     && de
                                         .expansion(repacker)
                                         .into_iter()
-                                        .all(|p| !self.graph.has_edge_blocking(p.into()))
+                                        .all(|p| !self.graph.has_edge_blocking(repacker, p))
                             }
                             _ => false,
                         }
@@ -179,10 +179,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
-        let edges = self
-            .edges_blocking(place.into())
-            .cloned()
-            .collect::<Vec<_>>();
+        let edges = self.edges_blocking(place.into(), repacker);
         if edges.is_empty() {
             return false;
         }
@@ -192,8 +189,12 @@ impl<'tcx> BorrowsState<'tcx> {
         true
     }
 
-    pub fn get_place_blocking(&self, place: MaybeRemotePlace<'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        let edges = self.edges_blocking(place).collect::<Vec<_>>();
+    pub fn get_place_blocking(
+        &self,
+        place: MaybeRemotePlace<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<MaybeOldPlace<'tcx>> {
+        let edges = self.edges_blocking(place.into(), repacker);
         if edges.len() != 1 {
             return None;
         }
@@ -207,9 +208,10 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub fn edges_blocking(
         &self,
-        place: MaybeRemotePlace<'tcx>,
-    ) -> impl Iterator<Item = &BorrowsEdge<'tcx>> {
-        self.graph.edges_blocking(place)
+        node: BlockedNode<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<BorrowsEdge<'tcx>> {
+        self.graph.edges_blocking(node, repacker)
     }
 
     pub fn graph_edges(&self) -> impl Iterator<Item = &BorrowsEdge<'tcx>> {
@@ -275,17 +277,17 @@ impl<'tcx> BorrowsState<'tcx> {
 
         for reborrow in self.reborrows() {
             if !to.has_reborrow_at_location(reborrow.value.reserve_location()) {
-                ug.kill_reborrow(reborrow, self, repacker);
+                ug.kill_edge(reborrow.clone().into(), self, repacker);
             }
         }
 
         for exp in self.deref_expansions().difference(&to.deref_expansions()) {
-            ug.unblock_place(exp.value.base().into(), self, repacker);
+            ug.kill_edge(exp.clone().into(), self, repacker);
         }
 
         for abstraction in self.region_abstractions() {
             if !to.region_abstractions().contains(&abstraction) {
-                ug.kill_abstraction(self, abstraction, repacker);
+                ug.kill_edge(abstraction.clone().into(), self, repacker);
             }
         }
 
@@ -357,7 +359,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 _ => {}
             }
         }
-        ug.unblock_place(place.into(), self, repacker);
+        ug.unblock_node(place.into(), self, repacker);
         self.apply_unblock_graph(ug, repacker, location);
 
         // Originally we may not have been expanded enough
@@ -435,7 +437,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let mut cont = false;
             let edges = self.graph.leaf_edges(repacker);
             for edge in edges {
-                if edge.blocked_by_places(repacker).iter().all(|p| p.is_old()) {
+                if edge.blocked_by_nodes(repacker).iter().all(|p| p.is_old()) {
                     self.remove_edge_and_set_latest(&edge, repacker, location);
                     cont = true;
                 }

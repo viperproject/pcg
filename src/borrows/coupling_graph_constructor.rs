@@ -19,11 +19,11 @@ pub type CGNode<'tcx> = RegionProjection<'tcx>;
 
 impl<'tcx> CGNode<'tcx> {
     pub fn to_abstraction_input_target(&self) -> AbstractionInputTarget<'tcx> {
-        AbstractionInputTarget::RegionProjection(*self)
+        *self
     }
 
     pub fn to_abstraction_output_target(&self) -> AbstractionOutputTarget<'tcx> {
-        AbstractionOutputTarget::RegionProjection(*self)
+        *self
     }
 }
 
@@ -101,7 +101,6 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
     ) -> coupling::Graph<CGNode<'tcx>> {
         let full_graph = bg.region_projection_graph(self.repacker);
         for node in full_graph.leaf_nodes() {
-            eprintln!("leaf: {:?}", node);
             self.add_edges_from(&full_graph, node, node)
         }
         self.coupling_graph

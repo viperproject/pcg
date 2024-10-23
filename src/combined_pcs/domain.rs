@@ -266,11 +266,11 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root }) = root {
                 match &self.fpcs.post_main[root.local] {
                     CapabilityLocal::Unallocated => {
-                        g.unblock_place(root.into(), &self.borrows.after, self.cgx.rp);
+                        g.unblock_node(root.into(), &self.borrows.after, self.cgx.rp);
                     }
                     CapabilityLocal::Allocated(projs) => {
                         if !(*projs).contains_key(&root) {
-                            g.unblock_place(root.into(), &self.borrows.after, self.cgx.rp);
+                            g.unblock_node(root.into(), &self.borrows.after, self.cgx.rp);
                         }
                     }
                 }

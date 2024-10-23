@@ -66,14 +66,14 @@ pub struct FunctionCallAbstraction<'tcx> {
 
     substs: GenericArgsRef<'tcx>,
 
-    edges: Vec<(usize, AbstractionBlockEdge<'tcx>)>,
+    edges: Vec<AbstractionBlockEdge<'tcx>>,
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for FunctionCallAbstraction<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         self.edges
             .iter_mut()
-            .flat_map(|(_, edge)| edge.pcs_elems())
+            .flat_map(|edge| edge.pcs_elems())
             .collect()
     }
 }
@@ -89,16 +89,18 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
     pub fn location(&self) -> Location {
         self.location
     }
-    pub fn edges(&self) -> &Vec<(usize, AbstractionBlockEdge<'tcx>)> {
+
+    pub fn edges(&self) -> &Vec<AbstractionBlockEdge<'tcx>> {
         &self.edges
     }
+
     pub fn new(
         location: Location,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
-        edges: Vec<(usize, AbstractionBlockEdge<'tcx>)>,
+        edges: Vec<AbstractionBlockEdge<'tcx>>,
     ) -> Self {
-        assert!(edges.len() > 0);
+        assert!(!edges.is_empty());
         Self {
             location,
             def_id,
@@ -170,44 +172,8 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
-pub enum AbstractionTarget<'tcx, T> {
-    Place(T),
-    RegionProjection(RegionProjection<'tcx>),
-}
-
-pub type AbstractionInputTarget<'tcx> = AbstractionTarget<'tcx, MaybeRemotePlace<'tcx>>;
-pub type AbstractionOutputTarget<'tcx> = AbstractionTarget<'tcx, MaybeOldPlace<'tcx>>;
-
-impl<'tcx> AbstractionInputTarget<'tcx> {
-    pub fn blocks(&self, place: &MaybeOldPlace<'tcx>) -> bool {
-        match self {
-            AbstractionTarget::Place(p) => match p {
-                MaybeRemotePlace::Local(maybe_old_place) => maybe_old_place == place,
-                MaybeRemotePlace::Remote(_local) => false,
-            },
-            AbstractionTarget::RegionProjection(_p) => false,
-        }
-    }
-}
-
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionOutputTarget<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            AbstractionTarget::Place(p) => vec![p],
-            AbstractionTarget::RegionProjection(p) => p.pcs_elems(),
-        }
-    }
-}
-
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionInputTarget<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            AbstractionTarget::Place(p) => p.pcs_elems(),
-            AbstractionTarget::RegionProjection(p) => p.pcs_elems(),
-        }
-    }
-}
+pub type AbstractionInputTarget<'tcx> = RegionProjection<'tcx>;
+pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx>;
 
 impl<'tcx> AbstractionType<'tcx> {
     pub fn location(&self) -> Location {
@@ -230,39 +196,11 @@ impl<'tcx> AbstractionType<'tcx> {
             .collect()
     }
 
-    pub fn blocks_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.edges()
-            .into_iter()
-            .flat_map(|edge| edge.inputs())
-            .flat_map(|input| match input {
-                AbstractionTarget::Place(p) => Some(p),
-                AbstractionTarget::RegionProjection(_) => None,
-            })
-            .collect()
-    }
-
     pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
         match self {
-            AbstractionType::FunctionCall(c) => {
-                c.edges.iter().map(|(_, edge)| edge).cloned().collect()
-            }
+            AbstractionType::FunctionCall(c) => c.edges.clone(),
             AbstractionType::Loop(c) => c.edges().clone(),
         }
-    }
-
-    pub fn blocker_places(&self) -> FxHashSet<MaybeOldPlace<'tcx>> {
-        self.edges()
-            .into_iter()
-            .flat_map(|edge| edge.outputs())
-            .flat_map(|output| match output {
-                AbstractionTarget::Place(p) => Some(p),
-                AbstractionTarget::RegionProjection(p) => Some(p.place),
-            })
-            .collect()
-    }
-
-    pub fn blocks(&self, place: MaybeRemotePlace<'tcx>) -> bool {
-        self.blocks_places().contains(&place)
     }
 }
 
@@ -304,6 +242,14 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn local(&self) -> mir::Local {
+        self.place().local
+    }
+
+    pub fn ty_region_vid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionVid> {
+        self.place().ty_region_vid(repacker)
+    }
+
     pub fn last_projection(&self) -> Option<(Place<'tcx>, PlaceElem<'tcx>)> {
         match self {
             MaybeOldPlace::Current { place } => place.last_projection(),
@@ -342,8 +288,10 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             region_projections[idx]
         } else {
             panic!(
-                "Region projection index {:?} out of bounds for place {:?}",
-                idx, self
+                "Region projection index {:?} out of bounds for place {:?}, ty: {:?}",
+                idx,
+                self,
+                self.ty(repacker)
             );
         }
     }
@@ -463,7 +411,7 @@ use crate::utils::PlaceRepacker;
 use serde_json::json;
 
 use super::{
-    borrows_edge::{BorrowsEdge, ToBorrowsEdge},
+    borrows_edge::{BlockedNode, BorrowsEdge, ToBorrowsEdge},
     borrows_visitor::{extract_lifetimes, get_vid},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
@@ -617,22 +565,24 @@ impl<'tcx> Reborrow<'tcx> {
         }
     }
 
+    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
+        vec![self.blocked_place.into()].into_iter().collect()
+    }
+
     pub fn reserve_location(&self) -> Location {
         self.reserve_location
     }
 
-    pub fn assiged_place_region_vid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionVid> {
-        match self
-            .assigned_place
-            .place()
-            .prefix_place(repacker)
-            .unwrap()
-            .ty(repacker)
-            .ty
-            .kind()
-        {
+    // TODO: Region could be erased and we can't handle that yet
+    pub fn assigned_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx>> {
+        let assigned_prefix_place = self.assigned_place.prefix_place(repacker)?;
+        let assigned_prefix_place = assigned_prefix_place.with_inherent_region(repacker);
+        match assigned_prefix_place.ty(repacker).ty.kind() {
             ty::Ref(region, _, _) => match region.kind() {
-                ty::RegionKind::ReVar(v) => Some(v),
+                ty::RegionKind::ReVar(v) => Some(RegionProjection::new(v, assigned_prefix_place)),
                 _ => None,
             },
             _ => None,

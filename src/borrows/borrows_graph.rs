@@ -13,13 +13,13 @@ use crate::{
 };
 
 use super::{
-    borrows_edge::{BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
+    borrows_edge::{BlockedNode, BlockingNode, BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
-        AbstractionBlockEdge, AbstractionTarget, AbstractionType, LoopAbstraction, MaybeOldPlace,
-        MaybeRemotePlace, Reborrow, ToJsonWithRepacker,
+        AbstractionBlockEdge, AbstractionType, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace,
+        Reborrow, ToJsonWithRepacker,
     },
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -182,9 +182,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         edge.kind()
-            .blocked_by_places(repacker)
+            .blocked_by_nodes(repacker)
             .iter()
-            .all(|p| !self.has_edge_blocking(*p))
+            .all(|p| !self.has_edge_blocking(repacker, *p))
     }
 
     pub fn leaf_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowsEdge<'tcx>> {
@@ -193,39 +193,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
         candidates
     }
 
-    pub fn leaf_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeOldPlace<'tcx>> {
+    pub fn leaf_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockingNode<'tcx>> {
         self.leaf_edges(repacker)
             .into_iter()
-            .flat_map(|edge| edge.blocked_by_places(repacker).into_iter())
+            .flat_map(|edge| edge.blocked_by_nodes(repacker).into_iter())
             .collect()
-    }
-
-    pub fn num_paths_between(
-        &self,
-        blocking: MaybeOldPlace<'tcx>,
-        blocked: MaybeRemotePlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> usize {
-        let mut count = 0;
-        for blocked_edge in self.edges_blocked_by(blocking.into(), repacker) {
-            for blocked_place in blocked_edge.blocked_places() {
-                if blocked_place == blocked {
-                    count += 1;
-                } else {
-                    if let Some(blocked_place) = blocked_place.as_local_place() {
-                        count += self.num_paths_between(blocked_place, blocked, repacker);
-                    }
-                }
-            }
-        }
-        count
     }
 
     pub fn root_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowsEdge<'tcx>> {
         self.0
             .iter()
             .filter(|edge| {
-                edge.blocked_places().iter().all(|p| match p {
+                edge.blocked_places(repacker).iter().all(|p| match p {
                     MaybeRemotePlace::Local(maybe_old_place) => {
                         self.is_root(*maybe_old_place, repacker)
                     }
@@ -239,38 +218,43 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.root_edges(repacker)
             .into_iter()
-            .flat_map(|edge| edge.blocked_places().into_iter())
+            .flat_map(|edge| edge.blocked_places(repacker).into_iter())
             .collect()
     }
 
-    pub fn has_edge_blocking(&self, place: MaybeOldPlace<'tcx>) -> bool {
+    pub fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        blocked_node: T,
+    ) -> bool {
+        let blocked_node = blocked_node.into();
         self.0
             .iter()
-            .any(|edge| edge.blocked_places().contains(&(place.into())))
+            .any(|edge| edge.blocks_node(repacker, blocked_node))
     }
 
     pub fn is_root(&self, place: MaybeOldPlace<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        !self.has_edge_blocked_by(place, repacker)
+        !self.has_edge_blocked_by(place.into(), repacker)
     }
 
     pub fn has_edge_blocked_by(
         &self,
-        place: MaybeOldPlace<'tcx>,
+        node: BlockingNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         self.0
             .iter()
-            .any(|edge| edge.blocked_by_places(repacker).contains(&place))
+            .any(|edge| edge.blocked_by_nodes(repacker).contains(&node))
     }
 
     pub fn edges_blocked_by(
         &self,
-        place: MaybeOldPlace<'tcx>,
+        node: BlockingNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BorrowsEdge<'tcx>> {
         self.0
             .iter()
-            .filter(|edge| edge.blocked_by_places(repacker).contains(&place))
+            .filter(|edge| edge.blocked_by_nodes(repacker).contains(&node))
             .cloned()
             .collect()
     }
@@ -308,7 +292,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         output_facts: &PoloniusOutput,
         location_table: &LocationTable,
     ) -> bool {
-        eprintln!("Attempt join loop {:?} -> {:?}", self_block, exit_block);
         let self_coupling_graph =
             self.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
         let other_coupling_graph =
@@ -458,11 +441,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn edges_blocking(
         &self,
-        place: MaybeRemotePlace<'tcx>,
-    ) -> impl Iterator<Item = &BorrowsEdge<'tcx>> {
+        node: BlockedNode<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<BorrowsEdge<'tcx>> {
         self.0
             .iter()
-            .filter(move |edge| edge.blocked_places().contains(&place))
+            .filter(move |edge| edge.blocks_node(repacker, node))
+            .cloned()
+            .collect()
     }
 
     pub fn remove_abstraction_at(&mut self, location: Location) {

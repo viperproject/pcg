@@ -1,10 +1,11 @@
-use crate::rustc_interface::middle::mir::Location;
+use crate::rustc_interface::{
+    data_structures::fx::FxHashSet,
+    middle::mir::Location
+};
 use crate::utils::PlaceRepacker;
 
 use super::{
-    domain::{MaybeOldPlace, MaybeRemotePlace},
-    has_pcs_elem::HasPcsElems,
-    region_projection::RegionProjection,
+    borrows_edge::BlockedNode, domain::{MaybeOldPlace, MaybeRemotePlace}, has_pcs_elem::HasPcsElems, region_projection::RegionProjection
 };
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
 pub enum RegionProjectionMemberDirection {
@@ -35,6 +36,13 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
+    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
+        let blocked = match self.direction {
+            RegionProjectionMemberDirection::PlaceIsRegionInput => self.place.into(),
+            RegionProjectionMemberDirection::PlaceIsRegionOutput => self.projection.into(),
+        };
+        vec![blocked].into_iter().collect()
+    }
 
     pub fn projection_index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
         self.projection.index(repacker)

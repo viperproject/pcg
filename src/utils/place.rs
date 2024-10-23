@@ -52,6 +52,16 @@ impl<'tcx> Place<'tcx> {
         Self(PlaceRef { local, projection }, DebugInfo::new_static())
     }
 
+    pub fn ty_region_vid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionVid> {
+        match self.ty(repacker).ty.kind() {
+            TyKind::Ref(region, _, _) => match region.kind() {
+                ty::RegionKind::ReVar(region_vid) => Some(region_vid),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn prefix_place(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Option<Place<'tcx>> {
         let (prefix, _) = self.last_projection()?;
         Some(Place::new(prefix.local, &prefix.projection))

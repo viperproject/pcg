@@ -1,6 +1,6 @@
 use std::{backtrace, fmt};
 
-use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionVid};
+use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionVid, middle::mir::Local};
 
 use crate::utils::{Place, PlaceRepacker};
 
@@ -20,6 +20,10 @@ impl<'tcx> fmt::Display for RegionProjection<'tcx> {
 }
 
 impl<'tcx> RegionProjection<'tcx> {
+    pub fn local(&self) -> Local {
+        self.place.local()
+    }
+
     pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
         Self { place, region }
     }
@@ -33,6 +37,14 @@ impl<'tcx> RegionProjection<'tcx> {
             .place()
             .projection_index(self.region, repacker)
             .unwrap()
+    }
+
+    pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+        if self.place.ty_region_vid(repacker) == Some(self.region) {
+            Some(self.place.project_deref(repacker))
+        } else {
+            None
+        }
     }
 
     pub fn region(&self) -> RegionVid {

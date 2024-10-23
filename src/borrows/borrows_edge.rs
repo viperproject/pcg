@@ -1,6 +1,9 @@
 use rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet, middle::mir::BasicBlock};
 
-use crate::{rustc_interface, utils::PlaceRepacker};
+use crate::{
+    rustc_interface,
+    utils::{Place, PlaceRepacker},
+};
 
 use super::{
     borrows_graph::Conditioned,
@@ -17,6 +20,82 @@ use super::{
 pub struct BorrowsEdge<'tcx> {
     conditions: PathConditions,
     pub(crate) kind: BorrowsEdgeKind<'tcx>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum BlockingNode<'tcx> {
+    Place(MaybeOldPlace<'tcx>),
+    RegionProjection(RegionProjection<'tcx>),
+}
+
+impl<'tcx> BlockingNode<'tcx> {
+    pub fn is_old(&self) -> bool {
+        match self {
+            BlockingNode::Place(maybe_old_place) => maybe_old_place.is_old(),
+            BlockingNode::RegionProjection(rp) => rp.place.is_old(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum BlockedNode<'tcx> {
+    Place(MaybeRemotePlace<'tcx>),
+    RegionProjection(RegionProjection<'tcx>),
+}
+
+impl<'tcx> BlockedNode<'tcx> {
+    pub fn is_old(&self) -> bool {
+        match self {
+            BlockedNode::Place(remote_place) => remote_place.is_old(),
+            BlockedNode::RegionProjection(rp) => rp.place.is_old(),
+        }
+    }
+
+    pub fn as_place(&self) -> Option<MaybeRemotePlace<'tcx>> {
+        match self {
+            BlockedNode::Place(maybe_remote_place) => Some(*maybe_remote_place),
+            BlockedNode::RegionProjection(region_projection) => None,
+        }
+    }
+}
+
+impl<'tcx> From<Place<'tcx>> for BlockedNode<'tcx> {
+    fn from(place: Place<'tcx>) -> Self {
+        BlockedNode::Place(place.into())
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx>> for BlockedNode<'tcx> {
+    fn from(rp: RegionProjection<'tcx>) -> Self {
+        BlockedNode::RegionProjection(rp)
+    }
+}
+
+impl<'tcx> From<MaybeOldPlace<'tcx>> for BlockingNode<'tcx> {
+    fn from(maybe_old_place: MaybeOldPlace<'tcx>) -> Self {
+        BlockingNode::Place(maybe_old_place)
+    }
+}
+
+impl<'tcx> From<MaybeRemotePlace<'tcx>> for BlockedNode<'tcx> {
+    fn from(remote_place: MaybeRemotePlace<'tcx>) -> Self {
+        BlockedNode::Place(remote_place)
+    }
+}
+
+impl<'tcx> From<MaybeOldPlace<'tcx>> for BlockedNode<'tcx> {
+    fn from(maybe_old_place: MaybeOldPlace<'tcx>) -> Self {
+        BlockedNode::Place(maybe_old_place.into())
+    }
+}
+
+impl<'tcx> From<BlockingNode<'tcx>> for BlockedNode<'tcx> {
+    fn from(blocking_node: BlockingNode<'tcx>) -> Self {
+        match blocking_node {
+            BlockingNode::Place(maybe_old_place) => BlockedNode::Place(maybe_old_place.into()),
+            BlockingNode::RegionProjection(rp) => BlockedNode::RegionProjection(rp),
+        }
+    }
 }
 
 impl<'tcx> BorrowsEdge<'tcx> {
@@ -48,28 +127,37 @@ impl<'tcx> BorrowsEdge<'tcx> {
         Self { conditions, kind }
     }
 
-    pub fn blocked_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.kind.blocked_places()
-    }
-
-    pub fn blocks_place(&self, place: MaybeOldPlace<'tcx>) -> bool {
-        self.kind.blocked_places().contains(&place.into())
-    }
-
-    pub fn is_blocked_by_place(
+    pub fn blocked_places(
         &self,
-        place: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
+        self.blocked_nodes(repacker)
+            .into_iter()
+            .flat_map(|node| node.as_place())
+            .collect()
+    }
+
+    pub fn blocks_node(&self, repacker: PlaceRepacker<'_, 'tcx>, node: BlockedNode<'tcx>) -> bool {
+        self.blocked_nodes(repacker).contains(&node)
+    }
+
+    pub fn blocks_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        rp: RegionProjection<'tcx>,
     ) -> bool {
-        self.kind.blocked_by_places(repacker).contains(&place)
+        self.kind.blocks_region_projection(repacker, rp)
     }
 
-    /// The places that are blocking this edge (e.g. the assigned place of a reborrow)
-    pub fn blocked_by_places(
+    pub fn blocked_by_nodes(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<MaybeOldPlace<'tcx>> {
-        self.kind.blocked_by_places(repacker)
+    ) -> FxHashSet<BlockingNode<'tcx>> {
+        self.kind.blocked_by_nodes(repacker)
+    }
+
+    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
+        self.kind.blocked_nodes(repacker)
     }
 }
 
@@ -124,10 +212,6 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         }
     }
 
-    pub fn blocks_place(&self, place: MaybeRemotePlace<'tcx>) -> bool {
-        self.blocked_places().contains(&place)
-    }
-
     pub fn blocked_by_place(
         &self,
         place: MaybeOldPlace<'tcx>,
@@ -136,35 +220,61 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         self.blocked_by_places(repacker).contains(&place)
     }
 
-    pub fn blocked_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        match &self {
-            BorrowsEdgeKind::Reborrow(reborrow) => {
-                vec![reborrow.blocked_place].into_iter().collect()
-            }
-            BorrowsEdgeKind::DerefExpansion(de) => vec![de.base().into()].into_iter().collect(),
-            BorrowsEdgeKind::Abstraction(ra) => {
-                ra.blocks_places().into_iter().map(|p| p.into()).collect()
-            }
-            BorrowsEdgeKind::RegionProjectionMember(member) => match member.direction {
-                RegionProjectionMemberDirection::PlaceIsRegionInput => {
-                    vec![member.place.into()].into_iter().collect()
-                }
-                RegionProjectionMemberDirection::PlaceIsRegionOutput => FxHashSet::default(),
-            },
+    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
+        match self {
+            BorrowsEdgeKind::Reborrow(de) => de.blocked_nodes(),
+            BorrowsEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
+            BorrowsEdgeKind::Abstraction(node) => node.blocked_nodes(),
+            BorrowsEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
         }
     }
 
+    pub fn blocked_by_nodes(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<BlockingNode<'tcx>> {
+        let mut nodes: FxHashSet<BlockingNode<'tcx>> = self
+            .blocked_by_places(repacker)
+            .into_iter()
+            .map(|p| BlockingNode::Place(p))
+            .collect();
+        match self {
+            BorrowsEdgeKind::Reborrow(reborrow) => {
+                // TODO: Region could be erased and we can't handle that yet
+                if let Some(rp) = reborrow.assigned_region_projection(repacker) {
+                    nodes.insert(BlockingNode::RegionProjection(rp));
+                }
+            }
+            BorrowsEdgeKind::Abstraction(node) => {
+                for output in node.outputs() {
+                    nodes.insert(BlockingNode::RegionProjection(output));
+                }
+            }
+            BorrowsEdgeKind::RegionProjectionMember(member) => {
+                if member.direction == RegionProjectionMemberDirection::PlaceIsRegionInput {
+                    nodes.insert(BlockingNode::RegionProjection(member.projection));
+                }
+            }
+            _ => {}
+        }
+        nodes
+    }
+
     /// The places that are blocking this edge (e.g. the assigned place of a reborrow)
-    pub fn blocked_by_places(
+    fn blocked_by_places(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<MaybeOldPlace<'tcx>> {
         match &self {
             BorrowsEdgeKind::Reborrow(reborrow) => {
-                vec![reborrow.assigned_place].into_iter().collect()
+                FxHashSet::default() // Blocked by the region projection of the assigned place!
             }
             BorrowsEdgeKind::DerefExpansion(de) => de.expansion(repacker).into_iter().collect(),
-            BorrowsEdgeKind::Abstraction(ra) => ra.blocked_by_places(),
+            BorrowsEdgeKind::Abstraction(abstraction) => abstraction
+                .outputs()
+                .into_iter()
+                .flat_map(|p| p.deref(repacker))
+                .collect(),
             BorrowsEdgeKind::RegionProjectionMember(member) => match member.direction {
                 RegionProjectionMemberDirection::PlaceIsRegionInput => {
                     vec![member.projection.place].into_iter().collect()
@@ -175,6 +285,31 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                         .collect()
                 }
             },
+        }
+    }
+
+    /// Returns true iff this edge directly blocks the given region projection
+    pub fn blocks_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        rp: RegionProjection<'tcx>,
+    ) -> bool {
+        match &self {
+            BorrowsEdgeKind::Reborrow(reborrow) => {
+                reborrow.assigned_region_projection(repacker) == Some(rp)
+            }
+            BorrowsEdgeKind::DerefExpansion(deref_expansion) => {
+                for place in deref_expansion.expansion(repacker) {
+                    if place.region_projections(repacker).contains(&rp) {
+                        return true;
+                    }
+                }
+                false
+            }
+            BorrowsEdgeKind::Abstraction(abstraction_edge) => {
+                abstraction_edge.inputs().contains(&rp)
+            }
+            BorrowsEdgeKind::RegionProjectionMember(region_projection_member) => todo!(),
         }
     }
 }
