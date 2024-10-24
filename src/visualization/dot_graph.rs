@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Display;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 type NodeId = String;
 
@@ -13,6 +15,51 @@ pub struct DotGraph {
 impl DotGraph {
     pub fn write_to_file(&self, path: &str) -> std::io::Result<()> {
         std::fs::write(path, self.to_string())
+    }
+
+    pub fn render_with_imgcat(dot_str: &str) -> Result<(), std::io::Error> {
+        let mut dot_process = Command::new("dot")
+            .args(&["-Tpng"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let dot_stdin = dot_process
+            .stdin
+            .as_mut()
+            .expect("Failed to open dot stdin");
+        dot_stdin.write_all(dot_str.as_bytes())?;
+
+        let dot_output = dot_process.wait_with_output()?;
+
+        if !dot_output.status.success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "dot command failed",
+            ));
+        }
+
+        let mut imgcat_process = Command::new("imgcat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::inherit())
+            .spawn()?;
+
+        let imgcat_stdin = imgcat_process
+            .stdin
+            .as_mut()
+            .expect("Failed to open imgcat stdin");
+        imgcat_stdin.write_all(&dot_output.stdout)?;
+
+        let imgcat_status = imgcat_process.wait()?;
+
+        if !imgcat_status.success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "imgcat command failed",
+            ));
+        }
+
+        Ok(())
     }
 }
 

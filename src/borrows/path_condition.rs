@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use serde_json::json;
 
@@ -55,18 +55,26 @@ impl std::fmt::Display for PCGraph {
 }
 
 impl PCGraph {
-    pub fn root(&self) -> Option<BasicBlock> {
+    pub fn roots(&self) -> HashSet<BasicBlock> {
         self.0
             .iter()
-            .find(|pc| !self.has_path_to_block(pc.from))
+            .filter(|pc| !self.has_path_to_block(pc.from))
             .map(|pc| pc.from)
+            .collect()
     }
 
     pub fn end(&self) -> Option<BasicBlock> {
-        self.0
+        let ends = self
+            .0
             .iter()
-            .find(|pc| !self.has_path_from_block(pc.to))
+            .filter(|pc| !self.has_path_from_block(pc.to))
             .map(|pc| pc.to)
+            .collect::<Vec<_>>();
+        if ends.len() == 1 {
+            Some(ends[0])
+        } else {
+            None
+        }
     }
 
     pub fn singleton(pc: PathCondition) -> Self {
@@ -92,22 +100,26 @@ impl PCGraph {
     }
 
     pub fn has_suffix_of(&self, path: &[BasicBlock]) -> bool {
-        let path = if let Some(root) = self.root() {
-            let root_idx = path.iter().position(|b| *b == root).unwrap_or(0);
-            &path[root_idx..]
-        } else {
-            path
-        };
-        let mut i = 0;
-        while i < path.len() - 1 {
-            let f = path[i];
-            let t = path[i + 1];
-            if !self.0.contains(&PathCondition::new(f, t)) {
-                return false;
+        let check_path = |path: &[BasicBlock]| {
+            let mut i = 0;
+            while i < path.len() - 1 {
+                let f = path[i];
+                let t = path[i + 1];
+                if !self.0.contains(&PathCondition::new(f, t)) {
+                    return false;
+                }
+                i += 1
             }
-            i += 1
+            true
+        };
+        for root in self.roots() {
+            let root_idx = path.iter().position(|b| *b == root).unwrap_or(0);
+            let path = &path[root_idx..];
+            if check_path(path) {
+                return true;
+            }
         }
-        true
+        false
     }
 
     pub fn insert(&mut self, pc: PathCondition) -> bool {
@@ -150,10 +162,10 @@ impl PathConditions {
         Self::AtBlock(block)
     }
 
-    pub fn root(&self) -> Option<BasicBlock> {
+    pub fn roots(&self) -> HashSet<BasicBlock> {
         match self {
-            PathConditions::AtBlock(b) => Some(*b),
-            PathConditions::Paths(p) => p.root(),
+            PathConditions::AtBlock(b) => HashSet::from([*b]),
+            PathConditions::Paths(p) => p.roots(),
         }
     }
 
@@ -161,20 +173,6 @@ impl PathConditions {
         match self {
             PathConditions::AtBlock(b) => Some(*b),
             PathConditions::Paths(p) => p.end(),
-        }
-    }
-
-    /// Returns true if no path through the program would satisfy both conditions.
-    pub fn mutually_exclusive(&self, other: &Self, blocks: &BasicBlocks<'_>) -> bool {
-        if self == other {
-            return false;
-        }
-        match (self.root(), other.root(), self.end(), other.end()) {
-            (Some(r1), Some(r2), Some(e1), Some(e2)) => {
-                let preds = blocks.predecessors();
-                !preds[r1].contains(&e2) && !preds[r2].contains(&e1)
-            }
-            _ => false,
         }
     }
 

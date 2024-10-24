@@ -331,6 +331,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                             .insert(GraphEdge::DerefExpansionEdge {
                                 source: base_node,
                                 target,
+                                path_conditions: format!("{}", edge.conditions()),
                             });
                         // TODO: Region could be erased and we can't handle that yet
                         if owned.base().has_region_projections(self.repacker()) {
@@ -354,6 +355,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                                 .insert(GraphEdge::DerefExpansionEdge {
                                     source: base_node,
                                     target: place,
+                                    path_conditions: format!("{}", edge.conditions()),
                                 });
                         }
                     }

@@ -245,6 +245,8 @@ where
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use crate::visualization::dot_graph::DotGraph;
+
 impl<N> Graph<N>
 where
     N: Eq + Hash + Clone + Copy + fmt::Display,
@@ -257,49 +259,7 @@ where
             graph: &Graph<N>,
         ) -> Result<(), std::io::Error> {
             let dot = graph.to_dot_petgraph();
-
-            let mut dot_process = Command::new("dot")
-                .args(&["-Tpng"])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()?;
-
-            let dot_stdin = dot_process
-                .stdin
-                .as_mut()
-                .expect("Failed to open dot stdin");
-            dot_stdin.write_all(dot.as_bytes())?;
-
-            let dot_output = dot_process.wait_with_output()?;
-
-            if !dot_output.status.success() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "dot command failed",
-                ));
-            }
-
-            let mut imgcat_process = Command::new("imgcat")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::inherit())
-                .spawn()?;
-
-            let imgcat_stdin = imgcat_process
-                .stdin
-                .as_mut()
-                .expect("Failed to open imgcat stdin");
-            imgcat_stdin.write_all(&dot_output.stdout)?;
-
-            let imgcat_status = imgcat_process.wait()?;
-
-            if !imgcat_status.success() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "imgcat command failed",
-                ));
-            }
-
-            Ok(())
+            DotGraph::render_with_imgcat(&dot)
         }
 
         // This function is just for debugging, so we don't care if it fails

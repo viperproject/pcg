@@ -168,6 +168,7 @@ enum GraphEdge {
     DerefExpansionEdge {
         source: NodeId,
         target: NodeId,
+        path_conditions: String,
     },
     RegionProjectionMemberEdge {
         place: NodeId,
@@ -222,10 +223,16 @@ impl GraphEdge {
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string()),
             },
-            GraphEdge::DerefExpansionEdge { source, target } => DotEdge {
+            GraphEdge::DerefExpansionEdge {
+                source,
+                target,
+                path_conditions,
+            } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
-                options: EdgeOptions::undirected().with_color("green".to_string()),
+                options: EdgeOptions::undirected()
+                    .with_color("green".to_string())
+                    .with_label(path_conditions.clone()),
             },
             GraphEdge::AbstractEdge { blocked, blocking } => DotEdge {
                 from: blocked.to_string(),
@@ -270,6 +277,19 @@ pub fn generate_unblock_dot_graph<'a, 'tcx: 'a>(
     unblock_graph: &UnblockGraph<'tcx>,
 ) -> io::Result<String> {
     let constructor = UnblockGraphConstructor::new(unblock_graph.clone(), *repacker);
+    let graph = constructor.construct_graph();
+    let mut buf = vec![];
+    let drawer = GraphDrawer::new(&mut buf);
+    drawer.draw(graph)?;
+    Ok(String::from_utf8(buf).unwrap())
+}
+
+pub fn generate_dot_graph_str<'a, 'tcx: 'a>(
+    repacker: PlaceRepacker<'a, 'tcx>,
+    summary: &CapabilitySummary<'tcx>,
+    borrows_domain: &BorrowsState<'tcx>,
+) -> io::Result<String> {
+    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
     let graph = constructor.construct_graph();
     let mut buf = vec![];
     let drawer = GraphDrawer::new(&mut buf);

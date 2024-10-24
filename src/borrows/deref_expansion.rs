@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    borrows_edge::BlockedNode,
+    borrows_edge::{BlockedNode, BlockingNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
@@ -93,6 +93,16 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for DerefExpansion<'tcx> {
 }
 
 impl<'tcx> DerefExpansion<'tcx> {
+    pub fn blocked_by_nodes(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<BlockingNode<'tcx>> {
+        self.expansion(repacker)
+            .into_iter()
+            .map(|p| p.into())
+            .collect()
+    }
+
     pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         let mut blocked_nodes = FxHashSet::default();
         blocked_nodes.insert(self.base().into());

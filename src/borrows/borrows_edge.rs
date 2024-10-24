@@ -212,14 +212,6 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         }
     }
 
-    pub fn blocked_by_place(
-        &self,
-        place: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        self.blocked_by_places(repacker).contains(&place)
-    }
-
     pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         match self {
             BorrowsEdgeKind::Reborrow(de) => de.blocked_nodes(),
@@ -233,58 +225,34 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BlockingNode<'tcx>> {
-        let mut nodes: FxHashSet<BlockingNode<'tcx>> = self
-            .blocked_by_places(repacker)
-            .into_iter()
-            .map(|p| BlockingNode::Place(p))
-            .collect();
         match self {
             BorrowsEdgeKind::Reborrow(reborrow) => {
                 // TODO: Region could be erased and we can't handle that yet
                 if let Some(rp) = reborrow.assigned_region_projection(repacker) {
-                    nodes.insert(BlockingNode::RegionProjection(rp));
+                    return vec![BlockingNode::RegionProjection(rp)]
+                        .into_iter()
+                        .collect();
+                } else {
+                    FxHashSet::default()
                 }
             }
-            BorrowsEdgeKind::Abstraction(node) => {
-                for output in node.outputs() {
-                    nodes.insert(BlockingNode::RegionProjection(output));
-                }
-            }
-            BorrowsEdgeKind::RegionProjectionMember(member) => {
-                if member.direction == RegionProjectionMemberDirection::PlaceIsRegionInput {
-                    nodes.insert(BlockingNode::RegionProjection(member.projection));
-                }
-            }
-            _ => {}
-        }
-        nodes
-    }
-
-    /// The places that are blocking this edge (e.g. the assigned place of a reborrow)
-    fn blocked_by_places(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<MaybeOldPlace<'tcx>> {
-        match &self {
-            BorrowsEdgeKind::Reborrow(reborrow) => {
-                FxHashSet::default() // Blocked by the region projection of the assigned place!
-            }
-            BorrowsEdgeKind::DerefExpansion(de) => de.expansion(repacker).into_iter().collect(),
-            BorrowsEdgeKind::Abstraction(abstraction) => abstraction
+            BorrowsEdgeKind::Abstraction(node) => node
                 .outputs()
                 .into_iter()
-                .flat_map(|p| p.deref(repacker))
+                .map(|p| BlockingNode::RegionProjection(p))
                 .collect(),
-            BorrowsEdgeKind::RegionProjectionMember(member) => match member.direction {
-                RegionProjectionMemberDirection::PlaceIsRegionInput => {
-                    vec![member.projection.place].into_iter().collect()
-                }
-                RegionProjectionMemberDirection::PlaceIsRegionOutput => {
-                    vec![member.place.as_local_place().unwrap()]
+            BorrowsEdgeKind::RegionProjectionMember(member) => {
+                if member.direction == RegionProjectionMemberDirection::PlaceIsRegionInput {
+                    vec![BlockingNode::RegionProjection(member.projection)]
+                        .into_iter()
+                        .collect()
+                } else {
+                    vec![BlockingNode::Place(member.place.as_local_place().unwrap())]
                         .into_iter()
                         .collect()
                 }
-            },
+            }
+            BorrowsEdgeKind::DerefExpansion(de) => de.blocked_by_nodes(repacker),
         }
     }
 
