@@ -5,13 +5,13 @@ use rustc_interface::{
         borrow_set::BorrowSet,
         consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
     },
-    dataflow::{Analysis, AnalysisDomain, JoinSemiLattice},
+    dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
     middle::{
         mir::{
-            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
-            TerminatorEdges,
+            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
+            Terminator, TerminatorEdges,
         },
-        ty::{self, TyCtxt},
+        ty::{self, RegionVid, TyCtxt},
     },
 };
 use serde_json::{json, Value};
@@ -23,8 +23,9 @@ use crate::{
 };
 
 use super::{
-    borrows_state::BorrowsState, borrows_visitor::BorrowsVisitor, domain::MaybeRemotePlace,
-    path_condition::PathCondition,
+    borrows_state::BorrowsState, borrows_visitor::BorrowsVisitor,
+    coupling_graph_constructor::LivenessChecker, domain::MaybeRemotePlace,
+    path_condition::PathCondition, region_projection::RegionProjection,
 };
 use super::{
     deref_expansion::DerefExpansion,
@@ -94,6 +95,13 @@ impl<'tcx> ReborrowAction<'tcx> {
     }
 }
 
+impl<'tcx> LivenessChecker<'tcx> for Results<'tcx, MaybeLiveLocals> {
+    fn is_live(&self, region_projection: RegionProjection<'tcx>, block: BasicBlock) -> bool {
+        self.entry_set_for_block(block)
+            .contains(region_projection.local())
+    }
+}
+
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
         let mut other_after = other.after.clone();
@@ -108,8 +116,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
             &other_after,
             self.block(),
             other.block(),
-            self.output_facts.as_ref(),
-            self.location_table.as_ref(),
+            self.maybe_live_locals.as_ref(),
             self.repacker,
         )
     }
@@ -195,6 +202,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub repacker: PlaceRepacker<'mir, 'tcx>,
     pub output_facts: Rc<PoloniusOutput>,
     pub location_table: Rc<LocationTable>,
+    pub maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
 }
 
 impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
@@ -248,6 +256,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         output_facts: Rc<PoloniusOutput>,
         location_table: Rc<LocationTable>,
         block: Option<BasicBlock>,
+        maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     ) -> Self {
         Self {
             before_start: BorrowsState::new(),
@@ -258,6 +267,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             repacker,
             output_facts,
             location_table,
+            maybe_live_locals,
         }
     }
 

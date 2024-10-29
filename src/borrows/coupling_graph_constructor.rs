@@ -4,7 +4,8 @@ use crate::{
     coupling,
     rustc_interface::{
         borrowck::consumers::{LocationTable, PoloniusOutput},
-        middle::mir::{BasicBlock, Location},
+        middle::mir::{BasicBlock, Local, Location},
+        middle::ty::RegionVid,
     },
     utils::PlaceRepacker,
 };
@@ -39,32 +40,30 @@ impl PartialOrd for CGNode<'_> {
     }
 }
 
-pub struct CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
-    output_facts: &'polonius PoloniusOutput,
+pub trait LivenessChecker<'tcx> {
+    fn is_live(&self, region_projection: RegionProjection<'tcx>, block: BasicBlock) -> bool;
+}
+
+pub struct CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T> {
+    liveness: &'regioncx T,
     repacker: PlaceRepacker<'mir, 'tcx>,
     block: BasicBlock,
     coupling_graph: coupling::Graph<CGNode<'tcx>>,
-    location_table: &'mir LocationTable,
 }
 
-impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
+impl<'regioncx, 'mir, 'tcx, T: LivenessChecker<'tcx>>
+    CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T>
+{
     pub fn new(
-        polonius_output: &'polonius PoloniusOutput,
-        location_table: &'mir LocationTable,
+        region_liveness: &'regioncx T,
         repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
     ) -> Self {
-        assert!(
-            polonius_output.dump_enabled,
-            "Polonius dump is not enabled. This is likely because you aren't using the forked \
-            version of Rust that enables it. See the README for more information."
-        );
         Self {
-            output_facts: polonius_output,
+            liveness: region_liveness,
             repacker,
             block,
             coupling_graph: coupling::Graph::new(),
-            location_table,
         }
     }
 
@@ -80,13 +79,8 @@ impl<'polonius, 'mir, 'tcx> CouplingGraphConstructor<'polonius, 'mir, 'tcx> {
                 .add_edge(upper_candidate, bottom_connect);
         }
         for node in nodes {
-            let live_origins = self
-                .output_facts
-                .origins_live_at(self.location_table.start_index(Location {
-                    block: self.block,
-                    statement_index: 0,
-                }));
-            if node.place.is_old() || !live_origins.contains(&node.region().into()) {
+            let is_dead = !self.liveness.is_live(node, self.block);
+            if node.place.is_old() || is_dead {
                 self.add_edges_from(bg, bottom_connect, node);
             } else {
                 self.coupling_graph.add_edge(node, bottom_connect);

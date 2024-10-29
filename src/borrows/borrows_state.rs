@@ -18,6 +18,7 @@ use super::{
     borrows_edge::{BlockedNode, BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
+    coupling_graph_constructor::LivenessChecker,
     deref_expansion::DerefExpansion,
     domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
     has_pcs_elem::HasPcsElems,
@@ -39,13 +40,12 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
-    pub fn join<'mir>(
+    pub fn join<'mir, T: LivenessChecker<'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        output_facts: &PoloniusOutput,
-        location_table: &LocationTable,
+        region_liveness: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
@@ -53,9 +53,8 @@ impl<'tcx> BorrowsState<'tcx> {
             &other.graph,
             self_block,
             other_block,
-            output_facts,
-            location_table,
             repacker,
+            region_liveness,
         ) {
             changed = true;
         }

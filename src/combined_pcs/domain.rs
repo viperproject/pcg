@@ -13,7 +13,10 @@ use std::{
 };
 
 use rustc_interface::{
-    dataflow::fmt::DebugWithContext, dataflow::JoinSemiLattice, middle::mir,
+    dataflow::fmt::DebugWithContext,
+    dataflow::JoinSemiLattice,
+    dataflow::{impls::MaybeLiveLocals, Results},
+    middle::mir,
     middle::mir::BasicBlock,
 };
 
@@ -62,7 +65,7 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
 
     pub fpcs: FreePlaceCapabilitySummary<'a, 'tcx>,
     pub borrows: BorrowsDomain<'a, 'tcx>,
-
+    maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
 
     dot_output_dir: Option<String>,
@@ -222,6 +225,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         block: Option<BasicBlock>,
         dot_output_dir: Option<String>,
         dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
+        maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
         let borrows = BorrowsDomain::new(
@@ -229,6 +233,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             cgx.mir.output_facts.clone().unwrap(),
             cgx.mir.location_table.clone().unwrap(),
             block,
+            maybe_live_locals.clone(),
         );
         Self {
             cgx,
@@ -237,6 +242,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             borrows,
             dot_graphs,
             dot_output_dir,
+            maybe_live_locals,
         }
     }
 }

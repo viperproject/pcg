@@ -15,7 +15,7 @@ use crate::{
 use super::{
     borrows_edge::{BlockedNode, BlockingNode, BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{CGNode, CouplingGraphConstructor},
+    coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
         AbstractionBlockEdge, AbstractionType, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace,
@@ -271,31 +271,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    fn construct_coupling_graph(
+    fn construct_coupling_graph<T: LivenessChecker<'tcx>>(
         &self,
-        output_facts: &PoloniusOutput,
-        location_table: &LocationTable,
+        region_liveness: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
         block: BasicBlock,
     ) -> coupling::Graph<CGNode<'tcx>> {
-        let constructor =
-            CouplingGraphConstructor::new(output_facts, location_table, repacker, block);
+        let constructor = CouplingGraphConstructor::new(region_liveness, repacker, block);
         constructor.construct_coupling_graph(self)
     }
 
-    fn join_loop(
+    fn join_loop<T: LivenessChecker<'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         exit_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
-        output_facts: &PoloniusOutput,
-        location_table: &LocationTable,
+        region_liveness: &T,
     ) -> bool {
         let self_coupling_graph =
-            self.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
+            self.construct_coupling_graph(region_liveness, repacker, exit_block);
         let other_coupling_graph =
-            other.construct_coupling_graph(output_facts, location_table, repacker, exit_block);
+            other.construct_coupling_graph(region_liveness, repacker, exit_block);
         // self_coupling_graph.render_with_imgcat();
         // other_coupling_graph.render_with_imgcat();
         let result = self_coupling_graph
@@ -327,14 +324,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         return changed;
     }
 
-    pub fn join(
+    pub fn join<T: LivenessChecker<'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        output_facts: &PoloniusOutput,
-        location_table: &LocationTable,
         repacker: PlaceRepacker<'_, 'tcx>,
+        region_liveness: &T,
     ) -> bool {
         let mut changed = false;
 
@@ -361,8 +357,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     self_block,
                     exit_blocks[0],
                     repacker,
-                    output_facts,
-                    location_table,
+                    region_liveness,
                 );
             }
             // TODO: Handle multiple exit blocks

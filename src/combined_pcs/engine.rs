@@ -15,7 +15,7 @@ use rustc_interface::{
         borrow_set::BorrowSet,
         consumers::{self, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
     },
-    dataflow::{Analysis, AnalysisDomain},
+    dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, Results},
     index::{Idx, IndexVec},
     middle::{
         mir::{
@@ -105,6 +105,7 @@ pub struct PcsEngine<'a, 'tcx> {
     pub(crate) cgx: Rc<PcsContext<'a, 'tcx>>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
+    maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     debug_output_dir: Option<String>,
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
     curr_block: Cell<BasicBlock>,
@@ -142,11 +143,15 @@ impl<'a, 'tcx> PcsEngine<'a, 'tcx> {
             cgx.mir.region_inference_context.clone(),
             cgx.mir.output_facts.as_ref().unwrap(),
         );
+        let maybe_live_locals = MaybeLiveLocals
+            .into_engine(cgx.rp.tcx(), cgx.rp.body())
+            .iterate_to_fixpoint();
         Self {
             cgx,
             dot_graphs,
             fpcs,
             borrows,
+            maybe_live_locals: Rc::new(maybe_live_locals),
             debug_output_dir,
             curr_block: Cell::new(START_BLOCK),
         }
@@ -180,6 +185,7 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PcsEngine<'a, 'tcx> {
             block,
             self.debug_output_dir.clone(),
             dot_graphs,
+            self.maybe_live_locals.clone(),
         )
     }
 
