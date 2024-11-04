@@ -319,7 +319,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId;
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
-    fn draw_borrows_edge(&mut self, edge: &BorrowsEdge<'tcx>, graph: Option<&BorrowsGraph<'tcx>>) {
+    fn draw_borrows_edge(&mut self, edge: &BorrowsEdge<'tcx>, _graph: Option<&BorrowsGraph<'tcx>>) {
         match edge.kind() {
             BorrowsEdgeKind::DerefExpansion(deref_expansion) => {
                 let base_node = self.insert_maybe_old_place(deref_expansion.base());

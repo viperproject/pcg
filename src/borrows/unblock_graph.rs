@@ -9,7 +9,7 @@ use crate::{
     borrows::{
         borrows_edge::ToBorrowsEdge,
         borrows_state::BorrowsState,
-        domain::{MaybeOldPlace, Reborrow},
+        domain::{MaybeOldPlace, Borrow},
         region_projection::RegionProjection,
     },
     combined_pcs::UnblockAction,
@@ -35,7 +35,7 @@ pub struct UnblockGraph<'tcx> {
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum UnblockHistoryAction<'tcx> {
     UnblockNode(BlockedNode<'tcx>),
-    KillReborrow(Reborrow<'tcx>),
+    KillReborrow(Borrow<'tcx>),
 }
 
 /// A history of the actions occurring in the construction of the unblock graph.
@@ -157,14 +157,13 @@ impl<'tcx> UnblockGraph<'tcx> {
                             ));
                             to_keep.remove(edge);
                         }
-                        UnblockEdgeType::RegionProjectionMember(member) => {
+                        UnblockEdgeType::RegionProjectionMember(_member) => {
                             // TODO: Action to remove the member
                             // push_action(UnblockAction::TerminateRegionProjectionMember(
                             //     member.projection,
                             // ));
                             to_keep.remove(edge);
                         }
-                        _ => {}
                     }
                 }
             }

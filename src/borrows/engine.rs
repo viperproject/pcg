@@ -20,16 +20,20 @@ use crate::{
     borrows::domain::ToJsonWithRepacker,
     rustc_interface,
     utils::{self, Place, PlaceRepacker},
+    BorrowsBridge,
 };
 
 use super::{
-    borrows_state::BorrowsState, borrows_visitor::BorrowsVisitor,
-    coupling_graph_constructor::LivenessChecker, domain::MaybeRemotePlace,
-    path_condition::PathCondition, region_projection::RegionProjection,
+    borrows_state::BorrowsState,
+    borrows_visitor::{BorrowsVisitor, DebugCtx},
+    coupling_graph_constructor::LivenessChecker,
+    domain::MaybeRemotePlace,
+    path_condition::PathCondition,
+    region_projection::RegionProjection,
 };
 use super::{
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, Reborrow},
+    domain::{Borrow, MaybeOldPlace},
 };
 
 pub struct BorrowsEngine<'mir, 'tcx> {
@@ -66,8 +70,8 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
 
 #[derive(Clone, Debug)]
 pub enum ReborrowAction<'tcx> {
-    AddReborrow(Reborrow<'tcx>),
-    RemoveReborrow(Reborrow<'tcx>),
+    AddReborrow(Borrow<'tcx>),
+    RemoveReborrow(Borrow<'tcx>),
     ExpandPlace(DerefExpansion<'tcx>),
     CollapsePlace(Vec<utils::Place<'tcx>>, MaybeOldPlace<'tcx>),
 }
@@ -104,7 +108,7 @@ impl<'tcx> LivenessChecker<'tcx> for Results<'tcx, MaybeLiveLocals> {
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
-        let mut other_after = other.after.clone();
+        let mut other_after = other.after_state().clone();
 
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
@@ -112,7 +116,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         other_after.add_path_condition(pc);
 
         // Overlay both graphs
-        self.after.join(
+        self.states.after.join(
             &other_after,
             self.block(),
             other.block(),
@@ -143,9 +147,9 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         location: Location,
     ) {
         BorrowsVisitor::preparing(self, state, true).visit_statement(statement, location);
-        state.before_start = state.after.clone();
+        state.states.before_start = state.states.after.clone();
         BorrowsVisitor::applying(self, state, true).visit_statement(statement, location);
-        state.before_after = state.after.clone();
+        state.states.before_after = state.states.after.clone();
     }
 
     fn apply_statement_effect(
@@ -155,7 +159,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         location: Location,
     ) {
         BorrowsVisitor::preparing(self, state, false).visit_statement(statement, location);
-        state.start = state.after.clone();
+        state.states.start = state.states.after.clone();
         BorrowsVisitor::applying(self, state, false).visit_statement(statement, location);
     }
 
@@ -166,9 +170,9 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         location: Location,
     ) {
         BorrowsVisitor::preparing(self, state, true).visit_terminator(terminator, location);
-        state.before_start = state.after.clone();
+        state.states.before_start = state.states.after.clone();
         BorrowsVisitor::applying(self, state, true).visit_terminator(terminator, location);
-        state.before_after = state.after.clone();
+        state.states.before_after = state.states.after.clone();
     }
 
     fn apply_terminator_effect<'mir>(
@@ -178,7 +182,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
         BorrowsVisitor::preparing(self, state, false).visit_terminator(terminator, location);
-        state.start = state.after.clone();
+        state.states.start = state.states.after.clone();
         BorrowsVisitor::applying(self, state, false).visit_terminator(terminator, location);
         terminator.edges()
     }
@@ -192,12 +196,48 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         todo!()
     }
 }
-#[derive(Clone)]
-pub struct BorrowsDomain<'mir, 'tcx> {
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct BorrowsStates<'tcx> {
     pub before_start: BorrowsState<'tcx>,
     pub before_after: BorrowsState<'tcx>,
     pub start: BorrowsState<'tcx>,
     pub after: BorrowsState<'tcx>,
+}
+
+impl<'tcx> BorrowsStates<'tcx> {
+    pub fn new() -> Self {
+        Self {
+            before_start: BorrowsState::new(),
+            before_after: BorrowsState::new(),
+            start: BorrowsState::new(),
+            after: BorrowsState::new(),
+        }
+    }
+
+    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
+        json!({
+            "before_start": self.before_start.to_json(repacker),
+            "before_after": self.before_after.to_json(repacker),
+            "start": self.start.to_json(repacker),
+            "after": self.after.to_json(repacker),
+        })
+    }
+
+    pub fn bridge_between_stmts(
+        &self,
+        next: &BorrowsStates<'tcx>,
+        debug_ctx: DebugCtx,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> (BorrowsBridge<'tcx>, BorrowsBridge<'tcx>) {
+        let start = self.after.bridge(&next.before_start, debug_ctx, repacker);
+        let middle = next.before_after.bridge(&next.start, debug_ctx, repacker);
+        (start, middle)
+    }
+}
+#[derive(Clone)]
+pub struct BorrowsDomain<'mir, 'tcx> {
+    pub states: BorrowsStates<'tcx>,
     pub block: Option<BasicBlock>,
     pub repacker: PlaceRepacker<'mir, 'tcx>,
     pub output_facts: Rc<PoloniusOutput>,
@@ -207,11 +247,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
 
 impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
     fn eq(&self, other: &Self) -> bool {
-        self.before_start == other.before_start
-            && self.before_after == other.before_after
-            && self.start == other.start
-            && self.after == other.after
-            && self.block == other.block
+        self.states == other.states && self.block == other.block
     }
 }
 
@@ -220,16 +256,24 @@ impl<'mir, 'tcx> Eq for BorrowsDomain<'mir, 'tcx> {}
 impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BorrowsDomain")
-            .field("before_start", &self.before_start)
-            .field("before_after", &self.before_after)
-            .field("start", &self.start)
-            .field("after", &self.after)
+            .field("before_start", &self.states.before_start)
+            .field("before_after", &self.states.before_after)
+            .field("start", &self.states.start)
+            .field("after", &self.states.after)
             .field("block", &self.block)
             .finish()
     }
 }
 
 impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+    pub fn after_state(&self) -> &BorrowsState<'tcx> {
+        &self.states.after
+    }
+
+    pub fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
+        &mut self.states.after
+    }
+
     pub fn is_initialized(&self) -> bool {
         self.block.is_some()
     }
@@ -242,15 +286,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         self.block.unwrap()
     }
 
-    pub fn to_json(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Value {
-        json!({
-            "before_start": self.before_start.to_json(repacker),
-            "before_after": self.before_after.to_json(repacker),
-            "start": self.start.to_json(repacker),
-            "after": self.after.to_json(repacker),
-        })
-    }
-
     pub fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
         output_facts: Rc<PoloniusOutput>,
@@ -259,10 +294,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     ) -> Self {
         Self {
-            before_start: BorrowsState::new(),
-            before_after: BorrowsState::new(),
-            start: BorrowsState::new(),
-            after: BorrowsState::new(),
+            states: BorrowsStates::new(),
             block,
             repacker,
             output_facts,
@@ -277,7 +309,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 self.repacker.body().local_decls[arg].ty.kind()
             {
                 let arg_place: Place<'tcx> = arg.into();
-                self.after.add_reborrow(
+                self.states.after.add_reborrow(
                     MaybeRemotePlace::place_assigned_to_local(arg),
                     arg_place.project_deref(self.repacker),
                     *mutability,

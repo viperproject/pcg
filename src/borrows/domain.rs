@@ -519,7 +519,7 @@ impl<'tcx> From<Place<'tcx>> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> std::fmt::Display for Reborrow<'tcx> {
+impl<'tcx> std::fmt::Display for Borrow<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -529,7 +529,7 @@ impl<'tcx> std::fmt::Display for Reborrow<'tcx> {
     }
 }
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub struct Reborrow<'tcx> {
+pub struct Borrow<'tcx> {
     pub blocked_place: MaybeRemotePlace<'tcx>,
     pub assigned_place: MaybeOldPlace<'tcx>,
     pub mutability: Mutability,
@@ -540,7 +540,7 @@ pub struct Reborrow<'tcx> {
     pub region: ty::Region<'tcx>,
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for Reborrow<'tcx> {
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for Borrow<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut vec = vec![&mut self.assigned_place];
         vec.extend(self.blocked_place.pcs_elems());
@@ -548,7 +548,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for Reborrow<'tcx> {
     }
 }
 
-impl<'tcx> Reborrow<'tcx> {
+impl<'tcx> Borrow<'tcx> {
     pub fn new(
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: MaybeOldPlace<'tcx>,
@@ -601,7 +601,7 @@ pub trait ToJsonWithRepacker<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value;
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for Reborrow<'tcx> {
+impl<'tcx> ToJsonWithRepacker<'tcx> for Borrow<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "blocked_place": self.blocked_place.to_json(repacker),

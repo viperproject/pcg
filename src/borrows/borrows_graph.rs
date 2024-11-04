@@ -19,7 +19,7 @@ use super::{
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
         AbstractionBlockEdge, AbstractionType, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace,
-        Reborrow, ToJsonWithRepacker,
+        Borrow, ToJsonWithRepacker,
     },
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -65,7 +65,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn region_projection_edge(
         &self,
-        reborrow: &Reborrow<'tcx>,
+        reborrow: &Borrow<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
         fn to_rp<'tcx>(
@@ -112,7 +112,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub fn reborrows(&self) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    pub fn reborrows(&self) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
@@ -134,7 +134,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn reborrows_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
@@ -156,7 +156,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn reborrows_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
@@ -419,7 +419,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         region: Region<'tcx>,
     ) -> bool {
         self.insert(
-            Reborrow::new(
+            Borrow::new(
                 blocked_place.into(),
                 assigned_place.into(),
                 mutability,
@@ -456,7 +456,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, debug_ctx: DebugCtx) -> bool {
+    pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
         self.0.remove(edge)
     }
 

@@ -111,34 +111,24 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
             let terminator = self.mir.basic_blocks[bb].terminator();
             let successors = match &terminator.kind {
                 mir::TerminatorKind::Call {
-                    func,
-                    args,
-                    destination,
                     target,
-                    unwind,
-                    call_source,
-                    fn_span,
+                    ..
                 } => vec![target.unwrap()],
                 mir::TerminatorKind::FalseUnwind {
                     real_target,
-                    unwind,
+                    ..
                 } => vec![*real_target],
                 mir::TerminatorKind::FalseEdge {
                     real_target,
-                    imaginary_target,
+                    ..
                 } => vec![*real_target],
                 mir::TerminatorKind::Drop {
-                    place,
                     target,
-                    unwind,
-                    replace,
+                    ..
                 } => vec![*target],
                 mir::TerminatorKind::Assert {
-                    cond,
-                    expected,
-                    msg,
                     target,
-                    unwind,
+                    ..
                 } => vec![*target],
                 _ => terminator.successors().into_iter().collect(),
             };

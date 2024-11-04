@@ -242,9 +242,6 @@ where
     }
 }
 
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 use crate::visualization::dot_graph::DotGraph;
 
 impl<N> Graph<N>

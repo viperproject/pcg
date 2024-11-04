@@ -237,12 +237,15 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.fpcs
             .apply_before_statement_effect(&mut state.fpcs, statement, location);
-        state.borrows.after.ensure_deref_expansions_to_fpcs(
-            self.cgx.rp.tcx(),
-            self.cgx.rp.body(),
-            &state.fpcs.post_main,
-            location,
-        );
+        state
+            .borrows
+            .after_state_mut()
+            .ensure_deref_expansions_to_fpcs(
+                self.cgx.rp.tcx(),
+                self.cgx.rp.body(),
+                &state.fpcs.post_main,
+                location,
+            );
         self.borrows
             .apply_before_statement_effect(&mut state.borrows, statement, location);
         self.generate_dot_graph(
@@ -264,12 +267,15 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
     ) {
         self.fpcs
             .apply_statement_effect(&mut state.fpcs, statement, location);
-        state.borrows.after.ensure_deref_expansions_to_fpcs(
-            self.cgx.rp.tcx(),
-            self.cgx.rp.body(),
-            &state.fpcs.post_main,
-            location,
-        );
+        state
+            .borrows
+            .after_state_mut()
+            .ensure_deref_expansions_to_fpcs(
+                self.cgx.rp.tcx(),
+                self.cgx.rp.body(),
+                &state.fpcs.post_main,
+                location,
+            );
         self.borrows
             .apply_statement_effect(&mut state.borrows, statement, location);
         self.generate_dot_graph(state, DataflowStmtPhase::Start, location.statement_index);
@@ -308,12 +314,15 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
             .apply_terminator_effect(&mut state.borrows, terminator, location);
         self.fpcs
             .apply_terminator_effect(&mut state.fpcs, terminator, location);
-        state.borrows.after.ensure_deref_expansions_to_fpcs(
-            self.cgx.rp.tcx(),
-            self.cgx.rp.body(),
-            &state.fpcs.post_main,
-            location,
-        );
+        state
+            .borrows
+            .after_state_mut()
+            .ensure_deref_expansions_to_fpcs(
+                self.cgx.rp.tcx(),
+                self.cgx.rp.body(),
+                &state.fpcs.post_main,
+                location,
+            );
         self.generate_dot_graph(state, DataflowStmtPhase::Start, location.statement_index);
         self.generate_dot_graph(state, DataflowStmtPhase::After, location.statement_index);
         terminator.edges()

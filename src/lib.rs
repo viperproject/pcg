@@ -17,13 +17,11 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-
 use borrows::{
     borrows_graph::Conditioned, borrows_visitor::DebugCtx, deref_expansion::DerefExpansion,
-    domain::Reborrow, engine::BorrowsDomain, unblock_graph::UnblockGraph,
+    domain::Borrow, engine::BorrowsDomain, unblock_graph::UnblockGraph,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PcsContext, PcsEngine, PlaceCapabilitySummary};
-use free_pcs::HasExtra;
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     dataflow::Analysis,
@@ -38,61 +36,36 @@ use crate::borrows::domain::ToJsonWithRepacker;
 pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     'mir,
     'tcx,
-    BorrowsDomain<'mir, 'tcx>,
     PlaceCapabilitySummary<'mir, 'tcx>,
     PcsEngine<'mir, 'tcx>,
 >;
 
-#[derive(Clone)]
-pub struct ReborrowBridge<'tcx> {
+#[derive(Clone, Debug)]
+pub struct BorrowsBridge<'tcx> {
     pub expands: FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
-    pub added_reborrows: FxHashSet<Conditioned<Reborrow<'tcx>>>,
+    pub added_borrows: FxHashSet<Conditioned<Borrow<'tcx>>>,
     pub ug: UnblockGraph<'tcx>,
 }
 
-impl<'tcx> ReborrowBridge<'tcx> {
-    pub fn new() -> ReborrowBridge<'tcx> {
-        ReborrowBridge {
+impl<'tcx> BorrowsBridge<'tcx> {
+    pub fn new() -> BorrowsBridge<'tcx> {
+        BorrowsBridge {
             expands: FxHashSet::default(),
-            added_reborrows: FxHashSet::default(),
+            added_borrows: FxHashSet::default(),
             ug: UnblockGraph::new(),
         }
     }
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "expands": self.expands.iter().map(|e| e.to_json(repacker)).collect::<Vec<_>>(),
-            "added_reborrows": self.added_reborrows.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
+            "added_borrows": self.added_borrows.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
             "ug": self.ug.to_json(repacker)
         })
     }
 }
 
-impl<'mir, 'tcx> HasExtra<BorrowsDomain<'mir, 'tcx>> for PlaceCapabilitySummary<'mir, 'tcx> {
-    type ExtraBridge = ReborrowBridge<'tcx>;
-    type BridgeCtx = TyCtxt<'tcx>;
-    fn get_extra(&self) -> BorrowsDomain<'mir, 'tcx> {
-        self.borrows.clone()
-    }
-
-    fn bridge_between_stmts(
-        lhs: BorrowsDomain<'mir, 'tcx>,
-        rhs: BorrowsDomain<'mir, 'tcx>,
-        ctx: DebugCtx,
-    ) -> (Self::ExtraBridge, Self::ExtraBridge) {
-        let start = lhs.after.bridge(&rhs.before_start, ctx, lhs.repacker);
-        let middle = rhs.before_after.bridge(&rhs.start, ctx, rhs.repacker);
-        (start, middle)
-    }
-
-    fn bridge_terminator(
-        _lhs: &BorrowsDomain<'mir, 'tcx>,
-        _rhs: BorrowsDomain<'mir, 'tcx>,
-        _block: BasicBlock,
-        _tcx: TyCtxt<'tcx>,
-    ) -> Self::ExtraBridge {
-        ReborrowBridge::new()
-    }
-}
+// let start = lhs.after.bridge(&rhs.before_start, ctx, lhs.repacker);
+// let middle = rhs.before_after.bridge(&rhs.start, ctx, rhs.repacker);
 
 use std::sync::Mutex;
 
@@ -150,7 +123,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                     statement_index
                 );
                 let borrows_json =
-                    serde_json::to_string_pretty(&statement.extra.to_json(rp)).unwrap();
+                    serde_json::to_string_pretty(&statement.borrows.to_json(rp)).unwrap();
                 std::fs::write(&borrows_file_path, borrows_json)
                     .expect("Failed to write borrows to JSON file");
             }

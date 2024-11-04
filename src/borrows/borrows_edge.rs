@@ -8,7 +8,7 @@ use crate::{
 use super::{
     borrows_graph::Conditioned,
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
+    domain::{MaybeOldPlace, MaybeRemotePlace, Borrow},
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
@@ -54,7 +54,7 @@ impl<'tcx> BlockedNode<'tcx> {
     pub fn as_place(&self) -> Option<MaybeRemotePlace<'tcx>> {
         match self {
             BlockedNode::Place(maybe_remote_place) => Some(*maybe_remote_place),
-            BlockedNode::RegionProjection(region_projection) => None,
+            BlockedNode::RegionProjection(_) => None,
         }
     }
 }
@@ -172,7 +172,7 @@ where
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowsEdgeKind<'tcx> {
-    Reborrow(Reborrow<'tcx>),
+    Reborrow(Borrow<'tcx>),
     DerefExpansion(DerefExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
@@ -189,7 +189,7 @@ impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowsEdgeKind<'tcx> {
 
 impl<'tcx, T> HasPcsElems<T> for BorrowsEdgeKind<'tcx>
 where
-    Reborrow<'tcx>: HasPcsElems<T>,
+    Borrow<'tcx>: HasPcsElems<T>,
     RegionProjectionMember<'tcx>: HasPcsElems<T>,
     DerefExpansion<'tcx>: HasPcsElems<T>,
     AbstractionEdge<'tcx>: HasPcsElems<T>,
@@ -277,7 +277,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
             BorrowsEdgeKind::Abstraction(abstraction_edge) => {
                 abstraction_edge.inputs().contains(&rp)
             }
-            BorrowsEdgeKind::RegionProjectionMember(region_projection_member) => todo!(),
+            BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
         }
     }
 }
@@ -303,7 +303,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionEdge<'tcx> {
     }
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for Reborrow<'tcx> {
+impl<'tcx> ToBorrowsEdge<'tcx> for Borrow<'tcx> {
     fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx> {
         BorrowsEdge {
             conditions,

@@ -205,14 +205,14 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
             let (fpcs, borrows) = match phase {
                 DataflowStmtPhase::Initial | DataflowStmtPhase::BeforeStart => {
-                    (&self.fpcs.pre_operands, &self.borrows.before_start)
+                    (&self.fpcs.pre_operands, &self.borrows.states.before_start)
                 }
                 DataflowStmtPhase::BeforeAfter => {
-                    (&self.fpcs.post_operands, &self.borrows.before_after)
+                    (&self.fpcs.post_operands, &self.borrows.states.before_after)
                 }
-                DataflowStmtPhase::Start => (&self.fpcs.pre_main, &self.borrows.start),
+                DataflowStmtPhase::Start => (&self.fpcs.pre_main, &self.borrows.states.start),
                 DataflowStmtPhase::After | DataflowStmtPhase::Join(_) => {
-                    (&self.fpcs.post_main, &self.borrows.after)
+                    (&self.fpcs.post_main, self.borrows.after_state())
                 }
             };
 
@@ -268,21 +268,21 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         let fpcs = self.fpcs.join(&other.fpcs);
         let borrows = self.borrows.join(&other.borrows);
         let mut g = UnblockGraph::new();
-        for root in self.borrows.after.roots(self.cgx.rp) {
+        for root in self.borrows.states.after.roots(self.cgx.rp) {
             if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root }) = root {
                 match &self.fpcs.post_main[root.local] {
                     CapabilityLocal::Unallocated => {
-                        g.unblock_node(root.into(), &self.borrows.after, self.cgx.rp);
+                        g.unblock_node(root.into(), &self.borrows.after_state(), self.cgx.rp);
                     }
                     CapabilityLocal::Allocated(projs) => {
                         if !(*projs).contains_key(&root) {
-                            g.unblock_node(root.into(), &self.borrows.after, self.cgx.rp);
+                            g.unblock_node(root.into(), &self.borrows.after_state(), self.cgx.rp);
                         }
                     }
                 }
             }
         }
-        let ub = self.borrows.after.apply_unblock_graph(
+        let ub = self.borrows.states.after.apply_unblock_graph(
             g,
             self.cgx.rp,
             mir::Location {

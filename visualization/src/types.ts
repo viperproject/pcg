@@ -82,7 +82,7 @@ export type PlaceExpand = {
 
 export type ReborrowBridge = {
   expands: Conditioned<PlaceExpand>[];
-  added_reborrows: Conditioned<Reborrow>[];
+  added_borrows: Conditioned<Reborrow>[];
   ug: {
     dot_graph: string,
     empty: boolean

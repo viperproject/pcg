@@ -11,7 +11,7 @@ use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     rustc_interface,
     utils::{Place, PlaceRepacker, SnapshotLocation},
-    ReborrowBridge,
+    BorrowsBridge,
 };
 
 use super::{
@@ -20,7 +20,7 @@ use super::{
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::LivenessChecker,
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
+    domain::{MaybeOldPlace, MaybeRemotePlace, Borrow},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
@@ -97,7 +97,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn reborrow_edges_reserved_at(
         &self,
         location: Location,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.graph
             .edges()
             .filter_map(|edge| match &edge.kind() {
@@ -160,7 +160,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn reborrows_blocking_prefix_of(
         &self,
         place: Place<'tcx>,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.reborrows()
             .into_iter()
             .filter(|rb| match rb.value.blocked_place {
@@ -246,21 +246,21 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn reborrows_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.graph.reborrows_blocked_by(place)
     }
 
-    pub fn reborrows(&self) -> FxHashSet<Conditioned<Reborrow<'tcx>>> {
+    pub fn reborrows(&self) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
         self.graph.reborrows()
     }
 
     pub fn bridge(
         &self,
         to: &Self,
-        debug_ctx: DebugCtx,
+        _debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> ReborrowBridge<'tcx> {
-        let added_reborrows: FxHashSet<Conditioned<Reborrow<'tcx>>> = to
+    ) -> BorrowsBridge<'tcx> {
+        let added_reborrows: FxHashSet<Conditioned<Borrow<'tcx>>> = to
             .reborrows()
             .into_iter()
             .filter(|rb| !self.has_reborrow_at_location(rb.value.reserve_location()))
@@ -290,8 +290,8 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
 
-        ReborrowBridge {
-            added_reborrows,
+        BorrowsBridge {
+            added_borrows: added_reborrows,
             expands,
             ug,
         }

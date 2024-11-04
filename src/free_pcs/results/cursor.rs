@@ -14,26 +14,30 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::borrows_visitor::DebugCtx,
+    borrows::{
+        borrows_visitor::DebugCtx,
+        engine::{BorrowsDomain, BorrowsStates},
+    },
     combined_pcs::{PcsContext, PcsEngine, PlaceCapabilitySummary},
     free_pcs::{
         CapabilitySummary, FreePlaceCapabilitySummary, RepackOp, RepackingBridgeSemiLattice,
     },
     rustc_interface,
     utils::PlaceRepacker,
+    BorrowsBridge,
 };
 
-pub trait HasFpcs<'mir, 'tcx> {
+pub trait HasPcs<'mir, 'tcx> {
     fn get_curr_fpcs(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
+    fn get_borrows_states(&self) -> &BorrowsStates<'tcx>;
 }
-impl<'mir, 'tcx> HasFpcs<'mir, 'tcx> for FreePlaceCapabilitySummary<'mir, 'tcx> {
-    fn get_curr_fpcs(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
-        self
-    }
-}
-impl<'mir, 'tcx> HasFpcs<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
+
+impl<'mir, 'tcx> HasPcs<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
     fn get_curr_fpcs(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
         &self.fpcs
+    }
+    fn get_borrows_states(&self) -> &BorrowsStates<'tcx> {
+        &self.borrows.states
     }
 }
 
@@ -50,50 +54,20 @@ impl<'mir, 'tcx> HasCgContext<'mir, 'tcx> for PcsEngine<'mir, 'tcx> {
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub trait HasExtra<T> {
-    type ExtraBridge;
-    type BridgeCtx;
-    fn get_extra(&self) -> T;
-    fn bridge_between_stmts(
-        lhs: T,
-        rhs: T,
-        debug_ctx: DebugCtx,
-    ) -> (Self::ExtraBridge, Self::ExtraBridge);
-    fn bridge_terminator(
-        lhs: &T,
-        rhs: T,
-        block: BasicBlock,
-        args: Self::BridgeCtx,
-    ) -> Self::ExtraBridge;
-}
-
-pub struct FreePcsAnalysis<
-    'mir,
-    'tcx,
-    T,
-    D: HasFpcs<'mir, 'tcx> + HasExtra<T>,
-    E: Analysis<'tcx, Domain = D>,
-> {
+pub struct FreePcsAnalysis<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>> {
     pub cursor: Cursor<'mir, 'tcx, E>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
-    _marker: std::marker::PhantomData<T>,
 }
 
-impl<
-        'mir,
-        'tcx,
-        T,
-        D: HasFpcs<'mir, 'tcx> + HasExtra<T, BridgeCtx = TyCtxt<'tcx>>,
-        E: Analysis<'tcx, Domain = D>,
-    > FreePcsAnalysis<'mir, 'tcx, T, D, E>
+impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
+    FreePcsAnalysis<'mir, 'tcx, D, E>
 {
     pub(crate) fn new(cursor: Cursor<'mir, 'tcx, E>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
             end_stmt: None,
-            _marker: std::marker::PhantomData,
         }
     }
 
@@ -125,7 +99,7 @@ impl<
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
     /// to the *end* of that location.
-    pub fn next(&mut self, exp_loc: Location) -> FreePcsLocation<'tcx, T, D::ExtraBridge> {
+    pub fn next(&mut self, exp_loc: Location) -> FreePcsLocation<'tcx> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
@@ -133,7 +107,7 @@ impl<
         let state = self.cursor.get();
 
         let after = state.get_curr_fpcs().post_main.clone();
-        let extra_after = state.get_extra();
+        let curr_borrows = state.get_borrows_states().clone();
 
         self.cursor.seek_after_primary_effect(location);
 
@@ -141,8 +115,11 @@ impl<
         let curr_fpcs = state.get_curr_fpcs();
         let (repacks_start, repacks_middle) = curr_fpcs.repack_ops(&after);
 
-        let (extra_start, extra_middle) =
-            D::bridge_between_stmts(extra_after, state.get_extra(), DebugCtx::new(location));
+        let (extra_start, extra_middle) = curr_borrows.bridge_between_stmts(
+            state.get_borrows_states(),
+            DebugCtx::new(location),
+            self.repacker(),
+        );
 
         let result = FreePcsLocation {
             location,
@@ -155,15 +132,15 @@ impl<
             repacks_start,
             repacks_middle,
             extra_start,
-            extra_middle: Some(extra_middle),
-            extra: state.get_extra(),
+            extra_middle,
+            borrows: curr_borrows,
         };
 
         self.curr_stmt = Some(location.successor_within_block());
 
         result
     }
-    pub fn terminator(&mut self) -> FreePcsTerminator<'tcx, T, D::ExtraBridge> {
+    pub fn terminator(&mut self) -> FreePcsTerminator<'tcx> {
         let location = self.curr_stmt.unwrap();
         assert!(location == self.end_stmt.unwrap());
         self.curr_stmt = None;
@@ -171,7 +148,6 @@ impl<
 
         // TODO: cleanup
         let rp: PlaceRepacker = self.repacker();
-        let extra = self.cursor.get().get_extra();
         let state = self.cursor.get().get_curr_fpcs().clone();
         let block = &self.body()[location.block];
         let succs = block
@@ -181,7 +157,6 @@ impl<
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
                 let to = entry_set.get_curr_fpcs();
-                let extra_to = entry_set.get_extra();
                 FreePcsLocation {
                     location: Location {
                         block: succ,
@@ -195,9 +170,9 @@ impl<
                     },
                     repacks_start: state.post_main.bridge(&to.post_main, rp),
                     repacks_middle: Vec::new(),
-                    extra: entry_set.get_extra(),
-                    extra_start: D::bridge_terminator(&extra, extra_to, succ, rp.tcx()),
-                    extra_middle: None,
+                    borrows: entry_set.get_borrows_states().clone(),
+                    extra_start: BorrowsBridge::new(),
+                    extra_middle: BorrowsBridge::new(),
                 }
             })
             .collect();
@@ -206,10 +181,7 @@ impl<
 
     /// Recommended interface.
     /// Does *not* require that one calls `analysis_for_bb` first
-    pub fn get_all_for_bb(
-        &mut self,
-        block: BasicBlock,
-    ) -> FreePcsBasicBlock<'tcx, T, D::ExtraBridge> {
+    pub fn get_all_for_bb(&mut self, block: BasicBlock) -> FreePcsBasicBlock<'tcx> {
         self.analysis_for_bb(block);
         let mut statements = Vec::new();
         while self.curr_stmt.unwrap() != self.end_stmt.unwrap() {
@@ -224,9 +196,9 @@ impl<
     }
 }
 
-pub struct FreePcsBasicBlock<'tcx, T, A> {
-    pub statements: Vec<FreePcsLocation<'tcx, T, A>>,
-    pub terminator: FreePcsTerminator<'tcx, T, A>,
+pub struct FreePcsBasicBlock<'tcx> {
+    pub statements: Vec<FreePcsLocation<'tcx>>,
+    pub terminator: FreePcsTerminator<'tcx>,
 }
 
 #[derive(Debug)]
@@ -238,19 +210,19 @@ pub struct CapabilitySummaries<'tcx> {
 }
 
 #[derive(Debug)]
-pub struct FreePcsLocation<'tcx, T, A> {
+pub struct FreePcsLocation<'tcx> {
     pub location: Location,
     /// Repacks before the statement
     pub repacks_start: Vec<RepackOp<'tcx>>,
     /// Repacks in the middle of the statement
     pub repacks_middle: Vec<RepackOp<'tcx>>,
     pub states: CapabilitySummaries<'tcx>,
-    pub extra_start: A,
-    pub extra_middle: Option<A>,
-    pub extra: T,
+    pub extra_start: BorrowsBridge<'tcx>,
+    pub extra_middle: BorrowsBridge<'tcx>,
+    pub borrows: BorrowsStates<'tcx>,
 }
 
 #[derive(Debug)]
-pub struct FreePcsTerminator<'tcx, T, A> {
-    pub succs: Vec<FreePcsLocation<'tcx, T, A>>,
+pub struct FreePcsTerminator<'tcx> {
+    pub succs: Vec<FreePcsLocation<'tcx>>,
 }

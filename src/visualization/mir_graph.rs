@@ -130,7 +130,6 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
         }
         Rvalue::ShallowInitBox(_, _) => todo!(),
         Rvalue::CopyForDeref(_) => todo!(),
-        _ => todo!(),
     }
 }
 fn format_terminator<'tcx>(

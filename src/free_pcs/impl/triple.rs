@@ -135,7 +135,6 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 };
                 self.operand_triples.push(triple);
             }
-            _ => todo!("{rvalue:?}"),
         }
     }
 
