@@ -7,19 +7,19 @@ use super::{Place, PlaceRepacker};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub enum SnapshotLocation {
-    Location(Location),
-    Join(BasicBlock),
+    After(Location),
+    Start(BasicBlock),
 }
 
 impl SnapshotLocation {
     pub fn start() -> Self {
-        SnapshotLocation::Location(Location::START)
+        SnapshotLocation::After(Location::START)
     }
 }
 
 impl From<Location> for SnapshotLocation {
     fn from(loc: Location) -> Self {
-        SnapshotLocation::Location(loc)
+        SnapshotLocation::After(loc)
     }
 }
 

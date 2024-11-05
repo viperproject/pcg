@@ -441,7 +441,7 @@ impl RemotePlace {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
         let maybe_old_place =
-            MaybeOldPlace::new(self.local.into(), Some(SnapshotLocation::Join(START_BLOCK)));
+            MaybeOldPlace::new(self.local.into(), Some(SnapshotLocation::Start(START_BLOCK)));
         maybe_old_place.region_projections(repacker)
     }
 

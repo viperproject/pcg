@@ -410,7 +410,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub fn add_reborrow(
+    pub fn add_borrow(
         &mut self,
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: Place<'tcx>,

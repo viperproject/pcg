@@ -46,7 +46,7 @@ impl<'tcx> Latest<'tcx> {
         for (place, other_loc) in other.0.iter() {
             if let Some(self_loc) = self.get_opt(*place) {
                 if self_loc != *other_loc {
-                    self.insert(*place, SnapshotLocation::Join(block));
+                    self.insert(*place, SnapshotLocation::Start(block));
                     changed = true;
                 }
             } else {

@@ -55,6 +55,12 @@ impl DebugCtx {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum StatementStage {
+    Operands,
+    Main,
+}
+
 pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
     tcx: TyCtxt<'tcx>,
     body: &'mir Body<'tcx>,
@@ -62,7 +68,7 @@ pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
     input_facts: &'mir PoloniusInput,
     location_table: &'mir LocationTable,
     borrow_set: Rc<BorrowSet<'tcx>>,
-    before: bool,
+    stage: StatementStage,
     preparing: bool,
     region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     debug_ctx: Option<DebugCtx>,
@@ -77,23 +83,23 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     pub fn preparing(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
-        before: bool,
+        stage: StatementStage,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        BorrowsVisitor::new(engine, state, before, true)
+        BorrowsVisitor::new(engine, state, stage, true)
     }
 
     pub fn applying(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
-        before: bool,
+        stage: StatementStage,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        BorrowsVisitor::new(engine, state, before, false)
+        BorrowsVisitor::new(engine, state, stage, false)
     }
 
     fn new(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
-        before: bool,
+        stage: StatementStage,
         preparing: bool,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
@@ -101,7 +107,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             body: engine.body,
             state,
             input_facts: engine.input_facts,
-            before,
+            stage,
             preparing,
             location_table: engine.location_table,
             borrow_set: engine.borrow_set.clone(),
@@ -319,7 +325,7 @@ pub fn get_vid(region: &Region) -> Option<RegionVid> {
 impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
-        if self.before && self.preparing {
+        if self.stage == StatementStage::Operands && self.preparing {
             match operand {
                 Operand::Copy(place) | Operand::Move(place) => {
                     let place: utils::Place<'tcx> = (*place).into();
@@ -327,29 +333,28 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 _ => {}
             }
-            match operand {
-                Operand::Move(place) => {
-                    self.state
-                        .states
-                        .after
-                        .set_latest((*place).into(), location);
-                    self.state.states.after.make_place_old(
-                        (*place).into(),
-                        PlaceRepacker::new(self.body, self.tcx),
-                        None,
-                    );
-                }
-                _ => {}
+        }
+        if self.stage == StatementStage::Operands && self.preparing {
+            if let Operand::Move(place) = operand {
+                self.state
+                    .states
+                    .after
+                    .set_latest((*place).into(), location);
+                self.state.states.after.make_place_old(
+                    (*place).into(),
+                    PlaceRepacker::new(self.body, self.tcx),
+                    None,
+                );
             }
         }
     }
 
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
-        if self.preparing && self.before {
+        if self.preparing && self.stage == StatementStage::Operands {
             self.minimize(location);
         }
         self.super_terminator(terminator, location);
-        if !self.before && !self.preparing {
+        if self.stage == StatementStage::Main && !self.preparing {
             match &terminator.kind {
                 TerminatorKind::Call {
                     func,
@@ -373,15 +378,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
         self.debug_ctx = Some(DebugCtx::new(location));
-        if self.preparing && self.before {
+        if self.preparing && self.stage == StatementStage::Operands {
             self.minimize(location);
         }
         self.super_statement(statement, location);
 
         // Will be included as start bridge ops
-        if self.preparing && self.before {
+        if self.preparing && self.stage == StatementStage::Operands {
             match &statement.kind {
-                StatementKind::Assign(box (target, _rvalue)) => {
+                StatementKind::Assign(box (target, _)) => {
+                    // In principle the target could be made old in the `Main`
+                    // stage as well, maybe that makes more sense?
                     if target.ty(self.body, self.tcx).ty.is_ref() {
                         let target = (*target).into();
                         self.state.states.after.make_place_old(
@@ -391,6 +398,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         );
                     }
                 }
+
                 StatementKind::FakeRead(box (_, place)) => {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.body, self.tcx) {
@@ -410,7 +418,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // Stuff in this block will be included as the middle "bridge" ops that
         // are visible to Prusti
-        if self.preparing && !self.before {
+        if self.preparing && self.stage == StatementStage::Main {
             match &statement.kind {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
@@ -431,10 +439,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             }
         }
 
-        if !self.preparing && !self.before {
+        if !self.preparing && self.stage == StatementStage::Main {
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
-                    self.after_state_mut().set_latest((*target).into(), location);
+                    self.after_state_mut()
+                        .set_latest((*target).into(), location);
                     match rvalue {
                         Rvalue::Aggregate(box kind, fields) => match kind {
                             AggregateKind::Adt(..) | AggregateKind::Tuple => {
@@ -510,7 +519,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 ty::TyKind::Ref(region, _, _) => {
                                     let from: utils::Place<'tcx> = (*from).into();
                                     let target: utils::Place<'tcx> = (*target).into();
-                                    self.state.states.after.add_reborrow(
+                                    self.state.states.after.add_borrow(
                                         from.project_deref(self.repacker()).into(),
                                         target.project_deref(self.repacker()),
                                         Mutability::Not,
@@ -531,7 +540,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 self.tcx
                                     .erase_regions((*assigned_place).ty(self.body, self.tcx).ty)
                             );
-                            self.state.states.after.add_reborrow(
+                            self.state.states.after.add_borrow(
                                 blocked_place.into(),
                                 assigned_place,
                                 kind.mutability(),
@@ -569,7 +578,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | &Discriminant(place)
             | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
-                if self.before && self.preparing && !place.is_owned(self.body, self.tcx) {
+                if self.stage == StatementStage::Operands
+                    && self.preparing
+                    && !place.is_owned(self.body, self.tcx)
+                {
                     self.ensure_expansion_to_exactly(place, location);
                 }
             }

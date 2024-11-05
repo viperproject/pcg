@@ -25,7 +25,7 @@ use crate::{
 
 use super::{
     borrows_state::BorrowsState,
-    borrows_visitor::{BorrowsVisitor, DebugCtx},
+    borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
     coupling_graph_constructor::LivenessChecker,
     domain::MaybeRemotePlace,
     path_condition::PathCondition,
@@ -146,9 +146,11 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        BorrowsVisitor::preparing(self, state, true).visit_statement(statement, location);
+        BorrowsVisitor::preparing(self, state, StatementStage::Operands)
+            .visit_statement(statement, location);
         state.states.before_start = state.states.after.clone();
-        BorrowsVisitor::applying(self, state, true).visit_statement(statement, location);
+        BorrowsVisitor::applying(self, state, StatementStage::Operands)
+            .visit_statement(statement, location);
         state.states.before_after = state.states.after.clone();
     }
 
@@ -158,9 +160,11 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        BorrowsVisitor::preparing(self, state, false).visit_statement(statement, location);
+        BorrowsVisitor::preparing(self, state, StatementStage::Main)
+            .visit_statement(statement, location);
         state.states.start = state.states.after.clone();
-        BorrowsVisitor::applying(self, state, false).visit_statement(statement, location);
+        BorrowsVisitor::applying(self, state, StatementStage::Main)
+            .visit_statement(statement, location);
     }
 
     fn apply_before_terminator_effect(
@@ -169,9 +173,11 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
-        BorrowsVisitor::preparing(self, state, true).visit_terminator(terminator, location);
+        BorrowsVisitor::preparing(self, state, StatementStage::Operands)
+            .visit_terminator(terminator, location);
         state.states.before_start = state.states.after.clone();
-        BorrowsVisitor::applying(self, state, true).visit_terminator(terminator, location);
+        BorrowsVisitor::applying(self, state, StatementStage::Operands)
+            .visit_terminator(terminator, location);
         state.states.before_after = state.states.after.clone();
     }
 
@@ -181,9 +187,11 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
-        BorrowsVisitor::preparing(self, state, false).visit_terminator(terminator, location);
+        BorrowsVisitor::preparing(self, state, StatementStage::Main)
+            .visit_terminator(terminator, location);
         state.states.start = state.states.after.clone();
-        BorrowsVisitor::applying(self, state, false).visit_terminator(terminator, location);
+        BorrowsVisitor::applying(self, state, StatementStage::Main)
+            .visit_terminator(terminator, location);
         terminator.edges()
     }
 
@@ -309,7 +317,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 self.repacker.body().local_decls[arg].ty.kind()
             {
                 let arg_place: Place<'tcx> = arg.into();
-                self.states.after.add_reborrow(
+                self.states.after.add_borrow(
                     MaybeRemotePlace::place_assigned_to_local(arg),
                     arg_place.project_deref(self.repacker),
                     *mutability,

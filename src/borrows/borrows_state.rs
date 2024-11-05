@@ -20,7 +20,7 @@ use super::{
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::LivenessChecker,
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, MaybeRemotePlace, Borrow},
+    domain::{Borrow, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
@@ -447,7 +447,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub fn add_reborrow(
+    pub fn add_borrow(
         &mut self,
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: Place<'tcx>,
@@ -456,7 +456,7 @@ impl<'tcx> BorrowsState<'tcx> {
         region: ty::Region<'tcx>,
     ) {
         self.graph
-            .add_reborrow(blocked_place, assigned_place, mutability, location, region);
+            .add_borrow(blocked_place, assigned_place, mutability, location, region);
     }
 
     pub fn has_reborrow_at_location(&self, location: Location) -> bool {
