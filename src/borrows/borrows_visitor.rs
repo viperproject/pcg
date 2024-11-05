@@ -326,15 +326,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
         if self.stage == StatementStage::Operands && self.preparing {
-            match operand {
-                Operand::Copy(place) | Operand::Move(place) => {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    self.ensure_expansion_to_exactly(place, location);
-                }
-                _ => {}
+            if let Some(place) = operand.place() {
+                self.ensure_expansion_to_exactly(place.into(), location);
             }
         }
-        if self.stage == StatementStage::Operands && self.preparing {
+        if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
                 self.state
                     .states
@@ -387,6 +383,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if self.preparing && self.stage == StatementStage::Operands {
             match &statement.kind {
                 StatementKind::Assign(box (target, _)) => {
+
+                    // Any references to target should be made old because it
+                    // will be overwritten in the assignment.
                     // In principle the target could be made old in the `Main`
                     // stage as well, maybe that makes more sense?
                     if target.ty(self.body, self.tcx).ty.is_ref() {
