@@ -9,10 +9,9 @@ use crate::{
 };
 
 use super::{
-    borrows_edge::{BlockedNode, BlockingNode},
+    borrow_pcg_edge::{BlockedNode, BlockingNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},
     has_pcs_elem::HasPcsElems,
-    latest::Latest,
     region_projection::RegionProjection,
 };
 
@@ -50,7 +49,9 @@ pub struct OwnedExpansion<'tcx> {
 
 impl<'tcx> OwnedExpansion<'tcx> {
     pub fn new(base: MaybeOldPlace<'tcx>) -> Self {
-        Self { base }
+        Self {
+            base,
+        }
     }
 
     pub fn base(&self) -> MaybeOldPlace<'tcx> {

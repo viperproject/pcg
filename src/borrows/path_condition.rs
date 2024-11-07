@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashSet};
 use serde_json::json;
 
 use crate::{
-    rustc_interface::middle::mir::{BasicBlock, BasicBlocks},
+    rustc_interface::middle::mir::BasicBlock,
     utils::PlaceRepacker,
 };
 

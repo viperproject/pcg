@@ -9,7 +9,7 @@ export default function SymbolicHeap({
     <Table
       columns={["Location", "Value", "Type"]}
       data={Object.entries(heap)
-        .filter(([symbol, value]) => !value.old)
+        // .filter(([symbol, value]) => !value.old)
         .map(([symbol, value]) => [symbol, value.value, value.ty])}
     />
   );

@@ -1,4 +1,4 @@
-use std::{backtrace, fmt};
+use std::fmt;
 
 use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionVid, middle::mir::Local};
 

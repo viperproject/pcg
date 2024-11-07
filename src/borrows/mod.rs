@@ -1,4 +1,5 @@
-pub mod borrows_edge;
+pub mod borrow_edge;
+pub mod borrow_pcg_edge;
 pub mod borrows_graph;
 pub mod borrows_state;
 pub mod borrows_visitor;
@@ -13,3 +14,4 @@ pub mod region_projection;
 pub mod region_projection_member;
 pub mod unblock_graph;
 pub mod has_pcs_elem;
+pub mod node;

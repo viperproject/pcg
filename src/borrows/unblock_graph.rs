@@ -2,31 +2,27 @@ use std::collections::HashSet;
 
 use rustc_interface::{
     ast::Mutability,
-    middle::mir::{BasicBlock, Location},
+    middle::mir::BasicBlock,
 };
 
 use crate::{
     borrows::{
-        borrows_edge::ToBorrowsEdge,
-        borrows_state::BorrowsState,
-        domain::{MaybeOldPlace, Borrow},
-        region_projection::RegionProjection,
+        borrows_state::BorrowsState, domain::MaybeOldPlace,
     },
     combined_pcs::UnblockAction,
     rustc_interface,
-    utils::{PlaceRepacker, PlaceSnapshot},
+    utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
 };
 
 use super::{
-    borrows_edge::{BlockedNode, BorrowsEdge, BorrowsEdgeKind},
-    borrows_graph::Conditioned,
-    domain::{AbstractionType, MaybeRemotePlace},
-    region_abstraction::AbstractionEdge,
+    borrow_edge::BorrowEdge,
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeKind, BorrowPCGEdge},
+    domain::MaybeRemotePlace,
 };
 
-type UnblockEdge<'tcx> = BorrowsEdge<'tcx>;
-type UnblockEdgeType<'tcx> = BorrowsEdgeKind<'tcx>;
+type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
+type UnblockEdgeType<'tcx> = BorrowPCGEdgeKind<'tcx>;
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
@@ -35,7 +31,7 @@ pub struct UnblockGraph<'tcx> {
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum UnblockHistoryAction<'tcx> {
     UnblockNode(BlockedNode<'tcx>),
-    KillReborrow(Borrow<'tcx>),
+    KillReborrow(BorrowEdge<'tcx>),
 }
 
 /// A history of the actions occurring in the construction of the unblock graph.
@@ -128,7 +124,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         while edges.len() > 0 {
             let mut to_keep = edges.clone();
 
-            let should_kill_edge = |edge: &BorrowsEdge<'tcx>| {
+            let should_kill_edge = |edge: &BorrowPCGEdge<'tcx>| {
                 edge.blocked_by_nodes(repacker)
                     .into_iter()
                     .all(|node| edges.iter().all(|e| !e.blocks_node(repacker, node.into())))
@@ -187,7 +183,7 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     pub fn kill_edge(
         &mut self,
-        edge: BorrowsEdge<'tcx>,
+        edge: BorrowPCGEdge<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {

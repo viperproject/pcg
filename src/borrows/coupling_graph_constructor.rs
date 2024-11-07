@@ -2,11 +2,7 @@ use std::cmp::Ordering;
 
 use crate::{
     coupling,
-    rustc_interface::{
-        borrowck::consumers::{LocationTable, PoloniusOutput},
-        middle::mir::{BasicBlock, Local, Location},
-        middle::ty::RegionVid,
-    },
+    rustc_interface::middle::mir::BasicBlock,
     utils::PlaceRepacker,
 };
 

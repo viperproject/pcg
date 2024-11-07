@@ -21,6 +21,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{domain::AbstractionBlockEdge, region_abstraction::AbstractionEdge},
+    free_pcs::CapabilityKind,
     rustc_interface,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
@@ -29,7 +30,6 @@ use super::{
     borrows_state::BorrowsState,
     domain::MaybeOldPlace,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
-    unblock_graph::UnblockGraph,
 };
 use super::{
     domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
@@ -121,10 +121,15 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         &mut self.state.states.after
     }
 
-    fn ensure_expansion_to_exactly(&mut self, place: utils::Place<'tcx>, location: Location) {
+    fn ensure_expansion_to_exactly(
+        &mut self,
+        place: utils::Place<'tcx>,
+        location: Location,
+        capability: CapabilityKind,
+    ) {
         self.state
             .after_state_mut()
-            .ensure_expansion_to_exactly(self.tcx, self.body, place, location)
+            .ensure_expansion_to_exactly(self.tcx, self.body, place, location, capability)
     }
 
     fn _loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
@@ -327,7 +332,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         self.super_operand(operand, location);
         if self.stage == StatementStage::Operands && self.preparing {
             if let Some(place) = operand.place() {
-                self.ensure_expansion_to_exactly(place.into(), location);
+                self.ensure_expansion_to_exactly(place.into(), location, CapabilityKind::Exclusive);
             }
         }
         if self.stage == StatementStage::Main && !self.preparing {
@@ -383,7 +388,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if self.preparing && self.stage == StatementStage::Operands {
             match &statement.kind {
                 StatementKind::Assign(box (target, _)) => {
-
                     // Any references to target should be made old because it
                     // will be overwritten in the assignment.
                     // In principle the target could be made old in the `Main`
@@ -405,9 +409,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             self.ensure_expansion_to_exactly(
                                 place.project_deref(self.repacker()),
                                 location,
+                                CapabilityKind::Exclusive,
                             );
                         } else {
-                            self.ensure_expansion_to_exactly(place, location);
+                            self.ensure_expansion_to_exactly(
+                                place,
+                                location,
+                                CapabilityKind::Exclusive,
+                            );
                         }
                     }
                 }
@@ -431,7 +440,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
                     if !target.is_owned(self.body, self.tcx) {
-                        self.ensure_expansion_to_exactly(target, location);
+                        self.ensure_expansion_to_exactly(target, location, CapabilityKind::Write);
                     }
                 }
                 _ => {}
@@ -441,8 +450,20 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if !self.preparing && self.stage == StatementStage::Main {
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
-                    self.after_state_mut()
-                        .set_latest((*target).into(), location);
+                    let target: utils::Place<'tcx> = (*target).into();
+                    self.after_state_mut().set_latest(target, location);
+                    if !target.is_owned(self.body, self.tcx) {
+                        self.state
+                            .states
+                            .after
+                            .set_capability((*target).into(), CapabilityKind::Exclusive);
+                    }
+                    if target.is_ref(self.body, self.tcx) {
+                        self.state.states.after.set_capability(
+                            target.project_deref(self.repacker()),
+                            CapabilityKind::Exclusive,
+                        );
+                    }
                     match rvalue {
                         Rvalue::Aggregate(box kind, fields) => match kind {
                             AggregateKind::Adt(..) | AggregateKind::Tuple => {
@@ -581,7 +602,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     && self.preparing
                     && !place.is_owned(self.body, self.tcx)
                 {
-                    self.ensure_expansion_to_exactly(place, location);
+                    self.ensure_expansion_to_exactly(place, location, CapabilityKind::Exclusive)
                 }
             }
         }

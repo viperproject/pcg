@@ -5,7 +5,7 @@ use crate::rustc_interface::{
 use crate::utils::PlaceRepacker;
 
 use super::{
-    borrows_edge::BlockedNode, domain::{MaybeOldPlace, MaybeRemotePlace}, has_pcs_elem::HasPcsElems, region_projection::RegionProjection
+    borrow_pcg_edge::BlockedNode, domain::{MaybeOldPlace, MaybeRemotePlace}, has_pcs_elem::HasPcsElems, region_projection::RegionProjection
 };
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
 pub enum RegionProjectionMemberDirection {

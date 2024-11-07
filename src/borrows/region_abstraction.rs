@@ -3,10 +3,10 @@ use rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 use crate::rustc_interface;
 
 use super::{
-    borrows_edge::BlockedNode,
+    borrow_pcg_edge::BlockedNode,
     domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
-        MaybeOldPlace, MaybeRemotePlace,
+        MaybeOldPlace,
     },
     has_pcs_elem::HasPcsElems,
 };

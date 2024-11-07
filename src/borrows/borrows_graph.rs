@@ -1,25 +1,26 @@
 use rustc_interface::{
     ast::Mutability,
-    borrowck::consumers::{LocationTable, PoloniusOutput},
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Location, START_BLOCK},
+    middle::mir::{self, BasicBlock, Location},
     middle::ty::{Region, TyCtxt},
 };
 use serde_json::json;
 
 use crate::{
-    coupling, rustc_interface,
-    utils::{Place, PlaceRepacker, SnapshotLocation},
+    coupling,
+    rustc_interface,
+    utils::{Place, PlaceRepacker},
 };
 
 use super::{
-    borrows_edge::{BlockedNode, BlockingNode, BorrowsEdge, BorrowsEdgeKind, ToBorrowsEdge},
+    borrow_edge::BorrowEdge,
+    borrow_pcg_edge::{BlockedNode, BlockingNode, BorrowPCGEdge, BorrowPCGEdgeKind, ToBorrowsEdge},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
-        AbstractionBlockEdge, AbstractionType, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace,
-        Borrow, ToJsonWithRepacker,
+        AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace,
+        ToJsonWithRepacker,
     },
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -29,7 +30,7 @@ use super::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowsEdge<'tcx>>);
+pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub fn is_empty(&self) -> bool {
@@ -44,7 +45,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0.len()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &BorrowsEdge<'tcx>> {
+    pub fn edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
         self.0.iter()
     }
 
@@ -54,7 +55,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> coupling::Graph<RegionProjection<'tcx>> {
         let mut graph = coupling::Graph::new();
         for edge in self.0.iter() {
-            if let BorrowsEdgeKind::Reborrow(reborrow) = &edge.kind() {
+            if let BorrowPCGEdgeKind::Reborrow(reborrow) = &edge.kind() {
                 if let Some((from, to)) = self.region_projection_edge(reborrow, repacker) {
                     graph.add_edge(from, to);
                 }
@@ -65,7 +66,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn region_projection_edge(
         &self,
-        reborrow: &Borrow<'tcx>,
+        reborrow: &BorrowEdge<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
         fn to_rp<'tcx>(
@@ -90,7 +91,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowsEdgeKind::Abstraction(abstraction) => Some(Conditioned {
+                BorrowPCGEdgeKind::Abstraction(abstraction) => Some(Conditioned {
                     conditions: edge.conditions().clone(),
                     value: abstraction.clone(),
                 }),
@@ -103,7 +104,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowsEdgeKind::DerefExpansion(de) => Some(Conditioned {
+                BorrowPCGEdgeKind::DerefExpansion(de) => Some(Conditioned {
                     conditions: edge.conditions().clone(),
                     value: de.clone(),
                 }),
@@ -112,11 +113,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub fn reborrows(&self) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
+    pub fn reborrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowsEdgeKind::Reborrow(reborrow) => Some(Conditioned {
+                BorrowPCGEdgeKind::Reborrow(reborrow) => Some(Conditioned {
                     conditions: edge.conditions().clone(),
                     value: reborrow.clone(),
                 }),
@@ -127,18 +128,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn has_reborrow_at_location(&self, location: Location) -> bool {
         self.0.iter().any(|edge| match &edge.kind() {
-            BorrowsEdgeKind::Reborrow(reborrow) => reborrow.reserve_location() == location,
+            BorrowPCGEdgeKind::Reborrow(reborrow) => reborrow.reserve_location() == location,
             _ => false,
         })
     }
     pub fn reborrows_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowsEdgeKind::Reborrow(reborrow) => {
+                BorrowPCGEdgeKind::Reborrow(reborrow) => {
                     if reborrow.blocked_place == place {
                         Some(Conditioned {
                             conditions: edge.conditions().clone(),
@@ -156,11 +157,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn reborrows_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
-    ) -> FxHashSet<Conditioned<Borrow<'tcx>>> {
+    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowsEdgeKind::Reborrow(reborrow) => {
+                BorrowPCGEdgeKind::Reborrow(reborrow) => {
                     if reborrow.assigned_place == place {
                         Some(Conditioned {
                             conditions: edge.conditions().clone(),
@@ -178,7 +179,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// All edges that are not blocked by any other edge
     pub fn is_leaf_edge(
         &self,
-        edge: &BorrowsEdge<'tcx>,
+        edge: &BorrowPCGEdge<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         edge.kind()
@@ -187,7 +188,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .all(|p| !self.has_edge_blocking(repacker, *p))
     }
 
-    pub fn leaf_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowsEdge<'tcx>> {
+    pub fn leaf_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowPCGEdge<'tcx>> {
         let mut candidates = self.0.clone();
         candidates.retain(|edge| self.is_leaf_edge(edge, repacker));
         candidates
@@ -200,7 +201,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub fn root_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowsEdge<'tcx>> {
+    pub fn root_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowPCGEdge<'tcx>> {
         self.0
             .iter()
             .filter(|edge| {
@@ -251,7 +252,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         node: BlockingNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<BorrowsEdge<'tcx>> {
+    ) -> FxHashSet<BorrowPCGEdge<'tcx>> {
         self.0
             .iter()
             .filter(|edge| edge.blocked_by_nodes(repacker).contains(&node))
@@ -369,7 +370,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let mut new_conditions = our_edge.conditions().clone();
                         new_conditions.join(&other_edge.conditions());
                         self.0.remove(our_edge);
-                        self.insert(BorrowsEdge::new(other_edge.kind().clone(), new_conditions));
+                        self.insert(BorrowPCGEdge::new(
+                            other_edge.kind().clone(),
+                            new_conditions,
+                        ));
                         changed = true;
                     }
                 }
@@ -398,7 +402,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn change_pcs_elem<T: 'tcx>(&mut self, old: T, new: T) -> bool
     where
         T: PartialEq + Clone,
-        BorrowsEdge<'tcx>: HasPcsElems<T>,
+        BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
         self.mut_pcs_elems(|thing| {
             if *thing == old {
@@ -419,7 +423,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         region: Region<'tcx>,
     ) -> bool {
         self.insert(
-            Borrow::new(
+            BorrowEdge::new(
                 blocked_place.into(),
                 assigned_place.into(),
                 mutability,
@@ -430,7 +434,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         )
     }
 
-    pub fn insert(&mut self, edge: BorrowsEdge<'tcx>) -> bool {
+    pub fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.0.insert(edge)
     }
 
@@ -438,7 +442,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         node: BlockedNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowsEdge<'tcx>> {
+    ) -> Vec<BorrowPCGEdge<'tcx>> {
         self.0
             .iter()
             .filter(move |edge| edge.blocks_node(repacker, node))
@@ -448,7 +452,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn remove_abstraction_at(&mut self, location: Location) {
         self.0.retain(|edge| {
-            if let BorrowsEdgeKind::Abstraction(abstraction) = &edge.kind() {
+            if let BorrowPCGEdgeKind::Abstraction(abstraction) = &edge.kind() {
                 abstraction.location() != location
             } else {
                 true
@@ -456,7 +460,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    pub fn remove(&mut self, edge: &BorrowsEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
+    pub fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
         self.0.remove(edge)
     }
 
@@ -467,7 +471,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         self.mut_edges(|edge| {
-            if let BorrowsEdgeKind::RegionProjectionMember(member) = &mut edge.kind {
+            if let BorrowPCGEdgeKind::RegionProjectionMember(member) = &mut edge.kind {
                 if member.projection.place == old_projection_place {
                     let idx = member.projection_index(repacker);
                     member.projection = new_projection_place.region_projection(idx, repacker);
@@ -483,7 +487,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         new_assigned_place: MaybeOldPlace<'tcx>,
     ) {
         self.mut_edges(|edge| {
-            if let BorrowsEdgeKind::Reborrow(reborrow) = &mut edge.kind {
+            if let BorrowPCGEdgeKind::Reborrow(reborrow) = &mut edge.kind {
                 if reborrow.assigned_place == orig_assigned_place {
                     reborrow.assigned_place = new_assigned_place;
                 }
@@ -494,7 +498,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn contains_deref_expansion_from(&self, place: &MaybeOldPlace<'tcx>) -> bool {
         self.0.iter().any(|edge| {
-            if let BorrowsEdgeKind::DerefExpansion(de) = &edge.kind {
+            if let BorrowPCGEdgeKind::DerefExpansion(de) = &edge.kind {
                 de.base() == *place
             } else {
                 false
@@ -548,15 +552,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         } else {
             DerefExpansion::borrowed(place, expansion, location, repacker)
         };
-        self.insert(BorrowsEdge::new(
-            BorrowsEdgeKind::DerefExpansion(de),
+        self.insert(BorrowPCGEdge::new(
+            BorrowPCGEdgeKind::DerefExpansion(de),
             PathConditions::new(location.block),
         ));
     }
 
     fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
     where
-        BorrowsEdge<'tcx>: HasPcsElems<T>,
+        BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
         self.mut_edges(|edge| {
             let mut changed = false;
@@ -569,7 +573,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    fn mut_edges<'slf>(&'slf mut self, mut f: impl FnMut(&mut BorrowsEdge<'tcx>) -> bool) -> bool {
+    fn mut_edges<'slf>(
+        &'slf mut self,
+        mut f: impl FnMut(&mut BorrowPCGEdge<'tcx>) -> bool,
+    ) -> bool {
         let mut changed = false;
         self.0 = self
             .0

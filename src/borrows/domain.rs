@@ -1,13 +1,11 @@
 use std::collections::HashSet;
 
 use rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
     hir::def_id::DefId,
     middle::mir::{
-        self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, ProjectionElem, START_BLOCK,
+        self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK,
     },
-    middle::ty::{self, GenericArgsRef, RegionVid, TyCtxt},
+    middle::ty::{GenericArgsRef, RegionVid, TyCtxt},
 };
 
 use crate::{
@@ -22,9 +20,9 @@ pub struct LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
-    fn to_borrows_edge(self, path_conditions: PathConditions) -> BorrowsEdge<'tcx> {
-        BorrowsEdge::new(
-            super::borrows_edge::BorrowsEdgeKind::Abstraction(AbstractionEdge {
+    fn to_borrows_edge(self, path_conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+        BorrowPCGEdge::new(
+            super::borrow_pcg_edge::BorrowPCGEdgeKind::Abstraction(AbstractionEdge {
                 abstraction_type: AbstractionType::Loop(self),
             }),
             path_conditions,
@@ -411,13 +409,7 @@ use crate::utils::PlaceRepacker;
 use serde_json::json;
 
 use super::{
-    borrows_edge::{BlockedNode, BorrowsEdge, ToBorrowsEdge},
-    borrows_visitor::{extract_lifetimes, get_vid},
-    has_pcs_elem::HasPcsElems,
-    latest::Latest,
-    path_condition::PathConditions,
-    region_abstraction::AbstractionEdge,
-    region_projection::RegionProjection,
+    borrow_edge::BorrowEdge, borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge}, borrows_visitor::{extract_lifetimes, get_vid}, has_pcs_elem::HasPcsElems, latest::Latest, path_condition::PathConditions, region_abstraction::AbstractionEdge, region_projection::RegionProjection
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
@@ -519,7 +511,7 @@ impl<'tcx> From<Place<'tcx>> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> std::fmt::Display for Borrow<'tcx> {
+impl<'tcx> std::fmt::Display for BorrowEdge<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -528,19 +520,8 @@ impl<'tcx> std::fmt::Display for Borrow<'tcx> {
         )
     }
 }
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub struct Borrow<'tcx> {
-    pub blocked_place: MaybeRemotePlace<'tcx>,
-    pub assigned_place: MaybeOldPlace<'tcx>,
-    pub mutability: Mutability,
 
-    /// The location when the reborrow was created
-    reserve_location: Location,
-
-    pub region: ty::Region<'tcx>,
-}
-
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for Borrow<'tcx> {
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut vec = vec![&mut self.assigned_place];
         vec.extend(self.blocked_place.pcs_elems());
@@ -548,65 +529,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for Borrow<'tcx> {
     }
 }
 
-impl<'tcx> Borrow<'tcx> {
-    pub fn new(
-        blocked_place: MaybeRemotePlace<'tcx>,
-        assigned_place: MaybeOldPlace<'tcx>,
-        mutability: Mutability,
-        reservation_location: Location,
-        region: ty::Region<'tcx>,
-    ) -> Self {
-        Self {
-            blocked_place,
-            assigned_place,
-            mutability,
-            reserve_location: reservation_location,
-            region,
-        }
-    }
-
-    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
-        vec![self.blocked_place.into()].into_iter().collect()
-    }
-
-    pub fn reserve_location(&self) -> Location {
-        self.reserve_location
-    }
-
-    // TODO: Region could be erased and we can't handle that yet
-    pub fn assigned_region_projection(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<RegionProjection<'tcx>> {
-        let assigned_prefix_place = self.assigned_place.prefix_place(repacker)?;
-        let assigned_prefix_place = assigned_prefix_place.with_inherent_region(repacker);
-        match assigned_prefix_place.ty(repacker).ty.kind() {
-            ty::Ref(region, _, _) => match region.kind() {
-                ty::RegionKind::ReVar(v) => Some(RegionProjection::new(v, assigned_prefix_place)),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    pub fn region_vid(&self) -> Option<RegionVid> {
-        match self.region.kind() {
-            ty::RegionKind::ReVar(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
 pub trait ToJsonWithRepacker<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value;
-}
-
-impl<'tcx> ToJsonWithRepacker<'tcx> for Borrow<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        json!({
-            "blocked_place": self.blocked_place.to_json(repacker),
-            "assigned_place": self.assigned_place.to_json(repacker),
-            "is_mut": self.mutability == Mutability::Mut
-        })
-    }
 }

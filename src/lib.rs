@@ -18,17 +18,18 @@ pub mod utils;
 pub mod visualization;
 
 use borrows::{
-    borrows_graph::Conditioned, borrows_visitor::DebugCtx, deref_expansion::DerefExpansion,
-    domain::Borrow, engine::BorrowsDomain, unblock_graph::UnblockGraph,
+    borrow_edge::BorrowEdge, borrows_graph::Conditioned,
+    deref_expansion::DerefExpansion, unblock_graph::UnblockGraph,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PcsContext, PcsEngine, PlaceCapabilitySummary};
+use free_pcs::CapabilityKind;
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     dataflow::Analysis,
-    middle::{mir::BasicBlock, ty::TyCtxt},
+    middle::ty::TyCtxt,
 };
 use serde_json::json;
-use utils::PlaceRepacker;
+use utils::{Place, PlaceRepacker};
 use visualization::mir_graph::generate_json_from_mir;
 
 use crate::borrows::domain::ToJsonWithRepacker;
@@ -40,11 +41,25 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     PcsEngine<'mir, 'tcx>,
 >;
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct Weaken<'tcx>(Place<'tcx>, CapabilityKind, CapabilityKind);
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "place": self.0.to_json(repacker),
+            "old": format!("{:?}", self.1),
+            "new": format!("{:?}", self.2),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct BorrowsBridge<'tcx> {
     pub expands: FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
-    pub added_borrows: FxHashSet<Conditioned<Borrow<'tcx>>>,
+    pub added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>>,
     pub ug: UnblockGraph<'tcx>,
+    weakens: FxHashSet<Weaken<'tcx>>,
 }
 
 impl<'tcx> BorrowsBridge<'tcx> {
@@ -53,19 +68,18 @@ impl<'tcx> BorrowsBridge<'tcx> {
             expands: FxHashSet::default(),
             added_borrows: FxHashSet::default(),
             ug: UnblockGraph::new(),
+            weakens: FxHashSet::default(),
         }
     }
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "expands": self.expands.iter().map(|e| e.to_json(repacker)).collect::<Vec<_>>(),
             "added_borrows": self.added_borrows.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
-            "ug": self.ug.to_json(repacker)
+            "ug": self.ug.to_json(repacker),
+            "weakens": self.weakens.iter().map(|w| w.to_json(repacker)).collect::<Vec<_>>(),
         })
     }
 }
-
-// let start = lhs.after.bridge(&rhs.before_start, ctx, lhs.repacker);
-// let middle = rhs.before_after.bridge(&rhs.start, ctx, rhs.repacker);
 
 use std::sync::Mutex;
 

@@ -7,16 +7,13 @@
 use rustc_interface::{
     dataflow::Analysis,
     dataflow::ResultsCursor,
-    middle::{
-        mir::{BasicBlock, Body, Location},
-        ty::TyCtxt,
-    },
+    middle::mir::{BasicBlock, Body, Location},
 };
 
 use crate::{
     borrows::{
         borrows_visitor::DebugCtx,
-        engine::{BorrowsDomain, BorrowsStates},
+        engine::BorrowsStates,
     },
     combined_pcs::{PcsContext, PcsEngine, PlaceCapabilitySummary},
     free_pcs::{

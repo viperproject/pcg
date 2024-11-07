@@ -8,10 +8,10 @@ use rustc_interface::{
     dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
     middle::{
         mir::{
-            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
+            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement,
             Terminator, TerminatorEdges,
         },
-        ty::{self, RegionVid, TyCtxt},
+        ty::{self, TyCtxt},
     },
 };
 use serde_json::{json, Value};
@@ -24,16 +24,11 @@ use crate::{
 };
 
 use super::{
-    borrows_state::BorrowsState,
-    borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
-    coupling_graph_constructor::LivenessChecker,
-    domain::MaybeRemotePlace,
-    path_condition::PathCondition,
-    region_projection::RegionProjection,
+    borrow_edge::BorrowEdge, borrows_state::BorrowsState, borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage}, coupling_graph_constructor::LivenessChecker, domain::MaybeRemotePlace, path_condition::PathCondition, region_projection::RegionProjection
 };
 use super::{
     deref_expansion::DerefExpansion,
-    domain::{Borrow, MaybeOldPlace},
+    domain::{MaybeOldPlace},
 };
 
 pub struct BorrowsEngine<'mir, 'tcx> {
@@ -70,8 +65,8 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
 
 #[derive(Clone, Debug)]
 pub enum ReborrowAction<'tcx> {
-    AddReborrow(Borrow<'tcx>),
-    RemoveReborrow(Borrow<'tcx>),
+    AddReborrow(BorrowEdge<'tcx>),
+    RemoveReborrow(BorrowEdge<'tcx>),
     ExpandPlace(DerefExpansion<'tcx>),
     CollapsePlace(Vec<utils::Place<'tcx>>, MaybeOldPlace<'tcx>),
 }

@@ -57,15 +57,24 @@ pub struct GraphNode {
 impl GraphNode {
     fn to_dot_node(&self) -> DotNode {
         match &self.node_type {
-            NodeType::ReborrowingDagNode { label, location } => {
+            NodeType::ReborrowingDagNode {
+                label,
+                location,
+                capability,
+            } => {
                 let location_text = match location {
                     Some(l) => escape_html(&format!(" at {:?}", l)),
                     None => "".to_string(),
                 };
+                let capability_text = match capability {
+                    Some(k) => format!("{:?}", k),
+                    None => "".to_string(),
+                };
                 let label = format!(
-                    "<FONT FACE=\"courier\">{}</FONT>&nbsp;{}",
+                    "<FONT FACE=\"courier\">{}</FONT>&nbsp;{}&nbsp;{}",
                     escape_html(&label),
-                    escape_html(&location_text)
+                    escape_html(&location_text),
+                    escape_html(&capability_text),
                 );
                 DotNode {
                     id: self.id.to_string(),
@@ -145,6 +154,7 @@ enum NodeType {
     ReborrowingDagNode {
         label: String,
         location: Option<SnapshotLocation>,
+        capability: Option<CapabilityKind>,
     },
 }
 

@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
 
-use crate::rustc_interface::middle::mir::{BasicBlock, Local, Location};
+use crate::rustc_interface::middle::mir::BasicBlock;
 use crate::utils::{Place, SnapshotLocation};
 
 #[derive(Clone, Debug)]

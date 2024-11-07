@@ -33,8 +33,8 @@ impl<'tcx> Triple<'tcx> {
     /// first dereference of a ref.
     pub fn replace_place<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
         Self {
-            pre: self.pre.replace_place(repacker),
-            post: self.post.map(|c| c.replace_place(repacker)),
+            pre: self.pre.fpcg_condition(repacker),
+            post: self.post.map(|c| c.fpcg_condition(repacker)),
         }
     }
 }
@@ -58,10 +58,21 @@ impl<'tcx> Condition<'tcx> {
         Self::new(place, CapabilityKind::Write)
     }
 
-    pub fn replace_place<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
+    /// Returns the condition for the place in the free PCG. If the place is
+    /// already in the free PCG, this will be the same condition. However, if
+    /// the place is in the borrow PCG, we must have an exclusive access to the
+    /// corresponding place in the free PCG, e.g., obtaining "Write" capability
+    /// to *_2 requires an exclusive capability to _2
+    pub fn fpcg_condition<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
         match self {
             Condition::Capability(place, kind) => {
-                Condition::Capability(get_place_to_expand_to(place, repacker), kind)
+                let fpcg_place = get_place_to_expand_to(place, repacker);
+                let capability_kind = if place != fpcg_place {
+                    CapabilityKind::Exclusive
+                } else {
+                    kind
+                };
+                Condition::Capability(fpcg_place, capability_kind)
             }
             _ => self,
         }
@@ -128,7 +139,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             | Aggregate(_, _)
             | ShallowInitBox(_, _) => {}
 
-            &Ref(_, _, place) | &RawPtr(_, place) | &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
+            &Ref(_, _, place)
+            | &RawPtr(_, place)
+            | &Len(place)
+            | &Discriminant(place)
+            | &CopyForDeref(place) => {
                 let triple = Triple {
                     pre: Condition::exclusive(place),
                     post: None,

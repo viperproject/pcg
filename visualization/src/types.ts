@@ -80,7 +80,14 @@ export type PlaceExpand = {
   expansion: string[]
 }
 
+export type Weaken = {
+  place: string;
+  old: string;
+  new: string;
+}
+
 export type ReborrowBridge = {
+  weakens: Weaken[];
   expands: Conditioned<PlaceExpand>[];
   added_borrows: Conditioned<Reborrow>[];
   ug: {

@@ -6,20 +6,13 @@ use crate::{
 };
 
 use super::{
-    borrows_graph::Conditioned,
-    deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, MaybeRemotePlace, Borrow},
-    has_pcs_elem::HasPcsElems,
-    path_condition::{PathCondition, PathConditions},
-    region_abstraction::AbstractionEdge,
-    region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion, domain::{MaybeOldPlace, MaybeRemotePlace}, has_pcs_elem::HasPcsElems, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection::RegionProjection, region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection}
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BorrowsEdge<'tcx> {
+pub struct BorrowPCGEdge<'tcx> {
     conditions: PathConditions,
-    pub(crate) kind: BorrowsEdgeKind<'tcx>,
+    pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -98,7 +91,7 @@ impl<'tcx> From<BlockingNode<'tcx>> for BlockedNode<'tcx> {
     }
 }
 
-impl<'tcx> BorrowsEdge<'tcx> {
+impl<'tcx> BorrowPCGEdge<'tcx> {
     /// true iff any of the blocked places can be mutated via the blocking places
     pub fn is_shared_borrow(&self) -> bool {
         self.kind.is_shared_borrow()
@@ -115,15 +108,15 @@ impl<'tcx> BorrowsEdge<'tcx> {
         self.conditions.valid_for_path(path)
     }
 
-    pub fn kind(&self) -> &BorrowsEdgeKind<'tcx> {
+    pub fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
         &self.kind
     }
 
-    pub fn mut_kind(&mut self) -> &mut BorrowsEdgeKind<'tcx> {
+    pub fn mut_kind(&mut self) -> &mut BorrowPCGEdgeKind<'tcx> {
         &mut self.kind
     }
 
-    pub fn new(kind: BorrowsEdgeKind<'tcx>, conditions: PathConditions) -> Self {
+    pub fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
         Self { conditions, kind }
     }
 
@@ -161,9 +154,9 @@ impl<'tcx> BorrowsEdge<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for BorrowsEdge<'tcx>
+impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdge<'tcx>
 where
-    BorrowsEdgeKind<'tcx>: HasPcsElems<T>,
+    BorrowPCGEdgeKind<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         self.kind.pcs_elems()
@@ -171,53 +164,53 @@ where
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BorrowsEdgeKind<'tcx> {
-    Reborrow(Borrow<'tcx>),
+pub enum BorrowPCGEdgeKind<'tcx> {
+    Reborrow(BorrowEdge<'tcx>),
     DerefExpansion(DerefExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowsEdgeKind<'tcx> {
+impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         match self {
-            BorrowsEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
             _ => vec![],
         }
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for BorrowsEdgeKind<'tcx>
+impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdgeKind<'tcx>
 where
-    Borrow<'tcx>: HasPcsElems<T>,
+    BorrowEdge<'tcx>: HasPcsElems<T>,
     RegionProjectionMember<'tcx>: HasPcsElems<T>,
     DerefExpansion<'tcx>: HasPcsElems<T>,
     AbstractionEdge<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         match self {
-            BorrowsEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
-            BorrowsEdgeKind::Reborrow(reborrow) => reborrow.pcs_elems(),
-            BorrowsEdgeKind::DerefExpansion(deref_expansion) => deref_expansion.pcs_elems(),
-            BorrowsEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
+            BorrowPCGEdgeKind::Reborrow(reborrow) => reborrow.pcs_elems(),
+            BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => deref_expansion.pcs_elems(),
+            BorrowPCGEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
         }
     }
 }
 
-impl<'tcx> BorrowsEdgeKind<'tcx> {
+impl<'tcx> BorrowPCGEdgeKind<'tcx> {
     pub fn is_shared_borrow(&self) -> bool {
         match self {
-            BorrowsEdgeKind::Reborrow(reborrow) => reborrow.mutability == Mutability::Not,
+            BorrowPCGEdgeKind::Reborrow(reborrow) => reborrow.mutability == Mutability::Not,
             _ => false,
         }
     }
 
     pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         match self {
-            BorrowsEdgeKind::Reborrow(de) => de.blocked_nodes(),
-            BorrowsEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
-            BorrowsEdgeKind::Abstraction(node) => node.blocked_nodes(),
-            BorrowsEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
+            BorrowPCGEdgeKind::Reborrow(de) => de.blocked_nodes(),
+            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
+            BorrowPCGEdgeKind::Abstraction(node) => node.blocked_nodes(),
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
         }
     }
 
@@ -226,7 +219,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BlockingNode<'tcx>> {
         match self {
-            BorrowsEdgeKind::Reborrow(reborrow) => {
+            BorrowPCGEdgeKind::Reborrow(reborrow) => {
                 // TODO: Region could be erased and we can't handle that yet
                 if let Some(rp) = reborrow.assigned_region_projection(repacker) {
                     return vec![BlockingNode::RegionProjection(rp)]
@@ -236,12 +229,12 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                     FxHashSet::default()
                 }
             }
-            BorrowsEdgeKind::Abstraction(node) => node
+            BorrowPCGEdgeKind::Abstraction(node) => node
                 .outputs()
                 .into_iter()
                 .map(|p| BlockingNode::RegionProjection(p))
                 .collect(),
-            BorrowsEdgeKind::RegionProjectionMember(member) => {
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 if member.direction == RegionProjectionMemberDirection::PlaceIsRegionInput {
                     vec![BlockingNode::RegionProjection(member.projection)]
                         .into_iter()
@@ -252,7 +245,7 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                         .collect()
                 }
             }
-            BorrowsEdgeKind::DerefExpansion(de) => de.blocked_by_nodes(repacker),
+            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_by_nodes(repacker),
         }
     }
 
@@ -263,10 +256,10 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
         rp: RegionProjection<'tcx>,
     ) -> bool {
         match &self {
-            BorrowsEdgeKind::Reborrow(reborrow) => {
+            BorrowPCGEdgeKind::Reborrow(reborrow) => {
                 reborrow.assigned_region_projection(repacker) == Some(rp)
             }
-            BorrowsEdgeKind::DerefExpansion(deref_expansion) => {
+            BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
                 for place in deref_expansion.expansion(repacker) {
                     if place.region_projections(repacker).contains(&rp) {
                         return true;
@@ -274,55 +267,55 @@ impl<'tcx> BorrowsEdgeKind<'tcx> {
                 }
                 false
             }
-            BorrowsEdgeKind::Abstraction(abstraction_edge) => {
+            BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
                 abstraction_edge.inputs().contains(&rp)
             }
-            BorrowsEdgeKind::RegionProjectionMember(_) => todo!(),
+            BorrowPCGEdgeKind::RegionProjectionMember(_) => todo!(),
         }
     }
 }
 pub trait ToBorrowsEdge<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx>;
+    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for DerefExpansion<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx> {
-        BorrowsEdge {
+    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+        BorrowPCGEdge {
             conditions,
-            kind: BorrowsEdgeKind::DerefExpansion(self),
+            kind: BorrowPCGEdgeKind::DerefExpansion(self),
         }
     }
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionEdge<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx> {
-        BorrowsEdge {
+    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+        BorrowPCGEdge {
             conditions,
-            kind: BorrowsEdgeKind::Abstraction(self),
+            kind: BorrowPCGEdgeKind::Abstraction(self),
         }
     }
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for Borrow<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx> {
-        BorrowsEdge {
+impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
+    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+        BorrowPCGEdge {
             conditions,
-            kind: BorrowsEdgeKind::Reborrow(self),
+            kind: BorrowPCGEdgeKind::Reborrow(self),
         }
     }
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for RegionProjectionMember<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowsEdge<'tcx> {
-        BorrowsEdge {
+    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+        BorrowPCGEdge {
             conditions,
-            kind: BorrowsEdgeKind::RegionProjectionMember(self),
+            kind: BorrowPCGEdgeKind::RegionProjectionMember(self),
         }
     }
 }
 
-impl<'tcx, T: ToBorrowsEdge<'tcx>> Into<BorrowsEdge<'tcx>> for Conditioned<T> {
-    fn into(self) -> BorrowsEdge<'tcx> {
+impl<'tcx, T: ToBorrowsEdge<'tcx>> Into<BorrowPCGEdge<'tcx>> for Conditioned<T> {
+    fn into(self) -> BorrowPCGEdge<'tcx> {
         self.value.to_borrows_edge(self.conditions)
     }
 }

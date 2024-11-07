@@ -1,6 +1,6 @@
 use crate::{
     borrows::{
-        borrows_edge::{BorrowsEdge, BorrowsEdgeKind},
+        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         deref_expansion::DerefExpansion,
@@ -13,13 +13,12 @@ use crate::{
         unblock_graph::UnblockGraph,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
-    rustc_interface::{self, middle::mir::Local},
+    rustc_interface::{self},
     utils::{Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation},
     visualization::dot_graph::RankAnnotation,
 };
 
 use std::{
-    borrow::Borrow,
     collections::{BTreeSet, HashSet},
     ops::Deref,
 };
@@ -228,6 +227,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             node_type: NodeType::ReborrowingDagNode {
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
+                capability: None,
             },
         };
         self.insert_node(node);
@@ -257,8 +257,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 region,
             }
         } else {
-            assert!(capability.is_none());
-            NodeType::ReborrowingDagNode { label, location }
+            NodeType::ReborrowingDagNode {
+                label,
+                location,
+                capability,
+            }
         };
         if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
             for region_projection in place.region_projections(self.repacker) {
@@ -286,7 +289,7 @@ impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
 
     pub fn construct_graph(mut self) -> Graph {
         for edge in self.unblock_graph.edges().cloned().collect::<Vec<_>>() {
-            self.draw_borrows_edge(&edge, None);
+            self.draw_borrow_pcg_edge(&edge, None);
         }
         self.constructor.to_graph()
     }
@@ -319,9 +322,13 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId;
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
-    fn draw_borrows_edge(&mut self, edge: &BorrowsEdge<'tcx>, _graph: Option<&BorrowsGraph<'tcx>>) {
+    fn draw_borrow_pcg_edge(
+        &mut self,
+        edge: &BorrowPCGEdge<'tcx>,
+        _graph: Option<&BorrowsGraph<'tcx>>,
+    ) {
         match edge.kind() {
-            BorrowsEdgeKind::DerefExpansion(deref_expansion) => {
+            BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
                 let base_node = self.insert_maybe_old_place(deref_expansion.base());
                 match deref_expansion {
                     DerefExpansion::OwnedExpansion(owned) => {
@@ -361,7 +368,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     }
                 }
             }
-            BorrowsEdgeKind::Reborrow(reborrow) => {
+            BorrowPCGEdgeKind::Reborrow(reborrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(reborrow.blocked_place);
                 // TODO: Region could be erased and we can't handle that yet
                 if let Some(assigned_region_projection) =
@@ -379,10 +386,10 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     });
                 }
             }
-            BorrowsEdgeKind::Abstraction(abstraction) => {
+            BorrowPCGEdgeKind::Abstraction(abstraction) => {
                 let _r = self.constructor().insert_region_abstraction(abstraction);
             }
-            BorrowsEdgeKind::RegionProjectionMember(member) => {
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 let place = self.insert_maybe_remote_place(member.place);
                 let region_projection = self
                     .constructor()
@@ -491,6 +498,9 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
     }
 
     fn capability_for_place(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+        if let Some(cap) = self.borrows_domain.get_capability(place) {
+            return Some(cap);
+        }
         match self.summary.get(place.local) {
             Some(CapabilityLocal::Allocated(projections)) => {
                 projections.deref().get(&place).cloned()
@@ -515,7 +525,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             }
         }
         for edge in self.borrows_domain.graph_edges() {
-            self.draw_borrows_edge(edge, Some(self.borrows_domain.graph()));
+            self.draw_borrow_pcg_edge(edge, Some(self.borrows_domain.graph()));
         }
 
         self.constructor.to_graph()

@@ -65,6 +65,11 @@ function BorrowDisplay({ borrow }: { borrow: Borrow }) {
 function ReborrowBridgeDisplay({ bridge }: { bridge: ReborrowBridge }) {
   return (
     <div>
+      {bridge.weakens.map((weaken, index) => (
+        <span>
+          Weaken <code>{weaken.place}</code>: {weaken.old} → {weaken.new}
+        </span>
+      ))}
       {bridge.expands.length > 0 && (
         <div>
           Expands
