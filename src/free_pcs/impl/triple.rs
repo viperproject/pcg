@@ -5,8 +5,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use rustc_interface::middle::mir::{
-    visit::Visitor, Local, Location, Operand, ProjectionElem, Rvalue, Statement, StatementKind,
-    Terminator, TerminatorKind, RETURN_PLACE,
+    visit::Visitor, BorrowKind, Local, Location, Operand, ProjectionElem, Rvalue, Statement,
+    StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
 };
 
 use crate::{
@@ -54,8 +54,13 @@ impl<'tcx> Condition<'tcx> {
     fn exclusive<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
         Self::new(place, CapabilityKind::Exclusive)
     }
+
     fn write<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
         Self::new(place, CapabilityKind::Write)
+    }
+
+    fn read<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+        Self::new(place, CapabilityKind::Read)
     }
 
     /// Returns the condition for the place in the free PCG. If the place is
@@ -113,7 +118,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
         self.super_operand(operand, location);
         let triple = match *operand {
             Operand::Copy(place) => Triple {
-                pre: Condition::exclusive(place),
+                pre: Condition::read(place),
                 post: None,
             },
             Operand::Move(place) => Triple {
@@ -128,7 +133,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
         self.super_rvalue(rvalue, location);
         use Rvalue::*;
-        match rvalue {
+        let pre = match rvalue {
             Use(_)
             | Repeat(_, _)
             | ThreadLocalRef(_)
@@ -137,20 +142,25 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             | NullaryOp(_, _)
             | UnaryOp(_, _)
             | Aggregate(_, _)
-            | ShallowInitBox(_, _) => {}
+            | ShallowInitBox(_, _) => return,
 
-            &Ref(_, _, place)
-            | &RawPtr(_, place)
-            | &Len(place)
-            | &Discriminant(place)
-            | &CopyForDeref(place) => {
-                let triple = Triple {
-                    pre: Condition::exclusive(place),
-                    post: None,
-                };
-                self.operand_triples.push(triple);
+            &Ref(_, kind, place) => {
+                if kind.mutability().is_mut() {
+                    Condition::exclusive(place)
+                } else {
+                    Condition::read(place)
+                }
             }
-        }
+            &RawPtr(mutbl, place) => {
+                if mutbl.is_mut() {
+                    Condition::exclusive(place)
+                } else {
+                    Condition::read(place)
+                }
+            }
+            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => Condition::read(place),
+        };
+        self.operand_triples.push(Triple { pre, post: None });
     }
 
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
@@ -190,6 +200,12 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             AscribeUserType(..) | Coverage(..) | Intrinsic(..) | ConstEvalCounter | Nop => return,
         };
         self.main_triples.push(t);
+        if let Assign(box (_, Rvalue::Ref(_, BorrowKind::Mut { .. }, place))) = &statement.kind {
+            self.main_triples.push(Triple {
+                pre: Condition::exclusive(*place),
+                post: Some(Condition::Unalloc(place.local)),
+            });
+        }
     }
 
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {

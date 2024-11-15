@@ -39,6 +39,7 @@ impl<'tcx> RelatedSet<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
+    Read,
     Write,
     Exclusive,
     /// [`CapabilityKind::Exclusive`] for everything not through a dereference,
@@ -48,6 +49,7 @@ pub enum CapabilityKind {
 impl Debug for CapabilityKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
+            CapabilityKind::Read => write!(f, "R"),
             CapabilityKind::Write => write!(f, "W"),
             CapabilityKind::Exclusive => write!(f, "E"),
             CapabilityKind::ShallowExclusive => write!(f, "e"),
