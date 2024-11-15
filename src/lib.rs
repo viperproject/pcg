@@ -59,7 +59,7 @@ pub struct BorrowsBridge<'tcx> {
     pub expands: FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
     pub added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>>,
     pub ug: UnblockGraph<'tcx>,
-    weakens: FxHashSet<Weaken<'tcx>>,
+    pub weakens: FxHashSet<Weaken<'tcx>>,
 }
 
 impl<'tcx> BorrowsBridge<'tcx> {
