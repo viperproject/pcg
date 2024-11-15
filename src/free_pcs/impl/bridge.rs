@@ -86,7 +86,7 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
             // Downgrade the permission if needed
             let curr = from[&place];
             if curr != kind {
-                assert!(curr > kind);
+                assert!(curr > kind, "{curr:?} not greater than {kind:?}");
                 from.insert(place, kind);
                 repacks.push(RepackOp::Weaken(place, curr, kind));
             }

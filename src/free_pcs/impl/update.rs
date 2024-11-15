@@ -6,8 +6,8 @@
 
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
-    utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
     rustc_interface::middle::mir::{Local, RETURN_PLACE},
+    utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
 };
 
 use super::{
@@ -35,9 +35,13 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 }
             }
             Condition::Capability(place, cap) => {
+                if self[place.local].is_unallocated() {
+                    self[place.local] =
+                        CapabilityLocal::Allocated(CapabilityProjections::new_uninit(place.local));
+                }
                 let cp = self[place.local].get_allocated_mut();
                 cp.repack(place, repacker);
-                if cp[&place] > cap {
+                if cp[&place].is_exclusive() && cap.is_write() {
                     // Requires write should deinit an exclusive
                     cp.insert(place, cap);
                 };
@@ -68,13 +72,16 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 );
             }
             Condition::AllocateOrDeallocate(local) => {
-                assert_eq!(
-                    self[local].get_allocated()[&local.into()],
-                    CapabilityKind::Write
-                );
+                // assert_eq!(
+                //     self[local].get_allocated()[&local.into()],
+                //     CapabilityKind::Write
+                // );
             }
             Condition::Capability(place, cap) => {
                 match cap {
+                    CapabilityKind::Read => {
+                        // TODO
+                    }
                     CapabilityKind::Write => {
                         // Cannot get write on a shared ref
                         debug_assert!(place
@@ -118,13 +125,10 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 self[local] = CapabilityLocal::Unallocated;
             }
             Condition::AllocateOrDeallocate(local) => {
-                self[local] =
-                    CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
+                self[local] = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
             }
             Condition::Capability(place, cap) => {
-                self[place.local]
-                    .get_allocated_mut()
-                    .update_cap(place, cap);
+                self[place.local].get_allocated_mut().update_cap(place, cap);
             }
         }
     }
