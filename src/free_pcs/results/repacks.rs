@@ -56,6 +56,12 @@ pub enum RepackOp<'tcx> {
     Collapse(Place<'tcx>, Place<'tcx>, CapabilityKind),
     /// TODO
     DerefShallowInit(Place<'tcx>, Place<'tcx>),
+    /// This place should have its capability changed from `Lent` (for mutably
+    /// borrowed places) or `Read` (for shared borrow places), to the given
+    /// capability, because it is no longer lent out.
+    /// TODO: This to some extent overlaps with [`UnblockAction::TerminateBorrow`];
+    /// if we merge the free and borrow PCG this should no longer be needed.
+    RegainLoanedCapability(Place<'tcx>, CapabilityKind),
 }
 
 impl Display for RepackOp<'_> {
@@ -69,6 +75,12 @@ impl Display for RepackOp<'_> {
             RepackOp::Collapse(to, _, kind) => write!(f, "CollapseTo({to:?}, {kind:?})"),
             RepackOp::Expand(from, _, kind) => write!(f, "Expand({from:?}, {kind:?})"),
             RepackOp::DerefShallowInit(from, _) => write!(f, "DerefShallowInit({from:?})"),
+            RepackOp::RegainLoanedCapability(place, capability_kind) => {
+                write!(
+                    f,
+                    "RegainLoanedCapability({place:?}, {capability_kind:?})"
+                )
+            }
         }
     }
 }
@@ -76,11 +88,11 @@ impl Display for RepackOp<'_> {
 impl<'tcx> RepackOp<'tcx> {
     pub fn affected_place(&self) -> Place<'tcx> {
         match *self {
-            RepackOp::StorageDead(local)
-            | RepackOp::IgnoreStorageDead(local) => local.into(),
+            RepackOp::StorageDead(local) | RepackOp::IgnoreStorageDead(local) => local.into(),
             RepackOp::Weaken(place, _, _)
             | RepackOp::Collapse(place, _, _)
             | RepackOp::Expand(place, _, _)
+            | RepackOp::RegainLoanedCapability(place, _)
             | RepackOp::DerefShallowInit(place, _) => place,
         }
     }

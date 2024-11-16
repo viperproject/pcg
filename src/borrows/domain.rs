@@ -350,8 +350,8 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().is_mut_ref(body, tcx)
     }
 
-    pub fn is_ref(&self, body: &mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
-        self.place().is_ref(body, tcx)
+    pub fn is_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.place().is_ref(repacker)
     }
 
     pub fn is_current(&self) -> bool {

@@ -121,11 +121,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         &mut self.state.states.after
     }
 
+    /// Ensures that the place is expanded to exactly the given place. If
+    /// `capability` is `Some`, the capability of the expanded place is set to
+    /// the given value.
     fn ensure_expansion_to_exactly(
         &mut self,
         place: utils::Place<'tcx>,
         location: Location,
-        capability: CapabilityKind,
+        capability: Option<CapabilityKind>,
     ) {
         self.state
             .after_state_mut()
@@ -332,7 +335,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         self.super_operand(operand, location);
         if self.stage == StatementStage::Operands && self.preparing {
             if let Some(place) = operand.place() {
-                self.ensure_expansion_to_exactly(place.into(), location, CapabilityKind::Exclusive);
+                self.ensure_expansion_to_exactly(place.into(), location, None);
             }
         }
         if self.stage == StatementStage::Main && !self.preparing {
@@ -405,18 +408,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::FakeRead(box (_, place)) => {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.body, self.tcx) {
-                        if place.is_ref(self.body, self.tcx) {
+                        if place.is_ref(self.repacker()) {
                             self.ensure_expansion_to_exactly(
                                 place.project_deref(self.repacker()),
                                 location,
-                                CapabilityKind::Exclusive,
+                                None,
                             );
                         } else {
-                            self.ensure_expansion_to_exactly(
-                                place,
-                                location,
-                                CapabilityKind::Exclusive,
-                            );
+                            self.ensure_expansion_to_exactly(place, location, None);
                         }
                     }
                 }
@@ -440,7 +439,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
                     if !target.is_owned(self.body, self.tcx) {
-                        self.ensure_expansion_to_exactly(target, location, CapabilityKind::Write);
+                        self.ensure_expansion_to_exactly(
+                            target,
+                            location,
+                            Some(CapabilityKind::Write),
+                        );
                     }
                 }
                 _ => {}
@@ -458,11 +461,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             .after
                             .set_capability((*target).into(), CapabilityKind::Exclusive);
                     }
-                    if target.is_ref(self.body, self.tcx) {
-                        self.state.states.after.set_capability(
-                            target.project_deref(self.repacker()),
-                            CapabilityKind::Exclusive,
-                        );
+                    if let Some(mutbl) = target.ref_mutability(self.body, self.tcx) {
+                        let capability = if mutbl.is_mut() {
+                            CapabilityKind::Exclusive
+                        } else {
+                            CapabilityKind::Read
+                        };
+                        self.state
+                            .states
+                            .after
+                            .set_capability(target.project_deref(self.repacker()), capability);
                     }
                     match rvalue {
                         Rvalue::Aggregate(box kind, fields) => match kind {
@@ -602,7 +610,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     && self.preparing
                     && !place.is_owned(self.body, self.tcx)
                 {
-                    self.ensure_expansion_to_exactly(place, location, CapabilityKind::Exclusive)
+                    self.ensure_expansion_to_exactly(place, location, None)
                 }
             }
         }

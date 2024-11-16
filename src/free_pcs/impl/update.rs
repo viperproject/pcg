@@ -35,16 +35,16 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 }
             }
             Condition::Capability(place, cap) => {
-                if self[place.local].is_unallocated() {
-                    self[place.local] =
-                        CapabilityLocal::Allocated(CapabilityProjections::new_uninit(place.local));
-                }
                 let cp = self[place.local].get_allocated_mut();
                 cp.repack(place, repacker);
                 if cp[&place].is_exclusive() && cap.is_write() {
                     // Requires write should deinit an exclusive
                     cp.insert(place, cap);
-                };
+                } else if cp[&place].is_lent() && cap.is_read() {
+                    // This read will expire the loan, so we regain exclusive access
+                    // TODO: If we expire borrows eagerly, perhaps we don't need this logic
+                    cp.insert(place, CapabilityKind::Exclusive);
+                }
             }
             Condition::Return => {
                 let always_live = repacker.always_live_locals();
@@ -79,7 +79,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             }
             Condition::Capability(place, cap) => {
                 match cap {
-                    CapabilityKind::Read => {
+                    CapabilityKind::Read | CapabilityKind::Lent => {
                         // TODO
                     }
                     CapabilityKind::Write => {
