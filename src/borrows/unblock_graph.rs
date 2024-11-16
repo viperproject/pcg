@@ -132,7 +132,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
                     match edge.kind() {
-                        UnblockEdgeType::Reborrow(reborrow) => {
+                        UnblockEdgeType::Borrow(reborrow) => {
                             push_action(UnblockAction::TerminateBorrow {
                                 blocked_place: reborrow.blocked_place,
                                 assigned_place: reborrow.assigned_place,

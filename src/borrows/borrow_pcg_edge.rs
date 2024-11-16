@@ -165,7 +165,7 @@ where
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowPCGEdgeKind<'tcx> {
-    Reborrow(BorrowEdge<'tcx>),
+    Borrow(BorrowEdge<'tcx>),
     DerefExpansion(DerefExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
@@ -190,7 +190,7 @@ where
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         match self {
             BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
-            BorrowPCGEdgeKind::Reborrow(reborrow) => reborrow.pcs_elems(),
+            BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.pcs_elems(),
             BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => deref_expansion.pcs_elems(),
             BorrowPCGEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
         }
@@ -200,14 +200,14 @@ where
 impl<'tcx> BorrowPCGEdgeKind<'tcx> {
     pub fn is_shared_borrow(&self) -> bool {
         match self {
-            BorrowPCGEdgeKind::Reborrow(reborrow) => reborrow.mutability == Mutability::Not,
+            BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.mutability == Mutability::Not,
             _ => false,
         }
     }
 
     pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         match self {
-            BorrowPCGEdgeKind::Reborrow(de) => de.blocked_nodes(),
+            BorrowPCGEdgeKind::Borrow(de) => de.blocked_nodes(),
             BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
             BorrowPCGEdgeKind::Abstraction(node) => node.blocked_nodes(),
             BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
@@ -219,7 +219,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BlockingNode<'tcx>> {
         match self {
-            BorrowPCGEdgeKind::Reborrow(reborrow) => {
+            BorrowPCGEdgeKind::Borrow(reborrow) => {
                 // TODO: Region could be erased and we can't handle that yet
                 if let Some(rp) = reborrow.assigned_region_projection(repacker) {
                     return vec![BlockingNode::RegionProjection(rp)]
@@ -256,7 +256,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
         rp: RegionProjection<'tcx>,
     ) -> bool {
         match &self {
-            BorrowPCGEdgeKind::Reborrow(reborrow) => {
+            BorrowPCGEdgeKind::Borrow(reborrow) => {
                 reborrow.assigned_region_projection(repacker) == Some(rp)
             }
             BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
@@ -300,7 +300,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
     fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::Reborrow(self),
+            kind: BorrowPCGEdgeKind::Borrow(self),
         }
     }
 }

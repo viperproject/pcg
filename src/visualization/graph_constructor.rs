@@ -368,7 +368,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     }
                 }
             }
-            BorrowPCGEdgeKind::Reborrow(reborrow) => {
+            BorrowPCGEdgeKind::Borrow(reborrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(reborrow.blocked_place);
                 // TODO: Region could be erased and we can't handle that yet
                 if let Some(assigned_region_projection) =
