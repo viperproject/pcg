@@ -55,7 +55,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> coupling::Graph<RegionProjection<'tcx>> {
         let mut graph = coupling::Graph::new();
         for edge in self.0.iter() {
-            if let BorrowPCGEdgeKind::Reborrow(reborrow) = &edge.kind() {
+            if let BorrowPCGEdgeKind::Borrow(reborrow) = &edge.kind() {
                 if let Some((from, to)) = self.region_projection_edge(reborrow, repacker) {
                     graph.add_edge(from, to);
                 }
@@ -117,7 +117,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Reborrow(reborrow) => Some(Conditioned {
+                BorrowPCGEdgeKind::Borrow(reborrow) => Some(Conditioned {
                     conditions: edge.conditions().clone(),
                     value: reborrow.clone(),
                 }),
@@ -128,7 +128,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn has_reborrow_at_location(&self, location: Location) -> bool {
         self.0.iter().any(|edge| match &edge.kind() {
-            BorrowPCGEdgeKind::Reborrow(reborrow) => reborrow.reserve_location() == location,
+            BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.reserve_location() == location,
             _ => false,
         })
     }
@@ -139,7 +139,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Reborrow(reborrow) => {
+                BorrowPCGEdgeKind::Borrow(reborrow) => {
                     if reborrow.blocked_place == place {
                         Some(Conditioned {
                             conditions: edge.conditions().clone(),
@@ -161,7 +161,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Reborrow(reborrow) => {
+                BorrowPCGEdgeKind::Borrow(reborrow) => {
                     if reborrow.assigned_place == place {
                         Some(Conditioned {
                             conditions: edge.conditions().clone(),
@@ -487,7 +487,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         new_assigned_place: MaybeOldPlace<'tcx>,
     ) {
         self.mut_edges(|edge| {
-            if let BorrowPCGEdgeKind::Reborrow(reborrow) = &mut edge.kind {
+            if let BorrowPCGEdgeKind::Borrow(reborrow) = &mut edge.kind {
                 if reborrow.assigned_place == orig_assigned_place {
                     reborrow.assigned_place = new_assigned_place;
                 }

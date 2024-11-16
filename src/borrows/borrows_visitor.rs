@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, rc::Rc};
+use std::{borrow::Borrow, collections::BTreeSet, rc::Rc};
 
 use rustc_interface::{
     ast::Mutability,
@@ -135,7 +135,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .ensure_expansion_to_exactly(self.tcx, self.body, place, location, capability)
     }
 
-    fn _loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
+    fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
         let location = if start {
             self.location_table.start_index(location)
         } else {
@@ -386,6 +386,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             self.minimize(location);
         }
         self.super_statement(statement, location);
+
+        for loan in self.loans_invalidated_at(location, self.stage == StatementStage::Operands) {
+            let loan = &self.borrow_set[loan];
+            eprintln!("Killing loan {:?} at {:?}", loan, location);
+            self.state.states.after.kill_borrows(
+                loan.reserve_location,
+                location,
+                PlaceRepacker::new(self.body, self.tcx),
+            );
+        }
 
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {

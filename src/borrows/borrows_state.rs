@@ -109,19 +109,17 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.remove(edge, DebugCtx::new(location))
     }
 
-    pub fn reborrow_edges_reserved_at(
+    pub fn borrow_edges_reserved_at(
         &self,
         location: Location,
     ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.graph
             .edges()
             .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Reborrow(reborrow)
-                    if reborrow.reserve_location() == location =>
-                {
+                BorrowPCGEdgeKind::Borrow(borrow) if borrow.reserve_location() == location => {
                     Some(Conditioned {
                         conditions: edge.conditions().clone(),
-                        value: reborrow.clone(),
+                        value: borrow.clone(),
                     })
                 }
                 _ => None,
@@ -215,7 +213,7 @@ impl<'tcx> BorrowsState<'tcx> {
             return None;
         }
         match edges[0].kind() {
-            BorrowPCGEdgeKind::Reborrow(reborrow) => Some(reborrow.assigned_place),
+            BorrowPCGEdgeKind::Borrow(reborrow) => Some(reborrow.assigned_place),
             BorrowPCGEdgeKind::DerefExpansion(_) => todo!(),
             BorrowPCGEdgeKind::Abstraction(_) => todo!(),
             BorrowPCGEdgeKind::RegionProjectionMember(_) => todo!(),
@@ -375,7 +373,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let graph_edges = self.graph_edges().cloned().collect::<Vec<_>>();
         for p in graph_edges {
             match p.kind() {
-                BorrowPCGEdgeKind::Reborrow(reborrow) => match reborrow.assigned_place {
+                BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_place {
                     MaybeOldPlace::Current {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
@@ -412,17 +410,18 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.roots(repacker)
     }
 
-    pub fn kill_reborrows(
+    pub fn kill_borrows(
         &mut self,
         reserve_location: Location,
         kill_location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        let edges_to_remove = self.reborrow_edges_reserved_at(reserve_location);
+        let edges_to_remove = self.borrow_edges_reserved_at(reserve_location);
         if edges_to_remove.is_empty() {
             return false;
         }
         for edge in edges_to_remove {
+            eprintln!("Killing borrow {:?} at {:?}", edge, kill_location);
             self.remove_edge_and_set_latest(&edge.into(), repacker, kill_location);
         }
         true
@@ -440,7 +439,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 crate::combined_pcs::UnblockAction::TerminateBorrow {
                     reserve_location, ..
                 } => {
-                    if self.kill_reborrows(reserve_location, location, repacker) {
+                    if self.kill_borrows(reserve_location, location, repacker) {
                         changed = true;
                     }
                 }
