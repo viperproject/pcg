@@ -42,7 +42,7 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
 >;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct Weaken<'tcx>(Place<'tcx>, CapabilityKind, CapabilityKind);
+pub struct Weaken<'tcx>(Place<'tcx>, CapabilityKind, CapabilityKind);
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {

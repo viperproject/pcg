@@ -1,4 +1,5 @@
 pub mod borrow_edge;
+pub mod borrow_pcg_capabilities;
 pub mod borrow_pcg_edge;
 pub mod borrows_graph;
 pub mod borrows_state;

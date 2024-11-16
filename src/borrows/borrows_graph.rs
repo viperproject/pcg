@@ -8,6 +8,7 @@ use serde_json::json;
 
 use crate::{
     coupling,
+    free_pcs::CapabilityKind,
     rustc_interface,
     utils::{Place, PlaceRepacker},
 };
@@ -19,8 +20,7 @@ use super::{
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
-        AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace,
-        ToJsonWithRepacker,
+        AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
     },
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -506,23 +506,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
+    /// If an expansion is added, returns the capability of the expanded place;
+    /// i.e. `Exclusive` if the place is mutable, and `Read` otherwise.
+    /// If there is no expansion added, returns `None`.
     pub fn ensure_deref_expansion_to_at_least(
         &mut self,
         to_place: Place<'tcx>,
         body: &mir::Body<'tcx>,
         tcx: TyCtxt<'tcx>,
         location: Location,
-    ) {
-        let mut in_dag = false;
+    ) -> Option<CapabilityKind> {
+        let mut projects_from = None;
         let repacker = PlaceRepacker::new(&body, tcx);
+        let mut changed = false;
         for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
-            if place.is_ref(body, tcx) {
-                in_dag = true;
+            if let Some(mutbl) = place.ref_mutability(body, tcx) {
+                projects_from = Some(mutbl);
             }
             let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
             expansion.push(target);
-            if in_dag {
+            if projects_from.is_some() {
                 let origin_place = place.into();
                 if !self.contains_deref_expansion_from(&origin_place) {
                     self.insert_deref_expansion(
@@ -531,8 +535,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         location,
                         PlaceRepacker::new(&body, tcx),
                     );
+                    changed = true;
                 }
             }
+        }
+        if !changed {
+            None
+        } else {
+            projects_from.map(|mutbl| {
+                if mutbl.is_mut() {
+                    CapabilityKind::Exclusive
+                } else {
+                    CapabilityKind::Read
+                }
+            })
         }
     }
 

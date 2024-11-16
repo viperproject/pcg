@@ -9,7 +9,10 @@ use std::{
     fmt::{Debug, Formatter, Result},
 };
 
-use rustc_interface::data_structures::fx::FxHashSet;
+use rustc_interface::{
+    hir::Mutability,
+    data_structures::fx::FxHashSet
+};
 
 use crate::{rustc_interface, utils::{Place, PlaceOrdering}};
 
@@ -39,6 +42,7 @@ impl<'tcx> RelatedSet<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
+    Lent,
     Read,
     Write,
     Exclusive,
@@ -53,6 +57,7 @@ impl Debug for CapabilityKind {
             CapabilityKind::Write => write!(f, "W"),
             CapabilityKind::Exclusive => write!(f, "E"),
             CapabilityKind::ShallowExclusive => write!(f, "e"),
+            CapabilityKind::Lent => write!(f, "L"),
         }
     }
 }
@@ -64,10 +69,12 @@ impl PartialOrd for CapabilityKind {
         }
         match (self, other) {
             // W < E, W < e
-            (_, CapabilityKind::Exclusive)
+            (CapabilityKind::Lent, _)
+            | (_, CapabilityKind::Exclusive)
             | (CapabilityKind::Write, CapabilityKind::ShallowExclusive) => Some(Ordering::Less),
             // E > W, e > W
             (CapabilityKind::Exclusive, _)
+            | (_, CapabilityKind::Lent)
             | (CapabilityKind::ShallowExclusive, CapabilityKind::Write) => Some(Ordering::Greater),
             _ => None,
         }
@@ -77,6 +84,12 @@ impl PartialOrd for CapabilityKind {
 impl CapabilityKind {
     pub fn is_exclusive(self) -> bool {
         matches!(self, CapabilityKind::Exclusive)
+    }
+    pub fn is_lent(self) -> bool {
+        matches!(self, CapabilityKind::Lent)
+    }
+    pub fn is_read(self) -> bool {
+        matches!(self, CapabilityKind::Read)
     }
     pub fn is_write(self) -> bool {
         matches!(self, CapabilityKind::Write)

@@ -51,8 +51,13 @@ impl<'tcx> Condition<'tcx> {
     fn new<T: Into<Place<'tcx>>>(place: T, capability: CapabilityKind) -> Condition<'tcx> {
         Condition::Capability(place.into(), capability)
     }
+
     fn exclusive<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
         Self::new(place, CapabilityKind::Exclusive)
+    }
+
+    fn lent<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+        Self::new(place, CapabilityKind::Lent)
     }
 
     fn write<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
@@ -200,11 +205,19 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             AscribeUserType(..) | Coverage(..) | Intrinsic(..) | ConstEvalCounter | Nop => return,
         };
         self.main_triples.push(t);
-        if let Assign(box (_, Rvalue::Ref(_, BorrowKind::Mut { .. }, place))) = &statement.kind {
-            self.main_triples.push(Triple {
-                pre: Condition::exclusive(*place),
-                post: Some(Condition::Unalloc(place.local)),
-            });
+        if let Assign(box (_, Rvalue::Ref(_, ref_kind, place))) = &statement.kind {
+            let triple = if ref_kind.mutability().is_mut() {
+                Triple {
+                    pre: Condition::exclusive(*place),
+                    post: Some(Condition::lent(*place)),
+                }
+            } else {
+                Triple {
+                    pre: Condition::read(*place),
+                    post: Some(Condition::read(*place)),
+                }
+            };
+            self.main_triples.push(triple);
         }
     }
 

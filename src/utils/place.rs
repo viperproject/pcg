@@ -142,8 +142,8 @@ impl<'tcx> Place<'tcx> {
         )
     }
 
-    pub fn is_ref(&self, body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
-        self.0.ty(body, tcx).ty.is_ref()
+    pub fn is_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.0.ty(repacker.mir, repacker.tcx).ty.is_ref()
     }
 
     pub fn ref_mutability(&self, body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Mutability> {

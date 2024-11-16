@@ -17,6 +17,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
+    borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, ToBorrowsEdge},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
@@ -30,37 +31,6 @@ use super::{
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
     unblock_graph::UnblockGraph,
 };
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct BorrowPCGCapabilities<'tcx>(HashMap<Place<'tcx>, CapabilityKind>);
-
-impl<'tcx> BorrowPCGCapabilities<'tcx> {
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) {
-        self.0.insert(place, capability);
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
-        self.0.iter().map(|(k, v)| (k.clone(), v.clone()))
-    }
-
-    pub fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.0.get(&place).cloned()
-    }
-
-    pub fn join(&mut self, other: &Self) -> bool {
-        let mut changed = false;
-        for (place, capability) in other.iter() {
-            if self.0.insert(place, capability).is_none() {
-                changed = true;
-            }
-        }
-        changed
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BorrowsState<'tcx> {
@@ -351,7 +321,7 @@ impl<'tcx> BorrowsState<'tcx> {
             added_borrows: added_reborrows,
             expands,
             ug,
-            weakens
+            weakens,
         }
     }
 
@@ -368,13 +338,16 @@ impl<'tcx> BorrowsState<'tcx> {
                     for (place, kind) in (*projections).iter() {
                         match kind {
                             CapabilityKind::Exclusive => {
-                                if place.is_ref(body, tcx) {
-                                    self.graph.ensure_deref_expansion_to_at_least(
-                                        place.project_deref(PlaceRepacker::new(body, tcx)),
-                                        body,
-                                        tcx,
-                                        location,
-                                    );
+                                let repacker = PlaceRepacker::new(body, tcx);
+                                if place.is_ref(repacker) {
+                                    let deref = place.project_deref(repacker);
+                                    if let Some(capability) =
+                                        self.graph.ensure_deref_expansion_to_at_least(
+                                            deref, body, tcx, location,
+                                        )
+                                    {
+                                        self.capabilities.insert(deref, capability);
+                                    }
                                 }
                             }
                             _ => {}
@@ -386,13 +359,16 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
+    /// Ensures that the place is expanded to exactly the given place. If
+    /// `capability` is `Some`, the capability of the expanded place is set to
+    /// the given value.
     pub fn ensure_expansion_to_exactly(
         &mut self,
         tcx: TyCtxt<'tcx>,
         body: &mir::Body<'tcx>,
         place: Place<'tcx>,
         location: Location,
-        capability: CapabilityKind,
+        capability: Option<CapabilityKind>,
     ) {
         let mut ug = UnblockGraph::new();
         let repacker = PlaceRepacker::new(body, tcx);
@@ -402,7 +378,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowPCGEdgeKind::Reborrow(reborrow) => match reborrow.assigned_place {
                     MaybeOldPlace::Current {
                         place: assigned_place,
-                    } if place.is_prefix(assigned_place) && !place.is_ref(body, tcx) => {
+                    } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
                         for ra in place.region_projections(repacker) {
                             self.add_region_projection_member(RegionProjectionMember::new(
                                 reborrow.blocked_place,
@@ -421,9 +397,15 @@ impl<'tcx> BorrowsState<'tcx> {
         self.apply_unblock_graph(ug, repacker, location);
 
         // Originally we may not have been expanded enough
-        self.graph
-            .ensure_deref_expansion_to_at_least(place.into(), body, tcx, location);
-        self.capabilities.insert(place, capability);
+        if let Some(inherent_cap) =
+            self.graph
+                .ensure_deref_expansion_to_at_least(place.into(), body, tcx, location)
+        {
+            self.capabilities.insert(place, inherent_cap);
+        }
+        if let Some(capability) = capability {
+            self.capabilities.insert(place, capability);
+        }
     }
 
     pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
@@ -455,7 +437,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let mut changed = false;
         for action in graph.actions(repacker) {
             match action {
-                crate::combined_pcs::UnblockAction::TerminateReborrow {
+                crate::combined_pcs::UnblockAction::TerminateBorrow {
                     reserve_location, ..
                 } => {
                     if self.kill_reborrows(reserve_location, location, repacker) {
