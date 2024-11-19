@@ -1,4 +1,3 @@
-
 use crate::rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -38,6 +37,10 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
+        &self.capabilities
+    }
+
     pub fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
         self.graph.edges()
     }
@@ -46,8 +49,8 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
-    pub fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(place)
+    pub fn get_capability<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
+        self.capabilities.get(node.into())
     }
 
     pub fn set_capability<T: Into<PCGNode<'tcx>>>(&mut self, node: T, capability: CapabilityKind) {
@@ -92,19 +95,15 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.change_pcs_elem(old, new)
     }
 
-    pub fn remove_edge_and_set_latest(
+    fn remove_edge_and_set_latest(
         &mut self,
         edge: &BorrowPCGEdge<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
         if !edge.is_shared_borrow() {
-            for place in edge.blocked_places(repacker) {
-                match place {
-                    MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
-                        self.set_latest(place, location)
-                    }
-                    _ => {}
+            for place in edge.blocked_places() {
+                if let Some(place) = place.as_current_place() {
+                    self.set_latest(place, location)
                 }
             }
         }
@@ -143,13 +142,13 @@ impl<'tcx> BorrowsState<'tcx> {
                     let is_old_unblocked = edge
                         .blocked_by_nodes(repacker)
                         .iter()
-                        .all(|p| p.is_old() && !self.graph.has_edge_blocking(repacker, *p));
+                        .all(|p| p.is_old() && !self.graph.has_edge_blocking(*p));
                     is_old_unblocked
                         || match &edge.kind() {
                             BorrowPCGEdgeKind::DerefExpansion(de) => de
                                 .expansion(repacker)
                                 .into_iter()
-                                .all(|p| !self.graph.has_edge_blocking(repacker, p)),
+                                .all(|p| !self.graph.has_edge_blocking(p)),
                             _ => false,
                         }
                 })
@@ -158,7 +157,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 break;
             }
             for edge in to_remove {
-                self.remove_edge_and_set_latest(&edge, repacker, location);
+                self.remove_edge_and_set_latest(&edge, location);
             }
             assert!(self.graph.edge_count() < num_edges_prev);
         }
@@ -190,25 +189,20 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn delete_descendants_of(
         &mut self,
         place: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
-        let edges = self.edges_blocking(place.into(), repacker);
+        let edges = self.edges_blocking(place.into());
         if edges.is_empty() {
             return false;
         }
         for edge in edges {
-            self.remove_edge_and_set_latest(&edge, repacker, location);
+            self.remove_edge_and_set_latest(&edge, location);
         }
         true
     }
 
-    pub fn get_place_blocking(
-        &self,
-        place: MaybeRemotePlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
-        let edges = self.edges_blocking(place.into(), repacker);
+    pub fn get_place_blocking(&self, place: MaybeRemotePlace<'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+        let edges = self.edges_blocking(place.into());
         if edges.len() != 1 {
             return None;
         }
@@ -220,12 +214,8 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub fn edges_blocking(
-        &self,
-        node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowPCGEdge<'tcx>> {
-        self.graph.edges_blocking(node, repacker)
+    pub fn edges_blocking(&self, node: BlockedNode<'tcx>) -> Vec<BorrowPCGEdge<'tcx>> {
+        self.graph.edges_blocking(node)
     }
 
     pub fn deref_expansions(&self) -> FxHashSet<Conditioned<DerefExpansion<'tcx>>> {
@@ -389,7 +379,10 @@ impl<'tcx> BorrowsState<'tcx> {
             return false;
         }
         for edge in edges_to_remove {
-            self.remove_edge_and_set_latest(&edge.into(), repacker, kill_location);
+            if edge.value.is_mut() {
+                self.set_capability(edge.value.assigned_ref(repacker), CapabilityKind::Write)
+            }
+            self.remove_edge_and_set_latest(&edge.into(), kill_location);
         }
         true
     }
@@ -411,7 +404,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                 }
                 crate::combined_pcs::UnblockAction::Collapse(place, _) => {
-                    if self.delete_descendants_of(place, repacker, location) {
+                    if self.delete_descendants_of(place, location) {
                         changed = true;
                     }
                 }
@@ -451,7 +444,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let edges = self.graph.leaf_edges(repacker);
             for edge in edges {
                 if edge.blocked_by_nodes(repacker).iter().all(|p| p.is_old()) {
-                    self.remove_edge_and_set_latest(&edge, repacker, location);
+                    self.remove_edge_and_set_latest(&edge, location);
                     cont = true;
                 }
             }

@@ -1,6 +1,7 @@
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind},
+        borrow_pcg_capabilities::BorrowPCGCapabilities,
+        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         deref_expansion::DerefExpansion,
@@ -126,26 +127,16 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_abstraction_input_target(&mut self, target: AbstractionInputTarget<'tcx>) -> NodeId {
-        self.insert_region_projection_node(target)
-    }
-
-    fn insert_abstraction_output_target(
-        &mut self,
-        target: AbstractionOutputTarget<'tcx>,
-    ) -> NodeId {
-        self.insert_region_projection_node(target)
-    }
-
     fn insert_region_projection_and_ancestors(
         &mut self,
         projection: RegionProjection<'tcx>,
+        capabilities: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
-        let node = self.insert_region_projection_node(projection);
+        let node = self.insert_region_projection_node(projection, capabilities.get(projection));
         let mut last_node = node;
         let mut last_projection = projection;
         while let Some(projection) = last_projection.prefix_projection(self.repacker) {
-            let node = self.insert_region_projection_node(projection);
+            let node = self.insert_region_projection_node(projection, capabilities.get(projection));
             self.edges.insert(GraphEdge::ProjectionEdge {
                 source: node,
                 target: last_node,
@@ -156,7 +147,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         node
     }
 
-    fn insert_region_projection_node(&mut self, projection: RegionProjection<'tcx>) -> NodeId {
+    fn insert_region_projection_node(
+        &mut self,
+        projection: RegionProjection<'tcx>,
+        capability: Option<CapabilityKind>,
+    ) -> NodeId {
         if let Some(id) = self.region_projection_nodes.existing_id(&projection) {
             return id;
         }
@@ -165,9 +160,14 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             id,
             node_type: NodeType::RegionProjectionNode {
                 label: format!(
-                    "{}↓{:?}",
+                    "{}↓{:?}{}",
                     projection.place.to_short_string(self.repacker),
-                    projection.region()
+                    projection.region(),
+                    if let Some(capability) = capability {
+                        format!(" {:?}", capability)
+                    } else {
+                        "".to_string()
+                    }
                 ),
             },
         };
@@ -181,11 +181,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         for edge in region_abstraction.edges() {
             for input in edge.inputs() {
-                let input = self.insert_abstraction_input_target(input);
+                let input = self.insert_region_projection_node(input, None);
                 input_nodes.insert(input);
             }
             for output in edge.outputs() {
-                let output = self.insert_abstraction_output_target(output);
+                let output = self.insert_region_projection_node(output, None);
                 output_nodes.insert(output);
             }
             for input in &input_nodes {
@@ -238,11 +238,12 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: Option<SnapshotLocation>,
-        capability: Option<CapabilityKind>,
+        capability_getter: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
         if let Some(node_id) = self.place_nodes.existing_id(&(place, location)) {
             return node_id;
         }
+        let capability = capability_getter.get(place);
         let id = self.place_node_id(place, location);
         let label = format!("{:?}", place.to_string(self.repacker));
         let region = match place.ty(self.repacker).ty.kind() {
@@ -263,11 +264,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 capability,
             }
         };
-        if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
-            for region_projection in place.region_projections(self.repacker) {
-                self.insert_region_projection_and_ancestors(region_projection);
-            }
-        }
+        // if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
+        //     for region_projection in place.region_projections(self.repacker) {
+        //         self.insert_region_projection_and_ancestors(region_projection, capability_getter);
+        //     }
+        // }
         let node = GraphNode { id, node_type };
         self.insert_node(node);
         id
@@ -289,7 +290,7 @@ impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
 
     pub fn construct_graph(mut self) -> Graph {
         for edge in self.unblock_graph.edges().cloned().collect::<Vec<_>>() {
-            self.draw_borrow_pcg_edge(&edge, None);
+            self.draw_borrow_pcg_edge(&edge, &NullCapabilityGetter);
         }
         self.constructor.to_graph()
     }
@@ -298,7 +299,7 @@ impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
 impl<'mir, 'tcx> PlaceGrapher<'mir, 'tcx> for UnblockGraphConstructor<'mir, 'tcx> {
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
         self.constructor
-            .insert_place_node(place.place(), place.location(), None)
+            .insert_place_node(place.place(), place.location(), &NullCapabilityGetter)
     }
 
     fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
@@ -325,7 +326,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn draw_borrow_pcg_edge(
         &mut self,
         edge: &BorrowPCGEdge<'tcx>,
-        _graph: Option<&BorrowsGraph<'tcx>>,
+        capabilities: &impl CapabilityGetter<'tcx>,
     ) {
         match edge.kind() {
             BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
@@ -347,9 +348,10 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 if let Some(assigned_region_projection) =
                     reborrow.assigned_region_projection(self.repacker())
                 {
-                    let assigned_place = self
-                        .constructor()
-                        .insert_region_projection_and_ancestors(assigned_region_projection);
+                    let assigned_place = self.constructor().insert_region_projection_and_ancestors(
+                        assigned_region_projection,
+                        capabilities,
+                    );
                     self.constructor().edges.insert(GraphEdge::ReborrowEdge {
                         borrowed_place,
                         assigned_place,
@@ -366,7 +368,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 let place = self.insert_maybe_remote_place(member.place);
                 let region_projection = self
                     .constructor()
-                    .insert_region_projection_node(member.projection);
+                    .insert_region_projection_node(member.projection, None);
                 self.constructor()
                     .edges
                     .insert(GraphEdge::RegionProjectionMemberEdge {
@@ -386,16 +388,52 @@ pub struct PCSGraphConstructor<'a, 'tcx> {
     repacker: PlaceRepacker<'a, 'tcx>,
 }
 
+trait CapabilityGetter<'tcx> {
+    fn get<T: Copy + Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind>;
+}
+
+struct PCSCapabilityGetter<'a, 'tcx> {
+    summary: &'a CapabilitySummary<'tcx>,
+    borrows_domain: &'a BorrowsState<'tcx>,
+}
+
+impl<'a, 'tcx> CapabilityGetter<'tcx> for PCSCapabilityGetter<'a, 'tcx> {
+    fn get<T: Copy + Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
+        if let Some(cap) = self.borrows_domain.get_capability(node) {
+            return Some(cap);
+        }
+        let place = node.into().as_current_place()?;
+        let alloc = self.summary.get(place.local)?;
+        if let CapabilityLocal::Allocated(projections) = alloc {
+            projections.deref().get(&place).cloned()
+        } else {
+            None
+        }
+    }
+}
+
+struct NullCapabilityGetter;
+
+impl<'a, 'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
+    fn get<T: Copy + Into<PCGNode<'tcx>>>(&self, _: T) -> Option<CapabilityKind> {
+        None
+    }
+}
+
 impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
     fn repacker(&self) -> PlaceRepacker<'a, 'tcx> {
         self.repacker
     }
 
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
+        let capability_getter = &PCSCapabilityGetter {
+            summary: self.summary,
+            borrows_domain: self.borrows_domain,
+        };
         match place {
             MaybeOldPlace::Current { place } => {
                 self.constructor
-                    .insert_place_node(place, None, self.capability_for_place(place))
+                    .insert_place_node(place, None, capability_getter)
             }
             MaybeOldPlace::OldPlace(snapshot_place) => self.insert_snapshot_place(snapshot_place),
         }
@@ -431,9 +469,11 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: Option<SnapshotLocation>,
-        kind: Option<CapabilityKind>,
+        capabilities: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
-        let node = self.constructor.insert_place_node(place, location, kind);
+        let node = self
+            .constructor
+            .insert_place_node(place, location, capabilities);
         if location.is_some() {
             return node;
         }
@@ -449,14 +489,20 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 self.repacker,
             );
             for (rp1, rp2) in connections {
-                let source = self.constructor.insert_region_projection_and_ancestors(rp1);
-                let target = self.constructor.insert_region_projection_and_ancestors(rp2);
+                let source = self
+                    .constructor
+                    .insert_region_projection_and_ancestors(rp1, capabilities);
+                let target = self
+                    .constructor
+                    .insert_region_projection_and_ancestors(rp2, capabilities);
                 self.constructor
                     .edges
                     .insert(GraphEdge::ProjectionEdge { source, target });
             }
             last_place = place.into();
-            let node = self.constructor.insert_place_node(place, None, None);
+            let node = self
+                .constructor
+                .insert_place_node(place, None, capabilities);
             self.constructor.edges.insert(GraphEdge::ProjectionEdge {
                 source: node,
                 target: last_node,
@@ -467,20 +513,11 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
     }
 
     fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
-        let cap = self.capability_for_place(place.place);
-        self.insert_place_and_previous_projections(place.place, Some(place.at), cap)
-    }
-
-    fn capability_for_place(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        if let Some(cap) = self.borrows_domain.get_capability(place) {
-            return Some(cap);
-        }
-        match self.summary.get(place.local) {
-            Some(CapabilityLocal::Allocated(projections)) => {
-                projections.deref().get(&place).cloned()
-            }
-            _ => None,
-        }
+        let capability_getter = &PCSCapabilityGetter {
+            summary: self.summary,
+            borrows_domain: self.borrows_domain,
+        };
+        self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
     }
 
     pub fn tcx(&self) -> TyCtxt<'tcx> {
@@ -492,14 +529,22 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             match capability {
                 CapabilityLocal::Unallocated => {}
                 CapabilityLocal::Allocated(projections) => {
-                    for (place, kind) in projections.iter() {
-                        self.insert_place_and_previous_projections(*place, None, Some(*kind));
+                    for (place, _) in projections.iter() {
+                        let capability_getter = &PCSCapabilityGetter {
+                            summary: self.summary,
+                            borrows_domain: self.borrows_domain,
+                        };
+                        self.insert_place_and_previous_projections(*place, None, capability_getter);
                     }
                 }
             }
         }
         for edge in self.borrows_domain.graph_edges() {
-            self.draw_borrow_pcg_edge(&edge, Some(self.borrows_domain.graph()));
+            let capability_getter = &PCSCapabilityGetter {
+                summary: self.summary,
+                borrows_domain: self.borrows_domain,
+            };
+            self.draw_borrow_pcg_edge(&edge, capability_getter);
         }
 
         self.constructor.to_graph()

@@ -186,7 +186,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         edge.kind()
             .blocked_by_nodes(repacker)
             .iter()
-            .all(|p| !self.has_edge_blocking(repacker, *p))
+            .all(|p| !self.has_edge_blocking(*p))
     }
 
     pub fn leaf_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowPCGEdge<'tcx>> {
@@ -206,7 +206,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter(|edge| {
-                edge.blocked_places(repacker).iter().all(|p| match p {
+                edge.blocked_places().iter().all(|p| match p {
                     MaybeRemotePlace::Local(maybe_old_place) => {
                         self.is_root(*maybe_old_place, repacker)
                     }
@@ -220,18 +220,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.root_edges(repacker)
             .into_iter()
-            .flat_map(|edge| edge.blocked_places(repacker).into_iter())
+            .flat_map(|edge| edge.blocked_places().into_iter())
             .collect()
     }
 
     pub fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
         blocked_node: T,
     ) -> bool {
         let blocked_node = blocked_node.into();
         self.edges()
-            .any(|edge| edge.blocks_node(repacker, blocked_node))
+            .any(|edge| edge.blocks_node(blocked_node))
     }
 
     pub fn is_root(&self, place: MaybeOldPlace<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -420,10 +419,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn edges_blocking(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<BorrowPCGEdge<'tcx>> {
         self.edges()
-            .filter(|edge| edge.blocks_node(repacker, node))
+            .filter(|edge| edge.blocks_node(node))
             .cloned()
             .collect()
     }

@@ -122,7 +122,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             let should_kill_edge = |edge: &BorrowPCGEdge<'tcx>| {
                 edge.blocked_by_nodes(repacker)
                     .into_iter()
-                    .all(|node| edges.iter().all(|e| !e.blocks_node(repacker, node.into())))
+                    .all(|node| edges.iter().all(|e| !e.blocks_node(node.into())))
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
@@ -132,7 +132,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                                 blocked_place: reborrow.blocked_place,
                                 assigned_place: reborrow.assigned_place,
                                 reserve_location: reborrow.reserve_location(),
-                                is_mut: reborrow.mutability == Mutability::Mut,
+                                is_mut: reborrow.is_mut(),
                             });
                             to_keep.remove(edge);
                         }
@@ -194,10 +194,11 @@ impl<'tcx> UnblockGraph<'tcx> {
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        for edge in borrows.edges_blocking(node, repacker) {
+        for edge in borrows.edges_blocking(node) {
             self.kill_edge(edge, borrows, repacker);
         }
-        if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node {
+        if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node
+        {
             for reborrow in borrows.borrows_blocking_prefix_of(place) {
                 self.kill_edge(reborrow.into(), borrows, repacker);
             }

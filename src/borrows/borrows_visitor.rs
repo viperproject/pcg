@@ -572,7 +572,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             }
                             self.state.states.after.delete_descendants_of(
                                 MaybeOldPlace::Current { place: from },
-                                repacker,
                                 location,
                             );
                         }
