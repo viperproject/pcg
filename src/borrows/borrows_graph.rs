@@ -27,6 +27,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
     region_projection::RegionProjection,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,12 +42,41 @@ impl<'tcx> BorrowsGraph<'tcx> {
         Self(FxHashSet::default())
     }
 
-    pub fn edge_count(&self) -> usize {
-        self.0.len()
+    pub fn data_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
+        self.0.iter()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
-        self.0.iter()
+    pub fn materialized_edges(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPCGEdge<'tcx>> {
+        let mut edges = FxHashSet::default();
+        for edge in self.0.iter() {
+            edges.insert(edge.clone());
+            for node in edge.blocked_by_nodes(repacker) {
+                if let BlockingNode::RegionProjection(rp) = node {
+                    // TODO: It's possible we don't know how to get the deref of this place
+                    //       if it doesn't have a region VID
+                    if let Some(deref) = rp.deref(repacker) {
+                        if !self.has_data_edge_blocking(repacker, rp)
+                            && (!rp.place.is_old() || self.has_data_edge_blocking(repacker, deref))
+                        {
+                            edges.insert(BorrowPCGEdge::new(
+                                BorrowPCGEdgeKind::RegionProjectionMember(
+                                    RegionProjectionMember::new(
+                                        deref.into(),
+                                        rp,
+                                        RegionProjectionMemberDirection::PlaceBlocksProjection,
+                                    ),
+                                ),
+                                edge.conditions().clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        edges.into_iter()
     }
 
     pub fn region_projection_graph(
@@ -229,6 +259,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         blocked_node: T,
     ) -> bool {
         let blocked_node = blocked_node.into();
+        self.materialized_edges(repacker)
+            .any(|edge| edge.blocks_node(repacker, blocked_node))
+    }
+
+    fn has_data_edge_blocking<T: Into<BlockedNode<'tcx>>>(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        blocked_node: T,
+    ) -> bool {
+        let blocked_node = blocked_node.into();
         self.0
             .iter()
             .any(|edge| edge.blocks_node(repacker, blocked_node))
@@ -238,13 +278,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
         !self.has_edge_blocked_by(place.into(), repacker)
     }
 
+    fn has_data_edge_blocked_by<T: Into<BlockingNode<'tcx>>>(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        blocked_node: T,
+    ) -> bool {
+        let blocked_node = blocked_node.into();
+        self.0
+            .iter()
+            .any(|edge| edge.blocked_by_nodes(repacker).contains(&blocked_node))
+    }
+
     pub fn has_edge_blocked_by(
         &self,
         node: BlockingNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.0
-            .iter()
+        self.materialized_edges(repacker)
             .any(|edge| edge.blocked_by_nodes(repacker).contains(&node))
     }
 
@@ -333,6 +383,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         region_liveness: &T,
     ) -> bool {
+        eprintln!("Join");
         let mut changed = false;
 
         // Optimization
@@ -385,6 +436,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         let mut finished = false;
         while !finished {
+            eprintln!("While");
             finished = true;
             for leaf_node in self.leaf_nodes(repacker) {
                 if !other.leaf_nodes(repacker).contains(&leaf_node) {
@@ -443,10 +495,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: BlockedNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<BorrowPCGEdge<'tcx>> {
-        self.0
-            .iter()
+        self.materialized_edges(repacker)
             .filter(move |edge| edge.blocks_node(repacker, node))
-            .cloned()
             .collect()
     }
 
@@ -527,8 +577,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
             expansion.push(target);
             if projects_from.is_some() {
-                let origin_place = place.into();
-                if !self.contains_deref_expansion_from(&origin_place) {
+                let origin_place: MaybeOldPlace<'tcx> = place.into();
+                if !origin_place.place().is_owned(body, tcx)
+                    && !self.contains_deref_expansion_from(&origin_place)
+                {
                     self.insert_deref_expansion(
                         origin_place,
                         expansion,
@@ -562,12 +614,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for p in expansion.iter() {
             assert!(p.projection.len() > place.place().projection.len());
         }
-        let de = if place.place().is_owned(repacker.body(), repacker.tcx()) {
-            let owned_expansion = OwnedExpansion::new(place);
-            DerefExpansion::OwnedExpansion(owned_expansion)
-        } else {
-            DerefExpansion::borrowed(place, expansion, location, repacker)
-        };
+        assert!(!place.place().is_owned(repacker.body(), repacker.tcx()));
+        let de = DerefExpansion::new(
+            place,
+            expansion
+                .into_iter()
+                .map(|p| p.projection.last().unwrap())
+                .copied()
+                .collect(),
+            location,
+        );
         self.insert(BorrowPCGEdge::new(
             BorrowPCGEdgeKind::DerefExpansion(de),
             PathConditions::new(location.block),

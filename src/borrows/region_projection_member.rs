@@ -1,24 +1,24 @@
-use crate::rustc_interface::{
-    data_structures::fx::FxHashSet,
-    middle::mir::Location
-};
+use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 use crate::utils::PlaceRepacker;
 
+use super::borrow_pcg_edge::BlockingNode;
 use super::{
-    borrow_pcg_edge::BlockedNode, domain::{MaybeOldPlace, MaybeRemotePlace}, has_pcs_elem::HasPcsElems, region_projection::RegionProjection
+    borrow_pcg_edge::BlockedNode,
+    domain::{MaybeOldPlace, MaybeRemotePlace},
+    has_pcs_elem::HasPcsElems,
+    region_projection::RegionProjection,
 };
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
 pub enum RegionProjectionMemberDirection {
-    PlaceIsRegionInput,
-    PlaceIsRegionOutput,
+    ProjectionBlocksPlace,
+    PlaceBlocksProjection,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {
     pub place: MaybeRemotePlace<'tcx>,
     pub projection: RegionProjection<'tcx>,
-    location: Location,
-    pub direction: RegionProjectionMemberDirection,
+    direction: RegionProjectionMemberDirection,
 }
 
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for RegionProjectionMember<'tcx> {
@@ -36,10 +36,21 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
+    pub fn blocked_by_nodes(&self) -> FxHashSet<BlockingNode<'tcx>> {
+        let blocked_by_node = match self.direction {
+            RegionProjectionMemberDirection::ProjectionBlocksPlace => {
+                BlockingNode::RegionProjection(self.projection)
+            }
+            RegionProjectionMemberDirection::PlaceBlocksProjection => {
+                BlockingNode::Place(self.place.as_local_place().unwrap())
+            }
+        };
+        vec![blocked_by_node].into_iter().collect()
+    }
     pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
         let blocked = match self.direction {
-            RegionProjectionMemberDirection::PlaceIsRegionInput => self.place.into(),
-            RegionProjectionMemberDirection::PlaceIsRegionOutput => self.projection.into(),
+            RegionProjectionMemberDirection::ProjectionBlocksPlace => self.place.into(),
+            RegionProjectionMemberDirection::PlaceBlocksProjection => self.projection.into(),
         };
         vec![blocked].into_iter().collect()
     }
@@ -48,20 +59,18 @@ impl<'tcx> RegionProjectionMember<'tcx> {
         self.projection.index(repacker)
     }
 
-    pub fn location(&self) -> Location {
-        self.location
+    pub fn direction(&self) -> RegionProjectionMemberDirection {
+        self.direction
     }
 
     pub fn new(
         place: MaybeRemotePlace<'tcx>,
         projection: RegionProjection<'tcx>,
-        location: Location,
         direction: RegionProjectionMemberDirection,
     ) -> Self {
         Self {
             place,
             projection,
-            location,
             direction,
         }
     }
