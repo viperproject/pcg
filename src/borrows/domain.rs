@@ -20,7 +20,7 @@ pub struct LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
-    fn to_borrows_edge(self, path_conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+    fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge::new(
             super::borrow_pcg_edge::BorrowPCGEdgeKind::Abstraction(AbstractionEdge {
                 abstraction_type: AbstractionType::Loop(self),
@@ -507,6 +507,12 @@ impl<'tcx> From<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
 
 impl<'tcx> From<Place<'tcx>> for MaybeRemotePlace<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
+        MaybeRemotePlace::Local(place.into())
+    }
+}
+
+impl<'tcx> From<mir::Place<'tcx>> for MaybeRemotePlace<'tcx> {
+    fn from(place: mir::Place<'tcx>) -> Self {
         MaybeRemotePlace::Local(place.into())
     }
 }

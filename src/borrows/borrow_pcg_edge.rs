@@ -1,4 +1,8 @@
-use rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet, middle::mir::BasicBlock};
+use rustc_interface::{
+    ast::Mutability,
+    data_structures::fx::FxHashSet,
+    middle::mir::{self, BasicBlock},
+};
 
 use crate::{
     rustc_interface,
@@ -39,12 +43,22 @@ impl<'tcx> BlockingNode<'tcx> {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BlockedNode<'tcx> {
+pub enum PCGNode<'tcx> {
     Place(MaybeRemotePlace<'tcx>),
     RegionProjection(RegionProjection<'tcx>),
 }
 
-impl<'tcx> BlockedNode<'tcx> {
+pub type BlockedNode<'tcx> = PCGNode<'tcx>;
+
+impl<'tcx> PCGNode<'tcx> {
+    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
+        match self {
+            BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) => {
+                Some(*place)
+            }
+            _ => None,
+        }
+    }
     pub fn is_old(&self) -> bool {
         match self {
             BlockedNode::Place(remote_place) => remote_place.is_old(),
@@ -57,6 +71,12 @@ impl<'tcx> BlockedNode<'tcx> {
             BlockedNode::Place(maybe_remote_place) => Some(*maybe_remote_place),
             BlockedNode::RegionProjection(_) => None,
         }
+    }
+}
+
+impl<'tcx> From<mir::Place<'tcx>> for BlockedNode<'tcx> {
+    fn from(place: mir::Place<'tcx>) -> Self {
+        BlockedNode::Place(place.into())
     }
 }
 
@@ -273,11 +293,11 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
     }
 }
 pub trait ToBorrowsEdge<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for DerefExpansion<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
             kind: BorrowPCGEdgeKind::DerefExpansion(self),
@@ -286,7 +306,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for DerefExpansion<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionEdge<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
             kind: BorrowPCGEdgeKind::Abstraction(self),
@@ -295,7 +315,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionEdge<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
             kind: BorrowPCGEdgeKind::Borrow(self),
@@ -304,7 +324,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for RegionProjectionMember<'tcx> {
-    fn to_borrows_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
             kind: BorrowPCGEdgeKind::RegionProjectionMember(self),
@@ -314,6 +334,6 @@ impl<'tcx> ToBorrowsEdge<'tcx> for RegionProjectionMember<'tcx> {
 
 impl<'tcx, T: ToBorrowsEdge<'tcx>> Into<BorrowPCGEdge<'tcx>> for Conditioned<T> {
     fn into(self) -> BorrowPCGEdge<'tcx> {
-        self.value.to_borrows_edge(self.conditions)
+        self.value.to_borrow_pcg_edge(self.conditions)
     }
 }

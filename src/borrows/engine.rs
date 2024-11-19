@@ -318,6 +318,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                     *mutability,
                     Location::START,
                     *region,
+                    self.repacker,
                 );
             }
         }

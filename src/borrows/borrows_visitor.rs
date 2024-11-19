@@ -27,9 +27,12 @@ use crate::{
 };
 
 use super::{
+    borrow_pcg_edge::BlockedNode,
     borrows_state::BorrowsState,
     domain::MaybeOldPlace,
+    path_condition::PathConditions,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    unblock_graph::UnblockGraph,
 };
 use super::{
     domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
@@ -124,15 +127,19 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     /// Ensures that the place is expanded to exactly the given place. If
     /// `capability` is `Some`, the capability of the expanded place is set to
     /// the given value.
-    fn ensure_expansion_to_exactly(
+    fn ensure_expansion_to_exactly<T: Into<BlockedNode<'tcx>>>(
         &mut self,
-        place: utils::Place<'tcx>,
+        node: T,
         location: Location,
         capability: Option<CapabilityKind>,
     ) {
-        self.state
-            .after_state_mut()
-            .ensure_expansion_to_exactly(self.tcx, self.body, place, location, capability)
+        self.state.after_state_mut().ensure_expansion_to_exactly(
+            self.tcx,
+            self.body,
+            node.into(),
+            location,
+            capability,
+        )
     }
 
     fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
@@ -184,25 +191,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         destination: Place<'tcx>,
         location: Location,
     ) {
-        let (func_def_id, substs) = match func {
-            Operand::Constant(box c) => match c.const_ {
-                Const::Val(_, ty) => match ty.kind() {
-                    ty::TyKind::FnDef(def_id, substs) => (def_id, substs),
-                    _ => unreachable!(),
-                },
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
+        let (func_def_id, substs) = if let Operand::Constant(box c) = func
+            && let Const::Val(_, ty) = c.const_
+            && let ty::TyKind::FnDef(def_id, substs) = ty.kind()
+        {
+            (def_id, substs)
+        } else {
+            unreachable!()
         };
         let sig = self.tcx.fn_sig(func_def_id).instantiate(self.tcx, substs);
         let sig = self.tcx.liberate_late_bound_regions(*func_def_id, sig);
         let output_lifetimes = extract_lifetimes(sig.output());
-        eprintln!(
-            "Constructing region abstraction for {:?} (output: {:?}) with lifetimes {:?}",
-            func_def_id,
-            sig.output(),
-            output_lifetimes
-        );
         if output_lifetimes.is_empty() {
             return;
         }
@@ -228,10 +227,16 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             sig.output(),
                             destination.into(),
                         ) {
+                            let repacker = PlaceRepacker::new(self.body, self.tcx);
+                            let input_rp = input_place.region_projection(0, self.repacker());
+                            let mut ug = UnblockGraph::new();
+                            ug.unblock_node(input_rp.into(), &self.state.states.after, repacker);
+                            self.state
+                                .states
+                                .after
+                                .apply_unblock_graph(ug, repacker, location);
                             edges.push(AbstractionBlockEdge::new(
-                                vec![input_place.region_projection(0, self.repacker())]
-                                    .into_iter()
-                                    .collect(),
+                                vec![input_rp].into_iter().collect(),
                                 vec![output].into_iter().collect(),
                             ));
                         }
@@ -266,10 +271,24 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     location,
                     *func_def_id,
                     substs,
-                    edges,
+                    edges.clone(),
                 ))),
                 location.block,
             );
+        }
+        for edge in edges {
+            for output in edge.outputs() {
+                if let Some(place) = output.deref(self.repacker()) {
+                    self.after_state_mut().add_region_projection_member(
+                        RegionProjectionMember::new(
+                            place.into(),
+                            output,
+                            RegionProjectionMemberDirection::PlaceBlocksProjection,
+                        ),
+                        PathConditions::AtBlock(location.block),
+                    );
+                }
+            }
         }
     }
 
@@ -341,7 +360,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         self.super_operand(operand, location);
         if self.stage == StatementStage::Operands && self.preparing {
             if let Some(place) = operand.place() {
-                self.ensure_expansion_to_exactly(place.into(), location, None);
+                self.ensure_expansion_to_exactly(place, location, None);
             }
         }
         if self.stage == StatementStage::Main && !self.preparing {
@@ -568,6 +587,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                         Mutability::Not,
                                         location,
                                         *region, // TODO: This is the region for the place, not the loan, does that matter?
+                                        PlaceRepacker::new(self.body, self.tcx),
                                     );
                                 }
                                 _ => {}
@@ -589,6 +609,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 kind.mutability(),
                                 location,
                                 *region,
+                                PlaceRepacker::new(self.body, self.tcx),
                             );
                         }
                         _ => {}
