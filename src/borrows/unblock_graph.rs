@@ -1,14 +1,9 @@
 use std::collections::HashSet;
 
-use rustc_interface::{
-    ast::Mutability,
-    middle::mir::BasicBlock,
-};
+use rustc_interface::{ast::Mutability, middle::mir::BasicBlock};
 
 use crate::{
-    borrows::{
-        borrows_state::BorrowsState, domain::MaybeOldPlace,
-    },
+    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace},
     combined_pcs::UnblockAction,
     rustc_interface,
     utils::PlaceRepacker,
@@ -17,7 +12,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeKind, BorrowPCGEdge},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
     domain::MaybeRemotePlace,
 };
 
@@ -153,11 +148,11 @@ impl<'tcx> UnblockGraph<'tcx> {
                             ));
                             to_keep.remove(edge);
                         }
-                        UnblockEdgeType::RegionProjectionMember(_member) => {
+                        UnblockEdgeType::RegionProjectionMember(member) => {
                             // TODO: Action to remove the member
-                            // push_action(UnblockAction::TerminateRegionProjectionMember(
-                            //     member.projection,
-                            // ));
+                            push_action(UnblockAction::TerminateRegionProjectionMember(
+                                member.clone(),
+                            ));
                             to_keep.remove(edge);
                         }
                     }

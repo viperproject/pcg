@@ -29,7 +29,7 @@ use rustc_interface::{
 use crate::{
     borrows::{
         domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
-        engine::BorrowsEngine,
+        engine::BorrowsEngine, region_projection_member::RegionProjectionMember,
     },
     free_pcs::engine::FpcsEngine,
     rustc_interface,
@@ -216,6 +216,7 @@ impl<'tcx> ProjectionEdge<'tcx> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum UnblockAction<'tcx> {
+    TerminateRegionProjectionMember(RegionProjectionMember<'tcx>),
     TerminateAbstraction(Location, AbstractionType<'tcx>),
     TerminateBorrow {
         reserve_location: Location,
