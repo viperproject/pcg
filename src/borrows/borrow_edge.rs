@@ -5,21 +5,24 @@ use super::{
     domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
     region_projection::RegionProjection,
 };
-use crate::rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
-    middle::mir::{
-        Location,
-    },
-    middle::ty::{self, RegionVid},
-};
 use crate::utils::PlaceRepacker;
+use crate::{
+    rustc_interface::{
+        ast::Mutability,
+        data_structures::fx::FxHashSet,
+        middle::{
+            mir::Location,
+            ty::{self, RegionVid},
+        },
+    },
+    utils::Place,
+};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowEdge<'tcx> {
     pub blocked_place: MaybeRemotePlace<'tcx>,
     pub assigned_place: MaybeOldPlace<'tcx>,
-    pub mutability: Mutability,
+    mutability: Mutability,
 
     /// The location when the reborrow was created
     reserve_location: Location,
@@ -52,19 +55,31 @@ impl<'tcx> BorrowEdge<'tcx> {
         self.reserve_location
     }
 
+    pub fn is_mut(&self) -> bool {
+        self.mutability == Mutability::Mut
+    }
+
+    pub fn assigned_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        self.assigned_place
+            .prefix_place(repacker)
+            .unwrap()
+            .with_inherent_region(repacker)
+    }
+
     // TODO: Region could be erased and we can't handle that yet
     pub fn assigned_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx>> {
-        let assigned_prefix_place = self.assigned_place.prefix_place(repacker)?;
-        let assigned_prefix_place = assigned_prefix_place.with_inherent_region(repacker);
-        match assigned_prefix_place.ty(repacker).ty.kind() {
-            ty::Ref(region, _, _) => match region.kind() {
-                ty::RegionKind::ReVar(v) => Some(RegionProjection::new(v, assigned_prefix_place)),
-                _ => None,
-            },
-            _ => None,
+        let assigned_place_ref = self.assigned_ref(repacker);
+        if let ty::TyKind::Ref(region, _, _) = assigned_place_ref.ty(repacker).ty.kind() {
+            if let ty::RegionKind::ReVar(v) = region.kind() {
+                Some(RegionProjection::new(v, assigned_place_ref))
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 

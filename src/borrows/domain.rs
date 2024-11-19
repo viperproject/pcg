@@ -488,6 +488,14 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
+    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
+        if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = self {
+            Some(*place)
+        } else {
+            None
+        }
+    }
+
     pub fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(*p),

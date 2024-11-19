@@ -150,16 +150,15 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
 
     pub fn blocked_places(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.blocked_nodes(repacker)
+        self.blocked_nodes()
             .into_iter()
             .flat_map(|node| node.as_place())
             .collect()
     }
 
-    pub fn blocks_node(&self, repacker: PlaceRepacker<'_, 'tcx>, node: BlockedNode<'tcx>) -> bool {
-        self.blocked_nodes(repacker).contains(&node)
+    pub fn blocks_node(&self, node: BlockedNode<'tcx>) -> bool {
+        self.blocked_nodes().contains(&node)
     }
 
     pub fn blocks_region_projection(
@@ -177,8 +176,8 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         self.kind.blocked_by_nodes(repacker)
     }
 
-    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
-        self.kind.blocked_nodes(repacker)
+    fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
+        self.kind.blocked_nodes()
     }
 }
 
@@ -228,12 +227,12 @@ where
 impl<'tcx> BorrowPCGEdgeKind<'tcx> {
     pub fn is_shared_borrow(&self) -> bool {
         match self {
-            BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.mutability == Mutability::Not,
+            BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(),
             _ => false,
         }
     }
 
-    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
+    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
         match self {
             BorrowPCGEdgeKind::Borrow(de) => de.blocked_nodes(),
             BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(),
