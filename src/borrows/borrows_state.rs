@@ -114,7 +114,7 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
     ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.graph
-            .edges()
+            .data_edges()
             .filter_map(|edge| match &edge.kind() {
                 BorrowPCGEdgeKind::Borrow(borrow) if borrow.reserve_location() == location => {
                     Some(Conditioned {
@@ -133,9 +133,10 @@ impl<'tcx> BorrowsState<'tcx> {
     /// This function performs such collapses until a fixpoint is reached
     pub fn minimize(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
         loop {
-            let to_remove = self
-                .graph
-                .edges()
+            let edges = self.graph.materialized_edges(repacker).collect::<Vec<_>>();
+            let num_edges_prev = edges.len();
+            let to_remove = edges
+                .into_iter()
                 .filter(|edge| {
                     let is_old_unblocked = edge
                         .blocked_by_nodes(repacker)
@@ -143,24 +144,22 @@ impl<'tcx> BorrowsState<'tcx> {
                         .all(|p| p.is_old() && !self.graph.has_edge_blocking(repacker, *p));
                     is_old_unblocked
                         || match &edge.kind() {
-                            BorrowPCGEdgeKind::DerefExpansion(de) => {
-                                !de.is_owned_expansion()
-                                    && de
-                                        .expansion(repacker)
-                                        .into_iter()
-                                        .all(|p| !self.graph.has_edge_blocking(repacker, p))
-                            }
+                            BorrowPCGEdgeKind::DerefExpansion(de) => de
+                                .expansion(repacker)
+                                .into_iter()
+                                .all(|p| !self.graph.has_edge_blocking(repacker, p)),
                             _ => false,
                         }
                 })
-                .cloned()
                 .collect::<Vec<_>>();
             if to_remove.is_empty() {
                 break;
             }
             for edge in to_remove {
                 self.remove_edge_and_set_latest(&edge, repacker, location);
+                eprintln!("Removed edge {:?}", edge);
             }
+            assert!(self.graph.materialized_edges(repacker).count() < num_edges_prev);
         }
     }
 
@@ -228,8 +227,11 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker)
     }
 
-    pub fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
-        self.graph.edges()
+    pub fn materialized_edges(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPCGEdge<'tcx>> {
+        self.graph.materialized_edges(repacker)
     }
 
     pub fn deref_expansions(&self) -> FxHashSet<Conditioned<DerefExpansion<'tcx>>> {
@@ -330,31 +332,31 @@ impl<'tcx> BorrowsState<'tcx> {
         summary: &CapabilitySummary<'tcx>,
         location: Location,
     ) {
-        for c in (*summary).iter() {
-            match c {
-                CapabilityLocal::Allocated(projections) => {
-                    for (place, kind) in (*projections).iter() {
-                        match kind {
-                            CapabilityKind::Exclusive => {
-                                let repacker = PlaceRepacker::new(body, tcx);
-                                if place.is_ref(repacker) {
-                                    let deref = place.project_deref(repacker);
-                                    if let Some(capability) =
-                                        self.graph.ensure_deref_expansion_to_at_least(
-                                            deref, body, tcx, location,
-                                        )
-                                    {
-                                        self.capabilities.insert(deref, capability);
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        // for c in (*summary).iter() {
+        //     match c {
+        //         CapabilityLocal::Allocated(projections) => {
+        //             for (place, kind) in (*projections).iter() {
+        //                 match kind {
+        //                     CapabilityKind::Exclusive => {
+        //                         let repacker = PlaceRepacker::new(body, tcx);
+        //                         if place.is_ref(repacker) {
+        //                             let deref = place.project_deref(repacker);
+        //                             if let Some(capability) =
+        //                                 self.graph.ensure_deref_expansion_to_at_least(
+        //                                     deref, body, tcx, location,
+        //                                 )
+        //                             {
+        //                                 self.capabilities.insert(deref, capability);
+        //                             }
+        //                         }
+        //                     }
+        //                     _ => {}
+        //                 }
+        //             }
+        //         }
+        //         _ => {}
+        //     }
+        // }
     }
 
     /// Ensures that the place is expanded to exactly the given place. If
@@ -370,7 +372,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) {
         let mut ug = UnblockGraph::new();
         let repacker = PlaceRepacker::new(body, tcx);
-        let graph_edges = self.graph_edges().cloned().collect::<Vec<_>>();
+        let graph_edges = self.graph.materialized_edges(repacker);
         for p in graph_edges {
             match p.kind() {
                 BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_place {
@@ -378,12 +380,14 @@ impl<'tcx> BorrowsState<'tcx> {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
                         for ra in place.region_projections(repacker) {
-                            self.add_region_projection_member(RegionProjectionMember::new(
-                                reborrow.blocked_place,
-                                ra,
-                                location,
-                                RegionProjectionMemberDirection::PlaceIsRegionInput,
-                            ));
+                            self.add_region_projection_member(
+                                RegionProjectionMember::new(
+                                    reborrow.blocked_place,
+                                    ra,
+                                    RegionProjectionMemberDirection::ProjectionBlocksPlace,
+                                ),
+                                PathConditions::new(location.block),
+                            );
                         }
                     }
                     _ => {}
@@ -421,7 +425,6 @@ impl<'tcx> BorrowsState<'tcx> {
             return false;
         }
         for edge in edges_to_remove {
-            eprintln!("Killing borrow {:?} at {:?}", edge, kill_location);
             self.remove_edge_and_set_latest(&edge.into(), repacker, kill_location);
         }
         true
@@ -464,12 +467,12 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-    pub fn add_region_projection_member(&mut self, member: RegionProjectionMember<'tcx>) {
-        self.graph.insert(
-            member
-                .clone()
-                .to_borrows_edge(PathConditions::new(member.location().block)),
-        );
+    pub fn add_region_projection_member(
+        &mut self,
+        member: RegionProjectionMember<'tcx>,
+        pc: PathConditions,
+    ) {
+        self.graph.insert(member.clone().to_borrows_edge(pc));
     }
 
     pub fn trim_old_leaves(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {

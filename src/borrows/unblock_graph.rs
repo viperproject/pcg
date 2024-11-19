@@ -187,6 +187,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
+        eprintln!("Kill edge2");
         self.add_dependency(edge.clone());
         for blocked_node in edge.blocked_by_nodes(repacker) {
             self.unblock_node(blocked_node.into(), borrows, repacker);
@@ -199,6 +200,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
+        eprintln!("Unblock");
         for edge in borrows.edges_blocking(node, repacker) {
             self.kill_edge(edge, borrows, repacker);
         }

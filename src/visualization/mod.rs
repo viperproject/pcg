@@ -10,7 +10,10 @@ pub mod graph_constructor;
 pub mod mir_graph;
 
 use crate::{
-    borrows::{borrows_state::BorrowsState, unblock_graph::UnblockGraph},
+    borrows::{
+        borrows_state::BorrowsState, region_projection_member::RegionProjectionMemberDirection,
+        unblock_graph::UnblockGraph,
+    },
     free_pcs::{CapabilityKind, CapabilitySummary},
     rustc_interface,
     utils::{Place, PlaceRepacker, SnapshotLocation},
@@ -183,6 +186,7 @@ enum GraphEdge {
     RegionProjectionMemberEdge {
         place: NodeId,
         region_projection: NodeId,
+        direction: RegionProjectionMemberDirection,
     },
     RegionProjectionToDerefExpansionEdge {
         region_projection: NodeId,
@@ -250,14 +254,23 @@ impl GraphEdge {
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
             GraphEdge::RegionProjectionMemberEdge {
-                place: source,
-                region_projection: target,
-            } => DotEdge {
-                from: source.to_string(),
-                to: target.to_string(),
-                options: EdgeOptions::directed(EdgeDirection::Forward)
-                    .with_color("purple".to_string()),
-            },
+                place,
+                region_projection,
+                direction,
+            } => {
+                let (from, to) =
+                    if *direction == RegionProjectionMemberDirection::PlaceBlocksProjection {
+                        (region_projection, place)
+                    } else {
+                        (place, region_projection)
+                    };
+                DotEdge {
+                    from: from.to_string(),
+                    to: to.to_string(),
+                    options: EdgeOptions::directed(EdgeDirection::Forward)
+                        .with_color("purple".to_string()),
+                }
+            }
         }
     }
 }

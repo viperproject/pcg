@@ -330,42 +330,15 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
         match edge.kind() {
             BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
                 let base_node = self.insert_maybe_old_place(deref_expansion.base());
-                match deref_expansion {
-                    DerefExpansion::OwnedExpansion(owned) => {
-                        let target = self.insert_maybe_old_place(owned.expansion(self.repacker()));
-                        self.constructor()
-                            .edges
-                            .insert(GraphEdge::DerefExpansionEdge {
-                                source: base_node,
-                                target,
-                                path_conditions: format!("{}", edge.conditions()),
-                            });
-                        // TODO: Region could be erased and we can't handle that yet
-                        if owned.base().has_region_projections(self.repacker()) {
-                            let base_rp = owned.base_region_projection(self.repacker());
-                            let base_rp_node = self
-                                .constructor()
-                                .insert_region_projection_and_ancestors(base_rp);
-                            self.constructor().edges.insert(
-                                GraphEdge::RegionProjectionToDerefExpansionEdge {
-                                    region_projection: base_rp_node,
-                                    deref: target,
-                                },
-                            );
-                        }
-                    }
-                    _ => {
-                        for place in deref_expansion.expansion(self.repacker()) {
-                            let place = self.insert_maybe_old_place(place);
-                            self.constructor()
-                                .edges
-                                .insert(GraphEdge::DerefExpansionEdge {
-                                    source: base_node,
-                                    target: place,
-                                    path_conditions: format!("{}", edge.conditions()),
-                                });
-                        }
-                    }
+                for place in deref_expansion.expansion(self.repacker()) {
+                    let place = self.insert_maybe_old_place(place);
+                    self.constructor()
+                        .edges
+                        .insert(GraphEdge::DerefExpansionEdge {
+                            source: base_node,
+                            target: place,
+                            path_conditions: format!("{}", edge.conditions()),
+                        });
                 }
             }
             BorrowPCGEdgeKind::Borrow(reborrow) => {
@@ -399,6 +372,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     .insert(GraphEdge::RegionProjectionMemberEdge {
                         place,
                         region_projection,
+                        direction: member.direction(),
                     });
             }
         }
@@ -524,8 +498,8 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 }
             }
         }
-        for edge in self.borrows_domain.graph_edges() {
-            self.draw_borrow_pcg_edge(edge, Some(self.borrows_domain.graph()));
+        for edge in self.borrows_domain.materialized_edges(self.repacker) {
+            self.draw_borrow_pcg_edge(&edge, Some(self.borrows_domain.graph()));
         }
 
         self.constructor.to_graph()

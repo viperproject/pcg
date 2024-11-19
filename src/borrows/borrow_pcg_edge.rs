@@ -6,7 +6,15 @@ use crate::{
 };
 
 use super::{
-    borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion, domain::{MaybeOldPlace, MaybeRemotePlace}, has_pcs_elem::HasPcsElems, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection::RegionProjection, region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection}
+    borrow_edge::BorrowEdge,
+    borrows_graph::Conditioned,
+    deref_expansion::DerefExpansion,
+    domain::{MaybeOldPlace, MaybeRemotePlace},
+    has_pcs_elem::HasPcsElems,
+    path_condition::{PathCondition, PathConditions},
+    region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -208,7 +216,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
     pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         match self {
             BorrowPCGEdgeKind::Borrow(de) => de.blocked_nodes(),
-            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
+            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(),
             BorrowPCGEdgeKind::Abstraction(node) => node.blocked_nodes(),
             BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
         }
@@ -234,17 +242,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
                 .into_iter()
                 .map(|p| BlockingNode::RegionProjection(p))
                 .collect(),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
-                if member.direction == RegionProjectionMemberDirection::PlaceIsRegionInput {
-                    vec![BlockingNode::RegionProjection(member.projection)]
-                        .into_iter()
-                        .collect()
-                } else {
-                    vec![BlockingNode::Place(member.place.as_local_place().unwrap())]
-                        .into_iter()
-                        .collect()
-                }
-            }
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_by_nodes(),
             BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_by_nodes(repacker),
         }
     }

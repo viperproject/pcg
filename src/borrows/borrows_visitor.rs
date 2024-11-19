@@ -194,9 +194,15 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             },
             _ => unreachable!(),
         };
-        let sig = EarlyBinder::instantiate_identity(self.tcx.fn_sig(func_def_id));
+        let sig = self.tcx.fn_sig(func_def_id).instantiate(self.tcx, substs);
         let sig = self.tcx.liberate_late_bound_regions(*func_def_id, sig);
         let output_lifetimes = extract_lifetimes(sig.output());
+        eprintln!(
+            "Constructing region abstraction for {:?} (output: {:?}) with lifetimes {:?}",
+            func_def_id,
+            sig.output(),
+            output_lifetimes
+        );
         if output_lifetimes.is_empty() {
             return;
         }
@@ -389,7 +395,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         for loan in self.loans_invalidated_at(location, self.stage == StatementStage::Operands) {
             let loan = &self.borrow_set[loan];
-            eprintln!("Killing loan {:?} at {:?}", loan, location);
             self.state.states.after.kill_borrows(
                 loan.reserve_location,
                 location,
@@ -505,9 +510,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                                         RegionProjectionMember::new(
                                                             operand_place.into(),
                                                             proj,
-                                                            location,
-                                                            RegionProjectionMemberDirection::PlaceIsRegionInput,
+                                                            RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                                         ),
+                                                        super::path_condition::PathConditions::AtBlock(location.block)
                                                     );
                                                 }
                                             }
