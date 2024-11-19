@@ -175,17 +175,21 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
-    fn insert_region_abstraction(&mut self, region_abstraction: &AbstractionEdge<'tcx>) {
+    fn insert_region_abstraction(
+        &mut self,
+        region_abstraction: &AbstractionEdge<'tcx>,
+        capabilities: &impl CapabilityGetter<'tcx>,
+    ) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 
         for edge in region_abstraction.edges() {
             for input in edge.inputs() {
-                let input = self.insert_region_projection_node(input, None);
+                let input = self.insert_region_projection_node(input, capabilities.get(input));
                 input_nodes.insert(input);
             }
             for output in edge.outputs() {
-                let output = self.insert_region_projection_node(output, None);
+                let output = self.insert_region_projection_node(output, capabilities.get(output));
                 output_nodes.insert(output);
             }
             for input in &input_nodes {
@@ -250,7 +254,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             ty::TyKind::Ref(region, _, _) => Some(format!("{:?}", region)),
             _ => None,
         };
-        let node_type = if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
+        let node_type = if place.is_owned(self.repacker) {
             NodeType::FPCSNode {
                 label,
                 capability,
@@ -264,11 +268,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 capability,
             }
         };
-        // if place.is_owned(self.repacker.body(), self.repacker.tcx()) {
-        //     for region_projection in place.region_projections(self.repacker) {
-        //         self.insert_region_projection_and_ancestors(region_projection, capability_getter);
-        //     }
-        // }
         let node = GraphNode { id, node_type };
         self.insert_node(node);
         id
@@ -362,13 +361,16 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 }
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
-                let _r = self.constructor().insert_region_abstraction(abstraction);
+                let _r = self
+                    .constructor()
+                    .insert_region_abstraction(abstraction, capabilities);
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 let place = self.insert_maybe_remote_place(member.place);
-                let region_projection = self
-                    .constructor()
-                    .insert_region_projection_node(member.projection, None);
+                let region_projection = self.constructor().insert_region_projection_node(
+                    member.projection,
+                    capabilities.get(member.projection),
+                );
                 self.constructor()
                     .edges
                     .insert(GraphEdge::RegionProjectionMemberEdge {

@@ -129,10 +129,10 @@ impl<'tcx> Place<'tcx> {
             .position(|region| get_vid(region).unwrap() == vid)
     }
 
-    pub fn is_owned(&self, body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
-        !self
-            .iter_projections()
-            .any(|(place, elem)| elem == ProjectionElem::Deref && !place.ty(body, tcx).ty.is_box())
+    pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        !self.iter_projections().any(|(place, elem)| {
+            elem == ProjectionElem::Deref && !place.ty(repacker.mir, repacker.tcx).ty.is_box()
+        })
     }
 
     pub fn is_mut_ref(&self, body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
@@ -346,12 +346,12 @@ impl<'tcx> Place<'tcx> {
     }
 
     pub fn nearest_owned_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
-        if self.is_owned(repacker.body(), repacker.tcx) {
+        if self.is_owned(repacker) {
             return self;
         }
         for (place, _) in self.iter_projections().rev() {
             let place: Self = place.into();
-            if place.is_owned(repacker.body(), repacker.tcx) {
+            if place.is_owned(repacker) {
                 return place;
             }
         }

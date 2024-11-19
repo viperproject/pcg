@@ -1,8 +1,8 @@
 use crate::rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Location},
-    middle::ty::{self, TyCtxt},
+    middle::mir::{BasicBlock, Location},
+    middle::ty::{self},
 };
 use serde_json::{json, Value};
 
@@ -20,7 +20,7 @@ use super::{
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::LivenessChecker,
     deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace, MaybeRemotePlace},
+    domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
@@ -314,14 +314,12 @@ impl<'tcx> BorrowsState<'tcx> {
     /// the given value.
     pub fn ensure_expansion_to_exactly(
         &mut self,
-        tcx: TyCtxt<'tcx>,
-        body: &mir::Body<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
         node: BlockedNode<'tcx>,
         location: Location,
         capability: Option<CapabilityKind>,
     ) {
         let mut ug = UnblockGraph::new();
-        let repacker = PlaceRepacker::new(body, tcx);
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
         if let Some(place) = node.as_current_place() {
             for p in graph_edges {
@@ -338,6 +336,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                         RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                     ),
                                     PathConditions::new(location.block),
+                                    repacker,
                                 );
                             }
                         }
@@ -354,7 +353,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if let Some(place) = node.as_current_place() {
             if let Some(inherent_cap) =
                 self.graph
-                    .ensure_deref_expansion_to_at_least(place.into(), body, tcx, location)
+                    .ensure_deref_expansion_to_at_least(place.into(), repacker, location)
             {
                 self.capabilities.insert(place, inherent_cap);
             }
@@ -434,8 +433,23 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         member: RegionProjectionMember<'tcx>,
         pc: PathConditions,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         self.graph.insert(member.clone().to_borrow_pcg_edge(pc));
+        let (place_cap, proj_cap) = if member.projection.mutability(repacker) == Mutability::Mut {
+            match member.direction() {
+                RegionProjectionMemberDirection::ProjectionBlocksPlace => {
+                    (CapabilityKind::Lent, CapabilityKind::Exclusive)
+                }
+                RegionProjectionMemberDirection::PlaceBlocksProjection => {
+                    (CapabilityKind::Exclusive, CapabilityKind::Lent)
+                }
+            }
+        } else {
+            (CapabilityKind::Read, CapabilityKind::Read)
+        };
+        self.set_capability(member.place, place_cap);
+        self.set_capability(member.projection, proj_cap);
     }
 
     pub fn trim_old_leaves(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
@@ -463,7 +477,7 @@ impl<'tcx> BorrowsState<'tcx> {
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        let (rp_cap, assigned_cap) = match mutability {
+        let (blocked_cap, assigned_cap) = match mutability {
             Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
             Mutability::Mut => (CapabilityKind::Lent, CapabilityKind::Exclusive),
         };
@@ -483,11 +497,14 @@ impl<'tcx> BorrowsState<'tcx> {
                 )
                 .to_borrow_pcg_edge(PathConditions::new(location.block)),
             );
-            self.set_capability(rp, rp_cap);
+            self.set_capability(rp, blocked_cap);
         }
         self.graph
             .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block)));
 
+        if !blocked_place.is_owned(repacker) {
+            self.set_capability(blocked_place, blocked_cap);
+        }
         self.set_capability(assigned_place, assigned_cap);
     }
 
@@ -516,6 +533,19 @@ impl<'tcx> BorrowsState<'tcx> {
         abstraction: AbstractionEdge<'tcx>,
         block: BasicBlock,
     ) {
+        match &abstraction.abstraction_type {
+            AbstractionType::FunctionCall(function_call_abstraction) => {
+                for edge in function_call_abstraction.edges() {
+                    for input in edge.inputs() {
+                        self.set_capability(input, CapabilityKind::Lent);
+                    }
+                    for output in edge.outputs() {
+                        self.set_capability(output, CapabilityKind::Exclusive);
+                    }
+                }
+            }
+            _ => {}
+        }
         self.graph
             .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block)));
     }

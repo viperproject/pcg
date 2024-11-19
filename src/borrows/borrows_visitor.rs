@@ -65,8 +65,7 @@ pub enum StatementStage {
 }
 
 pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
-    tcx: TyCtxt<'tcx>,
-    body: &'mir Body<'tcx>,
+    repacker: PlaceRepacker<'mir, 'tcx>,
     state: &'state mut BorrowsDomain<'mir, 'tcx>,
     input_facts: &'mir PoloniusInput,
     location_table: &'mir LocationTable,
@@ -80,9 +79,6 @@ pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
-    fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
-        PlaceRepacker::new(self.body, self.tcx)
-    }
     pub fn preparing(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
@@ -106,8 +102,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         preparing: bool,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
-            tcx: engine.tcx,
-            body: engine.body,
+            repacker: PlaceRepacker::new(engine.body, engine.tcx),
             state,
             input_facts: engine.input_facts,
             stage,
@@ -134,8 +129,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         capability: Option<CapabilityKind>,
     ) {
         self.state.after_state_mut().ensure_expansion_to_exactly(
-            self.tcx,
-            self.body,
+            self.repacker,
             node.into(),
             location,
             capability,
@@ -199,13 +193,20 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         } else {
             unreachable!()
         };
-        let sig = self.tcx.fn_sig(func_def_id).instantiate(self.tcx, substs);
-        let sig = self.tcx.liberate_late_bound_regions(*func_def_id, sig);
+        let sig = self
+            .repacker
+            .tcx()
+            .fn_sig(func_def_id)
+            .instantiate(self.repacker.tcx(), substs);
+        let sig = self
+            .repacker
+            .tcx()
+            .liberate_late_bound_regions(*func_def_id, sig);
         let output_lifetimes = extract_lifetimes(sig.output());
         if output_lifetimes.is_empty() {
             return;
         }
-        let param_env = self.tcx.param_env(func_def_id);
+        let param_env = self.repacker.tcx().param_env(func_def_id);
         let mut edges = vec![];
 
         for (idx, ty) in sig.inputs().iter().enumerate() {
@@ -227,14 +228,18 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             sig.output(),
                             destination.into(),
                         ) {
-                            let repacker = PlaceRepacker::new(self.body, self.tcx);
-                            let input_rp = input_place.region_projection(0, self.repacker());
+                            let input_rp = input_place.region_projection(0, self.repacker);
                             let mut ug = UnblockGraph::new();
-                            ug.unblock_node(input_rp.into(), &self.state.states.after, repacker);
-                            self.state
-                                .states
-                                .after
-                                .apply_unblock_graph(ug, repacker, location);
+                            ug.unblock_node(
+                                input_rp.into(),
+                                &self.state.states.after,
+                                self.repacker,
+                            );
+                            self.state.states.after.apply_unblock_graph(
+                                ug,
+                                self.repacker,
+                                location,
+                            );
                             edges.push(AbstractionBlockEdge::new(
                                 vec![input_rp].into_iter().collect(),
                                 vec![output].into_iter().collect(),
@@ -254,7 +259,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     destination.into(),
                 ) {
                     edges.push(AbstractionBlockEdge::new(
-                        vec![input_place.region_projection(lifetime_idx, self.repacker())]
+                        vec![input_place.region_projection(lifetime_idx, self.repacker)]
                             .into_iter()
                             .collect(),
                         vec![output].into_iter().collect(),
@@ -278,14 +283,15 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
         for edge in edges {
             for output in edge.outputs() {
-                if let Some(place) = output.deref(self.repacker()) {
-                    self.after_state_mut().add_region_projection_member(
+                if let Some(place) = output.deref(self.repacker) {
+                    self.state.states.after.add_region_projection_member(
                         RegionProjectionMember::new(
                             place.into(),
                             output,
                             RegionProjectionMemberDirection::PlaceBlocksProjection,
                         ),
                         PathConditions::AtBlock(location.block),
+                        self.repacker,
                     );
                 }
             }
@@ -304,7 +310,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         let output_ty = match output_ty.kind() {
             ty::TyKind::Ref(output_lifetime, ty, Mutability::Mut) => {
                 if outlives_in_param_env(input_lifetime, *output_lifetime, param_env) {
-                    result.push(output_place.region_projection(0, self.repacker()));
+                    result.push(output_place.region_projection(0, self.repacker));
                 }
                 *ty
             }
@@ -314,15 +320,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             extract_lifetimes(output_ty).into_iter().enumerate()
         {
             if outlives_in_param_env(input_lifetime, output_lifetime, param_env) {
-                result.push(output_place.region_projection(output_lifetime_idx, self.repacker()));
+                result.push(output_place.region_projection(output_lifetime_idx, self.repacker));
             }
         }
         result
     }
 
     fn minimize(&mut self, location: Location) {
-        let repacker = PlaceRepacker::new(self.body, self.tcx);
-        self.state.states.after.minimize(repacker, location);
+        self.state.states.after.minimize(self.repacker, location);
     }
 }
 
@@ -369,11 +374,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     .states
                     .after
                     .set_latest((*place).into(), location);
-                self.state.states.after.make_place_old(
-                    (*place).into(),
-                    PlaceRepacker::new(self.body, self.tcx),
-                    None,
-                );
+                self.state
+                    .states
+                    .after
+                    .make_place_old((*place).into(), self.repacker, None);
             }
         }
     }
@@ -414,11 +418,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         for loan in self.loans_invalidated_at(location, self.stage == StatementStage::Operands) {
             let loan = &self.borrow_set[loan];
-            self.state.states.after.kill_borrows(
-                loan.reserve_location,
-                location,
-                PlaceRepacker::new(self.body, self.tcx),
-            );
+            self.state
+                .states
+                .after
+                .kill_borrows(loan.reserve_location, location, self.repacker);
         }
 
         // Will be included as start bridge ops
@@ -429,11 +432,15 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     // will be overwritten in the assignment.
                     // In principle the target could be made old in the `Main`
                     // stage as well, maybe that makes more sense?
-                    if target.ty(self.body, self.tcx).ty.is_ref() {
+                    if target
+                        .ty(self.repacker.body(), self.repacker.tcx())
+                        .ty
+                        .is_ref()
+                    {
                         let target = (*target).into();
                         self.state.states.after.make_place_old(
                             target,
-                            PlaceRepacker::new(self.body, self.tcx),
+                            self.repacker,
                             self.debug_ctx,
                         );
                     }
@@ -441,10 +448,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
                 StatementKind::FakeRead(box (_, place)) => {
                     let place: utils::Place<'tcx> = (*place).into();
-                    if !place.is_owned(self.body, self.tcx) {
-                        if place.is_ref(self.repacker()) {
+                    if !place.is_owned(self.repacker) {
+                        if place.is_ref(self.repacker) {
                             self.ensure_expansion_to_exactly(
-                                place.project_deref(self.repacker()),
+                                place.project_deref(self.repacker),
                                 location,
                                 None,
                             );
@@ -463,16 +470,18 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             match &statement.kind {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
-                    let repacker = PlaceRepacker::new(self.body, self.tcx);
                     self.state
                         .states
                         .after
-                        .make_place_old(place, repacker, self.debug_ctx);
-                    self.state.states.after.trim_old_leaves(repacker, location);
+                        .make_place_old(place, self.repacker, self.debug_ctx);
+                    self.state
+                        .states
+                        .after
+                        .trim_old_leaves(self.repacker, location);
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    if !target.is_owned(self.body, self.tcx) {
+                    if !target.is_owned(self.repacker) {
                         self.ensure_expansion_to_exactly(
                             target,
                             location,
@@ -489,13 +498,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::Assign(box (target, rvalue)) => {
                     let target: utils::Place<'tcx> = (*target).into();
                     self.after_state_mut().set_latest(target, location);
-                    if !target.is_owned(self.body, self.tcx) {
+                    if !target.is_owned(self.repacker) {
                         self.state
                             .states
                             .after
                             .set_capability(target, CapabilityKind::Exclusive);
                     }
-                    if let Some(mutbl) = target.ref_mutability(self.repacker()) {
+                    if let Some(mutbl) = target.ref_mutability(self.repacker) {
                         let capability = if mutbl.is_mut() {
                             CapabilityKind::Exclusive
                         } else {
@@ -504,16 +513,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         self.state
                             .states
                             .after
-                            .set_capability(target.project_deref(self.repacker()), capability);
+                            .set_capability(target.project_deref(self.repacker), capability);
                     }
                     match rvalue {
                         Rvalue::Aggregate(box kind, fields) => match kind {
                             AggregateKind::Adt(..) | AggregateKind::Tuple => {
                                 let target: utils::Place<'tcx> = (*target).into();
                                 for (_idx, field) in fields.iter_enumerated() {
-                                    match field.ty(self.body, self.tcx).kind() {
+                                    match field.ty(self.repacker.body(), self.repacker.tcx()).kind()
+                                    {
                                         ty::TyKind::Ref(region, _, _) => {
-                                            for proj in target.region_projections(self.repacker()) {
+                                            for proj in target.region_projections(self.repacker) {
                                                 if self.outlives(
                                                     get_vid(region).unwrap(),
                                                     proj.region(),
@@ -521,8 +531,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                                     let operand_place: utils::Place<'tcx> =
                                                         field.place().unwrap().into();
                                                     let operand_place = MaybeOldPlace::new(
-                                                        operand_place
-                                                            .project_deref(self.repacker()),
+                                                        operand_place.project_deref(self.repacker),
                                                         Some(location),
                                                     );
                                                     self.state.states.after.add_region_projection_member(
@@ -531,7 +540,8 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                                             proj,
                                                             RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                                         ),
-                                                        super::path_condition::PathConditions::AtBlock(location.block)
+                                                        super::path_condition::PathConditions::AtBlock(location.block),
+                                                        self.repacker,
                                                     );
                                                 }
                                             }
@@ -543,17 +553,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             _ => {}
                         },
                         Rvalue::Use(Operand::Move(from)) => {
-                            let repacker = PlaceRepacker::new(self.body, self.tcx);
                             let from: utils::Place<'tcx> = (*from).into();
                             let target: utils::Place<'tcx> = (*target).into();
-                            if matches!(from.ty(self.repacker()).ty.kind(), ty::TyKind::Ref(_, _, r) if r.is_mut())
+                            if let Some(mutbl) = from.ref_mutability(self.repacker)
+                                && mutbl.is_mut()
                             {
                                 self.state.states.after.change_pcs_elem(
                                     MaybeOldPlace::new(
-                                        from.project_deref(self.repacker()),
+                                        from.project_deref(self.repacker),
                                         Some(self.state.states.after.get_latest(from)),
                                     ),
-                                    target.project_deref(repacker).into(),
+                                    target.project_deref(self.repacker).into(),
                                 );
                             }
                             let moved_place = MaybeOldPlace::new(
@@ -561,13 +571,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 Some(self.state.states.after.get_latest(from)),
                             );
                             for (idx, p) in moved_place
-                                .region_projections(repacker)
+                                .region_projections(self.repacker)
                                 .into_iter()
                                 .enumerate()
                             {
                                 self.state.states.after.change_pcs_elem(
                                     p,
-                                    target.region_projection(idx, repacker).into(),
+                                    target.region_projection(idx, self.repacker).into(),
                                 );
                             }
                             self.state.states.after.delete_descendants_of(
@@ -576,17 +586,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             );
                         }
                         Rvalue::Use(Operand::Copy(from)) => {
-                            match from.ty(self.body, self.tcx).ty.kind() {
+                            match from.ty(self.repacker.body(), self.repacker.tcx()).ty.kind() {
                                 ty::TyKind::Ref(region, _, _) => {
                                     let from: utils::Place<'tcx> = (*from).into();
                                     let target: utils::Place<'tcx> = (*target).into();
                                     self.state.states.after.add_borrow(
-                                        from.project_deref(self.repacker()).into(),
-                                        target.project_deref(self.repacker()),
+                                        from.project_deref(self.repacker).into(),
+                                        target.project_deref(self.repacker),
                                         Mutability::Not,
                                         location,
                                         *region, // TODO: This is the region for the place, not the loan, does that matter?
-                                        PlaceRepacker::new(self.body, self.tcx),
+                                        self.repacker,
                                     );
                                 }
                                 _ => {}
@@ -595,12 +605,18 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         Rvalue::Ref(region, kind, blocked_place) => {
                             let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
                             let target: utils::Place<'tcx> = (*target).into();
-                            let assigned_place = target.project_deref(self.repacker());
+                            let assigned_place = target.project_deref(self.repacker);
                             assert_eq!(
-                                self.tcx
-                                    .erase_regions((*blocked_place).ty(self.body, self.tcx).ty),
-                                self.tcx
-                                    .erase_regions((*assigned_place).ty(self.body, self.tcx).ty)
+                                self.repacker.tcx().erase_regions(
+                                    (*blocked_place)
+                                        .ty(self.repacker.body(), self.repacker.tcx())
+                                        .ty
+                                ),
+                                self.repacker.tcx().erase_regions(
+                                    (*assigned_place)
+                                        .ty(self.repacker.body(), self.repacker.tcx())
+                                        .ty
+                                )
                             );
                             self.state.states.after.add_borrow(
                                 blocked_place.into(),
@@ -608,7 +624,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 kind.mutability(),
                                 location,
                                 *region,
-                                PlaceRepacker::new(self.body, self.tcx),
+                                self.repacker,
                             );
                         }
                         _ => {}
@@ -616,8 +632,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 _ => {}
             }
-            let repacker = PlaceRepacker::new(self.body, self.tcx);
-            self.state.states.after.trim_old_leaves(repacker, location);
+            self.state
+                .states
+                .after
+                .trim_old_leaves(self.repacker, location);
         }
     }
 
@@ -643,7 +661,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 let place: utils::Place<'tcx> = place.into();
                 if self.stage == StatementStage::Operands
                     && self.preparing
-                    && !place.is_owned(self.body, self.tcx)
+                    && !place.is_owned(self.repacker)
                 {
                     self.ensure_expansion_to_exactly(place, location, None)
                 }
