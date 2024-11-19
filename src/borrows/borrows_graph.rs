@@ -55,22 +55,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
             edges.insert(edge.clone());
             for node in edge.blocked_by_nodes(repacker) {
                 if let BlockingNode::RegionProjection(rp) = node {
-                    // TODO: It's possible we don't know how to get the deref of this place
+                    // TODO: Can't get the deref of this place
                     //       if it doesn't have a region VID
                     if let Some(deref) = rp.deref(repacker) {
                         if !self.has_data_edge_blocking(repacker, rp)
                             && (!rp.place.is_old() || self.has_data_edge_blocking(repacker, deref))
                         {
-                            edges.insert(BorrowPCGEdge::new(
-                                BorrowPCGEdgeKind::RegionProjectionMember(
-                                    RegionProjectionMember::new(
-                                        deref.into(),
-                                        rp,
-                                        RegionProjectionMemberDirection::PlaceBlocksProjection,
-                                    ),
-                                ),
-                                edge.conditions().clone(),
-                            ));
+                            // edges.insert(BorrowPCGEdge::new(
+                            //     BorrowPCGEdgeKind::RegionProjectionMember(
+                            //         RegionProjectionMember::new(
+                            //             deref.into(),
+                            //             rp,
+                            //             RegionProjectionMemberDirection::PlaceBlocksProjection,
+                            //         ),
+                            //     ),
+                            //     edge.conditions().clone(),
+                            // ));
                         }
                     }
                 }
@@ -363,7 +363,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 ),
                 self_block,
             )
-            .to_borrows_edge(PathConditions::new(self_block));
+            .to_borrow_pcg_edge(PathConditions::new(self_block));
             if self.insert(abstraction) {
                 changed = true;
             }
@@ -473,17 +473,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
         mutability: Mutability,
         location: Location,
         region: Region<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.insert(
-            BorrowEdge::new(
-                blocked_place.into(),
-                assigned_place.into(),
-                mutability,
-                location,
-                region,
-            )
-            .to_borrows_edge(PathConditions::new(location.block)),
-        )
+        let borrow_edge = BorrowEdge::new(
+            blocked_place.into(),
+            assigned_place.into(),
+            mutability,
+            location,
+            region,
+        );
+        // TODO: We can't get the region projection if the assigned place doesn't have a region VID
+        if let Some(rp) = borrow_edge.assigned_region_projection(repacker) {
+            self.insert(
+                RegionProjectionMember::new(
+                    assigned_place.into(),
+                    rp,
+                    RegionProjectionMemberDirection::PlaceBlocksProjection,
+                )
+                .to_borrow_pcg_edge(PathConditions::new(location.block)),
+            );
+        }
+        return self.insert(borrow_edge.to_borrow_pcg_edge(PathConditions::new(location.block)));
     }
 
     pub fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {

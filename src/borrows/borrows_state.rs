@@ -309,7 +309,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
         let mut weakens: FxHashSet<Weaken<'tcx>> = FxHashSet::default();
 
-        for (place, capability) in self.capabilities.iter() {
+        for (place, capability) in self.capabilities.place_capabilities() {
             if let Some(to_capability) = to.capabilities.get(place) {
                 if capability > to_capability {
                     weakens.insert(Weaken(place.clone(), capability, to_capability));
@@ -366,47 +366,51 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         tcx: TyCtxt<'tcx>,
         body: &mir::Body<'tcx>,
-        place: Place<'tcx>,
+        node: BlockedNode<'tcx>,
         location: Location,
         capability: Option<CapabilityKind>,
     ) {
         let mut ug = UnblockGraph::new();
         let repacker = PlaceRepacker::new(body, tcx);
         let graph_edges = self.graph.materialized_edges(repacker);
-        for p in graph_edges {
-            match p.kind() {
-                BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_place {
-                    MaybeOldPlace::Current {
-                        place: assigned_place,
-                    } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
-                        for ra in place.region_projections(repacker) {
-                            self.add_region_projection_member(
-                                RegionProjectionMember::new(
-                                    reborrow.blocked_place,
-                                    ra,
-                                    RegionProjectionMemberDirection::ProjectionBlocksPlace,
-                                ),
-                                PathConditions::new(location.block),
-                            );
+        if let Some(place) = node.as_current_place() {
+            for p in graph_edges {
+                match p.kind() {
+                    BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_place {
+                        MaybeOldPlace::Current {
+                            place: assigned_place,
+                        } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
+                            for ra in place.region_projections(repacker) {
+                                self.add_region_projection_member(
+                                    RegionProjectionMember::new(
+                                        reborrow.blocked_place,
+                                        ra,
+                                        RegionProjectionMemberDirection::ProjectionBlocksPlace,
+                                    ),
+                                    PathConditions::new(location.block),
+                                );
+                            }
                         }
-                    }
+                        _ => {}
+                    },
                     _ => {}
-                },
-                _ => {}
+                }
             }
         }
-        ug.unblock_node(place.into(), self, repacker);
+        ug.unblock_node(node, self, repacker);
         self.apply_unblock_graph(ug, repacker, location);
 
         // Originally we may not have been expanded enough
-        if let Some(inherent_cap) =
-            self.graph
-                .ensure_deref_expansion_to_at_least(place.into(), body, tcx, location)
-        {
-            self.capabilities.insert(place, inherent_cap);
+        if let Some(place) = node.as_current_place() {
+            if let Some(inherent_cap) =
+                self.graph
+                    .ensure_deref_expansion_to_at_least(place.into(), body, tcx, location)
+            {
+                self.capabilities.insert(place, inherent_cap);
+            }
         }
         if let Some(capability) = capability {
-            self.capabilities.insert(place, capability);
+            self.capabilities.insert(node, capability);
         }
     }
 
@@ -472,7 +476,7 @@ impl<'tcx> BorrowsState<'tcx> {
         member: RegionProjectionMember<'tcx>,
         pc: PathConditions,
     ) {
-        self.graph.insert(member.clone().to_borrows_edge(pc));
+        self.graph.insert(member.clone().to_borrow_pcg_edge(pc));
     }
 
     pub fn trim_old_leaves(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
@@ -498,9 +502,21 @@ impl<'tcx> BorrowsState<'tcx> {
         mutability: Mutability,
         location: Location,
         region: ty::Region<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        self.graph
-            .add_borrow(blocked_place, assigned_place, mutability, location, region);
+        self.graph.add_borrow(
+            blocked_place,
+            assigned_place,
+            mutability,
+            location,
+            region,
+            repacker,
+        );
+        let cap = match mutability {
+            Mutability::Not => CapabilityKind::Read,
+            Mutability::Mut => CapabilityKind::Exclusive,
+        };
+        self.set_capability(assigned_place, cap);
     }
 
     pub fn has_reborrow_at_location(&self, location: Location) -> bool {
@@ -529,7 +545,7 @@ impl<'tcx> BorrowsState<'tcx> {
         block: BasicBlock,
     ) {
         self.graph
-            .insert(abstraction.to_borrows_edge(PathConditions::new(block)));
+            .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block)));
     }
 
     pub fn make_place_old(
