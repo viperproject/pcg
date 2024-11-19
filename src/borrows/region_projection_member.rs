@@ -38,9 +38,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        self.projection.mutability(repacker)
-    }
     pub fn blocked_by_nodes(&self) -> FxHashSet<BlockingNode<'tcx>> {
         let blocked_by_node = match self.direction {
             RegionProjectionMemberDirection::ProjectionBlocksPlace => {

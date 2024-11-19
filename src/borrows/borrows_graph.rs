@@ -224,13 +224,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
-        &self,
-        blocked_node: T,
-    ) -> bool {
+    pub fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(&self, blocked_node: T) -> bool {
         let blocked_node = blocked_node.into();
-        self.edges()
-            .any(|edge| edge.blocks_node(blocked_node))
+        self.edges().any(|edge| edge.blocks_node(blocked_node))
     }
 
     pub fn is_root(&self, place: MaybeOldPlace<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -416,10 +412,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0.insert(edge)
     }
 
-    pub fn edges_blocking(
-        &self,
-        node: BlockedNode<'tcx>,
-    ) -> Vec<BorrowPCGEdge<'tcx>> {
+    pub fn edges_blocking(&self, node: BlockedNode<'tcx>) -> Vec<BorrowPCGEdge<'tcx>> {
         self.edges()
             .filter(|edge| edge.blocks_node(node))
             .cloned()
@@ -495,15 +488,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// If an expansion is added, returns the capability of the expanded place;
     /// i.e. `Exclusive` if the place is mutable, and `Read` otherwise.
     /// If there is no expansion added, returns `None`.
-    pub (crate) fn ensure_deref_expansion_to_at_least(
+    pub(crate) fn ensure_deref_expansion_to_at_least(
         &mut self,
         to_place: Place<'tcx>,
-        body: &mir::Body<'tcx>,
-        tcx: TyCtxt<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> Option<CapabilityKind> {
         let mut projects_from = None;
-        let repacker = PlaceRepacker::new(&body, tcx);
         let mut changed = false;
         for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
@@ -514,15 +505,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             expansion.push(target);
             if projects_from.is_some() {
                 let origin_place: MaybeOldPlace<'tcx> = place.into();
-                if !origin_place.place().is_owned(body, tcx)
+                if !origin_place.place().is_owned(repacker)
                     && !self.contains_deref_expansion_from(&origin_place)
                 {
-                    self.insert_deref_expansion(
-                        origin_place,
-                        expansion,
-                        location,
-                        PlaceRepacker::new(&body, tcx),
-                    );
+                    self.insert_deref_expansion(origin_place, expansion, location, repacker);
                     changed = true;
                 }
             }
@@ -550,7 +536,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for p in expansion.iter() {
             assert!(p.projection.len() > place.place().projection.len());
         }
-        assert!(!place.place().is_owned(repacker.body(), repacker.tcx()));
+        assert!(!place.place().is_owned(repacker));
         let de = DerefExpansion::new(
             place,
             expansion

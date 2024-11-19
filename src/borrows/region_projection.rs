@@ -26,12 +26,25 @@ impl<'tcx> RegionProjection<'tcx> {
         self.place.local()
     }
 
-    pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
-        Self { place, region }
+    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        self.place.ref_mutability(repacker).unwrap_or(
+            if {
+                self.place
+                    .place()
+                    .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
+                    .unwrap()
+                    .is_local_mutation_allowed
+                    == crate::utils::LocalMutationIsAllowed::Yes
+            } {
+                Mutability::Mut
+            } else {
+                Mutability::Not
+            },
+        )
     }
 
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        self.place.ref_mutability(repacker).unwrap()
+    pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
+        Self { place, region }
     }
 
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {

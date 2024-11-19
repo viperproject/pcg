@@ -239,6 +239,9 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.place().is_owned(repacker)
+    }
     pub fn ref_mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Mutability> {
         self.place().ref_mutability(repacker)
     }
@@ -508,6 +511,10 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
             MaybeRemotePlace::Remote(_) => todo!(),
         }
+    }
+
+    pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.as_local_place().map(|p| p.is_owned(repacker)).unwrap_or(false)
     }
 
     pub fn mir_local(&self) -> mir::Local {
