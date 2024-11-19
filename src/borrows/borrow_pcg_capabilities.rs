@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{free_pcs::CapabilityKind, utils::Place};
 
-use super::borrow_pcg_edge::{BlockedNode, PCGNode};
+use super::borrow_pcg_edge::PCGNode;
 
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
 /// information in the borrows graph directly to facilitate simpler logic for

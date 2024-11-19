@@ -18,7 +18,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
     region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    region_projection_member::RegionProjectionMember,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::rustc_interface::{data_structures::fx::FxHashSet, middle::ty::RegionVid, middle::mir::Local};
+use crate::rustc_interface::{
+    ast::Mutability, data_structures::fx::FxHashSet, middle::mir::Local, middle::ty::RegionVid,
+};
 
 use crate::utils::{Place, PlaceRepacker};
 
@@ -26,6 +28,10 @@ impl<'tcx> RegionProjection<'tcx> {
 
     pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
         Self { place, region }
+    }
+
+    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        self.place.ref_mutability(repacker).unwrap()
     }
 
     pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {

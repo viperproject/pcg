@@ -498,7 +498,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 }
             }
         }
-        for edge in self.borrows_domain.materialized_edges(self.repacker) {
+        for edge in self.borrows_domain.graph_edges() {
             self.draw_borrow_pcg_edge(&edge, Some(self.borrows_domain.graph()));
         }
 

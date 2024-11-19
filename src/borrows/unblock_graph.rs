@@ -182,7 +182,6 @@ impl<'tcx> UnblockGraph<'tcx> {
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        eprintln!("Kill edge2");
         self.add_dependency(edge.clone());
         for blocked_node in edge.blocked_by_nodes(repacker) {
             self.unblock_node(blocked_node.into(), borrows, repacker);
@@ -195,31 +194,13 @@ impl<'tcx> UnblockGraph<'tcx> {
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        eprintln!("Unblock");
         for edge in borrows.edges_blocking(node, repacker) {
             self.kill_edge(edge, borrows, repacker);
         }
-        match node {
-            BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) => {
-                for reborrow in borrows.reborrows_blocking_prefix_of(place) {
-                    self.kill_edge(reborrow.into(), borrows, repacker);
-                }
+        if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node {
+            for reborrow in borrows.borrows_blocking_prefix_of(place) {
+                self.kill_edge(reborrow.into(), borrows, repacker);
             }
-            _ => {}
         }
     }
-
-    // pub fn kill_reborrows_reserved_at(
-    //     &mut self,
-    //     location: Location,
-    //     borrows: &BorrowsState<'tcx>,
-    //     repacker: PlaceRepacker<'_, 'tcx>,
-    // ) {
-    //     for edge in borrows.reborrow_edges_reserved_at(location) {
-    //         if !edge.value.blocked_place.is_old() {
-    //             self.unblock_place(edge.value.assigned_place.into(), borrows, repacker);
-    //             self.add_dependency(edge.into());
-    //         }
-    //     }
-    // }
 }
