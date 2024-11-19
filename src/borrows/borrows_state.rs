@@ -257,18 +257,18 @@ impl<'tcx> BorrowsState<'tcx> {
         new_assigned_place: MaybeOldPlace<'tcx>,
     ) {
         self.graph
-            .move_reborrows(orig_assigned_place, new_assigned_place);
+            .move_borrows(orig_assigned_place, new_assigned_place);
     }
 
     pub fn reborrows_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
     ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.graph.reborrows_blocked_by(place)
+        self.graph.borrows_blocked_by(place)
     }
 
     pub fn reborrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.graph.reborrows()
+        self.graph.borrows()
     }
 
     pub fn bridge(
@@ -458,6 +458,11 @@ impl<'tcx> BorrowsState<'tcx> {
                 crate::combined_pcs::UnblockAction::TerminateAbstraction(location, _call) => {
                     self.graph.remove_abstraction_at(location);
                 }
+                crate::combined_pcs::UnblockAction::TerminateRegionProjectionMember(
+                    region_projection_member,
+                ) => {
+                    self.graph.remove_region_projection_member(region_projection_member);
+                }
             }
         }
         changed
@@ -520,7 +525,7 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     pub fn has_reborrow_at_location(&self, location: Location) -> bool {
-        self.graph.has_reborrow_at_location(location)
+        self.graph.has_borrow_at_location(location)
     }
 
     pub fn region_abstractions(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
