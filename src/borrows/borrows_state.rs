@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 
-use rustc_interface::{
+use crate::rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock, Location},
@@ -9,8 +8,7 @@ use rustc_interface::{
 use serde_json::{json, Value};
 
 use crate::{
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
-    rustc_interface,
+    free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
     BorrowsBridge, Weaken,
 };
@@ -18,7 +16,7 @@ use crate::{
 use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, ToBorrowsEdge},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode, ToBorrowsEdge},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::LivenessChecker,
@@ -40,6 +38,10 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
+        self.graph.edges()
+    }
+
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }
@@ -48,8 +50,8 @@ impl<'tcx> BorrowsState<'tcx> {
         self.capabilities.get(place)
     }
 
-    pub fn set_capability(&mut self, place: Place<'tcx>, capability: CapabilityKind) {
-        self.capabilities.insert(place, capability);
+    pub fn set_capability<T: Into<PCGNode<'tcx>>>(&mut self, node: T, capability: CapabilityKind) {
+        self.capabilities.insert(node, capability);
     }
 
     pub fn join<'mir, T: LivenessChecker<'tcx>>(
@@ -114,7 +116,7 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
     ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.graph
-            .data_edges()
+            .edges()
             .filter_map(|edge| match &edge.kind() {
                 BorrowPCGEdgeKind::Borrow(borrow) if borrow.reserve_location() == location => {
                     Some(Conditioned {
@@ -133,7 +135,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// This function performs such collapses until a fixpoint is reached
     pub fn minimize(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
         loop {
-            let edges = self.graph.materialized_edges(repacker).collect::<Vec<_>>();
+            let edges = self.graph.edges().cloned().collect::<Vec<_>>();
             let num_edges_prev = edges.len();
             let to_remove = edges
                 .into_iter()
@@ -157,9 +159,8 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             for edge in to_remove {
                 self.remove_edge_and_set_latest(&edge, repacker, location);
-                eprintln!("Removed edge {:?}", edge);
             }
-            assert!(self.graph.materialized_edges(repacker).count() < num_edges_prev);
+            assert!(self.graph.edge_count() < num_edges_prev);
         }
     }
 
@@ -171,11 +172,11 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.filter_for_path(path);
     }
 
-    pub fn reborrows_blocking_prefix_of(
+    pub fn borrows_blocking_prefix_of(
         &self,
         place: Place<'tcx>,
     ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.reborrows()
+        self.borrows()
             .into_iter()
             .filter(|rb| match rb.value.blocked_place {
                 MaybeRemotePlace::Local(MaybeOldPlace::Current {
@@ -227,13 +228,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker)
     }
 
-    pub fn materialized_edges(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPCGEdge<'tcx>> {
-        self.graph.materialized_edges(repacker)
-    }
-
     pub fn deref_expansions(&self) -> FxHashSet<Conditioned<DerefExpansion<'tcx>>> {
         self.graph.deref_expansions()
     }
@@ -251,7 +245,7 @@ impl<'tcx> BorrowsState<'tcx> {
         );
     }
 
-    pub fn move_reborrows(
+    pub fn move_borrows(
         &mut self,
         orig_assigned_place: MaybeOldPlace<'tcx>,
         new_assigned_place: MaybeOldPlace<'tcx>,
@@ -260,14 +254,14 @@ impl<'tcx> BorrowsState<'tcx> {
             .move_borrows(orig_assigned_place, new_assigned_place);
     }
 
-    pub fn reborrows_blocked_by(
+    pub fn borrows_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
     ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.graph.borrows_blocked_by(place)
     }
 
-    pub fn reborrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
+    pub fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.graph.borrows()
     }
 
@@ -277,8 +271,8 @@ impl<'tcx> BorrowsState<'tcx> {
         _debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> BorrowsBridge<'tcx> {
-        let added_reborrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>> = to
-            .reborrows()
+        let added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>> = to
+            .borrows()
             .into_iter()
             .filter(|rb| !self.has_reborrow_at_location(rb.value.reserve_location()))
             .collect();
@@ -291,9 +285,9 @@ impl<'tcx> BorrowsState<'tcx> {
 
         let mut ug = UnblockGraph::new();
 
-        for reborrow in self.reborrows() {
-            if !to.has_reborrow_at_location(reborrow.value.reserve_location()) {
-                ug.kill_edge(reborrow.clone().into(), self, repacker);
+        for borrow in self.borrows() {
+            if !to.has_reborrow_at_location(borrow.value.reserve_location()) {
+                ug.kill_edge(borrow.clone().into(), self, repacker);
             }
         }
 
@@ -318,45 +312,11 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         BorrowsBridge {
-            added_borrows: added_reborrows,
+            added_borrows,
             expands,
             ug,
             weakens,
         }
-    }
-
-    pub fn ensure_deref_expansions_to_fpcs(
-        &mut self,
-        tcx: TyCtxt<'tcx>,
-        body: &mir::Body<'tcx>,
-        summary: &CapabilitySummary<'tcx>,
-        location: Location,
-    ) {
-        // for c in (*summary).iter() {
-        //     match c {
-        //         CapabilityLocal::Allocated(projections) => {
-        //             for (place, kind) in (*projections).iter() {
-        //                 match kind {
-        //                     CapabilityKind::Exclusive => {
-        //                         let repacker = PlaceRepacker::new(body, tcx);
-        //                         if place.is_ref(repacker) {
-        //                             let deref = place.project_deref(repacker);
-        //                             if let Some(capability) =
-        //                                 self.graph.ensure_deref_expansion_to_at_least(
-        //                                     deref, body, tcx, location,
-        //                                 )
-        //                             {
-        //                                 self.capabilities.insert(deref, capability);
-        //                             }
-        //                         }
-        //                     }
-        //                     _ => {}
-        //                 }
-        //             }
-        //         }
-        //         _ => {}
-        //     }
-        // }
     }
 
     /// Ensures that the place is expanded to exactly the given place. If
@@ -372,7 +332,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) {
         let mut ug = UnblockGraph::new();
         let repacker = PlaceRepacker::new(body, tcx);
-        let graph_edges = self.graph.materialized_edges(repacker);
+        let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
         if let Some(place) = node.as_current_place() {
             for p in graph_edges {
                 match p.kind() {
@@ -461,7 +421,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 crate::combined_pcs::UnblockAction::TerminateRegionProjectionMember(
                     region_projection_member,
                 ) => {
-                    self.graph.remove_region_projection_member(region_projection_member);
+                    self.graph
+                        .remove_region_projection_member(region_projection_member);
                 }
             }
         }
@@ -509,19 +470,32 @@ impl<'tcx> BorrowsState<'tcx> {
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        self.graph.add_borrow(
-            blocked_place,
-            assigned_place,
+        let (rp_cap, assigned_cap) = match mutability {
+            Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
+            Mutability::Mut => (CapabilityKind::Lent, CapabilityKind::Exclusive),
+        };
+        let borrow_edge = BorrowEdge::new(
+            blocked_place.into(),
+            assigned_place.into(),
             mutability,
             location,
             region,
-            repacker,
         );
-        let cap = match mutability {
-            Mutability::Not => CapabilityKind::Read,
-            Mutability::Mut => CapabilityKind::Exclusive,
-        };
-        self.set_capability(assigned_place, cap);
+        if let Some(rp) = borrow_edge.assigned_region_projection(repacker) {
+            self.graph.insert(
+                RegionProjectionMember::new(
+                    assigned_place.into(),
+                    rp,
+                    RegionProjectionMemberDirection::PlaceBlocksProjection,
+                )
+                .to_borrow_pcg_edge(PathConditions::new(location.block)),
+            );
+            self.set_capability(rp, rp_cap);
+        }
+        self.graph
+            .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block)));
+
+        self.set_capability(assigned_place, assigned_cap);
     }
 
     pub fn has_reborrow_at_location(&self, location: Location) -> bool {

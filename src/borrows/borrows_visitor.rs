@@ -493,9 +493,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         self.state
                             .states
                             .after
-                            .set_capability((*target).into(), CapabilityKind::Exclusive);
+                            .set_capability(target, CapabilityKind::Exclusive);
                     }
-                    if let Some(mutbl) = target.ref_mutability(self.body, self.tcx) {
+                    if let Some(mutbl) = target.ref_mutability(self.repacker()) {
                         let capability = if mutbl.is_mut() {
                             CapabilityKind::Exclusive
                         } else {

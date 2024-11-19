@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
 use rustc_interface::{
+    ast::Mutability,
     hir::def_id::DefId,
-    middle::mir::{
-        self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK,
-    },
+    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK},
     middle::ty::{GenericArgsRef, RegionVid, TyCtxt},
 };
 
@@ -240,6 +239,9 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn ref_mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Mutability> {
+        self.place().ref_mutability(repacker)
+    }
     pub fn local(&self) -> mir::Local {
         self.place().local
     }
@@ -409,7 +411,14 @@ use crate::utils::PlaceRepacker;
 use serde_json::json;
 
 use super::{
-    borrow_edge::BorrowEdge, borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge}, borrows_visitor::{extract_lifetimes, get_vid}, has_pcs_elem::HasPcsElems, latest::Latest, path_condition::PathConditions, region_abstraction::AbstractionEdge, region_projection::RegionProjection
+    borrow_edge::BorrowEdge,
+    borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge},
+    borrows_visitor::{extract_lifetimes, get_vid},
+    has_pcs_elem::HasPcsElems,
+    latest::Latest,
+    path_condition::PathConditions,
+    region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
@@ -432,8 +441,10 @@ impl RemotePlace {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
-        let maybe_old_place =
-            MaybeOldPlace::new(self.local.into(), Some(SnapshotLocation::Start(START_BLOCK)));
+        let maybe_old_place = MaybeOldPlace::new(
+            self.local.into(),
+            Some(SnapshotLocation::Start(START_BLOCK)),
+        );
         maybe_old_place.region_projections(repacker)
     }
 

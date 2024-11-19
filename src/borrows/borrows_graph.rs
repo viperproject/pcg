@@ -18,7 +18,7 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, BorrowPCGEdge, BorrowPCGEdgeKind, ToBorrowsEdge},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
-    deref_expansion::{DerefExpansion, OwnedExpansion},
+    deref_expansion::DerefExpansion,
     domain::{
         AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
     },
@@ -42,15 +42,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         Self(FxHashSet::default())
     }
 
-    pub fn data_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
-        self.0.iter()
+    pub fn edge_count(&self) -> usize {
+        self.0.len()
     }
 
-    pub fn materialized_edges(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPCGEdge<'tcx>> {
-        self.0.clone().into_iter()
+    pub fn edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
+        self.0.iter()
     }
 
     pub fn region_projection_graph(
@@ -233,7 +230,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         blocked_node: T,
     ) -> bool {
         let blocked_node = blocked_node.into();
-        self.materialized_edges(repacker)
+        self.edges()
             .any(|edge| edge.blocks_node(repacker, blocked_node))
     }
 
@@ -246,7 +243,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: BlockingNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.materialized_edges(repacker)
+        self.edges()
             .any(|edge| edge.blocked_by_nodes(repacker).contains(&node))
     }
 
@@ -416,36 +413,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub fn add_borrow(
-        &mut self,
-        blocked_place: MaybeRemotePlace<'tcx>,
-        assigned_place: Place<'tcx>,
-        mutability: Mutability,
-        location: Location,
-        region: Region<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let borrow_edge = BorrowEdge::new(
-            blocked_place.into(),
-            assigned_place.into(),
-            mutability,
-            location,
-            region,
-        );
-        // TODO: We can't get the region projection if the assigned place doesn't have a region VID
-        if let Some(rp) = borrow_edge.assigned_region_projection(repacker) {
-            self.insert(
-                RegionProjectionMember::new(
-                    assigned_place.into(),
-                    rp,
-                    RegionProjectionMemberDirection::PlaceBlocksProjection,
-                )
-                .to_borrow_pcg_edge(PathConditions::new(location.block)),
-            );
-        }
-        return self.insert(borrow_edge.to_borrow_pcg_edge(PathConditions::new(location.block)));
-    }
-
     pub fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.0.insert(edge)
     }
@@ -455,8 +422,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: BlockedNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<BorrowPCGEdge<'tcx>> {
-        self.materialized_edges(repacker)
-            .filter(move |edge| edge.blocks_node(repacker, node))
+        self.edges()
+            .filter(|edge| edge.blocks_node(repacker, node))
+            .cloned()
             .collect()
     }
 
@@ -529,7 +497,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// If an expansion is added, returns the capability of the expanded place;
     /// i.e. `Exclusive` if the place is mutable, and `Read` otherwise.
     /// If there is no expansion added, returns `None`.
-    pub fn ensure_deref_expansion_to_at_least(
+    pub (crate) fn ensure_deref_expansion_to_at_least(
         &mut self,
         to_place: Place<'tcx>,
         body: &mir::Body<'tcx>,
@@ -541,7 +509,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut changed = false;
         for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
-            if let Some(mutbl) = place.ref_mutability(body, tcx) {
+            if let Some(mutbl) = place.ref_mutability(repacker) {
                 projects_from = Some(mutbl);
             }
             let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
