@@ -267,8 +267,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
                 crate::free_pcs::CapabilityLocal::Unallocated => {}
                 crate::free_pcs::CapabilityLocal::Allocated(capability_projections) => {
                     for (root, kind) in capability_projections.iter_mut() {
-                        if kind.is_read() || kind.is_lent_exclusive() {
-                            if !state.borrows.states.after.contains(*root, self.cgx.rp) {
+                        if !state.borrows.states.after.contains(*root, self.cgx.rp) {
+                            if kind.is_read() || kind.is_lent_exclusive() {
                                 *kind = CapabilityKind::Exclusive;
                             }
                         }

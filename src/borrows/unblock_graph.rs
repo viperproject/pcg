@@ -122,7 +122,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             let should_kill_edge = |edge: &BorrowPCGEdge<'tcx>| {
                 edge.blocked_by_nodes(repacker)
                     .into_iter()
-                    .all(|node| edges.iter().all(|e| !e.blocks_node(node.into())))
+                    .all(|node| edges.iter().all(|e| !e.blocks_node(node.into(), repacker)))
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
@@ -194,7 +194,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        for edge in borrows.edges_blocking(node) {
+        for edge in borrows.edges_blocking(node, repacker) {
             self.kill_edge(edge, borrows, repacker);
         }
         if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node

@@ -12,7 +12,7 @@ use crate::{
 use super::{
     borrow_edge::BorrowEdge,
     borrows_graph::Conditioned,
-    deref_expansion::DerefExpansion,
+    deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
@@ -162,15 +162,18 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         Self { conditions, kind }
     }
 
-    pub fn blocked_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.blocked_nodes()
+    pub fn blocked_places(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
+        self.blocked_nodes(repacker)
             .into_iter()
             .flat_map(|node| node.as_place())
             .collect()
     }
 
-    pub fn blocks_node(&self, node: BlockedNode<'tcx>) -> bool {
-        self.blocked_nodes().contains(&node)
+    pub fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.blocked_nodes(repacker).contains(&node)
     }
 
     pub fn blocks_region_projection(
@@ -188,8 +191,8 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         self.kind.blocked_by_nodes(repacker)
     }
 
-    fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
-        self.kind.blocked_nodes()
+    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
+        self.kind.blocked_nodes(repacker)
     }
 }
 
@@ -208,6 +211,12 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     DerefExpansion(DerefExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
+}
+
+impl<'tcx> From<OwnedExpansion<'tcx>> for BorrowPCGEdgeKind<'tcx> {
+    fn from(owned_expansion: OwnedExpansion<'tcx>) -> Self {
+        BorrowPCGEdgeKind::DerefExpansion(DerefExpansion::OwnedExpansion(owned_expansion))
+    }
 }
 
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
@@ -244,10 +253,10 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
         }
     }
 
-    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
+    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         match self {
             BorrowPCGEdgeKind::Borrow(de) => de.blocked_nodes(),
-            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(),
+            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
             BorrowPCGEdgeKind::Abstraction(node) => node.blocked_nodes(),
             BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
         }
