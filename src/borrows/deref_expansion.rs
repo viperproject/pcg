@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BlockingNode},
+    borrow_pcg_edge::{BlockedNode, LocalNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
@@ -54,7 +54,7 @@ impl<'tcx> DerefExpansion<'tcx> {
     pub fn blocked_by_nodes(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<BlockingNode<'tcx>> {
+    ) -> FxHashSet<LocalNode<'tcx>> {
         self.expansion(repacker)
             .into_iter()
             .map(|p| p.into())

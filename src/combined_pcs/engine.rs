@@ -29,9 +29,10 @@ use rustc_interface::{
 use crate::{
     borrows::{
         domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
-        engine::BorrowsEngine, region_projection_member::RegionProjectionMember,
+        engine::BorrowsEngine,
+        region_projection_member::RegionProjectionMember,
     },
-    free_pcs::engine::FpcsEngine,
+    free_pcs::{engine::FpcsEngine, CapabilityKind},
     rustc_interface,
     utils::PlaceRepacker,
 };
@@ -261,6 +262,20 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
             .apply_statement_effect(&mut state.fpcs, statement, location);
         self.borrows
             .apply_statement_effect(&mut state.borrows, statement, location);
+        for (_, cap) in state.fpcs.post_main.iter_enumerated_mut() {
+            match cap {
+                crate::free_pcs::CapabilityLocal::Unallocated => {}
+                crate::free_pcs::CapabilityLocal::Allocated(capability_projections) => {
+                    for (root, kind) in capability_projections.iter_mut() {
+                        if kind.is_read() || kind.is_lent_exclusive() {
+                            if !state.borrows.states.after.contains(*root, self.cgx.rp) {
+                                *kind = CapabilityKind::Exclusive;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.generate_dot_graph(state, DataflowStmtPhase::Start, location.statement_index);
         self.generate_dot_graph(state, DataflowStmtPhase::After, location.statement_index);
     }
