@@ -1,6 +1,6 @@
-use std::{borrow::Borrow, collections::BTreeSet, rc::Rc};
+use std::{collections::BTreeSet, rc::Rc};
 
-use rustc_interface::{
+use crate::rustc_interface::{
     ast::Mutability,
     borrowck::{
         borrow_set::BorrowSet,
@@ -10,19 +10,16 @@ use rustc_interface::{
     },
     middle::{
         mir::{
-            visit::Visitor, AggregateKind, Body, Const, Location, Operand, Place, Rvalue,
-            Statement, StatementKind, Terminator, TerminatorKind,
+            visit::Visitor, AggregateKind, Const, Location, Operand, Place, Rvalue, Statement,
+            StatementKind, Terminator, TerminatorKind,
         },
-        ty::{
-            self, EarlyBinder, Region, RegionKind, RegionVid, TyCtxt, TypeVisitable, TypeVisitor,
-        },
+        ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
     },
 };
 
 use crate::{
     borrows::{domain::AbstractionBlockEdge, region_abstraction::AbstractionEdge},
     free_pcs::CapabilityKind,
-    rustc_interface,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
 
@@ -271,7 +268,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         // No edges may be added e.g. if the inputs do not contain any (possibly
         // nested) mutable references
         if !edges.is_empty() {
-            self.after_state_mut().add_region_abstraction(
+            self.state.states.after.add_region_abstraction(
                 AbstractionEdge::new(AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                     location,
                     *func_def_id,
@@ -279,6 +276,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     edges.clone(),
                 ))),
                 location.block,
+                self.repacker,
             );
         }
         for edge in edges {
@@ -583,6 +581,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             self.state.states.after.delete_descendants_of(
                                 MaybeOldPlace::Current { place: from },
                                 location,
+                                self.repacker,
                             );
                         }
                         Rvalue::Use(Operand::Copy(from)) => {

@@ -20,7 +20,7 @@ use super::{
     },
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
-    deref_expansion::DerefExpansion,
+    deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
         AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
     },
@@ -36,6 +36,10 @@ use super::{
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub fn contains_edge(&self, edge: &BorrowPCGEdgeKind<'tcx>) -> bool {
+        self.0.iter().any(|e| e.kind() == edge)
+    }
+
     pub fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
@@ -43,7 +47,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         let node = node.into();
         self.0.iter().any(|edge| {
-            edge.blocks_node(node)
+            edge.blocks_node(node, repacker)
                 || node
                     .as_blocking_node()
                     .map(|blocking| edge.blocked_by_nodes(repacker).contains(&blocking))
@@ -202,7 +206,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         edge.kind()
             .blocked_by_nodes(repacker)
             .iter()
-            .all(|p| !self.has_edge_blocking(*p))
+            .all(|p| !self.has_edge_blocking(*p, repacker))
     }
 
     pub fn leaf_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowPCGEdge<'tcx>> {
@@ -222,7 +226,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0
             .iter()
             .filter(|edge| {
-                edge.blocked_places().iter().all(|p| match p {
+                edge.blocked_places(repacker).iter().all(|p| match p {
                     MaybeRemotePlace::Local(maybe_old_place) => {
                         self.is_root(*maybe_old_place, repacker)
                     }
@@ -236,13 +240,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.root_edges(repacker)
             .into_iter()
-            .flat_map(|edge| edge.blocked_places().into_iter())
+            .flat_map(|edge| edge.blocked_places(repacker).into_iter())
             .collect()
     }
 
-    pub fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(&self, blocked_node: T) -> bool {
+    pub fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
+        &self,
+        blocked_node: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
         let blocked_node = blocked_node.into();
-        self.edges().any(|edge| edge.blocks_node(blocked_node))
+        self.edges()
+            .any(|edge| edge.blocks_node(blocked_node, repacker))
     }
 
     pub fn is_root(&self, place: MaybeOldPlace<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -428,9 +437,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0.insert(edge)
     }
 
-    pub fn edges_blocking(&self, node: BlockedNode<'tcx>) -> Vec<BorrowPCGEdge<'tcx>> {
+    pub fn edges_blocking(
+        &self,
+        node: BlockedNode<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<BorrowPCGEdge<'tcx>> {
         self.edges()
-            .filter(|edge| edge.blocks_node(node))
+            .filter(|edge| edge.blocks_node(node, repacker))
             .cloned()
             .collect()
     }
@@ -542,6 +555,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
+    pub fn insert_owned_expansion(&mut self, place: MaybeOldPlace<'tcx>, location: Location) {
+        let de = OwnedExpansion::new(place).into();
+        self.insert(BorrowPCGEdge::new(de, PathConditions::new(location.block)));
+    }
+
     fn insert_deref_expansion(
         &mut self,
         place: MaybeOldPlace<'tcx>,
@@ -552,20 +570,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for p in expansion.iter() {
             assert!(p.projection.len() > place.place().projection.len());
         }
-        assert!(!place.place().is_owned(repacker));
-        let de = DerefExpansion::new(
-            place,
-            expansion
-                .into_iter()
-                .map(|p| p.projection.last().unwrap())
-                .copied()
-                .collect(),
-            location,
-        );
-        self.insert(BorrowPCGEdge::new(
-            BorrowPCGEdgeKind::DerefExpansion(de),
-            PathConditions::new(location.block),
-        ));
+        if place.place().is_owned(repacker) {
+            self.insert_owned_expansion(place, location);
+        } else {
+            let de = DerefExpansion::borrowed(place, expansion, location, repacker);
+            self.insert(BorrowPCGEdge::new(
+                BorrowPCGEdgeKind::DerefExpansion(de),
+                PathConditions::new(location.block),
+            ));
+        }
     }
 
     fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
