@@ -6,7 +6,7 @@
 
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
-    rustc_interface::middle::mir::{Local, RETURN_PLACE},
+    rustc_interface::middle::mir::{Local, RETURN_PLACE, START_BLOCK},
     utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
 };
 
@@ -72,10 +72,12 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 );
             }
             Condition::AllocateOrDeallocate(local) => {
-                // assert_eq!(
-                //     self[local].get_allocated()[&local.into()],
-                //     CapabilityKind::Write
-                // );
+                assert_eq!(
+                    self[local].get_allocated()[&local.into()],
+                    CapabilityKind::Write,
+                    "local: {local:?}, body: {:?}\n",
+                    repacker.body().source.def_id()
+                );
             }
             Condition::Capability(place, cap) => {
                 match cap {
