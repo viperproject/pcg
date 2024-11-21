@@ -3,7 +3,7 @@ use crate::rustc_interface::{
 };
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::BlockingNode;
+use super::borrow_pcg_edge::LocalNode;
 use super::{
     borrow_pcg_edge::BlockedNode,
     domain::{MaybeOldPlace, MaybeRemotePlace},
@@ -38,13 +38,13 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    pub fn blocked_by_nodes(&self) -> FxHashSet<BlockingNode<'tcx>> {
+    pub fn blocked_by_nodes(&self) -> FxHashSet<LocalNode<'tcx>> {
         let blocked_by_node = match self.direction {
             RegionProjectionMemberDirection::ProjectionBlocksPlace => {
-                BlockingNode::RegionProjection(self.projection)
+                LocalNode::RegionProjection(self.projection)
             }
             RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                BlockingNode::Place(self.place.as_local_place().unwrap())
+                LocalNode::Place(self.place.as_local_place().unwrap())
             }
         };
         vec![blocked_by_node].into_iter().collect()
@@ -55,6 +55,10 @@ impl<'tcx> RegionProjectionMember<'tcx> {
             RegionProjectionMemberDirection::PlaceBlocksProjection => self.projection.into(),
         };
         vec![blocked].into_iter().collect()
+    }
+
+    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        self.projection.mutability(repacker)
     }
 
     pub fn projection_index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {

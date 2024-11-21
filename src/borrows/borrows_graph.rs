@@ -15,7 +15,9 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BlockedNode, BlockingNode, BorrowPCGEdge, BorrowPCGEdgeKind, ToBorrowsEdge},
+    borrow_pcg_edge::{
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
+    },
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
     deref_expansion::DerefExpansion,
@@ -34,6 +36,20 @@ use super::{
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub fn contains<T: Into<PCGNode<'tcx>>>(
+        &self,
+        node: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let node = node.into();
+        self.0.iter().any(|edge| {
+            edge.blocks_node(node)
+                || node
+                    .as_blocking_node()
+                    .map(|blocking| edge.blocked_by_nodes(repacker).contains(&blocking))
+                    .unwrap_or(false)
+        })
+    }
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -195,7 +211,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         candidates
     }
 
-    pub fn leaf_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockingNode<'tcx>> {
+    pub fn leaf_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.leaf_edges(repacker)
             .into_iter()
             .flat_map(|edge| edge.blocked_by_nodes(repacker).into_iter())
@@ -235,7 +251,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn has_edge_blocked_by(
         &self,
-        node: BlockingNode<'tcx>,
+        node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         self.edges()
@@ -244,7 +260,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn edges_blocked_by(
         &self,
-        node: BlockingNode<'tcx>,
+        node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdge<'tcx>> {
         self.0

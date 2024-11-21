@@ -37,6 +37,13 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub fn contains<T: Into<PCGNode<'tcx>>>(
+        &self,
+        node: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        self.graph.contains(node.into(), repacker)
+    }
     pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
         &self.capabilities
     }
@@ -436,13 +443,13 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         self.graph.insert(member.clone().to_borrow_pcg_edge(pc));
-        let (place_cap, proj_cap) = if member.projection.mutability(repacker) == Mutability::Mut {
+        let (place_cap, proj_cap) = if member.mutability(repacker) == Mutability::Mut {
             match member.direction() {
                 RegionProjectionMemberDirection::ProjectionBlocksPlace => {
-                    (CapabilityKind::Lent, CapabilityKind::Exclusive)
+                    (CapabilityKind::Exclusive, CapabilityKind::Lent)
                 }
                 RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                    (CapabilityKind::Exclusive, CapabilityKind::Lent)
+                    (CapabilityKind::Lent, CapabilityKind::Exclusive)
                 }
             }
         } else {

@@ -28,16 +28,18 @@ pub struct BorrowPCGEdge<'tcx> {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BlockingNode<'tcx> {
+pub enum LocalNode<'tcx> {
     Place(MaybeOldPlace<'tcx>),
     RegionProjection(RegionProjection<'tcx>),
 }
 
-impl<'tcx> BlockingNode<'tcx> {
+pub type BlockingNode<'tcx> = LocalNode<'tcx>;
+
+impl<'tcx> LocalNode<'tcx> {
     pub fn is_old(&self) -> bool {
         match self {
-            BlockingNode::Place(maybe_old_place) => maybe_old_place.is_old(),
-            BlockingNode::RegionProjection(rp) => rp.place.is_old(),
+            LocalNode::Place(maybe_old_place) => maybe_old_place.is_old(),
+            LocalNode::RegionProjection(rp) => rp.place.is_old(),
         }
     }
 }
@@ -51,6 +53,18 @@ pub enum PCGNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
+    pub fn as_blocking_node(&self) -> Option<BlockingNode<'tcx>> {
+        self.as_local_node()
+    }
+    pub fn as_local_node(&self) -> Option<LocalNode<'tcx>> {
+        match self {
+            PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
+                Some(LocalNode::Place(*maybe_old_place))
+            }
+            PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
+            PCGNode::RegionProjection(rp) => Some(LocalNode::RegionProjection(*rp)),
+        }
+    }
     pub fn as_current_place(&self) -> Option<Place<'tcx>> {
         match self {
             BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) => {
@@ -92,9 +106,9 @@ impl<'tcx> From<RegionProjection<'tcx>> for BlockedNode<'tcx> {
     }
 }
 
-impl<'tcx> From<MaybeOldPlace<'tcx>> for BlockingNode<'tcx> {
+impl<'tcx> From<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
     fn from(maybe_old_place: MaybeOldPlace<'tcx>) -> Self {
-        BlockingNode::Place(maybe_old_place)
+        LocalNode::Place(maybe_old_place)
     }
 }
 
@@ -110,11 +124,11 @@ impl<'tcx> From<MaybeOldPlace<'tcx>> for BlockedNode<'tcx> {
     }
 }
 
-impl<'tcx> From<BlockingNode<'tcx>> for BlockedNode<'tcx> {
-    fn from(blocking_node: BlockingNode<'tcx>) -> Self {
+impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
+    fn from(blocking_node: LocalNode<'tcx>) -> Self {
         match blocking_node {
-            BlockingNode::Place(maybe_old_place) => BlockedNode::Place(maybe_old_place.into()),
-            BlockingNode::RegionProjection(rp) => BlockedNode::RegionProjection(rp),
+            LocalNode::Place(maybe_old_place) => BlockedNode::Place(maybe_old_place.into()),
+            LocalNode::RegionProjection(rp) => BlockedNode::RegionProjection(rp),
         }
     }
 }
@@ -148,9 +162,7 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         Self { conditions, kind }
     }
 
-    pub fn blocked_places(
-        &self,
-    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
+    pub fn blocked_places(&self) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.blocked_nodes()
             .into_iter()
             .flat_map(|node| node.as_place())
@@ -172,7 +184,7 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
     pub fn blocked_by_nodes(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<BlockingNode<'tcx>> {
+    ) -> FxHashSet<LocalNode<'tcx>> {
         self.kind.blocked_by_nodes(repacker)
     }
 
@@ -244,14 +256,12 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
     pub fn blocked_by_nodes(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<BlockingNode<'tcx>> {
+    ) -> FxHashSet<LocalNode<'tcx>> {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => {
                 // TODO: Region could be erased and we can't handle that yet
                 if let Some(rp) = reborrow.assigned_region_projection(repacker) {
-                    return vec![BlockingNode::RegionProjection(rp)]
-                        .into_iter()
-                        .collect();
+                    return vec![LocalNode::RegionProjection(rp)].into_iter().collect();
                 } else {
                     FxHashSet::default()
                 }
@@ -259,7 +269,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
             BorrowPCGEdgeKind::Abstraction(node) => node
                 .outputs()
                 .into_iter()
-                .map(|p| BlockingNode::RegionProjection(p))
+                .map(|p| LocalNode::RegionProjection(p))
                 .collect(),
             BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_by_nodes(),
             BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_by_nodes(repacker),

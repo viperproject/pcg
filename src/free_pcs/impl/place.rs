@@ -42,10 +42,10 @@ impl<'tcx> RelatedSet<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
-    Lent,
     Read,
     Write,
     Exclusive,
+    Lent,
     /// [`CapabilityKind::Exclusive`] for everything not through a dereference,
     /// [`CapabilityKind::Write`] for everything through a dereference.
     ShallowExclusive,
@@ -85,7 +85,7 @@ impl CapabilityKind {
     pub fn is_exclusive(self) -> bool {
         matches!(self, CapabilityKind::Exclusive)
     }
-    pub fn is_lent(self) -> bool {
+    pub fn is_lent_exclusive(self) -> bool {
         matches!(self, CapabilityKind::Lent)
     }
     pub fn is_read(self) -> bool {

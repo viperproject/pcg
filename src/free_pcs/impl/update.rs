@@ -40,7 +40,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 if cp[&place].is_exclusive() && cap.is_write() {
                     // Requires write should deinit an exclusive
                     cp.insert(place, cap);
-                } else if cp[&place].is_lent() && cap.is_read() {
+                } else if cp[&place].is_lent_exclusive() && cap.is_read() {
                     // This read will expire the loan, so we regain exclusive access
                     // TODO: If we expire borrows eagerly, perhaps we don't need this logic
                     cp.insert(place, CapabilityKind::Exclusive);
