@@ -18,16 +18,12 @@ pub mod utils;
 pub mod visualization;
 
 use borrows::{
-    borrow_edge::BorrowEdge, borrows_graph::Conditioned,
-    deref_expansion::DerefExpansion, unblock_graph::UnblockGraph,
+    borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion,
+    unblock_graph::UnblockGraph,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PcsContext, PcsEngine, PlaceCapabilitySummary};
 use free_pcs::CapabilityKind;
-use rustc_interface::{
-    data_structures::fx::FxHashSet,
-    dataflow::Analysis,
-    middle::ty::TyCtxt,
-};
+use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
 use utils::{Place, PlaceRepacker};
 use visualization::mir_graph::generate_json_from_mir;
@@ -40,9 +36,10 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     PlaceCapabilitySummary<'mir, 'tcx>,
     PcsEngine<'mir, 'tcx>,
 >;
-
+/// Instructs that the current capability to the place (first [`CapabilityKind`]) should
+/// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Weaken<'tcx>(Place<'tcx>, CapabilityKind, CapabilityKind);
+pub struct Weaken<'tcx>(pub Place<'tcx>, pub CapabilityKind, pub CapabilityKind);
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
