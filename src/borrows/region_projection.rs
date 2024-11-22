@@ -26,6 +26,8 @@ impl<'tcx> RegionProjection<'tcx> {
         self.place.local()
     }
 
+    /// Returns `true` iff the place is a mutable reference, or if the place is
+    /// a mutable struct.
     pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         self.place.ref_mutability(repacker).unwrap_or(
             if {

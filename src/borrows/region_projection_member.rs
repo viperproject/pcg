@@ -57,6 +57,7 @@ impl<'tcx> RegionProjectionMember<'tcx> {
         vec![blocked].into_iter().collect()
     }
 
+    /// Returns `true` iff the lifetime projection is mutable
     pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         self.projection.mutability(repacker)
     }

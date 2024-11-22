@@ -42,10 +42,27 @@ impl<'tcx> RelatedSet<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
+    /// For owned places, this capability means that there are outstanding shared
+    /// borrows. Their capability will be restored to [`CapabilityKind::Exclusive`]
+    /// when their borrows expire.
+    ///
+    /// Nodes in the borrow PCG transitively originating from a shared
+    /// borrow also have this capability.
     Read,
+
+    /// For owned places, this capability is used when the place is moved out
+    /// of. This capability is used for both owned and borrowed places just before
+    /// they are overwritten.
     Write,
+
+    /// Writes and reads are permitted to this place, and the place is not
+    /// borrowed. We use this capability for owned places even if they are
+    /// created via immutable bindings.
     Exclusive,
+
+    /// This place is mutably borrowed.
     Lent,
+
     /// [`CapabilityKind::Exclusive`] for everything not through a dereference,
     /// [`CapabilityKind::Write`] for everything through a dereference.
     ShallowExclusive,
