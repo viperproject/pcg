@@ -241,6 +241,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
             .apply_before_statement_effect(&mut state.fpcs, statement, location);
         self.borrows
             .apply_before_statement_effect(&mut state.borrows, statement, location);
+
+        // Restore capabilities for owned places that were previously lent out
+        // but are now no longer borrowed.
         for cap in state.fpcs.post_operands.iter_mut() {
             match cap {
                 crate::free_pcs::CapabilityLocal::Unallocated => {}

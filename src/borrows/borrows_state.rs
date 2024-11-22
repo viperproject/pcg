@@ -29,6 +29,7 @@ use super::{
     unblock_graph::UnblockGraph,
 };
 
+/// The "Borrow PCG"
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
@@ -453,6 +454,8 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
+    /// Adds a region projection member to the graph and sets appropriate
+    /// capabilities for the place and projection
     pub fn add_region_projection_member(
         &mut self,
         member: RegionProjectionMember<'tcx>,

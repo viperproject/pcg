@@ -27,12 +27,17 @@ pub struct BorrowPCGEdge<'tcx> {
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
+/// Any node in the PCG that is "local" in the sense that it can be named
+/// (include nodes that potentially refer to a past program point), i.e. any
+/// node other than a [`super::domain::RemotePlace`]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum LocalNode<'tcx> {
     Place(MaybeOldPlace<'tcx>),
     RegionProjection(RegionProjection<'tcx>),
 }
 
+/// A node that could potentially block other nodes in the PCG, i.e. any node
+/// other than a [`super::domain::RemotePlace`] (which are roots by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> LocalNode<'tcx> {
