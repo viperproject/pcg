@@ -14,22 +14,11 @@ use crate::{
 };
 
 use super::{
-    borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{
+    borrow_edge::BorrowEdge, borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
-    },
-    borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker},
-    deref_expansion::{DerefExpansion, OwnedExpansion},
-    domain::{
+    }, borrows_visitor::DebugCtx, coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker}, deref_expansion::{DerefExpansion, OwnedExpansion}, domain::{
         AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
-    },
-    has_pcs_elem::{HasPcsElems, MakePlaceOld},
-    latest::Latest,
-    path_condition::{PathCondition, PathConditions},
-    region_abstraction::AbstractionEdge,
-    region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    }, edge_data::EdgeData, has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection::RegionProjection, region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection}
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

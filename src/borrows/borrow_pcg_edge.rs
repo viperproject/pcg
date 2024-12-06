@@ -5,7 +5,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    rustc_interface,
+    edgedata_enum, rustc_interface,
     utils::{Place, PlaceRepacker},
 };
 
@@ -14,6 +14,7 @@ use super::{
     borrows_graph::Conditioned,
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{MaybeOldPlace, MaybeRemotePlace},
+    edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
@@ -34,6 +35,12 @@ pub struct BorrowPCGEdge<'tcx> {
 pub enum LocalNode<'tcx> {
     Place(MaybeOldPlace<'tcx>),
     RegionProjection(RegionProjection<'tcx>),
+}
+
+impl<'tcx> From<RegionProjection<'tcx>> for LocalNode<'tcx> {
+    fn from(rp: RegionProjection<'tcx>) -> Self {
+        LocalNode::RegionProjection(rp)
+    }
 }
 
 /// A node that could potentially block other nodes in the PCG, i.e. any node
@@ -188,16 +195,19 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
     ) -> bool {
         self.kind.blocks_region_projection(repacker, rp)
     }
+}
 
-    pub fn blocked_by_nodes(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
+impl<'tcx> EdgeData<'tcx> for BorrowPCGEdge<'tcx> {
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.kind.blocked_by_nodes(repacker)
     }
 
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         self.kind.blocked_nodes(repacker)
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        self.kind.is_owned_expansion()
     }
 }
 
@@ -217,6 +227,14 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
+
+edgedata_enum!(
+    BorrowPCGEdgeKind<'tcx>,
+    Borrow(BorrowEdge<'tcx>),
+    DerefExpansion(DerefExpansion<'tcx>),
+    Abstraction(AbstractionEdge<'tcx>),
+    RegionProjectionMember(RegionProjectionMember<'tcx>)
+);
 
 impl<'tcx> From<OwnedExpansion<'tcx>> for BorrowPCGEdgeKind<'tcx> {
     fn from(owned_expansion: OwnedExpansion<'tcx>) -> Self {
@@ -255,38 +273,6 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(),
             _ => false,
-        }
-    }
-
-    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
-        match self {
-            BorrowPCGEdgeKind::Borrow(de) => de.blocked_nodes(),
-            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_nodes(repacker),
-            BorrowPCGEdgeKind::Abstraction(node) => node.blocked_nodes(),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_nodes(),
-        }
-    }
-
-    pub fn blocked_by_nodes(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        match self {
-            BorrowPCGEdgeKind::Borrow(reborrow) => {
-                // TODO: Region could be erased and we can't handle that yet
-                if let Some(rp) = reborrow.assigned_region_projection(repacker) {
-                    return vec![LocalNode::RegionProjection(rp)].into_iter().collect();
-                } else {
-                    FxHashSet::default()
-                }
-            }
-            BorrowPCGEdgeKind::Abstraction(node) => node
-                .outputs()
-                .into_iter()
-                .map(|p| LocalNode::RegionProjection(p))
-                .collect(),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.blocked_by_nodes(),
-            BorrowPCGEdgeKind::DerefExpansion(de) => de.blocked_by_nodes(repacker),
         }
     }
 

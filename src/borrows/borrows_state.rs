@@ -1,9 +1,8 @@
-use crate::rustc_interface::{
+use crate::{borrows::edge_data::EdgeData, rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{BasicBlock, Location},
-    middle::ty::{self},
-};
+    middle::{mir::{BasicBlock, Location}, ty::{self}},
+}};
 use serde_json::{json, Value};
 
 use crate::{

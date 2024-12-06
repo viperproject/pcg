@@ -7,6 +7,7 @@ pub mod borrows_visitor;
 pub mod coupling_graph_constructor;
 pub mod deref_expansion;
 pub mod domain;
+pub mod edge_data;
 pub mod engine;
 pub mod latest;
 pub mod path_condition;

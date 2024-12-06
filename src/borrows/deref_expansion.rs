@@ -1,16 +1,16 @@
 use serde_json::json;
 
 use crate::{
-    rustc_interface::{
+    edgedata_enum, rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::{Location, PlaceElem},
-    },
-    utils::{Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation},
+    }, utils::{Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation}
 };
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BlockingNode},
+    borrow_pcg_edge::{BlockedNode, BlockingNode, PCGNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},
+    edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
@@ -42,16 +42,54 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowDerefExpansion<'tcx> {
     }
 }
 
+impl<'tcx> EdgeData<'tcx> for BorrowDerefExpansion<'tcx> {
+    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        vec![self.base.into()].into_iter().collect()
+    }
+
+    fn blocked_by_nodes(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
+        self.expansion(repacker).into_iter().map(|p| p.into()).collect()
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        todo!()
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct OwnedExpansion<'tcx> {
     base: MaybeOldPlace<'tcx>,
 }
 
+impl<'tcx> EdgeData<'tcx> for OwnedExpansion<'tcx> {
+    fn blocked_nodes(
+        &self,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<super::borrow_pcg_edge::PCGNode<'tcx>> {
+        vec![self.base.into()].into_iter().collect()
+    }
+
+    fn blocked_by_nodes(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
+        vec![self.expansion(repacker)]
+            .into_iter()
+            .map(|p| p.into())
+            .collect()
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        true
+    }
+}
+
 impl<'tcx> OwnedExpansion<'tcx> {
     pub fn new(base: MaybeOldPlace<'tcx>) -> Self {
-        Self {
-            base,
-        }
+        Self { base }
     }
 
     pub fn base(&self) -> MaybeOldPlace<'tcx> {
@@ -77,6 +115,8 @@ pub enum DerefExpansion<'tcx> {
     /// An expansion of a place in the PCS
     BorrowExpansion(BorrowDerefExpansion<'tcx>),
 }
+
+edgedata_enum!(DerefExpansion<'tcx>, OwnedExpansion(OwnedExpansion<'tcx>), BorrowExpansion(BorrowDerefExpansion<'tcx>));
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for OwnedExpansion<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {

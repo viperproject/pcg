@@ -1,8 +1,9 @@
 use serde_json::json;
 
 use super::{
-    borrow_pcg_edge::BlockedNode,
+    borrow_pcg_edge::{BlockedNode, LocalNode},
     domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
+    edge_data::EdgeData,
     region_projection::RegionProjection,
 };
 use crate::utils::PlaceRepacker;
@@ -15,7 +16,6 @@ use crate::{
             ty::{self, RegionVid},
         },
     },
-    utils::Place,
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -28,6 +28,28 @@ pub struct BorrowEdge<'tcx> {
     reserve_location: Location,
 
     pub region: ty::Region<'tcx>,
+}
+
+impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
+    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
+        vec![self.blocked_place.into()].into_iter().collect()
+    }
+
+    fn blocked_by_nodes(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
+        // TODO: Region could be erased and we can't handle that yet
+        if let Some(rp) = self.assigned_region_projection(repacker) {
+            return vec![LocalNode::RegionProjection(rp)].into_iter().collect();
+        } else {
+            FxHashSet::default()
+        }
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        false
+    }
 }
 
 impl<'tcx> BorrowEdge<'tcx> {
@@ -45,10 +67,6 @@ impl<'tcx> BorrowEdge<'tcx> {
             reserve_location: reservation_location,
             region,
         }
-    }
-
-    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
-        vec![self.blocked_place.into()].into_iter().collect()
     }
 
     pub fn reserve_location(&self) -> Location {

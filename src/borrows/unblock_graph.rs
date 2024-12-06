@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use rustc_interface::{ast::Mutability, middle::mir::BasicBlock};
 
 use crate::{
-    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace},
+    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
     combined_pcs::UnblockAction,
     rustc_interface,
     utils::PlaceRepacker,
@@ -183,8 +183,10 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         self.add_dependency(edge.clone());
-        for blocked_node in edge.blocked_by_nodes(repacker) {
-            self.unblock_node(blocked_node.into(), borrows, repacker);
+        for blocking_node in edge.blocked_by_nodes(repacker) {
+            if !edge.is_owned_expansion() {
+                self.unblock_node(blocking_node.into(), borrows, repacker);
+            }
         }
     }
 

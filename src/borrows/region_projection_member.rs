@@ -1,9 +1,8 @@
-use crate::rustc_interface::{
-    ast::Mutability, data_structures::fx::FxHashSet,
-};
+use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::LocalNode;
+use super::borrow_pcg_edge::{LocalNode, PCGNode};
+use super::edge_data::EdgeData;
 use super::{
     borrow_pcg_edge::BlockedNode,
     domain::{MaybeOldPlace, MaybeRemotePlace},
@@ -23,6 +22,32 @@ pub struct RegionProjectionMember<'tcx> {
     direction: RegionProjectionMemberDirection,
 }
 
+impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
+    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+        let blocked_by_node = match self.direction {
+            RegionProjectionMemberDirection::ProjectionBlocksPlace => {
+                LocalNode::RegionProjection(self.projection)
+            }
+            RegionProjectionMemberDirection::PlaceBlocksProjection => {
+                LocalNode::Place(self.place.as_local_place().unwrap())
+            }
+        };
+        vec![blocked_by_node].into_iter().collect()
+    }
+
+    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        let blocked = match self.direction {
+            RegionProjectionMemberDirection::ProjectionBlocksPlace => self.place.into(),
+            RegionProjectionMemberDirection::PlaceBlocksProjection => self.projection.into(),
+        };
+        vec![blocked].into_iter().collect()
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        false
+    }
+}
+
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for RegionProjectionMember<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         vec![&mut self.projection]
@@ -38,25 +63,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    pub fn blocked_by_nodes(&self) -> FxHashSet<LocalNode<'tcx>> {
-        let blocked_by_node = match self.direction {
-            RegionProjectionMemberDirection::ProjectionBlocksPlace => {
-                LocalNode::RegionProjection(self.projection)
-            }
-            RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                LocalNode::Place(self.place.as_local_place().unwrap())
-            }
-        };
-        vec![blocked_by_node].into_iter().collect()
-    }
-    pub fn blocked_nodes(&self) -> FxHashSet<BlockedNode<'tcx>> {
-        let blocked = match self.direction {
-            RegionProjectionMemberDirection::ProjectionBlocksPlace => self.place.into(),
-            RegionProjectionMemberDirection::PlaceBlocksProjection => self.projection.into(),
-        };
-        vec![blocked].into_iter().collect()
-    }
-
     /// Returns `true` iff the lifetime projection is mutable
     pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         self.projection.mutability(repacker)
