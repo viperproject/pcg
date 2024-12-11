@@ -41,6 +41,11 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Weaken<'tcx>(pub Place<'tcx>, pub CapabilityKind, pub CapabilityKind);
 
+/// Instructs that the current capability to the place should be restored to the given capability, e.g.
+/// a lent exclusive capability should be restored to an exclusive capability.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RestoreCapability<'tcx>(pub Place<'tcx>, pub CapabilityKind);
+
 impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
@@ -57,6 +62,7 @@ pub struct BorrowsBridge<'tcx> {
     pub added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>>,
     pub ug: UnblockGraph<'tcx>,
     pub weakens: FxHashSet<Weaken<'tcx>>,
+    pub restores: FxHashSet<RestoreCapability<'tcx>>,
 }
 
 impl<'tcx> BorrowsBridge<'tcx> {
@@ -66,6 +72,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
             added_borrows: FxHashSet::default(),
             ug: UnblockGraph::new(),
             weakens: FxHashSet::default(),
+            restores: FxHashSet::default(),
         }
     }
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {

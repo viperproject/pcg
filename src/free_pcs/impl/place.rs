@@ -4,39 +4,34 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use derive_more::Deref;
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Formatter, Result},
+    fmt::{Debug, Formatter, Result}
 };
 
-use rustc_interface::{
-    hir::Mutability,
-    data_structures::fx::FxHashSet
-};
+use rustc_interface::{data_structures::fx::FxHashSet, hir::Mutability};
 
-use crate::{rustc_interface, utils::{Place, PlaceOrdering}};
+use crate::{rustc_interface, utils::Place};
 
-#[derive(Debug)]
-pub(crate) struct RelatedSet<'tcx> {
-    pub(crate) from: Vec<(Place<'tcx>, CapabilityKind)>,
-    pub(crate) to: Place<'tcx>,
-    // pub(crate) minimum: CapabilityKind,
-    pub(crate) relation: PlaceOrdering,
-}
+#[derive(Debug, Deref)]
+pub(crate) struct RelatedSet<'tcx>(FxHashSet<(Place<'tcx>, CapabilityKind)>);
+
 impl<'tcx> RelatedSet<'tcx> {
-    pub fn get_from(&self) -> FxHashSet<Place<'tcx>> {
-        assert!(matches!(
-            self.relation,
-            PlaceOrdering::Suffix | PlaceOrdering::Both
-        ));
-        self.from.iter().map(|(p, _)| *p).collect()
+    pub fn new(related: FxHashSet<(Place<'tcx>, CapabilityKind)>) -> Self {
+        Self(related)
     }
-    pub fn get_only_from(&self) -> Place<'tcx> {
-        assert_eq!(self.from.len(), 1);
-        self.from[0].0
+    pub fn get_places(&self) -> FxHashSet<Place<'tcx>> {
+        self.0.iter().map(|(p, _)| *p).collect()
+    }
+    pub fn get_only_place(&self) -> Place<'tcx> {
+        assert_eq!(self.0.len(), 1);
+        self.0.iter().next().unwrap().0
     }
     pub fn common_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
-        self.from[0].0.common_prefix(to)
+        self.get_places()
+            .iter()
+            .fold(to, |acc, p| acc.common_prefix(*p))
     }
 }
 

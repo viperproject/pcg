@@ -10,8 +10,8 @@ use crate::rustc_interface::{
     },
     middle::{
         mir::{
-            visit::Visitor, AggregateKind, Const, Location, Operand, Place, Rvalue, Statement,
-            StatementKind, Terminator, TerminatorKind,
+            visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Place, Rvalue,
+            Statement, StatementKind, Terminator, TerminatorKind,
         },
         ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
     },
@@ -24,7 +24,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_edge::BlockedNode,
+    borrow_pcg_edge::{BlockedNode, PCGNode},
     borrows_state::BorrowsState,
     domain::MaybeOldPlace,
     path_condition::PathConditions,
@@ -130,7 +130,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             node.into(),
             location,
             capability,
-        )
+        );
     }
 
     fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
@@ -199,7 +199,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .repacker
             .tcx()
             .liberate_late_bound_regions(*func_def_id, sig);
-        let output_lifetimes = extract_lifetimes(sig.output());
+        let output_lifetimes = extract_regions(sig.output());
         if output_lifetimes.is_empty() {
             return;
         }
@@ -247,7 +247,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 _ => *ty,
             };
-            for (lifetime_idx, input_lifetime) in extract_lifetimes(ty).into_iter().enumerate() {
+            for (lifetime_idx, input_lifetime) in extract_regions(ty).into_iter().enumerate() {
                 for output in self.matches_for_input_lifetime(
                     input_lifetime,
                     param_env,
@@ -315,7 +315,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             _ => output_ty,
         };
         for (output_lifetime_idx, output_lifetime) in
-            extract_lifetimes(output_ty).into_iter().enumerate()
+            extract_regions(output_ty).into_iter().enumerate()
         {
             if outlives_in_param_env(input_lifetime, output_lifetime, param_env) {
                 result.push(output_place.region_projection(output_lifetime_idx, self.repacker));
@@ -524,7 +524,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                             for proj in target.region_projections(self.repacker) {
                                                 if self.outlives(
                                                     get_vid(region).unwrap(),
-                                                    proj.region(),
+                                                    proj.region().as_vid().unwrap(),
                                                 ) {
                                                     let operand_place: utils::Place<'tcx> =
                                                         field.place().unwrap().into();
@@ -639,6 +639,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
+        if matches!(rvalue, Rvalue::Ref(_, BorrowKind::Fake(_), _)) {
+            return;
+        }
         self.super_rvalue(rvalue, location);
         use Rvalue::*;
         match rvalue {
@@ -679,15 +682,15 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
     }
 }
 
-pub fn extract_lifetimes<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
+pub(crate) fn extract_regions<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
     let mut visitor = LifetimeExtractor { lifetimes: vec![] };
     ty.visit_with(&mut visitor);
     visitor.lifetimes
 }
 
-pub fn extract_nested_lifetimes<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
+pub(crate) fn extract_nested_regions<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
     match ty.kind() {
-        ty::TyKind::Ref(_, ty, _) => extract_lifetimes(*ty),
-        _ => extract_lifetimes(ty),
+        ty::TyKind::Ref(_, ty, _) => extract_nested_regions(*ty),
+        _ => extract_regions(ty),
     }
 }

@@ -149,13 +149,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             | Aggregate(_, _)
             | ShallowInitBox(_, _) => return,
 
-            &Ref(_, kind, place) => {
-                if kind.mutability().is_mut() {
-                    Condition::exclusive(place)
-                } else {
-                    Condition::read(place)
-                }
-            }
+            &Ref(_, kind, place) => match kind {
+                BorrowKind::Shared => Condition::read(place),
+                BorrowKind::Fake(..) => return,
+                BorrowKind::Mut { .. } => Condition::exclusive(place),
+            },
             &RawPtr(mutbl, place) => {
                 if mutbl.is_mut() {
                     Condition::exclusive(place)
@@ -174,7 +172,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
         let t = match &statement.kind {
             &Assign(box (place, ref rvalue)) => Triple {
                 pre: Condition::write(place),
-                post: Some(Condition::new(place, rvalue.capability())),
+                post: rvalue.capability().map(|cap| Condition::new(place, cap)),
             },
             &FakeRead(box (_, place)) => Triple {
                 pre: Condition::exclusive(place),
@@ -205,17 +203,17 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             AscribeUserType(..) | Coverage(..) | Intrinsic(..) | ConstEvalCounter | Nop => return,
         };
         self.main_triples.push(t);
-        if let Assign(box (_, Rvalue::Ref(_, ref_kind, place))) = &statement.kind {
-            let triple = if ref_kind.mutability().is_mut() {
-                Triple {
-                    pre: Condition::exclusive(*place),
-                    post: Some(Condition::lent(*place)),
-                }
-            } else {
-                Triple {
+        if let Assign(box (_, Rvalue::Ref(_, kind, place))) = &statement.kind {
+            let triple = match kind {
+                BorrowKind::Shared => Triple {
                     pre: Condition::read(*place),
                     post: Some(Condition::read(*place)),
-                }
+                },
+                BorrowKind::Fake(..) => return,
+                BorrowKind::Mut { .. } => Triple {
+                    pre: Condition::exclusive(*place),
+                    post: Some(Condition::lent(*place)),
+                },
             };
             self.main_triples.push(triple);
         }
@@ -258,13 +256,14 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
 }
 
 trait ProducesCapability {
-    fn capability(&self) -> CapabilityKind;
+    fn capability(&self) -> Option<CapabilityKind>;
 }
 
 impl ProducesCapability for Rvalue<'_> {
-    fn capability(&self) -> CapabilityKind {
+    fn capability(&self) -> Option<CapabilityKind> {
         use Rvalue::*;
         match self {
+            Ref(_, BorrowKind::Fake(_), _) => None,
             Use(_)
             | Repeat(_, _)
             | Ref(_, _, _)
@@ -277,8 +276,8 @@ impl ProducesCapability for Rvalue<'_> {
             | UnaryOp(_, _)
             | Discriminant(_)
             | Aggregate(_, _)
-            | CopyForDeref(_) => CapabilityKind::Exclusive,
-            ShallowInitBox(_, _) => CapabilityKind::ShallowExclusive,
+            | CopyForDeref(_) => Some(CapabilityKind::Exclusive),
+            ShallowInitBox(_, _) => Some(CapabilityKind::ShallowExclusive),
         }
     }
 }

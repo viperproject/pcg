@@ -24,9 +24,10 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_visitor::{extract_nested_lifetimes, get_vid},
+        borrow_pcg_edge::PCGNode,
+        borrows_visitor::{extract_nested_regions, get_vid},
         domain::MaybeOldPlace,
-        region_projection::RegionProjection,
+        region_projection::{PCGRegion, RegionProjection},
     },
     rustc_interface,
 };
@@ -52,12 +53,9 @@ impl<'tcx> Place<'tcx> {
         Self(PlaceRef { local, projection }, DebugInfo::new_static())
     }
 
-    pub fn ty_region_vid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionVid> {
+    pub fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
         match self.ty(repacker).ty.kind() {
-            TyKind::Ref(region, _, _) => match region.kind() {
-                ty::RegionKind::ReVar(region_vid) => Some(region_vid),
-                _ => None,
-            },
+            TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
         }
     }
@@ -121,12 +119,15 @@ impl<'tcx> Place<'tcx> {
 
     pub fn projection_index(
         &self,
-        vid: RegionVid,
+        region: PCGRegion,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<usize> {
-        extract_nested_lifetimes(self.ty(repacker).ty)
+        extract_nested_regions(self.ty(repacker).ty)
             .iter()
-            .position(|region| get_vid(region).unwrap() == vid)
+            .position(|r| {
+                let r: PCGRegion = (*r).into();
+                r == region
+            })
     }
 
     pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -520,7 +521,8 @@ pub enum PlaceOrdering {
     Equal,
     // For example `x.f.g` to `x.f`.
     Suffix,
-    // For example `x[a]` and `x[b]` or `x as None` and `x as Some`.
+    // Both places share a common prefix, but are not related by prefix or suffix.
+    // For example `x.f` and `x.h`
     Both,
 }
 

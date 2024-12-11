@@ -1,8 +1,15 @@
-use crate::{borrows::edge_data::EdgeData, rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
-    middle::{mir::{BasicBlock, Location}, ty::{self}},
-}};
+use crate::{
+    borrows::edge_data::EdgeData,
+    rustc_interface::{
+        ast::Mutability,
+        data_structures::fx::FxHashSet,
+        middle::{
+            mir::{BasicBlock, Location},
+            ty::{self},
+        },
+    },
+    RestoreCapability,
+};
 use serde_json::{json, Value};
 
 use crate::{
@@ -37,6 +44,10 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub fn place_capabilities(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
+        self.capabilities.place_capabilities()
+    }
+
     pub fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
@@ -115,7 +126,17 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-        self.graph.remove(edge, DebugCtx::new(location))
+        let result = self.graph.remove(edge, DebugCtx::new(location));
+        // If removing the edge results in a leaf node with a Lent capability, this
+        // it should be set to Exclusive, as it is no longer being lent.
+        if result {
+            for node in self.graph.leaf_nodes(repacker) {
+                if self.get_capability(node) == Some(CapabilityKind::Lent) {
+                    self.set_capability(node, CapabilityKind::Exclusive);
+                }
+            }
+        }
+        result
     }
 
     pub fn borrow_edges_reserved_at(
@@ -316,11 +337,13 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         let mut weakens: FxHashSet<Weaken<'tcx>> = FxHashSet::default();
-
-        for (place, capability) in self.capabilities.place_capabilities() {
-            if let Some(to_capability) = to.capabilities.get(place) {
+        let mut restores: FxHashSet<RestoreCapability<'tcx>> = FxHashSet::default();
+        for (place, capability) in self.place_capabilities() {
+            if let Some(to_capability) = to.get_capability(place) {
                 if capability > to_capability {
                     weakens.insert(Weaken(place.clone(), capability, to_capability));
+                } else if to_capability.is_exclusive() && capability.is_lent_exclusive() {
+                    restores.insert(RestoreCapability(place, capability));
                 }
             }
         }
@@ -330,6 +353,7 @@ impl<'tcx> BorrowsState<'tcx> {
             expands,
             ug,
             weakens,
+            restores,
         }
     }
 
@@ -371,6 +395,19 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
         ug.unblock_node(node, self, repacker);
+
+        // The place itself could be in the owned PCG, but we want to unblock
+        // the borrowed parts. For example if the place is a struct S, with
+        // owned fields S.f and S.g, we will want to unblock S.f and S.g.
+        for root_node in self.roots(repacker) {
+            if let Some(root_node_place) = root_node.as_current_place() {
+                if let Some(place) = node.as_current_place() {
+                    if place.is_prefix(root_node_place) {
+                        ug.unblock_node(root_node.into(), self, repacker);
+                    }
+                }
+            }
+        }
         self.apply_unblock_graph(ug, repacker, location);
 
         // Originally we may not have been expanded enough
@@ -440,6 +477,11 @@ impl<'tcx> BorrowsState<'tcx> {
                     self.graph
                         .remove_region_projection_member(region_projection_member);
                 }
+            }
+        }
+        for node in self.graph.leaf_nodes(repacker) {
+            if self.get_capability(node) == Some(CapabilityKind::Lent) {
+                self.set_capability(node, CapabilityKind::Exclusive);
             }
         }
         changed

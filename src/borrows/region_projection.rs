@@ -1,7 +1,10 @@
 use std::fmt;
 
 use crate::rustc_interface::{
-    ast::Mutability, data_structures::fx::FxHashSet, middle::mir::Local, middle::ty::RegionVid,
+    ast::Mutability,
+    data_structures::fx::FxHashSet,
+    middle::mir::Local,
+    middle::ty::{self, RegionVid},
 };
 
 use crate::utils::{Place, PlaceRepacker};
@@ -10,9 +13,34 @@ use super::has_pcs_elem::HasPcsElems;
 use super::{domain::MaybeOldPlace, latest::Latest};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+pub enum PCGRegion {
+    RegionVid(RegionVid),
+    ReErased,
+}
+
+impl PCGRegion {
+    pub fn as_vid(&self) -> Option<RegionVid> {
+        match self {
+            PCGRegion::RegionVid(vid) => Some(*vid),
+            PCGRegion::ReErased => None,
+        }
+    }
+}
+
+impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
+    fn from(region: ty::Region<'tcx>) -> Self {
+        match region.kind() {
+            ty::RegionKind::ReVar(vid) => PCGRegion::RegionVid(vid),
+            ty::RegionKind::ReErased => PCGRegion::ReErased,
+            _ => todo!(),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub struct RegionProjection<'tcx> {
     pub place: MaybeOldPlace<'tcx>,
-    region: RegionVid,
+    region: PCGRegion,
 }
 
 impl<'tcx> fmt::Display for RegionProjection<'tcx> {
@@ -45,7 +73,7 @@ impl<'tcx> RegionProjection<'tcx> {
         )
     }
 
-    pub fn new(region: RegionVid, place: MaybeOldPlace<'tcx>) -> Self {
+    pub fn new(region: PCGRegion, place: MaybeOldPlace<'tcx>) -> Self {
         Self { place, region }
     }
 
@@ -61,14 +89,14 @@ impl<'tcx> RegionProjection<'tcx> {
     }
 
     pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        if self.place.ty_region_vid(repacker) == Some(self.region) {
+        if self.place.ty_region(repacker) == Some(self.region) {
             Some(self.place.project_deref(repacker))
         } else {
             None
         }
     }
 
-    pub fn region(&self) -> RegionVid {
+    pub fn region(&self) -> PCGRegion {
         self.region
     }
 

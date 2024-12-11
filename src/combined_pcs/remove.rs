@@ -32,7 +32,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             let place = place.into();
             if !self.contains_key(&place) {
                 let related = self.find_all_related(place, Some(crate::utils::PlaceOrdering::Suffix));
-                self.collapse(related.get_from(), place, rp);
+                self.collapse(related.get_places(), place, rp);
             }
         }
     }

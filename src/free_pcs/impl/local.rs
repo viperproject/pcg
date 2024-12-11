@@ -130,12 +130,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         if matches!(relation, PlaceOrdering::Prefix | PlaceOrdering::Equal) {
             // assert_eq!(related.len(), 1);
         }
-        RelatedSet {
-            from: related,
-            to,
-            // minimum: minimum.unwrap(),
-            relation,
-        }
+        RelatedSet::new(related.into_iter().collect())
     }
 
     pub(crate) fn expand(

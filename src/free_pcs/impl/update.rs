@@ -40,10 +40,14 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 if cp[&place].is_exclusive() && cap.is_write() {
                     // Requires write should deinit an exclusive
                     cp.insert(place, cap);
-                } else if cp[&place].is_lent_exclusive() && cap.is_read() {
+                } else if cp[&place].is_lent_exclusive()
+                    && (cap.is_read() || cap.is_exclusive())
+                {
                     // This read will expire the loan, so we regain exclusive access
                     // TODO: If we expire borrows eagerly, perhaps we don't need this logic
                     cp.insert(place, CapabilityKind::Exclusive);
+                } else {
+                    // TODO
                 }
             }
             Condition::Return => {
@@ -139,20 +143,24 @@ impl<'tcx> CapabilitySummary<'tcx> {
 impl<'tcx> CapabilityProjections<'tcx> {
     pub(super) fn repack(&mut self, to: Place<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
         let related = self.find_all_related(to, None);
-        match related.relation {
-            PlaceOrdering::Prefix => {
-                self.expand(related.get_only_from(), related.to, repacker);
-            }
-            PlaceOrdering::Equal => (),
-            PlaceOrdering::Suffix => {
-                self.collapse(related.get_from(), related.to, repacker);
-            }
-            PlaceOrdering::Both => {
-                let cp = related.common_prefix(to);
-                // Collapse
-                self.collapse(related.get_from(), cp, repacker);
-                // Expand
-                self.expand(cp, related.to, repacker);
+        for (from_place, _) in (*related).iter().copied() {
+            match from_place.partial_cmp(to).unwrap() {
+                PlaceOrdering::Prefix => {
+                    self.expand(related.get_only_place(), to, repacker);
+                }
+                PlaceOrdering::Equal => (),
+                PlaceOrdering::Suffix => {
+                    eprintln!("Places: {:?}", related.get_places());
+                    self.collapse(related.get_places(), to, repacker);
+                    return;
+                }
+                PlaceOrdering::Both => {
+                    let cp = related.common_prefix(to);
+                    // Collapse
+                    self.collapse(related.get_places(), cp, repacker);
+                    // Expand
+                    self.expand(cp, to, repacker);
+                }
             }
         }
     }

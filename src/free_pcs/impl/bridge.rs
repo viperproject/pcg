@@ -69,19 +69,21 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
         let mut repacks = Vec::new();
         for (&place, &kind) in &**other {
             let related = from.find_all_related(place, None);
-            match related.relation {
-                PlaceOrdering::Prefix => {
-                    let from_place = related.get_only_from();
-                    // TODO: remove need for clone
-                    let unpacks = from.expand(from_place, place, repacker);
-                    repacks.extend(unpacks);
+            for (from_place, _) in (*related).iter().copied() {
+                match from_place.partial_cmp(place).unwrap() {
+                    PlaceOrdering::Prefix => {
+                        let unpacks = from.expand(from_place, place, repacker);
+                        repacks.extend(unpacks);
+                        break;
+                    }
+                    PlaceOrdering::Suffix => {
+                        let packs = from.collapse(related.get_places(), place, repacker);
+                        repacks.extend(packs);
+                        break;
+                    }
+                    PlaceOrdering::Both => todo!(),
+                    PlaceOrdering::Equal => {}
                 }
-                PlaceOrdering::Equal => (),
-                PlaceOrdering::Suffix => {
-                    let packs = from.collapse(related.get_from(), related.to, repacker);
-                    repacks.extend(packs);
-                }
-                PlaceOrdering::Both => unreachable!("{self:?}\n{from:?}\n{other:?}\n{related:?}"),
             }
             // Downgrade the permission if needed
             let curr = from[&place];

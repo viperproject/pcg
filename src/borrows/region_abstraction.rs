@@ -25,7 +25,7 @@ impl<'tcx> EdgeData<'tcx> for AbstractionEdge<'tcx> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
+    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
         self.outputs().into_iter().map(|o| o.into()).collect()
     }
 

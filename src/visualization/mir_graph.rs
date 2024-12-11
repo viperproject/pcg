@@ -91,7 +91,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
             let kind = match kind {
                 mir::BorrowKind::Shared => "",
                 mir::BorrowKind::Mut { .. } => "mut",
-                mir::BorrowKind::Fake(_) => todo!(),
+                mir::BorrowKind::Fake(_) => "fake"
             };
             format!("&{} {}", kind, format_place(place, repacker))
         }

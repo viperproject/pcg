@@ -249,8 +249,8 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().local
     }
 
-    pub fn ty_region_vid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionVid> {
-        self.place().ty_region_vid(repacker)
+    pub fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
+        self.place().ty_region(repacker)
     }
 
     pub fn last_projection(&self) -> Option<(Place<'tcx>, PlaceElem<'tcx>)> {
@@ -309,9 +309,9 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     ) -> Vec<RegionProjection<'tcx>> {
         let place = self.with_inherent_region(repacker);
         // TODO: What if no VID?
-        extract_lifetimes(place.ty(repacker).ty)
+        extract_regions(place.ty(repacker).ty)
             .iter()
-            .flat_map(|region| get_vid(region).map(|vid| RegionProjection::new(vid, place)))
+            .map(|region| RegionProjection::new((*region).into(), place))
             .collect()
     }
 
@@ -415,13 +415,13 @@ use serde_json::json;
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge},
-    borrows_visitor::{extract_lifetimes, get_vid},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, ToBorrowsEdge},
+    borrows_visitor::{extract_regions, get_vid},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::PathConditions,
     region_abstraction::AbstractionEdge,
-    region_projection::RegionProjection,
+    region_projection::{PCGRegion, RegionProjection},
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
@@ -514,7 +514,9 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     }
 
     pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.as_local_place().map(|p| p.is_owned(repacker)).unwrap_or(false)
+        self.as_local_place()
+            .map(|p| p.is_owned(repacker))
+            .unwrap_or(false)
     }
 
     pub fn mir_local(&self) -> mir::Local {

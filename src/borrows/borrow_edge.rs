@@ -6,17 +6,15 @@ use super::{
     edge_data::EdgeData,
     region_projection::RegionProjection,
 };
-use crate::utils::PlaceRepacker;
-use crate::{
-    rustc_interface::{
-        ast::Mutability,
-        data_structures::fx::FxHashSet,
-        middle::{
-            mir::Location,
-            ty::{self, RegionVid},
-        },
+use crate::rustc_interface::{
+    ast::Mutability,
+    data_structures::fx::FxHashSet,
+    middle::{
+        mir::Location,
+        ty::{self, RegionVid},
     },
 };
+use crate::utils::PlaceRepacker;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowEdge<'tcx> {
@@ -84,18 +82,13 @@ impl<'tcx> BorrowEdge<'tcx> {
             .with_inherent_region(repacker)
     }
 
-    // TODO: Region could be erased and we can't handle that yet
     pub fn assigned_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx>> {
         let assigned_place_ref = self.assigned_ref(repacker);
         if let ty::TyKind::Ref(region, _, _) = assigned_place_ref.ty(repacker).ty.kind() {
-            if let ty::RegionKind::ReVar(v) = region.kind() {
-                Some(RegionProjection::new(v, assigned_place_ref))
-            } else {
-                None
-            }
+            Some(RegionProjection::new((*region).into(), assigned_place_ref))
         } else {
             None
         }
