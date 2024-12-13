@@ -11,8 +11,8 @@ pub mod mir_graph;
 
 use crate::{
     borrows::{
-        borrows_state::BorrowsState, region_projection_member::RegionProjectionMemberDirection,
-        unblock_graph::UnblockGraph,
+        borrows_graph::BorrowsGraph, borrows_state::BorrowsState,
+        region_projection_member::RegionProjectionMemberDirection, unblock_graph::UnblockGraph,
     },
     free_pcs::{CapabilityKind, CapabilitySummary},
     rustc_interface,
@@ -25,6 +25,7 @@ use std::{
 };
 
 use dot::escape_html;
+use graph_constructor::BorrowsGraphConstructor;
 use rustc_interface::middle::mir::Location;
 
 use self::{
@@ -313,6 +314,18 @@ pub fn generate_dot_graph_str<'a, 'tcx: 'a>(
     borrows_domain: &BorrowsState<'tcx>,
 ) -> io::Result<String> {
     let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
+    let graph = constructor.construct_graph();
+    let mut buf = vec![];
+    let drawer = GraphDrawer::new(&mut buf);
+    drawer.draw(graph)?;
+    Ok(String::from_utf8(buf).unwrap())
+}
+
+pub fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
+    repacker: PlaceRepacker<'a, 'tcx>,
+    borrows_domain: &BorrowsGraph<'tcx>,
+) -> io::Result<String> {
+    let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
     let graph = constructor.construct_graph();
     let mut buf = vec![];
     let drawer = GraphDrawer::new(&mut buf);

@@ -48,11 +48,7 @@ impl<'tcx> PlaceDisplay<'tcx> {
 impl<'tcx> Place<'tcx> {
 
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        let place_str = match self.to_string(repacker) {
-            crate::utils::display::PlaceDisplay::Temporary(p) => format!("{:?}", p),
-            crate::utils::display::PlaceDisplay::User(_, s) => s,
-        };
-        serde_json::Value::String(place_str)
+        serde_json::Value::String(self.to_short_string(repacker))
     }
 
     pub fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {

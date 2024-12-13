@@ -169,7 +169,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-pub type AbstractionInputTarget<'tcx> = RegionProjection<'tcx>;
+pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx>;
 
 impl<'tcx> AbstractionType<'tcx> {
@@ -417,6 +417,7 @@ use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, ToBorrowsEdge},
     borrows_visitor::{extract_regions, get_vid},
+    coupling_graph_constructor::CGNode,
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::PathConditions,
@@ -434,9 +435,22 @@ pub enum MaybeRemotePlace<'tcx> {
     /// `f(&mut x)` the blocked place is `Remote(x)`
     Remote(RemotePlace),
 }
+
+impl<'tcx> From<RemotePlace> for MaybeRemotePlace<'tcx> {
+    fn from(remote_place: RemotePlace) -> Self {
+        MaybeRemotePlace::Remote(remote_place)
+    }
+}
+
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub struct RemotePlace {
     local: mir::Local,
+}
+
+impl std::fmt::Display for RemotePlace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Remote({:?})", self.local)
+    }
 }
 
 impl RemotePlace {

@@ -8,8 +8,8 @@ use rustc_interface::{
     dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
     middle::{
         mir::{
-            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement,
-            Terminator, TerminatorEdges,
+            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
+            TerminatorEdges,
         },
         ty::{self, TyCtxt},
     },
@@ -24,12 +24,15 @@ use crate::{
 };
 
 use super::{
-    borrow_edge::BorrowEdge, borrows_state::BorrowsState, borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage}, coupling_graph_constructor::LivenessChecker, domain::MaybeRemotePlace, path_condition::PathCondition, region_projection::RegionProjection
+    borrow_edge::BorrowEdge,
+    borrows_state::BorrowsState,
+    borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
+    domain::MaybeRemotePlace,
+    path_condition::PathCondition,
+    region_projection::RegionProjection,
 };
-use super::{
-    deref_expansion::DerefExpansion,
-    domain::{MaybeOldPlace},
-};
+use super::{deref_expansion::DerefExpansion, domain::MaybeOldPlace};
 
 pub struct BorrowsEngine<'mir, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
@@ -94,10 +97,12 @@ impl<'tcx> ReborrowAction<'tcx> {
     }
 }
 
-impl<'tcx> LivenessChecker<'tcx> for Results<'tcx, MaybeLiveLocals> {
-    fn is_live(&self, region_projection: RegionProjection<'tcx>, block: BasicBlock) -> bool {
-        self.entry_set_for_block(block)
-            .contains(region_projection.local())
+impl<'tcx> BorrowCheckerInterface<'tcx> for Results<'tcx, MaybeLiveLocals> {
+    fn is_live(&self, node: CGNode<'tcx>, block: BasicBlock) -> bool {
+        match node {
+            CGNode::RegionProjection(rp) => self.entry_set_for_block(block).contains(rp.local()),
+            CGNode::RemotePlace(_) => true,
+        }
     }
 }
 

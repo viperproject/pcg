@@ -518,6 +518,7 @@ async function main() {
               <Assertions assertions={assertions} />
             </div>
             <PCSActions pathData={pathData} />
+            <LatestDisplay latest={pathData.borrows.latest} />
           </>
         )}
         {pcsGraphSelector}
@@ -530,6 +531,16 @@ async function main() {
     const root = createRoot(rootElement);
     root.render(<App />);
   }
+}
+
+function LatestDisplay({ latest }: { latest: Record<string, string> }) {
+  return (
+    <div>
+      {Object.entries(latest).map(([place, location]) => (
+        <div key={place}>{`${place} -> ${location}`}</div>
+      ))}
+    </div>
+  );
 }
 
 main();

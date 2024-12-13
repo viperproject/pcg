@@ -44,7 +44,13 @@ function BridgeExpands({ expands }: { expands: PlaceExpand[] }) {
     <div>
       {expands.map((expand, idx) => (
         <div key={`expand-${idx}`}>
-          {expand.base.place} -&gt; {expand.expansion.join(", ")}
+          <MaybeOldPlaceDisplay maybeOldPlace={expand.base} />
+          →
+          <span>
+            {expand.expansion.map((e) => (
+              <MaybeOldPlaceDisplay maybeOldPlace={e} />
+            ))}
+          </span>
         </div>
       ))}
     </div>

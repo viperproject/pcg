@@ -130,7 +130,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
             repacks_middle,
             extra_start,
             extra_middle,
-            borrows: curr_borrows,
+            borrows: state.get_borrows_states().clone(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());

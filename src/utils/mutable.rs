@@ -51,6 +51,14 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
+    /// Returns `true` if the data in the place could be changed after its
+    /// initial assignment. This function is used to determine if we need to
+    /// track the location of the place in the [`Latest`] map.
+    pub(crate) fn has_location_dependent_value(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.is_mutable(LocalMutationIsAllowed::No, repacker)
+            .is_ok()
+    }
+
     pub fn is_mutable(
         self,
         is_local_mutation_allowed: LocalMutationIsAllowed,

@@ -77,7 +77,7 @@ export type Conditioned<T> = {
 
 export type PlaceExpand = {
   base: MaybeOldPlace,
-  expansion: string[]
+  expansion: MaybeOldPlace[]
 }
 
 export type Weaken = {
@@ -104,7 +104,7 @@ export type PathData = {
   reborrow_start: ReborrowBridge;
   reborrow_middle?: ReborrowBridge;
   borrows: {
-    borrows: Borrow[];
+    latest: Record<string, string>;
   };
   repacks_middle: string[];
   repacks_start: string[];

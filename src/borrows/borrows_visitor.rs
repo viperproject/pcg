@@ -1,20 +1,23 @@
 use std::{collections::BTreeSet, rc::Rc};
 
-use crate::rustc_interface::{
-    ast::Mutability,
-    borrowck::{
-        borrow_set::BorrowSet,
-        consumers::{
-            BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
+use crate::{
+    rustc_interface::{
+        ast::Mutability,
+        borrowck::{
+            borrow_set::BorrowSet,
+            consumers::{
+                BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
+            },
+        },
+        middle::{
+            mir::{
+                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Place, Rvalue,
+                Statement, StatementKind, Terminator, TerminatorKind,
+            },
+            ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
         },
     },
-    middle::{
-        mir::{
-            visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Place, Rvalue,
-            Statement, StatementKind, Terminator, TerminatorKind,
-        },
-        ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
-    },
+    utils::LocalMutationIsAllowed,
 };
 
 use crate::{
@@ -179,7 +182,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         &mut self,
         func: &Operand<'tcx>,
         args: &[&Operand<'tcx>],
-        destination: Place<'tcx>,
+        destination: utils::Place<'tcx>,
         location: Location,
     ) {
         let (func_def_id, substs) = if let Operand::Constant(box c) = func
@@ -238,8 +241,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 location,
                             );
                             edges.push(AbstractionBlockEdge::new(
-                                vec![input_rp].into_iter().collect(),
-                                vec![output].into_iter().collect(),
+                                vec![input_rp.into()].into_iter().collect(),
+                                vec![output.into()].into_iter().collect(),
                             ));
                         }
                     }
@@ -256,9 +259,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     destination.into(),
                 ) {
                     edges.push(AbstractionBlockEdge::new(
-                        vec![input_place.region_projection(lifetime_idx, self.repacker)]
-                            .into_iter()
-                            .collect(),
+                        vec![input_place
+                            .region_projection(lifetime_idx, self.repacker)
+                            .into()]
+                        .into_iter()
+                        .collect(),
                         vec![output].into_iter().collect(),
                     ));
                 }
@@ -368,14 +373,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
         if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
+                let place: utils::Place<'tcx> = (*place).into();
                 self.state
                     .states
                     .after
-                    .set_latest((*place).into(), location);
-                self.state
-                    .states
-                    .after
-                    .make_place_old((*place).into(), self.repacker, None);
+                    .make_place_old(place, self.repacker, None);
             }
         }
     }
@@ -393,12 +395,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     destination,
                     ..
                 } => {
-                    self.after_state_mut()
-                        .set_latest((*destination).into(), location);
+                    let destination: utils::Place<'tcx> = (*destination).into();
+                    self.state.states.after.set_latest(
+                        (*destination).into(),
+                        location,
+                        self.repacker,
+                    );
                     self.construct_region_abstraction_if_necessary(
                         func,
                         &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
-                        (*destination).into(),
+                        destination,
                         location,
                     );
                 }
@@ -495,7 +501,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    self.after_state_mut().set_latest(target, location);
+                        self.state
+                            .states
+                            .after
+                            .set_latest(target, location, self.repacker);
                     if !target.is_owned(self.repacker) {
                         self.state
                             .states

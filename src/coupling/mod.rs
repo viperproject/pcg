@@ -125,6 +125,11 @@ where
     }
 
     pub fn add_edge(&mut self, from: N, to: N) {
+        if from == to {
+            // TODO: Should we handle these here?
+            eprintln!("self-loop edge");
+            return;
+        }
         self.edges.insert((from, to));
     }
 

@@ -12,6 +12,7 @@ use crate::{
 use super::{
     borrow_edge::BorrowEdge,
     borrows_graph::Conditioned,
+    coupling_graph_constructor::CGNode,
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{MaybeOldPlace, MaybeRemotePlace},
     edge_data::EdgeData,
@@ -62,9 +63,27 @@ pub enum PCGNode<'tcx> {
     RegionProjection(RegionProjection<'tcx>),
 }
 
+impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
+    fn from(cg_node: CGNode<'tcx>) -> Self {
+        match cg_node {
+            CGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp),
+            CGNode::RemotePlace(rp) => PCGNode::Place(rp.into()),
+        }
+    }
+}
+
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
+    pub fn as_cg_node(self) -> Option<CGNode<'tcx>> {
+        match self {
+            PCGNode::Place(MaybeRemotePlace::Remote(remote_place)) => {
+                Some(CGNode::RemotePlace(remote_place))
+            }
+            PCGNode::RegionProjection(rp) => Some(CGNode::RegionProjection(rp)),
+            PCGNode::Place(MaybeRemotePlace::Local(_)) => None,
+        }
+    }
     pub fn as_blocking_node(&self) -> Option<BlockingNode<'tcx>> {
         self.as_local_node()
     }
@@ -295,7 +314,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
                 false
             }
             BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
-                abstraction_edge.inputs().contains(&rp)
+                abstraction_edge.inputs().contains(&rp.into())
             }
             BorrowPCGEdgeKind::RegionProjectionMember(_) => todo!(),
         }

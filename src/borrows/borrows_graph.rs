@@ -7,18 +7,32 @@ use rustc_interface::{
 use serde_json::json;
 
 use crate::{
+    borrows::borrows_state::BorrowsState,
     coupling,
-    free_pcs::CapabilityKind,
+    free_pcs::{CapabilityKind, CapabilitySummary},
     rustc_interface,
     utils::{Place, PlaceRepacker},
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph, generate_dot_graph_str},
 };
 
 use super::{
-    borrow_edge::BorrowEdge, borrow_pcg_edge::{
+    borrow_edge::BorrowEdge,
+    borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
-    }, borrows_visitor::DebugCtx, coupling_graph_constructor::{CGNode, CouplingGraphConstructor, LivenessChecker}, deref_expansion::{DerefExpansion, OwnedExpansion}, domain::{
+    },
+    borrows_visitor::DebugCtx,
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
+    deref_expansion::{DerefExpansion, OwnedExpansion},
+    domain::{
         AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
-    }, edge_data::EdgeData, has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection::RegionProjection, region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection}
+    },
+    edge_data::EdgeData,
+    has_pcs_elem::{HasPcsElems, MakePlaceOld},
+    latest::Latest,
+    path_condition::{PathCondition, PathConditions},
+    region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,42 +73,68 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.0.iter()
     }
 
-    pub fn region_projection_graph(
+    pub fn base_coupling_graph(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> coupling::Graph<RegionProjection<'tcx>> {
+    ) -> coupling::Graph<CGNode<'tcx>> {
         let mut graph = coupling::Graph::new();
-        for edge in self.0.iter() {
-            if let BorrowPCGEdgeKind::Borrow(reborrow) = &edge.kind() {
-                if let Some((from, to)) = self.region_projection_edge(reborrow, repacker) {
-                    graph.add_edge(from, to);
+        // TODO: For performance, we could not track the path in release mode,
+        // we only use it to detect infinite loops
+        #[derive(Clone)]
+        struct ExploreFrom<'tcx> {
+            path: Vec<PCGNode<'tcx>>,
+        }
+
+        impl<'tcx> ExploreFrom<'tcx> {
+            pub fn new(current: PCGNode<'tcx>) -> Self {
+                Self {
+                    path: vec![current],
+                }
+            }
+
+            pub fn connect(&self) -> Option<CGNode<'tcx>> {
+                self.path.iter().rev().find_map(|node| node.as_cg_node())
+            }
+
+            pub fn current(&self) -> PCGNode<'tcx> {
+                self.path.last().unwrap().clone()
+            }
+
+            pub fn extend(&self, node: PCGNode<'tcx>) -> Option<Self> {
+                let mut result = self.clone();
+                if result.path.contains(&node) {
+                    // TODO: Right now there are some nodes that may point to themselves
+                    // these are ignored for now, but we should figure out why they exist
+                    // let dot_graph = generate_borrows_dot_graph(repacker, borrows_graph).unwrap();
+                    // DotGraph::render_with_imgcat(&dot_graph).unwrap();
+                    // panic!("Cycle detected: {:?} already in {:?}", node, result.path);
+                    return None;
+                }
+                result.path.push(node);
+                Some(result)
+            }
+        }
+
+        let mut queue = vec![];
+        for node in self.roots(repacker) {
+            queue.push(ExploreFrom::new(node.into()));
+        }
+
+        while let Some(ef) = queue.pop() {
+            for edge in self.edges_blocking(ef.current(), repacker) {
+                for node in edge.blocked_by_nodes(repacker) {
+                    if let LocalNode::RegionProjection(rp) = node {
+                        if let Some(source) = ef.connect() {
+                            graph.add_edge(source, rp.into());
+                        }
+                    }
+                    if let Some(ef) = ef.extend(node.into()) {
+                        queue.push(ef);
+                    }
                 }
             }
         }
         graph
-    }
-
-    pub fn region_projection_edge(
-        &self,
-        reborrow: &BorrowEdge<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
-        fn to_rp<'tcx>(
-            place: MaybeOldPlace<'tcx>,
-            repacker: PlaceRepacker<'_, 'tcx>,
-        ) -> Option<RegionProjection<'tcx>> {
-            place
-                .nearest_owned_place(repacker)
-                .region_projections(repacker)
-                .get(0)
-                .cloned()
-        }
-        let from = match reborrow.blocked_place {
-            MaybeRemotePlace::Local(maybe_old_place) => to_rp(maybe_old_place, repacker),
-            MaybeRemotePlace::Remote(local) => local.region_projections(repacker).get(0).cloned(),
-        }?;
-        let to = to_rp(reborrow.assigned_place, repacker)?;
-        Some((from, to))
     }
 
     pub fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
@@ -280,42 +320,40 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
     }
 
-    fn construct_coupling_graph<T: LivenessChecker<'tcx>>(
+    fn construct_coupling_graph<T: BorrowCheckerInterface<'tcx>>(
         &self,
-        region_liveness: &T,
+        borrow_checker: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
         block: BasicBlock,
     ) -> coupling::Graph<CGNode<'tcx>> {
-        let constructor = CouplingGraphConstructor::new(region_liveness, repacker, block);
+        let constructor = CouplingGraphConstructor::new(borrow_checker, repacker, block);
         constructor.construct_coupling_graph(self)
     }
 
-    fn join_loop<T: LivenessChecker<'tcx>>(
+    fn join_loop<T: BorrowCheckerInterface<'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         exit_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
-        region_liveness: &T,
+        borrow_checker: &T,
     ) -> bool {
         let self_coupling_graph =
-            self.construct_coupling_graph(region_liveness, repacker, exit_block);
+            self.construct_coupling_graph(borrow_checker, repacker, exit_block);
         let other_coupling_graph =
-            other.construct_coupling_graph(region_liveness, repacker, exit_block);
-        // self_coupling_graph.render_with_imgcat();
-        // other_coupling_graph.render_with_imgcat();
+            other.construct_coupling_graph(borrow_checker, repacker, exit_block);
+        self_coupling_graph.render_with_imgcat();
+        other_coupling_graph.render_with_imgcat();
         let result = self_coupling_graph
             .union(&other_coupling_graph)
             .transitive_reduction();
-        // result.render_with_imgcat();
+        result.render_with_imgcat();
         let mut changed = false;
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
-                    vec![blocked.to_abstraction_input_target()]
-                        .into_iter()
-                        .collect(),
-                    vec![assigned.to_abstraction_output_target()]
+                    vec![*blocked].into_iter().collect(),
+                    vec![assigned.as_region_projection().unwrap()]
                         .into_iter()
                         .collect(),
                 ),
@@ -325,15 +363,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if self.insert(abstraction) {
                 changed = true;
             }
-            for borrow in self.borrows_blocking(blocked.place.project_deref(repacker).into()) {
-                self.remove(&borrow.into(), DebugCtx::Other);
-                changed = true;
+            match blocked.as_region_projection() {
+                Some(rp) => {
+                    for borrow in self.borrows_blocking(rp.place.project_deref(repacker).into()) {
+                        self.remove(&borrow.into(), DebugCtx::Other);
+                        changed = true;
+                    }
+                }
+                None => (),
             }
         }
         return changed;
     }
 
-    pub fn join<T: LivenessChecker<'tcx>>(
+    pub fn join<T: BorrowCheckerInterface<'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
@@ -570,7 +613,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
+    pub (crate) fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
     where
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {

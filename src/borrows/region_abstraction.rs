@@ -3,10 +3,13 @@ use rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 use crate::{rustc_interface, utils::PlaceRepacker};
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, PCGNode}, domain::{
+    borrow_pcg_edge::{BlockedNode, PCGNode},
+    domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
         MaybeOldPlace,
-    }, edge_data::EdgeData, has_pcs_elem::HasPcsElems
+    },
+    edge_data::EdgeData,
+    has_pcs_elem::HasPcsElems,
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -25,8 +28,14 @@ impl<'tcx> EdgeData<'tcx> for AbstractionEdge<'tcx> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
-        self.outputs().into_iter().map(|o| o.into()).collect()
+    fn blocked_by_nodes(
+        &self,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
+        self.outputs()
+            .into_iter()
+            .map(|o| o.into())
+            .collect()
     }
 
     fn is_owned_expansion(&self) -> bool {

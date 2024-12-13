@@ -1,5 +1,5 @@
 use crate::{
-    borrows::edge_data::EdgeData,
+    borrows::{domain::ToJsonWithRepacker, edge_data::EdgeData},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
@@ -8,6 +8,7 @@ use crate::{
             ty::{self},
         },
     },
+    utils::LocalMutationIsAllowed,
     RestoreCapability,
 };
 use serde_json::{json, Value};
@@ -24,7 +25,7 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode, ToBorrowsEdge},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::LivenessChecker,
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
     deref_expansion::DerefExpansion,
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
@@ -75,7 +76,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.capabilities.insert(node, capability);
     }
 
-    pub fn join<'mir, T: LivenessChecker<'tcx>>(
+    pub fn join<'mir, T: BorrowCheckerInterface<'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
@@ -93,7 +94,7 @@ impl<'tcx> BorrowsState<'tcx> {
         ) {
             changed = true;
         }
-        if self.latest.join(&other.latest, self_block) {
+        if self.latest.join(&other.latest, self_block, repacker) {
             // TODO: Setting changed to true prevents divergence for loops,
             // think about how latest should work in loops
 
@@ -122,7 +123,10 @@ impl<'tcx> BorrowsState<'tcx> {
         if !edge.is_shared_borrow() {
             for place in edge.blocked_places(repacker) {
                 if let Some(place) = place.as_current_place() {
-                    self.set_latest(place, location)
+                    if place.has_location_dependent_value(repacker) {
+                        eprintln!("Loc {:?} setting latest for {:?}", location, place);
+                        self.set_latest(place, location, repacker);
+                    }
                 }
             }
         }
@@ -306,39 +310,83 @@ impl<'tcx> BorrowsState<'tcx> {
         _debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> BorrowsBridge<'tcx> {
+        let snapshot_self = self.clone();
         let added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>> = to
             .borrows()
             .into_iter()
-            .filter(|rb| !self.has_reborrow_at_location(rb.value.reserve_location()))
+            .filter(|rb| !snapshot_self.has_reborrow_at_location(rb.value.reserve_location()))
             .collect();
 
         let expands = to
             .deref_expansions()
-            .difference(&self.deref_expansions())
+            .difference(&snapshot_self.deref_expansions())
             .cloned()
             .collect();
 
         let mut ug = UnblockGraph::new();
 
-        for borrow in self.borrows() {
+        for borrow in snapshot_self.borrows() {
             if !to.has_reborrow_at_location(borrow.value.reserve_location()) {
                 ug.kill_edge(borrow.clone().into(), self, repacker);
             }
         }
 
-        for exp in self.deref_expansions().difference(&to.deref_expansions()) {
+        let same_place = |self_place: &MaybeOldPlace<'tcx>, to_place: &MaybeOldPlace<'tcx>| {
+            if self_place.place() != to_place.place() {
+                return false;
+            }
+            if self_place.location() == to_place.location() {
+                return true;
+            }
+            self_place.is_current()
+                && to_place.location().unwrap() == self.latest.get(self_place.place())
+        };
+
+        let same_node =
+            |self_place: CGNode<'tcx>, to_place: CGNode<'tcx>| match (self_place, to_place) {
+                (CGNode::RegionProjection(rp1), CGNode::RegionProjection(rp2)) => {
+                    same_place(&rp1.place, &rp2.place) && rp1.region() == rp2.region()
+                }
+                (CGNode::RemotePlace(rp1), CGNode::RemotePlace(rp2)) => rp1 == rp2,
+                _ => false,
+            };
+
+        'outer: for exp in snapshot_self
+            .deref_expansions()
+            .difference(&to.deref_expansions())
+        {
+            if exp.value.base().is_current() {
+                for to in to.deref_expansions() {
+                    if same_place(&exp.value.base(), &to.value.base()) {
+                        continue 'outer;
+                    }
+                }
+            }
             ug.kill_edge(exp.clone().into(), self, repacker);
         }
 
-        for abstraction in self.region_abstractions() {
-            if !to.region_abstractions().contains(&abstraction) {
-                ug.kill_edge(abstraction.clone().into(), self, repacker);
+        'outer: for self_abstraction in snapshot_self.region_abstractions() {
+            'inner: for to_abstraction in to.region_abstractions() {
+                let self_value = self_abstraction.value.abstraction_type.clone();
+                let to_value = to_abstraction.value.abstraction_type.clone();
+                for (n1, n2) in self_value.inputs().iter().zip(to_value.inputs().iter()) {
+                    if !same_node(*n1, *n2) {
+                        continue 'inner;
+                    }
+                }
+                for (n1, n2) in self_value.outputs().iter().zip(to_value.outputs().iter()) {
+                    if !same_node((*n1).into(), (*n2).into()) {
+                        continue 'inner;
+                    }
+                }
+                continue 'outer;
             }
+            ug.kill_edge(self_abstraction.clone().into(), self, repacker);
         }
 
         let mut weakens: FxHashSet<Weaken<'tcx>> = FxHashSet::default();
         let mut restores: FxHashSet<RestoreCapability<'tcx>> = FxHashSet::default();
-        for (place, capability) in self.place_capabilities() {
+        for (place, capability) in snapshot_self.place_capabilities() {
             if let Some(to_capability) = to.get_capability(place) {
                 if capability > to_capability {
                     weakens.insert(Weaken(place.clone(), capability, to_capability));
@@ -487,8 +535,14 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-    pub fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) {
-        self.latest.insert(place, location.into());
+    pub fn set_latest<T: Into<SnapshotLocation>>(
+        &mut self,
+        place: Place<'tcx>,
+        location: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        let location = location.into();
+        self.latest.insert(place, location.into(), repacker);
     }
 
     pub fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
@@ -587,8 +641,10 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.abstraction_edges()
     }
 
-    pub fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Value {
-        json!({})
+    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
+        json!({
+            "latest": self.latest.to_json(repacker),
+        })
     }
 
     pub fn new() -> Self {

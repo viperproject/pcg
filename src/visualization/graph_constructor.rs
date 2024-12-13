@@ -4,6 +4,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
+        coupling_graph_constructor::CGNode,
         deref_expansion::DerefExpansion,
         domain::{
             AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace,
@@ -22,6 +23,7 @@ use crate::{
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Deref,
+    rc::Rc,
 };
 
 use rustc_interface::middle::ty::{self, TyCtxt};
@@ -175,6 +177,13 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
+    fn insert_cg_node(&mut self, node: CGNode<'tcx>) -> NodeId {
+        match node {
+            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp, None),
+            CGNode::RemotePlace(rp) => self.insert_remote_node(rp),
+        }
+    }
+
     fn insert_region_abstraction(
         &mut self,
         region_abstraction: &AbstractionEdge<'tcx>,
@@ -185,11 +194,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         for edge in region_abstraction.edges() {
             for input in edge.inputs() {
-                let input = self.insert_region_projection_node(input, capabilities.get(input));
+                let input = self.insert_cg_node(input);
                 input_nodes.insert(input);
             }
             for output in edge.outputs() {
-                let output = self.insert_region_projection_node(output, capabilities.get(output));
+                let output = self.insert_region_projection_node(output, None);
                 output_nodes.insert(output);
             }
             for input in &input_nodes {
@@ -315,11 +324,26 @@ impl<'mir, 'tcx> PlaceGrapher<'mir, 'tcx> for UnblockGraphConstructor<'mir, 'tcx
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
         self.constructor.repacker
     }
+
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir {
+        NullCapabilityGetter
+    }
 }
 
 trait PlaceGrapher<'mir, 'tcx: 'mir> {
-    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId;
-    fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId;
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir;
+    fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
+        let capability_getter = self.capability_getter();
+        let constructor = self.constructor();
+        constructor.insert_place_node(place.place(), place.location(), &capability_getter)
+    }
+    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
+        let constructor = self.constructor();
+        match place {
+            MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
+            MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local),
+        }
+    }
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
     fn draw_borrow_pcg_edge(
@@ -383,6 +407,29 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     }
 }
 
+pub struct BorrowsGraphConstructor<'a, 'tcx> {
+    borrows_graph: &'a BorrowsGraph<'tcx>,
+    constructor: GraphConstructor<'a, 'tcx>,
+    repacker: PlaceRepacker<'a, 'tcx>,
+}
+
+impl<'a, 'tcx> BorrowsGraphConstructor<'a, 'tcx> {
+    pub fn new(borrows_graph: &'a BorrowsGraph<'tcx>, repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+        Self {
+            borrows_graph,
+            constructor: GraphConstructor::new(repacker),
+            repacker,
+        }
+    }
+
+    pub fn construct_graph(mut self) -> Graph {
+        for edge in self.borrows_graph.edges() {
+            self.draw_borrow_pcg_edge(&edge, &NullCapabilityGetter);
+        }
+        self.constructor.to_graph()
+    }
+}
+
 pub struct PCSGraphConstructor<'a, 'tcx> {
     summary: &'a CapabilitySummary<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
@@ -428,14 +475,10 @@ impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
     }
 
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
-        let capability_getter = &PCSCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
-        };
         match place {
             MaybeOldPlace::Current { place } => {
                 self.constructor
-                    .insert_place_node(place, None, capability_getter)
+                    .insert_place_node(place, None, &self.capability_getter())
             }
             MaybeOldPlace::OldPlace(snapshot_place) => self.insert_snapshot_place(snapshot_place),
         }
@@ -445,11 +488,25 @@ impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
         &mut self.constructor
     }
 
-    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
-        match place {
-            MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
-            MaybeRemotePlace::Remote(local) => self.constructor.insert_remote_node(local),
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
+        PCSCapabilityGetter {
+            summary: self.summary,
+            borrows_domain: self.borrows_domain,
         }
+    }
+}
+
+impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for BorrowsGraphConstructor<'a, 'tcx> {
+    fn repacker(&self) -> PlaceRepacker<'a, 'tcx> {
+        self.repacker
+    }
+
+    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
+        &mut self.constructor
+    }
+
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
+        NullCapabilityGetter
     }
 }
 
@@ -542,11 +599,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             }
         }
         for edge in self.borrows_domain.graph_edges() {
-            let capability_getter = &PCSCapabilityGetter {
-                summary: self.summary,
-                borrows_domain: self.borrows_domain,
-            };
-            self.draw_borrow_pcg_edge(&edge, capability_getter);
+            self.draw_borrow_pcg_edge(&edge, &self.capability_getter());
         }
 
         self.constructor.to_graph()
