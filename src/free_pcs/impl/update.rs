@@ -6,7 +6,7 @@
 
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
-    rustc_interface::middle::mir::{Local, RETURN_PLACE, START_BLOCK},
+    rustc_interface::middle::mir::{Local, RETURN_PLACE},
     utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
 };
 
@@ -150,7 +150,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 }
                 PlaceOrdering::Equal => (),
                 PlaceOrdering::Suffix => {
-                    eprintln!("Places: {:?}", related.get_places());
                     self.collapse(related.get_places(), to, repacker);
                     return;
                 }

@@ -1,18 +1,14 @@
 use rustc_interface::{
-    ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, Location},
-    middle::ty::{Region, TyCtxt},
+    middle::mir::{BasicBlock, Location},
 };
 use serde_json::json;
 
 use crate::{
-    borrows::borrows_state::BorrowsState,
     coupling,
-    free_pcs::{CapabilityKind, CapabilitySummary},
+    free_pcs::CapabilityKind,
     rustc_interface,
     utils::{Place, PlaceRepacker},
-    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph, generate_dot_graph_str},
 };
 
 use super::{
@@ -31,8 +27,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    region_projection_member::RegionProjectionMember,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1,5 +1,4 @@
 use rustc_interface::{
-    ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock},
 };

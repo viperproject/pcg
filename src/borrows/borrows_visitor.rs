@@ -1,7 +1,6 @@
 use std::{collections::BTreeSet, rc::Rc};
 
-use crate::{
-    rustc_interface::{
+use crate::rustc_interface::{
         ast::Mutability,
         borrowck::{
             borrow_set::BorrowSet,
@@ -11,14 +10,12 @@ use crate::{
         },
         middle::{
             mir::{
-                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Place, Rvalue,
+                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
                 Statement, StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
         },
-    },
-    utils::LocalMutationIsAllowed,
-};
+    };
 
 use crate::{
     borrows::{domain::AbstractionBlockEdge, region_abstraction::AbstractionEdge},
@@ -27,8 +24,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, PCGNode},
-    borrows_state::BorrowsState,
+    borrow_pcg_edge::BlockedNode,
     domain::MaybeOldPlace,
     path_condition::PathConditions,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
@@ -113,10 +109,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             debug_ctx: None,
             output_facts: engine.output_facts,
         }
-    }
-
-    fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
-        &mut self.state.states.after
     }
 
     /// Ensures that the place is expanded to exactly the given place. If

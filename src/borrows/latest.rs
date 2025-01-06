@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use crate::rustc_interface::middle::mir::BasicBlock;
-use crate::utils::{LocalMutationIsAllowed, Place, PlaceRepacker, SnapshotLocation};
+use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
 use super::domain::ToJsonWithRepacker;
 
@@ -49,7 +49,7 @@ impl<'tcx> Latest<'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: SnapshotLocation,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        _repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         // TODO: Should this assertion pass?
         // if let Some(existing) = self.get_opt(place) {

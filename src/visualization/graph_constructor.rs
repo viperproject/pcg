@@ -1,13 +1,11 @@
 use crate::{
     borrows::{
-        borrow_pcg_capabilities::BorrowPCGCapabilities,
         borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
-        deref_expansion::DerefExpansion,
         domain::{
-            AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, MaybeRemotePlace,
+            MaybeOldPlace, MaybeRemotePlace,
             RemotePlace,
         },
         region_abstraction::AbstractionEdge,
@@ -23,7 +21,6 @@ use crate::{
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Deref,
-    rc::Rc,
 };
 
 use rustc_interface::middle::ty::{self, TyCtxt};
@@ -187,7 +184,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     fn insert_region_abstraction(
         &mut self,
         region_abstraction: &AbstractionEdge<'tcx>,
-        capabilities: &impl CapabilityGetter<'tcx>,
     ) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
@@ -387,7 +383,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
                 let _r = self
                     .constructor()
-                    .insert_region_abstraction(abstraction, capabilities);
+                    .insert_region_abstraction(abstraction);
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 let place = self.insert_maybe_remote_place(member.place);

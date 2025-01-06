@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rustc_interface::{ast::Mutability, middle::mir::BasicBlock};
+use rustc_interface::middle::mir::BasicBlock;
 
 use crate::{
     borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
@@ -170,10 +170,6 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     fn add_dependency(&mut self, unblock_edge: UnblockEdge<'tcx>) {
         self.edges.insert(unblock_edge);
-    }
-
-    fn report_error(&mut self) {
-        panic!("Error in unblock graph");
     }
 
     pub fn kill_edge(

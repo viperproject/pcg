@@ -4,7 +4,7 @@ use crate::{coupling, rustc_interface::middle::mir::BasicBlock, utils::PlaceRepa
 
 use super::{
     borrows_graph::BorrowsGraph,
-    domain::{AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace, RemotePlace},
+    domain::{MaybeOldPlace, RemotePlace},
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };

@@ -8,7 +8,6 @@ use crate::{
             ty::{self},
         },
     },
-    utils::LocalMutationIsAllowed,
     RestoreCapability,
 };
 use serde_json::{json, Value};
@@ -124,7 +123,6 @@ impl<'tcx> BorrowsState<'tcx> {
             for place in edge.blocked_places(repacker) {
                 if let Some(place) = place.as_current_place() {
                     if place.has_location_dependent_value(repacker) {
-                        eprintln!("Loc {:?} setting latest for {:?}", location, place);
                         self.set_latest(place, location, repacker);
                     }
                 }

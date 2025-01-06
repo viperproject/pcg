@@ -17,15 +17,14 @@ use rustc_interface::{
     ast::Mutability,
     middle::{
         mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
-        ty::{self, RegionVid, Ty, TyCtxt, TyKind},
+        ty::{self, Ty, TyCtxt, TyKind},
     },
     target::abi::VariantIdx,
 };
 
 use crate::{
     borrows::{
-        borrow_pcg_edge::PCGNode,
-        borrows_visitor::{extract_nested_regions, get_vid},
+        borrows_visitor::extract_nested_regions,
         domain::MaybeOldPlace,
         region_projection::{PCGRegion, RegionProjection},
     },

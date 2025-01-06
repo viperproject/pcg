@@ -65,7 +65,6 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
 
     pub fpcs: FreePlaceCapabilitySummary<'a, 'tcx>,
     pub borrows: BorrowsDomain<'a, 'tcx>,
-    maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
 
     dot_output_dir: Option<String>,
@@ -242,7 +241,6 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             borrows,
             dot_graphs,
             dot_output_dir,
-            maybe_live_locals,
         }
     }
 }

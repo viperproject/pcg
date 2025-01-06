@@ -30,7 +30,6 @@ use super::{
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
     domain::MaybeRemotePlace,
     path_condition::PathCondition,
-    region_projection::RegionProjection,
 };
 use super::{deref_expansion::DerefExpansion, domain::MaybeOldPlace};
 

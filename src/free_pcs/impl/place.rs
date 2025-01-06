@@ -10,7 +10,7 @@ use std::{
     fmt::{Debug, Formatter, Result}
 };
 
-use rustc_interface::{data_structures::fx::FxHashSet, hir::Mutability};
+use rustc_interface::data_structures::fx::FxHashSet;
 
 use crate::{rustc_interface, utils::Place};
 

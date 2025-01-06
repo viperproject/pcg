@@ -4,7 +4,6 @@ use crate::utils::PlaceRepacker;
 use super::borrow_pcg_edge::{LocalNode, PCGNode};
 use super::edge_data::EdgeData;
 use super::{
-    borrow_pcg_edge::BlockedNode,
     domain::{MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,

@@ -4,15 +4,6 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::fmt;
 use std::hash::Hash;
 
-/// Generic type for Node, must implement required traits
-type Node = &'static str;
-
-#[derive(Clone, Debug)]
-struct Edge<N> {
-    from: N,
-    to: N,
-}
-
 #[derive(Clone, Debug)]
 pub struct Graph<N> {
     edges: HashSet<(N, N)>, // Set of edges (from, to)
@@ -120,10 +111,6 @@ where
         Graph { edges: new_edges }
     }
 
-    fn has_edges(&self) -> bool {
-        !self.edges.is_empty()
-    }
-
     pub fn add_edge(&mut self, from: N, to: N) {
         if from == to {
             // TODO: Should we handle these here?
@@ -133,20 +120,6 @@ where
         self.edges.insert((from, to));
     }
 
-    /// Adds edges between consecutive nodes in the provided path.
-    /// For example, given ["A", "B", "C"], it adds edges A -> B and B -> C.
-    fn add_edges(&mut self, nodes: Vec<N>) {
-        if nodes.len() < 2 {
-            return; // Need at least two nodes to create an edge
-        }
-
-        for i in 0..nodes.len() - 1 {
-            let from = nodes[i].clone();
-            let to = nodes[i + 1].clone();
-            self.add_edge(from, to);
-        }
-    }
-
     fn remove_edge(&mut self, from: &N, to: &N) {
         self.edges.remove(&(*from, *to));
     }
@@ -154,14 +127,6 @@ where
     /// Checks if a node is a leaf (i.e., has no outgoing edges)
     fn is_leaf(&self, node: &N) -> bool {
         !self.edges.iter().any(|(from, _)| from == node)
-    }
-
-    fn is_disconnected(&self, node: &N) -> bool {
-        self.is_leaf(node) && !self.edges.iter().any(|(_, to)| to == node)
-    }
-
-    fn remove_node(&mut self, node: &N) {
-        self.edges.retain(|(from, to)| from != node && to != node);
     }
 
     /// Returns all nodes in the graph
@@ -203,9 +168,6 @@ pub struct HyperEdge<N> {
 }
 
 impl<N: Ord> HyperEdge<N> {
-    fn new(lhs: BTreeSet<N>, rhs: BTreeSet<N>) -> Self {
-        HyperEdge { lhs, rhs }
-    }
     pub fn lhs(&self) -> &BTreeSet<N> {
         &self.lhs
     }
@@ -220,16 +182,6 @@ pub struct HyperGraph<N> {
 }
 
 impl<N: Ord> HyperGraph<N> {
-    fn new() -> Self {
-        HyperGraph {
-            hyperedges: BTreeSet::new(),
-        }
-    }
-
-    fn add_hyperedge(&mut self, hyperedge: HyperEdge<N>) {
-        self.hyperedges.insert(hyperedge);
-    }
-
     pub fn edges(&self) -> impl Iterator<Item = &HyperEdge<N>> {
         self.hyperedges.iter()
     }

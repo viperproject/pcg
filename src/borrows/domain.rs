@@ -4,7 +4,7 @@ use rustc_interface::{
     ast::Mutability,
     hir::def_id::DefId,
     middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK},
-    middle::ty::{GenericArgsRef, RegionVid, TyCtxt},
+    middle::ty::{GenericArgsRef, TyCtxt},
 };
 
 use crate::{
@@ -415,8 +415,8 @@ use serde_json::json;
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, ToBorrowsEdge},
-    borrows_visitor::{extract_regions, get_vid},
+    borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge},
+    borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
     has_pcs_elem::HasPcsElems,
     latest::Latest,

@@ -3,7 +3,7 @@ use rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 use crate::{rustc_interface, utils::PlaceRepacker};
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, PCGNode},
+    borrow_pcg_edge::PCGNode,
     domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
         MaybeOldPlace,
