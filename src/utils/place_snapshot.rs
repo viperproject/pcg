@@ -29,6 +29,12 @@ pub struct PlaceSnapshot<'tcx> {
     pub at: SnapshotLocation,
 }
 
+impl<'tcx> std::fmt::Display for PlaceSnapshot<'tcx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} at {:?}", self.place, self.at)
+    }
+}
+
 impl<'tcx> PlaceSnapshot<'tcx> {
     pub fn new<T: Into<SnapshotLocation>>(place: Place<'tcx>, at: T) -> Self {
         PlaceSnapshot {

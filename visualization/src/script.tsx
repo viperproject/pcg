@@ -444,6 +444,40 @@ async function main() {
             />
             Show PCS
           </label>
+          <button
+            style={{ marginLeft: '10px' }}
+            onClick={async () => {
+              if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
+                return;
+              }
+              const stmtIterations = iterations[currentPoint.stmt].flatMap(
+                (phases) => phases
+              );
+              const filename =
+                selected >= stmtIterations.length
+                  ? stmtIterations[stmtIterations.length - 1][1]
+                  : stmtIterations[selected][1];
+              const dotFilePath = `data/${selectedFunction}/${filename}`;
+              const dotData = await fetchDotFile(dotFilePath);
+              Viz.instance().then((viz) => {
+                const svgElement = viz.renderSVGElement(dotData);
+                const popup = window.open("", `Dot Graph - ${filename}`, "width=800,height=600");
+                popup.document.head.innerHTML = `
+                  <style>
+                    body { margin: 0; }
+                    svg {
+                      width: 100vw;
+                      height: 100vh;
+                      display: block;
+                    }
+                  </style>
+                `;
+                popup.document.body.appendChild(svgElement);
+              });
+            }}
+          >
+            Open in New Window
+          </button>
           <br />
           <label>
             <input

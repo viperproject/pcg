@@ -33,6 +33,8 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
+const IMGCAT_DEBUG: bool = false;
+
 impl<'tcx> BorrowsGraph<'tcx> {
     pub fn contains_edge(&self, edge: &BorrowPCGEdgeKind<'tcx>) -> bool {
         self.0.iter().any(|e| e.kind() == edge)
@@ -337,12 +339,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.construct_coupling_graph(borrow_checker, repacker, exit_block);
         let other_coupling_graph =
             other.construct_coupling_graph(borrow_checker, repacker, exit_block);
-        // self_coupling_graph.render_with_imgcat();
-        // other_coupling_graph.render_with_imgcat();
+
+        if IMGCAT_DEBUG {
+            self_coupling_graph.render_with_imgcat();
+            other_coupling_graph.render_with_imgcat();
+        }
+
         let result = self_coupling_graph
             .union(&other_coupling_graph)
             .transitive_reduction();
-        // result.render_with_imgcat();
+
+        if IMGCAT_DEBUG {
+            result.render_with_imgcat();
+        }
+
         let mut changed = false;
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
@@ -381,20 +391,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         let mut changed = false;
 
-        // Optimization
-        if repacker
-            .body()
-            .basic_blocks
-            .dominators()
-            .dominates(other_block, self_block)
-        {
-            if other != self {
-                *self = other.clone();
-                return true;
-            } else {
-                return false;
-            }
-        }
+        // // Optimization
+        // if repacker
+        //     .body()
+        //     .basic_blocks
+        //     .dominators()
+        //     .dominates(other_block, self_block)
+        // {
+        //     if other != self {
+        //         *self = other.clone();
+        //         return true;
+        //     } else {
+        //         return false;
+        //     }
+        // }
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
@@ -442,6 +452,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
+        assert!(self.is_acyclic(repacker), "Graph became cyclic after join");
         changed
     }
 
@@ -608,7 +619,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub (crate) fn mut_pcs_elems<'slf, T: 'tcx>(&'slf mut self, mut f: impl FnMut(&mut T) -> bool) -> bool
+    pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(
+        &'slf mut self,
+        mut f: impl FnMut(&mut T) -> bool,
+    ) -> bool
     where
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
@@ -647,6 +661,51 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn add_path_condition(&mut self, pc: PathCondition) -> bool {
         self.mut_edges(|edge| edge.insert_path_condition(pc.clone()))
+    }
+
+    pub fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        let mut visited = FxHashSet::default();
+        let mut rec_stack = FxHashSet::default();
+
+        fn has_cycle<'tcx>(
+            graph: &BorrowsGraph<'tcx>,
+            node: PCGNode<'tcx>,
+            visited: &mut FxHashSet<PCGNode<'tcx>>,
+            rec_stack: &mut FxHashSet<PCGNode<'tcx>>,
+            repacker: PlaceRepacker<'_, 'tcx>,
+        ) -> bool {
+            if rec_stack.contains(&node) {
+                return true;
+            }
+
+            if visited.contains(&node) {
+                return false;
+            }
+
+            visited.insert(node.clone());
+            rec_stack.insert(node.clone());
+
+            for edge in graph.edges() {
+                if edge.blocks_node(node.clone(), repacker) {
+                    for blocked_node in edge.blocked_by_nodes(repacker) {
+                        if has_cycle(graph, blocked_node.into(), visited, rec_stack, repacker) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            rec_stack.remove(&node);
+            false
+        }
+
+        for root in self.roots(repacker) {
+            if has_cycle(self, root.into(), &mut visited, &mut rec_stack, repacker) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 

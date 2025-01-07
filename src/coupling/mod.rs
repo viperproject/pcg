@@ -77,7 +77,8 @@ where
         reduction
     }
 
-    fn to_dot_petgraph(&self) -> String {
+    fn to_dot_petgraph(&self) -> String
+    {
         let arena = bumpalo::Bump::new();
         let to_render: Graph<&str> = self.map(|e| {
             let node_name = format!("{}", e);

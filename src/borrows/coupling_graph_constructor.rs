@@ -53,7 +53,10 @@ impl<'tcx> CGNode<'tcx> {
 
 impl std::fmt::Display for CGNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            CGNode::RegionProjection(rp) => write!(f, "{}", rp),
+            CGNode::RemotePlace(rp) => write!(f, "{}", rp),
+        }
     }
 }
 

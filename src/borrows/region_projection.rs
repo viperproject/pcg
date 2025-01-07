@@ -18,6 +18,15 @@ pub enum PCGRegion {
     ReErased,
 }
 
+impl std::fmt::Display for PCGRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PCGRegion::RegionVid(vid) => write!(f, "{:?}", vid),
+            PCGRegion::ReErased => write!(f, "ReErased"),
+        }
+    }
+}
+
 impl PCGRegion {
     pub fn as_vid(&self) -> Option<RegionVid> {
         match self {
@@ -45,7 +54,7 @@ pub struct RegionProjection<'tcx> {
 
 impl<'tcx> fmt::Display for RegionProjection<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}↓{:?}", self.place, self.region)
+        write!(f, "{}↓{}", self.place, self.region)
     }
 }
 
