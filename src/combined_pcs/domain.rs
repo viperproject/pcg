@@ -22,6 +22,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
+        borrow_pcg_edge::PCGNode,
         domain::{MaybeOldPlace, MaybeRemotePlace},
         engine::BorrowsDomain,
         unblock_graph::UnblockGraph,
@@ -267,7 +268,9 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         let borrows = self.borrows.join(&other.borrows);
         let mut g = UnblockGraph::new();
         for root in self.borrows.states.after.roots(self.cgx.rp) {
-            if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root }) = root {
+            if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
+                root
+            {
                 match &self.fpcs.post_main[root.local] {
                     CapabilityLocal::Unallocated => {
                         g.unblock_node(root.into(), &self.borrows.after_state(), self.cgx.rp);

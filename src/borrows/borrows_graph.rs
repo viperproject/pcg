@@ -5,6 +5,7 @@ use rustc_interface::{
 use serde_json::json;
 
 use crate::{
+    borrows::domain::AbstractionType,
     coupling,
     free_pcs::CapabilityKind,
     rustc_interface,
@@ -34,7 +35,7 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
-const IMGCAT_DEBUG: bool = true;
+const IMGCAT_DEBUG: bool = false;
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub fn contains_edge(&self, edge: &BorrowPCGEdgeKind<'tcx>) -> bool {
@@ -74,8 +75,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn base_coupling_graph(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> coupling::Graph<CGNode<'tcx>> {
-        let mut graph = coupling::Graph::new();
+    ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
+        let mut graph = coupling::DisjointSetGraph::new();
         // TODO: For performance, we could not track the path in release mode,
         // we only use it to detect infinite loops
         #[derive(Clone)]
@@ -119,13 +120,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         while let Some(ef) = queue.pop() {
-            for edge in self.edges_blocking(ef.current(), repacker) {
-                for node in edge.blocked_by_nodes(repacker) {
-                    if let LocalNode::RegionProjection(rp) = node {
-                        if let Some(source) = ef.connect() {
-                            graph.add_edge(source, rp.into());
+            let edges_blocking = self.edges_blocking(ef.current(), repacker);
+            for edge in edges_blocking {
+                match edge.kind() {
+                    BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
+                        let inputs = abstraction_edge
+                            .inputs()
+                            .into_iter()
+                            .map(|node| node.into())
+                            .collect();
+                        let outputs = abstraction_edge
+                            .outputs()
+                            .into_iter()
+                            .map(|node| node.into())
+                            .collect();
+                        graph.add_edge(&inputs, &outputs);
+                    }
+                    _ => {
+                        for node in edge.blocked_by_nodes(repacker) {
+                            if let LocalNode::RegionProjection(rp) = node {
+                                if let Some(source) = ef.connect() {
+                                    graph.add_edge(
+                                        &vec![source].into_iter().collect(),
+                                        &vec![rp.into()].into_iter().collect(),
+                                    );
+                                }
+                            }
                         }
                     }
+                }
+                for node in edge.blocked_by_nodes(repacker) {
                     if let Some(ef) = ef.extend(node.into()) {
                         queue.push(ef);
                     }
@@ -242,6 +266,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
         candidates
     }
 
+    pub fn nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        self.edges()
+            .flat_map(|edge| {
+                edge.blocked_nodes(repacker).into_iter().chain(
+                    edge.blocked_by_nodes(repacker)
+                        .into_iter()
+                        .map(|node| node.into()),
+                )
+            })
+            .collect()
+    }
+
     pub fn leaf_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.leaf_edges(repacker)
             .into_iter()
@@ -249,25 +285,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub fn root_edges(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BorrowPCGEdge<'tcx>> {
-        self.0
-            .iter()
-            .filter(|edge| {
-                edge.blocked_places(repacker).iter().all(|p| match p {
-                    MaybeRemotePlace::Local(maybe_old_place) => {
-                        self.is_root(*maybe_old_place, repacker)
-                    }
-                    MaybeRemotePlace::Remote(_local) => true,
-                })
-            })
-            .cloned()
-            .collect::<FxHashSet<_>>()
-    }
-
-    pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.root_edges(repacker)
+    pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        self.nodes(repacker)
             .into_iter()
-            .flat_map(|edge| edge.blocked_places(repacker).into_iter())
+            .filter(|node| self.is_root(*node, repacker))
             .collect()
     }
 
@@ -281,17 +302,25 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .any(|edge| edge.blocks_node(blocked_node, repacker))
     }
 
-    pub fn is_root(&self, place: MaybeOldPlace<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        !self.has_edge_blocked_by(place.into(), repacker)
+    pub fn is_root<T: Into<PCGNode<'tcx>>>(
+        &self,
+        node: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        !self.has_edge_blocked_by(node.into(), repacker)
     }
 
     pub fn has_edge_blocked_by(
         &self,
-        node: LocalNode<'tcx>,
+        node: PCGNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.edges()
-            .any(|edge| edge.blocked_by_nodes(repacker).contains(&node))
+        match node.as_local_node() {
+            Some(node) => self
+                .edges()
+                .any(|edge| edge.blocked_by_nodes(repacker).contains(&node)),
+            None => false,
+        }
     }
 
     pub fn edges_blocked_by(
@@ -323,7 +352,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         borrow_checker: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
         block: BasicBlock,
-    ) -> coupling::Graph<CGNode<'tcx>> {
+    ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         let constructor = CouplingGraphConstructor::new(borrow_checker, repacker, block);
         constructor.construct_coupling_graph(self)
     }
@@ -346,10 +375,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             other_coupling_graph.render_with_imgcat();
         }
 
-        let result = self_coupling_graph
-            .union(&other_coupling_graph)
-            .transitive_reduction();
-
+        let mut result = self_coupling_graph;
+        result.merge(&other_coupling_graph);
         if IMGCAT_DEBUG {
             result.render_with_imgcat();
         }
@@ -358,9 +385,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
-                    vec![*blocked].into_iter().collect(),
-                    vec![assigned.as_region_projection().unwrap()]
+                    blocked.clone().into_iter().collect(),
+                    assigned
+                        .clone()
                         .into_iter()
+                        .map(|node| node.as_region_projection().unwrap())
                         .collect(),
                 ),
                 self_block,
@@ -369,14 +398,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if self.insert(abstraction) {
                 changed = true;
             }
-            match blocked.as_region_projection() {
-                Some(rp) => {
-                    for borrow in self.borrows_blocking(rp.place.project_deref(repacker).into()) {
-                        self.remove(&borrow.into(), DebugCtx::Other);
-                        changed = true;
+            for node in assigned {
+                match node.as_region_projection() {
+                    Some(rp) => {
+                        for borrow in self.borrows_blocking(rp.place.project_deref(repacker).into())
+                        {
+                            self.remove(&borrow.into(), DebugCtx::Other);
+                            changed = true;
+                        }
                     }
+                    None => (),
                 }
-                None => (),
             }
         }
         return changed;
@@ -391,6 +423,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
         region_liveness: &T,
     ) -> bool {
         let mut changed = false;
+
+        if IMGCAT_DEBUG {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                DotGraph::render_with_imgcat(&dot_graph).unwrap_or_else(|e| {
+                    eprintln!("Error rendering self graph: {}", e);
+                });
+            }
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
+                DotGraph::render_with_imgcat(&dot_graph).unwrap_or_else(|e| {
+                    eprintln!("Error rendering other graph: {}", e);
+                });
+            }
+        }
 
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {

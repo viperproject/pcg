@@ -1,94 +1,53 @@
 use petgraph::dot::{Config, Dot};
-use petgraph::graphmap::DiGraphMap;
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use petgraph::visit::EdgeRef;
+use petgraph::Direction;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::hash::Hash;
 
-#[derive(Clone, Debug)]
-pub struct Graph<N> {
-    edges: HashSet<(N, N)>, // Set of edges (from, to)
-}
-impl<N> Graph<N>
-where
-    N: Eq + Hash + Clone + Copy + Ord + fmt::Debug,
-{
-    /// Converts the custom Graph into a petgraph DiGraphMap
-    fn to_petgraph(&self) -> DiGraphMap<N, ()> {
-        let mut graph = DiGraphMap::<N, ()>::new();
-        for (from, to) in &self.edges {
-            graph.add_edge(*from, *to, ());
-        }
-        graph
-    }
+/// A DAG where each node is a set of elements of type `N`. Cycles are resolved
+/// by merging the nodes in the cycle into a single node. The graph is always in
+/// a transitively reduced form (see
+/// https://en.wikipedia.org/wiki/Transitive_reduction)
+pub struct DisjointSetGraph<N> {
+    inner: petgraph::Graph<BTreeSet<N>, ()>,
 }
 
-impl<N> Graph<N>
-where
-    N: Eq + Hash + Clone + Copy + fmt::Display,
-{
+impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
     pub fn new() -> Self {
-        Graph {
-            edges: HashSet::new(),
+        DisjointSetGraph {
+            inner: petgraph::Graph::new(),
         }
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &(N, N)> {
-        self.edges.iter()
+    pub fn edges(&self) -> impl Iterator<Item = (BTreeSet<N>, BTreeSet<N>)> + '_ {
+        self.inner.edge_references().map(|e| {
+            let source = self.inner.node_weight(e.source()).unwrap();
+            let target = self.inner.node_weight(e.target()).unwrap();
+            (
+                source.iter().cloned().collect(),
+                target.iter().cloned().collect(),
+            )
+        })
     }
 
-    pub fn union(&self, other: &Self) -> Self {
-        let mut new_edges = self.edges.clone();
-        new_edges.extend(other.edges.iter().cloned());
-        Graph { edges: new_edges }
-    }
-
-    pub fn transitive_reduction(&self) -> Self {
-        let mut reduction = self.clone();
-
-        // For each edge (u, v) in the graph
-        for &(u, v) in &self.edges {
-            // Skip if there's no need to process (u, v)
-            if u == v {
-                continue;
-            }
-
-            // Perform BFS to find all nodes reachable from 'v'
-            let mut visited = HashSet::new();
-            let mut queue = VecDeque::new();
-            queue.push_back(v);
-            visited.insert(v);
-
-            while let Some(current) = queue.pop_front() {
-                // If there's a direct edge from 'u' to 'current', and 'current' is not 'v'
-                if current != v && reduction.has_edge(&u, &current) {
-                    // Remove the redundant edge (u, current)
-                    reduction.remove_edge(&u, &current);
-                }
-
-                for &(from, to) in &self.edges {
-                    if from == current && !visited.contains(&to) {
-                        visited.insert(to);
-                        queue.push_back(to);
-                    }
-                }
-            }
-        }
-
-        reduction
-    }
-
-    fn to_dot_petgraph(&self) -> String
-    {
+    fn to_dot(&self) -> String {
         let arena = bumpalo::Bump::new();
-        let to_render: Graph<&str> = self.map(|e| {
-            let node_name = format!("{}", e);
-            let node_name = arena.alloc(node_name);
-            node_name.as_str()
-        });
-        let dot = format!(
-            "{:?}",
-            Dot::with_config(&to_render.to_petgraph(), &[Config::EdgeNoLabel])
+        let to_render: petgraph::Graph<&str, ()> = self.inner.clone().map(
+            |_, e| {
+                let node_name = format!(
+                    "{}\n",
+                    e.iter().fold(String::from("{"), |mut acc, x| {
+                        acc.push_str(&format!("{}\n", x));
+                        acc
+                    }) + "}"
+                );
+                let node_name = arena.alloc(node_name);
+                node_name.as_str()
+            },
+            |_, _| (),
         );
+        let dot = format!("{:?}", Dot::with_config(&to_render, &[Config::EdgeNoLabel]));
 
         // Insert 'rankdir=LR;' after the first '{'
         let mut lines: Vec<&str> = dot.lines().collect();
@@ -99,65 +58,177 @@ where
         lines.join("\n")
     }
 
-    pub fn map<F, T>(&self, f: F) -> Graph<T>
-    where
-        F: Fn(N) -> T,
-        T: Eq + Hash + Clone + Copy + Ord + fmt::Debug,
-    {
-        let new_edges = self
-            .edges
-            .iter()
-            .map(|(from, to)| (f(*from), f(*to)))
-            .collect();
-        Graph { edges: new_edges }
+    pub fn render_with_imgcat(&self) {
+        fn go<N: Copy + Ord + Clone + fmt::Display>(
+            graph: &DisjointSetGraph<N>,
+        ) -> Result<(), std::io::Error> {
+            let dot = graph.to_dot();
+            DotGraph::render_with_imgcat(&dot)
+        }
+
+        // This function is just for debugging, so we don't care if it fails
+        go(self).unwrap_or_else(|e| {
+            eprintln!("Error rendering graph: {}", e);
+        });
     }
 
-    pub fn add_edge(&mut self, from: N, to: N) {
+    pub fn node_count(&self) -> usize {
+        self.inner.node_count()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.inner.edge_count()
+    }
+
+    pub fn insert(&mut self, node: N) -> petgraph::prelude::NodeIndex {
+        if let Some(idx) = self.lookup(node) {
+            return idx;
+        }
+        self.inner.add_node(BTreeSet::from([node]))
+    }
+
+    pub fn merge_into_idx(
+        &mut self,
+        new_idx: petgraph::prelude::NodeIndex,
+        old_idx: petgraph::prelude::NodeIndex,
+    ) {
+        let old_node_data = self.inner.node_weight(old_idx).unwrap().clone();
+        let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap();
+        new_idx_weight.extend(old_node_data.into_iter());
+        let to_add = self
+            .inner
+            .edges_directed(old_idx, Direction::Incoming)
+            .filter(|e| e.source() != new_idx)
+            .map(|e| (e.source(), new_idx))
+            .chain(
+                self.inner
+                    .edges_directed(old_idx, Direction::Outgoing)
+                    .filter(|e| e.target() != new_idx)
+                    .map(|e| (new_idx, e.target())),
+            );
+        for (source, target) in to_add.collect::<Vec<_>>() {
+            self.inner.update_edge(source, target, ());
+        }
+        self.inner.remove_node(old_idx);
+    }
+
+    fn join_nodes(&mut self, nodes: &BTreeSet<N>) -> petgraph::prelude::NodeIndex {
+        let mut iter = nodes.iter().cloned();
+        let idx = self.insert(iter.next().unwrap());
+        while let Some(node) = iter.next() {
+            if let Some(idx2) = self.lookup(node)
+                && idx2 != idx
+            {
+                self.merge_into_idx(idx, idx2);
+            }
+        }
+        idx
+    }
+
+    pub fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
+        self.inner.node_indices().find(|idx| {
+            self.inner
+                .node_weight(*idx)
+                .map_or(false, |w| w.contains(&node))
+        })
+    }
+
+    pub fn merge(&mut self, other: &Self) {
+        for (source, target) in other.edges() {
+            let source_idx = self.join_nodes(&source);
+            let target_idx = self.join_nodes(&target);
+            self.inner.update_edge(source_idx, target_idx, ());
+        }
+        // Compute strongly connected components after merging
+        let sccs = petgraph::algo::kosaraju_scc(&self.inner);
+        for scc in sccs {
+            if scc.len() > 1 {
+                // Merge all nodes in the SCC into the first node
+                let first = scc[0];
+                for other in &scc[1..] {
+                    self.merge_into_idx(first, *other);
+                }
+            }
+        }
+
+        debug_assert!(
+            petgraph::algo::is_cyclic_directed(&self.inner) == false,
+            "Graph contains cycles after SCC computation"
+        );
+
+        debug_assert_eq!(
+            petgraph::algo::connected_components(&self.inner),
+            1,
+            "Graph has multiple connected components"
+        );
+
+        let toposort = petgraph::algo::toposort(&self.inner, None).unwrap();
+        let (g, revmap) =
+            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner, &toposort);
+
+        let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure::<_, u32>(&g);
+        self.inner.retain_edges(|slf, ei| {
+            let endpoints = slf.edge_endpoints(ei).unwrap();
+            tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()])
+        });
+
+        debug_assert_eq!(
+            petgraph::algo::connected_components(&self.inner),
+            1,
+            "Graph has multiple connected components"
+        );
+    }
+
+    pub fn add_edge(&mut self, from: &BTreeSet<N>, to: &BTreeSet<N>) {
         if from == to {
             // TODO: Should we handle these here?
             eprintln!("self-loop edge");
             return;
         }
-        self.edges.insert((from, to));
-    }
-
-    fn remove_edge(&mut self, from: &N, to: &N) {
-        self.edges.remove(&(*from, *to));
+        let from_idx = self.join_nodes(from);
+        let to_idx = self.join_nodes(to);
+        self.inner.update_edge(from_idx, to_idx, ());
     }
 
     /// Checks if a node is a leaf (i.e., has no outgoing edges)
-    fn is_leaf(&self, node: &N) -> bool {
-        !self.edges.iter().any(|(from, _)| from == node)
+    fn is_leaf(&self, node: N) -> bool {
+        let node_idx = self.lookup(node).unwrap();
+        self.inner.neighbors(node_idx).count() == 0
     }
 
     /// Returns all nodes in the graph
-    fn get_all_nodes(&self) -> HashSet<N> {
-        let mut nodes = HashSet::new();
-        for (from, to) in &self.edges {
-            nodes.insert(*from);
-            nodes.insert(*to);
-        }
-        nodes
-    }
+    // fn get_all_nodes(&self) -> HashSet<N> {
+    //     let mut nodes = HashSet::new();
+    //     for node_idx in self.inner.node_indices() {
+    //         if let Some(weight) = self.inner.node_weight(node_idx) {
+    //             nodes.insert(*weight);
+    //         }
+    //     }
+    //     nodes
+    // }
 
     /// Returns the leaf nodes (nodes with no incoming edges)
-    pub fn leaf_nodes(&self) -> Vec<N> {
-        let all_nodes = self.get_all_nodes();
-        all_nodes
-            .into_iter()
-            .filter(|node| self.is_leaf(node))
+    pub fn leaf_nodes(&self) -> Vec<BTreeSet<N>> {
+        self.inner
+            .node_indices()
+            .filter(|idx| self.inner.neighbors(*idx).count() == 0)
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
     }
 
     /// Checks if there is an edge from `from` to `to`
-    fn has_edge(&self, from: &N, to: &N) -> bool {
-        self.edges.contains(&(*from, *to))
+    fn has_edge(&self, from: N, to: N) -> bool {
+        let from_idx = self.lookup(from).unwrap();
+        let to_idx = self.lookup(to).unwrap();
+        self.inner.contains_edge(from_idx, to_idx)
     }
 
-    pub fn nodes_pointing_to(&self, node: N) -> HashSet<N> {
-        self.edges
-            .iter()
-            .filter_map(|(from, to)| if to == &node { Some(*from) } else { None })
+    pub fn nodes_pointing_to(&self, node: &BTreeSet<N>) -> Vec<BTreeSet<N>> {
+        let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
+        self.inner
+            .node_indices()
+            .filter(|idx| self.inner.contains_edge(*idx, node_idx))
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
     }
 }
@@ -177,49 +248,18 @@ impl<N: Ord> HyperEdge<N> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct HyperGraph<N> {
-    hyperedges: BTreeSet<HyperEdge<N>>,
-}
-
-impl<N: Ord> HyperGraph<N> {
-    pub fn edges(&self) -> impl Iterator<Item = &HyperEdge<N>> {
-        self.hyperedges.iter()
-    }
-}
-
-impl<N> fmt::Display for Graph<N>
+impl<N> fmt::Display for DisjointSetGraph<N>
 where
     N: Eq + Hash + Clone + fmt::Display + Copy + Ord + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (from, to) in &self.edges {
-            writeln!(f, "{} -> {}", from, to)?;
+        for edge in self.inner.edge_references() {
+            let source = self.inner.node_weight(edge.source()).unwrap();
+            let target = self.inner.node_weight(edge.target()).unwrap();
+            writeln!(f, "{:?} -> {:?}", source, target)?;
         }
         Ok(())
     }
 }
 
 use crate::visualization::dot_graph::DotGraph;
-
-impl<N> Graph<N>
-where
-    N: Eq + Hash + Clone + Copy + fmt::Display,
-{
-    /// Renders the graph using `dot` and displays it using `imgcat`.
-    /// Requires `dot` and `imgcat` to be installed and available in the system PATH.
-    /// If either is not installed, this function effectively does nothing.
-    pub fn render_with_imgcat(&self) {
-        fn go<N: Eq + Hash + Clone + Copy + fmt::Display>(
-            graph: &Graph<N>,
-        ) -> Result<(), std::io::Error> {
-            let dot = graph.to_dot_petgraph();
-            DotGraph::render_with_imgcat(&dot)
-        }
-
-        // This function is just for debugging, so we don't care if it fails
-        go(self).unwrap_or_else(|e| {
-            eprintln!("Error rendering graph: {}", e);
-        });
-    }
-}

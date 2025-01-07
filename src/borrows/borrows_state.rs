@@ -470,7 +470,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<MaybeRemotePlace<'tcx>> {
+    pub fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.graph.roots(repacker)
     }
 

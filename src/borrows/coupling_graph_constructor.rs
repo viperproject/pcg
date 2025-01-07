@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeSet};
 
 use crate::{coupling, rustc_interface::middle::mir::BasicBlock, utils::PlaceRepacker};
 
@@ -80,7 +80,7 @@ pub struct CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T> {
     liveness: &'regioncx T,
     repacker: PlaceRepacker<'mir, 'tcx>,
     block: BasicBlock,
-    coupling_graph: coupling::Graph<CGNode<'tcx>>,
+    coupling_graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
 }
 
 impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
@@ -95,28 +95,30 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
             liveness: region_liveness,
             repacker,
             block,
-            coupling_graph: coupling::Graph::new(),
+            coupling_graph: coupling::DisjointSetGraph::new(),
         }
     }
 
     fn add_edges_from(
         &mut self,
-        bg: &coupling::Graph<CGNode<'tcx>>,
-        bottom_connect: CGNode<'tcx>,
-        upper_candidate: CGNode<'tcx>,
+        bg: &coupling::DisjointSetGraph<CGNode<'tcx>>,
+        bottom_connect: &BTreeSet<CGNode<'tcx>>,
+        upper_candidate: &BTreeSet<CGNode<'tcx>>,
     ) {
-        let nodes = bg.nodes_pointing_to(upper_candidate);
+        let nodes = bg.nodes_pointing_to(&upper_candidate);
         if nodes.is_empty() {
             self.coupling_graph
                 .add_edge(upper_candidate, bottom_connect);
         }
         for node in nodes {
-            let is_dead = !self.liveness.is_live(node, self.block);
-            if node.is_old() || is_dead {
-                self.add_edges_from(bg, bottom_connect, node);
+            let should_include = node
+                .iter()
+                .any(|n| self.liveness.is_live(*n, self.block) && !n.is_old());
+            if !should_include {
+                self.add_edges_from(bg, &bottom_connect, &node);
             } else {
-                self.coupling_graph.add_edge(node, bottom_connect);
-                self.add_edges_from(bg, node, node);
+                self.coupling_graph.add_edge(&node, &bottom_connect);
+                self.add_edges_from(bg, &node, &node);
             }
         }
     }
@@ -124,10 +126,11 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
     pub fn construct_coupling_graph(
         mut self,
         bg: &BorrowsGraph<'tcx>,
-    ) -> coupling::Graph<CGNode<'tcx>> {
+    ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         let full_graph = bg.base_coupling_graph(self.repacker);
-        for node in full_graph.leaf_nodes() {
-            self.add_edges_from(&full_graph, node, node)
+        let leaf_nodes = full_graph.leaf_nodes();
+        for node in leaf_nodes {
+            self.add_edges_from(&full_graph, &node, &node)
         }
         self.coupling_graph
     }
