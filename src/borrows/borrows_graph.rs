@@ -9,6 +9,7 @@ use crate::{
     free_pcs::CapabilityKind,
     rustc_interface,
     utils::{Place, PlaceRepacker},
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use super::{
@@ -33,7 +34,7 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
-const IMGCAT_DEBUG: bool = false;
+const IMGCAT_DEBUG: bool = true;
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub fn contains_edge(&self, edge: &BorrowPCGEdgeKind<'tcx>) -> bool {
@@ -391,20 +392,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         let mut changed = false;
 
-        // // Optimization
-        // if repacker
-        //     .body()
-        //     .basic_blocks
-        //     .dominators()
-        //     .dominates(other_block, self_block)
-        // {
-        //     if other != self {
-        //         *self = other.clone();
-        //         return true;
-        //     } else {
-        //         return false;
-        //     }
-        // }
         let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
@@ -452,7 +439,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        assert!(self.is_acyclic(repacker), "Graph became cyclic after join");
+        if !self.is_acyclic(repacker) {
+            if IMGCAT_DEBUG && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                let _ = DotGraph::render_with_imgcat(&dot_graph);
+            }
+            panic!("Graph became cyclic after join");
+        }
         changed
     }
 
