@@ -103,12 +103,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             pub fn extend(&self, node: PCGNode<'tcx>) -> Option<Self> {
                 let mut result = self.clone();
                 if result.path.contains(&node) {
-                    // TODO: Right now there are some nodes that may point to themselves
-                    // these are ignored for now, but we should figure out why they exist
-                    // let dot_graph = generate_borrows_dot_graph(repacker, borrows_graph).unwrap();
-                    // DotGraph::render_with_imgcat(&dot_graph).unwrap();
-                    // panic!("Cycle detected: {:?} already in {:?}", node, result.path);
-                    return None;
+                    panic!("Cycle detected: {:?} already in {:?}", node, result.path);
                 }
                 result.path.push(node);
                 Some(result)

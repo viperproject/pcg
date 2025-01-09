@@ -189,32 +189,11 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        if from == to {
-            // TODO: Should we handle these here?
-            eprintln!("self-loop edge");
-            return;
-        }
         let from_idx = self.join_nodes(from);
         let to_idx = self.join_nodes(to);
         self.inner.update_edge(from_idx, to_idx, ());
     }
 
-    /// Checks if a node is a leaf (i.e., has no outgoing edges)
-    fn is_leaf(&self, node: N) -> bool {
-        let node_idx = self.lookup(node).unwrap();
-        self.inner.neighbors(node_idx).count() == 0
-    }
-
-    /// Returns all nodes in the graph
-    // fn get_all_nodes(&self) -> HashSet<N> {
-    //     let mut nodes = HashSet::new();
-    //     for node_idx in self.inner.node_indices() {
-    //         if let Some(weight) = self.inner.node_weight(node_idx) {
-    //             nodes.insert(*weight);
-    //         }
-    //     }
-    //     nodes
-    // }
 
     /// Returns the leaf nodes (nodes with no incoming edges)
     pub fn leaf_nodes(&self) -> Vec<BTreeSet<N>> {
@@ -223,13 +202,6 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             .filter(|idx| self.inner.neighbors(*idx).count() == 0)
             .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
-    }
-
-    /// Checks if there is an edge from `from` to `to`
-    fn has_edge(&self, from: N, to: N) -> bool {
-        let from_idx = self.lookup(from).unwrap();
-        let to_idx = self.lookup(to).unwrap();
-        self.inner.contains_edge(from_idx, to_idx)
     }
 
     pub fn nodes_pointing_to(&self, node: &BTreeSet<N>) -> Vec<BTreeSet<N>> {
