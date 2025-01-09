@@ -116,9 +116,8 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
         let mut iter = nodes.iter().cloned();
         let idx = self.insert(iter.next().unwrap());
         while let Some(node) = iter.next() {
-            if let Some(idx2) = self.lookup(node)
-                && idx2 != idx
-            {
+            let idx2 = self.insert(node);
+            if idx2 != idx {
                 self.merge_into_idx(idx, idx2);
             }
         }
@@ -137,7 +136,9 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
         for (source, target) in other.edges() {
             let source_idx = self.join_nodes(&source);
             let target_idx = self.join_nodes(&target);
-            self.inner.update_edge(source_idx, target_idx, ());
+            if source_idx != target_idx {
+                self.inner.update_edge(source_idx, target_idx, ());
+            }
         }
         // Compute strongly connected components after merging
         let sccs = petgraph::algo::kosaraju_scc(&self.inner);
@@ -180,6 +181,14 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
     }
 
     pub fn add_edge(&mut self, from: &BTreeSet<N>, to: &BTreeSet<N>) {
+        assert!(
+            from != to,
+            "Self-loop edge {}",
+            from.iter()
+                .map(|x| format!("{{{}}}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         if from == to {
             // TODO: Should we handle these here?
             eprintln!("self-loop edge");

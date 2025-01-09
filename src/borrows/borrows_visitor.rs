@@ -1,21 +1,21 @@
 use std::{collections::BTreeSet, rc::Rc};
 
 use crate::rustc_interface::{
-        ast::Mutability,
-        borrowck::{
-            borrow_set::BorrowSet,
-            consumers::{
-                BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-            },
+    ast::Mutability,
+    borrowck::{
+        borrow_set::BorrowSet,
+        consumers::{
+            BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
         },
-        middle::{
-            mir::{
-                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
-                Statement, StatementKind, Terminator, TerminatorKind,
-            },
-            ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
+    },
+    middle::{
+        mir::{
+            visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue, Statement,
+            StatementKind, Terminator, TerminatorKind,
         },
-    };
+        ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
+    },
+};
 
 use crate::{
     borrows::{domain::AbstractionBlockEdge, region_abstraction::AbstractionEdge},
@@ -493,10 +493,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                        self.state
-                            .states
-                            .after
-                            .set_latest(target, location, self.repacker);
+                    self.state
+                        .states
+                        .after
+                        .set_latest(target, location, self.repacker);
                     if !target.is_owned(self.repacker) {
                         self.state
                             .states

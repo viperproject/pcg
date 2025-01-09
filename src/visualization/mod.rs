@@ -189,6 +189,10 @@ enum GraphEdge {
         region_projection: NodeId,
         direction: RegionProjectionMemberDirection,
     },
+    CoupledEdge {
+        source: NodeId,
+        target: NodeId,
+    },
 }
 
 impl GraphEdge {
@@ -245,7 +249,14 @@ impl GraphEdge {
                     options: EdgeOptions::directed(EdgeDirection::Forward)
                         .with_color("purple".to_string()),
                 }
-            }
+            },
+            GraphEdge::CoupledEdge { source, target } => DotEdge {
+                from: source.to_string(),
+                to: target.to_string(),
+                options: EdgeOptions::undirected()
+                    .with_color("red".to_string())
+                    .with_style("dashed".to_string()),
+            },
         }
     }
 }

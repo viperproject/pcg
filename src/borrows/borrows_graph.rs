@@ -35,7 +35,8 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowsGraph<'tcx>(FxHashSet<BorrowPCGEdge<'tcx>>);
 
-const IMGCAT_DEBUG: bool = false;
+const COUPLING_IMGCAT_DEBUG: bool = false;
+const BORROWS_IMGCAT_DEBUG: bool = false;
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub fn contains_edge(&self, edge: &BorrowPCGEdgeKind<'tcx>) -> bool {
@@ -134,6 +135,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .into_iter()
                             .map(|node| node.into())
                             .collect();
+                        eprintln!("Adding abstraction edge: {:?} -> {:?}", inputs, outputs);
                         graph.add_edge(&inputs, &outputs);
                     }
                     _ => {
@@ -370,18 +372,41 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let other_coupling_graph =
             other.construct_coupling_graph(borrow_checker, repacker, exit_block);
 
-        if IMGCAT_DEBUG {
+        if COUPLING_IMGCAT_DEBUG {
             self_coupling_graph.render_with_imgcat();
             other_coupling_graph.render_with_imgcat();
         }
 
         let mut result = self_coupling_graph;
         result.merge(&other_coupling_graph);
-        if IMGCAT_DEBUG {
+        if COUPLING_IMGCAT_DEBUG {
             result.render_with_imgcat();
         }
 
+        // Collect existing abstraction edges at this block
+        let existing_edges: FxHashSet<_> = self
+            .0
+            .iter()
+            .filter(|edge| {
+                if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
+                    if let AbstractionType::Loop(loop_abstraction) =
+                        &abstraction_edge.abstraction_type
+                    {
+                        loop_abstraction.location().block == self_block
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        // Create new abstraction edges from the merged coupling graph
+        let mut new_edges = FxHashSet::default();
         let mut changed = false;
+
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
@@ -395,9 +420,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self_block,
             )
             .to_borrow_pcg_edge(PathConditions::new(self_block));
-            if self.insert(abstraction) {
+            new_edges.insert(abstraction.clone());
+
+            if !existing_edges.contains(&abstraction) {
+                self.insert(abstraction);
                 changed = true;
             }
+
             for node in assigned {
                 match node.as_region_projection() {
                     Some(rp) => {
@@ -411,7 +440,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        return changed;
+
+        // Remove existing edges that aren't in the new abstraction
+        for edge in existing_edges {
+            if !new_edges.contains(&edge) {
+                self.remove(&edge, DebugCtx::Other);
+                changed = true;
+            }
+        }
+
+        changed
     }
 
     pub fn join<T: BorrowCheckerInterface<'tcx>>(
@@ -424,7 +462,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         let mut changed = false;
 
-        if IMGCAT_DEBUG {
+        if BORROWS_IMGCAT_DEBUG {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                 DotGraph::render_with_imgcat(&dot_graph).unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {}", e);
@@ -485,7 +523,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
         if !self.is_acyclic(repacker) {
-            if IMGCAT_DEBUG && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+            if BORROWS_IMGCAT_DEBUG
+                && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self)
+            {
                 let _ = DotGraph::render_with_imgcat(&dot_graph);
             }
             panic!("Graph became cyclic after join");

@@ -4,10 +4,7 @@ use crate::{
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
-        domain::{
-            MaybeOldPlace, MaybeRemotePlace,
-            RemotePlace,
-        },
+        domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
         region_abstraction::AbstractionEdge,
         region_projection::RegionProjection,
         unblock_graph::UnblockGraph,
@@ -181,10 +178,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_region_abstraction(
-        &mut self,
-        region_abstraction: &AbstractionEdge<'tcx>,
-    ) {
+    fn insert_region_abstraction(&mut self, region_abstraction: &AbstractionEdge<'tcx>) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 
@@ -203,6 +197,18 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                     self.edges.insert(GraphEdge::AbstractEdge {
                         blocked: *input,
                         blocking: *output,
+                    });
+                }
+            }
+        }
+
+        // Add undirected edges between all outputs
+        for output1 in output_nodes.iter() {
+            for output2 in output_nodes.iter() {
+                if output1 < output2 {
+                    self.edges.insert(GraphEdge::CoupledEdge {
+                        source: *output1,
+                        target: *output2,
                     });
                 }
             }
@@ -381,9 +387,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 }
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
-                let _r = self
-                    .constructor()
-                    .insert_region_abstraction(abstraction);
+                let _r = self.constructor().insert_region_abstraction(abstraction);
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 let place = self.insert_maybe_remote_place(member.place);

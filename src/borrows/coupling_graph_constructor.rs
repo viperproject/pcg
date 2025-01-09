@@ -106,17 +106,18 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         upper_candidate: &BTreeSet<CGNode<'tcx>>,
     ) {
         let nodes = bg.nodes_pointing_to(&upper_candidate);
-        if nodes.is_empty() {
+        if nodes.is_empty() && upper_candidate != bottom_connect {
             self.coupling_graph
                 .add_edge(upper_candidate, bottom_connect);
         }
         for node in nodes {
             let should_include = node
                 .iter()
-                .any(|n| self.liveness.is_live(*n, self.block) && !n.is_old());
+                .any(|n| /* self.liveness.is_live(*n, self.block) && */ !n.is_old());
             if !should_include {
                 self.add_edges_from(bg, &bottom_connect, &node);
             } else {
+                eprintln!("Include edge: {:?} -> {:?}", node, bottom_connect);
                 self.coupling_graph.add_edge(&node, &bottom_connect);
                 self.add_edges_from(bg, &node, &node);
             }
