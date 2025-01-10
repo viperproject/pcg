@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BlockingNode, PCGNode},
+    borrow_pcg_edge::{BlockingNode, PCGNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,

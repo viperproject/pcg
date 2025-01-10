@@ -199,11 +199,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         if output_lifetimes.is_empty() {
             return;
         }
-        let param_env = self.repacker.tcx().param_env(func_def_id);
         let mut edges = vec![];
 
-        for (idx, ty) in sig.inputs().iter().enumerate() {
-            let input_place: utils::Place<'tcx> = match args[idx].place() {
+        for arg in args.iter() {
+            let input_place: utils::Place<'tcx> = match arg.place() {
                 Some(place) => place.into(),
                 None => continue,
             };
@@ -211,16 +210,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 input_place,
                 self.state.states.after.get_latest(input_place),
             ));
+            let ty = input_place.ty(self.repacker).ty;
             let ty = match ty.kind() {
                 ty::TyKind::Ref(region, ty, m) => {
                     if m.is_mut() {
-                        for output in self.matches_for_input_lifetime(
-                            *region,
-                            param_env,
-                            substs,
-                            sig.output(),
-                            destination.into(),
-                        ) {
+                        for output in self
+                            .projections_borrowing_from_input_lifetime(*region, destination.into())
+                        {
                             let input_rp = input_place.region_projection(0, self.repacker);
                             let mut ug = UnblockGraph::new();
                             ug.unblock_node(
@@ -241,16 +237,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     *ty
                 }
-                _ => *ty,
+                _ => ty,
             };
             for (lifetime_idx, input_lifetime) in extract_regions(ty).into_iter().enumerate() {
-                for output in self.matches_for_input_lifetime(
-                    input_lifetime,
-                    param_env,
-                    substs,
-                    sig.output(),
-                    destination.into(),
-                ) {
+                for output in self
+                    .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
+                {
                     edges.push(AbstractionBlockEdge::new(
                         vec![input_place
                             .region_projection(lifetime_idx, self.repacker)
@@ -294,28 +286,20 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
-    fn matches_for_input_lifetime(
+    fn projections_borrowing_from_input_lifetime(
         &self,
         input_lifetime: ty::Region<'tcx>,
-        param_env: ty::ParamEnv<'tcx>,
-        _substs: ty::GenericArgsRef<'tcx>,
-        output_ty: ty::Ty<'tcx>,
         output_place: utils::Place<'tcx>,
     ) -> Vec<AbstractionOutputTarget<'tcx>> {
         let mut result = vec![];
-        let output_ty = match output_ty.kind() {
-            ty::TyKind::Ref(output_lifetime, ty, Mutability::Mut) => {
-                if outlives_in_param_env(input_lifetime, *output_lifetime, param_env) {
-                    result.push(output_place.region_projection(0, self.repacker));
-                }
-                *ty
-            }
-            _ => output_ty,
-        };
+        let output_ty = output_place.ty(self.repacker).ty;
         for (output_lifetime_idx, output_lifetime) in
             extract_regions(output_ty).into_iter().enumerate()
         {
-            if outlives_in_param_env(input_lifetime, output_lifetime, param_env) {
+            if let Some(input_vid) = get_vid(&input_lifetime)
+                && let Some(output_vid) = get_vid(&output_lifetime)
+                && self.outlives(input_vid, output_vid)
+            {
                 result.push(output_place.region_projection(output_lifetime_idx, self.repacker));
             }
         }
@@ -325,28 +309,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     fn minimize(&mut self, location: Location) {
         self.state.states.after.minimize(self.repacker, location);
     }
-}
-
-fn outlives_in_param_env<'tcx>(
-    input_lifetime: ty::Region<'tcx>,
-    output_lifetime: ty::Region<'tcx>,
-    param_env: ty::ParamEnv<'tcx>,
-) -> bool {
-    if input_lifetime == output_lifetime {
-        return true;
-    }
-    for bound in param_env.caller_bounds() {
-        match bound.as_region_outlives_clause() {
-            Some(outlives) => {
-                let outlives = outlives.no_bound_vars().unwrap();
-                if outlives.0 == input_lifetime && outlives.1 == output_lifetime {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-    }
-    false
 }
 
 pub fn get_vid(region: &Region) -> Option<RegionVid> {

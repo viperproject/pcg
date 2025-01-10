@@ -1,7 +1,7 @@
 use petgraph::dot::{Config, Dot};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
