@@ -19,7 +19,9 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor},
+    coupling_graph_constructor::{
+        BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
+    },
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
         AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
@@ -133,7 +135,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         graph.add_edge(&inputs, &outputs);
                     }
                     _ => {
-
                         // RegionProjectionMember edges may contain coupled
                         // nodes (via `[RegionProjectionMember.projections]`)
                         // These nodes may not have any edges in the coupling
@@ -427,20 +428,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 .iter()
                 .flat_map(|node| node.as_region_projection())
                 .collect::<Vec<_>>();
-            let edges_to_move = rps
+
+            // e.g. for place r: &'r mut T, if we have the region projection
+            // r↓'r, the blocked place is *r.
+            // TODO: Handle the general case, e.g r: (&'a mut T, &'b mut U)
+            let cg_places = rps
                 .iter()
-                .flat_map(|rp| {
-                    self.borrows_blocked_by(rp.deref(repacker).unwrap())
+                .flat_map(|rp| rp.deref(repacker))
+                .collect::<Vec<_>>();
+
+            let edges_to_move = cg_places
+                .iter()
+                .flat_map(|p| {
+                    self.borrows_blocked_by(*p)
                         .into_iter()
-                        .chain(other.borrows_blocked_by(rp.deref(repacker).unwrap()))
+                        .chain(other.borrows_blocked_by(*p))
                 })
                 .collect::<Vec<_>>();
             for edge in edges_to_move {
-
                 // If this edge would become a loop, it can be removed.
-                if rps
+                if cg_places
                     .iter()
-                    .all(|rp| rp.deref(repacker) != edge.value.blocked_place.as_local_place())
+                    .all(|p| Some(*p) != edge.value.blocked_place.as_local_place())
                 {
                     let new_edge_kind =
                         BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
