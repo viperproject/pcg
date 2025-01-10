@@ -41,7 +41,7 @@ impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
         match region.kind() {
             ty::RegionKind::ReVar(vid) => PCGRegion::RegionVid(vid),
             ty::RegionKind::ReErased => PCGRegion::ReErased,
-            _ => todo!(),
+            other => todo!("{:?}", other),
         }
     }
 }
