@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
 use crate::utils::PlaceRepacker;
 

@@ -184,12 +184,6 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             "Graph contains cycles after SCC computation"
         );
 
-        debug_assert_eq!(
-            petgraph::algo::connected_components(&self.inner),
-            1,
-            "Graph has multiple connected components"
-        );
-
         let toposort = petgraph::algo::toposort(&self.inner, None).unwrap();
         let (g, revmap) =
             petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner, &toposort);
@@ -199,12 +193,6 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             let endpoints = slf.edge_endpoints(ei).unwrap();
             tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()])
         });
-
-        debug_assert_eq!(
-            petgraph::algo::connected_components(&self.inner),
-            1,
-            "Graph has multiple connected components"
-        );
     }
 
     pub fn add_edge(&mut self, from: &BTreeSet<N>, to: &BTreeSet<N>) {

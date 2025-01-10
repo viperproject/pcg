@@ -159,21 +159,6 @@ impl<'tcx> DerefExpansion<'tcx> {
         blocked_nodes
     }
 
-    pub fn region_projection_edges(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
-        let mut edges = FxHashSet::default();
-        for rp in self.expansion(repacker).iter() {
-            edges.extend(RegionProjection::connections_between_places(
-                self.base(),
-                rp.clone(),
-                repacker,
-            ));
-        }
-        edges
-    }
-
     pub fn mut_base(&mut self) -> &mut MaybeOldPlace<'tcx> {
         match self {
             DerefExpansion::OwnedExpansion(owned) => &mut owned.base,

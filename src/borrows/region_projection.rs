@@ -66,20 +66,18 @@ impl<'tcx> RegionProjection<'tcx> {
     /// Returns `true` iff the place is a mutable reference, or if the place is
     /// a mutable struct.
     pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        self.place.ref_mutability(repacker).unwrap_or(
-            if {
-                self.place
-                    .place()
-                    .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
-                    .unwrap()
-                    .is_local_mutation_allowed
-                    == crate::utils::LocalMutationIsAllowed::Yes
-            } {
+        self.place.ref_mutability(repacker).unwrap_or_else(|| {
+            if let Ok(root_place) = self
+                .place
+                .place()
+                .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
+                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
+            {
                 Mutability::Mut
             } else {
                 Mutability::Not
-            },
-        )
+            }
+        })
     }
 
     pub fn new(region: PCGRegion, place: MaybeOldPlace<'tcx>) -> Self {
