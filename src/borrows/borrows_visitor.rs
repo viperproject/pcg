@@ -25,6 +25,7 @@ use crate::{
 
 use super::{
     borrow_pcg_edge::BlockedNode,
+    coupling_graph_constructor::Coupled,
     domain::MaybeOldPlace,
     path_condition::PathConditions,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
@@ -282,7 +283,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     self.state.states.after.add_region_projection_member(
                         RegionProjectionMember::new(
                             place.into(),
-                            output,
+                            Coupled(vec![output]),
                             RegionProjectionMemberDirection::PlaceBlocksProjection,
                         ),
                         PathConditions::AtBlock(location.block),
@@ -536,7 +537,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                                     self.state.states.after.add_region_projection_member(
                                                         RegionProjectionMember::new(
                                                             operand_place.into(),
-                                                            proj,
+                                                            Coupled(vec![proj]),
                                                             RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                                         ),
                                                         super::path_condition::PathConditions::AtBlock(location.block),
@@ -662,10 +663,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | &Discriminant(place)
             | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
-                if self.stage == StatementStage::Operands
-                    && self.preparing
-                    && !place.is_owned(self.repacker)
-                {
+                if self.stage == StatementStage::Operands && self.preparing {
                     self.ensure_expansion_to_exactly(place, location, None)
                 }
             }

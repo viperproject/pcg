@@ -391,17 +391,36 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 let place = self.insert_maybe_remote_place(member.place);
-                let region_projection = self.constructor().insert_region_projection_node(
-                    member.projection,
-                    capabilities.get(member.projection),
-                );
-                self.constructor()
-                    .edges
-                    .insert(GraphEdge::RegionProjectionMemberEdge {
-                        place,
-                        region_projection,
-                        direction: member.direction(),
-                    });
+                for projection in member.projections.iter() {
+                    let region_projection = self
+                        .constructor()
+                        .insert_region_projection_node(*projection, capabilities.get(*projection));
+                    self.constructor()
+                        .edges
+                        .insert(GraphEdge::RegionProjectionMemberEdge {
+                            place,
+                            region_projection,
+                            direction: member.direction(),
+                        });
+                }
+                // Add undirected edges between all projections since they're coupled
+                let projections: Vec<_> = member
+                    .projections
+                    .iter()
+                    .map(|p| {
+                        self.constructor()
+                            .insert_region_projection_node(*p, capabilities.get(*p))
+                    })
+                    .collect();
+
+                for (i, &proj1) in projections.iter().enumerate() {
+                    for &proj2 in projections.iter().skip(i + 1) {
+                        self.constructor().edges.insert(GraphEdge::CoupledEdge {
+                            source: proj1,
+                            target: proj2,
+                        });
+                    }
+                }
             }
         }
     }

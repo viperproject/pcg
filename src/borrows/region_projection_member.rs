@@ -1,7 +1,10 @@
+use std::collections::BTreeSet;
+
 use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
 use crate::utils::PlaceRepacker;
 
 use super::borrow_pcg_edge::{LocalNode, PCGNode};
+use super::coupling_graph_constructor::Coupled;
 use super::edge_data::EdgeData;
 use super::{
     domain::{MaybeOldPlace, MaybeRemotePlace},
@@ -17,29 +20,36 @@ pub enum RegionProjectionMemberDirection {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {
     pub place: MaybeRemotePlace<'tcx>,
-    pub projection: RegionProjection<'tcx>,
+    /// *Coupled* region projections;
+    pub projections: Coupled<RegionProjection<'tcx>>,
     direction: RegionProjectionMemberDirection,
 }
 
 impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
     fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
-        let blocked_by_node = match self.direction {
-            RegionProjectionMemberDirection::ProjectionBlocksPlace => {
-                LocalNode::RegionProjection(self.projection)
-            }
+        match self.direction {
+            RegionProjectionMemberDirection::ProjectionBlocksPlace => self
+                .projections
+                .iter()
+                .map(|p| LocalNode::RegionProjection(*p))
+                .collect(),
             RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                LocalNode::Place(self.place.as_local_place().unwrap())
+                vec![LocalNode::Place(self.place.as_local_place().unwrap())]
+                    .into_iter()
+                    .collect()
             }
-        };
-        vec![blocked_by_node].into_iter().collect()
+        }
     }
 
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        let blocked = match self.direction {
-            RegionProjectionMemberDirection::ProjectionBlocksPlace => self.place.into(),
-            RegionProjectionMemberDirection::PlaceBlocksProjection => self.projection.into(),
-        };
-        vec![blocked].into_iter().collect()
+        match self.direction {
+            RegionProjectionMemberDirection::ProjectionBlocksPlace => {
+                vec![self.place.into()].into_iter().collect()
+            }
+            RegionProjectionMemberDirection::PlaceBlocksProjection => {
+                self.projections.iter().map(|p| (*p).into()).collect()
+            }
+        }
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -49,26 +59,22 @@ impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
 
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for RegionProjectionMember<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
-        vec![&mut self.projection]
+        self.projections.iter_mut().collect()
     }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut vec = self.place.pcs_elems();
-        vec.extend(self.projection.pcs_elems());
+        vec.extend(self.projections.iter_mut().flat_map(|p| p.pcs_elems()));
         vec
     }
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    /// Returns `true` iff the lifetime projection is mutable
+    /// Returns `true` iff the lifetime projections are mutable
     pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        self.projection.mutability(repacker)
-    }
-
-    pub fn projection_index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
-        self.projection.index(repacker)
+        self.projections.mutability(repacker)
     }
 
     pub fn direction(&self) -> RegionProjectionMemberDirection {
@@ -77,12 +83,12 @@ impl<'tcx> RegionProjectionMember<'tcx> {
 
     pub fn new(
         place: MaybeRemotePlace<'tcx>,
-        projection: RegionProjection<'tcx>,
+        projections: Coupled<RegionProjection<'tcx>>,
         direction: RegionProjectionMemberDirection,
     ) -> Self {
         Self {
             place,
-            projection,
+            projections,
             direction,
         }
     }

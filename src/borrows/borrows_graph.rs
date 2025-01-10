@@ -19,7 +19,7 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor},
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{
         AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
@@ -29,7 +29,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection_member::RegionProjectionMember,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -130,10 +130,25 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .into_iter()
                             .map(|node| node.into())
                             .collect();
-                        eprintln!("Adding abstraction edge: {:?} -> {:?}", inputs, outputs);
                         graph.add_edge(&inputs, &outputs);
                     }
                     _ => {
+
+                        // RegionProjectionMember edges may contain coupled
+                        // nodes (via `[RegionProjectionMember.projections]`)
+                        // These nodes may not have any edges in the coupling
+                        // graph but must be included anyway.
+                        if let BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) =
+                            edge.kind()
+                        {
+                            graph.insert_endpoint(
+                                region_projection_member
+                                    .projections
+                                    .iter()
+                                    .map(|rp| (*rp).into())
+                                    .collect(),
+                            );
+                        }
                         for node in edge.blocked_by_nodes(repacker) {
                             if let LocalNode::RegionProjection(rp) = node {
                                 if let Some(source) = ef.connect() {
@@ -402,6 +417,43 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut new_edges = FxHashSet::default();
         let mut changed = false;
 
+        // Borrow edges originally going through individual region projection
+        // nodes should be moved to the corresponding coupled nodes.
+        // TODO: This currently is only applied to isolated endpoints but should
+        // probably be applied to all endpoints.
+        // TODO: Make sure `changed` is set correctly.
+        for isolated in result.isolated_endpoints() {
+            let rps = isolated
+                .iter()
+                .flat_map(|node| node.as_region_projection())
+                .collect::<Vec<_>>();
+            let edges_to_move = rps
+                .iter()
+                .flat_map(|rp| {
+                    self.borrows_blocked_by(rp.deref(repacker).unwrap())
+                        .into_iter()
+                        .chain(other.borrows_blocked_by(rp.deref(repacker).unwrap()))
+                })
+                .collect::<Vec<_>>();
+            for edge in edges_to_move {
+
+                // If this edge would become a loop, it can be removed.
+                if rps
+                    .iter()
+                    .all(|rp| rp.deref(repacker) != edge.value.blocked_place.as_local_place())
+                {
+                    let new_edge_kind =
+                        BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
+                            edge.value.blocked_place,
+                            Coupled(rps.clone()),
+                            RegionProjectionMemberDirection::ProjectionBlocksPlace,
+                        ));
+                    self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));
+                }
+                self.remove(&edge.into(), DebugCtx::Other);
+            }
+        }
+
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
@@ -420,19 +472,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if !existing_edges.contains(&abstraction) {
                 self.insert(abstraction);
                 changed = true;
-            }
-
-            for node in assigned {
-                match node.as_region_projection() {
-                    Some(rp) => {
-                        for borrow in self.borrows_blocking(rp.place.project_deref(repacker).into())
-                        {
-                            self.remove(&borrow.into(), DebugCtx::Other);
-                            changed = true;
-                        }
-                    }
-                    None => (),
-                }
             }
         }
 
@@ -459,31 +498,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         if BORROWS_IMGCAT_DEBUG {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                DotGraph::render_with_imgcat(&dot_graph).unwrap_or_else(|e| {
+                DotGraph::render_with_imgcat(&dot_graph, "Self graph:").unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {}", e);
                 });
             }
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
-                DotGraph::render_with_imgcat(&dot_graph).unwrap_or_else(|e| {
+                DotGraph::render_with_imgcat(&dot_graph, "Other graph:").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {}", e);
                 });
             }
         }
 
-        let our_edges = self.0.clone();
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
             if exit_blocks.len() >= 1 {
-                return self.join_loop(
-                    other,
-                    self_block,
-                    exit_blocks[0],
-                    repacker,
-                    region_liveness,
-                );
+                let result =
+                    self.join_loop(other, self_block, exit_blocks[0], repacker, region_liveness);
+                if BORROWS_IMGCAT_DEBUG {
+                    if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                        DotGraph::render_with_imgcat(&dot_graph, "After join (loop):")
+                            .unwrap_or_else(|e| {
+                                eprintln!("Error rendering self graph: {}", e);
+                            });
+                    }
+                }
+                assert!(self.is_acyclic(repacker), "Graph became cyclic after join");
+                return result;
             }
             // TODO: Handle multiple exit blocks
         }
+        let our_edges = self.0.clone();
         for other_edge in other.0.iter() {
             match our_edges.iter().find(|e| e.kind() == other_edge.kind()) {
                 Some(our_edge) => {
@@ -517,14 +561,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        if !self.is_acyclic(repacker) {
-            if BORROWS_IMGCAT_DEBUG
-                && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self)
-            {
-                let _ = DotGraph::render_with_imgcat(&dot_graph);
+
+        if BORROWS_IMGCAT_DEBUG {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                DotGraph::render_with_imgcat(&dot_graph, "After join:").unwrap_or_else(|e| {
+                    eprintln!("Error rendering self graph: {}", e);
+                });
             }
-            panic!("Graph became cyclic after join");
         }
+
+        assert!(self.is_acyclic(repacker), "Graph became cyclic after join");
         changed
     }
 
@@ -590,9 +636,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) {
         self.mut_edges(|edge| {
             if let BorrowPCGEdgeKind::RegionProjectionMember(member) = &mut edge.kind {
-                if member.projection.place == old_projection_place {
-                    let idx = member.projection_index(repacker);
-                    member.projection = new_projection_place.region_projection(idx, repacker);
+                for p in member.projections.iter_mut() {
+                    if p.place == old_projection_place {
+                        let idx = p.index(repacker);
+                        *p = new_projection_place.region_projection(idx, repacker);
+                    }
                 }
             }
             true

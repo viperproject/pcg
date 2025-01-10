@@ -24,7 +24,7 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode, ToBorrowsEdge},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
     deref_expansion::DerefExpansion,
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
@@ -426,7 +426,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 self.add_region_projection_member(
                                     RegionProjectionMember::new(
                                         reborrow.blocked_place,
-                                        ra,
+                                        Coupled(vec![ra]),
                                         RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                     ),
                                     PathConditions::new(location.block),
@@ -569,7 +569,9 @@ impl<'tcx> BorrowsState<'tcx> {
             (CapabilityKind::Read, CapabilityKind::Read)
         };
         self.set_capability(member.place, place_cap);
-        self.set_capability(member.projection, proj_cap);
+        for p in member.projections.iter() {
+            self.set_capability(*p, proj_cap);
+        }
     }
 
     pub fn trim_old_leaves(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
@@ -612,7 +614,7 @@ impl<'tcx> BorrowsState<'tcx> {
             self.graph.insert(
                 RegionProjectionMember::new(
                     assigned_place.into(),
-                    rp,
+                    Coupled(vec![rp]),
                     RegionProjectionMemberDirection::PlaceBlocksProjection,
                 )
                 .to_borrow_pcg_edge(PathConditions::new(location.block)),

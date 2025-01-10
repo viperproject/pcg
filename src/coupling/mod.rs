@@ -13,11 +13,34 @@ pub struct DisjointSetGraph<N> {
     inner: petgraph::Graph<BTreeSet<N>, ()>,
 }
 
+pub type Endpoint<N> = BTreeSet<N>;
+
 impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
     pub fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
         }
+    }
+
+    pub fn nodes(&self) -> BTreeSet<N> {
+        self.edges()
+            .map(|(from, to)| from.union(&to).cloned().collect::<BTreeSet<_>>())
+            .flatten()
+            .collect()
+    }
+
+    pub fn isolated_endpoints(&self) -> BTreeSet<Endpoint<N>> {
+        self.inner
+            .node_indices()
+            .filter(|idx| self.inner.neighbors_undirected(*idx).count() == 0)
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .collect()
+    }
+
+    pub fn endpoints(&self) -> BTreeSet<BTreeSet<N>> {
+        self.edges()
+            .flat_map(|(from, to)| [from, to].into_iter())
+            .collect::<BTreeSet<_>>()
     }
 
     pub fn edges(&self) -> impl Iterator<Item = (BTreeSet<N>, BTreeSet<N>)> + '_ {
@@ -63,7 +86,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             graph: &DisjointSetGraph<N>,
         ) -> Result<(), std::io::Error> {
             let dot = graph.to_dot();
-            DotGraph::render_with_imgcat(&dot)
+            DotGraph::render_with_imgcat(&dot, "")
         }
 
         // This function is just for debugging, so we don't care if it fails
@@ -85,6 +108,10 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             return idx;
         }
         self.inner.add_node(BTreeSet::from([node]))
+    }
+
+    pub fn insert_endpoint(&mut self, endpoint: BTreeSet<N>) -> petgraph::prelude::NodeIndex {
+        self.join_nodes(&endpoint)
     }
 
     pub fn merge_into_idx(
@@ -189,11 +216,18 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        let from_idx = self.join_nodes(from);
-        let to_idx = self.join_nodes(to);
-        self.inner.update_edge(from_idx, to_idx, ());
+        if from.is_empty() {
+            assert!(!to.is_empty());
+            self.join_nodes(to);
+        } else if to.is_empty() {
+            assert!(!from.is_empty());
+            self.join_nodes(from);
+        } else {
+            let from_idx = self.join_nodes(from);
+            let to_idx = self.join_nodes(to);
+            self.inner.update_edge(from_idx, to_idx, ());
+        }
     }
-
 
     /// Returns the leaf nodes (nodes with no incoming edges)
     pub fn leaf_nodes(&self) -> Vec<BTreeSet<N>> {

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use crate::rustc_interface::middle::mir::BasicBlock;
+use crate::rustc_interface::middle::{ty, mir::BasicBlock};
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
 use super::domain::ToJsonWithRepacker;
@@ -15,7 +15,20 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
         json!(self
             .0
             .iter()
-            .map(|(p, l)| (p.to_short_string(repacker), format!("{:?}", l)))
+            .map(|(p, l)| {
+                let ty = p.ty(repacker).ty;
+                let ty_str = if let ty::TyKind::Ref(region, ty, mutbl) = ty.kind() {
+                    format!(
+                        "&{}{} {}",
+                        region,
+                        if mutbl.is_mut() { " mut" } else { "" },
+                        ty
+                    )
+                } else {
+                    format!("{}", ty)
+                };
+                (format!("{}: {}", p.to_short_string(repacker), ty_str), format!("{:?}", l))
+            })
             .collect::<BTreeMap<_, _>>())
     }
 }

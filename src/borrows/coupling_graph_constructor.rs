@@ -1,6 +1,10 @@
 use std::{cmp::Ordering, collections::BTreeSet};
 
-use crate::{coupling, rustc_interface::middle::mir::BasicBlock, utils::PlaceRepacker};
+use crate::{
+    coupling,
+    rustc_interface::{ast::Mutability, middle::mir::BasicBlock},
+    utils::PlaceRepacker,
+};
 
 use super::{
     borrows_graph::BorrowsGraph,
@@ -8,6 +12,33 @@ use super::{
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
+
+/// A collection of coupled PCG nodes. They will expire at the same time, and only one
+/// node in the set will be alive.
+///
+/// These nodes are introduced for loops: place `a` may borrow from `b` or place
+/// `b` may borrow from `a` depending on the number of loop iterations. Therefore,
+/// `a` and `b` are coupled and only one can be accessed.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Coupled<T>(pub Vec<T>);
+
+impl<T> Coupled<T> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.0.iter_mut()
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.0.iter()
+    }
+}
+
+impl<'tcx> Coupled<RegionProjection<'tcx>> {
+    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        let mut iter = self.iter();
+        let first = iter.next().unwrap().mutability(repacker);
+        assert!(iter.all(|rp| rp.mutability(repacker) == first));
+        first
+    }
+}
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub enum CGNode<'tcx> {
@@ -106,10 +137,6 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         upper_candidate: &BTreeSet<CGNode<'tcx>>,
     ) {
         let nodes = bg.nodes_pointing_to(&upper_candidate);
-        if nodes.is_empty() && upper_candidate != bottom_connect {
-            self.coupling_graph
-                .add_edge(upper_candidate, bottom_connect);
-        }
         for node in nodes {
             let should_include = node
                 .iter()
@@ -117,7 +144,6 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
             if !should_include {
                 self.add_edges_from(bg, &bottom_connect, &node);
             } else {
-                eprintln!("Include edge: {:?} -> {:?}", node, bottom_connect);
                 self.coupling_graph.add_edge(&node, &bottom_connect);
                 self.add_edges_from(bg, &node, &node);
             }
@@ -131,6 +157,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         let full_graph = bg.base_coupling_graph(self.repacker);
         let leaf_nodes = full_graph.leaf_nodes();
         for node in leaf_nodes {
+            self.coupling_graph.insert_endpoint(node.clone());
             self.add_edges_from(&full_graph, &node, &node)
         }
         self.coupling_graph

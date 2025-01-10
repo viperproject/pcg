@@ -17,7 +17,8 @@ impl DotGraph {
         std::fs::write(path, self.to_string())
     }
 
-    pub fn render_with_imgcat(dot_str: &str) -> Result<(), std::io::Error> {
+    pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
+        eprintln!("{}", comment);
         let mut dot_process = Command::new("dot")
             .args(&["-Tpng"])
             .stdin(Stdio::piped())
