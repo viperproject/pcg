@@ -4,7 +4,7 @@ use crate::rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::mir::Local,
-    middle::ty::{self, RegionVid},
+    middle::ty::{self, DebruijnIndex, RegionVid},
 };
 
 use crate::utils::{Place, PlaceRepacker};
@@ -12,17 +12,23 @@ use crate::utils::{Place, PlaceRepacker};
 use super::has_pcs_elem::HasPcsElems;
 use super::{domain::MaybeOldPlace, latest::Latest};
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+/// A region occuring in region projections
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
 pub enum PCGRegion {
     RegionVid(RegionVid),
     ReErased,
+    /// TODO: Do we need this?
+    ReBound(DebruijnIndex, ty::BoundRegion),
 }
 
-impl std::fmt::Display for PCGRegion {
+impl<'tcx> std::fmt::Display for PCGRegion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PCGRegion::RegionVid(vid) => write!(f, "{:?}", vid),
             PCGRegion::ReErased => write!(f, "ReErased"),
+            PCGRegion::ReBound(debruijn_index, region) => {
+                write!(f, "ReBound({:?}, {:?})", debruijn_index, region)
+            }
         }
     }
 }
@@ -31,7 +37,7 @@ impl PCGRegion {
     pub fn as_vid(&self) -> Option<RegionVid> {
         match self {
             PCGRegion::RegionVid(vid) => Some(*vid),
-            PCGRegion::ReErased => None,
+            _ => None,
         }
     }
 }
@@ -41,7 +47,14 @@ impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
         match region.kind() {
             ty::RegionKind::ReVar(vid) => PCGRegion::RegionVid(vid),
             ty::RegionKind::ReErased => PCGRegion::ReErased,
-            other => todo!("{:?}", other),
+            ty::RegionKind::ReEarlyParam(_) => todo!(),
+            ty::RegionKind::ReBound(debruijn_index, inner) => {
+                PCGRegion::ReBound(debruijn_index, inner)
+            }
+            ty::RegionKind::ReLateParam(_) => todo!(),
+            ty::RegionKind::ReStatic => todo!(),
+            ty::RegionKind::RePlaceholder(_) => todo!(),
+            ty::RegionKind::ReError(_) => todo!(),
         }
     }
 }

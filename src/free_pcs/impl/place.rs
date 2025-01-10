@@ -7,7 +7,7 @@
 use derive_more::Deref;
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Formatter, Result}
+    fmt::{Debug, Formatter, Result},
 };
 
 use rustc_interface::data_structures::fx::FxHashSet;
@@ -80,14 +80,8 @@ impl PartialOrd for CapabilityKind {
             return Some(Ordering::Equal);
         }
         match (self, other) {
-            // W < E, W < e
-            (CapabilityKind::Lent, _)
-            | (_, CapabilityKind::Exclusive)
-            | (CapabilityKind::Write, CapabilityKind::ShallowExclusive) => Some(Ordering::Less),
-            // E > W, e > W
-            (CapabilityKind::Exclusive, _)
-            | (_, CapabilityKind::Lent)
-            | (CapabilityKind::ShallowExclusive, CapabilityKind::Write) => Some(Ordering::Greater),
+            (CapabilityKind::Write, _) | (_, CapabilityKind::Exclusive) => Some(Ordering::Less),
+            (CapabilityKind::Exclusive, _) | (_, CapabilityKind::Write) => Some(Ordering::Greater),
             _ => None,
         }
     }

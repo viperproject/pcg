@@ -205,7 +205,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
             let perm = removed_perms
                 .iter()
                 .fold(CapabilityKind::Exclusive, |acc, (_, p)| {
-                    acc.minimum(*p).unwrap()
+                    acc.minimum(*p).unwrap_or_else(|| {
+                        panic!("Minimum of {:?}", removed_perms);
+                    })
                 });
             for (from, from_perm) in removed_perms {
                 if perm != from_perm {
