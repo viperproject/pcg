@@ -1,10 +1,12 @@
 use serde_json::json;
 
 use crate::{
-    edgedata_enum, rustc_interface::{
+    edgedata_enum,
+    rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::{Location, PlaceElem},
-    }, utils::{Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation}
+    },
+    utils::{Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation},
 };
 
 use super::{
@@ -51,7 +53,10 @@ impl<'tcx> EdgeData<'tcx> for BorrowDerefExpansion<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
-        self.expansion(repacker).into_iter().map(|p| p.into()).collect()
+        self.expansion(repacker)
+            .into_iter()
+            .map(|p| p.into())
+            .collect()
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -67,9 +72,13 @@ pub struct OwnedExpansion<'tcx> {
 impl<'tcx> EdgeData<'tcx> for OwnedExpansion<'tcx> {
     fn blocked_nodes(
         &self,
-        _repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<super::borrow_pcg_edge::PCGNode<'tcx>> {
-        vec![self.base.into()].into_iter().collect()
+        let mut blocked_nodes = vec![self.base.into()];
+        if self.base.has_region_projections(repacker) {
+            blocked_nodes.push(self.base_region_projection(repacker).into());
+        }
+        blocked_nodes.into_iter().collect()
     }
 
     fn blocked_by_nodes(
@@ -116,7 +125,11 @@ pub enum DerefExpansion<'tcx> {
     BorrowExpansion(BorrowDerefExpansion<'tcx>),
 }
 
-edgedata_enum!(DerefExpansion<'tcx>, OwnedExpansion(OwnedExpansion<'tcx>), BorrowExpansion(BorrowDerefExpansion<'tcx>));
+edgedata_enum!(
+    DerefExpansion<'tcx>,
+    OwnedExpansion(OwnedExpansion<'tcx>),
+    BorrowExpansion(BorrowDerefExpansion<'tcx>)
+);
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for OwnedExpansion<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
@@ -142,21 +155,6 @@ impl<'tcx> DerefExpansion<'tcx> {
             .into_iter()
             .map(|p| p.into())
             .collect()
-    }
-
-    pub fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
-        let mut blocked_nodes = FxHashSet::default();
-        blocked_nodes.insert(self.base().into());
-        match self {
-            DerefExpansion::OwnedExpansion(owned) => {
-                // TODO: Region could be erased and we can't handle that yet
-                if owned.base.has_region_projections(repacker) {
-                    blocked_nodes.insert(owned.base_region_projection(repacker).into());
-                }
-            }
-            _ => {}
-        }
-        blocked_nodes
     }
 
     pub fn mut_base(&mut self) -> &mut MaybeOldPlace<'tcx> {

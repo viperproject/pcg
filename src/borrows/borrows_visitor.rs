@@ -677,16 +677,31 @@ struct LifetimeExtractor<'tcx> {
 
 impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
     fn visit_region(&mut self, rr: ty::Region<'tcx>) {
-        self.lifetimes.push(rr);
+        if !self.lifetimes.contains(&rr) {
+            self.lifetimes.push(rr);
+        }
     }
 }
 
+/// Returns all of the (possibly nested) regions in `ty`. If this type is a
+/// reference type, e.g. `&'a mut T`, then this will return `'a` and the regions of
+/// `T`.
+///
+/// The resulting list does not contain duplicates, e.g. T<'a, 'a> will return
+/// `['a]`. Note that the order of the returned regions is arbitrary, but
+/// consistent between calls to shapes with the same "type". E.g T<'a, 'b> and
+/// T<'c, 'd> will return the same list of regions will return `['a, 'b]` and
+/// `['c, 'd]` respectively. This enables substitution of regions to handle
+/// moves in the PCG e.g for the statement `let x: T<'a, 'b> = move c: T<'c,
+/// 'd>`.
 pub(crate) fn extract_regions<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
     let mut visitor = LifetimeExtractor { lifetimes: vec![] };
     ty.visit_with(&mut visitor);
     visitor.lifetimes
 }
 
+/// Similar to [`extract_regions`], but if the type is a reference type e.g.
+/// `&'a mut T`, then this is equivalent to `extract_regions(T)`.
 pub(crate) fn extract_nested_regions<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
     match ty.kind() {
         ty::TyKind::Ref(_, ty, _) => extract_nested_regions(*ty),
