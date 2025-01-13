@@ -45,7 +45,7 @@ pub struct GraphDrawer<T: io::Write> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-struct NodeId(char, usize);
+pub struct NodeId(char, usize);
 
 impl std::fmt::Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

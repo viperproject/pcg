@@ -1,3 +1,5 @@
+use crate::{free_pcs::CapabilityKind, utils::SnapshotLocation, visualization::{GraphNode, NodeId, NodeType}};
+
 use super::dot_graph::{DotEdge, DotNode, EdgeDirection, EdgeOptions, DotLabel, DotStringAttr};
 use std::io::{self, Write};
 
@@ -16,10 +18,13 @@ pub fn generate_node_legend() -> io::Result<String> {
 fn write_edge_legend<T: Write>(out: &mut T) -> io::Result<()> {
     writeln!(out, "digraph edge_legend {{")?;
     writeln!(out, "  node [shape=rect];")?;
-    writeln!(out, "  rankdir=LR;")?;
+    writeln!(out, "  rankdir=TB;")?;
     writeln!(out, "  label=\"Edge Types\";")?;
     writeln!(out, "  labelloc=\"t\";")?;
+    writeln!(out, "  nodesep=0.5;")?;
+    writeln!(out, "  ranksep=2.0;")?;
 
+    // Create all clusters first
     // Projection Edge
     write_edge(out, "proj_a", "proj_b", "Projection Edge",
         EdgeOptions::undirected())?;
@@ -57,38 +62,45 @@ fn write_edge_legend<T: Write>(out: &mut T) -> io::Result<()> {
 fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
     writeln!(out, "digraph node_legend {{")?;
     writeln!(out, "  node [shape=rect];")?;
-    writeln!(out, "  rankdir=LR;")?;
+    writeln!(out, "  rankdir=TB;")?;
     writeln!(out, "  label=\"Node Types\";")?;
     writeln!(out, "  labelloc=\"t\";")?;
 
-    // FPCS Node
-    writeln!(out, "  fpcs_node [")?;
-    writeln!(out, "    shape=rect,")?;
-    writeln!(out, "    label=<<FONT FACE=\"courier\">place</FONT>&nbsp;Write&nbsp;at loc>,")?;
-    writeln!(out, "    color=gray,")?;
-    writeln!(out, "    fontcolor=gray")?;
-    writeln!(out, "  ];")?;
+    // Create nodes
+    let fpcs_node = GraphNode {
+        id: NodeId('f', 0),
+        node_type: NodeType::FPCSNode {
+            label: "x".to_string(),
+            capability: Some(CapabilityKind::Write),
+            location: None,
+            region: None,
+        },
+    };
 
-    // Region Projection Node
-    writeln!(out, "  region_node [")?;
-    writeln!(out, "    shape=octagon,")?;
-    writeln!(out, "    label=\"region\",")?;
-    writeln!(out, "    color=blue,")?;
-    writeln!(out, "    fontcolor=blue")?;
-    writeln!(out, "  ];")?;
+    let region_node = GraphNode {
+        id: NodeId('r', 0),
+        node_type: NodeType::RegionProjectionNode {
+            label: "rx↓'rx".to_string(),
+        },
+    };
 
-    // Reborrowing DAG Node
-    writeln!(out, "  reborrow_node [")?;
-    writeln!(out, "    shape=rect,")?;
-    writeln!(out, "    style=rounded,")?;
-    writeln!(out, "    label=<<FONT FACE=\"courier\">place</FONT>&nbsp;at loc>,")?;
-    writeln!(out, "    color=darkgreen,")?;
-    writeln!(out, "    fontcolor=darkgreen,")?;
-    writeln!(out, "    penwidth=1.5")?;
-    writeln!(out, "  ];")?;
+    let reborrow_node = GraphNode {
+        id: NodeId('b', 0),
+        node_type: NodeType::ReborrowingDagNode {
+            label: "*rx".to_string(),
+            location: None,
+            capability: None,
+        },
+    };
+
+    // Write nodes using to_dot_node()
+    writeln!(out, "  {}", fpcs_node.to_dot_node())?;
+    writeln!(out, "  {}", region_node.to_dot_node())?;
+    writeln!(out, "  {}", reborrow_node.to_dot_node())?;
 
     // Arrange nodes horizontally
-    writeln!(out, "  {{ rank=same; fpcs_node; region_node; reborrow_node; }}")?;
+    writeln!(out, "  {{ rank=same; {}; {}; {}; }}",
+        fpcs_node.id, region_node.id, reborrow_node.id)?;
 
     writeln!(out, "}}")
 }
