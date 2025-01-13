@@ -275,7 +275,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     self.state.states.after.add_region_projection_member(
                         RegionProjectionMember::new(
                             place.into(),
-                            Coupled(vec![output]),
+                            Coupled::singleton(output),
                             RegionProjectionMemberDirection::PlaceBlocksProjection,
                         ),
                         PathConditions::AtBlock(location.block),
@@ -505,7 +505,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                         self.state.states.after.add_region_projection_member(
                                                         RegionProjectionMember::new(
                                                             operand_place.into(),
-                                                            Coupled(vec![proj]),
+                                                            Coupled::singleton(proj),
                                                             RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                                         ),
                                                         PathConditions::AtBlock(location.block),

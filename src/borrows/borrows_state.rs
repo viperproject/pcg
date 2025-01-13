@@ -426,7 +426,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 self.add_region_projection_member(
                                     RegionProjectionMember::new(
                                         reborrow.blocked_place,
-                                        Coupled(vec![ra]),
+                                        Coupled::singleton(ra),
                                         RegionProjectionMemberDirection::ProjectionBlocksPlace,
                                     ),
                                     PathConditions::new(location.block),
@@ -614,7 +614,7 @@ impl<'tcx> BorrowsState<'tcx> {
             self.graph.insert(
                 RegionProjectionMember::new(
                     assigned_place.into(),
-                    Coupled(vec![rp]),
+                    Coupled::singleton(rp),
                     RegionProjectionMemberDirection::PlaceBlocksProjection,
                 )
                 .to_borrow_pcg_edge(PathConditions::new(location.block)),

@@ -1,4 +1,7 @@
-use std::{cmp::Ordering, collections::BTreeSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, HashSet},
+};
 
 use crate::{
     coupling,
@@ -19,15 +22,97 @@ use super::{
 /// These nodes are introduced for loops: place `a` may borrow from `b` or place
 /// `b` may borrow from `a` depending on the number of loop iterations. Therefore,
 /// `a` and `b` are coupled and only one can be accessed.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Coupled<T>(pub Vec<T>);
+///
+/// Internally, the nodes are stored in a `Vec` to allow for mutation
+#[derive(Clone, Debug, Hash)]
+pub struct Coupled<T>(Vec<T>);
+
+impl<T: std::hash::Hash + Eq> PartialEq for Coupled<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.elems_hash_set() == other.elems_hash_set()
+    }
+}
+
+impl<T: std::hash::Hash + std::cmp::Eq> Eq for Coupled<T> {}
+
+impl<T: Ord + std::hash::Hash + std::cmp::Eq> PartialOrd for Coupled<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.elems_btree_set().cmp(&other.elems_btree_set()))
+    }
+}
+
+impl<T: Ord + std::hash::Hash + std::cmp::Eq> Ord for Coupled<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.elems_btree_set().cmp(&other.elems_btree_set())
+    }
+}
 
 impl<T> Coupled<T> {
+    pub fn singleton(item: T) -> Self {
+        Self(vec![item])
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.0.iter()
+    }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.0.iter_mut()
     }
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.0.iter()
+}
+
+impl<T> IntoIterator for Coupled<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<T: std::hash::Hash + std::cmp::Eq> Coupled<T> {
+    pub fn elems_hash_set(&self) -> HashSet<&T> {
+        self.0.iter().collect()
+    }
+}
+
+impl<T: Ord> Coupled<T> {
+    pub fn elems_btree_set(&self) -> BTreeSet<&T> {
+        self.0.iter().collect()
+    }
+
+    pub fn contains(&self, item: &T) -> bool {
+        self.0.contains(item)
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        for item in other.0 {
+            if !self.0.contains(&item) {
+                self.0.push(item);
+            }
+        }
+    }
+}
+
+impl<T> From<BTreeSet<T>> for Coupled<T> {
+    fn from(set: BTreeSet<T>) -> Self {
+        Self(set.into_iter().collect())
+    }
+}
+
+impl<T: Eq> From<Vec<T>> for Coupled<T> {
+    fn from(vec: Vec<T>) -> Self {
+        let mut deduped = Vec::new();
+        for item in vec {
+            if !deduped.contains(&item) {
+                deduped.push(item);
+            }
+        }
+        Self(deduped)
     }
 }
 
@@ -136,16 +221,19 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         bottom_connect: &BTreeSet<CGNode<'tcx>>,
         upper_candidate: &BTreeSet<CGNode<'tcx>>,
     ) {
-        let nodes = bg.nodes_pointing_to(&upper_candidate);
-        for node in nodes {
-            let should_include = node
+        let upper_candidate = upper_candidate.clone().into();
+        let endpoints = bg.endpoints_pointing_to(&upper_candidate);
+        for coupled in endpoints {
+            let should_include = coupled
                 .iter()
                 .any(|n| /* self.liveness.is_live(*n, self.block) && */ !n.is_old());
+            let coupled_set: BTreeSet<_> = coupled.clone().into_iter().collect();
             if !should_include {
-                self.add_edges_from(bg, &bottom_connect, &node);
+                self.add_edges_from(bg, &bottom_connect, &coupled_set);
             } else {
-                self.coupling_graph.add_edge(&node, &bottom_connect);
-                self.add_edges_from(bg, &node, &node);
+                self.coupling_graph
+                    .add_edge(&coupled, &bottom_connect.clone().into());
+                self.add_edges_from(bg, &coupled_set, &coupled_set);
             }
         }
     }
@@ -158,7 +246,8 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         let leaf_nodes = full_graph.leaf_nodes();
         for node in leaf_nodes {
             self.coupling_graph.insert_endpoint(node.clone());
-            self.add_edges_from(&full_graph, &node, &node)
+            let node_set: BTreeSet<_> = node.into_iter().collect();
+            self.add_edges_from(&full_graph, &node_set, &node_set);
         }
         self.coupling_graph
     }

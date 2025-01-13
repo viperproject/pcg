@@ -126,12 +126,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .inputs()
                             .into_iter()
                             .map(|node| node.into())
-                            .collect();
+                            .collect::<Vec<_>>()
+                            .into();
                         let outputs = abstraction_edge
                             .outputs()
                             .into_iter()
                             .map(|node| node.into())
-                            .collect();
+                            .collect::<Vec<_>>()
+                            .into();
                         graph.add_edge(&inputs, &outputs);
                     }
                     _ => {
@@ -147,16 +149,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                     .projections
                                     .iter()
                                     .map(|rp| (*rp).into())
-                                    .collect(),
+                                    .collect::<Vec<_>>()
+                                    .into(),
                             );
                         }
                         for node in edge.blocked_by_nodes(repacker) {
                             if let LocalNode::RegionProjection(rp) = node {
                                 if let Some(source) = ef.connect() {
-                                    graph.add_edge(
-                                        &vec![source].into_iter().collect(),
-                                        &vec![rp.into()].into_iter().collect(),
-                                    );
+                                    graph.add_edge(&vec![source].into(), &vec![rp.into()].into());
                                 }
                             }
                         }
@@ -454,7 +454,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     let new_edge_kind =
                         BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
                             edge.value.blocked_place,
-                            Coupled(rps.clone()),
+                            rps.clone().into(),
                             RegionProjectionMemberDirection::ProjectionBlocksPlace,
                         ));
                     self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));

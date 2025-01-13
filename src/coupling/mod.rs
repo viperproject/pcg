@@ -10,26 +10,26 @@ use std::hash::Hash;
 /// a transitively reduced form (see
 /// https://en.wikipedia.org/wiki/Transitive_reduction)
 pub struct DisjointSetGraph<N> {
-    inner: petgraph::Graph<BTreeSet<N>, ()>,
+    inner: petgraph::Graph<Coupled<N>, ()>,
 }
 
 pub type Endpoint<N> = BTreeSet<N>;
 
-impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
+impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
     pub fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
         }
     }
 
-    pub fn nodes(&self) -> BTreeSet<N> {
-        self.edges()
-            .map(|(from, to)| from.union(&to).cloned().collect::<BTreeSet<_>>())
-            .flatten()
+    pub fn endpoints(&self) -> BTreeSet<Coupled<N>> {
+        self.inner
+            .node_indices()
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
     }
 
-    pub fn isolated_endpoints(&self) -> BTreeSet<Endpoint<N>> {
+    pub (crate) fn isolated_endpoints(&self) -> Vec<Coupled<N>> {
         self.inner
             .node_indices()
             .filter(|idx| self.inner.neighbors_undirected(*idx).count() == 0)
@@ -37,20 +37,11 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             .collect()
     }
 
-    pub fn endpoints(&self) -> BTreeSet<BTreeSet<N>> {
-        self.edges()
-            .flat_map(|(from, to)| [from, to].into_iter())
-            .collect::<BTreeSet<_>>()
-    }
-
-    pub fn edges(&self) -> impl Iterator<Item = (BTreeSet<N>, BTreeSet<N>)> + '_ {
+    pub fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();
             let target = self.inner.node_weight(e.target()).unwrap();
-            (
-                source.iter().cloned().collect(),
-                target.iter().cloned().collect(),
-            )
+            (source.clone(), target.clone())
         })
     }
 
@@ -82,7 +73,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
     }
 
     pub fn render_with_imgcat(&self) {
-        fn go<N: Copy + Ord + Clone + fmt::Display>(
+        fn go<N: Copy + Ord + Clone + fmt::Display + Hash>(
             graph: &DisjointSetGraph<N>,
         ) -> Result<(), std::io::Error> {
             let dot = graph.to_dot();
@@ -103,14 +94,14 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
         self.inner.edge_count()
     }
 
-    pub fn insert(&mut self, node: N) -> petgraph::prelude::NodeIndex {
+    fn insert(&mut self, node: N) -> petgraph::prelude::NodeIndex {
         if let Some(idx) = self.lookup(node) {
             return idx;
         }
-        self.inner.add_node(BTreeSet::from([node]))
+        self.inner.add_node(BTreeSet::from([node]).into())
     }
 
-    pub fn insert_endpoint(&mut self, endpoint: BTreeSet<N>) -> petgraph::prelude::NodeIndex {
+    pub fn insert_endpoint(&mut self, endpoint: Coupled<N>) -> petgraph::prelude::NodeIndex {
         self.join_nodes(&endpoint)
     }
 
@@ -121,7 +112,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
     ) {
         let old_node_data = self.inner.node_weight(old_idx).unwrap().clone();
         let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap();
-        new_idx_weight.extend(old_node_data.into_iter());
+        new_idx_weight.merge(old_node_data);
         let to_add = self
             .inner
             .edges_directed(old_idx, Direction::Incoming)
@@ -139,7 +130,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
         self.inner.remove_node(old_idx);
     }
 
-    fn join_nodes(&mut self, nodes: &BTreeSet<N>) -> petgraph::prelude::NodeIndex {
+    fn join_nodes(&mut self, nodes: &Coupled<N>) -> petgraph::prelude::NodeIndex {
         let mut iter = nodes.iter().cloned();
         let idx = self.insert(iter.next().unwrap());
         while let Some(node) = iter.next() {
@@ -195,7 +186,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
         });
     }
 
-    pub fn add_edge(&mut self, from: &BTreeSet<N>, to: &BTreeSet<N>) {
+    pub fn add_edge(&mut self, from: &Coupled<N>, to: &Coupled<N>) {
         assert!(
             from != to,
             "Self-loop edge {}",
@@ -218,7 +209,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
     }
 
     /// Returns the leaf nodes (nodes with no incoming edges)
-    pub fn leaf_nodes(&self) -> Vec<BTreeSet<N>> {
+    pub fn leaf_nodes(&self) -> Vec<Coupled<N>> {
         self.inner
             .node_indices()
             .filter(|idx| self.inner.neighbors(*idx).count() == 0)
@@ -226,7 +217,7 @@ impl<N: Copy + Ord + Clone + fmt::Display> DisjointSetGraph<N> {
             .collect()
     }
 
-    pub fn nodes_pointing_to(&self, node: &BTreeSet<N>) -> Vec<BTreeSet<N>> {
+    pub fn endpoints_pointing_to(&self, node: &Coupled<N>) -> Vec<Coupled<N>> {
         let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
         self.inner
             .node_indices()
@@ -265,4 +256,5 @@ where
     }
 }
 
+use crate::borrows::coupling_graph_constructor::Coupled;
 use crate::visualization::dot_graph::DotGraph;
