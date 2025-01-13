@@ -126,9 +126,13 @@ pub fn run_combined_pcs<'mir, 'tcx>(
 
     if let Some(dir_path) = visualization_output_path {
         // Generate legend visualization
-        let legend_file_path = format!("{}/legend.dot", dir_path);
-        let legend_graph = crate::visualization::legend::generate_legend().unwrap();
-        std::fs::write(&legend_file_path, legend_graph).expect("Failed to write legend");
+        let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
+        let edge_legend_graph = crate::visualization::legend::generate_edge_legend().unwrap();
+        std::fs::write(&edge_legend_file_path, edge_legend_graph).expect("Failed to write edge legend");
+
+        let node_legend_file_path = format!("{}/node_legend.dot", dir_path);
+        let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
+        std::fs::write(&node_legend_file_path, node_legend_graph).expect("Failed to write node legend");
         generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, &mir.body)
             .expect("Failed to generate JSON from MIR");
 

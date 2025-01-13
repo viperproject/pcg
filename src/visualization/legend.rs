@@ -1,17 +1,23 @@
 use super::dot_graph::{DotEdge, DotNode, EdgeDirection, EdgeOptions, DotLabel, DotStringAttr};
 use std::io::{self, Write};
 
-pub fn generate_legend() -> io::Result<String> {
+pub fn generate_edge_legend() -> io::Result<String> {
     let mut buf = vec![];
-    write_legend(&mut buf)?;
+    write_edge_legend(&mut buf)?;
     Ok(String::from_utf8(buf).unwrap())
 }
 
-fn write_legend<T: Write>(out: &mut T) -> io::Result<()> {
-    writeln!(out, "digraph legend {{")?;
+pub fn generate_node_legend() -> io::Result<String> {
+    let mut buf = vec![];
+    write_node_legend(&mut buf)?;
+    Ok(String::from_utf8(buf).unwrap())
+}
+
+fn write_edge_legend<T: Write>(out: &mut T) -> io::Result<()> {
+    writeln!(out, "digraph edge_legend {{")?;
     writeln!(out, "  node [shape=rect];")?;
     writeln!(out, "  rankdir=LR;")?;
-    writeln!(out, "  label=\"Edge Types Legend\";")?;
+    writeln!(out, "  label=\"Edge Types\";")?;
     writeln!(out, "  labelloc=\"t\";")?;
 
     // Projection Edge
@@ -44,6 +50,45 @@ fn write_legend<T: Write>(out: &mut T) -> io::Result<()> {
         EdgeOptions::undirected()
             .with_color("red".to_string())
             .with_style("dashed".to_string()))?;
+
+    writeln!(out, "}}")
+}
+
+fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
+    writeln!(out, "digraph node_legend {{")?;
+    writeln!(out, "  node [shape=rect];")?;
+    writeln!(out, "  rankdir=LR;")?;
+    writeln!(out, "  label=\"Node Types\";")?;
+    writeln!(out, "  labelloc=\"t\";")?;
+
+    // FPCS Node
+    writeln!(out, "  fpcs_node [")?;
+    writeln!(out, "    shape=rect,")?;
+    writeln!(out, "    label=<<FONT FACE=\"courier\">place</FONT>&nbsp;Write&nbsp;at loc>,")?;
+    writeln!(out, "    color=gray,")?;
+    writeln!(out, "    fontcolor=gray")?;
+    writeln!(out, "  ];")?;
+
+    // Region Projection Node
+    writeln!(out, "  region_node [")?;
+    writeln!(out, "    shape=octagon,")?;
+    writeln!(out, "    label=\"region\",")?;
+    writeln!(out, "    color=blue,")?;
+    writeln!(out, "    fontcolor=blue")?;
+    writeln!(out, "  ];")?;
+
+    // Reborrowing DAG Node
+    writeln!(out, "  reborrow_node [")?;
+    writeln!(out, "    shape=rect,")?;
+    writeln!(out, "    style=rounded,")?;
+    writeln!(out, "    label=<<FONT FACE=\"courier\">place</FONT>&nbsp;at loc>,")?;
+    writeln!(out, "    color=darkgreen,")?;
+    writeln!(out, "    fontcolor=darkgreen,")?;
+    writeln!(out, "    penwidth=1.5")?;
+    writeln!(out, "  ];")?;
+
+    // Arrange nodes horizontally
+    writeln!(out, "  {{ rank=same; fpcs_node; region_node; reborrow_node; }}")?;
 
     writeln!(out, "}}")
 }

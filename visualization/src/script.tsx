@@ -173,30 +173,48 @@ async function main() {
 
     const openLegendWindow = async () => {
       try {
-        const legendPath = `data/${selectedFunction}/legend.dot`;
-        const legendData = await fetchDotFile(legendPath);
+        const edgeLegendPath = `data/${selectedFunction}/edge_legend.dot`;
+        const nodeLegendPath = `data/${selectedFunction}/node_legend.dot`;
+        const [edgeLegendData, nodeLegendData] = await Promise.all([
+          fetchDotFile(edgeLegendPath),
+          fetchDotFile(nodeLegendPath)
+        ]);
+
         Viz.instance().then((viz) => {
-          const svgElement = viz.renderSVGElement(legendData);
-          const popup = window.open("", "Graph Legend", "width=600,height=800");
+          const edgeSvgElement = viz.renderSVGElement(edgeLegendData);
+          const nodeSvgElement = viz.renderSVGElement(nodeLegendData);
+
+          const popup = window.open("", "Graph Legend", "width=800,height=1000");
           popup.document.head.innerHTML = `
             <style>
               body {
                 margin: 0;
                 display: flex;
-                justify-content: center;
+                flex-direction: column;
                 align-items: center;
                 min-height: 100vh;
                 background: white;
+                padding: 20px;
+              }
+              .legend-container {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+                max-width: 100%;
               }
               svg {
                 max-width: 100%;
                 height: auto;
-                padding: 20px;
               }
             </style>
           `;
-          popup.document.title = "Graph Edge Types Legend";
-          popup.document.body.appendChild(svgElement);
+          popup.document.title = "Graph Legend";
+
+          const container = popup.document.createElement('div');
+          container.className = 'legend-container';
+          container.appendChild(edgeSvgElement);
+          container.appendChild(nodeSvgElement);
+          popup.document.body.appendChild(container);
         });
       } catch (error) {
         console.warn("Failed to load legend:", error);
