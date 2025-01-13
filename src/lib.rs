@@ -85,7 +85,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
     }
 }
 
-use std::sync::Mutex;
+use std::{fs::File, sync::Mutex};
 
 lazy_static::lazy_static! {
     static ref RECORD_PCS: Mutex<bool> = Mutex::new(false);
@@ -125,6 +125,10 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     let mut fpcs_analysis = free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(&mir.body));
 
     if let Some(dir_path) = visualization_output_path {
+        // Generate legend visualization
+        let legend_file_path = format!("{}/legend.dot", dir_path);
+        let legend_graph = crate::visualization::legend::generate_legend().unwrap();
+        std::fs::write(&legend_file_path, legend_graph).expect("Failed to write legend");
         generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, &mir.body)
             .expect("Failed to generate JSON from MIR");
 

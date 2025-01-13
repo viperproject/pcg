@@ -171,6 +171,38 @@ async function main() {
       return await response.text();
     };
 
+    const openLegendWindow = async () => {
+      try {
+        const legendPath = `data/${selectedFunction}/legend.dot`;
+        const legendData = await fetchDotFile(legendPath);
+        Viz.instance().then((viz) => {
+          const svgElement = viz.renderSVGElement(legendData);
+          const popup = window.open("", "Graph Legend", "width=600,height=800");
+          popup.document.head.innerHTML = `
+            <style>
+              body {
+                margin: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                background: white;
+              }
+              svg {
+                max-width: 100%;
+                height: auto;
+                padding: 20px;
+              }
+            </style>
+          `;
+          popup.document.title = "Graph Edge Types Legend";
+          popup.document.body.appendChild(svgElement);
+        });
+      } catch (error) {
+        console.warn("Failed to load legend:", error);
+      }
+    };
+
     async function loadPCSDotGraph() {
       const dotGraph = document.getElementById("dot-graph");
       if (!dotGraph) {
@@ -193,6 +225,7 @@ async function main() {
           : stmtIterations[selected][1];
       const dotFilePath = `data/${selectedFunction}/${filename}`;
       const dotData = await fetchDotFile(dotFilePath);
+
       Viz.instance().then(function (viz) {
         dotGraph.innerHTML = "";
         dotGraph.appendChild(viz.renderSVGElement(dotData));
@@ -445,9 +478,12 @@ async function main() {
             Show PCS
           </label>
           <button
-            style={{ marginLeft: '10px' }}
+            style={{ marginLeft: "10px" }}
             onClick={async () => {
-              if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
+              if (
+                currentPoint.type !== "stmt" ||
+                iterations.length <= currentPoint.stmt
+              ) {
                 return;
               }
               const stmtIterations = iterations[currentPoint.stmt].flatMap(
@@ -461,7 +497,11 @@ async function main() {
               const dotData = await fetchDotFile(dotFilePath);
               Viz.instance().then((viz) => {
                 const svgElement = viz.renderSVGElement(dotData);
-                const popup = window.open("", `Dot Graph - ${filename}`, "width=800,height=600");
+                const popup = window.open(
+                  "",
+                  `Dot Graph - ${filename}`,
+                  "width=800,height=600"
+                );
                 popup.document.head.innerHTML = `
                   <style>
                     body { margin: 0; }
@@ -487,6 +527,13 @@ async function main() {
             />
             Show storage statements
           </label>
+          <button
+            onClick={openLegendWindow}
+            className="control-button"
+            style={{ marginLeft: "10px" }}
+          >
+            Show Legend
+          </button>
         </div>
         <div
           className="graph-container"

@@ -8,6 +8,7 @@ pub mod dot_graph;
 pub mod drawer;
 pub mod graph_constructor;
 pub mod mir_graph;
+pub mod legend;
 
 use crate::{
     borrows::{
@@ -39,7 +40,7 @@ pub fn place_id<'tcx>(place: &Place<'tcx>) -> String {
     format!("{:?}", place)
 }
 
-struct GraphDrawer<T: io::Write> {
+pub struct GraphDrawer<T: io::Write> {
     out: T,
 }
 
