@@ -29,14 +29,6 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             .collect()
     }
 
-    pub (crate) fn isolated_endpoints(&self) -> Vec<Coupled<N>> {
-        self.inner
-            .node_indices()
-            .filter(|idx| self.inner.neighbors_undirected(*idx).count() == 0)
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
-            .collect()
-    }
-
     pub fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();
@@ -142,7 +134,11 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         idx
     }
 
-    pub fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
+    pub fn contains_node(&self, node: N) -> bool {
+        self.lookup(node).is_some()
+    }
+
+    fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
         self.inner.node_indices().find(|idx| {
             self.inner
                 .node_weight(*idx)
@@ -213,6 +209,37 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         self.inner
             .node_indices()
             .filter(|idx| self.inner.neighbors(*idx).count() == 0)
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .collect()
+    }
+
+    pub fn root_nodes(&self) -> Vec<Coupled<N>> {
+        self.inner
+            .node_indices()
+            .filter(|idx| {
+                self.inner
+                    .neighbors_directed(*idx, Direction::Incoming)
+                    .count()
+                    == 0
+            })
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .collect()
+    }
+
+    pub fn interior_nodes(&self) -> Vec<Coupled<N>> {
+        self.inner
+            .node_indices()
+            .filter(|idx| {
+                self.inner
+                    .neighbors_directed(*idx, Direction::Incoming)
+                    .count()
+                    > 0
+                    && self
+                        .inner
+                        .neighbors_directed(*idx, Direction::Outgoing)
+                        .count()
+                        > 0
+            })
             .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
     }

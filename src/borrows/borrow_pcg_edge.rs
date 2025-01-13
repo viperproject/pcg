@@ -48,6 +48,12 @@ impl<'tcx> From<RegionProjection<'tcx>> for LocalNode<'tcx> {
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> LocalNode<'tcx> {
+    pub fn as_cg_node(&self) -> Option<CGNode<'tcx>> {
+        match self {
+            LocalNode::Place(_) => None,
+            LocalNode::RegionProjection(rp) => Some(CGNode::RegionProjection(*rp)),
+        }
+    }
     pub fn is_old(&self) -> bool {
         match self {
             LocalNode::Place(maybe_old_place) => maybe_old_place.is_old(),

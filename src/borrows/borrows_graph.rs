@@ -420,10 +420,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         // Borrow edges originally going through individual region projection
         // nodes should be moved to the corresponding coupled nodes.
-        // TODO: This currently is only applied to isolated endpoints but should
-        // probably be applied to all endpoints.
         // TODO: Make sure `changed` is set correctly.
-        for isolated in result.isolated_endpoints() {
+        for isolated in result.endpoints() {
             let rps = isolated
                 .iter()
                 .flat_map(|node| node.as_region_projection())
@@ -492,6 +490,47 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
+        // Edges that only connect nodes within the region abstraction (but are
+        // not the abstraction edge itself, should be removed
+        let edges = self.edges().cloned().collect::<Vec<_>>();
+        'outer: for edge in edges {
+            match edge.kind() {
+                BorrowPCGEdgeKind::Abstraction(_) => continue,
+                _ => {}
+            }
+            for blocked in edge.blocked_nodes(repacker) {
+                if let Some(cg_node) = blocked.as_cg_node() {
+                    if !result.contains_node(cg_node) {
+                        continue 'outer;
+                    }
+                } else {
+                    continue 'outer;
+                }
+            }
+            for blocked_by in edge.blocked_by_nodes(repacker) {
+                if let Some(cg_node) = blocked_by.as_cg_node() {
+                    if !result.contains_node(cg_node) {
+                        continue 'outer;
+                    }
+                } else {
+                    continue 'outer;
+                }
+            }
+            self.remove(&edge, DebugCtx::Other);
+            changed = true;
+        }
+
+        // The process may result interior (old) places now being roots in the
+        // graph. These should be removed.
+        for root in self.roots(repacker) {
+            if root.is_old() {
+                for edge in self.edges_blocking(root, repacker) {
+                    self.remove(&edge, DebugCtx::Other);
+                    changed = true;
+                }
+            }
+        }
+
         changed
     }
 
@@ -531,7 +570,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             });
                     }
                 }
-                assert!(self.is_acyclic(repacker), "Graph became cyclic after join");
+                assert!(self.is_valid(repacker), "Graph became invalid after join");
                 return result;
             }
             // TODO: Handle multiple exit blocks
@@ -579,7 +618,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        assert!(self.is_acyclic(repacker), "Graph became cyclic after join");
+        assert!(self.is_valid(repacker), "Graph became invalid after join");
         changed
     }
 
@@ -792,7 +831,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.insert_path_condition(pc.clone()))
     }
 
-    pub fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        for node in self.roots(repacker) {
+            match node {
+                PCGNode::Place(place) => {
+                    // If *x at l is an interiorn node, we still currently have
+                    // x at l for the edge {x at l -> *x at l}. Except for these
+                    // cases, we should not have any old places that are roots.
+                    if place.is_old() && !place.is_owned(repacker) {
+                        return false;
+                    }
+                }
+                PCGNode::RegionProjection(region_projection) => {
+                    if region_projection.place.is_old() {
+                        return false;
+                    }
+                }
+            }
+        }
+        self.is_acyclic(repacker)
+    }
+
+    fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         let mut visited = FxHashSet::default();
         let mut rec_stack = FxHashSet::default();
 
