@@ -48,6 +48,10 @@ impl<T: Ord + std::hash::Hash + std::cmp::Eq> Ord for Coupled<T> {
 }
 
 impl<T> Coupled<T> {
+    pub fn size(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn singleton(item: T) -> Self {
         Self(vec![item])
     }

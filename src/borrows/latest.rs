@@ -41,7 +41,8 @@ impl<'tcx> Latest<'tcx> {
     fn get_exact(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
         self.0.iter().find(|(p, _)| *p == place).map(|(_, l)| *l)
     }
-    pub fn get_opt(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
+
+    fn get_opt(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
         if let Some(location) = self.get_exact(place) {
             Some(location)
         } else {

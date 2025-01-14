@@ -172,6 +172,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
+    pub (crate) fn region_projection_members(
+        &self,
+    ) -> FxHashSet<Conditioned<RegionProjectionMember<'tcx>>> {
+        self.0
+            .iter()
+            .filter_map(|edge| match &edge.kind() {
+                BorrowPCGEdgeKind::RegionProjectionMember(member) => Some(Conditioned {
+                    conditions: edge.conditions().clone(),
+                    value: member.clone(),
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
         self.0
             .iter()
@@ -493,31 +508,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // Edges that only connect nodes within the region abstraction (but are
         // not the abstraction edge itself, should be removed
         let edges = self.edges().cloned().collect::<Vec<_>>();
-        'outer: for edge in edges {
-            match edge.kind() {
-                BorrowPCGEdgeKind::Abstraction(_) => continue,
-                _ => {}
+        for edge in edges {
+            if self.is_encapsulated_by_abstraction(&edge, repacker) {
+                self.remove(&edge, DebugCtx::Other);
+                changed = true;
             }
-            for blocked in edge.blocked_nodes(repacker) {
-                if let Some(cg_node) = blocked.as_cg_node() {
-                    if !result.contains_node(cg_node) {
-                        continue 'outer;
-                    }
-                } else {
-                    continue 'outer;
-                }
-            }
-            for blocked_by in edge.blocked_by_nodes(repacker) {
-                if let Some(cg_node) = blocked_by.as_cg_node() {
-                    if !result.contains_node(cg_node) {
-                        continue 'outer;
-                    }
-                } else {
-                    continue 'outer;
-                }
-            }
-            self.remove(&edge, DebugCtx::Other);
-            changed = true;
         }
 
         // The process may result interior (old) places now being roots in the
@@ -534,6 +529,32 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
+    /// Returns true iff `edge` connects two nodes within an abstraction edge
+    fn is_encapsulated_by_abstraction(
+        &self,
+        edge: &BorrowPCGEdge<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        'outer: for abstraction in self.abstraction_edges() {
+            for blocked in edge.blocked_nodes(repacker) {
+                if !abstraction.value.blocked_nodes(repacker).contains(&blocked) {
+                    continue 'outer;
+                }
+            }
+            for blocked_by in edge.blocked_by_nodes(repacker) {
+                if !abstraction
+                    .value
+                    .blocked_by_nodes(repacker)
+                    .contains(&blocked_by)
+                {
+                    continue 'outer;
+                }
+            }
+            return true;
+        }
+        false
+    }
+
     pub fn join<T: BorrowCheckerInterface<'tcx>>(
         &mut self,
         other: &Self,
@@ -542,7 +563,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         region_liveness: &T,
     ) -> bool {
-        let mut changed = false;
+        let old_self = self.clone();
 
         if BORROWS_IMGCAT_DEBUG {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
@@ -564,10 +585,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     self.join_loop(other, self_block, exit_blocks[0], repacker, region_liveness);
                 if BORROWS_IMGCAT_DEBUG {
                     if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                        DotGraph::render_with_imgcat(&dot_graph, "After join (loop):")
-                            .unwrap_or_else(|e| {
-                                eprintln!("Error rendering self graph: {}", e);
-                            });
+                        DotGraph::render_with_imgcat(
+                            &dot_graph,
+                            &format!("After join (loop, changed={:?}):", result),
+                        )
+                        .unwrap_or_else(|e| {
+                            eprintln!("Error rendering self graph: {}", e);
+                        });
                     }
                 }
                 assert!(self.is_valid(repacker), "Graph became invalid after join");
@@ -587,13 +611,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             other_edge.kind().clone(),
                             new_conditions,
                         ));
-                        changed = true;
                     }
                 }
                 None => {
+                    match other_edge.kind() {
+                        BorrowPCGEdgeKind::RegionProjectionMember(member)
+                            if member.direction()
+                                == RegionProjectionMemberDirection::ProjectionBlocksPlace =>
+                        {
+                            for projection in member.projections.iter() {
+                                if let Some(place) = projection.deref(repacker) {
+                                    for borrow in self.borrows_blocked_by(place) {
+                                        // if borrow.value.blocked_place == member.place {
+                                        self.remove(&(borrow.into()), DebugCtx::Other);
+                                        // }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
                     self.insert(other_edge.clone());
-                    changed = true;
                 }
+            }
+        }
+        for edge in self.edges().cloned().collect::<Vec<_>>() {
+            if let BorrowPCGEdgeKind::Abstraction(_) = edge.kind() {
+                continue;
+            }
+            if self.is_encapsulated_by_abstraction(&edge, repacker) {
+                self.remove(&edge, DebugCtx::Other);
             }
         }
         let mut finished = false;
@@ -604,15 +651,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     for edge in self.edges_blocked_by(leaf_node.into(), repacker) {
                         finished = false;
                         self.remove(&edge, DebugCtx::Other);
-                        changed = true;
                     }
                 }
             }
         }
 
+        let changed = old_self != *self;
+
         if BORROWS_IMGCAT_DEBUG {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                DotGraph::render_with_imgcat(&dot_graph, "After join:").unwrap_or_else(|e| {
+                DotGraph::render_with_imgcat(
+                    &dot_graph,
+                    &format!("After join: (changed={:?})", changed),
+                )
+                .unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {}", e);
                 });
             }

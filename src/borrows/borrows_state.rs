@@ -308,54 +308,66 @@ impl<'tcx> BorrowsState<'tcx> {
         _debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> BorrowsBridge<'tcx> {
-        let snapshot_self = self.clone();
         let added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>> = to
             .borrows()
             .into_iter()
-            .filter(|rb| !snapshot_self.has_reborrow_at_location(rb.value.reserve_location()))
+            .filter(|rb| !self.has_reborrow_at_location(rb.value.reserve_location()))
             .collect();
 
         let expands = to
             .deref_expansions()
-            .difference(&snapshot_self.deref_expansions())
+            .difference(&self.deref_expansions())
             .cloned()
             .collect();
 
         let mut ug = UnblockGraph::new();
 
-        for borrow in snapshot_self.borrows() {
+        for borrow in self.borrows() {
             if !to.has_reborrow_at_location(borrow.value.reserve_location()) {
                 ug.kill_edge(borrow.clone().into(), self, repacker);
             }
         }
 
-        let same_place = |self_place: &MaybeOldPlace<'tcx>, to_place: &MaybeOldPlace<'tcx>| {
-            if self_place.place() != to_place.place() {
-                return false;
-            }
-            if self_place.location() == to_place.location() {
-                return true;
-            }
-            self_place.is_current()
-                && to_place.location().unwrap() == self.latest.get(self_place.place())
-        };
+        // Two nodes are conceptually the same place if:
+        // 1) they are actually equal
+        // 2) if `self_place` is a current place and `to_place` is a snapshotted
+        // version of that same place which is current w.r.t `self`
+        //
+        // TODO: Confirm that case 1 is correct (for example, if the place has
+        // been re-assigned in `other`)
+        let same_place =
+            |self_place: MaybeRemotePlace<'tcx>, to_place: MaybeRemotePlace<'tcx>| match (
+                self_place, to_place,
+            ) {
+                (MaybeRemotePlace::Local(self_place), MaybeRemotePlace::Local(to_place)) => {
+                    if self_place.place() != to_place.place() {
+                        return false;
+                    }
+                    if self_place.location() == to_place.location() {
+                        return true;
+                    }
+                    self_place.is_current()
+                        && to_place.location().unwrap() == self.latest.get(self_place.place())
+                }
+                (MaybeRemotePlace::Remote(p1), MaybeRemotePlace::Remote(p2)) => p1 == p2,
+                _ => false,
+            };
 
         let same_node =
             |self_place: CGNode<'tcx>, to_place: CGNode<'tcx>| match (self_place, to_place) {
                 (CGNode::RegionProjection(rp1), CGNode::RegionProjection(rp2)) => {
-                    same_place(&rp1.place, &rp2.place) && rp1.region() == rp2.region()
+                    same_place(rp1.place.into(), rp2.place.into()) && rp1.region() == rp2.region()
                 }
                 (CGNode::RemotePlace(rp1), CGNode::RemotePlace(rp2)) => rp1 == rp2,
                 _ => false,
             };
 
-        'outer: for exp in snapshot_self
-            .deref_expansions()
-            .difference(&to.deref_expansions())
-        {
+        // TODO: perhaps this logic could be simplified?
+
+        'outer: for exp in self.deref_expansions().difference(&to.deref_expansions()) {
             if exp.value.base().is_current() {
                 for to in to.deref_expansions() {
-                    if same_place(&exp.value.base(), &to.value.base()) {
+                    if same_place(exp.value.base().into(), to.value.base().into()) {
                         continue 'outer;
                     }
                 }
@@ -363,8 +375,8 @@ impl<'tcx> BorrowsState<'tcx> {
             ug.kill_edge(exp.clone().into(), self, repacker);
         }
 
-        'outer: for self_abstraction in snapshot_self.region_abstractions() {
-            'inner: for to_abstraction in to.region_abstractions() {
+        'outer: for self_abstraction in self.abstraction_edges() {
+            'inner: for to_abstraction in to.abstraction_edges() {
                 let self_value = self_abstraction.value.abstraction_type.clone();
                 let to_value = to_abstraction.value.abstraction_type.clone();
                 for (n1, n2) in self_value.inputs().iter().zip(to_value.inputs().iter()) {
@@ -382,9 +394,27 @@ impl<'tcx> BorrowsState<'tcx> {
             ug.kill_edge(self_abstraction.clone().into(), self, repacker);
         }
 
+        'outer: for self_member in self.graph.region_projection_members().iter() {
+            for to_member in to.graph.region_projection_members().iter() {
+                if same_place(self_member.value.place.into(), to_member.value.place.into())
+                    && self_member.value.direction() == to_member.value.direction()
+                    && self_member.value.projections.size() == to_member.value.projections.size()
+                    && self_member
+                        .value
+                        .projections
+                        .iter()
+                        .zip(to_member.value.projections.iter())
+                        .all(|(p1, p2)| same_node((*p1).into(), (*p2).into()))
+                {
+                    continue 'outer;
+                }
+            }
+            ug.kill_edge(self_member.clone().into(), self, repacker);
+        }
+
         let mut weakens: FxHashSet<Weaken<'tcx>> = FxHashSet::default();
         let mut restores: FxHashSet<RestoreCapability<'tcx>> = FxHashSet::default();
-        for (place, capability) in snapshot_self.place_capabilities() {
+        for (place, capability) in self.place_capabilities() {
             if let Some(to_capability) = to.get_capability(place) {
                 if capability > to_capability {
                     weakens.insert(Weaken(place.clone(), capability, to_capability));
@@ -637,8 +667,14 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.has_borrow_at_location(location)
     }
 
-    pub fn region_abstractions(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
+    pub fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
         self.graph.abstraction_edges()
+    }
+
+    pub fn region_projection_members(
+        &self,
+    ) -> FxHashSet<Conditioned<RegionProjectionMember<'tcx>>> {
+        self.graph.region_projection_members()
     }
 
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
