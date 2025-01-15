@@ -4,48 +4,33 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::{
+use crate::rustc_interface::{
     dataflow::Analysis,
     dataflow::ResultsCursor,
     middle::mir::{BasicBlock, Body, Location},
 };
 
 use crate::{
-    borrows::{
-        borrows_visitor::DebugCtx,
-        engine::BorrowsStates,
-    },
-    combined_pcs::{PcsContext, PcsEngine, PlaceCapabilitySummary},
+    borrows::{borrows_visitor::DebugCtx, engine::BorrowsStates},
+    combined_pcs::PlaceCapabilitySummary,
     free_pcs::{
         CapabilitySummary, FreePlaceCapabilitySummary, RepackOp, RepackingBridgeSemiLattice,
     },
-    rustc_interface,
     utils::PlaceRepacker,
     BorrowsBridge,
 };
 
-pub trait HasPcs<'mir, 'tcx> {
-    fn get_curr_fpcs(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
+pub (crate) trait HasPcs<'mir, 'tcx> {
+    fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx>;
 }
 
 impl<'mir, 'tcx> HasPcs<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
-    fn get_curr_fpcs(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
-        &self.fpcs
+    fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
+        &self.owned_pcg()
     }
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx> {
-        &self.borrows.states
-    }
-}
-
-// trait FpcsEngineLike<'mir, 'tcx, D: FreePlaceCapabilitySummaryLike<'mir, 'tcx>>: Analysis<'tcx, Domain = D>
-
-pub trait HasCgContext<'mir, 'tcx> {
-    fn get_cgx(&self) -> std::rc::Rc<PcsContext<'mir, 'tcx>>;
-}
-impl<'mir, 'tcx> HasCgContext<'mir, 'tcx> for PcsEngine<'mir, 'tcx> {
-    fn get_cgx(&self) -> std::rc::Rc<PcsContext<'mir, 'tcx>> {
-        self.cgx.clone()
+        &self.borrow_pcg().states
     }
 }
 
@@ -87,11 +72,11 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
     }
 
     pub fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.cursor.get().get_curr_fpcs().repacker
+        self.cursor.get().get_curr_fpcg().repacker
     }
 
     pub fn initial_state(&self) -> &CapabilitySummary<'tcx> {
-        &self.cursor.get().get_curr_fpcs().post_main
+        &self.cursor.get().get_curr_fpcg().post_main
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -103,13 +88,13 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         let state = self.cursor.get();
 
-        let after = state.get_curr_fpcs().post_main.clone();
+        let after = state.get_curr_fpcg().post_main.clone();
         let curr_borrows = state.get_borrows_states().clone();
 
         self.cursor.seek_after_primary_effect(location);
 
         let state = self.cursor.get();
-        let curr_fpcs = state.get_curr_fpcs();
+        let curr_fpcs = state.get_curr_fpcg();
         let (repacks_start, repacks_middle) = curr_fpcs.repack_ops(&after);
 
         let (extra_start, extra_middle) = curr_borrows.bridge_between_stmts(
@@ -145,7 +130,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         // TODO: cleanup
         let rp: PlaceRepacker = self.repacker();
-        let state = self.cursor.get().get_curr_fpcs().clone();
+        let state = self.cursor.get().get_curr_fpcg().clone();
         let block = &self.body()[location.block];
         let succs = block
             .terminator()
@@ -153,7 +138,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
             .map(|succ| {
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
-                let to = entry_set.get_curr_fpcs();
+                let to = entry_set.get_curr_fpcg();
                 FreePcsLocation {
                     location: Location {
                         block: succ,

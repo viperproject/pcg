@@ -21,7 +21,7 @@ use borrows::{
     borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion,
     unblock_graph::UnblockGraph,
 };
-use combined_pcs::{BodyWithBorrowckFacts, PcsContext, PcsEngine, PlaceCapabilitySummary};
+use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::CapabilityKind;
 use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
@@ -34,7 +34,7 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     'mir,
     'tcx,
     PlaceCapabilitySummary<'mir, 'tcx>,
-    PcsEngine<'mir, 'tcx>,
+    PCGEngine<'mir, 'tcx>,
 >;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
@@ -96,8 +96,8 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
-    let cgx = PcsContext::new(tcx, mir);
-    let fpcs = PcsEngine::new(cgx, visualization_output_path.clone());
+    let cgx = PCGContext::new(tcx, mir);
+    let fpcs = PCGEngine::new(cgx, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCS.lock().unwrap();
         *record_pcs = true;
@@ -125,7 +125,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     let mut fpcs_analysis = free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(&mir.body));
 
     if let Some(dir_path) = visualization_output_path {
-        // Generate legend visualization
+
         let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
         let edge_legend_graph = crate::visualization::legend::generate_edge_legend().unwrap();
         std::fs::write(&edge_legend_file_path, edge_legend_graph).expect("Failed to write edge legend");
@@ -136,7 +136,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, &mir.body)
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PcsContext::new(tcx, mir).rp;
+        let rp = PCGContext::new(tcx, mir).rp;
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body.basic_blocks.iter_enumerated() {

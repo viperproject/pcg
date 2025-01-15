@@ -90,20 +90,20 @@ impl<'tcx> From<consumers::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFact
     }
 }
 
-pub struct PcsContext<'a, 'tcx> {
-    pub rp: PlaceRepacker<'a, 'tcx>,
-    pub mir: &'a BodyWithBorrowckFacts<'tcx>,
+pub(crate) struct PCGContext<'a, 'tcx> {
+    pub(crate) rp: PlaceRepacker<'a, 'tcx>,
+    pub(crate) mir: &'a BodyWithBorrowckFacts<'tcx>,
 }
 
-impl<'a, 'tcx> PcsContext<'a, 'tcx> {
+impl<'a, 'tcx> PCGContext<'a, 'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, mir: &'a BodyWithBorrowckFacts<'tcx>) -> Self {
         let rp = PlaceRepacker::new(&mir.body, tcx);
         Self { rp, mir }
     }
 }
 
-pub struct PcsEngine<'a, 'tcx> {
-    pub(crate) cgx: Rc<PcsContext<'a, 'tcx>>,
+pub struct PCGEngine<'a, 'tcx> {
+    pub(crate) cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
     maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
@@ -111,7 +111,7 @@ pub struct PcsEngine<'a, 'tcx> {
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
     curr_block: Cell<BasicBlock>,
 }
-impl<'a, 'tcx> PcsEngine<'a, 'tcx> {
+impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
     fn initialize(&self, state: &mut PlaceCapabilitySummary<'a, 'tcx>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
@@ -122,7 +122,7 @@ impl<'a, 'tcx> PcsEngine<'a, 'tcx> {
         assert!(state.is_initialized());
     }
 
-    pub fn new(cgx: PcsContext<'a, 'tcx>, debug_output_dir: Option<String>) -> Self {
+    pub(crate) fn new(cgx: PCGContext<'a, 'tcx>, debug_output_dir: Option<String>) -> Self {
         if let Some(dir_path) = &debug_output_dir {
             if std::path::Path::new(dir_path).exists() {
                 std::fs::remove_dir_all(dir_path).expect("Failed to delete directory contents");
@@ -168,7 +168,7 @@ impl<'a, 'tcx> PcsEngine<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> AnalysisDomain<'tcx> for PcsEngine<'a, 'tcx> {
+impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
     type Domain = PlaceCapabilitySummary<'a, 'tcx>;
     const NAME: &'static str = "pcs";
 
@@ -192,8 +192,7 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PcsEngine<'a, 'tcx> {
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
         self.curr_block.set(START_BLOCK);
-        state.fpcs.initialize_as_start_block();
-        state.borrows.initialize_as_start_block();
+        state.pcg_mut().initialize_as_start_block();
     }
 }
 
@@ -228,7 +227,7 @@ pub enum UnblockAction<'tcx> {
     Collapse(MaybeOldPlace<'tcx>, Vec<MaybeOldPlace<'tcx>>),
 }
 
-impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
+impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
     fn apply_before_statement_effect(
         &mut self,
         state: &mut Self::Domain,
@@ -238,18 +237,20 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         self.initialize(state, location.block);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.fpcs
-            .apply_before_statement_effect(&mut state.fpcs, statement, location);
+            .apply_before_statement_effect(state.owned_pcg_mut(), statement, location);
         self.borrows
-            .apply_before_statement_effect(&mut state.borrows, statement, location);
+            .apply_before_statement_effect(state.borrow_pcg_mut(), statement, location);
+
+        let pcg = state.pcg_mut();
 
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
-        for cap in state.fpcs.post_operands.iter_mut() {
+        for cap in pcg.owned.post_operands.iter_mut() {
             match cap {
                 crate::free_pcs::CapabilityLocal::Unallocated => {}
                 crate::free_pcs::CapabilityLocal::Allocated(capability_projections) => {
                     for (root, kind) in capability_projections.iter_mut() {
-                        if !state.borrows.states.after.contains(*root, self.cgx.rp) {
+                        if !pcg.borrow.states.after.contains(*root, self.cgx.rp) {
                             if kind.is_read() || kind.is_lent_exclusive() {
                                 *kind = CapabilityKind::Exclusive;
                             }
@@ -276,9 +277,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         location: Location,
     ) {
         self.fpcs
-            .apply_statement_effect(&mut state.fpcs, statement, location);
+            .apply_statement_effect(state.owned_pcg_mut(), statement, location);
         self.borrows
-            .apply_statement_effect(&mut state.borrows, statement, location);
+            .apply_statement_effect(state.borrow_pcg_mut(), statement, location);
         self.generate_dot_graph(state, DataflowStmtPhase::Start, location.statement_index);
         self.generate_dot_graph(state, DataflowStmtPhase::After, location.statement_index);
     }
@@ -291,9 +292,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         self.initialize(state, location.block);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.borrows
-            .apply_before_terminator_effect(&mut state.borrows, terminator, location);
+            .apply_before_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs
-            .apply_before_terminator_effect(&mut state.fpcs, terminator, location);
+            .apply_before_terminator_effect(state.owned_pcg_mut(), terminator, location);
         self.generate_dot_graph(
             state,
             DataflowStmtPhase::BeforeStart,
@@ -312,9 +313,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PcsEngine<'a, 'tcx> {
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
         self.borrows
-            .apply_terminator_effect(&mut state.borrows, terminator, location);
+            .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs
-            .apply_terminator_effect(&mut state.fpcs, terminator, location);
+            .apply_terminator_effect(state.owned_pcg_mut(), terminator, location);
         self.generate_dot_graph(state, DataflowStmtPhase::Start, location.statement_index);
         self.generate_dot_graph(state, DataflowStmtPhase::After, location.statement_index);
         terminator.edges()
