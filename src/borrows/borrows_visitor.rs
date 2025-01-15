@@ -1,19 +1,22 @@
 use std::{collections::BTreeSet, rc::Rc};
 
-use crate::rustc_interface::{
-    ast::Mutability,
-    borrowck::{
-        borrow_set::BorrowSet,
-        consumers::{
-            BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
+use crate::{
+    combined_pcs::PCGError,
+    rustc_interface::{
+        ast::Mutability,
+        borrowck::{
+            borrow_set::BorrowSet,
+            consumers::{
+                BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
+            },
         },
-    },
-    middle::{
-        mir::{
-            visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue, Statement,
-            StatementKind, Terminator, TerminatorKind,
+        middle::{
+            mir::{
+                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
+                Statement, StatementKind, Terminator, TerminatorKind,
+            },
+            ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
         },
-        ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
     },
 };
 
@@ -61,7 +64,7 @@ pub enum StatementStage {
     Main,
 }
 
-pub (crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
+pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     state: &'state mut BorrowsDomain<'mir, 'tcx>,
     input_facts: &'mir PoloniusInput,
@@ -305,7 +308,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-pub (crate) fn get_vid(region: &Region) -> Option<RegionVid> {
+pub(crate) fn get_vid(region: &Region) -> Option<RegionVid> {
     match region.kind() {
         RegionKind::ReVar(vid) => Some(vid),
         _other => None,
@@ -380,7 +383,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
             match &statement.kind {
-                StatementKind::Assign(box (target, _)) => {
+                StatementKind::Assign(box (target, rvalue)) => {
                     // Any references to target should be made old because it
                     // will be overwritten in the assignment.
                     // In principle the target could be made old in the `Main`
@@ -390,6 +393,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         .ty
                         .is_ref()
                     {
+                        if let Rvalue::Cast(_, _, _) = rvalue {
+                            self.state.report_error(PCGError::Unsupported(format!(
+                                "Casts to reference-typed values are not yet supported: {:?}",
+                                statement
+                            )));
+                            return;
+                        }
                         let target = (*target).into();
                         self.state.states.after.make_place_old(
                             target,

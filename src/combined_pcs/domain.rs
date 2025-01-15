@@ -62,9 +62,9 @@ impl DataflowStmtPhase {
 #[derive(Clone)]
 pub struct PlaceCapabilitySummary<'a, 'tcx> {
     cgx: Rc<PCGContext<'a, 'tcx>>,
-    pub (crate) block: Option<BasicBlock>,
+    pub(crate) block: Option<BasicBlock>,
 
-    pcg: std::result::Result<PCG<'a, 'tcx>, String>,
+    pcg: PCG<'a, 'tcx>,
     dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
 
     dot_output_dir: Option<String>,
@@ -142,6 +142,11 @@ impl DotGraphs {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PCGError {
+    Unsupported(String),
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct PCG<'a, 'tcx> {
     pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
@@ -160,28 +165,32 @@ impl<'a, 'tcx> PCG<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
+    pub(crate) fn has_error(&self) -> bool {
+        self.borrow_pcg().has_error()
+    }
+
     pub(crate) fn pcg_mut(&mut self) -> &mut PCG<'a, 'tcx> {
-        self.pcg.as_mut().unwrap()
+        &mut self.pcg
     }
 
     pub(crate) fn borrow_pcg_mut(&mut self) -> &mut BorrowsDomain<'a, 'tcx> {
-        &mut self.pcg.as_mut().unwrap().borrow
+        &mut self.pcg.borrow
     }
 
     pub(crate) fn owned_pcg_mut(&mut self) -> &mut FreePlaceCapabilitySummary<'a, 'tcx> {
-        &mut self.pcg.as_mut().unwrap().owned
+        &mut self.pcg.owned
     }
 
     pub(crate) fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'a, 'tcx> {
-        &self.pcg.as_ref().unwrap().owned
+        &self.pcg.owned
     }
 
     pub(crate) fn borrow_pcg(&self) -> &BorrowsDomain<'a, 'tcx> {
-        &self.pcg.as_ref().unwrap().borrow
+        &self.pcg.borrow
     }
 
     pub(crate) fn is_valid(&self) -> bool {
-        self.pcg.as_ref().unwrap().is_valid()
+        self.pcg.is_valid()
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
@@ -190,7 +199,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
         self.block = Some(block);
-        self.pcg.as_mut().unwrap().borrow.set_block(block);
+        self.pcg.borrow.set_block(block);
     }
 
     pub fn set_dot_graphs(&mut self, dot_graphs: Rc<RefCell<DotGraphs>>) {
@@ -219,6 +228,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                 .relative_filename(phase, self.block(), statement_index)
         )
     }
+
     pub fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
         if !*RECORD_PCS.lock().unwrap() {
             return;
@@ -243,7 +253,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                 relative_filename
             ));
 
-            let pcg = self.pcg.as_ref().unwrap();
+            let pcg = &self.pcg;
 
             let (fpcs, borrows) = match phase {
                 DataflowStmtPhase::Initial | DataflowStmtPhase::BeforeStart => {
@@ -277,10 +287,10 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             block,
             maybe_live_locals.clone(),
         );
-        let pcg = Ok(PCG {
+        let pcg = PCG {
             owned: fpcs,
             borrow: borrows,
-        });
+        };
         Self {
             cgx,
             block,
@@ -305,6 +315,10 @@ impl Debug for PlaceCapabilitySummary<'_, '_> {
 
 impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     fn join(&mut self, other: &Self) -> bool {
+        if other.has_error() && !self.has_error() {
+            self.pcg = other.pcg.clone();
+            return true;
+        }
         if !other.is_valid() {
             eprintln!(
                 "Block {:?} is invalid. Body source: {:?}",
@@ -341,8 +355,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             }
         }
         let self_block = self.block();
-        let pcg = self.pcg.as_mut().unwrap();
-        let ub = pcg.borrow.states.after.apply_unblock_graph(
+        let ub = self.pcg.borrow.states.after.apply_unblock_graph(
             g,
             self.cgx.rp,
             mir::Location {
@@ -363,10 +376,6 @@ impl<'a, 'tcx> DebugWithContext<PCGEngine<'a, 'tcx>> for PlaceCapabilitySummary<
         ctxt: &PCGEngine<'a, 'tcx>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        self.pcg.as_ref().unwrap().owned.fmt_diff_with(
-            &old.pcg.as_ref().unwrap().owned,
-            &ctxt.fpcs,
-            f,
-        )
+        self.pcg.owned.fmt_diff_with(&old.pcg.owned, &ctxt.fpcs, f)
     }
 }

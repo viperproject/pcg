@@ -234,6 +234,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
+        if state.has_error() {
+            return;
+        }
         self.initialize(state, location.block);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.fpcs
@@ -276,6 +279,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
+        if state.has_error() {
+            return;
+        }
         self.fpcs
             .apply_statement_effect(state.owned_pcg_mut(), statement, location);
         self.borrows
@@ -289,6 +295,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
+        if state.has_error() {
+            return;
+        }
         self.initialize(state, location.block);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.borrows
@@ -312,6 +321,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
+        if state.has_error() {
+            return terminator.edges();
+        }
         self.borrows
             .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs

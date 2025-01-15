@@ -1,17 +1,20 @@
 use std::rc::Rc;
 
-use crate::rustc_interface::{
-    borrowck::{
-        borrow_set::BorrowSet,
-        consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
-    },
-    dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
-    middle::{
-        mir::{
-            visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
-            TerminatorEdges,
+use crate::{
+    combined_pcs::PCGError,
+    rustc_interface::{
+        borrowck::{
+            borrow_set::BorrowSet,
+            consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
         },
-        ty::{self, TyCtxt},
+        dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
+        middle::{
+            mir::{
+                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement,
+                Terminator, TerminatorEdges,
+            },
+            ty::{self, TyCtxt},
+        },
     },
 };
 use serde_json::{json, Value};
@@ -33,13 +36,13 @@ use super::{
 use super::{deref_expansion::DerefExpansion, domain::MaybeOldPlace};
 
 pub struct BorrowsEngine<'mir, 'tcx> {
-    pub (crate) tcx: TyCtxt<'tcx>,
-    pub (crate) body: &'mir Body<'tcx>,
-    pub (crate) location_table: &'mir LocationTable,
-    pub (crate) input_facts: &'mir PoloniusInput,
-    pub (crate) borrow_set: Rc<BorrowSet<'tcx>>,
-    pub (crate) region_inference_context: Rc<RegionInferenceContext<'tcx>>,
-    pub (crate) output_facts: &'mir PoloniusOutput,
+    pub(crate) tcx: TyCtxt<'tcx>,
+    pub(crate) body: &'mir Body<'tcx>,
+    pub(crate) location_table: &'mir LocationTable,
+    pub(crate) input_facts: &'mir PoloniusInput,
+    pub(crate) borrow_set: Rc<BorrowSet<'tcx>>,
+    pub(crate) region_inference_context: Rc<RegionInferenceContext<'tcx>>,
+    pub(crate) output_facts: &'mir PoloniusOutput,
 }
 
 impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
@@ -106,6 +109,12 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for Results<'tcx, MaybeLiveLocals> {
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
+        if other.has_error() && !self.has_error() {
+            self.error = other.error.clone();
+            return true;
+        } else if self.has_error() {
+            return false;
+        }
         assert!(other.is_valid(), "Other graph is invalid");
         let mut other_after = other.after_state().clone();
 
@@ -145,6 +154,9 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
+        if state.has_error() {
+            return;
+        }
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
         state.states.before_start = state.states.after.clone();
@@ -159,6 +171,9 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
+        if state.has_error() {
+            return;
+        }
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
             .visit_statement(statement, location);
         state.states.start = state.states.after.clone();
@@ -172,6 +187,9 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
+        if state.has_error() {
+            return;
+        }
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_terminator(terminator, location);
         state.states.before_start = state.states.after.clone();
@@ -186,6 +204,9 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
+        if state.has_error() {
+            return terminator.edges();
+        }
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
             .visit_terminator(terminator, location);
         state.states.start = state.states.after.clone();
@@ -244,12 +265,13 @@ impl<'tcx> BorrowsStates<'tcx> {
 }
 #[derive(Clone)]
 pub struct BorrowsDomain<'mir, 'tcx> {
-    pub (crate) states: BorrowsStates<'tcx>,
-    pub (crate) block: Option<BasicBlock>,
-    pub (crate) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub (crate) output_facts: Rc<PoloniusOutput>,
-    pub (crate) location_table: Rc<LocationTable>,
-    pub (crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
+    pub(crate) states: BorrowsStates<'tcx>,
+    pub(crate) block: Option<BasicBlock>,
+    pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
+    pub(crate) output_facts: Rc<PoloniusOutput>,
+    pub(crate) location_table: Rc<LocationTable>,
+    pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
+    error: Option<PCGError>,
 }
 
 impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
@@ -273,26 +295,38 @@ impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
 }
 
 impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+    pub(crate) fn error(&self) -> Option<&PCGError> {
+        self.error.as_ref()
+    }
     pub(crate) fn is_valid(&self) -> bool {
         self.states.after.is_valid(self.repacker)
     }
-    pub (crate) fn after_state(&self) -> &BorrowsState<'tcx> {
+    pub(crate) fn after_state(&self) -> &BorrowsState<'tcx> {
         &self.states.after
     }
 
-    pub (crate) fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
+    pub(crate) fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
         &mut self.states.after
     }
 
-    pub (crate) fn set_block(&mut self, block: BasicBlock) {
+    pub(crate) fn set_block(&mut self, block: BasicBlock) {
         self.block = Some(block);
     }
 
-    pub (crate) fn block(&self) -> BasicBlock {
+    pub(crate) fn block(&self) -> BasicBlock {
         self.block.unwrap()
     }
 
-    pub (crate) fn new(
+    pub(crate) fn report_error(&mut self, error: PCGError) {
+        eprintln!("PCG Error: {:?}", error);
+        self.error = Some(error);
+    }
+
+    pub(crate) fn has_error(&self) -> bool {
+        self.error.is_some()
+    }
+
+    pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
         output_facts: Rc<PoloniusOutput>,
         location_table: Rc<LocationTable>,
@@ -306,10 +340,11 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             output_facts,
             location_table,
             maybe_live_locals,
+            error: None,
         }
     }
 
-    pub (crate) fn initialize_as_start_block(&mut self) {
+    pub(crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
             if let ty::TyKind::Ref(region, _, mutability) =
                 self.repacker.body().local_decls[arg].ty.kind()

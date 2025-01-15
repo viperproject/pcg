@@ -877,7 +877,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        return true;
         if let Some(valid) = self.cached_is_valid.get() {
             return valid;
         }

@@ -20,7 +20,7 @@ use crate::{
     BorrowsBridge,
 };
 
-pub (crate) trait HasPcs<'mir, 'tcx> {
+pub trait HasPcs<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx>;
 }
