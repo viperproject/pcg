@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rustc_interface::{
+use crate::rustc_interface::{
     borrowck::{
         borrow_set::BorrowSet,
         consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
@@ -18,15 +18,12 @@ use serde_json::{json, Value};
 
 use crate::{
     borrows::domain::ToJsonWithRepacker,
-    rustc_interface,
     utils::{self, Place, PlaceRepacker},
-    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
     BorrowsBridge,
 };
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrows_graph::BORROWS_IMGCAT_DEBUG,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
@@ -36,13 +33,13 @@ use super::{
 use super::{deref_expansion::DerefExpansion, domain::MaybeOldPlace};
 
 pub struct BorrowsEngine<'mir, 'tcx> {
-    pub tcx: TyCtxt<'tcx>,
-    pub body: &'mir Body<'tcx>,
-    pub location_table: &'mir LocationTable,
-    pub input_facts: &'mir PoloniusInput,
-    pub borrow_set: Rc<BorrowSet<'tcx>>,
-    pub region_inference_context: Rc<RegionInferenceContext<'tcx>>,
-    pub output_facts: &'mir PoloniusOutput,
+    pub (crate) tcx: TyCtxt<'tcx>,
+    pub (crate) body: &'mir Body<'tcx>,
+    pub (crate) location_table: &'mir LocationTable,
+    pub (crate) input_facts: &'mir PoloniusInput,
+    pub (crate) borrow_set: Rc<BorrowSet<'tcx>>,
+    pub (crate) region_inference_context: Rc<RegionInferenceContext<'tcx>>,
+    pub (crate) output_facts: &'mir PoloniusOutput,
 }
 
 impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
@@ -247,12 +244,12 @@ impl<'tcx> BorrowsStates<'tcx> {
 }
 #[derive(Clone)]
 pub struct BorrowsDomain<'mir, 'tcx> {
-    pub states: BorrowsStates<'tcx>,
-    pub block: Option<BasicBlock>,
-    pub repacker: PlaceRepacker<'mir, 'tcx>,
-    pub output_facts: Rc<PoloniusOutput>,
-    pub location_table: Rc<LocationTable>,
-    pub maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
+    pub (crate) states: BorrowsStates<'tcx>,
+    pub (crate) block: Option<BasicBlock>,
+    pub (crate) repacker: PlaceRepacker<'mir, 'tcx>,
+    pub (crate) output_facts: Rc<PoloniusOutput>,
+    pub (crate) location_table: Rc<LocationTable>,
+    pub (crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
 }
 
 impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
@@ -279,27 +276,23 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn is_valid(&self) -> bool {
         self.states.after.is_valid(self.repacker)
     }
-    pub fn after_state(&self) -> &BorrowsState<'tcx> {
+    pub (crate) fn after_state(&self) -> &BorrowsState<'tcx> {
         &self.states.after
     }
 
-    pub fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
+    pub (crate) fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
         &mut self.states.after
     }
 
-    pub fn is_initialized(&self) -> bool {
-        self.block.is_some()
-    }
-
-    pub fn set_block(&mut self, block: BasicBlock) {
+    pub (crate) fn set_block(&mut self, block: BasicBlock) {
         self.block = Some(block);
     }
 
-    pub fn block(&self) -> BasicBlock {
+    pub (crate) fn block(&self) -> BasicBlock {
         self.block.unwrap()
     }
 
-    pub fn new(
+    pub (crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
         output_facts: Rc<PoloniusOutput>,
         location_table: Rc<LocationTable>,
@@ -316,7 +309,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         }
     }
 
-    pub fn initialize_as_start_block(&mut self) {
+    pub (crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
             if let ty::TyKind::Ref(region, _, mutability) =
                 self.repacker.body().local_decls[arg].ty.kind()
@@ -332,9 +325,5 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 );
             }
         }
-    }
-
-    pub fn body(&self) -> &'mir Body<'tcx> {
-        self.repacker.body()
     }
 }

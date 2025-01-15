@@ -48,11 +48,11 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.is_valid(repacker)
     }
 
-    pub fn place_capabilities(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
+    pub (crate) fn place_capabilities(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
         self.capabilities.place_capabilities()
     }
 
-    pub fn contains<T: Into<PCGNode<'tcx>>>(
+    pub (crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
         repacker: PlaceRepacker<'_, 'tcx>,

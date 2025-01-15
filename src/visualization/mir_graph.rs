@@ -91,7 +91,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
             let kind = match kind {
                 mir::BorrowKind::Shared => "",
                 mir::BorrowKind::Mut { .. } => "mut",
-                mir::BorrowKind::Fake(_) => "fake"
+                mir::BorrowKind::Fake(_) => "fake",
             };
             format!("&{} {}", kind, format_place(place, repacker))
         }
@@ -103,7 +103,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
             format!("*{} {}", kind, format_place(place, repacker))
         }
         Rvalue::ThreadLocalRef(_) => todo!(),
-        Rvalue::Len(_) => todo!(),
+        Rvalue::Len(x) => format!("len({})", format_place(&x, repacker)),
         Rvalue::Cast(_, operand, ty) => format!("{} as {}", format_operand(operand, repacker), ty),
         Rvalue::BinaryOp(op, box (lhs, rhs)) => {
             format!(
@@ -336,9 +336,7 @@ fn mk_mir_graph<'mir, 'tcx>(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> MirGra
                     label: "real".to_string(),
                 });
             }
-            TerminatorKind::InlineAsm {
-                ..
-            } => todo!(),
+            TerminatorKind::InlineAsm { .. } => todo!(),
             TerminatorKind::CoroutineDrop => todo!(),
             _ => todo!(),
         }

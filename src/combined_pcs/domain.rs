@@ -264,6 +264,13 @@ impl Debug for PlaceCapabilitySummary<'_, '_> {
 
 impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     fn join(&mut self, other: &Self) -> bool {
+        if !other.is_valid() {
+            eprintln!(
+                "Block {:?} is invalid. Body source: {:?}",
+                other.block(),
+                self.cgx.mir.body.source
+            );
+        }
         debug_assert!(other.is_valid(), "Block {:?} is invalid", other.block());
         assert!(self.is_initialized() && other.is_initialized());
         if self.block().as_usize() == 0 {

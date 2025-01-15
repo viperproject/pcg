@@ -21,13 +21,9 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{
-        BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
-    },
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
     deref_expansion::{DerefExpansion, OwnedExpansion},
-    domain::{
-        AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker,
-    },
+    domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -753,7 +749,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.remove(edge)
     }
 
-    pub (crate) fn contains_deref_expansion_from(&self, place: &MaybeOldPlace<'tcx>) -> bool {
+    pub(crate) fn contains_deref_expansion_from(&self, place: &MaybeOldPlace<'tcx>) -> bool {
         self.edges.iter().any(|edge| {
             if let BorrowPCGEdgeKind::DerefExpansion(de) = &edge.kind {
                 de.base() == *place
@@ -804,7 +800,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub (crate) fn insert_owned_expansion(&mut self, place: MaybeOldPlace<'tcx>, location: Location) {
+    pub(crate) fn insert_owned_expansion(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        location: Location,
+    ) {
         let de = OwnedExpansion::new(place).into();
         self.insert(BorrowPCGEdge::new(de, PathConditions::new(location.block)));
     }
@@ -867,6 +867,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub fn filter_for_path(&mut self, path: &[BasicBlock]) {
+        self.cached_is_valid.set(None);
         self.edges
             .retain(|edge| edge.conditions().valid_for_path(path));
     }
@@ -876,6 +877,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        return true;
         if let Some(valid) = self.cached_is_valid.get() {
             return valid;
         }

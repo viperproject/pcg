@@ -61,7 +61,7 @@ pub enum StatementStage {
     Main,
 }
 
-pub struct BorrowsVisitor<'tcx, 'mir, 'state> {
+pub (crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     state: &'state mut BorrowsDomain<'mir, 'tcx>,
     input_facts: &'mir PoloniusInput,
