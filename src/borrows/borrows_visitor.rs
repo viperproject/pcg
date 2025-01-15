@@ -171,7 +171,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         false
     }
 
-    fn construct_region_abstraction_if_necessary(
+    /// Constructs a function call abstraction, if necessary.
+    fn construct_function_call_abstraction(
         &mut self,
         func: &Operand<'tcx>,
         args: &[&Operand<'tcx>],
@@ -212,28 +213,21 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ));
             let ty = input_place.ty(self.repacker).ty;
             let ty = match ty.kind() {
-                ty::TyKind::Ref(region, ty, m) => {
-                    if m.is_mut() {
-                        for output in self
-                            .projections_borrowing_from_input_lifetime(*region, destination.into())
-                        {
-                            let input_rp = input_place.region_projection(0, self.repacker);
-                            let mut ug = UnblockGraph::new();
-                            ug.unblock_node(
-                                input_rp.into(),
-                                &self.state.states.after,
-                                self.repacker,
-                            );
-                            self.state.states.after.apply_unblock_graph(
-                                ug,
-                                self.repacker,
-                                location,
-                            );
-                            edges.push(AbstractionBlockEdge::new(
-                                vec![input_rp.into()].into_iter().collect(),
-                                vec![output.into()].into_iter().collect(),
-                            ));
-                        }
+                ty::TyKind::Ref(region, ty, _) => {
+                    let output_borrow_projections =
+                        self.projections_borrowing_from_input_lifetime(*region, destination.into());
+                    for output in output_borrow_projections {
+                        let input_rp = input_place.region_projection(0, self.repacker);
+                        let mut ug = UnblockGraph::new();
+                        ug.unblock_node(input_rp.into(), &self.state.states.after, self.repacker);
+                        self.state
+                            .states
+                            .after
+                            .apply_unblock_graph(ug, self.repacker, location);
+                        edges.push(AbstractionBlockEdge::new(
+                            vec![input_rp.into()].into_iter().collect(),
+                            vec![output.into()].into_iter().collect(),
+                        ));
                     }
                     *ty
                 }
@@ -258,7 +252,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         // No edges may be added e.g. if the inputs do not contain any (possibly
         // nested) mutable references
         if !edges.is_empty() {
-            self.state.states.after.add_region_abstraction(
+            self.state.states.after.insert_abstraction_edge(
                 AbstractionEdge::new(AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                     location,
                     *func_def_id,
@@ -311,7 +305,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-pub fn get_vid(region: &Region) -> Option<RegionVid> {
+pub (crate) fn get_vid(region: &Region) -> Option<RegionVid> {
     match region.kind() {
         RegionKind::ReVar(vid) => Some(vid),
         _other => None,
@@ -356,7 +350,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         location,
                         self.repacker,
                     );
-                    self.construct_region_abstraction_if_necessary(
+                    self.construct_function_call_abstraction(
                         func,
                         &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
                         destination,

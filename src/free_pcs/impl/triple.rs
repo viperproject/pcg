@@ -239,10 +239,12 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 pre: Condition::write(place),
                 post: None,
             },
-            &Call { destination, .. } => Triple {
-                pre: Condition::write(destination),
-                post: Some(Condition::exclusive(destination)),
-            },
+            &Call { destination, .. } => {
+                Triple {
+                    pre: Condition::write(destination),
+                    post: Some(Condition::exclusive(destination)),
+                }
+            }
             &Yield { resume_arg, .. } => Triple {
                 pre: Condition::write(resume_arg),
                 post: Some(Condition::exclusive(resume_arg)),

@@ -144,6 +144,10 @@ impl DotGraphs {
 }
 
 impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
+    pub(crate) fn is_valid(&self) -> bool {
+        self.borrows.is_valid()
+    }
+
     pub fn is_initialized(&self) -> bool {
         self.block.is_some()
     }
@@ -260,6 +264,7 @@ impl Debug for PlaceCapabilitySummary<'_, '_> {
 
 impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     fn join(&mut self, other: &Self) -> bool {
+        debug_assert!(other.is_valid(), "Block {:?} is invalid", other.block());
         assert!(self.is_initialized() && other.is_initialized());
         if self.block().as_usize() == 0 {
             panic!("{:?}", other.block());

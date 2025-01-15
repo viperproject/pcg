@@ -1,7 +1,7 @@
 #![feature(rustc_private)]
 
-use std::io::Write;
 use std::fs::File;
+use std::io::Write;
 
 use std::cell::RefCell;
 
@@ -13,6 +13,7 @@ use rustc_interface::{
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config, Queries},
     middle::{
+        mir::pretty::{write_mir_fn, PrettyPrintMirOptions},
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
         ty::TyCtxt,
         util::Providers,
@@ -67,7 +68,7 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
         match kind {
             hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
                 let item_name = format!("{}", tcx.item_name(def_id.to_def_id()));
-                let body = BODIES.with(|state| {
+                let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
                     let mut map = state.borrow_mut();
                     unsafe { std::mem::transmute(map.remove(&def_id).unwrap()) }
                 });
@@ -122,8 +123,6 @@ impl driver::Callbacks for PcsCallbacks {
         }
     }
 }
-
-
 
 fn main() {
     let mut rustc_args = Vec::new();

@@ -20,11 +20,13 @@ use crate::{
     borrows::domain::ToJsonWithRepacker,
     rustc_interface,
     utils::{self, Place, PlaceRepacker},
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
     BorrowsBridge,
 };
 
 use super::{
     borrow_edge::BorrowEdge,
+    borrows_graph::BORROWS_IMGCAT_DEBUG,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
@@ -107,6 +109,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for Results<'tcx, MaybeLiveLocals> {
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
+        assert!(other.is_valid(), "Other graph is invalid");
         let mut other_after = other.after_state().clone();
 
         // For edges in the other graph that actually belong to it,
@@ -273,6 +276,9 @@ impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
 }
 
 impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+    pub(crate) fn is_valid(&self) -> bool {
+        self.states.after.is_valid(self.repacker)
+    }
     pub fn after_state(&self) -> &BorrowsState<'tcx> {
         &self.states.after
     }
