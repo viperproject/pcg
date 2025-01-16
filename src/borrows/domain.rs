@@ -242,9 +242,9 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.place().is_owned(repacker)
     }
-    pub fn ref_mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Mutability> {
-        self.place().ref_mutability(repacker)
-    }
+    // pub fn ref_mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Mutability> {
+    //     self.place().ref_mutability(repacker)
+    // }
     pub fn local(&self) -> mir::Local {
         self.place().local
     }
@@ -299,7 +299,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub (crate) fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.region_projections(repacker).len() > 0
     }
 
