@@ -239,17 +239,15 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
-    pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.place().is_owned(repacker)
     }
-    // pub fn ref_mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Mutability> {
-    //     self.place().ref_mutability(repacker)
-    // }
-    pub fn local(&self) -> mir::Local {
+
+    pub(crate) fn local(&self) -> mir::Local {
         self.place().local
     }
 
-    pub fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
+    pub(crate) fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
         self.place().ty_region(repacker)
     }
 
@@ -259,29 +257,22 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             MaybeOldPlace::OldPlace(snapshot) => snapshot.place.last_projection(),
         }
     }
-    pub fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+
+    pub(crate) fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.with_inherent_region(repacker).into(),
         }
     }
 
-    pub fn prefix_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+    pub(crate) fn prefix_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeOldPlace::Current { place } => Some(place.prefix_place(repacker)?.into()),
             MaybeOldPlace::OldPlace(snapshot) => Some(snapshot.prefix_place(repacker)?.into()),
         }
     }
 
-    pub fn nearest_owned_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
-        let mut result = self.clone();
-        for p in result.pcs_elems() {
-            *p = p.nearest_owned_place(repacker);
-        }
-        result
-    }
-
-    pub fn region_projection(
+    pub(crate) fn region_projection(
         &self,
         idx: usize,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -299,11 +290,11 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub (crate) fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.region_projections(repacker).len() > 0
     }
 
-    pub (crate) fn region_projections(
+    pub(crate) fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
@@ -322,39 +313,22 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub fn as_current(&self) -> Option<Place<'tcx>> {
-        match self {
-            MaybeOldPlace::Current { place } => Some(*place),
-            MaybeOldPlace::OldPlace(_) => None,
-        }
-    }
-
-    pub fn old_place(&self) -> Option<PlaceSnapshot<'tcx>> {
-        match self {
-            MaybeOldPlace::Current { .. } => None,
-            MaybeOldPlace::OldPlace(old_place) => Some(old_place.clone()),
-        }
-    }
-
     pub fn ty(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceTy<'tcx> {
         self.place().ty(repacker)
     }
 
-    pub fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(self.place().project_deref(repacker).into(), self.location())
     }
-    pub fn project_deeper(&self, tcx: TyCtxt<'tcx>, elem: PlaceElem<'tcx>) -> MaybeOldPlace<'tcx> {
+
+    pub(crate) fn project_deeper(&self, tcx: TyCtxt<'tcx>, elem: PlaceElem<'tcx>) -> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(
             self.place().project_deeper(&[elem], tcx).into(),
             self.location(),
         )
     }
 
-    pub fn is_mut_ref(&self, body: &mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
-        self.place().is_mut_ref(body, tcx)
-    }
-
-    pub fn is_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.place().is_ref(repacker)
     }
 

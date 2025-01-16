@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 
 use crate::rustc_interface::{
     ast::Mutability,
@@ -60,9 +60,10 @@ impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
-pub struct RegionProjection<'tcx> {
-    pub(crate) place: MaybeRemotePlace<'tcx>,
+pub struct RegionProjection<'tcx, P = MaybeRemotePlace<'tcx>> {
+    pub(crate) place: P,
     region: PCGRegion,
+    phantom: PhantomData<&'tcx ()>,
 }
 
 impl<'tcx> fmt::Display for RegionProjection<'tcx> {
@@ -97,7 +98,11 @@ impl<'tcx> RegionProjection<'tcx> {
     }
 
     pub(crate) fn new(region: PCGRegion, place: MaybeRemotePlace<'tcx>) -> Self {
-        Self { place, region }
+        Self {
+            place,
+            region,
+            phantom: PhantomData,
+        }
     }
 
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
@@ -114,12 +119,12 @@ impl<'tcx> RegionProjection<'tcx> {
         }
     }
 
-    pub (crate) fn region(&self) -> PCGRegion {
+    pub(crate) fn region(&self) -> PCGRegion {
         self.region
     }
 
     /// Returns the cartesian product of the region projections of `source` and `dest`.
-    pub (crate) fn connections_between_places(
+    pub(crate) fn connections_between_places(
         source: MaybeOldPlace<'tcx>,
         dest: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -133,7 +138,7 @@ impl<'tcx> RegionProjection<'tcx> {
         edges
     }
 
-    pub (crate) fn prefix_projection(
+    pub(crate) fn prefix_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx>> {
