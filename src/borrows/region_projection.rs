@@ -9,8 +9,8 @@ use crate::rustc_interface::{
 
 use crate::utils::{Place, PlaceRepacker};
 
-use super::has_pcs_elem::HasPcsElems;
 use super::{domain::MaybeOldPlace, latest::Latest};
+use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
 
 /// A region occuring in region projections
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
@@ -61,7 +61,7 @@ impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub struct RegionProjection<'tcx> {
-    pub place: MaybeOldPlace<'tcx>,
+    pub(crate) place: MaybeRemotePlace<'tcx>,
     region: PCGRegion,
 }
 
@@ -72,18 +72,21 @@ impl<'tcx> fmt::Display for RegionProjection<'tcx> {
 }
 
 impl<'tcx> RegionProjection<'tcx> {
-    pub fn local(&self) -> Local {
-        self.place.local()
+    pub fn local(&self) -> Option<Local> {
+        self.place.as_local_place().map(|p| p.local())
     }
 
     /// Returns `true` iff the place is a mutable reference, or if the place is
-    /// a mutable struct.
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        self.place.ref_mutability(repacker).unwrap_or_else(|| {
-            if let Ok(root_place) = self
-                .place
-                .place()
-                .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
+    /// a mutable struct. If the place is a remote place, it is mutable iff the
+    /// corresponding input argument is a mutable reference.
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        let place = match self.place {
+            MaybeRemotePlace::Local(p) => p.place(),
+            MaybeRemotePlace::Remote(rp) => rp.assigned_local().into(),
+        };
+        place.ref_mutability(repacker).unwrap_or_else(|| {
+            if let Ok(root_place) =
+                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
                 && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
             {
                 Mutability::Mut
@@ -93,24 +96,24 @@ impl<'tcx> RegionProjection<'tcx> {
         })
     }
 
-    pub fn new(region: PCGRegion, place: MaybeOldPlace<'tcx>) -> Self {
+    pub(crate) fn new(region: PCGRegion, place: MaybeRemotePlace<'tcx>) -> Self {
         Self { place, region }
     }
 
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {
-        self.place.make_place_old(place, latest);
-    }
-
-    pub fn index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
-        self.place
-            .place()
-            .projection_index(self.region, repacker)
-            .unwrap()
-    }
+    // pub (crate) fn index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
+    //     self.place
+    //         .place()
+    //         .projection_index(self.region, repacker)
+    //         .unwrap()
+    // }
 
     pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        if self.place.ty_region(repacker) == Some(self.region) {
-            Some(self.place.project_deref(repacker))
+        if let MaybeRemotePlace::Local(p) = &self.place {
+            if p.ty_region(repacker) == Some(self.region) {
+                Some(p.project_deref(repacker))
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -138,13 +141,17 @@ impl<'tcx> RegionProjection<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx>> {
-        let prefix = self.place.prefix_place(repacker)?;
-        Some(RegionProjection::new(self.region, prefix))
+        if let MaybeRemotePlace::Local(p) = &self.place {
+            let prefix = p.prefix_place(repacker)?;
+            Some(RegionProjection::new(self.region, prefix.into()))
+        } else {
+            None
+        }
     }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        vec![&mut self.place]
+        self.place.pcs_elems()
     }
 }

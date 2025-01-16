@@ -48,11 +48,13 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.is_valid(repacker)
     }
 
-    pub (crate) fn place_capabilities(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
+    pub(crate) fn place_capabilities(
+        &self,
+    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
         self.capabilities.place_capabilities()
     }
 
-    pub (crate) fn contains<T: Into<PCGNode<'tcx>>>(
+    pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -255,7 +257,7 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGEdgeKind::Borrow(reborrow) => Some(reborrow.assigned_place),
             BorrowPCGEdgeKind::DerefExpansion(_) => todo!(),
             BorrowPCGEdgeKind::Abstraction(_) => todo!(),
-            BorrowPCGEdgeKind::RegionProjectionMember(_) => todo!(),
+            BorrowPCGEdgeKind::RegionProjectionMember(_) => None,
         }
     }
 
@@ -627,8 +629,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 .to_borrow_pcg_edge(PathConditions::new(location.block)),
             );
             self.set_capability(rp, blocked_cap);
-            if rp.place.is_ref(repacker) {
-                self.graph.insert_owned_expansion(rp.place, location);
+            if let MaybeRemotePlace::Local(p) = &rp.place && p.is_ref(repacker) {
+                self.graph.insert_owned_expansion(p.clone(), location);
             }
         }
         self.graph
@@ -676,9 +678,11 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                     for output in edge.outputs() {
                         self.set_capability(output, CapabilityKind::Exclusive);
-                        if output.place.is_ref(repacker) {
+                        if let MaybeRemotePlace::Local(p) = &output.place
+                            && p.is_ref(repacker)
+                        {
                             self.graph.insert_owned_expansion(
-                                output.place,
+                                p.clone(),
                                 function_call_abstraction.location(),
                             );
                         }

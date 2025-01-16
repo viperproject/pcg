@@ -88,7 +88,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     ) -> Option<RegionProjection<'tcx>> {
         let assigned_place_ref = self.assigned_ref(repacker);
         if let ty::TyKind::Ref(region, _, _) = assigned_place_ref.ty(repacker).ty.kind() {
-            Some(RegionProjection::new((*region).into(), assigned_place_ref))
+            Some(RegionProjection::new((*region).into(), assigned_place_ref.into()))
         } else {
             None
         }

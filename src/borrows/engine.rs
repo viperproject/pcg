@@ -101,7 +101,13 @@ impl<'tcx> ReborrowAction<'tcx> {
 impl<'tcx> BorrowCheckerInterface<'tcx> for Results<'tcx, MaybeLiveLocals> {
     fn is_live(&self, node: CGNode<'tcx>, block: BasicBlock) -> bool {
         match node {
-            CGNode::RegionProjection(rp) => self.entry_set_for_block(block).contains(rp.local()),
+            CGNode::RegionProjection(rp) => {
+                if let Some(local) = rp.local() {
+                    self.entry_set_for_block(block).contains(local)
+                } else {
+                    todo!()
+                }
+            }
             CGNode::RemotePlace(_) => true,
         }
     }

@@ -308,10 +308,9 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {
         let place = self.with_inherent_region(repacker);
-        // TODO: What if no VID?
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place))
+            .map(|region| RegionProjection::new((*region).into(), place.into()))
             .collect()
     }
 
@@ -427,12 +426,10 @@ use super::{
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub enum MaybeRemotePlace<'tcx> {
-    /// Reborrows from a place that has a name in the program, e.g for a
-    /// reborrow x = &mut (*y), the blocked place is `Local(*y)`
+    /// A place that has a name in the program
     Local(MaybeOldPlace<'tcx>),
 
-    /// The blocked place that a borrows in function inputs; e.g for a function
-    /// `f(&mut x)` the blocked place is `Remote(x)`
+    /// A place that cannot be named, e.g. the source of a reference-type input argument
     Remote(RemotePlace),
 }
 
@@ -454,18 +451,7 @@ impl std::fmt::Display for RemotePlace {
 }
 
 impl RemotePlace {
-    pub fn region_projections<'tcx>(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<RegionProjection<'tcx>> {
-        let maybe_old_place = MaybeOldPlace::new(
-            self.local.into(),
-            Some(SnapshotLocation::Start(START_BLOCK)),
-        );
-        maybe_old_place.region_projections(repacker)
-    }
-
-    pub fn assigned_local(self) -> mir::Local {
+    pub(crate) fn assigned_local(self) -> mir::Local {
         self.local
     }
 }
@@ -501,11 +487,18 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     pub fn place_assigned_to_local(local: mir::Local) -> Self {
         MaybeRemotePlace::Remote(RemotePlace { local })
     }
-    pub fn is_old(&self) -> bool {
+    pub(crate) fn is_old(&self) -> bool {
         matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
-    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
+    pub(crate) fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            MaybeRemotePlace::Local(p) => p.to_short_string(repacker),
+            MaybeRemotePlace::Remote(rp) => format!("{}", rp),
+        }
+    }
+
+    pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
         if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = self {
             Some(*place)
         } else {
@@ -527,17 +520,10 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         }
     }
 
-    pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.as_local_place()
             .map(|p| p.is_owned(repacker))
             .unwrap_or(false)
-    }
-
-    pub fn mir_local(&self) -> mir::Local {
-        match self {
-            MaybeRemotePlace::Local(p) => p.place().local,
-            MaybeRemotePlace::Remote(remote_place) => remote_place.assigned_local(),
-        }
     }
 }
 
