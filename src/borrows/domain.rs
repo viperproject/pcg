@@ -303,7 +303,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.region_projections(repacker).len() > 0
     }
 
-    pub fn region_projections(
+    pub (crate) fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx>> {

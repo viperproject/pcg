@@ -7,9 +7,9 @@ use crate::rustc_interface::{
     middle::ty::{self, DebruijnIndex, RegionVid},
 };
 
-use crate::utils::{Place, PlaceRepacker};
+use crate::utils::PlaceRepacker;
 
-use super::{domain::MaybeOldPlace, latest::Latest};
+use super::domain::MaybeOldPlace;
 use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
 
 /// A region occuring in region projections
@@ -100,13 +100,8 @@ impl<'tcx> RegionProjection<'tcx> {
         Self { place, region }
     }
 
-    // pub (crate) fn index(&self, repacker: PlaceRepacker<'_, 'tcx>) -> usize {
-    //     self.place
-    //         .place()
-    //         .projection_index(self.region, repacker)
-    //         .unwrap()
-    // }
-
+    /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
+    /// this returns `*x`. Otherwise, it returns `None`.
     pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
         if let MaybeRemotePlace::Local(p) = &self.place {
             if p.ty_region(repacker) == Some(self.region) {
@@ -119,11 +114,12 @@ impl<'tcx> RegionProjection<'tcx> {
         }
     }
 
-    pub fn region(&self) -> PCGRegion {
+    pub (crate) fn region(&self) -> PCGRegion {
         self.region
     }
 
-    pub fn connections_between_places(
+    /// Returns the cartesian product of the region projections of `source` and `dest`.
+    pub (crate) fn connections_between_places(
         source: MaybeOldPlace<'tcx>,
         dest: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -137,7 +133,7 @@ impl<'tcx> RegionProjection<'tcx> {
         edges
     }
 
-    pub fn prefix_projection(
+    pub (crate) fn prefix_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx>> {
