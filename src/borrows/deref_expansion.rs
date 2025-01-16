@@ -112,7 +112,7 @@ impl<'tcx> OwnedExpansion<'tcx> {
     pub fn base_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> RegionProjection<'tcx> {
+    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         self.base.region_projection(0, repacker)
     }
 }
@@ -143,6 +143,15 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for DerefExpansion<'tcx> {
             DerefExpansion::OwnedExpansion(owned) => owned.pcs_elems(),
             DerefExpansion::BorrowExpansion(e) => e.pcs_elems(),
         }
+    }
+}
+
+impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, T>> for DerefExpansion<'tcx>
+where
+    DerefExpansion<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
+        vec![]
     }
 }
 

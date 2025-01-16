@@ -29,8 +29,9 @@ use crate::{
 use super::{
     borrow_pcg_edge::BlockedNode,
     coupling_graph_constructor::Coupled,
-    domain::MaybeOldPlace,
+    domain::{MaybeOldPlace, MaybeRemotePlace},
     path_condition::PathConditions,
+    region_projection::RegionProjection,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
     unblock_graph::UnblockGraph,
 };
@@ -271,9 +272,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 if let Some(place) = output.deref(self.repacker) {
                     self.state.states.after.add_region_projection_member(
                         RegionProjectionMember::new(
-                            place.into(),
-                            Coupled::singleton(output),
-                            RegionProjectionMemberDirection::PlaceBlocksProjection,
+                            Coupled::singleton(output.into()),
+                            Coupled::singleton(place.into()),
                         ),
                         PathConditions::AtBlock(location.block),
                         self.repacker,
@@ -297,7 +297,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 && let Some(output_vid) = get_vid(&output_lifetime)
                 && self.outlives(input_vid, output_vid)
             {
-                result.push(output_place.region_projection(output_lifetime_idx, self.repacker));
+                result.push(
+                    output_place
+                        .region_projection(output_lifetime_idx, self.repacker)
+                        .into(),
+                );
             }
         }
         result
@@ -507,14 +511,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                             Some(location),
                                         );
                                         self.state.states.after.add_region_projection_member(
-                                                        RegionProjectionMember::new(
-                                                            operand_place.into(),
-                                                            Coupled::singleton(proj),
-                                                            RegionProjectionMemberDirection::ProjectionBlocksPlace,
-                                                        ),
-                                                        PathConditions::AtBlock(location.block),
-                                                        self.repacker,
-                                                    );
+                                            RegionProjectionMember::new(
+                                                Coupled::singleton(operand_place.into()),
+                                                Coupled::singleton(proj.into()),
+                                            ),
+                                            PathConditions::AtBlock(location.block),
+                                            self.repacker,
+                                        );
                                     }
                                 }
                             }
@@ -538,15 +541,29 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             from,
                             Some(self.state.states.after.get_latest(from)),
                         );
-                        for (idx, p) in moved_place
+                        for (idx, old_rp) in moved_place
                             .region_projections(self.repacker)
                             .into_iter()
                             .enumerate()
                         {
-                            self.state.states.after.change_pcs_elem(
-                                p,
-                                target.region_projection(idx, self.repacker).into(),
-                            );
+                            let new_rp = target.region_projection(idx, self.repacker);
+                            // Both of these statements are required! We represent some reigonprojections
+                            // as RegionProjection<MaybeOldPlace> and some as RegionProjection<MaybeRemotePlace>,
+                            // existing nodes could be of either kind.
+                            self.state
+                                .states
+                                .after
+                                .change_pcs_elem::<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>(
+                                    old_rp,
+                                    new_rp.into(),
+                                );
+                            self.state
+                                .states
+                                .after
+                                .change_pcs_elem::<RegionProjection<'tcx>>(
+                                    old_rp.into(),
+                                    new_rp.into(),
+                                );
                         }
                         self.state.states.after.delete_descendants_of(
                             MaybeOldPlace::Current { place: from },

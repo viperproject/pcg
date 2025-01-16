@@ -1,6 +1,6 @@
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode},
+        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
@@ -123,11 +123,12 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_region_projection_and_ancestors(
+    fn insert_region_projection_and_ancestors<T: Into<MaybeRemotePlace<'tcx>>>(
         &mut self,
-        projection: RegionProjection<'tcx>,
+        projection: RegionProjection<'tcx, T>,
         capabilities: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
+        let projection = projection.map_place(|p| p.into());
         let node = self.insert_region_projection_node(projection, capabilities.get(projection));
         let mut last_node = node;
         let mut last_projection = projection;
@@ -143,11 +144,12 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         node
     }
 
-    fn insert_region_projection_node(
+    fn insert_region_projection_node<T: Into<MaybeRemotePlace<'tcx>>>(
         &mut self,
-        projection: RegionProjection<'tcx>,
+        projection: RegionProjection<'tcx, T>,
         capability: Option<CapabilityKind>,
     ) -> NodeId {
+        let projection = projection.map_place(|p| p.into());
         if let Some(id) = self.region_projection_nodes.existing_id(&projection) {
             return id;
         }
@@ -346,6 +348,23 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
             MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local),
         }
     }
+    fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
+        match node {
+            PCGNode::Place(place) => self.insert_maybe_remote_place(place),
+            PCGNode::RegionProjection(rp) => {
+                self.constructor().insert_region_projection_node(rp, None)
+            }
+        }
+    }
+
+    fn insert_local_node(&mut self, node: LocalNode<'tcx>) -> NodeId {
+        match node {
+            LocalNode::Place(place) => self.insert_maybe_old_place(place),
+            LocalNode::RegionProjection(rp) => {
+                self.constructor().insert_region_projection_node(rp, None)
+            }
+        }
+    }
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
     fn draw_borrow_pcg_edge(
@@ -390,35 +409,34 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 let _r = self.constructor().insert_region_abstraction(abstraction);
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
-                let place = self.insert_maybe_remote_place(member.place);
-                for projection in member.projections.iter() {
-                    let region_projection = self
-                        .constructor()
-                        .insert_region_projection_node(*projection, capabilities.get(*projection));
-                    self.constructor()
-                        .edges
-                        .insert(GraphEdge::RegionProjectionMemberEdge {
-                            place,
-                            region_projection,
-                            direction: member.direction(),
-                        });
-                }
-                // Add undirected edges between all projections since they're coupled
-                let projections: Vec<_> = member
-                    .projections
-                    .iter()
-                    .map(|p| {
+                for input in member.inputs.iter() {
+                    let input_node = self.insert_pcg_node(*input);
+                    for output in member.outputs.iter() {
+                        let output_node = self.insert_local_node(*output);
                         self.constructor()
-                            .insert_region_projection_node(*p, capabilities.get(*p))
-                    })
-                    .collect();
-
-                for (i, &proj1) in projections.iter().enumerate() {
-                    for &proj2 in projections.iter().skip(i + 1) {
-                        self.constructor().edges.insert(GraphEdge::CoupledEdge {
-                            source: proj1,
-                            target: proj2,
-                        });
+                            .edges
+                            .insert(GraphEdge::RegionProjectionMemberEdge {
+                                source: input_node,
+                                target: output_node,
+                            });
+                    }
+                }
+                for (i, &input1) in member.inputs.iter().enumerate() {
+                    for &input2 in member.inputs.iter().skip(i + 1) {
+                        let source = self.insert_pcg_node(input1);
+                        let target = self.insert_pcg_node(input2);
+                        self.constructor()
+                            .edges
+                            .insert(GraphEdge::CoupledEdge { source, target });
+                    }
+                }
+                for (i, &output1) in member.outputs.iter().enumerate() {
+                    for &output2 in member.outputs.iter().skip(i + 1) {
+                        let source = self.insert_local_node(output1);
+                        let target = self.insert_local_node(output2);
+                        self.constructor()
+                            .edges
+                            .insert(GraphEdge::CoupledEdge { source, target });
                     }
                 }
             }

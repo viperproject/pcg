@@ -1,15 +1,20 @@
 use std::{fmt, marker::PhantomData};
 
-use crate::rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
-    middle::mir::Local,
-    middle::ty::{self, DebruijnIndex, RegionVid},
+use crate::{
+    rustc_interface::{
+        ast::Mutability,
+        data_structures::fx::FxHashSet,
+        middle::{
+            mir::Local,
+            ty::{self, DebruijnIndex, RegionVid},
+        },
+    },
+    utils::Place,
 };
 
 use crate::utils::PlaceRepacker;
 
-use super::domain::MaybeOldPlace;
+use super::{coupling_graph_constructor::CGNode, domain::MaybeOldPlace};
 use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
 
 /// A region occuring in region projections
@@ -72,6 +77,102 @@ impl<'tcx> fmt::Display for RegionProjection<'tcx> {
     }
 }
 
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
+    for RegionProjection<'tcx, MaybeRemotePlace<'tcx>>
+{
+    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        RegionProjection {
+            place: rp.place.into(),
+            region: rp.region,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        vec![&mut self.place]
+    }
+}
+
+impl<'tcx> TryFrom<CGNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    type Error = ();
+    fn try_from(node: CGNode<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            CGNode::RegionProjection(rp) => rp.try_into(),
+            CGNode::RemotePlace(_) => Err(()),
+        }
+    }
+}
+
+impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
+    for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
+{
+    type Error = ();
+    fn try_from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Result<Self, Self::Error> {
+        Ok(RegionProjection {
+            place: rp.place.try_into()?,
+            region: rp.region,
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for RegionProjection<'tcx> {
+    fn from(rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
+        RegionProjection {
+            place: rp.place.into(),
+            region: rp.region,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
+    for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
+{
+    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        RegionProjection {
+            place: rp.place.into(),
+            region: rp.region,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'tcx, T> RegionProjection<'tcx, T> {
+    pub(crate) fn map_place<U>(self, f: impl FnOnce(T) -> U) -> RegionProjection<'tcx, U> {
+        RegionProjection {
+            place: f(self.place),
+            region: self.region,
+            phantom: PhantomData,
+        }
+    }
+    pub(crate) fn new(region: PCGRegion, place: T) -> Self {
+        Self {
+            place,
+            region,
+            phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn region(&self) -> PCGRegion {
+        self.region
+    }
+}
+
+impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
+    /// this returns `*x`.
+    pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+        if self.place.ty_region(repacker) == Some(self.region) {
+            Some(self.place.project_deref(repacker))
+        } else {
+            None
+        }
+    }
+}
+
 impl<'tcx> RegionProjection<'tcx> {
     pub fn local(&self) -> Option<Local> {
         self.place.as_local_place().map(|p| p.local())
@@ -97,30 +198,19 @@ impl<'tcx> RegionProjection<'tcx> {
         })
     }
 
-    pub(crate) fn new(region: PCGRegion, place: MaybeRemotePlace<'tcx>) -> Self {
-        Self {
-            place,
-            region,
-            phantom: PhantomData,
+    fn as_local_region_projection(&self) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        if let MaybeRemotePlace::Local(p) = self.place {
+            Some(self.map_place(|_| p))
+        } else {
+            None
         }
     }
 
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
     /// this returns `*x`. Otherwise, it returns `None`.
     pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        if let MaybeRemotePlace::Local(p) = &self.place {
-            if p.ty_region(repacker) == Some(self.region) {
-                Some(p.project_deref(repacker))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn region(&self) -> PCGRegion {
-        self.region
+        self.as_local_region_projection()
+            .and_then(|rp| rp.deref(repacker))
     }
 
     /// Returns the cartesian product of the region projections of `source` and `dest`.
@@ -128,7 +218,10 @@ impl<'tcx> RegionProjection<'tcx> {
         source: MaybeOldPlace<'tcx>,
         dest: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<(RegionProjection<'tcx>, RegionProjection<'tcx>)> {
+    ) -> FxHashSet<(
+        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+    )> {
         let mut edges = FxHashSet::default();
         for rp in source.region_projections(repacker) {
             for erp in dest.region_projections(repacker) {

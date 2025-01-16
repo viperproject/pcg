@@ -10,6 +10,7 @@ use super::{
     },
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
+    region_projection::RegionProjection,
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -17,8 +18,11 @@ pub struct AbstractionEdge<'tcx> {
     pub abstraction_type: AbstractionType<'tcx>,
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionEdge<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx, T> HasPcsElems<T> for AbstractionEdge<'tcx>
+where
+    AbstractionType<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
         self.abstraction_type.pcs_elems()
     }
 }
@@ -32,10 +36,7 @@ impl<'tcx> EdgeData<'tcx> for AbstractionEdge<'tcx> {
         &self,
         _repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
-        self.outputs()
-            .into_iter()
-            .map(|o| o.into())
-            .collect()
+        self.outputs().into_iter().map(|o| o.into()).collect()
     }
 
     fn is_owned_expansion(&self) -> bool {

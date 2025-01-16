@@ -1,6 +1,7 @@
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock},
+    ast::Mutability,
 };
 
 use crate::{
@@ -34,11 +35,48 @@ pub struct BorrowPCGEdge<'tcx> {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum LocalNode<'tcx> {
     Place(MaybeOldPlace<'tcx>),
-    RegionProjection(RegionProjection<'tcx>),
+    RegionProjection(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
 }
 
-impl<'tcx> From<RegionProjection<'tcx>> for LocalNode<'tcx> {
-    fn from(rp: RegionProjection<'tcx>) -> Self {
+impl<'tcx> TryFrom<RegionProjection<'tcx>> for LocalNode<'tcx> {
+    type Error = ();
+    fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
+        Ok(LocalNode::RegionProjection(rp.try_into()?))
+    }
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            LocalNode::Place(p) => vec![p],
+            LocalNode::RegionProjection(rp) => vec![&mut rp.place],
+        }
+    }
+}
+
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        match self {
+            LocalNode::Place(_) => vec![],
+            LocalNode::RegionProjection(rp) => vec![rp],
+        }
+    }
+}
+
+impl<'tcx> From<Place<'tcx>> for LocalNode<'tcx> {
+    fn from(place: Place<'tcx>) -> Self {
+        LocalNode::Place(place.into())
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
+    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        LocalNode::RegionProjection(rp.into())
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx> {
+    fn from(rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
         LocalNode::RegionProjection(rp)
     }
 }
@@ -51,7 +89,9 @@ impl<'tcx> LocalNode<'tcx> {
     pub fn as_cg_node(&self) -> Option<CGNode<'tcx>> {
         match self {
             LocalNode::Place(_) => None,
-            LocalNode::RegionProjection(rp) => Some(CGNode::RegionProjection(*rp)),
+            LocalNode::RegionProjection(rp) => {
+                Some(CGNode::RegionProjection(rp.map_place(|p| p.into())))
+            }
         }
     }
     pub fn is_old(&self) -> bool {
@@ -67,6 +107,39 @@ pub enum PCGNode<'tcx> {
     Place(MaybeRemotePlace<'tcx>),
     RegionProjection(RegionProjection<'tcx>),
 }
+impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for PCGNode<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
+        match self {
+            PCGNode::Place(_) => vec![],
+            PCGNode::RegionProjection(rp) => vec![rp],
+        }
+    }
+}
+
+impl<'tcx, T> HasPcsElems<T> for PCGNode<'tcx>
+where
+    MaybeRemotePlace<'tcx>: HasPcsElems<T>,
+    RegionProjection<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
+        match self {
+            PCGNode::Place(p) => p.pcs_elems(),
+            PCGNode::RegionProjection(rp) => rp.pcs_elems(),
+        }
+    }
+}
+
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        vec![]
+    }
+}
+
+impl<'tcx, T: Into<MaybeRemotePlace<'tcx>>> From<RegionProjection<'tcx, T>> for PCGNode<'tcx> {
+    fn from(rp: RegionProjection<'tcx, T>) -> Self {
+        PCGNode::RegionProjection(rp.map_place(|p| p.into()))
+    }
+}
 
 impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
     fn from(cg_node: CGNode<'tcx>) -> Self {
@@ -80,6 +153,12 @@ impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
+    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        match self {
+            PCGNode::Place(rp) => rp.mutability(repacker),
+            PCGNode::RegionProjection(rp) => rp.mutability(repacker),
+        }
+    }
     pub fn as_cg_node(self) -> Option<CGNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Remote(remote_place)) => {
@@ -98,7 +177,10 @@ impl<'tcx> PCGNode<'tcx> {
                 Some(LocalNode::Place(*maybe_old_place))
             }
             PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
-            PCGNode::RegionProjection(rp) => Some(LocalNode::RegionProjection(*rp)),
+            PCGNode::RegionProjection(rp) => {
+                let place = rp.place.as_local_place()?;
+                Some(LocalNode::RegionProjection(rp.map_place(|_| place)))
+            }
         }
     }
     pub fn as_current_place(&self) -> Option<Place<'tcx>> {
@@ -136,12 +218,6 @@ impl<'tcx> From<Place<'tcx>> for BlockedNode<'tcx> {
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx>> for BlockedNode<'tcx> {
-    fn from(rp: RegionProjection<'tcx>) -> Self {
-        BlockedNode::RegionProjection(rp)
-    }
-}
-
 impl<'tcx> From<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
     fn from(maybe_old_place: MaybeOldPlace<'tcx>) -> Self {
         LocalNode::Place(maybe_old_place)
@@ -164,14 +240,14 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
     fn from(blocking_node: LocalNode<'tcx>) -> Self {
         match blocking_node {
             LocalNode::Place(maybe_old_place) => BlockedNode::Place(maybe_old_place.into()),
-            LocalNode::RegionProjection(rp) => BlockedNode::RegionProjection(rp),
+            LocalNode::RegionProjection(rp) => BlockedNode::RegionProjection(rp.into()),
         }
     }
 }
 
 impl<'tcx> BorrowPCGEdge<'tcx> {
     /// true iff any of the blocked places can be mutated via the blocking places
-    pub fn is_shared_borrow(&self) -> bool {
+    pub (crate) fn is_shared_borrow(&self) -> bool {
         self.kind.is_shared_borrow()
     }
 
@@ -190,11 +266,7 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         &self.kind
     }
 
-    pub fn mut_kind(&mut self) -> &mut BorrowPCGEdgeKind<'tcx> {
-        &mut self.kind
-    }
-
-    pub fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
+    pub (crate) fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
         Self { conditions, kind }
     }
 
@@ -210,14 +282,6 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
 
     pub fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.blocked_nodes(repacker).contains(&node)
-    }
-
-    pub fn blocks_region_projection(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        rp: RegionProjection<'tcx>,
-    ) -> bool {
-        self.kind.blocks_region_projection(repacker, rp)
     }
 }
 
@@ -293,35 +357,10 @@ where
 }
 
 impl<'tcx> BorrowPCGEdgeKind<'tcx> {
-    pub fn is_shared_borrow(&self) -> bool {
+    pub (crate) fn is_shared_borrow(&self) -> bool {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(),
             _ => false,
-        }
-    }
-
-    /// Returns true iff this edge directly blocks the given region projection
-    pub fn blocks_region_projection(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        rp: RegionProjection<'tcx>,
-    ) -> bool {
-        match &self {
-            BorrowPCGEdgeKind::Borrow(reborrow) => {
-                reborrow.assigned_region_projection(repacker) == Some(rp)
-            }
-            BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
-                for place in deref_expansion.expansion(repacker) {
-                    if place.region_projections(repacker).contains(&rp) {
-                        return true;
-                    }
-                }
-                false
-            }
-            BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
-                abstraction_edge.inputs().contains(&rp.into())
-            }
-            BorrowPCGEdgeKind::RegionProjectionMember(_) => todo!(),
         }
     }
 }

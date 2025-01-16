@@ -186,9 +186,8 @@ enum GraphEdge {
         path_conditions: String,
     },
     RegionProjectionMemberEdge {
-        place: NodeId,
-        region_projection: NodeId,
-        direction: RegionProjectionMemberDirection,
+        source: NodeId,
+        target: NodeId,
     },
     CoupledEdge {
         source: NodeId,
@@ -233,20 +232,10 @@ impl GraphEdge {
                 to: blocking.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
-            GraphEdge::RegionProjectionMemberEdge {
-                place,
-                region_projection,
-                direction,
-            } => {
-                let (from, to) =
-                    if *direction == RegionProjectionMemberDirection::PlaceBlocksProjection {
-                        (region_projection, place)
-                    } else {
-                        (place, region_projection)
-                    };
+            GraphEdge::RegionProjectionMemberEdge { source, target } => {
                 DotEdge {
-                    from: from.to_string(),
-                    to: to.to_string(),
+                    from: source.to_string(),
+                    to: target.to_string(),
                     options: EdgeOptions::directed(EdgeDirection::Forward)
                         .with_color("purple".to_string()),
                 }

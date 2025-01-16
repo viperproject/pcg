@@ -17,37 +17,17 @@ pub enum RegionProjectionMemberDirection {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {
-    pub place: MaybeRemotePlace<'tcx>,
-    /// *Coupled* region projections;
-    pub projections: Coupled<RegionProjection<'tcx>>,
-    direction: RegionProjectionMemberDirection,
+    pub(crate) inputs: Coupled<PCGNode<'tcx>>,
+    pub(crate) outputs: Coupled<LocalNode<'tcx>>,
 }
 
 impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
     fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
-        match self.direction {
-            RegionProjectionMemberDirection::ProjectionBlocksPlace => self
-                .projections
-                .iter()
-                .map(|p| LocalNode::RegionProjection(*p))
-                .collect(),
-            RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                vec![LocalNode::Place(self.place.as_local_place().unwrap())]
-                    .into_iter()
-                    .collect()
-            }
-        }
+        self.outputs.iter().cloned().collect()
     }
 
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        match self.direction {
-            RegionProjectionMemberDirection::ProjectionBlocksPlace => {
-                vec![self.place.into()].into_iter().collect()
-            }
-            RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                self.projections.iter().map(|p| (*p).into()).collect()
-            }
-        }
+        self.inputs.iter().cloned().collect()
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -57,37 +37,45 @@ impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
 
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for RegionProjectionMember<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
-        self.projections.iter_mut().collect()
+        self.inputs.iter_mut().flat_map(|p| p.pcs_elems()).collect()
+    }
+}
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
+    for RegionProjectionMember<'tcx>
+{
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        self.outputs
+            .iter_mut()
+            .flat_map(|p| p.pcs_elems())
+            .collect()
     }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut vec = self.place.pcs_elems();
-        vec.extend(self.projections.iter_mut().flat_map(|p| p.pcs_elems()));
-        vec
+        self.inputs
+            .iter_mut()
+            .flat_map(|p| p.pcs_elems())
+            .chain(self.outputs.iter_mut().flat_map(|p| p.pcs_elems()))
+            .collect()
     }
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
     /// Returns `true` iff the lifetime projections are mutable
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        self.projections.mutability(repacker)
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        self.inputs.mutability(repacker)
     }
 
-    pub fn direction(&self) -> RegionProjectionMemberDirection {
-        self.direction
+    pub(crate) fn new(inputs: Coupled<PCGNode<'tcx>>, outputs: Coupled<LocalNode<'tcx>>) -> Self {
+        Self { inputs, outputs }
     }
 
-    pub fn new(
-        place: MaybeRemotePlace<'tcx>,
-        projections: Coupled<RegionProjection<'tcx>>,
-        direction: RegionProjectionMemberDirection,
-    ) -> Self {
-        Self {
-            place,
-            projections,
-            direction,
-        }
+    pub fn inputs(&self) -> &Coupled<PCGNode<'tcx>> {
+        &self.inputs
+    }
+
+    pub fn outputs(&self) -> &Coupled<LocalNode<'tcx>> {
+        &self.outputs
     }
 }

@@ -24,7 +24,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_visitor::extract_nested_regions,
+        borrows_visitor::{extract_nested_regions, extract_regions},
         domain::MaybeOldPlace,
         region_projection::{PCGRegion, RegionProjection},
     },
@@ -98,18 +98,19 @@ impl<'tcx> Place<'tcx> {
         &self,
         idx: usize,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> RegionProjection<'tcx> {
+    ) -> RegionProjection<'tcx, Self> {
         self.region_projections(repacker)[idx]
     }
 
-    pub fn region_projections(
+    pub(crate) fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<RegionProjection<'tcx>> {
-        MaybeOldPlace::Current {
-            place: self.clone(),
-        }
-        .region_projections(repacker)
+    ) -> Vec<RegionProjection<'tcx, Self>> {
+        let place = self.with_inherent_region(repacker);
+        extract_regions(place.ty(repacker).ty)
+            .iter()
+            .map(|region| RegionProjection::new((*region).into(), place.into()))
+            .collect()
     }
 
     pub fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

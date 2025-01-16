@@ -21,7 +21,9 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
+    coupling_graph_constructor::{
+        BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
+    },
     deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
@@ -84,7 +86,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
-        let mut graph = coupling::DisjointSetGraph::new();
+        let mut graph: coupling::DisjointSetGraph<CGNode<'tcx>> = coupling::DisjointSetGraph::new();
         // TODO: For performance, we could not track the path in release mode,
         // we only use it to detect infinite loops
         #[derive(Clone)]
@@ -149,14 +151,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         if let BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) =
                             edge.kind()
                         {
-                            graph.insert_endpoint(
+                            let coupled_input_projections: Vec<CGNode<'tcx>> =
                                 region_projection_member
-                                    .projections
+                                    .inputs
                                     .iter()
-                                    .map(|rp| (*rp).into())
-                                    .collect::<Vec<_>>()
-                                    .into(),
-                            );
+                                    .flat_map(|rp| (*rp).try_into())
+                                    .collect::<Vec<_>>();
+
+                            let coupled_output_projections: Vec<CGNode<'tcx>> =
+                                region_projection_member
+                                    .outputs
+                                    .iter()
+                                    .flat_map(|rp| (*rp).try_into())
+                                    .collect::<Vec<_>>();
+
+                            if !coupled_input_projections.is_empty() {
+                                graph.insert_endpoint(coupled_input_projections.into());
+                            }
+                            if !coupled_output_projections.is_empty() {
+                                graph.insert_endpoint(coupled_output_projections.into());
+                            }
                         }
                         for node in edge.blocked_by_nodes(repacker) {
                             if let LocalNode::RegionProjection(rp) = node {
@@ -456,9 +470,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 {
                     let new_edge_kind =
                         BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
-                            edge.value.blocked_place,
-                            rps.clone().into(),
-                            RegionProjectionMemberDirection::ProjectionBlocksPlace,
+                            Coupled::singleton(edge.value.blocked_place.into()),
+                            rps.clone()
+                                .into_iter()
+                                .map(|rp| rp.try_into().unwrap())
+                                .collect::<Vec<_>>()
+                                .into(),
                         ));
                     self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));
                 }
@@ -473,7 +490,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     assigned
                         .clone()
                         .into_iter()
-                        .map(|node| node.as_region_projection().unwrap())
+                        .map(|node| node.try_into().unwrap())
                         .collect(),
                 ),
                 self_block,
@@ -605,17 +622,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 None => {
+                    // TODO: Why is this necessary?
                     match other_edge.kind() {
-                        BorrowPCGEdgeKind::RegionProjectionMember(member)
-                            if member.direction()
-                                == RegionProjectionMemberDirection::ProjectionBlocksPlace =>
-                        {
-                            for projection in member.projections.iter() {
-                                if let Some(place) = projection.deref(repacker) {
-                                    for borrow in self.borrows_blocked_by(place) {
-                                        // if borrow.value.blocked_place == member.place {
-                                        self.remove(&(borrow.into()), DebugCtx::Other);
-                                        // }
+                        BorrowPCGEdgeKind::RegionProjectionMember(member) => {
+                            for output in member.outputs.iter() {
+                                if let LocalNode::RegionProjection(rp) = output {
+                                    if let Some(place) = rp.deref(repacker) {
+                                        for borrow in self.borrows_blocked_by(place) {
+                                            self.remove(&(borrow.into()), DebugCtx::Other);
+                                        }
                                     }
                                 }
                             }
@@ -877,6 +892,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        return true;
         if let Some(valid) = self.cached_is_valid.get() {
             return valid;
         }

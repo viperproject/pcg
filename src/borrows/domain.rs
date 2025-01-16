@@ -18,6 +18,15 @@ pub struct LoopAbstraction<'tcx> {
     block: BasicBlock,
 }
 
+impl<'tcx, T> HasPcsElems<T> for LoopAbstraction<'tcx>
+where
+    AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
+        self.edge.pcs_elems()
+    }
+}
+
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
     fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge::new(
@@ -49,25 +58,19 @@ impl<'tcx> LoopAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for LoopAbstraction<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.edge.pcs_elems()
-    }
-}
-
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
-
     def_id: DefId,
-
     substs: GenericArgsRef<'tcx>,
-
     edges: Vec<AbstractionBlockEdge<'tcx>>,
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for FunctionCallAbstraction<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx, T> HasPcsElems<T> for FunctionCallAbstraction<'tcx>
+where
+    AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
         self.edges
             .iter_mut()
             .flat_map(|edge| edge.pcs_elems())
@@ -113,8 +116,12 @@ pub enum AbstractionType<'tcx> {
     Loop(LoopAbstraction<'tcx>),
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionType<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx, T> HasPcsElems<T> for AbstractionType<'tcx>
+where
+    LoopAbstraction<'tcx>: HasPcsElems<T>,
+    FunctionCallAbstraction<'tcx>: HasPcsElems<T>,
+{
+    fn pcs_elems(&mut self) -> Vec<&mut T> {
         match self {
             AbstractionType::FunctionCall(c) => c.pcs_elems(),
             AbstractionType::Loop(c) => c.pcs_elems(),
@@ -126,6 +133,12 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionType<'tcx> {
 pub struct AbstractionBlockEdge<'tcx> {
     inputs: Vec<AbstractionInputTarget<'tcx>>,
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
+}
+
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        self.outputs.iter_mut().collect()
+    }
 }
 
 impl<'tcx> PartialEq for AbstractionBlockEdge<'tcx> {
@@ -170,7 +183,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
 }
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
-pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx>;
+pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> AbstractionType<'tcx> {
     pub fn location(&self) -> Location {
@@ -207,6 +220,26 @@ pub enum MaybeOldPlace<'tcx> {
     OldPlace(PlaceSnapshot<'tcx>),
 }
 
+impl<'tcx> TryFrom<PCGNode<'tcx>> for MaybeOldPlace<'tcx> {
+    type Error = ();
+    fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            PCGNode::Place(p) => Ok(p.try_into()?),
+            PCGNode::RegionProjection(_) => Err(()),
+        }
+    }
+}
+
+impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for MaybeOldPlace<'tcx> {
+    type Error = ();
+    fn try_from(remote_place: MaybeRemotePlace<'tcx>) -> Result<Self, Self::Error> {
+        match remote_place {
+            MaybeRemotePlace::Local(p) => Ok(p),
+            MaybeRemotePlace::Remote(_) => Err(()),
+        }
+    }
+}
+
 impl<'tcx> From<mir::Local> for MaybeOldPlace<'tcx> {
     fn from(local: mir::Local) -> Self {
         Self::Current {
@@ -239,6 +272,19 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        let place: Place<'_> = self.place();
+        place.ref_mutability(repacker).unwrap_or_else(|| {
+            if let Ok(root_place) =
+                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
+                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
+            {
+                Mutability::Mut
+            } else {
+                Mutability::Not
+            }
+        })
+    }
     pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.place().is_owned(repacker)
     }
@@ -258,14 +304,20 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub(crate) fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn with_inherent_region(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> MaybeOldPlace<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.with_inherent_region(repacker).into(),
         }
     }
 
-    pub(crate) fn prefix_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+    pub(crate) fn prefix_place(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeOldPlace::Current { place } => Some(place.prefix_place(repacker)?.into()),
             MaybeOldPlace::OldPlace(snapshot) => Some(snapshot.prefix_place(repacker)?.into()),
@@ -276,7 +328,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         &self,
         idx: usize,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> RegionProjection<'tcx> {
+    ) -> RegionProjection<'tcx, Self> {
         let region_projections = self.region_projections(repacker);
         if idx < region_projections.len() {
             region_projections[idx]
@@ -297,7 +349,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     pub(crate) fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<RegionProjection<'tcx>> {
+    ) -> Vec<RegionProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
@@ -321,7 +373,11 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(self.place().project_deref(repacker).into(), self.location())
     }
 
-    pub(crate) fn project_deeper(&self, tcx: TyCtxt<'tcx>, elem: PlaceElem<'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn project_deeper(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(
             self.place().project_deeper(&[elem], tcx).into(),
             self.location(),
@@ -388,7 +444,7 @@ use serde_json::json;
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge},
+    borrow_pcg_edge::{BorrowPCGEdge, PCGNode, ToBorrowsEdge},
     borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
     has_pcs_elem::HasPcsElems,
@@ -428,6 +484,20 @@ impl RemotePlace {
     pub(crate) fn assigned_local(self) -> mir::Local {
         self.local
     }
+
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, '_>) -> Mutability {
+        let place: Place<'_> = self.local.into();
+        place.ref_mutability(repacker).unwrap_or_else(|| {
+            if let Ok(root_place) =
+                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
+                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
+            {
+                Mutability::Mut
+            } else {
+                Mutability::Not
+            }
+        })
+    }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
@@ -458,6 +528,12 @@ impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        match self {
+            MaybeRemotePlace::Local(p) => p.mutability(repacker),
+            MaybeRemotePlace::Remote(rp) => rp.mutability(repacker),
+        }
+    }
     pub fn place_assigned_to_local(local: mir::Local) -> Self {
         MaybeRemotePlace::Remote(RemotePlace { local })
     }

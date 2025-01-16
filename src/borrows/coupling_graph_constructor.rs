@@ -10,8 +10,9 @@ use crate::{
 };
 
 use super::{
+    borrow_pcg_edge::{LocalNode, PCGNode},
     borrows_graph::BorrowsGraph,
-    domain::{MaybeOldPlace, RemotePlace},
+    domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
@@ -120,7 +121,7 @@ impl<T: Eq> From<Vec<T>> for Coupled<T> {
     }
 }
 
-impl<'tcx> Coupled<RegionProjection<'tcx>> {
+impl<'tcx> Coupled<PCGNode<'tcx>> {
     pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         let mut iter = self.iter();
         let first = iter.next().unwrap().mutability(repacker);
@@ -133,6 +134,42 @@ impl<'tcx> Coupled<RegionProjection<'tcx>> {
 pub enum CGNode<'tcx> {
     RegionProjection(RegionProjection<'tcx>),
     RemotePlace(RemotePlace),
+}
+
+impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for CGNode<'tcx> {
+    type Error = ();
+    fn try_from(node: MaybeRemotePlace<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            MaybeRemotePlace::Remote(rp) => Ok(CGNode::RemotePlace(rp)),
+            MaybeRemotePlace::Local(_) => Err(()),
+        }
+    }
+}
+
+impl<'tcx> TryFrom<PCGNode<'tcx>> for CGNode<'tcx> {
+    type Error = ();
+    fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            PCGNode::Place(p) => Ok(p.try_into()?),
+            PCGNode::RegionProjection(rp) => Ok(CGNode::RegionProjection(rp.into())),
+        }
+    }
+}
+
+impl<'tcx> TryFrom<LocalNode<'tcx>> for CGNode<'tcx> {
+    type Error = ();
+    fn try_from(node: LocalNode<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            LocalNode::Place(_) => Err(()),
+            LocalNode::RegionProjection(rp) => Ok(CGNode::RegionProjection(rp.into())),
+        }
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for CGNode<'tcx> {
+    fn from(rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
+        CGNode::RegionProjection(rp.into())
+    }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for CGNode<'tcx> {
@@ -157,6 +194,13 @@ impl<'tcx> From<RemotePlace> for CGNode<'tcx> {
 }
 
 impl<'tcx> CGNode<'tcx> {
+    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+        match self {
+            CGNode::RegionProjection(rp) => rp.mutability(repacker),
+            CGNode::RemotePlace(rp) => rp.mutability(repacker),
+        }
+    }
+
     pub fn as_region_projection(self) -> Option<RegionProjection<'tcx>> {
         match self {
             CGNode::RegionProjection(rp) => Some(rp),

@@ -4,6 +4,7 @@ use super::{
     borrow_pcg_edge::{BlockedNode, LocalNode},
     domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
     edge_data::EdgeData,
+    has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
 use crate::rustc_interface::{
@@ -28,6 +29,12 @@ pub struct BorrowEdge<'tcx> {
     pub region: ty::Region<'tcx>,
 }
 
+impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, T>> for BorrowEdge<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
+        vec![]
+    }
+}
+
 impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         vec![self.blocked_place.into()].into_iter().collect()
@@ -39,7 +46,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
     ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
         // TODO: Region could be erased and we can't handle that yet
         if let Some(rp) = self.assigned_region_projection(repacker) {
-            return vec![LocalNode::RegionProjection(rp)].into_iter().collect();
+            return vec![LocalNode::RegionProjection(rp.into())].into_iter().collect();
         } else {
             FxHashSet::default()
         }
@@ -85,10 +92,13 @@ impl<'tcx> BorrowEdge<'tcx> {
     pub fn assigned_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<RegionProjection<'tcx>> {
+    ) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         let assigned_place_ref = self.assigned_ref(repacker);
         if let ty::TyKind::Ref(region, _, _) = assigned_place_ref.ty(repacker).ty.kind() {
-            Some(RegionProjection::new((*region).into(), assigned_place_ref.into()))
+            Some(RegionProjection::new(
+                (*region).into(),
+                assigned_place_ref.into(),
+            ))
         } else {
             None
         }
