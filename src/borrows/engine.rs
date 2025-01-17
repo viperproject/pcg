@@ -368,23 +368,23 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                     );
                 }
             }
-            // let local_place: utils::Place<'tcx> = arg_place.into();
-            // for region_projection in local_place.region_projections(self.repacker) {
-            //     self.states.after.add_region_projection_member(
-            //         RegionProjectionMember::new(
-            //             Coupled::singleton(
-            //                 RegionProjection::new(
-            //                     region_projection.region(),
-            //                     RemotePlace::new(arg),
-            //                 )
-            //                 .into(),
-            //             ),
-            //             Coupled::singleton(region_projection.into()),
-            //         ),
-            //         PathConditions::start(),
-            //         self.repacker,
-            //     );
-            // }
+            let local_place: utils::Place<'tcx> = arg_place.into();
+            for region_projection in local_place.region_projections(self.repacker) {
+                self.states.after.add_region_projection_member(
+                    RegionProjectionMember::new(
+                        Coupled::singleton(
+                            RegionProjection::new(
+                                region_projection.region(),
+                                RemotePlace::new(arg),
+                            )
+                            .into(),
+                        ),
+                        Coupled::singleton(region_projection.into()),
+                    ),
+                    PathConditions::start(),
+                    self.repacker,
+                );
+            }
         }
     }
 }

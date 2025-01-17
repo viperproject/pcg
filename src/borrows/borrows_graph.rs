@@ -622,21 +622,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 None => {
-                    // TODO: Why is this necessary?
-                    match other_edge.kind() {
-                        BorrowPCGEdgeKind::RegionProjectionMember(member) => {
-                            for output in member.outputs.iter() {
-                                if let LocalNode::RegionProjection(rp) = output {
-                                    if let Some(place) = rp.deref(repacker) {
-                                        for borrow in self.borrows_blocked_by(place) {
-                                            self.remove(&(borrow.into()), DebugCtx::Other);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
                     self.insert(other_edge.clone());
                 }
             }
