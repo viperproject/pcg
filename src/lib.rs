@@ -85,7 +85,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
     }
 }
 
-use std::{fs::File, sync::Mutex};
+use std::sync::Mutex;
 
 lazy_static::lazy_static! {
     static ref RECORD_PCS: Mutex<bool> = Mutex::new(false);

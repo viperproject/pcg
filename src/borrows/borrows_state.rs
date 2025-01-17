@@ -46,6 +46,9 @@ pub struct BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) {
+        self.graph.insert(edge);
+    }
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.graph.is_valid(repacker)
     }
@@ -269,6 +272,14 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<BorrowPCGEdge<'tcx>> {
         self.graph.edges_blocking(node, repacker)
+    }
+
+    pub(crate) fn edges_blocked_by(
+        &self,
+        node: LocalNode<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<BorrowPCGEdge<'tcx>> {
+        self.graph.edges_blocked_by(node, repacker)
     }
 
     pub(crate) fn deref_expansions(&self) -> FxHashSet<Conditioned<DerefExpansion<'tcx>>> {

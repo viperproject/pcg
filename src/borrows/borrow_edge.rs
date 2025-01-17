@@ -58,7 +58,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowEdge<'tcx> {
-    pub fn new(
+    pub (crate) fn new(
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: MaybeOldPlace<'tcx>,
         mutability: Mutability,
@@ -74,7 +74,7 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub fn reserve_location(&self) -> Location {
+    pub(crate) fn reserve_location(&self) -> Location {
         self.reserve_location
     }
 
@@ -82,14 +82,14 @@ impl<'tcx> BorrowEdge<'tcx> {
         self.mutability == Mutability::Mut
     }
 
-    pub fn assigned_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn assigned_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         self.assigned_place
             .prefix_place(repacker)
             .unwrap()
             .with_inherent_region(repacker)
     }
 
-    pub fn assigned_region_projection(
+    pub(crate) fn assigned_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
@@ -101,13 +101,6 @@ impl<'tcx> BorrowEdge<'tcx> {
             ))
         } else {
             None
-        }
-    }
-
-    pub fn region_vid(&self) -> Option<RegionVid> {
-        match self.region.kind() {
-            ty::RegionKind::ReVar(v) => Some(v),
-            _ => None,
         }
     }
 }

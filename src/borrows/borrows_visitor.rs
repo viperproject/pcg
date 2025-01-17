@@ -27,9 +27,10 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_edge::BlockedNode,
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
     coupling_graph_constructor::Coupled,
     domain::MaybeOldPlace,
+    has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
     region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
@@ -568,26 +569,29 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             }
                             _ => {}
                         }
-                        // for rp in target.region_projections(self.repacker) {
-                        //     for (local, _) in self.repacker.body().local_decls.iter_enumerated() {
-                        //         let arg_place: utils::Place<'tcx> = local.into();
-                        //         for arg_rp in arg_place.region_projections(self.repacker) {
-                        //             if self.outlives(
-                        //                 arg_rp.region().as_vid().unwrap(),
-                        //                 rp.region().as_vid().unwrap(),
-                        //             ) {
-                        //                 self.state.states.after.add_region_projection_member(
-                        //                     RegionProjectionMember::new(
-                        //                         Coupled::singleton(arg_rp.into()),
-                        //                         Coupled::singleton(rp.into()),
-                        //                     ),
-                        //                     PathConditions::AtBlock(location.block),
-                        //                     self.repacker,
-                        //                 );
-                        //             }
-                        //         }
-                        //     }
-                        // }
+                        let from_place: utils::Place<'tcx> = (*from).into();
+                        for (idx, rp) in from_place
+                            .region_projections(self.repacker)
+                            .iter()
+                            .enumerate()
+                        {
+                            for mut orig_edge in self
+                                .state
+                                .states
+                                .after
+                                .edges_blocked_by((*rp).into(), self.repacker)
+                            {
+                                let edge_region_projections: Vec<
+                                    &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+                                > = orig_edge.pcs_elems();
+                                for output in edge_region_projections {
+                                    if *output == (*rp).into() {
+                                        *output = target.region_projection(idx, self.repacker).into()
+                                    }
+                                }
+                                self.state.states.after.insert(orig_edge);
+                            }
+                        }
                     }
                     Rvalue::Ref(region, kind, blocked_place) => {
                         let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
