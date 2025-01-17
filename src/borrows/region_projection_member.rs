@@ -5,15 +5,10 @@ use super::borrow_pcg_edge::{LocalNode, PCGNode};
 use super::coupling_graph_constructor::Coupled;
 use super::edge_data::EdgeData;
 use super::{
-    domain::{MaybeOldPlace, MaybeRemotePlace},
+    domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
-pub enum RegionProjectionMemberDirection {
-    ProjectionBlocksPlace,
-    PlaceBlocksProjection,
-}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {

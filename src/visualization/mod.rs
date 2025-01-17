@@ -7,13 +7,12 @@
 pub mod dot_graph;
 pub mod drawer;
 pub mod graph_constructor;
-pub mod mir_graph;
 pub mod legend;
+pub mod mir_graph;
 
 use crate::{
     borrows::{
-        borrows_graph::BorrowsGraph, borrows_state::BorrowsState,
-        region_projection_member::RegionProjectionMemberDirection, unblock_graph::UnblockGraph,
+        borrows_graph::BorrowsGraph, borrows_state::BorrowsState, unblock_graph::UnblockGraph,
     },
     free_pcs::{CapabilityKind, CapabilitySummary},
     rustc_interface,
@@ -232,13 +231,11 @@ impl GraphEdge {
                 to: blocking.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
-            GraphEdge::RegionProjectionMemberEdge { source, target } => {
-                DotEdge {
-                    from: source.to_string(),
-                    to: target.to_string(),
-                    options: EdgeOptions::directed(EdgeDirection::Forward)
-                        .with_color("purple".to_string()),
-                }
+            GraphEdge::RegionProjectionMemberEdge { source, target } => DotEdge {
+                from: source.to_string(),
+                to: target.to_string(),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_color("purple".to_string()),
             },
             GraphEdge::CoupledEdge { source, target } => DotEdge {
                 from: source.to_string(),

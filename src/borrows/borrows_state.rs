@@ -33,7 +33,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    region_projection_member::RegionProjectionMember,
     unblock_graph::UnblockGraph,
 };
 

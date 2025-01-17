@@ -481,6 +481,10 @@ impl std::fmt::Display for RemotePlace {
 }
 
 impl RemotePlace {
+    pub(crate) fn new(local: mir::Local) -> Self {
+        Self { local }
+    }
+
     pub(crate) fn assigned_local(self) -> mir::Local {
         self.local
     }

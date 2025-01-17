@@ -29,10 +29,10 @@ use crate::{
 use super::{
     borrow_pcg_edge::BlockedNode,
     coupling_graph_constructor::Coupled,
-    domain::{MaybeOldPlace, MaybeRemotePlace},
+    domain::MaybeOldPlace,
     path_condition::PathConditions,
     region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    region_projection_member::RegionProjectionMember,
     unblock_graph::UnblockGraph,
 };
 use super::{
@@ -153,26 +153,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn outlives(&self, sup: RegionVid, sub: RegionVid) -> bool {
-        let mut visited = BTreeSet::default();
-        let mut stack = vec![sup];
-
-        while let Some(current) = stack.pop() {
-            if current == sub {
-                return true;
-            }
-
-            if visited.insert(current) {
-                for o in self
-                    .region_inference_context
-                    .outlives_constraints()
-                    .filter(|c| c.sup == current)
-                {
-                    stack.push(o.sub);
-                }
-            }
-        }
-
-        false
+        self.region_inference_context.eval_outlives(sup, sub)
     }
 
     /// Constructs a function call abstraction, if necessary.
@@ -587,6 +568,26 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             }
                             _ => {}
                         }
+                        // for rp in target.region_projections(self.repacker) {
+                        //     for (local, _) in self.repacker.body().local_decls.iter_enumerated() {
+                        //         let arg_place: utils::Place<'tcx> = local.into();
+                        //         for arg_rp in arg_place.region_projections(self.repacker) {
+                        //             if self.outlives(
+                        //                 arg_rp.region().as_vid().unwrap(),
+                        //                 rp.region().as_vid().unwrap(),
+                        //             ) {
+                        //                 self.state.states.after.add_region_projection_member(
+                        //                     RegionProjectionMember::new(
+                        //                         Coupled::singleton(arg_rp.into()),
+                        //                         Coupled::singleton(rp.into()),
+                        //                     ),
+                        //                     PathConditions::AtBlock(location.block),
+                        //                     self.repacker,
+                        //                 );
+                        //             }
+                        //         }
+                        //     }
+                        // }
                     }
                     Rvalue::Ref(region, kind, blocked_place) => {
                         let blocked_place: utils::Place<'tcx> = (*blocked_place).into();

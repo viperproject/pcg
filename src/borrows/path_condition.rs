@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashSet};
 use serde_json::json;
 
 use crate::{
-    rustc_interface::middle::mir::BasicBlock,
+    rustc_interface::middle::mir::{BasicBlock, START_BLOCK},
     utils::PlaceRepacker,
 };
 
@@ -160,6 +160,10 @@ impl std::fmt::Display for PathConditions {
 impl PathConditions {
     pub fn new(block: BasicBlock) -> Self {
         Self::AtBlock(block)
+    }
+
+    pub fn start() -> Self {
+        Self::AtBlock(START_BLOCK)
     }
 
     pub fn roots(&self) -> HashSet<BasicBlock> {

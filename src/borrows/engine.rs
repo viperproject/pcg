@@ -29,9 +29,11 @@ use super::{
     borrow_edge::BorrowEdge,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode},
-    domain::MaybeRemotePlace,
-    path_condition::PathCondition,
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
+    domain::{MaybeRemotePlace, RemotePlace},
+    path_condition::{PathCondition, PathConditions},
+    region_projection::RegionProjection,
+    region_projection_member::RegionProjectionMember,
 };
 use super::{deref_expansion::DerefExpansion, domain::MaybeOldPlace};
 
@@ -352,19 +354,37 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
-            if let ty::TyKind::Ref(region, _, mutability) =
-                self.repacker.body().local_decls[arg].ty.kind()
-            {
-                let arg_place: Place<'tcx> = arg.into();
-                self.states.after.add_borrow(
-                    MaybeRemotePlace::place_assigned_to_local(arg),
-                    arg_place.project_deref(self.repacker),
-                    *mutability,
-                    Location::START,
-                    *region,
-                    self.repacker,
-                );
+            let local_decl = &self.repacker.body().local_decls[arg];
+            let arg_place: Place<'tcx> = arg.into();
+            if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
+                {
+                    self.states.after.add_borrow(
+                        MaybeRemotePlace::place_assigned_to_local(arg),
+                        arg_place.project_deref(self.repacker),
+                        *mutability,
+                        Location::START,
+                        *region,
+                        self.repacker,
+                    );
+                }
             }
+            // let local_place: utils::Place<'tcx> = arg_place.into();
+            // for region_projection in local_place.region_projections(self.repacker) {
+            //     self.states.after.add_region_projection_member(
+            //         RegionProjectionMember::new(
+            //             Coupled::singleton(
+            //                 RegionProjection::new(
+            //                     region_projection.region(),
+            //                     RemotePlace::new(arg),
+            //                 )
+            //                 .into(),
+            //             ),
+            //             Coupled::singleton(region_projection.into()),
+            //         ),
+            //         PathConditions::start(),
+            //         self.repacker,
+            //     );
+            // }
         }
     }
 }

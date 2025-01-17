@@ -31,7 +31,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberDirection},
+    region_projection_member::RegionProjectionMember,
 };
 
 #[derive(Clone, Debug)]
@@ -892,7 +892,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        return true;
         if let Some(valid) = self.cached_is_valid.get() {
             return valid;
         }
