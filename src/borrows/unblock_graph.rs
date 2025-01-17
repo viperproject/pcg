@@ -67,8 +67,14 @@ impl<'tcx> UnblockHistory<'tcx> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum UnblockType {
+    ForRead,
+    ForExclusive,
+}
+
 impl<'tcx> UnblockGraph<'tcx> {
-    pub fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
+    pub (crate) fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
         self.edges.iter()
     }
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
@@ -91,7 +97,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
         let mut ug = Self::new();
-        ug.unblock_node(place.into(), state, repacker);
+        ug.unblock_node(place.into(), state, repacker, UnblockType::ForExclusive);
         ug
     }
 
@@ -172,33 +178,54 @@ impl<'tcx> UnblockGraph<'tcx> {
         self.edges.insert(unblock_edge);
     }
 
-    pub fn kill_edge(
+    pub(crate) fn kill_edge(
         &mut self,
         edge: BorrowPCGEdge<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
+        typ: UnblockType,
     ) {
+        if let UnblockType::ForRead = typ {
+            match edge.kind() {
+                UnblockEdgeType::Borrow(reborrow) => {
+                    if !reborrow.is_mut() {
+                        return;
+                    }
+                    // Borrow is mutable, needs to be killed
+                }
+                _ => {
+                    return;
+                }
+            }
+        }
         self.add_dependency(edge.clone());
         for blocking_node in edge.blocked_by_nodes(repacker) {
             if !edge.is_owned_expansion() {
-                self.unblock_node(blocking_node.into(), borrows, repacker);
+                // We always unblock for exclusive since the input edge is dead
+                self.unblock_node(
+                    blocking_node.into(),
+                    borrows,
+                    repacker,
+                    UnblockType::ForExclusive,
+                );
             }
         }
     }
 
-    pub fn unblock_node(
+    pub(crate) fn unblock_node(
         &mut self,
         node: BlockedNode<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
+        typ: UnblockType,
     ) {
         for edge in borrows.edges_blocking(node, repacker) {
-            self.kill_edge(edge, borrows, repacker);
+            self.kill_edge(edge, borrows, repacker, typ);
         }
         if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node
         {
             for reborrow in borrows.borrows_blocking_prefix_of(place) {
-                self.kill_edge(reborrow.into(), borrows, repacker);
+                self.kill_edge(reborrow.into(), borrows, repacker, typ);
             }
         }
     }

@@ -4,7 +4,7 @@ use crate::utils::PlaceRepacker;
 use super::borrow_pcg_edge::{LocalNode, PCGNode};
 
 /// A trait for data that represents a hyperedge in the Borrow PCG.
-pub trait EdgeData<'tcx> {
+pub (crate) trait EdgeData<'tcx> {
     /// For an edge A -> B, this returns the set of nodes A. In general, the capabilities
     /// of nodes B are obtained from these nodes.
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>>;

@@ -1,5 +1,7 @@
+use serde_json::json;
+
 use crate::{
-    borrows::has_pcs_elem::HasPcsElems,
+    borrows::{domain::ToJsonWithRepacker, has_pcs_elem::HasPcsElems},
     rustc_interface::middle::mir::{BasicBlock, Location},
 };
 
@@ -14,6 +16,13 @@ pub enum SnapshotLocation {
 impl SnapshotLocation {
     pub fn start() -> Self {
         SnapshotLocation::After(Location::START)
+    }
+
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        match self {
+            SnapshotLocation::After(loc) => format!("after {:?}", loc).into(),
+            SnapshotLocation::Start(bb) => format!("start {:?}", bb).into(),
+        }
     }
 }
 
@@ -32,6 +41,15 @@ pub struct PlaceSnapshot<'tcx> {
 impl<'tcx> std::fmt::Display for PlaceSnapshot<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} at {:?}", self.place, self.at)
+    }
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for PlaceSnapshot<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "place": self.place.to_json(repacker),
+            "at": self.at.to_json(),
+        })
     }
 }
 

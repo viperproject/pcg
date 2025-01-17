@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
     combined_pcs::PCGError,
@@ -18,6 +18,7 @@ use crate::{
             ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
         },
     },
+    utils::Place,
 };
 
 use crate::{
@@ -27,14 +28,13 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
     coupling_graph_constructor::Coupled,
     domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
     region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
-    unblock_graph::UnblockGraph,
+    unblock_graph::{UnblockGraph, UnblockType},
 };
 use super::{
     domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
@@ -117,16 +117,16 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
-    /// Ensures that the place is expanded to exactly the given place. If
-    /// `capability` is `Some`, the capability of the expanded place is set to
-    /// the given value.
-    fn ensure_expansion_to_exactly<T: Into<BlockedNode<'tcx>>>(
+    /// Ensures that the place is expanded to the given place, possibly for a
+    /// certain capability. If `capability` is `Some`, the capability of the
+    /// expanded place is set to the given value.
+    fn ensure_expansion_to<T: Into<Place<'tcx>>>(
         &mut self,
         node: T,
         location: Location,
         capability: Option<CapabilityKind>,
     ) {
-        self.state.after_state_mut().ensure_expansion_to_exactly(
+        self.state.after_state_mut().ensure_expansion_to(
             self.repacker,
             node.into(),
             location,
@@ -205,7 +205,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     for output in output_borrow_projections {
                         let input_rp = input_place.region_projection(0, self.repacker);
                         let mut ug = UnblockGraph::new();
-                        ug.unblock_node(input_rp.into(), &self.state.states.after, self.repacker);
+                        ug.unblock_node(
+                            input_rp.into(),
+                            &self.state.states.after,
+                            self.repacker,
+                            UnblockType::ForExclusive,
+                        );
                         self.state
                             .states
                             .after
@@ -305,8 +310,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
         if self.stage == StatementStage::Operands && self.preparing {
-            if let Some(place) = operand.place() {
-                self.ensure_expansion_to_exactly(place, location, None);
+            match operand {
+                Operand::Copy(place) | Operand::Move(place) => {
+                    let capability = if matches!(operand, Operand::Copy(..)) {
+                        CapabilityKind::Read
+                    } else {
+                        CapabilityKind::Exclusive
+                    };
+                    let place: utils::Place<'tcx> = (*place).into();
+                    self.ensure_expansion_to(place, location, Some(capability));
+                }
+                _ => {}
             }
         }
         if self.stage == StatementStage::Main && !self.preparing {
@@ -360,10 +374,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         for loan in self.loans_invalidated_at(location, self.stage == StatementStage::Operands) {
             let loan = &self.borrow_set[loan];
+            let mut ug = UnblockGraph::new();
+            ug.unblock_node(
+                loan.assigned_place.into(),
+                &self.state.states.after,
+                self.repacker,
+                UnblockType::ForExclusive,
+            );
             self.state
                 .states
                 .after
-                .kill_borrows(loan.reserve_location, location, self.repacker);
+                .apply_unblock_graph(ug, self.repacker, location);
         }
 
         // Will be included as start bridge ops
@@ -399,13 +420,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.repacker) {
                         if place.is_ref(self.repacker) {
-                            self.ensure_expansion_to_exactly(
+                            self.ensure_expansion_to(
                                 place.project_deref(self.repacker),
                                 location,
                                 None,
                             );
                         } else {
-                            self.ensure_expansion_to_exactly(place, location, None);
+                            self.ensure_expansion_to(place, location, None);
                         }
                     }
                 }
@@ -430,13 +451,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    if !target.is_owned(self.repacker) {
-                        self.ensure_expansion_to_exactly(
-                            target,
-                            location,
-                            Some(CapabilityKind::Write),
-                        );
-                    }
+                    self.ensure_expansion_to(target, location, Some(CapabilityKind::Write));
                 }
                 _ => {}
             }
@@ -479,23 +494,18 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 } else {
                                     continue;
                                 };
-                            if let ty::TyKind::Ref(region, _, _) =
-                                field.ty(self.repacker.body(), self.repacker.tcx()).kind()
-                            {
-                                // We're moving a reference into a struct / enum
-                                for proj in target.region_projections(self.repacker) {
+                            for source_proj in operand_place.region_projections(self.repacker) {
+                                let source_proj = source_proj
+                                    .map_place(|p| MaybeOldPlace::new(p, Some(location)));
+                                for target_proj in target.region_projections(self.repacker) {
                                     if self.outlives(
-                                        get_vid(region).unwrap(),
-                                        proj.region().as_vid().unwrap(),
+                                        source_proj.region().as_vid().unwrap(),
+                                        target_proj.region().as_vid().unwrap(),
                                     ) {
-                                        let operand_place = MaybeOldPlace::new(
-                                            operand_place.project_deref(self.repacker),
-                                            Some(location),
-                                        );
                                         self.state.states.after.add_region_projection_member(
                                             RegionProjectionMember::new(
-                                                Coupled::singleton(operand_place.into()),
-                                                Coupled::singleton(proj.into()),
+                                                Coupled::singleton(source_proj.into()),
+                                                Coupled::singleton(target_proj.into()),
                                             ),
                                             PathConditions::AtBlock(location.block),
                                             self.repacker,
@@ -586,7 +596,8 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 > = orig_edge.pcs_elems();
                                 for output in edge_region_projections {
                                     if *output == (*rp).into() {
-                                        *output = target.region_projection(idx, self.repacker).into()
+                                        *output =
+                                            target.region_projection(idx, self.repacker).into()
                                     }
                                 }
                                 self.state.states.after.insert(orig_edge);
@@ -652,7 +663,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
                 if self.stage == StatementStage::Operands && self.preparing {
-                    self.ensure_expansion_to_exactly(place, location, None)
+                    self.ensure_expansion_to(place, location, None)
                 }
             }
         }

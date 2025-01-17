@@ -34,7 +34,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
     region_projection_member::RegionProjectionMember,
-    unblock_graph::UnblockGraph,
+    unblock_graph::{UnblockGraph, UnblockType},
 };
 
 /// The "Borrow PCG"
@@ -94,7 +94,9 @@ impl<'tcx> BorrowsState<'tcx> {
         region_liveness: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
+        if repacker.should_check_validity() {
+            debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
+        }
         let mut changed = false;
         if self.graph.join(
             &other.graph,
@@ -308,11 +310,23 @@ impl<'tcx> BorrowsState<'tcx> {
             .cloned()
             .collect();
 
+        let added_region_projection_members = to
+            .graph
+            .region_projection_members()
+            .difference(&self.graph.region_projection_members())
+            .cloned()
+            .collect();
+
         let mut ug = UnblockGraph::new();
 
         for borrow in self.borrows() {
             if !to.has_borrow_at_location(borrow.value.reserve_location()) {
-                ug.kill_edge(borrow.clone().into(), self, repacker);
+                ug.kill_edge(
+                    borrow.clone().into(),
+                    self,
+                    repacker,
+                    UnblockType::ForExclusive,
+                );
             }
         }
 
@@ -378,7 +392,12 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                 }
             }
-            ug.kill_edge(exp.clone().into(), self, repacker);
+            ug.kill_edge(
+                exp.clone().into(),
+                self,
+                repacker,
+                UnblockType::ForExclusive,
+            );
         }
 
         'outer: for self_abstraction in self.abstraction_edges() {
@@ -397,7 +416,12 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 continue 'outer;
             }
-            ug.kill_edge(self_abstraction.clone().into(), self, repacker);
+            ug.kill_edge(
+                self_abstraction.clone().into(),
+                self,
+                repacker,
+                UnblockType::ForExclusive,
+            );
         }
 
         'outer: for self_member in self.graph.region_projection_members().iter() {
@@ -431,7 +455,12 @@ impl<'tcx> BorrowsState<'tcx> {
                 // All edges match, continue to the next edge in *self_graph*
                 continue 'outer;
             }
-            ug.kill_edge(self_member.clone().into(), self, repacker);
+            ug.kill_edge(
+                self_member.clone().into(),
+                self,
+                repacker,
+                UnblockType::ForExclusive,
+            );
         }
 
         let mut weakens: FxHashSet<Weaken<'tcx>> = FxHashSet::default();
@@ -452,72 +481,82 @@ impl<'tcx> BorrowsState<'tcx> {
             ug,
             weakens,
             restores,
+            added_region_projection_members,
         }
     }
 
-    /// Ensures that the place is expanded to exactly the given place. If
-    /// `capability` is `Some`, the capability of the expanded place is set to
-    /// the given value.
-    pub(crate) fn ensure_expansion_to_exactly(
+    /// Ensures that the place is expanded to the given place, possibly for a
+    /// certain capability. If `capability` is `Some`, the capability of the
+    /// expanded place is set to the given value.
+    ///
+    /// This will also handle corresponding region projections of the place
+    pub(crate) fn ensure_expansion_to(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
-        node: BlockedNode<'tcx>,
+        place: Place<'tcx>,
         location: Location,
         capability: Option<CapabilityKind>,
     ) {
-        let mut ug = UnblockGraph::new();
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
-        if let Some(place) = node.as_current_place() {
-            for p in graph_edges {
-                match p.kind() {
-                    BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_place {
-                        MaybeOldPlace::Current {
-                            place: assigned_place,
-                        } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
-                            for ra in place.region_projections(repacker) {
-                                self.add_region_projection_member(
-                                    RegionProjectionMember::new(
-                                        Coupled::singleton(reborrow.blocked_place.into()),
-                                        Coupled::singleton(ra.into()),
-                                    ),
-                                    PathConditions::new(location.block),
-                                    repacker,
-                                );
-                            }
+        for p in graph_edges {
+            match p.kind() {
+                BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_place {
+                    MaybeOldPlace::Current {
+                        place: assigned_place,
+                    } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
+                        for ra in place.region_projections(repacker) {
+                            self.add_region_projection_member(
+                                RegionProjectionMember::new(
+                                    Coupled::singleton(reborrow.blocked_place.into()),
+                                    Coupled::singleton(ra.into()),
+                                ),
+                                PathConditions::new(location.block),
+                                repacker,
+                            );
                         }
-                        _ => {}
-                    },
+                    }
                     _ => {}
-                }
+                },
+                _ => {}
             }
         }
-        ug.unblock_node(node, self, repacker);
+
+        let unblock_type = if capability != Some(CapabilityKind::Read) {
+            UnblockType::ForExclusive
+        } else {
+            UnblockType::ForRead
+        };
+
+        let mut ug = UnblockGraph::new();
+        ug.unblock_node(place.into(), self, repacker, unblock_type);
+        for rp in place.region_projections(repacker) {
+            ug.unblock_node(rp.into(), self, repacker, unblock_type);
+        }
 
         // The place itself could be in the owned PCG, but we want to unblock
         // the borrowed parts. For example if the place is a struct S, with
         // owned fields S.f and S.g, we will want to unblock S.f and S.g.
         for root_node in self.roots(repacker) {
             if let Some(root_node_place) = root_node.as_current_place() {
-                if let Some(place) = node.as_current_place() {
-                    if place.is_prefix(root_node_place) {
-                        ug.unblock_node(root_node.into(), self, repacker);
-                    }
+                if place.is_prefix(root_node_place) {
+                    ug.unblock_node(root_node.into(), self, repacker, unblock_type);
                 }
             }
         }
+
         self.apply_unblock_graph(ug, repacker, location);
 
-        // Originally we may not have been expanded enough
-        if let Some(place) = node.as_current_place() {
+        if !place.is_owned(repacker) {
+            // Originally we may not have been expanded enough
             if let Some(inherent_cap) =
                 self.graph
                     .ensure_deref_expansion_to_at_least(place.into(), repacker, location)
             {
                 self.capabilities.insert(place, inherent_cap);
             }
-        }
-        if let Some(capability) = capability {
-            self.capabilities.insert(node, capability);
+            if let Some(capability) = capability {
+                self.capabilities.insert(place, capability);
+            }
         }
     }
 

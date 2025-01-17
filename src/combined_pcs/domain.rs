@@ -25,7 +25,7 @@ use crate::{
         borrow_pcg_edge::PCGNode,
         domain::{MaybeOldPlace, MaybeRemotePlace},
         engine::BorrowsDomain,
-        unblock_graph::UnblockGraph,
+        unblock_graph::{UnblockGraph, UnblockType},
     },
     free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
     rustc_interface,
@@ -318,15 +318,20 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         if other.has_error() && !self.has_error() {
             self.pcg = other.pcg.clone();
             return true;
+        } else if self.has_error() {
+            return false;
         }
-        if !other.is_valid() {
-            eprintln!(
-                "Block {:?} is invalid. Body source: {:?}",
-                other.block(),
-                self.cgx.mir.body.source
-            );
+        if self.cgx.rp.should_check_validity() {
+            if !other.is_valid() {
+                eprintln!(
+                    "Block {:?} is invalid. Body source: {:?}, span: {:?}",
+                    other.block(),
+                    self.cgx.mir.body.source,
+                    self.cgx.mir.body.span
+                );
+            }
+            debug_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
         }
-        debug_assert!(other.is_valid(), "Block {:?} is invalid", other.block());
         assert!(self.is_initialized() && other.is_initialized());
         if self.block().as_usize() == 0 {
             panic!("{:?}", other.block());
@@ -340,7 +345,12 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             {
                 match &self.owned_pcg().post_main[root.local] {
                     CapabilityLocal::Unallocated => {
-                        g.unblock_node(root.into(), &self.borrow_pcg().after_state(), self.cgx.rp);
+                        g.unblock_node(
+                            root.into(),
+                            &self.borrow_pcg().after_state(),
+                            self.cgx.rp,
+                            UnblockType::ForRead,
+                        );
                     }
                     CapabilityLocal::Allocated(projs) => {
                         if !(*projs).contains_key(&root) {
@@ -348,6 +358,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                                 root.into(),
                                 &self.borrow_pcg().after_state(),
                                 self.cgx.rp,
+                                UnblockType::ForExclusive,
                             );
                         }
                     }

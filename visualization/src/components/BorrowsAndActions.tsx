@@ -4,10 +4,12 @@ import {
   Borrow,
   BorrowAction,
   Reborrow,
-  ReborrowAction,
   MaybeOldPlace,
-  ReborrowBridge,
+  ReborrowBridge as BorrowsBridge,
   PlaceExpand,
+  PCGNode,
+  MaybeRemotePlace,
+  LocalNode,
 } from "../types";
 import * as Viz from "@viz-js/viz";
 
@@ -16,11 +18,25 @@ function MaybeOldPlaceDisplay({
 }: {
   maybeOldPlace: MaybeOldPlace;
 }) {
+  if (typeof maybeOldPlace === "string") {
+    return <span>{maybeOldPlace}</span>;
+  }
   return (
-    <div>
+    <span style={{ fontFamily: "monospace" }}>
       {maybeOldPlace.place} {maybeOldPlace.at ? `at ${maybeOldPlace.at}` : ""}
-    </div>
+    </span>
   );
+}
+
+function MaybeRemotePlaceDisplay({
+  maybeRemotePlace,
+}: {
+  maybeRemotePlace: MaybeRemotePlace;
+}) {
+  if (typeof maybeRemotePlace === "string") {
+    return <span>{maybeRemotePlace}</span>;
+  }
+  return <MaybeOldPlaceDisplay maybeOldPlace={maybeRemotePlace} />;
 }
 
 function ReborrowDisplay({ reborrow }: { reborrow: Reborrow }) {
@@ -44,8 +60,7 @@ function BridgeExpands({ expands }: { expands: PlaceExpand[] }) {
     <div>
       {expands.map((expand, idx) => (
         <div key={`expand-${idx}`}>
-          <MaybeOldPlaceDisplay maybeOldPlace={expand.base} />
-          →
+          <MaybeOldPlaceDisplay maybeOldPlace={expand.base} />→
           <span>
             {expand.expansion.map((e) => (
               <MaybeOldPlaceDisplay maybeOldPlace={e} />
@@ -60,25 +75,76 @@ function BridgeExpands({ expands }: { expands: PlaceExpand[] }) {
 function BorrowDisplay({ borrow }: { borrow: Borrow }) {
   return (
     <div>
-      <p>Assigned: {borrow?.assigned_place?.place}</p>
-      <p>Borrowed: {borrow?.borrowed_place?.place}</p>
+      <p>Assigned: <MaybeOldPlaceDisplay maybeOldPlace={borrow?.assigned_place} /></p>
+      <p>Borrowed: <MaybeOldPlaceDisplay maybeOldPlace={borrow?.borrowed_place} /></p>
       <p>Is Mutable: {borrow?.is_mut ? "Yes" : "No"}</p>
       <p>Kind: {borrow?.kind}</p>
     </div>
   );
 }
 
-function ReborrowBridgeDisplay({ bridge }: { bridge: ReborrowBridge }) {
+function PCGNodeDisplay({ node }: { node: PCGNode<MaybeRemotePlace> }) {
+  if (typeof node === "string") {
+    return <span>{node}</span>;
+  } else if ("region" in node) {
+    return (
+      <span>
+        <MaybeRemotePlaceDisplay maybeRemotePlace={node.place} />↓{node.region}
+      </span>
+    );
+  }
+  return <span>{JSON.stringify(node)}</span>;
+}
+
+function LocalPCGNodeDisplay({ node }: { node: LocalNode }) {
+  if (typeof node === "string") {
+    return <span>{node}</span>;
+  }
+  if ("region" in node) {
+    return (
+      <span>
+        <MaybeOldPlaceDisplay maybeOldPlace={node.place} />↓{node.region}
+      </span>
+    );
+  }
+  return <MaybeOldPlaceDisplay maybeOldPlace={node} />;
+}
+
+function BorrowsBridgeDisplay({ bridge }: { bridge: BorrowsBridge }) {
   return (
     <div>
+      {bridge.added_region_projection_members.length > 0 && (
+        <>
+          Added Region Projection Members: <br />
+          {bridge.added_region_projection_members.map((rp, index) => (
+            <span key={`rp-${index}`}>
+              {"{"}
+              {rp.value.inputs.map((input, i) => (
+                <>
+                  <PCGNodeDisplay node={input} />
+                  {i < rp.value.inputs.length - 1 && ", "}
+                </>
+              ))}
+              {"}"} → {"{"}
+              {rp.value.outputs.map((output, i) => (
+                <>
+                  <LocalPCGNodeDisplay node={output} />
+                  {i < rp.value.outputs.length - 1 && ", "}
+                </>
+              ))}
+              {"}"}
+            </span>
+          ))}
+        </>
+      )}
       {bridge.weakens.map((weaken, index) => (
-        <span>
+        <span key={`weaken-${index}`}>
           Weaken <code>{weaken.place}</code>: {weaken.old} → {weaken.new}
         </span>
       ))}
       {bridge.expands.length > 0 && (
         <div>
-          Expands
+          Expands:
           <BridgeExpands expands={bridge.expands.map((e) => e.value)} />
         </div>
       )}
@@ -141,12 +207,12 @@ export default function PCSActions({ pathData }: { pathData: PathData }) {
         maxHeight: "80vh",
       }}
     >
-      <h4>Reborrow Bridge (Start)</h4>
-      <ReborrowBridgeDisplay bridge={pathData.reborrow_start} />
+      <h4>Borrow PCG Bridge (Start)</h4>
+      <BorrowsBridgeDisplay bridge={pathData.reborrow_start} />
       {pathData.reborrow_middle && (
         <>
-          <h4>Reborrow Bridge (Mid)</h4>
-          <ReborrowBridgeDisplay bridge={pathData.reborrow_middle} />
+          <h4>Borrow PCG Bridge (Mid)</h4>
+          <BorrowsBridgeDisplay bridge={pathData.reborrow_middle} />
         </>
       )}
       <h4>Repacks (Start)</h4>

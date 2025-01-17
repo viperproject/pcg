@@ -1,5 +1,7 @@
 use std::{fmt, marker::PhantomData};
 
+use serde_json::json;
+
 use crate::{
     rustc_interface::{
         ast::Mutability,
@@ -14,7 +16,7 @@ use crate::{
 
 use crate::utils::PlaceRepacker;
 
-use super::{coupling_graph_constructor::CGNode, domain::MaybeOldPlace};
+use super::{coupling_graph_constructor::CGNode, domain::{MaybeOldPlace, ToJsonWithRepacker}};
 use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
 
 /// A region occuring in region projections
@@ -69,6 +71,15 @@ pub struct RegionProjection<'tcx, P = MaybeRemotePlace<'tcx>> {
     pub(crate) place: P,
     region: PCGRegion,
     phantom: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for RegionProjection<'tcx, T> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "place": self.place.to_json(repacker),
+            "region": self.region.to_string(),
+        })
+    }
 }
 
 impl<'tcx> fmt::Display for RegionProjection<'tcx> {
@@ -174,6 +185,7 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
 }
 
 impl<'tcx> RegionProjection<'tcx> {
+
     pub fn local(&self) -> Option<Local> {
         self.place.as_local_place().map(|p| p.local())
     }
@@ -213,7 +225,9 @@ impl<'tcx> RegionProjection<'tcx> {
             .and_then(|rp| rp.deref(repacker))
     }
 
-    /// Returns the cartesian product of the region projections of `source` and `dest`.
+    /// Returns the set of pairs (srp, drp) where srp ∈
+    /// `source.region_projections(repacker)` and drp ∈
+    /// `dest.region_projections(repacker)` and `srp.region() == drp.region()`.
     pub(crate) fn connections_between_places(
         source: MaybeOldPlace<'tcx>,
         dest: MaybeOldPlace<'tcx>,
@@ -225,7 +239,9 @@ impl<'tcx> RegionProjection<'tcx> {
         let mut edges = FxHashSet::default();
         for rp in source.region_projections(repacker) {
             for erp in dest.region_projections(repacker) {
-                edges.insert((rp, erp));
+                if rp.region() == erp.region() {
+                    edges.insert((rp, erp));
+                }
             }
         }
         edges

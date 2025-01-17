@@ -37,8 +37,10 @@ export type DagreNode<T> = {
   height: number;
 };
 
-export type MaybeOldPlace = {
-  place: string;
+export type Place = string;
+
+export type MaybeOldPlace = Place | {
+  place: Place;
   at?: string;
 };
 
@@ -86,8 +88,24 @@ export type Weaken = {
   new: string;
 }
 
+export type MaybeRemotePlace = string | MaybeOldPlace;
+
+export type RegionProjection<T> = {
+  place: T,
+  region: string
+};
+
+export type PCGNode<T> = RegionProjection<T> | T;
+export type LocalNode = PCGNode<MaybeOldPlace>;
+
+export type RegionProjectionMember = {
+  inputs: PCGNode<MaybeRemotePlace>[];
+  outputs: LocalNode[];
+}
+
 export type ReborrowBridge = {
   weakens: Weaken[];
+  added_region_projection_members: Conditioned<RegionProjectionMember>[];
   expands: Conditioned<PlaceExpand>[];
   added_borrows: Conditioned<Reborrow>[];
   ug: {

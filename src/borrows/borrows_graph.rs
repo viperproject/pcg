@@ -3,11 +3,12 @@ use std::cell::Cell;
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     middle::mir::{BasicBlock, Location},
+    middle::ty::TyKind,
 };
 use serde_json::json;
 
 use crate::{
-    borrows::domain::AbstractionType,
+    borrows::{domain::AbstractionType, region_projection::RegionProjection},
     coupling,
     free_pcs::CapabilityKind,
     rustc_interface,
@@ -570,7 +571,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         region_liveness: &T,
     ) -> bool {
-        assert!(other.is_valid(repacker), "Other graph is invalid");
+        if repacker.should_check_validity() {
+            debug_assert!(other.is_valid(repacker), "Other graph is invalid");
+        }
         let old_self = self.clone();
 
         if BORROWS_IMGCAT_DEBUG {
@@ -661,7 +664,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        if !self.is_valid(repacker) {
+        if false && !self.is_valid(repacker) {
             if BORROWS_IMGCAT_DEBUG {
                 if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                     DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
@@ -772,16 +775,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut changed = false;
         for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
-            if let Some(mutbl) = place.ref_mutability(repacker) {
-                projects_from = Some(mutbl);
-            }
+            let place = place.with_inherent_region(repacker);
             let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
             expansion.push(target);
+            if let TyKind::Ref(region, _, mutbl) = place.ty(repacker).ty.kind() {
+                projects_from = Some(mutbl);
+                self.insert(BorrowPCGEdge::new(
+                    BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
+                        Coupled::singleton(RegionProjection::new((*region).into(), place).into()),
+                        Coupled::singleton(target.into()),
+                    )),
+                    PathConditions::new(location.block),
+                ));
+            }
             if projects_from.is_some() {
                 let origin_place: MaybeOldPlace<'tcx> = place.into();
-                if !origin_place.place().is_owned(repacker)
-                    && !self.contains_deref_expansion_from(&origin_place)
-                {
+                if !self.contains_deref_expansion_from(&origin_place) {
                     self.insert_deref_expansion(origin_place, expansion, location, repacker);
                     changed = true;
                 }

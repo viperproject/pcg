@@ -158,7 +158,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             id,
             node_type: NodeType::RegionProjectionNode {
                 label: format!(
-                    "{}↓{:?}{}",
+                    "{}↓{}{}",
                     projection.place.to_short_string(self.repacker),
                     projection.region(),
                     if let Some(capability) = capability {

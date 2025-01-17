@@ -72,6 +72,7 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                     let mut map = state.borrow_mut();
                     unsafe { std::mem::transmute(map.remove(&def_id).unwrap()) }
                 });
+                eprintln!("Running PCG on function: {}", item_name);
                 run_combined_pcs(
                     &body,
                     tcx,
@@ -80,7 +81,7 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 item_names.push(item_name);
             }
             unsupported_item_kind => {
-                eprintln!("unsupported item: {unsupported_item_kind:?}");
+                eprintln!("Unsupported item: {unsupported_item_kind:?}");
             }
         }
     }

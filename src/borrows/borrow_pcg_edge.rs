@@ -1,7 +1,7 @@
 use rustc_interface::{
+    ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock},
-    ast::Mutability,
 };
 
 use crate::{
@@ -14,7 +14,7 @@ use super::{
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
     deref_expansion::{DerefExpansion, OwnedExpansion},
-    domain::{MaybeOldPlace, MaybeRemotePlace},
+    domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
@@ -32,11 +32,7 @@ pub struct BorrowPCGEdge<'tcx> {
 /// Any node in the PCG that is "local" in the sense that it can be named
 /// (include nodes that potentially refer to a past program point), i.e. any
 /// node other than a [`super::domain::RemotePlace`]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum LocalNode<'tcx> {
-    Place(MaybeOldPlace<'tcx>),
-    RegionProjection(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
-}
+pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for LocalNode<'tcx> {
     type Error = ();
@@ -50,15 +46,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
         match self {
             LocalNode::Place(p) => vec![p],
             LocalNode::RegionProjection(rp) => vec![&mut rp.place],
-        }
-    }
-}
-
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        match self {
-            LocalNode::Place(_) => vec![],
-            LocalNode::RegionProjection(rp) => vec![rp],
         }
     }
 }
@@ -103,12 +90,22 @@ impl<'tcx> LocalNode<'tcx> {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum PCGNode<'tcx> {
-    Place(MaybeRemotePlace<'tcx>),
-    RegionProjection(RegionProjection<'tcx>),
+pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>> {
+    Place(T),
+    RegionProjection(RegionProjection<'tcx, T>),
 }
-impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for PCGNode<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
+
+impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for PCGNode<'tcx, T> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        match self {
+            PCGNode::Place(p) => p.to_json(repacker),
+            PCGNode::RegionProjection(rp) => rp.to_json(repacker),
+        }
+    }
+}
+
+impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, T>> for PCGNode<'tcx, T> {
+    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
         match self {
             PCGNode::Place(_) => vec![],
             PCGNode::RegionProjection(rp) => vec![rp],
@@ -153,13 +150,14 @@ impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         match self {
             PCGNode::Place(rp) => rp.mutability(repacker),
             PCGNode::RegionProjection(rp) => rp.mutability(repacker),
         }
     }
-    pub fn as_cg_node(self) -> Option<CGNode<'tcx>> {
+
+    pub(crate) fn as_cg_node(self) -> Option<CGNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Remote(remote_place)) => {
                 Some(CGNode::RemotePlace(remote_place))
@@ -168,10 +166,11 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Local(_)) => None,
         }
     }
-    pub fn as_blocking_node(&self) -> Option<BlockingNode<'tcx>> {
+    pub(crate) fn as_blocking_node(&self) -> Option<BlockingNode<'tcx>> {
         self.as_local_node()
     }
-    pub fn as_local_node(&self) -> Option<LocalNode<'tcx>> {
+
+    pub(crate) fn as_local_node(&self) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
@@ -183,7 +182,7 @@ impl<'tcx> PCGNode<'tcx> {
             }
         }
     }
-    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
+    pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
         match self {
             BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) => {
                 Some(*place)
@@ -191,14 +190,15 @@ impl<'tcx> PCGNode<'tcx> {
             _ => None,
         }
     }
-    pub fn is_old(&self) -> bool {
+
+    pub(crate) fn is_old(&self) -> bool {
         match self {
             BlockedNode::Place(remote_place) => remote_place.is_old(),
             BlockedNode::RegionProjection(rp) => rp.place.is_old(),
         }
     }
 
-    pub fn as_place(&self) -> Option<MaybeRemotePlace<'tcx>> {
+    pub(crate) fn as_place(&self) -> Option<MaybeRemotePlace<'tcx>> {
         match self {
             BlockedNode::Place(maybe_remote_place) => Some(*maybe_remote_place),
             BlockedNode::RegionProjection(_) => None,
@@ -247,7 +247,7 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 
 impl<'tcx> BorrowPCGEdge<'tcx> {
     /// true iff any of the blocked places can be mutated via the blocking places
-    pub (crate) fn is_shared_borrow(&self) -> bool {
+    pub(crate) fn is_shared_borrow(&self) -> bool {
         self.kind.is_shared_borrow()
     }
 
@@ -266,7 +266,7 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         &self.kind
     }
 
-    pub (crate) fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
+    pub(crate) fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
         Self { conditions, kind }
     }
 
@@ -357,14 +357,14 @@ where
 }
 
 impl<'tcx> BorrowPCGEdgeKind<'tcx> {
-    pub (crate) fn is_shared_borrow(&self) -> bool {
+    pub(crate) fn is_shared_borrow(&self) -> bool {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(),
             _ => false,
         }
     }
 }
-pub trait ToBorrowsEdge<'tcx> {
+pub (crate) trait ToBorrowsEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }
 

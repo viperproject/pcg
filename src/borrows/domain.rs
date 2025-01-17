@@ -220,6 +220,15 @@ pub enum MaybeOldPlace<'tcx> {
     OldPlace(PlaceSnapshot<'tcx>),
 }
 
+impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        match self {
+            MaybeOldPlace::Current { place } => place.to_json(repacker),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_json(repacker),
+        }
+    }
+}
+
 impl<'tcx> TryFrom<PCGNode<'tcx>> for MaybeOldPlace<'tcx> {
     type Error = ();
     fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
@@ -461,6 +470,15 @@ pub enum MaybeRemotePlace<'tcx> {
 
     /// A place that cannot be named, e.g. the source of a reference-type input argument
     Remote(RemotePlace),
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        match self {
+            MaybeRemotePlace::Local(p) => p.to_json(repacker),
+            MaybeRemotePlace::Remote(rp) => format!("{}", rp).into(),
+        }
+    }
 }
 
 impl<'tcx> From<RemotePlace> for MaybeRemotePlace<'tcx> {

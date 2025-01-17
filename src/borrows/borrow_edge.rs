@@ -12,7 +12,7 @@ use crate::rustc_interface::{
     data_structures::fx::FxHashSet,
     middle::{
         mir::Location,
-        ty::{self, RegionVid},
+        ty::{self},
     },
 };
 use crate::utils::PlaceRepacker;

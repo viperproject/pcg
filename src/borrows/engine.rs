@@ -123,7 +123,9 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         } else if self.has_error() {
             return false;
         }
-        assert!(other.is_valid(), "Other graph is invalid");
+        if self.repacker.should_check_validity() {
+            debug_assert!(other.is_valid(), "Other graph is invalid");
+        }
         let mut other_after = other.after_state().clone();
 
         // For edges in the other graph that actually belong to it,

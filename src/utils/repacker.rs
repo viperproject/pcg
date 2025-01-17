@@ -63,6 +63,15 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         Self { mir, tcx }
     }
 
+    /// For debugging only: this function defines a predicate for whether
+    /// validity of the PCG should be checked. One use case is to only check
+    /// validity for simple CFGs during testing, in order to find bugs that can
+    /// be easily reproduced.
+    pub(crate) fn should_check_validity(&self) -> bool {
+        true
+        // self.mir.basic_blocks.len() < 8
+    }
+
     /// Returns `true` iff the edge from `from` to `to` is a back edge.
     pub fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
         self.mir.basic_blocks.dominators().dominates(to, from)
@@ -110,26 +119,11 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         for bb in loop_blocks.iter() {
             let terminator = self.mir.basic_blocks[bb].terminator();
             let successors = match &terminator.kind {
-                mir::TerminatorKind::Call {
-                    target,
-                    ..
-                } => vec![target.unwrap()],
-                mir::TerminatorKind::FalseUnwind {
-                    real_target,
-                    ..
-                } => vec![*real_target],
-                mir::TerminatorKind::FalseEdge {
-                    real_target,
-                    ..
-                } => vec![*real_target],
-                mir::TerminatorKind::Drop {
-                    target,
-                    ..
-                } => vec![*target],
-                mir::TerminatorKind::Assert {
-                    target,
-                    ..
-                } => vec![*target],
+                mir::TerminatorKind::Call { target, .. } => vec![target.unwrap()],
+                mir::TerminatorKind::FalseUnwind { real_target, .. } => vec![*real_target],
+                mir::TerminatorKind::FalseEdge { real_target, .. } => vec![*real_target],
+                mir::TerminatorKind::Drop { target, .. } => vec![*target],
+                mir::TerminatorKind::Assert { target, .. } => vec![*target],
                 _ => terminator.successors().into_iter().collect(),
             };
             for successor in successors {
@@ -264,6 +258,12 @@ impl<'tcx> Place<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> (Self, Vec<Self>, ProjectionRefKind) {
         let index = self.projection.len();
+        assert!(
+            index < guide_place.projection.len(),
+            "self place {:?} is not a prefix of guide place {:?}",
+            self,
+            guide_place
+        );
         let new_projection = repacker.tcx.mk_place_elems_from_iter(
             self.projection
                 .iter()

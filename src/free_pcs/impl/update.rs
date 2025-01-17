@@ -40,9 +40,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 if cp[&place].is_exclusive() && cap.is_write() {
                     // Requires write should deinit an exclusive
                     cp.insert(place, cap);
-                } else if cp[&place].is_lent_exclusive()
-                    && (cap.is_read() || cap.is_exclusive())
-                {
+                } else if cp[&place].is_lent_exclusive() && (cap.is_read() || cap.is_exclusive()) {
                     // This read will expire the loan, so we regain exclusive access
                     // TODO: If we expire borrows eagerly, perhaps we don't need this logic
                     cp.insert(place, CapabilityKind::Exclusive);
@@ -61,7 +59,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     } else {
                         Condition::Unalloc(local)
                     };
-                    self.requires(pre, repacker);
+                    self.check_pre_satisfied(pre, repacker);
                 }
             }
         }

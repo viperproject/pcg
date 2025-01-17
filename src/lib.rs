@@ -19,6 +19,7 @@ pub mod visualization;
 
 use borrows::{
     borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion,
+    region_projection::RegionProjection, region_projection_member::RegionProjectionMember,
     unblock_graph::UnblockGraph,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
@@ -58,6 +59,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
 
 #[derive(Clone, Debug)]
 pub struct BorrowsBridge<'tcx> {
+    pub added_region_projection_members: FxHashSet<Conditioned<RegionProjectionMember<'tcx>>>,
     pub expands: FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
     pub added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>>,
     pub ug: UnblockGraph<'tcx>,
@@ -68,6 +70,7 @@ pub struct BorrowsBridge<'tcx> {
 impl<'tcx> BorrowsBridge<'tcx> {
     pub fn new() -> BorrowsBridge<'tcx> {
         BorrowsBridge {
+            added_region_projection_members: FxHashSet::default(),
             expands: FxHashSet::default(),
             added_borrows: FxHashSet::default(),
             ug: UnblockGraph::new(),
@@ -77,6 +80,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
     }
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
+            "added_region_projection_members": self.added_region_projection_members.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
             "expands": self.expands.iter().map(|e| e.to_json(repacker)).collect::<Vec<_>>(),
             "added_borrows": self.added_borrows.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
             "ug": self.ug.to_json(repacker),
@@ -125,14 +129,15 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     let mut fpcs_analysis = free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(&mir.body));
 
     if let Some(dir_path) = visualization_output_path {
-
         let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
         let edge_legend_graph = crate::visualization::legend::generate_edge_legend().unwrap();
-        std::fs::write(&edge_legend_file_path, edge_legend_graph).expect("Failed to write edge legend");
+        std::fs::write(&edge_legend_file_path, edge_legend_graph)
+            .expect("Failed to write edge legend");
 
         let node_legend_file_path = format!("{}/node_legend.dot", dir_path);
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
-        std::fs::write(&node_legend_file_path, node_legend_graph).expect("Failed to write node legend");
+        std::fs::write(&node_legend_file_path, node_legend_graph)
+            .expect("Failed to write node legend");
         generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, &mir.body)
             .expect("Failed to generate JSON from MIR");
 
