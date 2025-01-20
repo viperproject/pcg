@@ -23,50 +23,6 @@ pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum UnblockHistoryAction<'tcx> {
-    UnblockNode(BlockedNode<'tcx>),
-    KillReborrow(BorrowEdge<'tcx>),
-}
-
-/// A history of the actions occurring in the construction of the unblock graph.
-/// This should only be used for debugging
-#[derive(Clone, Debug)]
-pub struct UnblockHistory<'tcx>(Vec<UnblockHistoryAction<'tcx>>);
-
-impl<'tcx> std::fmt::Display for UnblockHistory<'tcx> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for action in self.0.iter() {
-            match action {
-                UnblockHistoryAction::UnblockNode(place) => {
-                    writeln!(f, "unblock node {:?}", place)?;
-                }
-                UnblockHistoryAction::KillReborrow(reborrow) => {
-                    writeln!(f, "kill reborrow {}", reborrow)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-impl<'tcx> UnblockHistory<'tcx> {
-    pub fn new() -> Self {
-        Self(vec![])
-    }
-
-    // Adds an element to the end of the history if it is not already present
-    // Returns false iff the element was already present
-    pub fn record(&mut self, action: UnblockHistoryAction<'tcx>) -> bool {
-        if self.0.contains(&action) {
-            false
-        } else {
-            self.0.push(action);
-            true
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum UnblockType {
     ForRead,
@@ -77,6 +33,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     pub (crate) fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
         self.edges.iter()
     }
+
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         let dot_graph = generate_unblock_dot_graph(&repacker, self).unwrap();
         serde_json::json!({

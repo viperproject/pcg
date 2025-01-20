@@ -49,7 +49,7 @@ impl<'tcx> PartialEq for BorrowsGraph<'tcx> {
     }
 }
 
-const COUPLING_IMGCAT_DEBUG: bool = false;
+pub(crate) const COUPLING_IMGCAT_DEBUG: bool = false;
 pub(crate) const BORROWS_IMGCAT_DEBUG: bool = false;
 
 impl<'tcx> BorrowsGraph<'tcx> {
@@ -404,14 +404,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
             other.construct_coupling_graph(borrow_checker, repacker, exit_block);
 
         if COUPLING_IMGCAT_DEBUG {
-            self_coupling_graph.render_with_imgcat();
-            other_coupling_graph.render_with_imgcat();
+            self_coupling_graph.render_with_imgcat("Self coupling graph");
+            other_coupling_graph.render_with_imgcat("Other coupling graph");
         }
 
         let mut result = self_coupling_graph;
         result.merge(&other_coupling_graph);
         if COUPLING_IMGCAT_DEBUG {
-            result.render_with_imgcat();
+            result.render_with_imgcat("Merged coupling graph");
         }
 
         // Collect existing abstraction edges at this block

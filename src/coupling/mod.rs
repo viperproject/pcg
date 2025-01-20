@@ -9,27 +9,26 @@ use std::hash::Hash;
 /// by merging the nodes in the cycle into a single node. The graph is always in
 /// a transitively reduced form (see
 /// https://en.wikipedia.org/wiki/Transitive_reduction)
-pub struct DisjointSetGraph<N> {
+#[derive(Clone)]
+pub(crate) struct DisjointSetGraph<N> {
     inner: petgraph::Graph<Coupled<N>, ()>,
 }
 
-pub type Endpoint<N> = BTreeSet<N>;
-
 impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
         }
     }
 
-    pub fn endpoints(&self) -> BTreeSet<Coupled<N>> {
+    pub(crate) fn endpoints(&self) -> BTreeSet<Coupled<N>> {
         self.inner
             .node_indices()
             .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
+    pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();
             let target = self.inner.node_weight(e.target()).unwrap();
@@ -64,40 +63,38 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         lines.join("\n")
     }
 
-    pub fn render_with_imgcat(&self) {
-        fn go<N: Copy + Ord + Clone + fmt::Display + Hash>(
-            graph: &DisjointSetGraph<N>,
-        ) -> Result<(), std::io::Error> {
-            let dot = graph.to_dot();
-            DotGraph::render_with_imgcat(&dot, "")
-        }
-
-        // This function is just for debugging, so we don't care if it fails
-        go(self).unwrap_or_else(|e| {
+    pub(crate) fn render_with_imgcat(&self, msg: &str) {
+        let dot = self.to_dot();
+        DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
             eprintln!("Error rendering graph: {}", e);
         });
-    }
-
-    pub fn node_count(&self) -> usize {
-        self.inner.node_count()
-    }
-
-    pub fn edge_count(&self) -> usize {
-        self.inner.edge_count()
     }
 
     fn insert(&mut self, node: N) -> petgraph::prelude::NodeIndex {
         if let Some(idx) = self.lookup(node) {
             return idx;
         }
-        self.inner.add_node(BTreeSet::from([node]).into())
+        let idx = self.inner.add_node(BTreeSet::from([node]).into());
+        debug_assert!(
+            self.is_acyclic(),
+            "Graph contains cycles after inserting node"
+        );
+        idx
     }
 
-    pub fn insert_endpoint(&mut self, endpoint: Coupled<N>) -> petgraph::prelude::NodeIndex {
-        self.join_nodes(&endpoint)
+    pub(crate) fn insert_endpoint(&mut self, endpoint: Coupled<N>) -> petgraph::prelude::NodeIndex {
+        let idx = self.join_nodes(&endpoint);
+        debug_assert!(
+            self.is_acyclic(),
+            "Graph contains cycles after inserting endpoint"
+        );
+        idx
     }
 
-    pub fn merge_into_idx(
+    /// Merges the node at `old_idx` into the node at `new_idx`. All elements in the endpoint
+    /// at `old_idx` are added to the endpoint at `new_idx`. Edges to / from `old_idx` are
+    /// (except for those to / from `new_idx` resp.) are redirected to `new_idx`.
+    pub(crate) fn merge_into_idx(
         &mut self,
         new_idx: petgraph::prelude::NodeIndex,
         old_idx: petgraph::prelude::NodeIndex,
@@ -120,6 +117,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             self.inner.update_edge(source, target, ());
         }
         self.inner.remove_node(old_idx);
+        debug_assert!(self.is_acyclic(), "Graph contains cycles after merging");
     }
 
     fn join_nodes(&mut self, nodes: &Coupled<N>) -> petgraph::prelude::NodeIndex {
@@ -131,11 +129,13 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
                 self.merge_into_idx(idx, idx2);
             }
         }
-        idx
-    }
-
-    pub fn contains_node(&self, node: N) -> bool {
-        self.lookup(node).is_some()
+        self.merge_sccs();
+        debug_assert!(
+            self.is_acyclic(),
+            "Graph contains cycles after joining nodes"
+        );
+        // We don't use `idx` here because node indices may change after merging SCCs.
+        self.lookup(*nodes.iter().next().unwrap()).unwrap()
     }
 
     fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
@@ -146,7 +146,43 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         })
     }
 
-    pub fn merge(&mut self, other: &Self) {
+    fn is_acyclic(&self) -> bool {
+        !petgraph::algo::is_cyclic_directed(&self.inner)
+    }
+
+    /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
+    /// operation, the indices of the nodes may change.
+    fn merge_sccs(&mut self) {
+        #[cfg(debug_assertions)]
+        let old_graph = self.clone(); // For debugging
+
+        let sccs = petgraph::algo::kosaraju_scc(&self.inner);
+        for scc in sccs {
+            let first = scc[0];
+            if scc.len() > 1 {
+                // Merge all nodes in the SCC into the first node
+                for other in &scc[1..] {
+                    self.merge_into_idx(first, *other);
+                }
+            }
+            if let Some(edge) = self.inner.find_edge(first, first) {
+                self.inner.remove_edge(edge);
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        if !self.is_acyclic() && COUPLING_IMGCAT_DEBUG {
+            old_graph.render_with_imgcat("Before merging SCCs");
+            self.render_with_imgcat("After merging SCCs");
+        }
+
+        debug_assert!(
+            self.is_acyclic(),
+            "Resulting graph contains cycles after merging SCCs"
+        );
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) {
         for (source, target) in other.edges() {
             let source_idx = self.join_nodes(&source);
             let target_idx = self.join_nodes(&target);
@@ -154,20 +190,11 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
                 self.inner.update_edge(source_idx, target_idx, ());
             }
         }
-        // Compute strongly connected components after merging
-        let sccs = petgraph::algo::kosaraju_scc(&self.inner);
-        for scc in sccs {
-            if scc.len() > 1 {
-                // Merge all nodes in the SCC into the first node
-                let first = scc[0];
-                for other in &scc[1..] {
-                    self.merge_into_idx(first, *other);
-                }
-            }
-        }
+
+        self.merge_sccs();
 
         debug_assert!(
-            petgraph::algo::is_cyclic_directed(&self.inner) == false,
+            self.is_acyclic(),
             "Graph contains cycles after SCC computation"
         );
 
@@ -180,10 +207,12 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             let endpoints = slf.edge_endpoints(ei).unwrap();
             tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()])
         });
+
+        debug_assert!(self.is_acyclic(), "Resulting graph contains cycles");
     }
 
-    pub fn add_edge(&mut self, from: &Coupled<N>, to: &Coupled<N>) {
-        assert!(
+    pub(crate) fn add_edge(&mut self, from: &Coupled<N>, to: &Coupled<N>) {
+        debug_assert!(
             from != to,
             "Self-loop edge {}",
             from.iter()
@@ -202,10 +231,12 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             let to_idx = self.join_nodes(to);
             self.inner.update_edge(from_idx, to_idx, ());
         }
+        self.merge_sccs();
+        debug_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 
     /// Returns the leaf nodes (nodes with no incoming edges)
-    pub fn leaf_nodes(&self) -> Vec<Coupled<N>> {
+    pub(crate) fn leaf_nodes(&self) -> Vec<Coupled<N>> {
         self.inner
             .node_indices()
             .filter(|idx| self.inner.neighbors(*idx).count() == 0)
@@ -213,38 +244,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             .collect()
     }
 
-    pub fn root_nodes(&self) -> Vec<Coupled<N>> {
-        self.inner
-            .node_indices()
-            .filter(|idx| {
-                self.inner
-                    .neighbors_directed(*idx, Direction::Incoming)
-                    .count()
-                    == 0
-            })
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
-            .collect()
-    }
-
-    pub fn interior_nodes(&self) -> Vec<Coupled<N>> {
-        self.inner
-            .node_indices()
-            .filter(|idx| {
-                self.inner
-                    .neighbors_directed(*idx, Direction::Incoming)
-                    .count()
-                    > 0
-                    && self
-                        .inner
-                        .neighbors_directed(*idx, Direction::Outgoing)
-                        .count()
-                        > 0
-            })
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
-            .collect()
-    }
-
-    pub fn endpoints_pointing_to(&self, node: &Coupled<N>) -> Vec<Coupled<N>> {
+    pub(crate) fn endpoints_pointing_to(&self, node: &Coupled<N>) -> Vec<Coupled<N>> {
         let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
         self.inner
             .node_indices()
@@ -283,5 +283,6 @@ where
     }
 }
 
+use crate::borrows::borrows_graph::COUPLING_IMGCAT_DEBUG;
 use crate::borrows::coupling_graph_constructor::Coupled;
 use crate::visualization::dot_graph::DotGraph;

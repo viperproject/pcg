@@ -68,11 +68,11 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     /// validity for simple CFGs during testing, in order to find bugs that can
     /// be easily reproduced.
     pub(crate) fn should_check_validity(&self) -> bool {
-        true
+        self.mir.basic_blocks.len() < 8
     }
 
     /// Returns `true` iff the edge from `from` to `to` is a back edge.
-    pub fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
+    pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
         self.mir.basic_blocks.dominators().dominates(to, from)
             && self.mir.basic_blocks[from]
                 .terminator()
@@ -80,8 +80,8 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
                 .any(|s| s == to)
     }
 
-    // Computes all the blocks in the loop given a back edge from `back_edge_source` to `loop_header`.
-    pub fn compute_loop_blocks(
+    /// Computes all the blocks in the loop given a back edge from `back_edge_source` to `loop_header`.
+    fn compute_loop_blocks(
         &self,
         loop_header: BasicBlock,
         back_edge_source: BasicBlock,
@@ -112,7 +112,7 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     }
 
     /// Finds the exit blocks of the loop.
-    pub fn find_loop_exit_blocks(&self, loop_blocks: &BitSet<BasicBlock>) -> Vec<BasicBlock> {
+    fn find_loop_exit_blocks(&self, loop_blocks: &BitSet<BasicBlock>) -> Vec<BasicBlock> {
         let mut exit_blocks = HashSet::new();
 
         for bb in loop_blocks.iter() {
@@ -136,7 +136,7 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     }
 
     /// Given a back edge from `back_edge_source` to `loop_header`, finds the blocks immediately after the loop.
-    pub fn get_loop_exit_blocks(
+    pub(crate) fn get_loop_exit_blocks(
         &self,
         loop_header: BasicBlock,
         back_edge_source: BasicBlock,
