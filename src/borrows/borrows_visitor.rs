@@ -228,6 +228,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 for output in self
                     .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
                 {
+                    if let ty::TyKind::Closure(..) = ty.kind() {
+                        self.state.report_error(PCGError::Unsupported(format!(
+                            "Closures that contain borrows are not yet supported as function arguments: {:?}",
+                            location
+                        )));
+                        return;
+                    }
                     edges.push(AbstractionBlockEdge::new(
                         vec![input_place
                             .region_projection(lifetime_idx, self.repacker)

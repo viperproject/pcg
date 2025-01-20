@@ -16,7 +16,10 @@ use crate::{
 
 use crate::utils::PlaceRepacker;
 
-use super::{coupling_graph_constructor::CGNode, domain::{MaybeOldPlace, ToJsonWithRepacker}};
+use super::{
+    coupling_graph_constructor::CGNode,
+    domain::{MaybeOldPlace, ToJsonWithRepacker},
+};
 use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
 
 /// A region occuring in region projections
@@ -185,7 +188,6 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
 }
 
 impl<'tcx> RegionProjection<'tcx> {
-
     pub fn local(&self) -> Option<Local> {
         self.place.as_local_place().map(|p| p.local())
     }

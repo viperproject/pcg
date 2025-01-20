@@ -69,7 +69,6 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     /// be easily reproduced.
     pub(crate) fn should_check_validity(&self) -> bool {
         true
-        // self.mir.basic_blocks.len() < 8
     }
 
     /// Returns `true` iff the edge from `from` to `to` is a back edge.
