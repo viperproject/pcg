@@ -557,7 +557,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             ty::TyKind::Ref(region, _, _) => {
                                 let from: utils::Place<'tcx> = (*from).into();
                                 let target: utils::Place<'tcx> = (*target).into();
-                                state.add_borrow(
+                                let add_borrow_actions = state.add_borrow(
                                     from.project_deref(self.repacker).into(),
                                     target.project_deref(self.repacker),
                                     Mutability::Not,
@@ -565,6 +565,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                     *region, // TODO: This is the region for the place, not the loan, does that matter?
                                     self.repacker,
                                 );
+                                self.record_actions(add_borrow_actions);
                             }
                             _ => {}
                         }
@@ -574,7 +575,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             .iter()
                             .enumerate()
                         {
-                            for mut orig_edge in state.edges_blocked_by((*rp).into(), self.repacker)
+                            for mut orig_edge in self
+                                .state
+                                .states
+                                .post_main
+                                .edges_blocked_by((*rp).into(), self.repacker)
                             {
                                 let edge_region_projections: Vec<
                                     &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -585,7 +590,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                             target.region_projection(idx, self.repacker).into()
                                     }
                                 }
-                                state.insert(orig_edge);
+                                self.state.states.post_main.insert(orig_edge);
                             }
                         }
                     }
@@ -605,7 +610,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                     .ty
                             )
                         );
-                        state.add_borrow(
+                        let actions = state.add_borrow(
                             blocked_place.into(),
                             assigned_place,
                             kind.mutability(),
@@ -613,6 +618,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             *region,
                             self.repacker,
                         );
+                        self.record_actions(actions);
                     }
                     _ => {}
                 }

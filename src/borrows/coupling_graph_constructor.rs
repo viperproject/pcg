@@ -94,7 +94,7 @@ impl<T: Ord> Coupled<T> {
         self.0.contains(item)
     }
 
-    pub (crate) fn merge(&mut self, other: Self) {
+    pub(crate) fn merge(&mut self, other: Self) {
         for item in other.0 {
             if !self.0.contains(&item) {
                 self.0.push(item);

@@ -707,6 +707,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
+    #[must_use]
     pub(crate) fn add_borrow(
         &mut self,
         blocked_place: MaybeRemotePlace<'tcx>,
@@ -715,7 +716,8 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
+    ) -> Vec<BorrowPcgAction<'tcx>> {
+        let mut actions = vec![];
         let (blocked_cap, assigned_cap) = match mutability {
             Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
             Mutability::Mut => (CapabilityKind::Lent, CapabilityKind::Exclusive),
@@ -728,16 +730,23 @@ impl<'tcx> BorrowsState<'tcx> {
             region,
         );
         if let Some(rp) = borrow_edge.assigned_region_projection(repacker) {
-            self.graph.insert(
+            let action = BorrowPcgAction::AddRegionProjectionMember(
                 RegionProjectionMember::new(
                     Coupled::singleton(rp.into()),
                     Coupled::singleton(assigned_place.into()),
-                )
-                .to_borrow_pcg_edge(PathConditions::new(location.block)),
+                ),
+                PathConditions::new(location.block),
             );
+            actions.push(action.clone());
+            self.apply_action(action, repacker);
             self.set_capability(rp, blocked_cap);
             if rp.place.is_ref(repacker) {
-                self.graph.insert_owned_expansion(rp.place, location);
+                let action = BorrowPcgAction::InsertDerefExpansion(
+                    OwnedExpansion::new(rp.place).into(),
+                    location,
+                );
+                actions.push(action.clone());
+                self.apply_action(action, repacker);
             }
         }
         self.graph
@@ -747,6 +756,7 @@ impl<'tcx> BorrowsState<'tcx> {
             self.set_capability(blocked_place, blocked_cap);
         }
         self.set_capability(assigned_place, assigned_cap);
+        actions
     }
 
     pub(crate) fn has_borrow_at_location(&self, location: Location) -> bool {
