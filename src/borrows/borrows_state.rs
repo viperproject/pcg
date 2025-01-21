@@ -551,13 +551,9 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !place.is_owned(repacker) {
-            let (extra_acts, inherent_cap) =
+            let extra_acts =
                 self.ensure_deref_expansion_to_at_least(place.into(), repacker, location);
             actions.extend(extra_acts);
-            // Originally we may not have been expanded enough
-            if let Some(inherent_cap) = inherent_cap {
-                self.capabilities.insert(place, inherent_cap);
-            }
             if let Some(capability) = capability {
                 self.capabilities.insert(place, capability);
             }
@@ -565,18 +561,35 @@ impl<'tcx> BorrowsState<'tcx> {
         actions
     }
 
-    /// If an expansion is added, returns the capability of the expanded place;
-    /// i.e. `Exclusive` if the place is mutable, and `Read` otherwise.
-    /// If there is no expansion added, returns `None`.
-    pub(crate) fn ensure_deref_expansion_to_at_least(
+    pub(crate) fn insert_deref_expansion(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        expansion: Vec<Place<'tcx>>,
+        location: Location,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        for p in expansion.iter() {
+            assert!(p.projection.len() > place.place().projection.len());
+        }
+        if place.place().is_owned(repacker) {
+            self.graph.insert_owned_expansion(place, location);
+        } else {
+            let de = DerefExpansion::borrowed(place, expansion, location, repacker);
+            self.graph.insert(BorrowPCGEdge::new(
+                BorrowPCGEdgeKind::DerefExpansion(de),
+                PathConditions::new(location.block),
+            ));
+        }
+    }
+
+    fn ensure_deref_expansion_to_at_least(
         &mut self,
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-    ) -> (Vec<BorrowPcgAction<'tcx>>, Option<CapabilityKind>) {
+    ) -> Vec<BorrowPcgAction<'tcx>> {
         let mut actions = vec![];
         let mut projects_from = None;
-        let mut changed = false;
         for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
             let place = place.with_inherent_region(repacker);
@@ -597,26 +610,24 @@ impl<'tcx> BorrowsState<'tcx> {
             if projects_from.is_some() {
                 let origin_place: MaybeOldPlace<'tcx> = place.into();
                 if !self.graph.contains_deref_expansion_from(&origin_place) {
-                    self.graph
-                        .insert_deref_expansion(origin_place, expansion, location, repacker);
-                    changed = true;
+                    let action =
+                        BorrowPcgAction::InsertDerefExpansion(origin_place, expansion, location);
+                    actions.push(action.clone());
+                    self.apply_action(action, repacker);
                 }
             }
         }
-        if !changed {
-            (vec![], None)
-        } else {
-            (
-                actions,
-                projects_from.map(|mutbl| {
-                    if mutbl.is_mut() {
-                        CapabilityKind::Exclusive
-                    } else {
-                        CapabilityKind::Read
-                    }
-                }),
-            )
+        if let Some(mutbl) = projects_from {
+            self.capabilities.insert(
+                to_place,
+                if mutbl.is_mut() {
+                    CapabilityKind::Exclusive
+                } else {
+                    CapabilityKind::Read
+                },
+            );
         }
+        actions
     }
 
     pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
@@ -787,7 +798,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.abstraction_edges()
     }
 
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
+    pub (crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
         json!({
             "latest": self.latest.to_json(repacker),
         })

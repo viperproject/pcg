@@ -265,16 +265,7 @@ impl<T> DataflowStates<T> {
 pub(crate) type BorrowsStates<'tcx> = DataflowStates<BorrowsState<'tcx>>;
 
 impl<'tcx> BorrowsStates<'tcx> {
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
-        json!({
-            "before_start": self.pre_operands.to_json(repacker),
-            "before_after": self.post_operands.to_json(repacker),
-            "start": self.pre_main.to_json(repacker),
-            "after": self.post_main.to_json(repacker),
-        })
-    }
-
-    pub fn bridge_between_stmts(
+    pub (crate) fn bridge_between_stmts(
         &self,
         next: &BorrowsStates<'tcx>,
         debug_ctx: DebugCtx,

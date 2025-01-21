@@ -6,6 +6,7 @@ use crate::utils::{Place, PlaceRepacker};
 use super::borrow_pcg_edge::BorrowPCGEdge;
 use super::borrows_state::BorrowsState;
 use super::borrows_visitor::BorrowsVisitor;
+use super::domain::MaybeOldPlace;
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
 
@@ -23,6 +24,7 @@ pub(crate) enum BorrowPcgAction<'tcx> {
     SetLatest(Place<'tcx>, Location),
     Unblock(UnblockAction<'tcx>, Location),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
+    InsertDerefExpansion(MaybeOldPlace<'tcx>, Vec<Place<'tcx>>, Location),
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
@@ -34,7 +36,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn apply_action(&mut self, action: BorrowPcgAction<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+    pub(crate) fn apply_action(
+        &mut self,
+        action: BorrowPcgAction<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
         match action {
             BorrowPcgAction::MakePlaceOld(place) => {
                 self.make_place_old(place, repacker, None);
@@ -47,6 +53,9 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             BorrowPcgAction::AddRegionProjectionMember(member, pc) => {
                 self.add_region_projection_member(member, pc, repacker);
+            }
+            BorrowPcgAction::InsertDerefExpansion(place, expansion, location) => {
+                self.insert_deref_expansion(place, expansion, location, repacker);
             }
         }
     }

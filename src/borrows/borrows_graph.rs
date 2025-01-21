@@ -795,26 +795,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.insert(BorrowPCGEdge::new(de, PathConditions::new(location.block)));
     }
 
-    pub(crate) fn insert_deref_expansion(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        expansion: Vec<Place<'tcx>>,
-        location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        for p in expansion.iter() {
-            assert!(p.projection.len() > place.place().projection.len());
-        }
-        if place.place().is_owned(repacker) {
-            self.insert_owned_expansion(place, location);
-        } else {
-            let de = DerefExpansion::borrowed(place, expansion, location, repacker);
-            self.insert(BorrowPCGEdge::new(
-                BorrowPCGEdgeKind::DerefExpansion(de),
-                PathConditions::new(location.block),
-            ));
-        }
-    }
 
     pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(
         &'slf mut self,
