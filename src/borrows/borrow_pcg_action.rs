@@ -3,10 +3,9 @@ use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::{Place, PlaceRepacker};
 
-use super::borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge};
+use super::borrow_pcg_edge::ToBorrowsEdge;
 use super::borrows_state::BorrowsState;
-use super::borrows_visitor::BorrowsVisitor;
-use super::domain::MaybeOldPlace;
+use super::deref_expansion::DerefExpansion;
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
 
@@ -24,7 +23,7 @@ pub(crate) enum BorrowPcgAction<'tcx> {
     SetLatest(Place<'tcx>, Location),
     Unblock(UnblockAction<'tcx>, Location),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-    InsertDerefExpansion(MaybeOldPlace<'tcx>, Vec<Place<'tcx>>, Location),
+    InsertDerefExpansion(DerefExpansion<'tcx>, Location),
 }
 
 impl<'tcx> BorrowsState<'tcx> {
@@ -46,8 +45,8 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgAction::AddRegionProjectionMember(member, pc) => {
                 self.add_region_projection_member(member, pc, repacker);
             }
-            BorrowPcgAction::InsertDerefExpansion(place, expansion, location) => {
-                self.insert_deref_expansion(place, expansion, location, repacker);
+            BorrowPcgAction::InsertDerefExpansion(de, location) => {
+                self.insert(de.to_borrow_pcg_edge(PathConditions::new(location.block)));
             }
         }
     }

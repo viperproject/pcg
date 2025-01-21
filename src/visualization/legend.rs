@@ -1,4 +1,4 @@
-use crate::{free_pcs::CapabilityKind, utils::SnapshotLocation, visualization::{GraphNode, NodeId, NodeType}};
+use crate::{free_pcs::CapabilityKind, visualization::{GraphNode, NodeId, NodeType}};
 
 use super::dot_graph::{DotEdge, DotNode, EdgeDirection, EdgeOptions, DotLabel, DotStringAttr};
 use std::io::{self, Write};

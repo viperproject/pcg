@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use rustc_interface::{
     ast::Mutability,
     hir::def_id::DefId,
-    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem, START_BLOCK},
+    middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem},
     middle::ty::{GenericArgsRef, TyCtxt},
 };
 

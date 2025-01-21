@@ -19,8 +19,7 @@ pub mod visualization;
 
 use borrows::{
     borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion,
-    latest::Latest, region_projection::RegionProjection,
-    region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph,
+    latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, RepackOp};

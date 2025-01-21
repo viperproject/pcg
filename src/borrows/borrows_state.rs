@@ -1,5 +1,5 @@
 use crate::{
-    borrows::{domain::ToJsonWithRepacker, edge_data::EdgeData},
+    borrows::edge_data::EdgeData,
     combined_pcs::UnblockAction,
     rustc_interface::{
         ast::Mutability,
@@ -11,7 +11,6 @@ use crate::{
     },
     RestoreCapability,
 };
-use serde_json::{json, Value};
 
 use crate::{
     free_pcs::CapabilityKind,
@@ -29,7 +28,7 @@ use super::{
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
-    deref_expansion::DerefExpansion,
+    deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
@@ -561,27 +560,7 @@ impl<'tcx> BorrowsState<'tcx> {
         actions
     }
 
-    pub(crate) fn insert_deref_expansion(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        expansion: Vec<Place<'tcx>>,
-        location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        for p in expansion.iter() {
-            assert!(p.projection.len() > place.place().projection.len());
-        }
-        if place.place().is_owned(repacker) {
-            self.graph.insert_owned_expansion(place, location);
-        } else {
-            let de = DerefExpansion::borrowed(place, expansion, location, repacker);
-            self.graph.insert(BorrowPCGEdge::new(
-                BorrowPCGEdgeKind::DerefExpansion(de),
-                PathConditions::new(location.block),
-            ));
-        }
-    }
-
+    #[must_use]
     fn ensure_deref_expansion_to_at_least(
         &mut self,
         to_place: Place<'tcx>,
@@ -610,8 +589,10 @@ impl<'tcx> BorrowsState<'tcx> {
             if projects_from.is_some() {
                 let origin_place: MaybeOldPlace<'tcx> = place.into();
                 if !self.graph.contains_deref_expansion_from(&origin_place) {
-                    let action =
-                        BorrowPcgAction::InsertDerefExpansion(origin_place, expansion, location);
+                    let action = BorrowPcgAction::InsertDerefExpansion(
+                        DerefExpansion::new(origin_place, expansion, location, repacker),
+                        location,
+                    );
                     actions.push(action.clone());
                     self.apply_action(action, repacker);
                 }
@@ -706,7 +687,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-
     pub(crate) fn trim_old_leaves(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -777,18 +757,13 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.abstraction_edges()
     }
 
-    pub (crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
-        json!({
-            "latest": self.latest.to_json(repacker),
-        })
-    }
-
     pub(crate) fn insert_abstraction_edge(
         &mut self,
         abstraction: AbstractionEdge<'tcx>,
         block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
+    ) -> Vec<BorrowPcgAction<'tcx>> {
+        let mut actions = vec![];
         match &abstraction.abstraction_type {
             AbstractionType::FunctionCall(function_call_abstraction) => {
                 for edge in function_call_abstraction.edges() {
@@ -798,10 +773,12 @@ impl<'tcx> BorrowsState<'tcx> {
                     for output in edge.outputs() {
                         self.set_capability(output, CapabilityKind::Exclusive);
                         if output.place.is_ref(repacker) {
-                            self.graph.insert_owned_expansion(
-                                output.place,
+                            let action = BorrowPcgAction::InsertDerefExpansion(
+                                OwnedExpansion::new(output.place).into(),
                                 function_call_abstraction.location(),
                             );
+                            actions.push(action.clone());
+                            self.apply_action(action, repacker);
                         }
                     }
                 }
@@ -810,6 +787,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         self.graph
             .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block)));
+        actions
     }
 
     pub(crate) fn make_place_old(

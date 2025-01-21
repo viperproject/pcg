@@ -6,11 +6,9 @@ use super::{
     borrow_pcg_edge::PCGNode,
     domain::{
         AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
-        MaybeOldPlace,
     },
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
-    region_projection::RegionProjection,
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]

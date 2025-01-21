@@ -73,7 +73,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
             }
-            Condition::AllocateOrDeallocate(local) => {
+            Condition::AllocateOrDeallocate(_local) => {
                 // TODO: This assertion fails for proc_macro2 crate, determine why
                 // assert_eq!(
                 //     self[local].get_allocated()[&local.into()],

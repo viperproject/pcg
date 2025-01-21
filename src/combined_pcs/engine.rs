@@ -19,8 +19,8 @@ use rustc_interface::{
     index::{Idx, IndexVec},
     middle::{
         mir::{
-            BasicBlock, Body, CallReturnPlaces, Location, PlaceElem, Promoted, Statement,
-            Terminator, TerminatorEdges, START_BLOCK,
+            BasicBlock, Body, CallReturnPlaces, Location, Promoted, Statement, Terminator,
+            TerminatorEdges, START_BLOCK,
         },
         ty::{self, GenericArgsRef, ParamEnv, TyCtxt},
     },

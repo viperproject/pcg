@@ -155,7 +155,30 @@ where
     }
 }
 
+impl<'tcx> From<OwnedExpansion<'tcx>> for DerefExpansion<'tcx> {
+    fn from(owned: OwnedExpansion<'tcx>) -> Self {
+        DerefExpansion::OwnedExpansion(owned)
+    }
+}
+
 impl<'tcx> DerefExpansion<'tcx> {
+
+    pub(crate) fn new(
+        base: MaybeOldPlace<'tcx>,
+        expansion: Vec<Place<'tcx>>,
+        location: Location,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Self {
+        for p in expansion.iter() {
+            assert!(p.projection.len() > base.place().projection.len());
+        }
+        if base.place().is_owned(repacker) {
+            DerefExpansion::OwnedExpansion(OwnedExpansion::new(base))
+        } else {
+            DerefExpansion::borrowed(base, expansion, location, repacker)
+        }
+    }
+
     pub fn blocked_by_nodes(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,

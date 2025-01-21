@@ -18,7 +18,6 @@ use crate::{
             ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
         },
     },
-    utils::Place,
 };
 
 use crate::{

@@ -250,7 +250,9 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) states: BorrowsStates<'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
+    #[allow(unused)]
     pub(crate) output_facts: Rc<PoloniusOutput>,
+    #[allow(unused)]
     pub(crate) location_table: Rc<LocationTable>,
     pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     pub(crate) actions: DataflowStates<Vec<BorrowPcgAction<'tcx>>>,
@@ -279,9 +281,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         &self.states.post_main
     }
 
-    pub(crate) fn error(&self) -> Option<&PCGError> {
-        self.error.as_ref()
-    }
     pub(crate) fn is_valid(&self) -> bool {
         self.post_state().is_valid(self.repacker)
     }

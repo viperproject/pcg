@@ -287,8 +287,10 @@ impl<T> DebugRecursiveCallHistory<T> {
 }
 
 pub(crate) struct CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T> {
+    #[allow(unused)]
     liveness: &'regioncx T,
     repacker: PlaceRepacker<'mir, 'tcx>,
+    #[allow(unused)]
     block: BasicBlock,
     coupling_graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
 }

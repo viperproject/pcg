@@ -13,7 +13,6 @@ use rustc_interface::{
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config, Queries},
     middle::{
-        mir::pretty::{write_mir_fn, PrettyPrintMirOptions},
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
         ty::TyCtxt,
         util::Providers,

@@ -1,23 +1,20 @@
 use std::cell::Cell;
 
-use rustc_interface::{
+use crate::rustc_interface::{
     data_structures::fx::FxHashSet,
     middle::mir::{BasicBlock, Location},
-    middle::ty::TyKind,
 };
 use serde_json::json;
 
 use crate::{
-    borrows::{domain::AbstractionType, region_projection::RegionProjection},
+    borrows::domain::AbstractionType,
     coupling,
-    free_pcs::CapabilityKind,
-    rustc_interface,
     utils::{Place, PlaceRepacker},
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use super::{
-    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPcgAction, borrow_pcg_edge::{
+    borrow_edge::BorrowEdge, borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     }, borrows_visitor::DebugCtx, coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
