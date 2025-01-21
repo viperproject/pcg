@@ -71,37 +71,6 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum ReborrowAction<'tcx> {
-    AddReborrow(BorrowEdge<'tcx>),
-    RemoveReborrow(BorrowEdge<'tcx>),
-    ExpandPlace(DerefExpansion<'tcx>),
-    CollapsePlace(Vec<utils::Place<'tcx>>, MaybeOldPlace<'tcx>),
-}
-
-impl<'tcx> ReborrowAction<'tcx> {
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        match self {
-            ReborrowAction::AddReborrow(reborrow) => json!({
-                "action": "AddReborrow",
-                "reborrow": reborrow.to_json(repacker)
-            }),
-            ReborrowAction::RemoveReborrow(reborrow) => json!({
-                "action": "RemoveReborrow",
-                "reborrow": reborrow.to_json(repacker)
-            }),
-            ReborrowAction::ExpandPlace(e) => json!({
-                "action": "ExpandPlace",
-                "place": e.base().to_json(repacker),
-            }),
-            ReborrowAction::CollapsePlace(_, place) => json!({
-                "action": "CollapsePlace",
-                "place": place.to_json(repacker),
-            }),
-        }
-    }
-}
-
 impl<'tcx> BorrowCheckerInterface<'tcx> for Results<'tcx, MaybeLiveLocals> {
     fn is_live(&self, node: CGNode<'tcx>, block: BasicBlock) -> bool {
         match node {
