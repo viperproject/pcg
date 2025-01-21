@@ -76,16 +76,18 @@ impl Display for RepackOp<'_> {
             RepackOp::Expand(from, _, kind) => write!(f, "Expand({from:?}, {kind:?})"),
             RepackOp::DerefShallowInit(from, _) => write!(f, "DerefShallowInit({from:?})"),
             RepackOp::RegainLoanedCapability(place, capability_kind) => {
-                write!(
-                    f,
-                    "RegainLoanedCapability({place:?}, {capability_kind:?})"
-                )
+                write!(f, "RegainLoanedCapability({place:?}, {capability_kind:?})")
             }
         }
     }
 }
 
 impl<'tcx> RepackOp<'tcx> {
+
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        serde_json::Value::String(format!("{self:?}"))
+    }
+
     pub fn affected_place(&self) -> Place<'tcx> {
         match *self {
             RepackOp::StorageDead(local) | RepackOp::IgnoreStorageDead(local) => local.into(),

@@ -117,13 +117,12 @@ export type ReborrowBridge = {
 export type PathData = {
   heap: Record<string, { value: string; ty: string; old: boolean }>;
   pcs: string;
-  borrow_actions_start: BorrowAction[];
-  borrow_actions_mid: BorrowAction[];
-  reborrow_start: ReborrowBridge;
-  reborrow_middle?: ReborrowBridge;
-  borrows: {
-    latest: Record<string, string>;
-  };
-  repacks_middle: string[];
-  repacks_start: string[];
+};
+
+export type PCGStmtVisualizationData = {
+  latest: Record<string, string>;
+  free_pcg_repacks_start: string[];
+  free_pcg_repacks_middle: string[];
+  borrows_bridge_start: ReborrowBridge;
+  borrows_bridge_middle: ReborrowBridge;
 };

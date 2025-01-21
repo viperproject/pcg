@@ -68,7 +68,7 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     /// validity for simple CFGs during testing, in order to find bugs that can
     /// be easily reproduced.
     pub(crate) fn should_check_validity(&self) -> bool {
-        self.mir.basic_blocks.len() < 8
+        false
     }
 
     /// Returns `true` iff the edge from `from` to `to` is a back edge.

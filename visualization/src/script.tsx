@@ -4,7 +4,7 @@ import ReactDOMServer from "react-dom/server";
 import * as dagre from "@dagrejs/dagre";
 import * as Viz from "@viz-js/viz";
 
-import PCSActions from "./components/BorrowsAndActions";
+import PCGOps from "./components/BorrowsAndActions";
 import {
   computeTableHeight,
   isStorageStmt,
@@ -17,6 +17,7 @@ import {
   DagreInputNode,
   DagreNode,
   PathData,
+  PCGStmtVisualizationData,
 } from "./types";
 import Edge from "./components/Edge";
 import SymbolicHeap from "./components/SymbolicHeap";
@@ -30,6 +31,7 @@ import {
   getFunctions,
   getGraphData,
   getPathData,
+  getPCGStmtVisualizationData,
   getPaths,
   getPCSIterations,
   PCSIterations,
@@ -123,6 +125,8 @@ async function main() {
     const [iterations, setIterations] = useState<PCSIterations>([]);
     const [selected, setSelected] = useState<Selection>(999); // HACK - always show last iteration
     const [pathData, setPathData] = useState<PathData | null>(null);
+    const [pcgStmtVisualizationData, setPcgStmtVisualizationData] =
+      useState<PCGStmtVisualizationData | null>(null);
     const [currentPoint, setCurrentPoint] = useState<CurrentPoint>({
       type: "stmt",
       block: 0,
@@ -177,14 +181,18 @@ async function main() {
         const nodeLegendPath = `data/${selectedFunction}/node_legend.dot`;
         const [edgeLegendData, nodeLegendData] = await Promise.all([
           fetchDotFile(edgeLegendPath),
-          fetchDotFile(nodeLegendPath)
+          fetchDotFile(nodeLegendPath),
         ]);
 
         Viz.instance().then((viz) => {
           const edgeSvgElement = viz.renderSVGElement(edgeLegendData);
           const nodeSvgElement = viz.renderSVGElement(nodeLegendData);
 
-          const popup = window.open("", "Graph Legend", "width=800,height=1000");
+          const popup = window.open(
+            "",
+            "Graph Legend",
+            "width=800,height=1000"
+          );
           popup.document.head.innerHTML = `
             <style>
               body {
@@ -210,8 +218,8 @@ async function main() {
           `;
           popup.document.title = "Graph Legend";
 
-          const container = popup.document.createElement('div');
-          container.className = 'legend-container';
+          const container = popup.document.createElement("div");
+          container.className = "legend-container";
           container.appendChild(edgeSvgElement);
           container.appendChild(nodeSvgElement);
           popup.document.body.appendChild(container);
@@ -310,7 +318,23 @@ async function main() {
         }
       };
 
+      const fetchPcgStmtVisualizationData = async () => {
+        try {
+          if (currentPoint.type === "stmt") {
+            const pcgStmtVisualizationData = await getPCGStmtVisualizationData(
+              selectedFunction,
+              currentPoint.block,
+              currentPoint.stmt
+            );
+            setPcgStmtVisualizationData(pcgStmtVisualizationData);
+          }
+        } catch (error) {
+          console.error("Error fetching pcg stmt visualization data:", error);
+        }
+      };
+
       fetchPathData();
+      fetchPcgStmtVisualizationData();
     }, [selectedFunction, selectedPath, currentPoint, paths]);
 
     useEffect(() => {
@@ -609,6 +633,12 @@ async function main() {
             ))}
           </svg>
         </div>
+        {pcgStmtVisualizationData && (
+          <>
+            <PCGOps data={pcgStmtVisualizationData} />
+            <LatestDisplay latest={pcgStmtVisualizationData.latest} />
+          </>
+        )}
         {pathData && (
           <>
             <div style={{ position: "absolute", top: "20px", right: "20px" }}>
@@ -616,8 +646,6 @@ async function main() {
               <PathConditions pcs={pathData.pcs} />
               <Assertions assertions={assertions} />
             </div>
-            <PCSActions pathData={pathData} />
-            <LatestDisplay latest={pathData.borrows.latest} />
           </>
         )}
         {pcsGraphSelector}

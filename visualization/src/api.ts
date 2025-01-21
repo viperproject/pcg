@@ -1,4 +1,5 @@
 import { Assertion } from "./components/Assertions";
+import { PCGStmtVisualizationData } from "./types";
 
 export type MirGraphNode = {
   id: string;
@@ -67,6 +68,16 @@ export const getAssertions = async (functionName: string) => {
     return [];
   }
 };
+
+export async function getPCGStmtVisualizationData(
+  functionName: string,
+  block: number,
+  stmt: number
+): Promise<PCGStmtVisualizationData> {
+  return await fetchJsonFile(
+    `data/${functionName}/block_${block}_stmt_${stmt}_pcg_data.json`
+  );
+}
 
 export async function getPathData(
   functionName: string,

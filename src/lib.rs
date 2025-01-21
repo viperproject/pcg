@@ -19,11 +19,11 @@ pub mod visualization;
 
 use borrows::{
     borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion,
-    region_projection::RegionProjection, region_projection_member::RegionProjectionMember,
-    unblock_graph::UnblockGraph,
+    latest::Latest, region_projection::RegionProjection,
+    region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
-use free_pcs::CapabilityKind;
+use free_pcs::{CapabilityKind, RepackOp};
 use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
 use utils::{Place, PlaceRepacker};
@@ -92,7 +92,35 @@ impl<'tcx> BorrowsBridge<'tcx> {
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {
-    static ref RECORD_PCS: Mutex<bool> = Mutex::new(false);
+    /// Whether to record PCG information for each block. This is used for
+    /// debugging only. This is set to true when the PCG is initially
+    /// constructed, and then disabled after its construction. The reason for
+    /// using a global variable is that debugging information is written during
+    /// the dataflow operations of the PCG, which are also used when examining
+    /// PCG results. We don't want to write the debugging information to disk
+    /// during examination, of course.
+    static ref RECORD_PCG: Mutex<bool> = Mutex::new(false);
+}
+
+struct PCGStmtVisualizationData<'a, 'tcx> {
+    /// The value of the "latest" map at the end of the statement.
+    latest: &'a Latest<'tcx>,
+    free_pcg_repacks_start: &'a Vec<RepackOp<'tcx>>,
+    free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
+    borrows_bridge_start: &'a BorrowsBridge<'tcx>,
+    borrows_bridge_middle: &'a BorrowsBridge<'tcx>,
+}
+
+impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "latest": self.latest.to_json(repacker),
+            "free_pcg_repacks_start": self.free_pcg_repacks_start.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
+            "free_pcg_repacks_middle": self.free_pcg_repacks_middle.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
+            "borrows_bridge_start": self.borrows_bridge_start.to_json(repacker),
+            "borrows_bridge_middle": self.borrows_bridge_middle.to_json(repacker),
+        })
+    }
 }
 
 pub fn run_combined_pcs<'mir, 'tcx>(
@@ -101,18 +129,18 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
     let cgx = PCGContext::new(tcx, mir);
-    let fpcs = PCGEngine::new(cgx, visualization_output_path.clone());
+    let fpcg = PCGEngine::new(cgx, visualization_output_path.clone());
     {
-        let mut record_pcs = RECORD_PCS.lock().unwrap();
+        let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
     }
-    let analysis = fpcs
+    let analysis = fpcg
         .into_engine(tcx, &mir.body)
-        .pass_name("free_pcs")
+        .pass_name("free_pcg")
         .iterate_to_fixpoint();
     {
-        let mut record_pcs = RECORD_PCS.lock().unwrap();
-        *record_pcs = false;
+        let mut record_pcg = RECORD_PCG.lock().unwrap();
+        *record_pcg = false;
     }
     if let Some(dir_path) = &visualization_output_path {
         for block in mir.body.basic_blocks.indices() {
@@ -147,16 +175,22 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         for (block, _data) in mir.body.basic_blocks.iter_enumerated() {
             let pcs_block = fpcs_analysis.get_all_for_bb(block);
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
-                let borrows_file_path = format!(
-                    "{}/block_{}_stmt_{}_borrows.json",
+                let data = PCGStmtVisualizationData {
+                    latest: &statement.borrows.after.latest,
+                    free_pcg_repacks_start: &statement.repacks_start,
+                    free_pcg_repacks_middle: &statement.repacks_middle,
+                    borrows_bridge_start: &statement.extra_start,
+                    borrows_bridge_middle: &statement.extra_middle,
+                };
+                let pcg_data_file_path = format!(
+                    "{}/block_{}_stmt_{}_pcg_data.json",
                     &dir_path,
                     block.index(),
                     statement_index
                 );
-                let borrows_json =
-                    serde_json::to_string_pretty(&statement.borrows.to_json(rp)).unwrap();
-                std::fs::write(&borrows_file_path, borrows_json)
-                    .expect("Failed to write borrows to JSON file");
+                let pcg_data_json = data.to_json(rp);
+                std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
+                    .expect("Failed to write pcg data to JSON file");
             }
         }
     }

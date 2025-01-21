@@ -10,6 +10,7 @@ import {
   PCGNode,
   MaybeRemotePlace,
   LocalNode,
+  PCGStmtVisualizationData,
 } from "../types";
 import * as Viz from "@viz-js/viz";
 
@@ -75,8 +76,14 @@ function BridgeExpands({ expands }: { expands: PlaceExpand[] }) {
 function BorrowDisplay({ borrow }: { borrow: Borrow }) {
   return (
     <div>
-      <p>Assigned: <MaybeOldPlaceDisplay maybeOldPlace={borrow?.assigned_place} /></p>
-      <p>Borrowed: <MaybeOldPlaceDisplay maybeOldPlace={borrow?.borrowed_place} /></p>
+      <p>
+        Assigned:{" "}
+        <MaybeOldPlaceDisplay maybeOldPlace={borrow?.assigned_place} />
+      </p>
+      <p>
+        Borrowed:{" "}
+        <MaybeOldPlaceDisplay maybeOldPlace={borrow?.borrowed_place} />
+      </p>
       <p>Is Mutable: {borrow?.is_mut ? "Yes" : "No"}</p>
       <p>Kind: {borrow?.kind}</p>
     </div>
@@ -192,7 +199,7 @@ function BorrowActionDisplay({ action }: { action: BorrowAction }) {
   );
 }
 
-export default function PCSActions({ pathData }: { pathData: PathData }) {
+export default function PCGOps({ data }: { data: PCGStmtVisualizationData }) {
   return (
     <div
       style={{
@@ -208,22 +215,22 @@ export default function PCSActions({ pathData }: { pathData: PathData }) {
       }}
     >
       <h4>Borrow PCG Bridge (Start)</h4>
-      <BorrowsBridgeDisplay bridge={pathData.reborrow_start} />
-      {pathData.reborrow_middle && (
+      <BorrowsBridgeDisplay bridge={data.borrows_bridge_start} />
+      {data.borrows_bridge_middle && (
         <>
           <h4>Borrow PCG Bridge (Mid)</h4>
-          <BorrowsBridgeDisplay bridge={pathData.reborrow_middle} />
+          <BorrowsBridgeDisplay bridge={data.borrows_bridge_middle} />
         </>
       )}
       <h4>Repacks (Start)</h4>
       <ul>
-        {pathData.repacks_start.map((repack, index) => (
+        {data.free_pcg_repacks_start.map((repack, index) => (
           <li key={`start-${index}`}>{repack}</li>
         ))}
       </ul>
       <h4>Repacks (Middle)</h4>
       <ul>
-        {pathData.repacks_middle.map((repack, index) => (
+        {data.free_pcg_repacks_middle.map((repack, index) => (
           <li key={`mid-${index}`}>{repack}</li>
         ))}
       </ul>

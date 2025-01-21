@@ -14,7 +14,7 @@ pub enum SnapshotLocation {
 }
 
 impl SnapshotLocation {
-    pub fn start() -> Self {
+    pub (crate) fn start() -> Self {
         SnapshotLocation::After(Location::START)
     }
 

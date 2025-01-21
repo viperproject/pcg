@@ -30,7 +30,7 @@ use crate::{
     free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
     rustc_interface,
     visualization::generate_dot_graph,
-    RECORD_PCS,
+    RECORD_PCG,
 };
 
 use super::{PCGContext, PCGEngine};
@@ -230,7 +230,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     }
 
     pub fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
-        if !*RECORD_PCS.lock().unwrap() {
+        if !*RECORD_PCG.lock().unwrap() {
             return;
         }
         if self.block().as_usize() == 0 {
