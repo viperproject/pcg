@@ -196,7 +196,7 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UnblockAction<'tcx> {
     TerminateRegionProjectionMember(RegionProjectionMember<'tcx>),
     TerminateAbstraction(Location, AbstractionType<'tcx>),

@@ -17,6 +17,7 @@ use super::region_projection_member::RegionProjectionMember;
 /// functionality which generates annotations between two arbitrary
 /// `BorrowsState`s. Ultimately, we want to remove that functionality and
 /// instead generate annotations for consumers directly in the `BorrowsVisitor`.
+#[derive(Clone)]
 pub(crate) enum BorrowPcgAction<'tcx> {
     MakePlaceOld(Place<'tcx>),
     SetLatest(Place<'tcx>, Location),
@@ -26,12 +27,14 @@ pub(crate) enum BorrowPcgAction<'tcx> {
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(crate) fn apply_action(&mut self, action: BorrowPcgAction<'tcx>) {
-        self.state.post_state_mut().apply_action(action, self.repacker);
+        self.state
+            .post_state_mut()
+            .apply_action(action, self.repacker);
     }
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    fn apply_action(&mut self, action: BorrowPcgAction<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+    pub(crate) fn apply_action(&mut self, action: BorrowPcgAction<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
         match action {
             BorrowPcgAction::MakePlaceOld(place) => {
                 self.make_place_old(place, repacker, None);

@@ -21,6 +21,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
+    borrow_pcg_action::BorrowPcgAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
@@ -34,6 +35,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
     unblock_graph::{UnblockGraph, UnblockType},
 };
@@ -492,7 +494,8 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         location: Location,
         capability: Option<CapabilityKind>,
-    ) {
+    ) -> Vec<BorrowPcgAction<'tcx>> {
+        let mut actions = vec![];
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
         for p in graph_edges {
             match p.kind() {
@@ -501,14 +504,15 @@ impl<'tcx> BorrowsState<'tcx> {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
                         for ra in place.region_projections(repacker) {
-                            self.add_region_projection_member(
+                            let action = BorrowPcgAction::AddRegionProjectionMember(
                                 RegionProjectionMember::new(
                                     Coupled::singleton(reborrow.blocked_place.into()),
                                     Coupled::singleton(ra.into()),
                                 ),
                                 PathConditions::new(location.block),
-                                repacker,
                             );
+                            actions.push(action.clone());
+                            self.apply_action(action, repacker);
                         }
                     }
                     _ => {}
@@ -540,19 +544,78 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
 
-        self.apply_unblock_graph(ug, repacker, location);
+        for action in ug.actions(repacker) {
+            let action = BorrowPcgAction::Unblock(action, location);
+            actions.push(action.clone());
+            self.apply_action(action, repacker);
+        }
 
         if !place.is_owned(repacker) {
+            let (extra_acts, inherent_cap) =
+                self.ensure_deref_expansion_to_at_least(place.into(), repacker, location);
+            actions.extend(extra_acts);
             // Originally we may not have been expanded enough
-            if let Some(inherent_cap) =
-                self.graph
-                    .ensure_deref_expansion_to_at_least(place.into(), repacker, location)
-            {
+            if let Some(inherent_cap) = inherent_cap {
                 self.capabilities.insert(place, inherent_cap);
             }
             if let Some(capability) = capability {
                 self.capabilities.insert(place, capability);
             }
+        }
+        actions
+    }
+
+    /// If an expansion is added, returns the capability of the expanded place;
+    /// i.e. `Exclusive` if the place is mutable, and `Read` otherwise.
+    /// If there is no expansion added, returns `None`.
+    pub(crate) fn ensure_deref_expansion_to_at_least(
+        &mut self,
+        to_place: Place<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        location: Location,
+    ) -> (Vec<BorrowPcgAction<'tcx>>, Option<CapabilityKind>) {
+        let mut actions = vec![];
+        let mut projects_from = None;
+        let mut changed = false;
+        for (place, _) in to_place.iter_projections() {
+            let place: Place<'tcx> = place.into();
+            let place = place.with_inherent_region(repacker);
+            let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
+            expansion.push(target);
+            if let ty::TyKind::Ref(region, _, mutbl) = place.ty(repacker).ty.kind() {
+                projects_from = Some(mutbl);
+                let action = BorrowPcgAction::AddRegionProjectionMember(
+                    RegionProjectionMember::new(
+                        Coupled::singleton(RegionProjection::new((*region).into(), place).into()),
+                        Coupled::singleton(target.into()),
+                    ),
+                    PathConditions::new(location.block),
+                );
+                actions.push(action.clone());
+                self.apply_action(action, repacker);
+            }
+            if projects_from.is_some() {
+                let origin_place: MaybeOldPlace<'tcx> = place.into();
+                if !self.graph.contains_deref_expansion_from(&origin_place) {
+                    self.graph
+                        .insert_deref_expansion(origin_place, expansion, location, repacker);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            (vec![], None)
+        } else {
+            (
+                actions,
+                projects_from.map(|mutbl| {
+                    if mutbl.is_mut() {
+                        CapabilityKind::Exclusive
+                    } else {
+                        CapabilityKind::Read
+                    }
+                }),
+            )
         }
     }
 

@@ -28,6 +28,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
+    borrow_pcg_action::BorrowPcgAction,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
@@ -296,6 +297,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) output_facts: Rc<PoloniusOutput>,
     pub(crate) location_table: Rc<LocationTable>,
     pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
+    actions: DataflowStates<Vec<BorrowPcgAction<'tcx>>>,
     error: Option<PCGError>,
 }
 
@@ -357,6 +359,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     ) -> Self {
         Self {
             states: BorrowsStates::default(),
+            actions: DataflowStates::default(),
             block,
             repacker,
             output_facts,

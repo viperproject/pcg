@@ -17,22 +17,11 @@ use crate::{
 };
 
 use super::{
-    borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{
+    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPcgAction, borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
-    },
-    borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{
+    }, borrows_visitor::DebugCtx, coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
-    },
-    deref_expansion::{DerefExpansion, OwnedExpansion},
-    domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
-    edge_data::EdgeData,
-    has_pcs_elem::{HasPcsElems, MakePlaceOld},
-    latest::Latest,
-    path_condition::{PathCondition, PathConditions},
-    region_abstraction::AbstractionEdge,
-    region_projection_member::RegionProjectionMember,
+    }, deref_expansion::{DerefExpansion, OwnedExpansion}, domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker}, edge_data::EdgeData, has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection_member::RegionProjectionMember
 };
 
 #[derive(Clone, Debug)]
@@ -796,52 +785,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    /// If an expansion is added, returns the capability of the expanded place;
-    /// i.e. `Exclusive` if the place is mutable, and `Read` otherwise.
-    /// If there is no expansion added, returns `None`.
-    pub(crate) fn ensure_deref_expansion_to_at_least(
-        &mut self,
-        to_place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        location: Location,
-    ) -> Option<CapabilityKind> {
-        let mut projects_from = None;
-        let mut changed = false;
-        for (place, _) in to_place.iter_projections() {
-            let place: Place<'tcx> = place.into();
-            let place = place.with_inherent_region(repacker);
-            let (target, mut expansion, _) = place.expand_one_level(to_place, repacker);
-            expansion.push(target);
-            if let TyKind::Ref(region, _, mutbl) = place.ty(repacker).ty.kind() {
-                projects_from = Some(mutbl);
-                self.insert(BorrowPCGEdge::new(
-                    BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
-                        Coupled::singleton(RegionProjection::new((*region).into(), place).into()),
-                        Coupled::singleton(target.into()),
-                    )),
-                    PathConditions::new(location.block),
-                ));
-            }
-            if projects_from.is_some() {
-                let origin_place: MaybeOldPlace<'tcx> = place.into();
-                if !self.contains_deref_expansion_from(&origin_place) {
-                    self.insert_deref_expansion(origin_place, expansion, location, repacker);
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            None
-        } else {
-            projects_from.map(|mutbl| {
-                if mutbl.is_mut() {
-                    CapabilityKind::Exclusive
-                } else {
-                    CapabilityKind::Read
-                }
-            })
-        }
-    }
 
     pub(crate) fn insert_owned_expansion(
         &mut self,
@@ -852,7 +795,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.insert(BorrowPCGEdge::new(de, PathConditions::new(location.block)));
     }
 
-    fn insert_deref_expansion(
+    pub(crate) fn insert_deref_expansion(
         &mut self,
         place: MaybeOldPlace<'tcx>,
         expansion: Vec<Place<'tcx>>,
