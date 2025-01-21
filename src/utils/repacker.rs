@@ -68,7 +68,7 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     /// validity for simple CFGs during testing, in order to find bugs that can
     /// be easily reproduced.
     pub(crate) fn should_check_validity(&self) -> bool {
-        false
+        true
     }
 
     /// Returns `true` iff the edge from `from` to `to` is a back edge.
@@ -416,39 +416,9 @@ impl<'tcx> Place<'tcx> {
         }
         places
     }
-
-    // /// Pop the last projection from the place and return the new place with the popped element.
-    // pub fn pop_one_level(self, place: Place<'tcx>) -> (PlaceElem<'tcx>, Place<'tcx>) {
-    //     assert!(place.projection.len() > 0);
-    //     let last_index = place.projection.len() - 1;
-    //     let projection = self.tcx.intern_place_elems(&place.projection[..last_index]);
-    //     (
-    //         place.projection[last_index],
-    //         Place::new(place.local, projection),
-    //     )
-    // }
 }
 
-// impl<'tcx> RootPlace<'tcx> {
-//     pub fn get_parent(self, repacker: PlaceRepacker<'_, 'tcx>) -> Place<'tcx> {
-//         assert!(self.projection.len() > 0);
-//         let idx = self.projection.len() - 1;
-//         let projection = repacker.tcx.intern_place_elems(&self.projection[..idx]);
-//         Place::new(self.local, projection)
-//     }
-// }
-
 impl<'tcx> Place<'tcx> {
-    // pub fn get_root(self, repacker: PlaceRepacker<'_, 'tcx>) -> RootPlace<'tcx> {
-    //     if let Some(idx) = self.projection.iter().rev().position(RootPlace::is_indirect) {
-    //         let idx = self.projection.len() - idx;
-    //         let projection = repacker.tcx.intern_place_elems(&self.projection[..idx]);
-    //         let new = Self::new(self.local, projection);
-    //         RootPlace::new(new)
-    //     } else {
-    //         RootPlace::new(self.local.into())
-    //     }
-    // }
 
     pub fn ty(self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceTy<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
@@ -549,20 +519,6 @@ impl<'tcx> Place<'tcx> {
             ret
         })
     }
-
-    // pub fn all_behind_region(self, r: RegionVid, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<Self> {
-    //     struct AllBehindWalker<'tcx>(Place<'tcx>, Vec<Place<'tcx>>, TyCtxt<'tcx>);
-    //     impl<'tcx> DeepTypeVisitor<'tcx> for AllBehindWalker<'tcx> {
-    //         fn tcx(&self) -> TyCtxt<'tcx> {
-    //             self.2
-    //         }
-
-    //         fn visit_rec(&mut self, ty: Ty<'tcx>, stack: &mut Stack<'tcx>) {
-    //             ty.visit_with(self, stack);
-    //         }
-    //     }
-    //     todo!()
-    // }
 
     pub fn mk_deref(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
         self.mk_place_elem(PlaceElem::Deref, repacker)

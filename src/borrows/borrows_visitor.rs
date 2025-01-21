@@ -28,6 +28,7 @@ use crate::{
 };
 
 use super::{
+    borrow_pcg_action::BorrowPcgAction,
     coupling_graph_constructor::Coupled,
     domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
@@ -67,8 +68,8 @@ pub enum StatementStage {
 }
 
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
-    repacker: PlaceRepacker<'mir, 'tcx>,
-    state: &'state mut BorrowsDomain<'mir, 'tcx>,
+    pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
+    pub(super) state: &'state mut BorrowsDomain<'mir, 'tcx>,
     input_facts: &'mir PoloniusInput,
     location_table: &'mir LocationTable,
     borrow_set: Rc<BorrowSet<'tcx>>,
@@ -204,17 +205,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         self.projections_borrowing_from_input_lifetime(*region, destination.into());
                     for output in output_borrow_projections {
                         let input_rp = input_place.region_projection(0, self.repacker);
-                        let mut ug = UnblockGraph::new();
-                        ug.unblock_node(
+                        for action in UnblockGraph::actions_to_unblock(
                             input_rp.into(),
                             &self.state.states.after,
                             self.repacker,
-                            UnblockType::ForExclusive,
-                        );
-                        self.state
-                            .states
-                            .after
-                            .apply_unblock_graph(ug, self.repacker, location);
+                        ) {
+                            self.apply_action(BorrowPcgAction::Unblock(action, location));
+                        }
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output.into()].into_iter().collect(),
@@ -325,7 +322,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         CapabilityKind::Exclusive
                     };
                     let place: utils::Place<'tcx> = (*place).into();
-                    self.ensure_expansion_to(place, location, Some(capability));
+                    self.state.states.after.ensure_expansion_to(
+                        self.repacker,
+                        place,
+                        location,
+                        Some(capability),
+                    );
                 }
                 _ => {}
             }
@@ -333,10 +335,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
-                self.state
-                    .states
-                    .after
-                    .make_place_old(place, self.repacker, None);
+                self.apply_action(BorrowPcgAction::MakePlaceOld(place));
             }
         }
     }
@@ -355,11 +354,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     ..
                 } => {
                     let destination: utils::Place<'tcx> = (*destination).into();
-                    self.state.states.after.set_latest(
-                        (*destination).into(),
-                        location,
-                        self.repacker,
-                    );
+                    self.apply_action(BorrowPcgAction::SetLatest(destination, location));
                     self.construct_function_call_abstraction(
                         func,
                         &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),

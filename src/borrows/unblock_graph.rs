@@ -11,8 +11,7 @@ use crate::{
 };
 
 use super::{
-    borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode},
     domain::MaybeRemotePlace,
 };
 
@@ -30,11 +29,11 @@ pub(crate) enum UnblockType {
 }
 
 impl<'tcx> UnblockGraph<'tcx> {
-    pub (crate) fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
+    pub(crate) fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
         self.edges.iter()
     }
 
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         let dot_graph = generate_unblock_dot_graph(&repacker, self).unwrap();
         serde_json::json!({
             "empty": self.is_empty(),
@@ -42,10 +41,20 @@ impl<'tcx> UnblockGraph<'tcx> {
         })
     }
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             edges: HashSet::new(),
         }
+    }
+
+    pub(crate) fn actions_to_unblock(
+        node: PCGNode<'tcx>,
+        state: &BorrowsState<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<UnblockAction<'tcx>> {
+        let mut ug = UnblockGraph::new();
+        ug.unblock_node(node, state, repacker, UnblockType::ForExclusive);
+        ug.actions(repacker)
     }
 
     pub fn for_place(
@@ -121,7 +130,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                     }
                 }
             }
-            assert!(
+            debug_assert!(
                 to_keep.len() < edges.len(),
                 "Didn't remove any leaves! {:#?}",
                 edges

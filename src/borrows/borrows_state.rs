@@ -1,5 +1,6 @@
 use crate::{
     borrows::{domain::ToJsonWithRepacker, edge_data::EdgeData},
+    combined_pcs::UnblockAction,
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
@@ -155,24 +156,6 @@ impl<'tcx> BorrowsState<'tcx> {
         result
     }
 
-    pub fn borrow_edges_reserved_at(
-        &self,
-        location: Location,
-    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.graph
-            .edges()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Borrow(borrow) if borrow.reserve_location() == location => {
-                    Some(Conditioned {
-                        conditions: edge.conditions().clone(),
-                        value: borrow.clone(),
-                    })
-                }
-                _ => None,
-            })
-            .collect()
-    }
-
     /// Collapses nodes using the following rules:
     /// - If a node is only blocked by old leaves, then its expansion should be collapsed
     /// - If a borrow PCG node's expansion is only leaves, then its expansion should be collapsed
@@ -251,6 +234,9 @@ impl<'tcx> BorrowsState<'tcx> {
         true
     }
 
+    /// Returns the place that blocks `place` if:
+    /// 1. there is exactly one edge blocking `place`
+    /// 2. that edge is a borrow edge
     pub fn get_place_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
@@ -564,13 +550,13 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.roots(repacker)
     }
 
-    pub(crate) fn kill_borrows(
+    fn kill_borrows(
         &mut self,
         reserve_location: Location,
         kill_location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        let edges_to_remove = self.borrow_edges_reserved_at(reserve_location);
+        let edges_to_remove = self.graph.borrow_edges_reserved_at(reserve_location);
         if edges_to_remove.is_empty() {
             return false;
         }
@@ -583,6 +569,30 @@ impl<'tcx> BorrowsState<'tcx> {
         true
     }
 
+    pub(crate) fn apply_unblock_action(
+        &mut self,
+        action: UnblockAction<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        location: Location,
+    ) -> bool {
+        match action {
+            crate::combined_pcs::UnblockAction::TerminateBorrow {
+                reserve_location, ..
+            } => self.kill_borrows(reserve_location, location, repacker),
+            crate::combined_pcs::UnblockAction::Collapse(place, _) => {
+                self.delete_descendants_of(place, location, repacker)
+            }
+            crate::combined_pcs::UnblockAction::TerminateAbstraction(location, _call) => {
+                self.graph.remove_abstraction_at(location)
+            }
+            crate::combined_pcs::UnblockAction::TerminateRegionProjectionMember(
+                region_projection_member,
+            ) => self
+                .graph
+                .remove_region_projection_member(region_projection_member),
+        }
+    }
+
     pub(crate) fn apply_unblock_graph(
         &mut self,
         graph: UnblockGraph<'tcx>,
@@ -591,33 +601,8 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let mut changed = false;
         for action in graph.actions(repacker) {
-            match action {
-                crate::combined_pcs::UnblockAction::TerminateBorrow {
-                    reserve_location, ..
-                } => {
-                    if self.kill_borrows(reserve_location, location, repacker) {
-                        changed = true;
-                    }
-                }
-                crate::combined_pcs::UnblockAction::Collapse(place, _) => {
-                    if self.delete_descendants_of(place, location, repacker) {
-                        changed = true;
-                    }
-                }
-                crate::combined_pcs::UnblockAction::TerminateAbstraction(location, _call) => {
-                    self.graph.remove_abstraction_at(location);
-                }
-                crate::combined_pcs::UnblockAction::TerminateRegionProjectionMember(
-                    region_projection_member,
-                ) => {
-                    self.graph
-                        .remove_region_projection_member(region_projection_member);
-                }
-            }
-        }
-        for node in self.graph.leaf_nodes(repacker) {
-            if self.get_capability(node) == Some(CapabilityKind::Lent) {
-                self.set_capability(node, CapabilityKind::Exclusive);
+            if self.apply_unblock_action(action, repacker, location) {
+                changed = true;
             }
         }
         changed

@@ -83,6 +83,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.iter()
     }
 
+    pub(crate) fn borrow_edges_reserved_at(
+        &self,
+        location: Location,
+    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
+        self.edges()
+            .filter_map(|edge| match &edge.kind() {
+                BorrowPCGEdgeKind::Borrow(borrow) if borrow.reserve_location() == location => {
+                    Some(Conditioned {
+                        conditions: edge.conditions().clone(),
+                        value: borrow.clone(),
+                    })
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn base_coupling_graph(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -725,26 +742,43 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn remove_abstraction_at(&mut self, location: Location) {
+    pub(crate) fn remove_abstraction_at(&mut self, location: Location) -> bool {
         self.cached_is_valid.set(None);
+        let mut changed = false;
         self.edges.retain(|edge| {
             if let BorrowPCGEdgeKind::Abstraction(abstraction) = &edge.kind() {
-                abstraction.location() != location
+                if abstraction.location() != location {
+                    return true;
+                } else {
+                    changed = true;
+                    return false;
+                }
             } else {
                 true
             }
         });
+        changed
     }
 
-    pub(crate) fn remove_region_projection_member(&mut self, member: RegionProjectionMember<'tcx>) {
+    pub(crate) fn remove_region_projection_member(
+        &mut self,
+        member: RegionProjectionMember<'tcx>,
+    ) -> bool {
         self.cached_is_valid.set(None);
+        let mut changed = false;
         self.edges.retain(|edge| {
             if let BorrowPCGEdgeKind::RegionProjectionMember(m) = &edge.kind() {
-                m != &member
+                if m != &member {
+                    return true;
+                } else {
+                    changed = true;
+                    return false;
+                }
             } else {
                 true
             }
         });
+        changed
     }
 
     pub(crate) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
