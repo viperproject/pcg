@@ -46,6 +46,16 @@ pub struct BorrowsState<'tcx> {
     capabilities: BorrowPCGCapabilities<'tcx>,
 }
 
+impl<'tcx> Default for BorrowsState<'tcx> {
+    fn default() -> Self {
+        Self {
+            latest: Latest::new(),
+            graph: BorrowsGraph::new(),
+            capabilities: BorrowPCGCapabilities::new(),
+        }
+    }
+}
+
 impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) {
         self.graph.insert(edge);
@@ -718,14 +728,6 @@ impl<'tcx> BorrowsState<'tcx> {
         json!({
             "latest": self.latest.to_json(repacker),
         })
-    }
-
-    pub(crate) fn new() -> Self {
-        Self {
-            latest: Latest::new(),
-            graph: BorrowsGraph::new(),
-            capabilities: BorrowPCGCapabilities::new(),
-        }
     }
 
     pub(crate) fn insert_abstraction_edge(

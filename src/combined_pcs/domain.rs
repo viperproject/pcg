@@ -257,14 +257,14 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
             let (fpcs, borrows) = match phase {
                 DataflowStmtPhase::Initial | DataflowStmtPhase::BeforeStart => {
-                    (&pcg.owned.pre_operands, &pcg.borrow.states.before_start)
+                    (&pcg.owned.pre_operands, &pcg.borrow.states.pre_operands)
                 }
                 DataflowStmtPhase::BeforeAfter => {
-                    (&pcg.owned.post_operands, &pcg.borrow.states.before_after)
+                    (&pcg.owned.post_operands, &pcg.borrow.states.pre_operands)
                 }
-                DataflowStmtPhase::Start => (&pcg.owned.pre_main, &pcg.borrow.states.start),
+                DataflowStmtPhase::Start => (&pcg.owned.pre_main, &pcg.borrow.states.pre_main),
                 DataflowStmtPhase::After | DataflowStmtPhase::Join(_) => {
-                    (&pcg.owned.post_main, pcg.borrow.after_state())
+                    (&pcg.owned.post_main, &pcg.borrow.states.post_main)
                 }
             };
 
@@ -339,7 +339,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         let fpcs = self.owned_pcg_mut().join(&other.owned_pcg());
         let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
         let mut g = UnblockGraph::new();
-        for root in self.borrow_pcg().states.after.roots(self.cgx.rp) {
+        for root in self.borrow_pcg().states.post_main.roots(self.cgx.rp) {
             if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
                 root
             {
@@ -347,7 +347,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                     CapabilityLocal::Unallocated => {
                         g.unblock_node(
                             root.into(),
-                            &self.borrow_pcg().after_state(),
+                            &self.borrow_pcg().states.post_main,
                             self.cgx.rp,
                             UnblockType::ForRead,
                         );
@@ -356,7 +356,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                         if !(*projs).contains_key(&root) {
                             g.unblock_node(
                                 root.into(),
-                                &self.borrow_pcg().after_state(),
+                                &self.borrow_pcg().states.post_main,
                                 self.cgx.rp,
                                 UnblockType::ForExclusive,
                             );
@@ -366,7 +366,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             }
         }
         let self_block = self.block();
-        let ub = self.pcg.borrow.states.after.apply_unblock_graph(
+        let ub = self.pcg.borrow.states.post_main.apply_unblock_graph(
             g,
             self.cgx.rp,
             mir::Location {

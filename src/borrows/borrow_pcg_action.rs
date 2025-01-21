@@ -3,8 +3,11 @@ use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::{Place, PlaceRepacker};
 
+use super::borrow_pcg_edge::BorrowPCGEdge;
 use super::borrows_state::BorrowsState;
 use super::borrows_visitor::BorrowsVisitor;
+use super::path_condition::PathConditions;
+use super::region_projection_member::RegionProjectionMember;
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
@@ -18,11 +21,12 @@ pub(crate) enum BorrowPcgAction<'tcx> {
     MakePlaceOld(Place<'tcx>),
     SetLatest(Place<'tcx>, Location),
     Unblock(UnblockAction<'tcx>, Location),
+    AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(crate) fn apply_action(&mut self, action: BorrowPcgAction<'tcx>) {
-        self.state.states.after.apply_action(action, self.repacker);
+        self.state.post_state_mut().apply_action(action, self.repacker);
     }
 }
 
@@ -37,6 +41,9 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             BorrowPcgAction::Unblock(unblock_action, location) => {
                 self.apply_unblock_action(unblock_action, repacker, location);
+            }
+            BorrowPcgAction::AddRegionProjectionMember(member, pc) => {
+                self.add_region_projection_member(member, pc, repacker);
             }
         }
     }

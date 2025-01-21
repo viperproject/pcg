@@ -176,7 +176,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
             let pcs_block = fpcs_analysis.get_all_for_bb(block);
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 let data = PCGStmtVisualizationData {
-                    latest: &statement.borrows.after.latest,
+                    latest: &statement.borrows.post_main.latest,
                     free_pcg_repacks_start: &statement.repacks_start,
                     free_pcg_repacks_middle: &statement.repacks_middle,
                     borrows_bridge_start: &statement.extra_start,

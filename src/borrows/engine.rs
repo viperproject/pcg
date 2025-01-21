@@ -1,3 +1,4 @@
+use std::default::Default;
 use std::rc::Rc;
 
 use crate::{
@@ -126,7 +127,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         if self.repacker.should_check_validity() {
             debug_assert!(other.is_valid(), "Other graph is invalid");
         }
-        let mut other_after = other.after_state().clone();
+        let mut other_after = other.post_state().clone();
 
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
@@ -134,7 +135,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         other_after.add_path_condition(pc);
 
         // Overlay both graphs
-        self.states.after.join(
+        self.states.post_main.join(
             &other_after,
             self.block(),
             other.block(),
@@ -169,10 +170,10 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
-        state.states.before_start = state.states.after.clone();
+        state.states.pre_operands = state.states.post_main.clone();
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
-        state.states.before_after = state.states.after.clone();
+        state.states.post_operands = state.states.post_main.clone();
     }
 
     fn apply_statement_effect(
@@ -186,7 +187,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
             .visit_statement(statement, location);
-        state.states.start = state.states.after.clone();
+        state.states.pre_main = state.states.post_main.clone();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
             .visit_statement(statement, location);
     }
@@ -202,10 +203,10 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_terminator(terminator, location);
-        state.states.before_start = state.states.after.clone();
+        state.states.pre_operands = state.states.post_main.clone();
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_terminator(terminator, location);
-        state.states.before_after = state.states.after.clone();
+        state.states.post_operands = state.states.post_main.clone();
     }
 
     fn apply_terminator_effect<'mir>(
@@ -219,7 +220,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
             .visit_terminator(terminator, location);
-        state.states.start = state.states.after.clone();
+        state.states.pre_main = state.states.post_main.clone();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
             .visit_terminator(terminator, location);
         terminator.edges()
@@ -236,29 +237,39 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct BorrowsStates<'tcx> {
-    pub before_start: BorrowsState<'tcx>,
-    pub before_after: BorrowsState<'tcx>,
-    pub start: BorrowsState<'tcx>,
-    pub after: BorrowsState<'tcx>,
+pub struct DataflowStates<T> {
+    pub(crate) pre_operands: T,
+    pub(crate) post_operands: T,
+    pub(crate) pre_main: T,
+    pub(crate) post_main: T,
 }
 
-impl<'tcx> BorrowsStates<'tcx> {
-    pub fn new() -> Self {
+impl<T: Default> Default for DataflowStates<T> {
+    fn default() -> Self {
         Self {
-            before_start: BorrowsState::new(),
-            before_after: BorrowsState::new(),
-            start: BorrowsState::new(),
-            after: BorrowsState::new(),
+            pre_operands: T::default(),
+            post_operands: T::default(),
+            pre_main: T::default(),
+            post_main: T::default(),
         }
     }
+}
 
+impl<T> DataflowStates<T> {
+    pub fn post_main(&self) -> &T {
+        &self.post_main
+    }
+}
+
+pub(crate) type BorrowsStates<'tcx> = DataflowStates<BorrowsState<'tcx>>;
+
+impl<'tcx> BorrowsStates<'tcx> {
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Value {
         json!({
-            "before_start": self.before_start.to_json(repacker),
-            "before_after": self.before_after.to_json(repacker),
-            "start": self.start.to_json(repacker),
-            "after": self.after.to_json(repacker),
+            "before_start": self.pre_operands.to_json(repacker),
+            "before_after": self.post_operands.to_json(repacker),
+            "start": self.pre_main.to_json(repacker),
+            "after": self.post_main.to_json(repacker),
         })
     }
 
@@ -268,8 +279,12 @@ impl<'tcx> BorrowsStates<'tcx> {
         debug_ctx: DebugCtx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> (BorrowsBridge<'tcx>, BorrowsBridge<'tcx>) {
-        let start = self.after.bridge(&next.before_start, debug_ctx, repacker);
-        let middle = next.before_after.bridge(&next.start, debug_ctx, repacker);
+        let start = self
+            .post_main
+            .bridge(&next.pre_operands, debug_ctx, repacker);
+        let middle = next
+            .post_operands
+            .bridge(&next.pre_main, debug_ctx, repacker);
         (start, middle)
     }
 }
@@ -295,28 +310,25 @@ impl<'mir, 'tcx> Eq for BorrowsDomain<'mir, 'tcx> {}
 impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BorrowsDomain")
-            .field("before_start", &self.states.before_start)
-            .field("before_after", &self.states.before_after)
-            .field("start", &self.states.start)
-            .field("after", &self.states.after)
+            .field("states", &self.states)
             .field("block", &self.block)
             .finish()
     }
 }
 
 impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+    pub(crate) fn post_state(&self) -> &BorrowsState<'tcx> {
+        &self.states.post_main
+    }
+
     pub(crate) fn error(&self) -> Option<&PCGError> {
         self.error.as_ref()
     }
     pub(crate) fn is_valid(&self) -> bool {
-        self.states.after.is_valid(self.repacker)
+        self.post_state().is_valid(self.repacker)
     }
-    pub(crate) fn after_state(&self) -> &BorrowsState<'tcx> {
-        &self.states.after
-    }
-
-    pub(crate) fn after_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
-        &mut self.states.after
+    pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
+        &mut self.states.post_main
     }
 
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
@@ -344,7 +356,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     ) -> Self {
         Self {
-            states: BorrowsStates::new(),
+            states: BorrowsStates::default(),
             block,
             repacker,
             output_facts,
@@ -360,7 +372,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let arg_place: Place<'tcx> = arg.into();
             if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
                 {
-                    self.states.after.add_borrow(
+                    self.states.post_main.add_borrow(
                         MaybeRemotePlace::place_assigned_to_local(arg),
                         arg_place.project_deref(self.repacker),
                         *mutability,
@@ -372,7 +384,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             }
             let local_place: utils::Place<'tcx> = arg_place.into();
             for region_projection in local_place.region_projections(self.repacker) {
-                self.states.after.add_region_projection_member(
+                self.states.post_main.add_region_projection_member(
                     RegionProjectionMember::new(
                         Coupled::singleton(
                             RegionProjection::new(
