@@ -196,24 +196,6 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
-pub struct ProjectionEdge<'tcx> {
-    pub blockers: Vec<PlaceElem<'tcx>>,
-    pub blocked: MaybeOldPlace<'tcx>,
-}
-
-impl<'tcx> ProjectionEdge<'tcx> {
-    pub fn blocks_place(&self, place: MaybeOldPlace<'tcx>) -> bool {
-        self.blocked == place
-    }
-    pub fn blocker_places(&self, tcx: TyCtxt<'tcx>) -> Vec<MaybeOldPlace<'tcx>> {
-        self.blockers
-            .iter()
-            .map(|p| self.blocked.project_deeper(tcx, *p))
-            .collect()
-    }
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum UnblockAction<'tcx> {
     TerminateRegionProjectionMember(RegionProjectionMember<'tcx>),
