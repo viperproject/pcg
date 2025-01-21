@@ -18,16 +18,13 @@ use crate::{
         },
     },
 };
-use serde_json::{json, Value};
 
 use crate::{
-    borrows::domain::ToJsonWithRepacker,
     utils::{self, Place, PlaceRepacker},
     BorrowsBridge,
 };
 
 use super::{
-    borrow_edge::BorrowEdge,
     borrow_pcg_action::BorrowPcgAction,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
@@ -37,7 +34,6 @@ use super::{
     region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
 };
-use super::{deref_expansion::DerefExpansion, domain::MaybeOldPlace};
 
 pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) tcx: TyCtxt<'tcx>,
@@ -234,7 +230,7 @@ impl<T> DataflowStates<T> {
 pub(crate) type BorrowsStates<'tcx> = DataflowStates<BorrowsState<'tcx>>;
 
 impl<'tcx> BorrowsStates<'tcx> {
-    pub (crate) fn bridge_between_stmts(
+    pub(crate) fn bridge_between_stmts(
         &self,
         next: &BorrowsStates<'tcx>,
         debug_ctx: DebugCtx,
@@ -257,7 +253,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) output_facts: Rc<PoloniusOutput>,
     pub(crate) location_table: Rc<LocationTable>,
     pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
-    actions: DataflowStates<Vec<BorrowPcgAction<'tcx>>>,
+    pub(crate) actions: DataflowStates<Vec<BorrowPcgAction<'tcx>>>,
     error: Option<PCGError>,
 }
 
@@ -347,18 +343,21 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             }
             let local_place: utils::Place<'tcx> = arg_place.into();
             for region_projection in local_place.region_projections(self.repacker) {
-                self.states.post_main.add_region_projection_member(
-                    RegionProjectionMember::new(
-                        Coupled::singleton(
-                            RegionProjection::new(
-                                region_projection.region(),
-                                RemotePlace::new(arg),
-                            )
-                            .into(),
+                self.states
+                    .post_main
+                    .apply_action(BorrowPcgAction::AddRegionProjectionMember(
+                        RegionProjectionMember::new(
+                            Coupled::singleton(
+                                RegionProjection::new(
+                                    region_projection.region(),
+                                    RemotePlace::new(arg),
+                                )
+                                .into(),
+                            ),
+                            Coupled::singleton(region_projection.into()),
                         ),
-                        Coupled::singleton(region_projection.into()),
+                        PathConditions::start(),
                     ),
-                    PathConditions::start(),
                     self.repacker,
                 );
             }

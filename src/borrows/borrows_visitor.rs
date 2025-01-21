@@ -82,6 +82,26 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
+    fn curr_actions(&mut self) -> &mut Vec<BorrowPcgAction<'tcx>> {
+        match (self.stage, self.preparing) {
+            (StatementStage::Operands, true) => self.state.actions.pre_operands.as_mut(),
+            (StatementStage::Operands, false) => self.state.actions.post_operands.as_mut(),
+            (StatementStage::Main, true) => self.state.actions.pre_main.as_mut(),
+            (StatementStage::Main, false) => self.state.actions.post_main.as_mut(),
+        }
+    }
+
+    fn record_actions(&mut self, actions: Vec<BorrowPcgAction<'tcx>>) {
+        self.curr_actions().extend(actions);
+    }
+
+    fn apply_action(&mut self, action: BorrowPcgAction<'tcx>) {
+        self.curr_actions().push(action.clone());
+        self.state
+            .post_state_mut()
+            .apply_action(action, self.repacker);
+    }
+
     pub fn preparing(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
@@ -118,23 +138,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
-    /// Ensures that the place is expanded to the given place, possibly for a
-    /// certain capability. If `capability` is `Some`, the capability of the
-    /// expanded place is set to the given value.
-    fn ensure_expansion_to<T: Into<Place<'tcx>>>(
-        &mut self,
-        node: T,
-        location: Location,
-        capability: Option<CapabilityKind>,
-    ) {
-        self.state.post_state_mut().ensure_expansion_to(
-            self.repacker,
-            node.into(),
-            location,
-            capability,
-        );
-    }
-
     fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
         let location = if start {
             self.location_table.start_index(location)
@@ -165,7 +168,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         args: &[&Operand<'tcx>],
         destination: utils::Place<'tcx>,
         location: Location,
-    ) {
+    ) -> Vec<BorrowPcgAction<'tcx>> {
+        let mut actions = vec![];
         let (func_def_id, substs) = if let Operand::Constant(box c) = func
             && let Const::Val(_, ty) = c.const_
             && let ty::TyKind::FnDef(def_id, substs) = ty.kind()
@@ -185,7 +189,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .liberate_late_bound_regions(*func_def_id, sig);
         let output_lifetimes = extract_regions(sig.output());
         if output_lifetimes.is_empty() {
-            return;
+            return actions;
         }
         let mut edges = vec![];
 
@@ -230,7 +234,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             "Closures that contain borrows are not yet supported as function arguments: {:?}",
                             location
                         )));
-                        return;
+                        return actions;
                     }
                     edges.push(AbstractionBlockEdge::new(
                         vec![input_place
@@ -261,17 +265,19 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         for edge in edges {
             for output in edge.outputs() {
                 if let Some(place) = output.deref(self.repacker) {
-                    self.state.post_state_mut().add_region_projection_member(
+                    let action = BorrowPcgAction::AddRegionProjectionMember(
                         RegionProjectionMember::new(
                             Coupled::singleton(output.into()),
                             Coupled::singleton(place.into()),
                         ),
                         PathConditions::AtBlock(location.block),
-                        self.repacker,
                     );
+                    self.apply_action(action.clone());
+                    actions.push(action);
                 }
             }
         }
+        actions
     }
 
     fn projections_borrowing_from_input_lifetime(
@@ -494,13 +500,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                         source_proj.region().as_vid().unwrap(),
                                         target_proj.region().as_vid().unwrap(),
                                     ) {
-                                        self.state.post_state_mut().add_region_projection_member(
-                                            RegionProjectionMember::new(
-                                                Coupled::singleton(source_proj.into()),
-                                                Coupled::singleton(target_proj.into()),
+                                        self.apply_action(
+                                            BorrowPcgAction::AddRegionProjectionMember(
+                                                RegionProjectionMember::new(
+                                                    Coupled::singleton(source_proj.into()),
+                                                    Coupled::singleton(target_proj.into()),
+                                                ),
+                                                PathConditions::AtBlock(location.block),
                                             ),
-                                            PathConditions::AtBlock(location.block),
-                                            self.repacker,
                                         );
                                     }
                                 }
@@ -641,7 +648,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
                 if self.stage == StatementStage::Operands && self.preparing {
-                    self.ensure_expansion_to(place, location, None)
+                    let actions = self.state.post_state_mut().ensure_expansion_to(
+                        self.repacker,
+                        place,
+                        location,
+                        None,
+                    );
+                    self.record_actions(actions);
                 }
             }
         }

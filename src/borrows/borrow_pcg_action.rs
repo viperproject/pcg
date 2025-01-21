@@ -1,9 +1,9 @@
 use crate::combined_pcs::UnblockAction;
 use crate::free_pcs::CapabilityKind;
-use crate::rustc_interface::middle::mir::Location;
+use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::{Place, PlaceRepacker};
 
-use super::borrow_pcg_edge::BorrowPCGEdge;
+use super::borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge};
 use super::borrows_state::BorrowsState;
 use super::borrows_visitor::BorrowsVisitor;
 use super::domain::MaybeOldPlace;
@@ -25,14 +25,6 @@ pub(crate) enum BorrowPcgAction<'tcx> {
     Unblock(UnblockAction<'tcx>, Location),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
     InsertDerefExpansion(MaybeOldPlace<'tcx>, Vec<Place<'tcx>>, Location),
-}
-
-impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
-    pub(crate) fn apply_action(&mut self, action: BorrowPcgAction<'tcx>) {
-        self.state
-            .post_state_mut()
-            .apply_action(action, self.repacker);
-    }
 }
 
 impl<'tcx> BorrowsState<'tcx> {
@@ -57,6 +49,28 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgAction::InsertDerefExpansion(place, expansion, location) => {
                 self.insert_deref_expansion(place, expansion, location, repacker);
             }
+        }
+    }
+
+    /// Adds a region projection member to the graph and sets appropriate
+    /// capabilities for the place and projection
+    fn add_region_projection_member(
+        &mut self,
+        member: RegionProjectionMember<'tcx>,
+        pc: PathConditions,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        self.insert(member.clone().to_borrow_pcg_edge(pc));
+        let (input_cap, output_cap) = if member.mutability(repacker) == Mutability::Mut {
+            (CapabilityKind::Lent, CapabilityKind::Exclusive)
+        } else {
+            (CapabilityKind::Read, CapabilityKind::Read)
+        };
+        for i in member.inputs.iter() {
+            self.set_capability(*i, input_cap);
+        }
+        for o in member.outputs.iter() {
+            self.set_capability(*o, output_cap);
         }
     }
 }

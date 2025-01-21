@@ -706,27 +706,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-    /// Adds a region projection member to the graph and sets appropriate
-    /// capabilities for the place and projection
-    pub(crate) fn add_region_projection_member(
-        &mut self,
-        member: RegionProjectionMember<'tcx>,
-        pc: PathConditions,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        self.graph.insert(member.clone().to_borrow_pcg_edge(pc));
-        let (input_cap, output_cap) = if member.mutability(repacker) == Mutability::Mut {
-            (CapabilityKind::Lent, CapabilityKind::Exclusive)
-        } else {
-            (CapabilityKind::Read, CapabilityKind::Read)
-        };
-        for i in member.inputs.iter() {
-            self.set_capability(*i, input_cap);
-        }
-        for o in member.outputs.iter() {
-            self.set_capability(*o, output_cap);
-        }
-    }
 
     pub(crate) fn trim_old_leaves(
         &mut self,
