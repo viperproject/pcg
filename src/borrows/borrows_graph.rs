@@ -14,11 +14,22 @@ use crate::{
 };
 
 use super::{
-    borrow_edge::BorrowEdge, borrow_pcg_edge::{
+    borrow_edge::BorrowEdge,
+    borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
-    }, borrows_visitor::DebugCtx, coupling_graph_constructor::{
+    },
+    borrows_visitor::DebugCtx,
+    coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
-    }, deref_expansion::DerefExpansion, domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker}, edge_data::EdgeData, has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection_member::RegionProjectionMember
+    },
+    deref_expansion::DerefExpansion,
+    domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
+    edge_data::EdgeData,
+    has_pcs_elem::{HasPcsElems, MakePlaceOld},
+    latest::Latest,
+    path_condition::{PathCondition, PathConditions},
+    region_abstraction::AbstractionEdge,
+    region_projection_member::RegionProjectionMember,
 };
 
 #[derive(Clone, Debug)]
