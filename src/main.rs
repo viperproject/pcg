@@ -13,9 +13,7 @@ use rustc_interface::{
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config, Queries},
     middle::{
-        query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
-        ty::TyCtxt,
-        util::Providers,
+        query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt, util::Providers,
     },
     session::Session,
 };
@@ -45,6 +43,13 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
     original_mir_borrowck(tcx, def_id)
 }
 
+fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
+    // DEBUG
+    // body.body.basic_blocks.len() < 8
+
+    true
+}
+
 fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
     let mut item_names = vec![];
 
@@ -66,17 +71,19 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
         let kind = tcx.def_kind(def_id);
         match kind {
             hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
-                let item_name = format!("{}", tcx.item_name(def_id.to_def_id()));
+                let item_name = format!("{}", tcx.def_path_str(def_id.to_def_id()));
                 let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
                     let mut map = state.borrow_mut();
                     unsafe { std::mem::transmute(map.remove(&def_id).unwrap()) }
                 });
                 eprintln!("Running PCG on function: {}", item_name);
-                run_combined_pcs(
-                    &body,
-                    tcx,
-                    vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
-                );
+                if should_check_body(&body) {
+                    run_combined_pcs(
+                        &body,
+                        tcx,
+                        vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
+                    );
+                }
                 item_names.push(item_name);
             }
             unsupported_item_kind => {

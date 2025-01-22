@@ -13,7 +13,7 @@ use crate::{
         dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
         middle::{
             mir::{
-                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement,
+                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
                 Terminator, TerminatorEdges,
             },
             ty::{self, TyCtxt},
@@ -337,40 +337,44 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         }
     }
 
+    pub(super) fn introduce_initial_borrows(&mut self, local: Local, location: Location) {
+        let local_decl = &self.repacker.body().local_decls[local];
+        let arg_place: Place<'tcx> = local.into();
+        if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
+            let _ = self.states.post_main.add_borrow(
+                MaybeRemotePlace::place_assigned_to_local(local),
+                arg_place.project_deref(self.repacker),
+                *mutability,
+                location,
+                *region,
+                self.repacker,
+            );
+        }
+        let local_place: utils::Place<'tcx> = arg_place.into();
+        for region_projection in local_place.region_projections(self.repacker) {
+            self.states.post_main.apply_action(
+                BorrowPCGAction::add_region_projection_member(
+                    RegionProjectionMember::new(
+                        Coupled::singleton(
+                            RegionProjection::new(
+                                region_projection.region(),
+                                RemotePlace::new(local),
+                            )
+                            .into(),
+                        ),
+                        Coupled::singleton(region_projection.into()),
+                    ),
+                    PathConditions::AtBlock(location.block),
+                    "Initialize Local",
+                ),
+                self.repacker,
+            );
+        }
+    }
+
     pub(crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
-            let local_decl = &self.repacker.body().local_decls[arg];
-            let arg_place: Place<'tcx> = arg.into();
-            if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
-                let _ = self.states.post_main.add_borrow(
-                    MaybeRemotePlace::place_assigned_to_local(arg),
-                    arg_place.project_deref(self.repacker),
-                    *mutability,
-                    Location::START,
-                    *region,
-                    self.repacker,
-                );
-            }
-            let local_place: utils::Place<'tcx> = arg_place.into();
-            for region_projection in local_place.region_projections(self.repacker) {
-                self.states.post_main.apply_action(
-                    BorrowPCGAction::add_region_projection_member(
-                        RegionProjectionMember::new(
-                            Coupled::singleton(
-                                RegionProjection::new(
-                                    region_projection.region(),
-                                    RemotePlace::new(arg),
-                                )
-                                .into(),
-                            ),
-                            Coupled::singleton(region_projection.into()),
-                        ),
-                        PathConditions::start(),
-                        "Initialize Local",
-                    ),
-                    self.repacker,
-                );
-            }
+            self.introduce_initial_borrows(arg, Location::START);
         }
     }
 }

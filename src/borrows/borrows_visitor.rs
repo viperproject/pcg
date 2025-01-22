@@ -162,6 +162,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         target: Place<'tcx>,
         location: Location,
     ) {
+        if !self.state.post_state().contains(source_proj, self.repacker) {
+            return;
+        }
         for target_proj in target.region_projections(self.repacker) {
             if self.outlives(
                 source_proj.region().as_vid().unwrap(),
@@ -173,7 +176,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         Coupled::singleton(target_proj.into()),
                     ),
                     PathConditions::AtBlock(location.block),
-                    "Aggregate Assignment",
+                    "Outliving Projection",
                 ));
             }
         }
@@ -182,153 +185,171 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     fn stmt_post_main(&mut self, statement: &Statement<'tcx>, location: Location) {
         assert!(!self.preparing);
         assert!(self.stage == StatementStage::Main);
-        if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
-            let target: utils::Place<'tcx> = (*target).into();
-            self.apply_action(BorrowPCGAction::set_latest(
-                target,
-                location,
-                "Target of Assignment",
-            ));
-            let state = self.state.post_state_mut();
-            if !target.is_owned(self.repacker) {
-                state.set_capability(target, CapabilityKind::Exclusive);
+        match &statement.kind {
+            StatementKind::StorageLive(local) => {
+                // self.state.introduce_initial_borrows(*local, location);
             }
-            if let Some(mutbl) = target.ref_mutability(self.repacker) {
-                let capability = if mutbl.is_mut() {
-                    CapabilityKind::Exclusive
-                } else {
-                    CapabilityKind::Read
-                };
-                state.set_capability(target.project_deref(self.repacker), capability);
-            }
-            match rvalue {
-                Rvalue::Aggregate(box (AggregateKind::Adt(..) | AggregateKind::Tuple), fields) => {
-                    let target: utils::Place<'tcx> = (*target).into();
-                    for field in fields.iter() {
-                        let operand_place: utils::Place<'tcx> = if let Some(place) = field.place() {
-                            place.into()
-                        } else {
-                            continue;
-                        };
-                        for source_proj in operand_place.region_projections(self.repacker) {
-                            let source_proj = source_proj.map_place(|p| {
-                                MaybeOldPlace::new(p, Some(self.state.post_state().get_latest(p)))
-                            });
-                            self.connect_outliving_projections(source_proj, target, location);
-                        }
-                    }
+            StatementKind::Assign(box (target, rvalue)) => {
+                let target: utils::Place<'tcx> = (*target).into();
+                self.apply_action(BorrowPCGAction::set_latest(
+                    target,
+                    location,
+                    "Target of Assignment",
+                ));
+                let state = self.state.post_state_mut();
+                if !target.is_owned(self.repacker) {
+                    state.set_capability(target, CapabilityKind::Exclusive);
                 }
-                Rvalue::Use(Operand::Move(from)) => {
-                    let from: utils::Place<'tcx> = (*from).into();
-                    let target: utils::Place<'tcx> = (*target).into();
-                    if let Some(mutbl) = from.ref_mutability(self.repacker)
-                        && mutbl.is_mut()
-                    {
-                        state.change_pcs_elem(
-                            MaybeOldPlace::new(
-                                from.project_deref(self.repacker),
-                                Some(state.get_latest(from)),
-                            ),
-                            target.project_deref(self.repacker).into(),
-                        );
-                    }
-                    let moved_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
-                    for (idx, old_rp) in moved_place
-                        .region_projections(self.repacker)
-                        .into_iter()
-                        .enumerate()
-                    {
-                        let new_rp = target.region_projection(idx, self.repacker);
-                        // Both of these statements are required! We represent some reigonprojections
-                        // as RegionProjection<MaybeOldPlace> and some as RegionProjection<MaybeRemotePlace>,
-                        // existing nodes could be of either kind.
-                        state.change_pcs_elem::<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>(
-                            old_rp,
-                            new_rp.into(),
-                        );
-                        state.change_pcs_elem::<RegionProjection<'tcx>>(
-                            old_rp.into(),
-                            new_rp.into(),
-                        );
-                    }
-                    state.delete_descendants_of(
-                        MaybeOldPlace::Current { place: from },
-                        location,
-                        self.repacker,
-                    );
+                if let Some(mutbl) = target.ref_mutability(self.repacker) {
+                    let capability = if mutbl.is_mut() {
+                        CapabilityKind::Exclusive
+                    } else {
+                        CapabilityKind::Read
+                    };
+                    state.set_capability(target.project_deref(self.repacker), capability);
                 }
-                Rvalue::Use(Operand::Copy(from)) => {
-                    match from.ty(self.repacker.body(), self.repacker.tcx()).ty.kind() {
-                        ty::TyKind::Ref(region, _, _) => {
-                            let from: utils::Place<'tcx> = (*from).into();
-                            let target: utils::Place<'tcx> = (*target).into();
-                            let add_borrow_actions = state.add_borrow(
-                                from.project_deref(self.repacker).into(),
-                                target.project_deref(self.repacker),
-                                Mutability::Not,
-                                location,
-                                *region, // TODO: This is the region for the place, not the loan, does that matter?
-                                self.repacker,
-                            );
-                            self.record_actions(add_borrow_actions);
-                        }
-                        _ => {}
-                    }
-                    let from_place: utils::Place<'tcx> = (*from).into();
-                    for (idx, rp) in from_place
-                        .region_projections(self.repacker)
-                        .iter()
-                        .enumerate()
-                    {
-                        for mut orig_edge in self
-                            .state
-                            .states
-                            .post_main
-                            .edges_blocked_by((*rp).into(), self.repacker)
-                        {
-                            let edge_region_projections: Vec<
-                                &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-                            > = orig_edge.pcs_elems();
-                            for output in edge_region_projections {
-                                if *output == (*rp).into() {
-                                    *output = target.region_projection(idx, self.repacker).into()
-                                }
+                match rvalue {
+                    Rvalue::Aggregate(
+                        box (AggregateKind::Adt(..) | AggregateKind::Tuple),
+                        fields,
+                    ) => {
+                        let target: utils::Place<'tcx> = (*target).into();
+                        for field in fields.iter() {
+                            let operand_place: utils::Place<'tcx> =
+                                if let Some(place) = field.place() {
+                                    place.into()
+                                } else {
+                                    continue;
+                                };
+                            for source_proj in operand_place.region_projections(self.repacker) {
+                                let source_proj = source_proj.map_place(|p| {
+                                    MaybeOldPlace::new(
+                                        p,
+                                        Some(self.state.post_state().get_latest(p)),
+                                    )
+                                });
+                                self.connect_outliving_projections(source_proj, target, location);
                             }
-                            self.state.states.post_main.insert(orig_edge);
                         }
                     }
-                }
-                Rvalue::Ref(region, kind, blocked_place) => {
-                    let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
-                    let target: utils::Place<'tcx> = (*target).into();
-                    let assigned_place = target.project_deref(self.repacker);
-                    assert_eq!(
-                        self.repacker.tcx().erase_regions(
-                            (*blocked_place)
-                                .ty(self.repacker.body(), self.repacker.tcx())
-                                .ty
-                        ),
-                        self.repacker.tcx().erase_regions(
-                            (*assigned_place)
-                                .ty(self.repacker.body(), self.repacker.tcx())
-                                .ty
-                        )
-                    );
-                    let actions = state.add_borrow(
-                        blocked_place.into(),
-                        assigned_place,
-                        kind.mutability(),
-                        location,
-                        *region,
-                        self.repacker,
-                    );
-                    self.record_actions(actions);
-                    for source_proj in blocked_place.region_projections(self.repacker) {
-                        self.connect_outliving_projections(source_proj.into(), target, location);
+                    Rvalue::Use(Operand::Move(from)) => {
+                        let from: utils::Place<'tcx> = (*from).into();
+                        let target: utils::Place<'tcx> = (*target).into();
+                        if let Some(mutbl) = from.ref_mutability(self.repacker)
+                            && mutbl.is_mut()
+                        {
+                            state.change_pcs_elem(
+                                MaybeOldPlace::new(
+                                    from.project_deref(self.repacker),
+                                    Some(state.get_latest(from)),
+                                ),
+                                target.project_deref(self.repacker).into(),
+                            );
+                        }
+                        let moved_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
+                        for (idx, old_rp) in moved_place
+                            .region_projections(self.repacker)
+                            .into_iter()
+                            .enumerate()
+                        {
+                            let new_rp = target.region_projection(idx, self.repacker);
+                            // Both of these statements are required! We represent some reigonprojections
+                            // as RegionProjection<MaybeOldPlace> and some as RegionProjection<MaybeRemotePlace>,
+                            // existing nodes could be of either kind.
+                            state.change_pcs_elem::<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>(
+                                old_rp,
+                                new_rp.into(),
+                            );
+                            state.change_pcs_elem::<RegionProjection<'tcx>>(
+                                old_rp.into(),
+                                new_rp.into(),
+                            );
+                        }
+                        state.delete_descendants_of(
+                            MaybeOldPlace::Current { place: from },
+                            location,
+                            self.repacker,
+                        );
                     }
+                    Rvalue::Use(Operand::Copy(from)) => {
+                        match from.ty(self.repacker.body(), self.repacker.tcx()).ty.kind() {
+                            ty::TyKind::Ref(region, _, _) => {
+                                let from: utils::Place<'tcx> = (*from).into();
+                                let target: utils::Place<'tcx> = (*target).into();
+                                let add_borrow_actions = state.add_borrow(
+                                    from.project_deref(self.repacker).into(),
+                                    target.project_deref(self.repacker),
+                                    Mutability::Not,
+                                    location,
+                                    *region, // TODO: This is the region for the place, not the loan, does that matter?
+                                    self.repacker,
+                                );
+                                self.record_actions(add_borrow_actions);
+                            }
+                            _ => {}
+                        }
+                        let from_place: utils::Place<'tcx> = (*from).into();
+                        for (idx, rp) in from_place
+                            .region_projections(self.repacker)
+                            .iter()
+                            .enumerate()
+                        {
+                            for mut orig_edge in self
+                                .state
+                                .states
+                                .post_main
+                                .edges_blocked_by((*rp).into(), self.repacker)
+                            {
+                                let edge_region_projections: Vec<
+                                    &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+                                > = orig_edge.pcs_elems();
+                                for output in edge_region_projections {
+                                    if *output == (*rp).into() {
+                                        *output =
+                                            target.region_projection(idx, self.repacker).into()
+                                    }
+                                }
+                                self.state.states.post_main.insert(orig_edge);
+                            }
+                        }
+                    }
+                    Rvalue::Ref(region, kind, blocked_place) => {
+                        let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
+                        let target: utils::Place<'tcx> = (*target).into();
+                        let assigned_place = target.project_deref(self.repacker);
+                        assert_eq!(
+                            self.repacker.tcx().erase_regions(
+                                (*blocked_place)
+                                    .ty(self.repacker.body(), self.repacker.tcx())
+                                    .ty
+                            ),
+                            self.repacker.tcx().erase_regions(
+                                (*assigned_place)
+                                    .ty(self.repacker.body(), self.repacker.tcx())
+                                    .ty
+                            )
+                        );
+                        let actions = state.add_borrow(
+                            blocked_place.into(),
+                            assigned_place,
+                            kind.mutability(),
+                            location,
+                            *region,
+                            self.repacker,
+                        );
+                        self.record_actions(actions);
+                        for source_proj in blocked_place.region_projections(self.repacker) {
+                            self.connect_outliving_projections(
+                                source_proj.into(),
+                                target,
+                                location,
+                            );
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
+            _ => {}
         }
         let actions = self
             .state
