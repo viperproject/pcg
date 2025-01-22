@@ -1,6 +1,5 @@
 use crate::{
     borrows::edge_data::EdgeData,
-    combined_pcs::UnblockAction,
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
@@ -36,7 +35,7 @@ use super::{
     region_abstraction::AbstractionEdge,
     region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
-    unblock_graph::{UnblockGraph, UnblockType},
+    unblock_graph::{BorrowPCGUnblockAction, UnblockGraph, UnblockType},
 };
 
 /// The "Borrow PCG"
@@ -615,47 +614,13 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.roots(repacker)
     }
 
-    fn kill_borrows(
-        &mut self,
-        reserve_location: Location,
-        kill_location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let edges_to_remove = self.graph.borrow_edges_reserved_at(reserve_location);
-        if edges_to_remove.is_empty() {
-            return false;
-        }
-        for edge in edges_to_remove {
-            if edge.value.is_mut() {
-                self.set_capability(edge.value.assigned_ref(repacker), CapabilityKind::Write)
-            }
-            self.remove_edge_and_set_latest(&edge.into(), kill_location, repacker);
-        }
-        true
-    }
-
     pub(crate) fn apply_unblock_action(
         &mut self,
-        action: UnblockAction<'tcx>,
+        action: BorrowPCGUnblockAction<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> bool {
-        match action {
-            crate::combined_pcs::UnblockAction::TerminateBorrow {
-                reserve_location, ..
-            } => self.kill_borrows(reserve_location, location, repacker),
-            crate::combined_pcs::UnblockAction::Collapse(place, _) => {
-                self.delete_descendants_of(place, location, repacker)
-            }
-            crate::combined_pcs::UnblockAction::TerminateAbstraction(location, _call) => {
-                self.graph.remove_abstraction_at(location)
-            }
-            crate::combined_pcs::UnblockAction::TerminateRegionProjectionMember(
-                region_projection_member,
-            ) => self
-                .graph
-                .remove_region_projection_member(region_projection_member),
-        }
+        self.remove_edge_and_set_latest(&action.edge(), location, repacker)
     }
 
     pub(crate) fn apply_unblock_graph(

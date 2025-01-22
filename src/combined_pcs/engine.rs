@@ -27,11 +27,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::{
-        domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
-        engine::BorrowsEngine,
-        region_projection_member::RegionProjectionMember,
-    },
+    borrows::engine::BorrowsEngine,
     free_pcs::{engine::FpcsEngine, CapabilityKind},
     rustc_interface,
     utils::PlaceRepacker,
@@ -194,19 +190,6 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
         self.curr_block.set(START_BLOCK);
         state.pcg_mut().initialize_as_start_block();
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UnblockAction<'tcx> {
-    TerminateRegionProjectionMember(RegionProjectionMember<'tcx>),
-    TerminateAbstraction(Location, AbstractionType<'tcx>),
-    TerminateBorrow {
-        reserve_location: Location,
-        blocked_place: MaybeRemotePlace<'tcx>,
-        assigned_place: MaybeOldPlace<'tcx>,
-        is_mut: bool,
-    },
-    Collapse(MaybeOldPlace<'tcx>, Vec<MaybeOldPlace<'tcx>>),
 }
 
 impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {

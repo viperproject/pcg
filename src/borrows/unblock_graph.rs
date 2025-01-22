@@ -4,7 +4,6 @@ use rustc_interface::middle::mir::BasicBlock;
 
 use crate::{
     borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
-    combined_pcs::UnblockAction,
     rustc_interface,
     utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
@@ -20,6 +19,17 @@ type UnblockEdgeType<'tcx> = BorrowPCGEdgeKind<'tcx>;
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BorrowPCGUnblockAction<'tcx> {
+    edge: BorrowPCGEdge<'tcx>,
+}
+
+impl<'tcx> BorrowPCGUnblockAction<'tcx> {
+    pub fn edge(&self) -> &BorrowPCGEdge<'tcx> {
+        &self.edge
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -51,7 +61,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         node: PCGNode<'tcx>,
         state: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<UnblockAction<'tcx>> {
+    ) -> Vec<BorrowPCGUnblockAction<'tcx>> {
         let mut ug = UnblockGraph::new();
         ug.unblock_node(node, state, repacker, UnblockType::ForExclusive);
         ug.actions(repacker)
@@ -75,7 +85,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         self.edges.retain(|edge| edge.valid_for_path(path));
     }
 
-    pub fn actions(self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<UnblockAction<'tcx>> {
+    pub fn actions(self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<BorrowPCGUnblockAction<'tcx>> {
         let mut edges = self.edges;
         let mut actions = vec![];
 
@@ -98,36 +108,8 @@ impl<'tcx> UnblockGraph<'tcx> {
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
-                    match edge.kind() {
-                        UnblockEdgeType::Borrow(reborrow) => {
-                            push_action(UnblockAction::TerminateBorrow {
-                                blocked_place: reborrow.blocked_place,
-                                assigned_place: reborrow.assigned_place,
-                                reserve_location: reborrow.reserve_location(),
-                                is_mut: reborrow.is_mut(),
-                            });
-                            to_keep.remove(edge);
-                        }
-                        UnblockEdgeType::DerefExpansion(deref_edge) => {
-                            let expansion = deref_edge.expansion(repacker);
-                            push_action(UnblockAction::Collapse(deref_edge.base(), expansion));
-                            to_keep.remove(edge);
-                        }
-                        UnblockEdgeType::Abstraction(abstraction_edge) => {
-                            push_action(UnblockAction::TerminateAbstraction(
-                                abstraction_edge.location(),
-                                abstraction_edge.abstraction_type.clone(),
-                            ));
-                            to_keep.remove(edge);
-                        }
-                        UnblockEdgeType::RegionProjectionMember(member) => {
-                            // TODO: Action to remove the member
-                            push_action(UnblockAction::TerminateRegionProjectionMember(
-                                member.clone(),
-                            ));
-                            to_keep.remove(edge);
-                        }
-                    }
+                    push_action(BorrowPCGUnblockAction { edge: edge.clone() });
+                    to_keep.remove(edge);
                 }
             }
             debug_assert!(

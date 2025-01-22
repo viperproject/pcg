@@ -1,4 +1,3 @@
-use crate::combined_pcs::UnblockAction;
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::{Place, PlaceRepacker};
@@ -8,6 +7,7 @@ use super::borrows_state::BorrowsState;
 use super::deref_expansion::DerefExpansion;
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
+use super::unblock_graph::BorrowPCGUnblockAction;
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
@@ -21,7 +21,7 @@ use super::region_projection_member::RegionProjectionMember;
 pub(crate) enum BorrowPcgAction<'tcx> {
     MakePlaceOld(Place<'tcx>),
     SetLatest(Place<'tcx>, Location),
-    Unblock(UnblockAction<'tcx>, Location),
+    Unblock(BorrowPCGUnblockAction<'tcx>, Location),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
     InsertDerefExpansion(DerefExpansion<'tcx>, Location),
 }

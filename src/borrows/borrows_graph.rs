@@ -18,7 +18,7 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     }, borrows_visitor::DebugCtx, coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
-    }, deref_expansion::{DerefExpansion, OwnedExpansion}, domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker}, edge_data::EdgeData, has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection_member::RegionProjectionMember
+    }, deref_expansion::DerefExpansion, domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker}, edge_data::EdgeData, has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_abstraction::AbstractionEdge, region_projection_member::RegionProjectionMember
 };
 
 #[derive(Clone, Debug)]
@@ -67,23 +67,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
         self.edges.iter()
-    }
-
-    pub(crate) fn borrow_edges_reserved_at(
-        &self,
-        location: Location,
-    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.edges()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Borrow(borrow) if borrow.reserve_location() == location => {
-                    Some(Conditioned {
-                        conditions: edge.conditions().clone(),
-                        value: borrow.clone(),
-                    })
-                }
-                _ => None,
-            })
-            .collect()
     }
 
     pub(crate) fn base_coupling_graph(
@@ -728,45 +711,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn remove_abstraction_at(&mut self, location: Location) -> bool {
-        self.cached_is_valid.set(None);
-        let mut changed = false;
-        self.edges.retain(|edge| {
-            if let BorrowPCGEdgeKind::Abstraction(abstraction) = &edge.kind() {
-                if abstraction.location() != location {
-                    return true;
-                } else {
-                    changed = true;
-                    return false;
-                }
-            } else {
-                true
-            }
-        });
-        changed
-    }
-
-    pub(crate) fn remove_region_projection_member(
-        &mut self,
-        member: RegionProjectionMember<'tcx>,
-    ) -> bool {
-        self.cached_is_valid.set(None);
-        let mut changed = false;
-        self.edges.retain(|edge| {
-            if let BorrowPCGEdgeKind::RegionProjectionMember(m) = &edge.kind() {
-                if m != &member {
-                    return true;
-                } else {
-                    changed = true;
-                    return false;
-                }
-            } else {
-                true
-            }
-        });
-        changed
-    }
-
     pub(crate) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
         self.cached_is_valid.set(None);
         self.edges.remove(edge)
@@ -781,17 +725,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         })
     }
-
-
-    pub(crate) fn insert_owned_expansion(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        location: Location,
-    ) {
-        let de = OwnedExpansion::new(place).into();
-        self.insert(BorrowPCGEdge::new(de, PathConditions::new(location.block)));
-    }
-
 
     pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(
         &'slf mut self,
