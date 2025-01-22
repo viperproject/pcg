@@ -18,6 +18,7 @@ use crate::{
             ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
         },
     },
+    utils::Place,
 };
 
 use crate::{
@@ -155,6 +156,29 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
+    fn connect_outliving_projections(
+        &mut self,
+        source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        target: Place<'tcx>,
+        location: Location,
+    ) {
+        for target_proj in target.region_projections(self.repacker) {
+            if self.outlives(
+                source_proj.region().as_vid().unwrap(),
+                target_proj.region().as_vid().unwrap(),
+            ) {
+                self.apply_action(BorrowPCGAction::add_region_projection_member(
+                    RegionProjectionMember::new(
+                        Coupled::singleton(source_proj.into()),
+                        Coupled::singleton(target_proj.into()),
+                    ),
+                    PathConditions::AtBlock(location.block),
+                    "Aggregate Assignment",
+                ));
+            }
+        }
+    }
+
     fn stmt_post_main(&mut self, statement: &Statement<'tcx>, location: Location) {
         assert!(!self.preparing);
         assert!(self.stage == StatementStage::Main);
@@ -190,23 +214,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             let source_proj = source_proj.map_place(|p| {
                                 MaybeOldPlace::new(p, Some(self.state.post_state().get_latest(p)))
                             });
-                            for target_proj in target.region_projections(self.repacker) {
-                                if self.outlives(
-                                    source_proj.region().as_vid().unwrap(),
-                                    target_proj.region().as_vid().unwrap(),
-                                ) {
-                                    self.apply_action(
-                                        BorrowPCGAction::add_region_projection_member(
-                                            RegionProjectionMember::new(
-                                                Coupled::singleton(source_proj.into()),
-                                                Coupled::singleton(target_proj.into()),
-                                            ),
-                                            PathConditions::AtBlock(location.block),
-                                            "Aggregate Assignment",
-                                        ),
-                                    );
-                                }
-                            }
+                            self.connect_outliving_projections(source_proj, target, location);
                         }
                     }
                 }
@@ -315,6 +323,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         self.repacker,
                     );
                     self.record_actions(actions);
+                    for source_proj in blocked_place.region_projections(self.repacker) {
+                        self.connect_outliving_projections(source_proj.into(), target, location);
+                    }
                 }
                 _ => {}
             }
