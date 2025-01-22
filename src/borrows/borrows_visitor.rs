@@ -162,9 +162,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         target: Place<'tcx>,
         location: Location,
     ) {
+
+        // This is somewhat of a hack:
+        // If there is no source projection, then definitely there are no inputs to the
+        // region projection. For example, an empty Vec<'a> could be constructed with no inputs.
+        // In this case, we don't add connections between the (empty) source and target, because
+        // doing so could result in a graph with snapshotted region projections roots. Such roots
+        // are not allowed based on the current graph validity implementation.
         if !self.state.post_state().contains(source_proj, self.repacker) {
             return;
         }
+
         for target_proj in target.region_projections(self.repacker) {
             if self.outlives(
                 source_proj.region().as_vid().unwrap(),
