@@ -1,6 +1,8 @@
 use std::default::Default;
 use std::rc::Rc;
 
+use serde_json::json;
+
 use crate::{
     combined_pcs::PCGError,
     rustc_interface::{
@@ -25,11 +27,11 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_action::BorrowPcgAction,
+    borrow_pcg_action::BorrowPCGAction,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
-    domain::{MaybeRemotePlace, RemotePlace},
+    domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
@@ -210,6 +212,17 @@ pub struct DataflowStates<T> {
     pub(crate) post_main: T,
 }
 
+impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for DataflowStates<T> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "pre_operands": self.pre_operands.to_json(repacker),
+            "post_operands": self.post_operands.to_json(repacker),
+            "pre_main": self.pre_main.to_json(repacker),
+            "post_main": self.post_main.to_json(repacker),
+        })
+    }
+}
+
 impl<T: Default> Default for DataflowStates<T> {
     fn default() -> Self {
         Self {
@@ -255,7 +268,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     #[allow(unused)]
     pub(crate) location_table: Rc<LocationTable>,
     pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
-    pub(crate) actions: DataflowStates<Vec<BorrowPcgAction<'tcx>>>,
+    pub(crate) actions: DataflowStates<Vec<BorrowPCGAction<'tcx>>>,
     error: Option<PCGError>,
 }
 
@@ -329,22 +342,19 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let local_decl = &self.repacker.body().local_decls[arg];
             let arg_place: Place<'tcx> = arg.into();
             if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
-                {
-                    self.states.post_main.add_borrow(
-                        MaybeRemotePlace::place_assigned_to_local(arg),
-                        arg_place.project_deref(self.repacker),
-                        *mutability,
-                        Location::START,
-                        *region,
-                        self.repacker,
-                    );
-                }
+                let _ = self.states.post_main.add_borrow(
+                    MaybeRemotePlace::place_assigned_to_local(arg),
+                    arg_place.project_deref(self.repacker),
+                    *mutability,
+                    Location::START,
+                    *region,
+                    self.repacker,
+                );
             }
             let local_place: utils::Place<'tcx> = arg_place.into();
             for region_projection in local_place.region_projections(self.repacker) {
-                self.states
-                    .post_main
-                    .apply_action(BorrowPcgAction::AddRegionProjectionMember(
+                self.states.post_main.apply_action(
+                    BorrowPCGAction::add_region_projection_member(
                         RegionProjectionMember::new(
                             Coupled::singleton(
                                 RegionProjection::new(
@@ -356,6 +366,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                             Coupled::singleton(region_projection.into()),
                         ),
                         PathConditions::start(),
+                        "Initialize Local",
                     ),
                     self.repacker,
                 );

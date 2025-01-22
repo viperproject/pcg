@@ -16,8 +16,9 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
         Self(HashMap::new())
     }
 
-    pub fn insert<T: Into<PCGNode<'tcx>>>(&mut self, node: T, capability: CapabilityKind) {
-        self.0.insert(node.into(), capability);
+    /// Returns true iff the capability was changed.
+    pub (crate) fn insert<T: Into<PCGNode<'tcx>>>(&mut self, node: T, capability: CapabilityKind) -> bool {
+        self.0.insert(node.into(), capability) != Some(capability)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {

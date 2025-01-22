@@ -18,8 +18,7 @@ pub mod utils;
 pub mod visualization;
 
 use borrows::{
-    borrow_edge::BorrowEdge, borrows_graph::Conditioned, deref_expansion::DerefExpansion,
-    latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph,
+    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPCGAction, borrows_graph::Conditioned, deref_expansion::DerefExpansion, engine::DataflowStates, latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, RepackOp};
@@ -108,6 +107,7 @@ struct PCGStmtVisualizationData<'a, 'tcx> {
     free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
     borrows_bridge_start: &'a BorrowsBridge<'tcx>,
     borrows_bridge_middle: &'a BorrowsBridge<'tcx>,
+    actions: &'a DataflowStates<Vec<BorrowPCGAction<'tcx>>>,
 }
 
 impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
@@ -118,6 +118,7 @@ impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
             "free_pcg_repacks_middle": self.free_pcg_repacks_middle.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
             "borrows_bridge_start": self.borrows_bridge_start.to_json(repacker),
             "borrows_bridge_middle": self.borrows_bridge_middle.to_json(repacker),
+            "actions": self.actions.to_json(repacker),
         })
     }
 }
@@ -180,6 +181,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                     free_pcg_repacks_middle: &statement.repacks_middle,
                     borrows_bridge_start: &statement.extra_start,
                     borrows_bridge_middle: &statement.extra_middle,
+                    actions: &statement.actions,
                 };
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",

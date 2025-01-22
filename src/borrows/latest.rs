@@ -64,7 +64,7 @@ impl<'tcx> Latest<'tcx> {
         place: Place<'tcx>,
         location: SnapshotLocation,
         _repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
+    ) -> bool {
         // TODO: Should this assertion pass?
         // if let Some(existing) = self.get_opt(place) {
         //     if existing != location && !place.has_location_dependent_value(repacker) {
@@ -74,17 +74,24 @@ impl<'tcx> Latest<'tcx> {
         //         );
         //     }
         // }
-        self.insert_unchecked(place, location);
+        self.insert_unchecked(place, location)
     }
 
-    fn insert_unchecked(&mut self, place: Place<'tcx>, location: SnapshotLocation) {
+    fn insert_unchecked(&mut self, place: Place<'tcx>, location: SnapshotLocation) -> bool {
+        if self.get_exact(place) == Some(location) {
+            return false;
+        }
         self.0.retain(|(p, _)| !place.is_prefix(*p));
+
         for (p, loc) in self.0.iter_mut() {
             if p.is_prefix(place) {
-                *loc = location;
+                if *loc != location {
+                    *loc = location;
+                }
             }
         }
         self.0.push((place, location));
+        true
     }
 
     pub fn join(

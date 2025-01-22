@@ -27,7 +27,9 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_action::BorrowPcgAction,
+    borrow_pcg_action::BorrowPCGAction,
+    borrow_pcg_edge::BorrowPCGEdge,
+    borrows_state::ExecutedActions,
     coupling_graph_constructor::Coupled,
     domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
@@ -81,7 +83,15 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
-    fn curr_actions(&mut self) -> &mut Vec<BorrowPcgAction<'tcx>> {
+    fn remove_edge_and_set_latest(&mut self, edge: &BorrowPCGEdge<'tcx>, location: Location) {
+        let actions =
+            self.state
+                .post_state_mut()
+                .remove_edge_and_set_latest(edge, location, self.repacker);
+        self.record_actions(actions);
+    }
+
+    fn curr_actions(&mut self) -> &mut Vec<BorrowPCGAction<'tcx>> {
         match (self.stage, self.preparing) {
             (StatementStage::Operands, true) => self.state.actions.pre_operands.as_mut(),
             (StatementStage::Operands, false) => self.state.actions.post_operands.as_mut(),
@@ -90,31 +100,39 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
-    fn record_actions(&mut self, actions: Vec<BorrowPcgAction<'tcx>>) {
-        self.curr_actions().extend(actions);
+    fn reset_actions(&mut self) {
+        self.curr_actions().clear();
     }
 
-    fn apply_action(&mut self, action: BorrowPcgAction<'tcx>) {
+    fn record_actions(&mut self, actions: ExecutedActions<'tcx>) {
+        self.curr_actions().extend(actions.actions());
+    }
+
+    fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) {
         self.curr_actions().push(action.clone());
         self.state
             .post_state_mut()
             .apply_action(action, self.repacker);
     }
 
-    pub fn preparing(
+    pub(super) fn preparing(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
         stage: StatementStage,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        BorrowsVisitor::new(engine, state, stage, true)
+        let mut bv = BorrowsVisitor::new(engine, state, stage, true);
+        bv.reset_actions();
+        bv
     }
 
-    pub fn applying(
+    pub(super) fn applying(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsDomain<'mir, 'tcx>,
         stage: StatementStage,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        BorrowsVisitor::new(engine, state, stage, false)
+        let mut bv = BorrowsVisitor::new(engine, state, stage, false);
+        bv.reset_actions();
+        bv
     }
 
     fn new(
@@ -167,7 +185,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         args: &[&Operand<'tcx>],
         destination: utils::Place<'tcx>,
         location: Location,
-    ) -> Vec<BorrowPcgAction<'tcx>> {
+    ) -> Vec<BorrowPCGAction<'tcx>> {
         let mut actions = vec![];
         let (func_def_id, substs) = if let Operand::Constant(box c) = func
             && let Const::Val(_, ty) = c.const_
@@ -213,7 +231,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             &self.state.post_state(),
                             self.repacker,
                         ) {
-                            self.apply_action(BorrowPcgAction::Unblock(action, location));
+                            self.apply_action(BorrowPCGAction::remove_edge(action.edge));
                         }
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
@@ -264,12 +282,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         for edge in edges {
             for output in edge.outputs() {
                 if let Some(place) = output.deref(self.repacker) {
-                    let action = BorrowPcgAction::AddRegionProjectionMember(
+                    let action = BorrowPCGAction::add_region_projection_member(
                         RegionProjectionMember::new(
                             Coupled::singleton(output.into()),
                             Coupled::singleton(place.into()),
                         ),
                         PathConditions::AtBlock(location.block),
+                        "Construct Function Call Abstraction",
                     );
                     self.apply_action(action.clone());
                     actions.push(action);
@@ -304,9 +323,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn minimize(&mut self, location: Location) {
-        self.state
+        let actions = self
+            .state
             .post_state_mut()
             .minimize(self.repacker, location);
+        self.record_actions(actions);
     }
 }
 
@@ -342,7 +363,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
-                self.apply_action(BorrowPcgAction::MakePlaceOld(place));
+                self.apply_action(BorrowPCGAction::make_place_old(place));
             }
         }
     }
@@ -361,7 +382,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     ..
                 } => {
                     let destination: utils::Place<'tcx> = (*destination).into();
-                    self.apply_action(BorrowPcgAction::SetLatest(destination, location));
+                    self.apply_action(BorrowPCGAction::set_latest(
+                        destination,
+                        location,
+                        "Destination of Function Call",
+                    ));
                     self.construct_function_call_abstraction(
                         func,
                         &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
@@ -383,19 +408,20 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         let invalidated_loans =
             self.loans_invalidated_at(location, self.stage == StatementStage::Operands);
-        let state = self.state.post_state_mut();
 
         for loan in invalidated_loans {
             let loan = &self.borrow_set[loan];
-            let mut ug = UnblockGraph::new();
-            ug.unblock_node(
+            let unblock_actions = UnblockGraph::actions_to_unblock(
                 loan.assigned_place.into(),
-                state,
+                self.state.post_state_mut(),
                 self.repacker,
-                UnblockType::ForExclusive,
             );
-            state.apply_unblock_graph(ug, self.repacker, location);
+            for action in unblock_actions {
+                self.remove_edge_and_set_latest(&action.edge, location);
+            }
         }
+
+        let state = self.state.post_state_mut();
 
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
@@ -425,48 +451,52 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::FakeRead(box (_, place)) => {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.repacker) {
-                        if place.is_ref(self.repacker) {
+                        let actions = if place.is_ref(self.repacker) {
                             state.ensure_expansion_to(
                                 self.repacker,
                                 place.project_deref(self.repacker),
                                 location,
                                 None,
-                            );
+                            )
                         } else {
-                            state.ensure_expansion_to(self.repacker, place, location, None);
-                        }
+                            state.ensure_expansion_to(self.repacker, place, location, None)
+                        };
+                        self.record_actions(actions);
                     }
                 }
                 _ => {}
             }
-        }
-
-        // Stuff in this block will be included as the middle "bridge" ops that
-        // are visible to Prusti
-        if self.preparing && self.stage == StatementStage::Main {
+        } else if self.preparing && self.stage == StatementStage::Main {
+            // Stuff in this block will be included as the middle "bridge" ops that
+            // are visible to Prusti
             match &statement.kind {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     state.make_place_old(place, self.repacker, self.debug_ctx);
-                    state.trim_old_leaves(self.repacker, location);
+                    let actions = state.trim_old_leaves(self.repacker, location);
+                    self.record_actions(actions);
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    state.ensure_expansion_to(
+                    let expansion_actions = state.ensure_expansion_to(
                         self.repacker,
                         target,
                         location,
                         Some(CapabilityKind::Write),
                     );
+                    self.record_actions(expansion_actions);
                 }
                 _ => {}
             }
-        }
-
-        if !self.preparing && self.stage == StatementStage::Main {
+        } else if !self.preparing && self.stage == StatementStage::Main {
             if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
                 let target: utils::Place<'tcx> = (*target).into();
-                state.set_latest(target, location, self.repacker);
+                self.apply_action(BorrowPCGAction::set_latest(
+                    target,
+                    location,
+                    "Target of Assignment",
+                ));
+                let state = self.state.post_state_mut();
                 if !target.is_owned(self.repacker) {
                     state.set_capability(target, CapabilityKind::Exclusive);
                 }
@@ -492,20 +522,22 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                     continue;
                                 };
                             for source_proj in operand_place.region_projections(self.repacker) {
-                                let source_proj = source_proj
-                                    .map_place(|p| MaybeOldPlace::new(p, Some(location)));
+                                let source_proj = source_proj.map_place(|p| {
+                                    MaybeOldPlace::new(p, Some(self.state.post_state().get_latest(p)))
+                                });
                                 for target_proj in target.region_projections(self.repacker) {
                                     if self.outlives(
                                         source_proj.region().as_vid().unwrap(),
                                         target_proj.region().as_vid().unwrap(),
                                     ) {
                                         self.apply_action(
-                                            BorrowPcgAction::AddRegionProjectionMember(
+                                            BorrowPCGAction::add_region_projection_member(
                                                 RegionProjectionMember::new(
                                                     Coupled::singleton(source_proj.into()),
                                                     Coupled::singleton(target_proj.into()),
                                                 ),
                                                 PathConditions::AtBlock(location.block),
+                                                "Aggregate Assignment",
                                             ),
                                         );
                                     }
@@ -623,9 +655,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     _ => {}
                 }
             }
-            self.state
+            let actions = self
+                .state
                 .post_state_mut()
                 .trim_old_leaves(self.repacker, location);
+            self.record_actions(actions);
         }
     }
 

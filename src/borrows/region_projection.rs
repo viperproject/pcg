@@ -27,6 +27,7 @@ use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
 pub enum PCGRegion {
     RegionVid(RegionVid),
     ReErased,
+    ReStatic,
     /// TODO: Do we need this?
     ReBound(DebruijnIndex, ty::BoundRegion),
 }
@@ -36,6 +37,7 @@ impl<'tcx> std::fmt::Display for PCGRegion {
         match self {
             PCGRegion::RegionVid(vid) => write!(f, "{:?}", vid),
             PCGRegion::ReErased => write!(f, "ReErased"),
+            PCGRegion::ReStatic => write!(f, "ReStatic"),
             PCGRegion::ReBound(debruijn_index, region) => {
                 write!(f, "ReBound({:?}, {:?})", debruijn_index, region)
             }
@@ -44,7 +46,7 @@ impl<'tcx> std::fmt::Display for PCGRegion {
 }
 
 impl PCGRegion {
-    pub fn as_vid(&self) -> Option<RegionVid> {
+    pub(crate) fn as_vid(&self) -> Option<RegionVid> {
         match self {
             PCGRegion::RegionVid(vid) => Some(*vid),
             _ => None,
@@ -62,7 +64,7 @@ impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
                 PCGRegion::ReBound(debruijn_index, inner)
             }
             ty::RegionKind::ReLateParam(_) => todo!(),
-            ty::RegionKind::ReStatic => todo!(),
+            ty::RegionKind::ReStatic => PCGRegion::ReStatic,
             ty::RegionKind::RePlaceholder(_) => todo!(),
             ty::RegionKind::ReError(_) => todo!(),
         }

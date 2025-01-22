@@ -369,11 +369,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
         _debug_ctx: Option<DebugCtx>,
-    ) {
-        self.mut_edges(|edge| {
-            edge.make_place_old(place, latest);
-            true
-        });
+    ) -> bool {
+        self.mut_edges(|edge| edge.make_place_old(place, latest))
     }
 
     fn construct_coupling_graph<T: BorrowCheckerInterface<'tcx>>(
@@ -477,7 +474,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         ));
                     self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));
                 }
-                self.remove(&edge.into(), DebugCtx::Other);
+                self.remove(&edge.into());
             }
         }
 
@@ -505,7 +502,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // Remove existing edges that aren't in the new abstraction
         for edge in existing_edges {
             if !new_edges.contains(&edge) {
-                self.remove(&edge, DebugCtx::Other);
+                self.remove(&edge);
                 changed = true;
             }
         }
@@ -515,7 +512,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let edges = self.edges().cloned().collect::<Vec<_>>();
         for edge in edges {
             if self.is_encapsulated_by_abstraction(&edge, repacker) {
-                self.remove(&edge, DebugCtx::Other);
+                self.remove(&edge);
                 changed = true;
             }
         }
@@ -525,7 +522,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for root in self.roots(repacker) {
             if root.is_old() {
                 for edge in self.edges_blocking(root, repacker) {
-                    self.remove(&edge, DebugCtx::Other);
+                    self.remove(&edge);
                     changed = true;
                 }
             }
@@ -631,7 +628,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             if self.is_encapsulated_by_abstraction(&edge, repacker) {
-                self.remove(&edge, DebugCtx::Other);
+                self.remove(&edge);
             }
         }
         let mut finished = false;
@@ -641,7 +638,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 if !other.leaf_nodes(repacker).contains(&leaf_node) {
                     for edge in self.edges_blocked_by(leaf_node.into(), repacker) {
                         finished = false;
-                        self.remove(&edge, DebugCtx::Other);
+                        self.remove(&edge);
                     }
                 }
             }
@@ -722,7 +719,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>, _debug_ctx: DebugCtx) -> bool {
+    pub(crate) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>) -> bool {
         self.cached_is_valid.set(None);
         self.edges.remove(edge)
     }

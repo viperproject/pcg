@@ -23,7 +23,7 @@ pub struct UnblockGraph<'tcx> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowPCGUnblockAction<'tcx> {
-    edge: BorrowPCGEdge<'tcx>,
+    pub(super) edge: BorrowPCGEdge<'tcx>,
 }
 
 impl<'tcx> BorrowPCGUnblockAction<'tcx> {

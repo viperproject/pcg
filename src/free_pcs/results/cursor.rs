@@ -4,10 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::rustc_interface::{
-    dataflow::Analysis,
-    dataflow::ResultsCursor,
-    middle::mir::{BasicBlock, Body, Location},
+use crate::{
+    borrows::{borrow_pcg_action::BorrowPCGAction, engine::DataflowStates},
+    rustc_interface::{
+        dataflow::{Analysis, ResultsCursor},
+        middle::mir::{BasicBlock, Body, Location},
+    },
 };
 
 use crate::{
@@ -23,6 +25,7 @@ use crate::{
 pub trait HasPcs<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx>;
+    fn get_borrow_pcg_actions(&self) -> &DataflowStates<Vec<BorrowPCGAction<'tcx>>>;
 }
 
 impl<'mir, 'tcx> HasPcs<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
@@ -31,6 +34,9 @@ impl<'mir, 'tcx> HasPcs<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
     }
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx> {
         &self.borrow_pcg().states
+    }
+    fn get_borrow_pcg_actions(&self) -> &DataflowStates<Vec<BorrowPCGAction<'tcx>>> {
+        &self.borrow_pcg().actions
     }
 }
 
@@ -52,10 +58,6 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
             end_stmt: None,
         }
     }
-
-    // pub fn universal_constraints(&self) -> Vec<(Vec<(RegionVid, Local)>, Vec<(RegionVid, Local)>)> where E: HasCgContext<'mir, 'tcx> {
-    //     self.cursor.analysis().get_cgx().signature_constraints()
-    // }
 
     pub fn analysis_for_bb(&mut self, block: BasicBlock) {
         self.cursor.seek_to_block_start(block);
@@ -105,6 +107,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         let result = FreePcsLocation {
             location,
+            actions: state.get_borrow_pcg_actions().clone(),
             states: CapabilitySummaries {
                 before_start: curr_fpcs.pre_operands.clone(),
                 before_after: curr_fpcs.post_operands.clone(),
@@ -144,6 +147,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                         block: succ,
                         statement_index: 0,
                     },
+                    actions: entry_set.get_borrow_pcg_actions().clone(),
                     states: CapabilitySummaries {
                         before_start: to.pre_operands.clone(),
                         before_after: to.post_operands.clone(),
@@ -202,6 +206,7 @@ pub struct FreePcsLocation<'tcx> {
     pub extra_start: BorrowsBridge<'tcx>,
     pub extra_middle: BorrowsBridge<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
+    pub(crate) actions: DataflowStates<Vec<BorrowPCGAction<'tcx>>>,
 }
 
 #[derive(Debug)]

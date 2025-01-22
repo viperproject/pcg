@@ -438,12 +438,16 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             }
         )
     }
-    pub fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) {
+
+    pub (crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
         if self.is_current() && place.is_prefix(self.place()) {
             *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
                 place: self.place(),
                 at: latest.get(self.place()),
             });
+            true
+        } else {
+            false
         }
     }
 }
@@ -635,6 +639,15 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowEdge<'tcx> {
     }
 }
 
-pub trait ToJsonWithRepacker<'tcx> {
+pub(crate) trait ToJsonWithRepacker<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value;
+}
+
+impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Vec<T> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        self.iter()
+            .map(|a| a.to_json(repacker))
+            .collect::<Vec<_>>()
+            .into()
+    }
 }

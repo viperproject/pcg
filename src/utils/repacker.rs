@@ -175,7 +175,7 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
+    fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),
@@ -191,7 +191,7 @@ impl<'tcx> Place<'tcx> {
     /// subtracting `{x.f.g.h}` from it, which results into (`{x.f, x.f.g}`, `{x.g, x.h,
     /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The first vector contains the chain of
     /// places that were expanded along with the target to of each expansion.
-    pub fn expand(
+    pub(crate) fn expand(
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -419,7 +419,6 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-
     pub fn ty(self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceTy<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }

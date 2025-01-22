@@ -376,7 +376,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         );
         self.dot_graphs().borrow_mut().register_new_iteration(0);
         self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
-        fpcs || borrows || ub
+        fpcs || borrows || ub.changed()
     }
 }
 

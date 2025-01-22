@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_action::BorrowPcgAction,
+    borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
@@ -37,6 +37,38 @@ use super::{
     region_projection_member::RegionProjectionMember,
     unblock_graph::{BorrowPCGUnblockAction, UnblockGraph, UnblockType},
 };
+
+pub(crate) struct ExecutedActions<'tcx> {
+    actions: Vec<BorrowPCGAction<'tcx>>,
+    changed: bool,
+}
+
+impl<'tcx> ExecutedActions<'tcx> {
+    fn new() -> Self {
+        Self {
+            actions: vec![],
+            changed: false,
+        }
+    }
+
+    pub(crate) fn changed(&self) -> bool {
+        self.changed
+    }
+
+    fn record(&mut self, action: BorrowPCGAction<'tcx>, changed: bool) {
+        self.actions.push(action);
+        self.changed |= changed;
+    }
+
+    fn extend(&mut self, actions: ExecutedActions<'tcx>) {
+        self.actions.extend(actions.actions);
+        self.changed |= actions.changed;
+    }
+
+    pub(super) fn actions(self) -> Vec<BorrowPCGAction<'tcx>> {
+        self.actions
+    }
+}
 
 /// The "Borrow PCG"
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,11 +89,24 @@ impl<'tcx> Default for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) {
-        self.graph.insert(edge);
+    pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
+        self.graph.insert(edge)
+    }
+    pub(super) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>) -> bool {
+        self.graph.remove(edge)
     }
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.graph.is_valid(repacker)
+    }
+
+    fn record_and_apply_action(
+        &mut self,
+        action: BorrowPCGAction<'tcx>,
+        actions: &mut ExecutedActions<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        let changed = self.apply_action(action.clone(), repacker);
+        actions.record(action, changed);
     }
 
     pub(crate) fn place_capabilities(
@@ -93,8 +138,13 @@ impl<'tcx> BorrowsState<'tcx> {
         self.capabilities.get(node.into())
     }
 
-    pub fn set_capability<T: Into<PCGNode<'tcx>>>(&mut self, node: T, capability: CapabilityKind) {
-        self.capabilities.insert(node, capability);
+    /// Returns true iff the capability was changed.
+    pub(crate) fn set_capability<T: Into<PCGNode<'tcx>>>(
+        &mut self,
+        node: T,
+        capability: CapabilityKind,
+    ) -> bool {
+        self.capabilities.insert(node, capability)
     }
 
     pub(crate) fn join<'mir, T: BorrowCheckerInterface<'tcx>>(
@@ -138,22 +188,30 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.change_pcs_elem(old, new)
     }
 
-    fn remove_edge_and_set_latest(
+    #[must_use]
+    pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: &BorrowPCGEdge<'tcx>,
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         if !edge.is_shared_borrow() {
             for place in edge.blocked_places(repacker) {
                 if let Some(place) = place.as_current_place() {
                     if place.has_location_dependent_value(repacker) {
-                        self.set_latest(place, location, repacker);
+                        self.record_and_apply_action(
+                            BorrowPCGAction::set_latest(place, location, "Remove Edge"),
+                            &mut actions,
+                            repacker,
+                        );
                     }
                 }
             }
         }
-        let result = self.graph.remove(edge, DebugCtx::new(location));
+        let remove_edge_action = BorrowPCGAction::remove_edge(edge.clone());
+        let result = self.apply_action(remove_edge_action.clone(), repacker);
+        actions.record(remove_edge_action, result);
         // If removing the edge results in a leaf node with a Lent capability, this
         // it should be set to Exclusive, as it is no longer being lent.
         if result {
@@ -163,7 +221,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-        result
+        actions
     }
 
     /// Collapses nodes using the following rules:
@@ -171,7 +229,13 @@ impl<'tcx> BorrowsState<'tcx> {
     /// - If a borrow PCG node's expansion is only leaves, then its expansion should be collapsed
     ///
     /// This function performs such collapses until a fixpoint is reached
-    pub(crate) fn minimize(&mut self, repacker: PlaceRepacker<'_, 'tcx>, location: Location) {
+    #[must_use]
+    pub(crate) fn minimize(
+        &mut self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        location: Location,
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         loop {
             let edges = self.graph.edges().cloned().collect::<Vec<_>>();
             let num_edges_prev = edges.len();
@@ -196,10 +260,10 @@ impl<'tcx> BorrowsState<'tcx> {
                 })
                 .collect::<Vec<_>>();
             if to_remove.is_empty() {
-                break;
+                break actions;
             }
             for edge in to_remove {
-                self.remove_edge_and_set_latest(&edge, location, repacker);
+                actions.extend(self.remove_edge_and_set_latest(&edge, location, repacker));
             }
             assert!(self.graph.edge_count() < num_edges_prev);
         }
@@ -486,14 +550,15 @@ impl<'tcx> BorrowsState<'tcx> {
     /// expanded place is set to the given value.
     ///
     /// This will also handle corresponding region projections of the place
+    #[must_use]
     pub(crate) fn ensure_expansion_to(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
         place: Place<'tcx>,
         location: Location,
         capability: Option<CapabilityKind>,
-    ) -> Vec<BorrowPcgAction<'tcx>> {
-        let mut actions = vec![];
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
         for p in graph_edges {
             match p.kind() {
@@ -502,15 +567,18 @@ impl<'tcx> BorrowsState<'tcx> {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
                         for ra in place.region_projections(repacker) {
-                            let action = BorrowPcgAction::AddRegionProjectionMember(
-                                RegionProjectionMember::new(
-                                    Coupled::singleton(reborrow.blocked_place.into()),
-                                    Coupled::singleton(ra.into()),
+                            self.record_and_apply_action(
+                                BorrowPCGAction::add_region_projection_member(
+                                    RegionProjectionMember::new(
+                                        Coupled::singleton(reborrow.blocked_place.into()),
+                                        Coupled::singleton(ra.into()),
+                                    ),
+                                    PathConditions::new(location.block),
+                                    "Ensure Expansion To"
                                 ),
-                                PathConditions::new(location.block),
+                                &mut actions,
+                                repacker,
                             );
-                            actions.push(action.clone());
-                            self.apply_action(action, repacker);
                         }
                     }
                     _ => {}
@@ -543,9 +611,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         for action in ug.actions(repacker) {
-            let action = BorrowPcgAction::Unblock(action, location);
-            actions.push(action.clone());
-            self.apply_action(action, repacker);
+            actions.extend(self.apply_unblock_action(action, repacker, location));
         }
 
         if !place.is_owned(repacker) {
@@ -565,8 +631,8 @@ impl<'tcx> BorrowsState<'tcx> {
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-    ) -> Vec<BorrowPcgAction<'tcx>> {
-        let mut actions = vec![];
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         let mut projects_from = None;
         for (place, _) in to_place.iter_projections() {
             let place: Place<'tcx> = place.into();
@@ -575,25 +641,32 @@ impl<'tcx> BorrowsState<'tcx> {
             expansion.push(target);
             if let ty::TyKind::Ref(region, _, mutbl) = place.ty(repacker).ty.kind() {
                 projects_from = Some(mutbl);
-                let action = BorrowPcgAction::AddRegionProjectionMember(
-                    RegionProjectionMember::new(
-                        Coupled::singleton(RegionProjection::new((*region).into(), place).into()),
-                        Coupled::singleton(target.into()),
+                self.record_and_apply_action(
+                    BorrowPCGAction::add_region_projection_member(
+                        RegionProjectionMember::new(
+                            Coupled::singleton(
+                                RegionProjection::new((*region).into(), place).into(),
+                            ),
+                            Coupled::singleton(target.into()),
+                        ),
+                        PathConditions::new(location.block),
+                        "Ensure Deref Expansion To At Least",
                     ),
-                    PathConditions::new(location.block),
+                    &mut actions,
+                    repacker,
                 );
-                actions.push(action.clone());
-                self.apply_action(action, repacker);
             }
             if projects_from.is_some() {
                 let origin_place: MaybeOldPlace<'tcx> = place.into();
                 if !self.graph.contains_deref_expansion_from(&origin_place) {
-                    let action = BorrowPcgAction::InsertDerefExpansion(
-                        DerefExpansion::new(origin_place, expansion, location, repacker),
-                        location,
+                    self.record_and_apply_action(
+                        BorrowPCGAction::insert_deref_expansion(
+                            DerefExpansion::new(origin_place, expansion, location, repacker),
+                            location,
+                        ),
+                        &mut actions,
+                        repacker,
                     );
-                    actions.push(action.clone());
-                    self.apply_action(action, repacker);
                 }
             }
         }
@@ -614,12 +687,13 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.roots(repacker)
     }
 
+    #[must_use]
     pub(crate) fn apply_unblock_action(
         &mut self,
         action: BorrowPCGUnblockAction<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-    ) -> bool {
+    ) -> ExecutedActions<'tcx> {
         self.remove_edge_and_set_latest(&action.edge(), location, repacker)
     }
 
@@ -628,46 +702,36 @@ impl<'tcx> BorrowsState<'tcx> {
         graph: UnblockGraph<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-    ) -> bool {
-        let mut changed = false;
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         for action in graph.actions(repacker) {
-            if self.apply_unblock_action(action, repacker, location) {
-                changed = true;
-            }
+            actions.extend(self.apply_unblock_action(action, repacker, location));
         }
-        changed
-    }
-
-    pub(crate) fn set_latest<T: Into<SnapshotLocation>>(
-        &mut self,
-        place: Place<'tcx>,
-        location: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        let location = location.into();
-        self.latest.insert(place, location.into(), repacker);
+        actions
     }
 
     pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
         self.latest.get(place)
     }
 
+    #[must_use]
     pub(crate) fn trim_old_leaves(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-    ) {
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         loop {
             let mut cont = false;
             let edges = self.graph.leaf_edges(repacker);
             for edge in edges {
                 if edge.blocked_by_nodes(repacker).iter().all(|p| p.is_old()) {
-                    self.remove_edge_and_set_latest(&edge, location, repacker);
+                    actions.extend(self.remove_edge_and_set_latest(&edge, location, repacker));
                     cont = true;
                 }
             }
             if !cont {
-                break;
+                break actions;
             }
         }
     }
@@ -681,8 +745,8 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowPcgAction<'tcx>> {
-        let mut actions = vec![];
+    ) -> ExecutedActions<'tcx> {
+        let mut actions = ExecutedActions::new();
         let (blocked_cap, assigned_cap) = match mutability {
             Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
             Mutability::Mut => (CapabilityKind::Lent, CapabilityKind::Exclusive),
@@ -695,23 +759,28 @@ impl<'tcx> BorrowsState<'tcx> {
             region,
         );
         if let Some(rp) = borrow_edge.assigned_region_projection(repacker) {
-            let action = BorrowPcgAction::AddRegionProjectionMember(
-                RegionProjectionMember::new(
-                    Coupled::singleton(rp.into()),
-                    Coupled::singleton(assigned_place.into()),
+            self.record_and_apply_action(
+                BorrowPCGAction::add_region_projection_member(
+                    RegionProjectionMember::new(
+                        Coupled::singleton(rp.into()),
+                        Coupled::singleton(assigned_place.into()),
+                    ),
+                    PathConditions::new(location.block),
+                    "Add Borrow",
                 ),
-                PathConditions::new(location.block),
+                &mut actions,
+                repacker,
             );
-            actions.push(action.clone());
-            self.apply_action(action, repacker);
             self.set_capability(rp, blocked_cap);
             if rp.place.is_ref(repacker) {
-                let action = BorrowPcgAction::InsertDerefExpansion(
-                    OwnedExpansion::new(rp.place).into(),
-                    location,
+                self.record_and_apply_action(
+                    BorrowPCGAction::insert_deref_expansion(
+                        OwnedExpansion::new(rp.place).into(),
+                        location,
+                    ),
+                    &mut actions,
+                    repacker,
                 );
-                actions.push(action.clone());
-                self.apply_action(action, repacker);
             }
         }
         self.graph
@@ -737,7 +806,7 @@ impl<'tcx> BorrowsState<'tcx> {
         abstraction: AbstractionEdge<'tcx>,
         block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowPcgAction<'tcx>> {
+    ) -> Vec<BorrowPCGAction<'tcx>> {
         let mut actions = vec![];
         match &abstraction.abstraction_type {
             AbstractionType::FunctionCall(function_call_abstraction) => {
@@ -748,7 +817,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     for output in edge.outputs() {
                         self.set_capability(output, CapabilityKind::Exclusive);
                         if output.place.is_ref(repacker) {
-                            let action = BorrowPcgAction::InsertDerefExpansion(
+                            let action = BorrowPCGAction::insert_deref_expansion(
                                 OwnedExpansion::new(output.place).into(),
                                 function_call_abstraction.location(),
                             );
@@ -770,7 +839,7 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         _repacker: PlaceRepacker<'_, 'tcx>,
         debug_ctx: Option<DebugCtx>,
-    ) {
-        self.graph.make_place_old(place, &self.latest, debug_ctx);
+    ) -> bool {
+        self.graph.make_place_old(place, &self.latest, debug_ctx)
     }
 }
