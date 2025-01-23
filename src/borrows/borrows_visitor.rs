@@ -1,4 +1,7 @@
-use std::rc::Rc;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crate::{
     borrows::domain::RemotePlace,
@@ -11,6 +14,7 @@ use crate::{
                 BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
             },
         },
+        dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
         middle::{
             mir::{
                 visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
@@ -30,10 +34,10 @@ use crate::{
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
-    borrow_pcg_edge::BorrowPCGEdge,
+    borrow_pcg_edge::{BorrowPCGEdge, PCGNode},
     borrows_state::ExecutedActions,
-    coupling_graph_constructor::Coupled,
-    domain::MaybeOldPlace,
+    coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
+    domain::{MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionProjection},
@@ -84,12 +88,55 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     output_facts: &'mir PoloniusOutput,
 }
 
+#[derive(Clone)]
+pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
+    cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+}
+
+impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
+    pub(crate) fn new(repacker: &PlaceRepacker<'mir, 'tcx>) -> Self {
+        let cursor = MaybeLiveLocals
+            .into_engine(repacker.tcx(), repacker.body())
+            .iterate_to_fixpoint()
+            .into_results_cursor(repacker.body());
+        Self {
+            cursor: Rc::new(RefCell::new(cursor)),
+        }
+    }
+}
+
+impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        let local = match node {
+            PCGNode::RegionProjection(rp) => {
+                if let Some(local) = rp.local() {
+                    local
+                } else {
+                    todo!()
+                }
+            }
+            PCGNode::Place(MaybeRemotePlace::Local(p)) => p.local(),
+            _ => {
+                return true;
+            }
+        };
+        let mut cursor = self.cursor.as_ref().borrow_mut();
+        cursor.seek_before_primary_effect(location);
+        // if !cursor.contains(local) {
+        //     eprintln!("{:?} is not live after {:?}", local, location);
+        // }
+        cursor.contains(local)
+    }
+}
+
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     fn remove_edge_and_set_latest(&mut self, edge: &BorrowPCGEdge<'tcx>, location: Location) {
-        let actions =
-            self.state
-                .post_state_mut()
-                .remove_edge_and_set_latest(edge, location, self.repacker);
+        let actions = self.state.post_state_mut().remove_edge_and_set_latest(
+            edge,
+            location,
+            self.repacker,
+            "Remove Edge",
+        );
         self.record_actions(actions);
     }
 
@@ -380,11 +427,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             }
             _ => {}
         }
-        let actions = self
-            .state
-            .post_state_mut()
-            .trim_old_leaves(self.repacker, location);
-        self.record_actions(actions);
     }
 
     fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
@@ -473,7 +515,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             &self.state.post_state(),
                             self.repacker,
                         ) {
-                            self.apply_action(BorrowPCGAction::remove_edge(action.edge));
+                            self.apply_action(BorrowPCGAction::remove_edge(
+                                action.edge,
+                                "For Function Call Abstraction",
+                            ));
                         }
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
@@ -641,18 +686,23 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
         self.super_statement(statement, location);
 
-        let invalidated_loans =
-            self.loans_invalidated_at(location, self.stage == StatementStage::Operands);
+        {
+            // TODO: Check if this logic is still necessary now that more general
+            //       liveness information is used.
 
-        for loan in invalidated_loans {
-            let loan = &self.borrow_set[loan];
-            let unblock_actions = UnblockGraph::actions_to_unblock(
-                loan.assigned_place.into(),
-                self.state.post_state_mut(),
-                self.repacker,
-            );
-            for action in unblock_actions {
-                self.remove_edge_and_set_latest(&action.edge, location);
+            let invalidated_loans =
+                self.loans_invalidated_at(location, self.stage == StatementStage::Operands);
+
+            for loan in invalidated_loans {
+                let loan = &self.borrow_set[loan];
+                let unblock_actions = UnblockGraph::actions_to_unblock(
+                    loan.assigned_place.into(),
+                    self.state.post_state_mut(),
+                    self.repacker,
+                );
+                for action in unblock_actions {
+                    self.remove_edge_and_set_latest(&action.edge, location);
+                }
             }
         }
 
@@ -660,6 +710,15 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
+            // Remove places that are non longer live based on borrow checker information
+            let actions = self.state.states.post_main.pack_old_and_dead_leaves(
+                self.repacker,
+                location,
+                &self.state.bc,
+            );
+            self.record_actions(actions);
+
+            let state = self.state.post_state_mut();
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
                     // Any references to target should be made old because it
@@ -708,12 +767,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     state.make_place_old(place, self.repacker, self.debug_ctx);
-                    let actions = state.trim_old_leaves(self.repacker, location);
+                    let actions = self.state.states.post_main.pack_old_and_dead_leaves(
+                        self.repacker,
+                        location,
+                        &self.state.bc,
+                    );
                     self.record_actions(actions);
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    let expansion_actions = state.ensure_expansion_to(
+                    let expansion_actions = self.state.post_state_mut().ensure_expansion_to(
                         self.repacker,
                         target,
                         location,

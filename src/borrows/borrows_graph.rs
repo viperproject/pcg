@@ -563,7 +563,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self_block: BasicBlock,
         other_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
-        region_liveness: &T,
+        bc: &T,
     ) -> bool {
         if repacker.should_check_validity() {
             debug_assert!(other.is_valid(repacker), "Other graph is invalid");
@@ -587,7 +587,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
             if exit_blocks.len() >= 1 {
                 let result =
-                    self.join_loop(other, self_block, exit_blocks[0], repacker, region_liveness);
+                    self.join_loop(other, self_block, exit_blocks[0], repacker, bc);
                 if BORROWS_IMGCAT_DEBUG {
                     if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                         DotGraph::render_with_imgcat(

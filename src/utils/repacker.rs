@@ -60,6 +60,10 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         Self { mir, tcx }
     }
 
+    pub(crate) fn is_arg(self, local: Local) -> bool {
+        local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
+    }
+
     /// For debugging only: this function defines a predicate for whether
     /// validity of the PCG should be checked. One use case is to only check
     /// validity for simple CFGs during testing, in order to find bugs that can

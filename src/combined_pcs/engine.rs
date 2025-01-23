@@ -102,7 +102,6 @@ pub struct PCGEngine<'a, 'tcx> {
     pub(crate) cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
-    maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     debug_output_dir: Option<String>,
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
     curr_block: Cell<BasicBlock>,
@@ -140,15 +139,11 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
             cgx.mir.region_inference_context.clone(),
             cgx.mir.output_facts.as_ref().unwrap(),
         );
-        let maybe_live_locals = MaybeLiveLocals
-            .into_engine(cgx.rp.tcx(), cgx.rp.body())
-            .iterate_to_fixpoint();
         Self {
             cgx,
             dot_graphs,
             fpcs,
             borrows,
-            maybe_live_locals: Rc::new(maybe_live_locals),
             debug_output_dir,
             curr_block: Cell::new(START_BLOCK),
         }
@@ -182,7 +177,6 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
             block,
             self.debug_output_dir.clone(),
             dot_graphs,
-            self.maybe_live_locals.clone(),
         )
     }
 
@@ -261,8 +255,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             .apply_before_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs
             .apply_before_terminator_effect(state.owned_pcg_mut(), terminator, location);
-        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
     }
     fn apply_terminator_effect<'mir>(
         &mut self,
@@ -277,8 +271,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs
             .apply_terminator_effect(state.owned_pcg_mut(), terminator, location);
-        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
         terminator.edges()
     }
 

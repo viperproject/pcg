@@ -373,7 +373,7 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
         }
     }
 }
-pub (crate) trait ToBorrowsEdge<'tcx> {
+pub(crate) trait ToBorrowsEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }
 

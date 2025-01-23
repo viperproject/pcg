@@ -10,7 +10,10 @@ use crate::{
             borrow_set::BorrowSet,
             consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
         },
-        dataflow::{impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results},
+        dataflow::{
+            impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results,
+            ResultsCursor,
+        },
         middle::{
             mir::{
                 visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
@@ -28,8 +31,9 @@ use crate::{
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
+    borrow_pcg_edge::PCGNode,
     borrows_state::BorrowsState,
-    borrows_visitor::{BorrowsVisitor, DebugCtx, StatementStage},
+    borrows_visitor::{BorrowCheckerImpl, BorrowsVisitor, DebugCtx, StatementStage},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
     domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
     path_condition::{PathCondition, PathConditions},
@@ -69,21 +73,6 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
     }
 }
 
-impl<'tcx> BorrowCheckerInterface<'tcx> for Results<'tcx, MaybeLiveLocals> {
-    fn is_live(&self, node: CGNode<'tcx>, block: BasicBlock) -> bool {
-        match node {
-            CGNode::RegionProjection(rp) => {
-                if let Some(local) = rp.local() {
-                    self.entry_set_for_block(block).contains(local)
-                } else {
-                    todo!()
-                }
-            }
-            CGNode::RemotePlace(_) => true,
-        }
-    }
-}
-
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
         if other.has_error() && !self.has_error() {
@@ -107,7 +96,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
             &other_after,
             self.block(),
             other.block(),
-            self.maybe_live_locals.as_ref(),
+            &self.bc,
             self.repacker,
         )
     }
@@ -284,8 +273,8 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) output_facts: Rc<PoloniusOutput>,
     #[allow(unused)]
     pub(crate) location_table: Rc<LocationTable>,
-    pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
+    pub(crate) bc: BorrowCheckerImpl<'mir, 'tcx>,
     error: Option<PCGError>,
 }
 
@@ -340,7 +329,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         output_facts: Rc<PoloniusOutput>,
         location_table: Rc<LocationTable>,
         block: Option<BasicBlock>,
-        maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     ) -> Self {
         Self {
             states: BorrowsStates::default(),
@@ -349,8 +337,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             repacker,
             output_facts,
             location_table,
-            maybe_live_locals,
             error: None,
+            bc: BorrowCheckerImpl::new(&repacker),
         }
     }
 

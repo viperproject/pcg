@@ -5,7 +5,10 @@ use std::{
 
 use crate::{
     coupling,
-    rustc_interface::{ast::Mutability, middle::mir::BasicBlock},
+    rustc_interface::{
+        ast::Mutability,
+        middle::mir::{BasicBlock, Location},
+    },
     utils::PlaceRepacker,
 };
 
@@ -236,8 +239,8 @@ impl PartialOrd for CGNode<'_> {
     }
 }
 
-pub trait BorrowCheckerInterface<'tcx> {
-    fn is_live(&self, node: CGNode<'tcx>, block: BasicBlock) -> bool;
+pub (crate) trait BorrowCheckerInterface<'tcx> {
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
 }
 
 /// Records a history of actions for debugging purpose;

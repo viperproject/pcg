@@ -35,10 +35,10 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn remove_edge(edge: BorrowPCGEdge<'tcx>) -> Self {
+    pub(super) fn remove_edge(edge: BorrowPCGEdge<'tcx>, context: impl Into<String>) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::RemoveEdge(edge),
-            debug_context: None,
+            debug_context: Some(context.into()),
         }
     }
 

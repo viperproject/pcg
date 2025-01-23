@@ -22,10 +22,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrow_pcg_edge::PCGNode,
-        domain::{MaybeOldPlace, MaybeRemotePlace},
-        engine::BorrowsDomain,
-        unblock_graph::{UnblockGraph, UnblockType},
+        borrow_pcg_edge::PCGNode, borrows_visitor::BorrowCheckerImpl, domain::{MaybeOldPlace, MaybeRemotePlace}, engine::BorrowsDomain, unblock_graph::{UnblockGraph, UnblockType}
     },
     free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
     rustc_interface,
@@ -304,15 +301,13 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         block: Option<BasicBlock>,
         dot_output_dir: Option<String>,
         dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
-        maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
         let borrows = BorrowsDomain::new(
             cgx.rp,
             cgx.mir.output_facts.clone().unwrap(),
             cgx.mir.location_table.clone().unwrap(),
-            block,
-            maybe_live_locals.clone(),
+            block
         );
         let pcg = PCG {
             owned: fpcs,

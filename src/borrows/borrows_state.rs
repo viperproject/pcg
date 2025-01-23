@@ -155,20 +155,17 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        region_liveness: &T,
+        bc: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         if repacker.should_check_validity() {
             debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
         }
         let mut changed = false;
-        if self.graph.join(
-            &other.graph,
-            self_block,
-            other_block,
-            repacker,
-            region_liveness,
-        ) {
+        if self
+            .graph
+            .join(&other.graph, self_block, other_block, repacker, bc)
+        {
             changed = true;
         }
         if self.latest.join(&other.latest, self_block, repacker) {
@@ -197,6 +194,7 @@ impl<'tcx> BorrowsState<'tcx> {
         edge: &BorrowPCGEdge<'tcx>,
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
+        context: &str,
     ) -> ExecutedActions<'tcx> {
         let mut actions = ExecutedActions::new();
         if !edge.is_shared_borrow() {
@@ -204,7 +202,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 if let Some(place) = place.as_current_place() {
                     if place.has_location_dependent_value(repacker) {
                         self.record_and_apply_action(
-                            BorrowPCGAction::set_latest(place, location, "Remove Edge"),
+                            BorrowPCGAction::set_latest(place, location, context),
                             &mut actions,
                             repacker,
                         );
@@ -212,7 +210,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-        let remove_edge_action = BorrowPCGAction::remove_edge(edge.clone());
+        let remove_edge_action = BorrowPCGAction::remove_edge(edge.clone(), context);
         let result = self.apply_action(remove_edge_action.clone(), repacker);
         actions.record(remove_edge_action, result);
         // If removing the edge results in a leaf node with a Lent capability, this
@@ -266,7 +264,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 break actions;
             }
             for edge in to_remove {
-                actions.extend(self.remove_edge_and_set_latest(&edge, location, repacker));
+                actions
+                    .extend(self.remove_edge_and_set_latest(&edge, location, repacker, "Minimize"));
             }
             assert!(self.graph.edge_count() < num_edges_prev);
         }
@@ -306,7 +305,7 @@ impl<'tcx> BorrowsState<'tcx> {
             return false;
         }
         for edge in edges {
-            self.remove_edge_and_set_latest(&edge, location, repacker);
+            self.remove_edge_and_set_latest(&edge, location, repacker, "Delete Descendants");
         }
         true
     }
@@ -577,7 +576,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                         Coupled::singleton(ra.into()),
                                     ),
                                     PathConditions::new(location.block),
-                                    "Ensure Expansion To"
+                                    "Ensure Expansion To",
                                 ),
                                 &mut actions,
                                 repacker,
@@ -697,7 +696,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> ExecutedActions<'tcx> {
-        self.remove_edge_and_set_latest(&action.edge(), location, repacker)
+        self.remove_edge_and_set_latest(&action.edge(), location, repacker, "Unblock")
     }
 
     pub(crate) fn apply_unblock_graph(
@@ -718,18 +717,64 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn trim_old_leaves(
+    /// Removes leaves that are old or dead (based on the borrow checker). Note
+    /// that the liveness calculation is performed based on what happened at the
+    /// end of the *previous* statement.
+    ///
+    /// For example when evaluating:
+    /// ```text
+    /// bb0[1]: let x = &mut y;
+    /// bb0[2]: *x = 2;
+    /// bb0[3]: ... // x is dead
+    /// ```
+    /// would not remove the *x -> y edge until this function is called at bb0[3].
+    /// This ensures that the edge appears in the graph at the end of bb0[2]
+    /// (rather than never at all).
+    ///
+    /// Additional caveat: we do not remove dead places that are function
+    /// arguments. At least for now this interferes with the implementation in
+    /// the Prusti purified encoding for accessing the final value of a
+    /// reference-typed function argument in its postcondition.
+    pub(super) fn pack_old_and_dead_leaves(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
+        bc: &impl BorrowCheckerInterface<'tcx>,
     ) -> ExecutedActions<'tcx> {
         let mut actions = ExecutedActions::new();
+        let prev_location = if location.statement_index == 0 {
+            None
+        } else {
+            Some(Location {
+                block: location.block,
+                statement_index: location.statement_index - 1,
+            })
+        };
+        let should_trim = |p: &PCGNode<'tcx, MaybeOldPlace<'tcx>>| {
+            if p.is_old() {
+                return true;
+            }
+            let p = match p {
+                PCGNode::Place(p) => p.place(),
+                PCGNode::RegionProjection(rp) => rp.place.place(),
+            };
+            if p.projection.is_empty() && repacker.is_arg(p.local) {
+                return false;
+            }
+            prev_location.is_some() && !bc.is_live(p.into(), prev_location.unwrap())
+        };
         loop {
             let mut cont = false;
             let edges = self.graph.leaf_edges(repacker);
             for edge in edges {
-                if edge.blocked_by_nodes(repacker).iter().all(|p| p.is_old()) {
-                    actions.extend(self.remove_edge_and_set_latest(&edge, location, repacker));
+                let blocked_by_nodes = edge.blocked_by_nodes(repacker);
+                if blocked_by_nodes.iter().all(should_trim) {
+                    actions.extend(self.remove_edge_and_set_latest(
+                        &edge,
+                        location,
+                        repacker,
+                        &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
+                    ));
                     cont = true;
                 }
             }
