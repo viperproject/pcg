@@ -4,7 +4,7 @@ use std::rc::Rc;
 use serde_json::json;
 
 use crate::{
-    combined_pcs::PCGError,
+    combined_pcs::{EvalStmtPhase, PCGError},
     rustc_interface::{
         borrowck::{
             borrow_set::BorrowSet,
@@ -205,14 +205,14 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct DataflowStates<T> {
+pub struct EvalStmtData<T> {
     pub(crate) pre_operands: T,
     pub(crate) post_operands: T,
     pub(crate) pre_main: T,
     pub(crate) post_main: T,
 }
 
-impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for DataflowStates<T> {
+impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for EvalStmtData<T> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "pre_operands": self.pre_operands.to_json(repacker),
@@ -223,7 +223,7 @@ impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for DataflowSta
     }
 }
 
-impl<T: Default> Default for DataflowStates<T> {
+impl<T: Default> Default for EvalStmtData<T> {
     fn default() -> Self {
         Self {
             pre_operands: T::default(),
@@ -234,13 +234,30 @@ impl<T: Default> Default for DataflowStates<T> {
     }
 }
 
-impl<T> DataflowStates<T> {
+impl<T> EvalStmtData<T> {
+    pub fn iter(&self) -> impl Iterator<Item = (EvalStmtPhase, &T)> {
+        [
+            (EvalStmtPhase::PreOperands, &self.pre_operands),
+            (EvalStmtPhase::PostOperands, &self.post_operands),
+            (EvalStmtPhase::PreMain, &self.pre_main),
+            (EvalStmtPhase::PostMain, &self.post_main),
+        ]
+        .into_iter()
+    }
+    pub(crate) fn get(&self, phase: EvalStmtPhase) -> &T {
+        match phase {
+            EvalStmtPhase::PreOperands => &self.pre_operands,
+            EvalStmtPhase::PostOperands => &self.post_operands,
+            EvalStmtPhase::PreMain => &self.pre_main,
+            EvalStmtPhase::PostMain => &self.post_main,
+        }
+    }
     pub fn post_main(&self) -> &T {
         &self.post_main
     }
 }
 
-pub(crate) type BorrowsStates<'tcx> = DataflowStates<BorrowsState<'tcx>>;
+pub(crate) type BorrowsStates<'tcx> = EvalStmtData<BorrowsState<'tcx>>;
 
 impl<'tcx> BorrowsStates<'tcx> {
     pub(crate) fn bridge_between_stmts(
@@ -268,7 +285,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     #[allow(unused)]
     pub(crate) location_table: Rc<LocationTable>,
     pub(crate) maybe_live_locals: Rc<Results<'tcx, MaybeLiveLocals>>,
-    pub(crate) actions: DataflowStates<Vec<BorrowPCGAction<'tcx>>>,
+    pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
     error: Option<PCGError>,
 }
 
@@ -327,7 +344,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     ) -> Self {
         Self {
             states: BorrowsStates::default(),
-            actions: DataflowStates::default(),
+            actions: EvalStmtData::default(),
             block,
             repacker,
             output_facts,

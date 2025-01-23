@@ -18,7 +18,7 @@ pub mod utils;
 pub mod visualization;
 
 use borrows::{
-    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPCGAction, borrows_graph::Conditioned, deref_expansion::DerefExpansion, engine::DataflowStates, latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph
+    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPCGAction, borrows_graph::Conditioned, deref_expansion::DerefExpansion, engine::EvalStmtData, latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, RepackOp};
@@ -107,7 +107,7 @@ struct PCGStmtVisualizationData<'a, 'tcx> {
     free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
     borrows_bridge_start: &'a BorrowsBridge<'tcx>,
     borrows_bridge_middle: &'a BorrowsBridge<'tcx>,
-    actions: &'a DataflowStates<Vec<BorrowPCGAction<'tcx>>>,
+    actions: &'a EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
 }
 
 impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {

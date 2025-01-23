@@ -95,6 +95,15 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>> {
     RegionProjection(RegionProjection<'tcx, T>),
 }
 
+impl<'tcx, T: std::fmt::Display> std::fmt::Display for PCGNode<'tcx, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PCGNode::Place(p) => write!(f, "{}", p),
+            PCGNode::RegionProjection(rp) => write!(f, "{}", rp),
+        }
+    }
+}
+
 impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for PCGNode<'tcx, T> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         match self {

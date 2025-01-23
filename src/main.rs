@@ -84,11 +84,21 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 }
                 eprintln!("Running PCG on function: {}", item_name);
                 if should_check_body(&body) {
-                    run_combined_pcs(
+                    let mut output = run_combined_pcs(
                         &body,
                         tcx,
                         vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
                     );
+                    // for (idx, _) in body.body.basic_blocks.iter_enumerated() {
+                    //     let block = output.get_all_for_bb(idx);
+                    //     for stmt in block.statements {
+                    //         for (phase, state) in stmt.borrows.iter() {
+                    //             for line in state.debug_capability_lines() {
+                    //                 println!("{:?} {}: {}", stmt.location, phase, line);
+                    //             }
+                    //         }
+                    //     }
+                    // }
                 }
                 item_names.push(item_name);
             }

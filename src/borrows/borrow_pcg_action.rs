@@ -18,7 +18,7 @@ use super::region_projection_member::RegionProjectionMember;
 /// `BorrowsState`s. Ultimately, we want to remove that functionality and
 /// instead generate annotations for consumers directly in the `BorrowsVisitor`.
 #[derive(Clone, Debug)]
-pub(crate) struct BorrowPCGAction<'tcx> {
+pub struct BorrowPCGAction<'tcx> {
     kind: BorrowPCGActionKind<'tcx>,
     debug_context: Option<String>,
 }

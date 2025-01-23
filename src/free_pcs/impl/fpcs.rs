@@ -8,41 +8,62 @@ use std::fmt::{Debug, Formatter, Result};
 
 use derive_more::{Deref, DerefMut};
 use rustc_interface::{
+    dataflow::fmt::DebugWithContext,
     index::Idx,
-    dataflow::fmt::DebugWithContext, index::IndexVec, middle::mir::{Local, RETURN_PLACE},
+    index::IndexVec,
+    middle::mir::{Local, RETURN_PLACE},
 };
 
 use crate::{
-    free_pcs::{
-        CapabilityLocal, CapabilityProjections, RepackOp,
-    }, rustc_interface, utils::PlaceRepacker
+    borrows::engine::EvalStmtData,
+    free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
+    rustc_interface,
+    utils::PlaceRepacker,
 };
 
-use super::{CapabilityKind, RepackingBridgeSemiLattice, engine::FpcsEngine};
+use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub pre_operands: CapabilitySummary<'tcx>,
-    pub post_operands: CapabilitySummary<'tcx>,
-    pub pre_main: CapabilitySummary<'tcx>,
-    pub post_main: CapabilitySummary<'tcx>,
+    pub(crate) summaries: EvalStmtData<CapabilitySummary<'tcx>>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
+    pub(crate) fn pre_operands(&self) -> &CapabilitySummary<'tcx> {
+        &self.summaries.pre_operands
+    }
+
+    pub(crate) fn post_operands(&self) -> &CapabilitySummary<'tcx> {
+        &self.summaries.post_operands
+    }
+
+    pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
+        &mut self.summaries.post_operands
+    }
+
+    pub(crate) fn pre_main(&self) -> &CapabilitySummary<'tcx> {
+        &self.summaries.pre_main
+    }
+    pub(crate) fn post_main(&self) -> &CapabilitySummary<'tcx> {
+        &self.summaries.post_main
+    }
+
     pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
         let after = CapabilitySummary::default(repacker.local_count());
         Self {
             repacker,
-            pre_operands: CapabilitySummary::empty(),
-            post_operands: CapabilitySummary::empty(),
-            pre_main: CapabilitySummary::empty(),
-            post_main: after,
+            summaries: EvalStmtData {
+                pre_operands: CapabilitySummary::empty(),
+                post_operands: CapabilitySummary::empty(),
+                pre_main: CapabilitySummary::empty(),
+                post_main: after,
+            },
         }
     }
     pub fn initialize_as_start_block(&mut self) {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(self.repacker.body().arg_count);
-        for (local, cap) in self.post_main.iter_enumerated_mut() {
+        for (local, cap) in self.summaries.post_main.iter_enumerated_mut() {
             let new_cap = if local == return_local {
                 // Return local is allocated but uninitialized
                 CapabilityLocal::new(local, CapabilityKind::Write)
@@ -60,9 +81,15 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         }
     }
 
-    pub fn repack_ops(&self, previous: &CapabilitySummary<'tcx>) -> (Vec<RepackOp<'tcx>>, Vec<RepackOp<'tcx>>) {
-        let from_prev = previous.bridge(&self.pre_operands, self.repacker);
-        let middle = self.post_operands.bridge(&self.pre_main, self.repacker);
+    pub fn repack_ops(
+        &self,
+        previous: &CapabilitySummary<'tcx>,
+    ) -> (Vec<RepackOp<'tcx>>, Vec<RepackOp<'tcx>>) {
+        let from_prev = previous.bridge(&self.summaries.pre_operands, self.repacker);
+        let middle = self
+            .summaries
+            .post_operands
+            .bridge(&self.summaries.pre_main, self.repacker);
         (from_prev, middle)
     }
 }
@@ -71,23 +98,20 @@ impl Clone for FreePlaceCapabilitySummary<'_, '_> {
     fn clone(&self) -> Self {
         Self {
             repacker: self.repacker,
-            pre_operands: self.pre_operands.clone(),
-            post_operands: self.post_operands.clone(),
-            pre_main: self.pre_main.clone(),
-            post_main: self.post_main.clone(),
+            summaries: self.summaries.clone(),
         }
     }
 }
 impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.post_main == other.post_main
+        self.summaries.post_main == other.summaries.post_main
     }
 }
 impl Eq for FreePlaceCapabilitySummary<'_, '_> {}
 
 impl Debug for FreePlaceCapabilitySummary<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.post_main.fmt(f)
+        self.summaries.post_main.fmt(f)
     }
 }
 impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -97,17 +121,37 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
         _ctxt: &FpcsEngine<'a, 'tcx>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        let (from_prev, middle) = self.repack_ops(&old.post_main);
+        let (from_prev, middle) = self.repack_ops(&old.summaries.post_main);
         if !from_prev.is_empty() {
             writeln!(f, "{from_prev:?}")?;
         }
-        CapabilitySummaryCompare(&self.pre_operands, &old.post_main, "").fmt(f)?;
-        CapabilitySummaryCompare(&self.post_operands, &self.pre_operands, "ARGUMENTS:\n").fmt(f)?;
+        CapabilitySummaryCompare(
+            &self.summaries.pre_operands,
+            &old.summaries.post_main,
+            "",
+        )
+        .fmt(f)?;
+        CapabilitySummaryCompare(
+            &self.summaries.post_operands,
+            &self.summaries.pre_operands,
+            "ARGUMENTS:\n",
+        )
+        .fmt(f)?;
         if !middle.is_empty() {
             writeln!(f, "{middle:?}")?;
         }
-        CapabilitySummaryCompare(&self.pre_main, &self.post_operands, "").fmt(f)?;
-        CapabilitySummaryCompare(&self.post_main, &self.pre_main, "STATEMENT:\n").fmt(f)?;
+        CapabilitySummaryCompare(
+            &self.summaries.pre_main,
+            &self.summaries.post_operands,
+            "",
+        )
+        .fmt(f)?;
+        CapabilitySummaryCompare(
+            &self.summaries.post_main,
+            &self.summaries.pre_main,
+            "STATEMENT:\n",
+        )
+        .fmt(f)?;
         Ok(())
     }
 }
@@ -125,14 +169,21 @@ impl<'tcx> Debug for CapabilitySummary<'tcx> {
 
 impl<'tcx> CapabilitySummary<'tcx> {
     pub fn default(local_count: usize) -> Self {
-        Self(IndexVec::from_elem_n(CapabilityLocal::default(), local_count))
+        Self(IndexVec::from_elem_n(
+            CapabilityLocal::default(),
+            local_count,
+        ))
     }
     pub fn empty() -> Self {
         Self(IndexVec::new())
     }
 }
 
-struct CapabilitySummaryCompare<'a, 'tcx>(&'a CapabilitySummary<'tcx>, &'a CapabilitySummary<'tcx>, &'a str);
+struct CapabilitySummaryCompare<'a, 'tcx>(
+    &'a CapabilitySummary<'tcx>,
+    &'a CapabilitySummary<'tcx>,
+    &'a str,
+);
 impl Debug for CapabilitySummaryCompare<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if self.0 == self.1 {

@@ -17,7 +17,9 @@ use crate::{
 
 impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
     fn join(&mut self, other: &Self) -> bool {
-        self.post_main.join(&other.post_main, self.repacker)
+        self.summaries
+            .post_main
+            .join(&other.summaries.post_main, self.repacker)
     }
 }
 

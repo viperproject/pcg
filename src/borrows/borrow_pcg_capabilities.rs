@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{free_pcs::CapabilityKind, utils::Place};
 
@@ -12,31 +12,43 @@ use super::borrow_pcg_edge::PCGNode;
 pub struct BorrowPCGCapabilities<'tcx>(HashMap<PCGNode<'tcx>, CapabilityKind>);
 
 impl<'tcx> BorrowPCGCapabilities<'tcx> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(HashMap::new())
     }
 
+    pub(crate) fn debug_capability_lines(&self) -> Vec<String> {
+        self.iter()
+            .map(|(node, capability)| format!("{}: {:?}", node, capability))
+            .collect()
+    }
+
     /// Returns true iff the capability was changed.
-    pub (crate) fn insert<T: Into<PCGNode<'tcx>>>(&mut self, node: T, capability: CapabilityKind) -> bool {
+    pub(crate) fn insert<T: Into<PCGNode<'tcx>>>(
+        &mut self,
+        node: T,
+        capability: CapabilityKind,
+    ) -> bool {
         self.0.insert(node.into(), capability) != Some(capability)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
         self.0.iter().map(|(k, v)| (k.clone(), v.clone()))
     }
 
-    pub fn place_capabilities(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
+    pub(crate) fn place_capabilities(
+        &self,
+    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
         self.0
             .iter()
             .flat_map(|(k, v)| k.as_current_place().map(|p| (p, v.clone())))
     }
 
-    pub fn get<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
+    pub(crate) fn get<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
         self.0.get(&node.into()).cloned()
     }
 
     /// TODO: The logic here isn't quite right yet.
-    pub fn join(&mut self, other: &Self) -> bool {
+    pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
         for (place, capability) in other.iter() {
             if self.0.insert(place, capability).is_none() {

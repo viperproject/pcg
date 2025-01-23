@@ -7,14 +7,12 @@
 use rustc_interface::{
     dataflow::{Analysis, AnalysisDomain},
     middle::mir::{
-        visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location,
-        Statement, Terminator, TerminatorEdges,
+        visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
+        TerminatorEdges,
     },
 };
 
-use crate::{
-    rustc_interface, utils::PlaceRepacker
-};
+use crate::{rustc_interface, utils::PlaceRepacker};
 
 use super::{triple::TripleWalker, FreePlaceCapabilitySummary};
 
@@ -89,35 +87,45 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
-    fn apply_before(self, state: &mut FreePlaceCapabilitySummary<'a, 'tcx>, tw: TripleWalker<'tcx>, _location: Location) {
+    fn apply_before(
+        self,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
+        tw: TripleWalker<'tcx>,
+        _location: Location,
+    ) {
         // Repack for operands
-        state.pre_operands = state.post_main.clone();
+        state.summaries.pre_operands = state.summaries.post_main.clone();
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.0);
-            state.pre_operands.requires(triple.pre(), self.0);
+            state.summaries.pre_operands.requires(triple.pre(), self.0);
         }
 
         // Apply operands effects
-        state.post_operands = state.pre_operands.clone();
+        state.summaries.post_operands = state.summaries.pre_operands.clone();
         for triple in tw.operand_triples {
             let triple = triple.replace_place(self.0);
-            state.post_operands.ensures(triple, self.0);
+            state.summaries.post_operands.ensures(triple, self.0);
         }
     }
 
-    fn apply_main(self, state: &mut FreePlaceCapabilitySummary<'a, 'tcx>, tw: TripleWalker<'tcx>, _location: Location) {
+    fn apply_main(
+        self,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
+        tw: TripleWalker<'tcx>,
+        _location: Location,
+    ) {
         // Repack for main
-        state.pre_main = state.post_operands.clone();
+        state.summaries.pre_main = state.summaries.post_operands.clone();
         for &triple in &tw.main_triples {
             let triple = triple.replace_place(self.0);
-            state.pre_main.requires(triple.pre(), self.0);
+            state.summaries.pre_main.requires(triple.pre(), self.0);
         }
 
         // Apply main effects
-        state.post_main = state.pre_main.clone();
+        state.summaries.post_main = state.summaries.pre_main.clone();
         for triple in tw.main_triples {
             let triple = triple.replace_place(self.0);
-            state.post_main.ensures(triple, self.0);
+            state.summaries.post_main.ensures(triple, self.0);
         }
     }
 }

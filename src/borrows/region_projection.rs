@@ -87,7 +87,7 @@ impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for RegionProje
     }
 }
 
-impl<'tcx> fmt::Display for RegionProjection<'tcx> {
+impl<'tcx, T: std::fmt::Display> fmt::Display for RegionProjection<'tcx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}↓{}", self.place, self.region)
     }

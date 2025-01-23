@@ -41,17 +41,39 @@ pub struct DataflowIterationDebugInfo {
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd)]
+pub enum EvalStmtPhase {
+    PreOperands,
+    PostOperands,
+    PreMain,
+    PostMain,
+}
+
+impl std::fmt::Display for EvalStmtPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalStmtPhase::PreOperands => write!(f, "pre_operands"),
+            EvalStmtPhase::PostOperands => write!(f, "post_operands"),
+            EvalStmtPhase::PreMain => write!(f, "pre_main"),
+            EvalStmtPhase::PostMain => write!(f, "post_main"),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd)]
 pub enum DataflowStmtPhase {
     Initial,
+    EvalStmt(EvalStmtPhase),
     Join(BasicBlock),
-    BeforeStart,
-    BeforeAfter,
-    Start,
-    After,
+}
+
+impl From<EvalStmtPhase> for DataflowStmtPhase {
+    fn from(phase: EvalStmtPhase) -> Self {
+        DataflowStmtPhase::EvalStmt(phase)
+    }
 }
 
 impl DataflowStmtPhase {
-    pub fn to_filename_str_part(&self) -> String {
+    pub(crate) fn to_filename_str_part(&self) -> String {
         match self {
             DataflowStmtPhase::Join(block) => format!("join_{:?}", block),
             _ => format!("{:?}", self),
@@ -108,7 +130,7 @@ impl DotGraphs {
         self.0[statement_index].len()
     }
 
-    pub fn insert(
+    pub(crate) fn insert(
         &mut self,
         statement_index: usize,
         phase: DataflowStmtPhase,
@@ -118,7 +140,7 @@ impl DotGraphs {
         top.insert(phase, filename).is_none()
     }
 
-    pub fn write_json_file(&self, filename: &str) {
+    pub(crate) fn write_json_file(&self, filename: &str) {
         let iterations_json = self
             .0
             .iter()
@@ -229,7 +251,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         )
     }
 
-    pub fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
+    pub (crate) fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
         if !*RECORD_PCG.lock().unwrap() {
             return;
         }
@@ -247,24 +269,29 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                     .borrow()
                     .relative_filename(phase, self.block(), statement_index);
             let filename = self.dot_filename_for(&output_dir, phase, statement_index);
-            assert!(self.dot_graphs().borrow_mut().insert(
-                statement_index,
-                phase,
-                relative_filename
-            ));
+            if !self.dot_graphs()
+                .borrow_mut()
+                .insert(statement_index, phase, relative_filename)
+            {
+                panic!(
+                    "Dot graph for entry ({}, {:?}) already exists",
+                    statement_index,
+                    phase
+                )
+            }
 
             let pcg = &self.pcg;
 
             let (fpcs, borrows) = match phase {
-                DataflowStmtPhase::Initial | DataflowStmtPhase::BeforeStart => {
-                    (&pcg.owned.pre_operands, &pcg.borrow.states.pre_operands)
+                DataflowStmtPhase::Initial => (
+                    &pcg.owned.summaries.pre_operands,
+                    &pcg.borrow.states.pre_operands,
+                ),
+                DataflowStmtPhase::EvalStmt(phase) => {
+                    (pcg.owned.summaries.get(phase), pcg.borrow.states.get(phase))
                 }
-                DataflowStmtPhase::BeforeAfter => {
-                    (&pcg.owned.post_operands, &pcg.borrow.states.pre_operands)
-                }
-                DataflowStmtPhase::Start => (&pcg.owned.pre_main, &pcg.borrow.states.pre_main),
-                DataflowStmtPhase::After | DataflowStmtPhase::Join(_) => {
-                    (&pcg.owned.post_main, &pcg.borrow.states.post_main)
+                DataflowStmtPhase::Join(_) => {
+                    (&pcg.owned.summaries.post_main, &pcg.borrow.states.post_main)
                 }
             };
 
@@ -343,7 +370,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
                 root
             {
-                match &self.owned_pcg().post_main[root.local] {
+                match &self.owned_pcg().post_main()[root.local] {
                     CapabilityLocal::Unallocated => {
                         g.unblock_node(
                             root.into(),

@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::{borrow_pcg_action::BorrowPCGAction, engine::DataflowStates},
+    borrows::{borrow_pcg_action::BorrowPCGAction, engine::EvalStmtData},
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
@@ -22,33 +22,33 @@ use crate::{
     BorrowsBridge,
 };
 
-pub trait HasPcs<'mir, 'tcx> {
+pub trait HasPcg<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx>;
-    fn get_borrow_pcg_actions(&self) -> &DataflowStates<Vec<BorrowPCGAction<'tcx>>>;
+    fn get_borrow_pcg_actions(&self) -> &EvalStmtData<Vec<BorrowPCGAction<'tcx>>>;
 }
 
-impl<'mir, 'tcx> HasPcs<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
+impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
         &self.owned_pcg()
     }
     fn get_borrows_states(&self) -> &BorrowsStates<'tcx> {
         &self.borrow_pcg().states
     }
-    fn get_borrow_pcg_actions(&self) -> &DataflowStates<Vec<BorrowPCGAction<'tcx>>> {
+    fn get_borrow_pcg_actions(&self) -> &EvalStmtData<Vec<BorrowPCGAction<'tcx>>> {
         &self.borrow_pcg().actions
     }
 }
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>> {
+pub struct FreePcsAnalysis<'mir, 'tcx, D, E: Analysis<'tcx, Domain = D>> {
     pub cursor: Cursor<'mir, 'tcx, E>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
+impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
     FreePcsAnalysis<'mir, 'tcx, D, E>
 {
     pub(crate) fn new(cursor: Cursor<'mir, 'tcx, E>) -> Self {
@@ -59,7 +59,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
         }
     }
 
-    pub fn analysis_for_bb(&mut self, block: BasicBlock) {
+    pub(crate) fn analysis_for_bb(&mut self, block: BasicBlock) {
         self.cursor.seek_to_block_start(block);
         let end_stmt = self.body().terminator_loc(block).successor_within_block();
         self.curr_stmt = Some(Location {
@@ -77,20 +77,16 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
         self.cursor.get().get_curr_fpcg().repacker
     }
 
-    pub fn initial_state(&self) -> &CapabilitySummary<'tcx> {
-        &self.cursor.get().get_curr_fpcg().post_main
-    }
-
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
     /// to the *end* of that location.
-    pub fn next(&mut self, exp_loc: Location) -> FreePcsLocation<'tcx> {
+    pub(crate) fn next(&mut self, exp_loc: Location) -> FreePcsLocation<'tcx> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
 
         let state = self.cursor.get();
 
-        let after = state.get_curr_fpcg().post_main.clone();
+        let after = state.get_curr_fpcg().post_main().clone();
         let curr_borrows = state.get_borrows_states().clone();
 
         self.cursor.seek_after_primary_effect(location);
@@ -108,12 +104,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
         let result = FreePcsLocation {
             location,
             actions: state.get_borrow_pcg_actions().clone(),
-            states: CapabilitySummaries {
-                before_start: curr_fpcs.pre_operands.clone(),
-                before_after: curr_fpcs.post_operands.clone(),
-                start: curr_fpcs.pre_main.clone(),
-                after: curr_fpcs.post_main.clone(),
-            },
+            states: curr_fpcs.summaries.clone(),
             repacks_start,
             repacks_middle,
             extra_start,
@@ -125,7 +116,7 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         result
     }
-    pub fn terminator(&mut self) -> FreePcsTerminator<'tcx> {
+    pub(crate) fn terminator(&mut self) -> FreePcsTerminator<'tcx> {
         let location = self.curr_stmt.unwrap();
         assert!(location == self.end_stmt.unwrap());
         self.curr_stmt = None;
@@ -148,13 +139,8 @@ impl<'mir, 'tcx, D: HasPcs<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                         statement_index: 0,
                     },
                     actions: entry_set.get_borrow_pcg_actions().clone(),
-                    states: CapabilitySummaries {
-                        before_start: to.pre_operands.clone(),
-                        before_after: to.post_operands.clone(),
-                        start: to.pre_main.clone(),
-                        after: to.post_main.clone(),
-                    },
-                    repacks_start: state.post_main.bridge(&to.post_main, rp),
+                    states: to.summaries.clone(),
+                    repacks_start: state.post_main().bridge(&to.post_main(), rp),
                     repacks_middle: Vec::new(),
                     borrows: entry_set.get_borrows_states().clone(),
                     extra_start: BorrowsBridge::new(),
@@ -187,13 +173,7 @@ pub struct FreePcsBasicBlock<'tcx> {
     pub terminator: FreePcsTerminator<'tcx>,
 }
 
-#[derive(Debug)]
-pub struct CapabilitySummaries<'tcx> {
-    pub before_start: CapabilitySummary<'tcx>,
-    pub before_after: CapabilitySummary<'tcx>,
-    pub start: CapabilitySummary<'tcx>,
-    pub after: CapabilitySummary<'tcx>,
-}
+pub type CapabilitySummaries<'tcx> = EvalStmtData<CapabilitySummary<'tcx>>;
 
 #[derive(Debug)]
 pub struct FreePcsLocation<'tcx> {
@@ -206,7 +186,7 @@ pub struct FreePcsLocation<'tcx> {
     pub extra_start: BorrowsBridge<'tcx>,
     pub extra_middle: BorrowsBridge<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
-    pub(crate) actions: DataflowStates<Vec<BorrowPCGAction<'tcx>>>,
+    pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
 }
 
 #[derive(Debug)]
