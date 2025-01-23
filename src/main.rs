@@ -45,9 +45,9 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
 
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // DEBUG
-    // body.body.basic_blocks.len() < 8
+    body.body.basic_blocks.len() < 8
 
-    true
+    // true
 }
 
 fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {

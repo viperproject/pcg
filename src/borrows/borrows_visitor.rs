@@ -36,7 +36,7 @@ use super::{
     domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
-    region_projection::RegionProjection,
+    region_projection::{PCGRegion, RegionProjection},
     region_projection_member::RegionProjectionMember,
     unblock_graph::{UnblockGraph, UnblockType},
 };
@@ -174,10 +174,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
 
         for target_proj in target.region_projections(self.repacker) {
-            if self.outlives(
-                source_proj.region().as_vid().unwrap(),
-                target_proj.region().as_vid().unwrap(),
-            ) {
+            if let Some(true) = self.outlives(source_proj.region(), target_proj.region()) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         Coupled::singleton(source_proj.into()),
@@ -409,8 +406,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .collect()
     }
 
-    fn outlives(&self, sup: RegionVid, sub: RegionVid) -> bool {
-        self.region_inference_context.eval_outlives(sup, sub)
+    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> Option<bool> {
+        match (sup, sub) {
+            (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => {
+                Some(self.region_inference_context.eval_outlives(sup, sub))
+            }
+            (PCGRegion::ReStatic, _) => Some(true),
+            _ => None,
+        }
     }
 
     /// Constructs a function call abstraction, if necessary.
@@ -428,7 +431,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            unreachable!()
+            self.state.report_error(PCGError::Unsupported(format!(
+                "Non-constant function calls are not yet supported: {:?}",
+                func
+            )));
+            return actions;
         };
         let sig = self
             .repacker
@@ -499,7 +506,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             vec![output].into_iter().collect(),
                         ));
                     }
-
                 }
             }
         }
@@ -547,10 +553,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         for (output_lifetime_idx, output_lifetime) in
             extract_regions(output_ty).into_iter().enumerate()
         {
-            if let Some(input_vid) = get_vid(&input_lifetime)
-                && let Some(output_vid) = get_vid(&output_lifetime)
-                && self.outlives(input_vid, output_vid)
-            {
+            if let Some(true) = self.outlives(input_lifetime.into(), output_lifetime.into()) {
                 result.push(
                     output_place
                         .region_projection(output_lifetime_idx, self.repacker)
