@@ -1,11 +1,10 @@
 #[test]
 fn run_all_tests() {
+    use std::path::PathBuf;
     use std::process::Command;
 
-    // Get the current executable's directory
-    let current_exe = std::env::current_exe().unwrap();
-    let target_dir = current_exe.parent().unwrap().parent().unwrap();
-    let workspace_dir = target_dir.parent().unwrap();
+    // Get the workspace directory from CARGO_MANIFEST_DIR
+    let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
 
     // Find all numbered test files
     let test_dir = workspace_dir.join("tests");
@@ -29,7 +28,7 @@ fn run_all_tests() {
     test_files.sort();
 
     // Get the path to our executable
-    let pcs_exe = target_dir.join("pcs_bin");
+    let pcs_exe = workspace_dir.join("target/debug/pcs_bin");
 
     // Run each test file
     for test_file in test_files {
