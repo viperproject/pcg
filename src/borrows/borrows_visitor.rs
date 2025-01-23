@@ -16,7 +16,7 @@ use crate::{
                 visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
                 Statement, StatementKind, Terminator, TerminatorKind,
             },
-            ty::{self, Region, RegionKind, RegionVid, TypeVisitable, TypeVisitor},
+            ty::{self, TypeVisitable, TypeVisitor},
         },
     },
     utils::Place,
@@ -38,7 +38,7 @@ use super::{
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionProjection},
     region_projection_member::RegionProjectionMember,
-    unblock_graph::{UnblockGraph, UnblockType},
+    unblock_graph::UnblockGraph,
 };
 use super::{
     domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
