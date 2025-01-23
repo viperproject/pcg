@@ -76,6 +76,12 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                     let mut map = state.borrow_mut();
                     unsafe { std::mem::transmute(map.remove(&def_id).unwrap()) }
                 });
+
+                let safety = tcx.fn_sig(def_id).skip_binder().safety();
+                if safety == hir::Safety::Unsafe {
+                    eprintln!("Skipping unsafe function: {}", item_name);
+                    continue;
+                }
                 eprintln!("Running PCG on function: {}", item_name);
                 if should_check_body(&body) {
                     run_combined_pcs(

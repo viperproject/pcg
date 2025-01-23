@@ -20,8 +20,6 @@ use rustc_interface::{
     target::abi::FieldIdx,
 };
 
-// use crate::utils::ty::{DeepTypeVisitable, DeepTypeVisitor, Stack};
-
 use crate::rustc_interface;
 
 use super::Place;

@@ -573,13 +573,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-pub(crate) fn get_vid(region: &Region) -> Option<RegionVid> {
-    match region.kind() {
-        RegionKind::ReVar(vid) => Some(vid),
-        _other => None,
-    }
-}
-
 impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
@@ -758,12 +751,20 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             | &Discriminant(place)
             | &CopyForDeref(place) => {
                 let place: utils::Place<'tcx> = place.into();
+                let capability = if matches!(
+                    rvalue,
+                    Rvalue::Ref(_, BorrowKind::Mut { .. }, _) | Rvalue::RawPtr(Mutability::Mut, _)
+                ) {
+                    None
+                } else {
+                    Some(CapabilityKind::Read)
+                };
                 if self.stage == StatementStage::Operands && self.preparing {
                     let actions = self.state.post_state_mut().ensure_expansion_to(
                         self.repacker,
                         place,
                         location,
-                        None,
+                        capability,
                     );
                     self.record_actions(actions);
                 }
