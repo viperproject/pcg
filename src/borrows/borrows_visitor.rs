@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
+    borrows::domain::RemotePlace,
     combined_pcs::PCGError,
     rustc_interface::{
         ast::Mutability,
@@ -162,7 +163,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         target: Place<'tcx>,
         location: Location,
     ) {
-
         // This is somewhat of a hack:
         // If there is no source projection, then definitely there are no inputs to the
         // region projection. For example, an empty Vec<'a> could be constructed with no inputs.
@@ -194,9 +194,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         assert!(!self.preparing);
         assert!(self.stage == StatementStage::Main);
         match &statement.kind {
-            StatementKind::StorageLive(local) => {
-                // self.state.introduce_initial_borrows(*local, location);
-            }
             StatementKind::Assign(box (target, rvalue)) => {
                 let target: utils::Place<'tcx> = (*target).into();
                 self.apply_action(BorrowPCGAction::set_latest(
@@ -240,6 +237,33 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             }
                         }
                     }
+                    Rvalue::Use(Operand::Constant(box c)) => match c.ty().kind() {
+                        ty::TyKind::Ref(const_region, _, _) => {
+                            assert!(target.projection.len() == 0);
+                            if let ty::TyKind::Ref(target_region, _, _) =
+                                target.ty(self.repacker).ty.kind()
+                            {
+                                self.apply_action(BorrowPCGAction::add_region_projection_member(
+                                    RegionProjectionMember::new(
+                                        Coupled::singleton(
+                                            RegionProjection::new(
+                                                (*const_region).into(),
+                                                RemotePlace::new(target.as_local().unwrap()),
+                                            )
+                                            .into(),
+                                        ),
+                                        Coupled::singleton(
+                                            RegionProjection::new((*target_region).into(), target)
+                                                .into(),
+                                        ),
+                                    ),
+                                    PathConditions::AtBlock(location.block),
+                                    "Assign constant to local",
+                                ));
+                            }
+                        }
+                        _ => {}
+                    },
                     Rvalue::Use(Operand::Move(from)) => {
                         let from: utils::Place<'tcx> = (*from).into();
                         let target: utils::Place<'tcx> = (*target).into();
