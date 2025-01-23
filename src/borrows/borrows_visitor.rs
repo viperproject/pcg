@@ -488,14 +488,18 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         )));
                         return actions;
                     }
-                    edges.push(AbstractionBlockEdge::new(
-                        vec![input_place
-                            .region_projection(lifetime_idx, self.repacker)
-                            .into()]
-                        .into_iter()
-                        .collect(),
-                        vec![output].into_iter().collect(),
-                    ));
+                    let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
+
+                    // Only add the edge if the input projection already exists, i.e.
+                    // is blocking something else. Otherwise, there is no point in tracking
+                    // when it becomes accessible.
+                    if self.state.post_state().contains(input_rp, self.repacker) {
+                        edges.push(AbstractionBlockEdge::new(
+                            vec![input_rp.into()].into_iter().collect(),
+                            vec![output].into_iter().collect(),
+                        ));
+                    }
+
                 }
             }
         }
