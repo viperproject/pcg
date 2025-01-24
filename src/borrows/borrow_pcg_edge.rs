@@ -1,19 +1,19 @@
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock},
+    middle::mir::{self, BasicBlock, PlaceElem},
 };
 
 use crate::{
     edgedata_enum, rustc_interface,
-    utils::{Place, PlaceRepacker},
+    utils::{HasPlace, Place, PlaceRepacker},
 };
 
 use super::{
     borrow_edge::BorrowEdge,
+    borrow_pcg_expansion::{BorrowPCGExpansion, ExpansionOfOwned},
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
-    deref_expansion::{DerefExpansion, OwnedExpansion},
     domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
@@ -38,6 +38,16 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for LocalNode<'tcx> {
     type Error = ();
     fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
         Ok(LocalNode::RegionProjection(rp.try_into()?))
+    }
+}
+
+impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeOldPlace<'tcx> {
+    type Error = ();
+    fn try_from(node: LocalNode<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            LocalNode::Place(maybe_old_place) => Ok(maybe_old_place),
+            LocalNode::RegionProjection(_) => Err(()),
+        }
     }
 }
 
@@ -72,7 +82,33 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx>
 /// other than a [`super::domain::RemotePlace`] (which are roots by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
+impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
+    fn place(&self) -> Place<'tcx> {
+        match self {
+            LocalNode::Place(p) => p.place(),
+            LocalNode::RegionProjection(rp) => rp.place.place(),
+        }
+    }
+    fn project_deeper(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> BlockingNode<'tcx> {
+        match self {
+            LocalNode::Place(p) => p.project_deeper(repacker, elem).into(),
+            LocalNode::RegionProjection(rp) => rp.project_deeper(repacker, elem).into(),
+        }
+    }
+}
+
 impl<'tcx> LocalNode<'tcx> {
+    pub(crate) fn is_current(&self) -> bool {
+        match self {
+            LocalNode::Place(p) => p.is_current(),
+            LocalNode::RegionProjection(rp) => rp.place.is_current(),
+        }
+    }
+
     pub fn as_cg_node(&self) -> Option<CGNode<'tcx>> {
         match self {
             LocalNode::Place(_) => None,
@@ -157,6 +193,15 @@ impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
 }
 
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
+
+impl<'tcx, T> PCGNode<'tcx, T> {
+    pub fn place(&self) -> &T {
+        match self {
+            PCGNode::Place(p) => p,
+            PCGNode::RegionProjection(rp) => &rp.place,
+        }
+    }
+}
 
 impl<'tcx> PCGNode<'tcx> {
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
@@ -320,7 +365,7 @@ where
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowPCGEdgeKind<'tcx> {
     Borrow(BorrowEdge<'tcx>),
-    DerefExpansion(DerefExpansion<'tcx>),
+    BorrowPCGExpansion(BorrowPCGExpansion<'tcx, LocalNode<'tcx>>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
@@ -328,14 +373,14 @@ pub enum BorrowPCGEdgeKind<'tcx> {
 edgedata_enum!(
     BorrowPCGEdgeKind<'tcx>,
     Borrow(BorrowEdge<'tcx>),
-    DerefExpansion(DerefExpansion<'tcx>),
+    BorrowPCGExpansion(DerefExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>)
 );
 
-impl<'tcx> From<OwnedExpansion<'tcx>> for BorrowPCGEdgeKind<'tcx> {
-    fn from(owned_expansion: OwnedExpansion<'tcx>) -> Self {
-        BorrowPCGEdgeKind::DerefExpansion(DerefExpansion::OwnedExpansion(owned_expansion))
+impl<'tcx> From<ExpansionOfOwned<'tcx>> for BorrowPCGEdgeKind<'tcx> {
+    fn from(owned_expansion: ExpansionOfOwned<'tcx>) -> Self {
+        BorrowPCGEdgeKind::BorrowPCGExpansion(BorrowPCGExpansion::FromOwned(owned_expansion))
     }
 }
 
@@ -352,14 +397,14 @@ impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdgeKind<'tcx>
 where
     BorrowEdge<'tcx>: HasPcsElems<T>,
     RegionProjectionMember<'tcx>: HasPcsElems<T>,
-    DerefExpansion<'tcx>: HasPcsElems<T>,
+    BorrowPCGExpansion<'tcx>: HasPcsElems<T>,
     AbstractionEdge<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         match self {
             BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
             BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.pcs_elems(),
-            BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => deref_expansion.pcs_elems(),
+            BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => deref_expansion.pcs_elems(),
             BorrowPCGEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
         }
     }
@@ -377,11 +422,11 @@ pub(crate) trait ToBorrowsEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for DerefExpansion<'tcx> {
+impl<'tcx> ToBorrowsEdge<'tcx> for BorrowPCGExpansion<'tcx, LocalNode<'tcx>> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::DerefExpansion(self),
+            kind: BorrowPCGEdgeKind::BorrowPCGExpansion(self),
         }
     }
 }

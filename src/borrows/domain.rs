@@ -4,12 +4,12 @@ use rustc_interface::{
     ast::Mutability,
     hir::def_id::DefId,
     middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem},
-    middle::ty::{GenericArgsRef, TyCtxt},
+    middle::ty::GenericArgsRef,
 };
 
 use crate::{
     rustc_interface,
-    utils::{Place, PlaceSnapshot, SnapshotLocation},
+    utils::{Place, HasPlace, PlaceSnapshot, SnapshotLocation},
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -280,7 +280,26 @@ impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
     }
 }
 
+impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
+    fn place(&self) -> Place<'tcx> {
+        match self {
+            MaybeOldPlace::Current { place } => *place,
+            MaybeOldPlace::OldPlace(old_place) => old_place.place,
+        }
+    }
+    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self {
+        MaybeOldPlace::new(
+            self.place().project_deeper(&[elem], repacker.tcx()).into(),
+            self.location(),
+        )
+    }
+}
+
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
+        self.place().projection
+    }
+
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         let place: Place<'_> = self.place();
         place.ref_mutability(repacker).unwrap_or_else(|| {
@@ -382,17 +401,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(self.place().project_deref(repacker).into(), self.location())
     }
 
-    pub(crate) fn project_deeper(
-        &self,
-        tcx: TyCtxt<'tcx>,
-        elem: PlaceElem<'tcx>,
-    ) -> MaybeOldPlace<'tcx> {
-        MaybeOldPlace::new(
-            self.place().project_deeper(&[elem], tcx).into(),
-            self.location(),
-        )
-    }
-
     pub(crate) fn is_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.place().is_ref(repacker)
     }
@@ -403,13 +411,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
 
     pub fn is_old(&self) -> bool {
         matches!(self, MaybeOldPlace::OldPlace(_))
-    }
-
-    pub fn place(&self) -> Place<'tcx> {
-        match self {
-            MaybeOldPlace::Current { place } => *place,
-            MaybeOldPlace::OldPlace(old_place) => old_place.place,
-        }
     }
 
     pub fn location(&self) -> Option<SnapshotLocation> {
@@ -439,7 +440,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         )
     }
 
-    pub (crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
+    pub(crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
         if self.is_current() && place.is_prefix(self.place()) {
             *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
                 place: self.place(),
@@ -626,14 +627,14 @@ impl<'tcx> std::fmt::Display for BorrowEdge<'tcx> {
         write!(
             f,
             "reborrow blocking {} assigned to {}",
-            self.blocked_place, self.assigned_place
+            self.blocked_place, self.assigned_ref
         )
     }
 }
 
 impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut vec = vec![&mut self.assigned_place];
+        let mut vec = vec![&mut self.assigned_ref];
         vec.extend(self.blocked_place.pcs_elems());
         vec
     }

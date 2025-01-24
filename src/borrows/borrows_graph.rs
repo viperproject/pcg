@@ -18,11 +18,11 @@ use super::{
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
+    borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
     },
-    deref_expansion::DerefExpansion,
     domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
@@ -217,11 +217,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn deref_expansions(&self) -> FxHashSet<Conditioned<DerefExpansion<'tcx>>> {
+    pub(crate) fn borrow_pcg_expansions(&self) -> FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>> {
         self.edges
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::DerefExpansion(de) => Some(Conditioned {
+                BorrowPCGEdgeKind::BorrowPCGExpansion(de) => Some(Conditioned {
                     conditions: edge.conditions().clone(),
                     value: de.clone(),
                 }),
@@ -260,7 +260,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges
             .iter()
             .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Borrow(reborrow) if reborrow.assigned_place == place => {
+                BorrowPCGEdgeKind::Borrow(reborrow) if reborrow.assigned_ref == place => {
                     Some(Conditioned {
                         conditions: edge.conditions().clone(),
                         value: reborrow.clone(),
@@ -472,7 +472,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 .collect::<Vec<_>>()
                                 .into(),
                         ));
-                    self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));
+                    let inserted =
+                        self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));
+                    changed |= inserted;
                 }
                 self.remove(&edge.into());
             }
@@ -494,8 +496,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             new_edges.insert(abstraction.clone());
 
             if !existing_edges.contains(&abstraction) {
-                self.insert(abstraction);
-                changed = true;
+                let inserted = self.insert(abstraction);
+                changed |= inserted;
             }
         }
 
@@ -611,14 +613,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let mut new_conditions = our_edge.conditions().clone();
                         new_conditions.join(&other_edge.conditions());
                         self.edges.remove(our_edge);
-                        self.insert(BorrowPCGEdge::new(
+                        _ = self.insert(BorrowPCGEdge::new(
                             other_edge.kind().clone(),
                             new_conditions,
                         ));
                     }
                 }
                 None => {
-                    self.insert(other_edge.clone());
+                    _ = self.insert(other_edge.clone());
                 }
             }
         }
@@ -702,6 +704,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
+    #[must_use]
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.cached_is_valid.set(None);
         self.edges.insert(edge)
@@ -723,10 +726,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.remove(edge)
     }
 
-    pub(crate) fn contains_deref_expansion_from(&self, place: &MaybeOldPlace<'tcx>) -> bool {
+    pub(crate) fn contains_borrow_pcg_expansion_from(&self, place: MaybeOldPlace<'tcx>) -> bool {
         self.edges.iter().any(|edge| {
-            if let BorrowPCGEdgeKind::DerefExpansion(de) = &edge.kind {
-                de.base() == *place
+            if let BorrowPCGEdgeKind::BorrowPCGExpansion(de) = &edge.kind {
+                de.base() == place.into()
             } else {
                 false
             }
@@ -794,11 +797,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         return false;
                     }
                 }
-                PCGNode::RegionProjection(region_projection) => {
-                    if region_projection.place.is_old() {
-                        self.cached_is_valid.set(Some(false));
-                        return false;
-                    }
+                PCGNode::RegionProjection(_) => {
+                    // TODO: Consider something like the invariant below:
+                    // if region_projection.place.is_old() {
+                    //     self.cached_is_valid.set(Some(false));
+                    //     return false;
+                    // }
                 }
             }
         }

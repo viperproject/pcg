@@ -34,6 +34,24 @@ use crate::{
 use super::{debug_info::DebugInfo, PlaceRepacker};
 
 #[derive(Clone, Copy, Deref, DerefMut)]
+pub(crate) struct CorrectedPlace<'tcx>(Place<'tcx>);
+
+impl<'tcx> CorrectedPlace<'tcx> {
+    pub fn new(place: Place<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+        Self(place.with_inherent_region(repacker))
+    }
+
+    pub(crate) fn last_projection(&self) -> Option<CorrectedPlaceElem<'tcx>> {
+        self.0
+            .last_projection()
+            .map(|(_, elem)| CorrectedPlaceElem(elem))
+    }
+}
+
+#[derive(Clone, Copy, Deref, DerefMut, PartialEq, Eq, Debug, Hash)]
+pub(crate) struct CorrectedPlaceElem<'tcx>(PlaceElem<'tcx>);
+
+#[derive(Clone, Copy, Deref, DerefMut)]
 pub struct Place<'tcx>(
     #[deref]
     #[deref_mut]
@@ -45,6 +63,11 @@ impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
         MaybeOldPlace::Current { place }
     }
+}
+
+pub trait HasPlace<'tcx> {
+    fn place(&self) -> Place<'tcx>;
+    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self;
 }
 
 impl<'tcx> Place<'tcx> {
@@ -66,7 +89,7 @@ impl<'tcx> Place<'tcx> {
 
     /// In MIR, if a place is a field projection, then the type of the place
     /// will be the determined by the last projection. If the type of that place
-    /// is a reference, it appears that the associated region is not necessarily
+    /// contains borrows, it appears that the associated regions are not necessarily
     /// the same as the one given by the parent struct.
     ///
     /// In the case that this place is a reference-typed field projection, this function

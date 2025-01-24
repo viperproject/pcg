@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::Write;
 
 use std::cell::RefCell;
+use tracing_subscriber;
 
 use pcs::rustc_interface::{
     borrowck::consumers,
@@ -17,7 +18,7 @@ use pcs::rustc_interface::{
     session::Session,
 };
 use pcs::{
-    combined_pcs::{BodyWithBorrowckFacts, EvalStmtPhase},
+    combined_pcs::BodyWithBorrowckFacts,
     run_combined_pcs,
 };
 
@@ -46,6 +47,7 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
     original_mir_borrowck(tcx, def_id)
 }
 
+#[allow(unused)]
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // DEBUG
     // body.body.basic_blocks.len() < 8
@@ -168,6 +170,11 @@ impl driver::Callbacks for PcsCallbacks {
 }
 
 fn main() {
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
     let mut rustc_args = Vec::new();
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());

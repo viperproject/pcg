@@ -15,7 +15,7 @@ use rustc_interface::{
             self, tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
             Place as MirPlace, PlaceElem, ProjectionElem,
         },
-        ty::{Region, RegionVid, Ty, TyCtxt, TyKind},
+        ty::{Region, Ty, TyCtxt, TyKind},
     },
     target::abi::FieldIdx,
 };
@@ -25,27 +25,19 @@ use crate::rustc_interface;
 use super::Place;
 
 #[derive(Debug, Clone, Copy)]
-pub enum ProjectionRefKind {
+pub enum ProjectionKind {
     Ref(Mutability),
     RawPtr(Mutability),
     Box,
+    Field(FieldIdx),
     Other,
 }
-impl ProjectionRefKind {
-    pub fn is_ref(self) -> bool {
-        matches!(self, ProjectionRefKind::Ref(_))
+impl ProjectionKind {
+    pub (crate) fn is_box(self) -> bool {
+        matches!(self, ProjectionKind::Box)
     }
-    pub fn is_raw_ptr(self) -> bool {
-        matches!(self, ProjectionRefKind::RawPtr(_))
-    }
-    pub fn is_box(self) -> bool {
-        matches!(self, ProjectionRefKind::Box)
-    }
-    pub fn is_deref(self) -> bool {
-        self.is_ref() || self.is_raw_ptr() || self.is_box()
-    }
-    pub fn is_shared_ref(self) -> bool {
-        matches!(self, ProjectionRefKind::Ref(Mutability::Not))
+    pub (crate) fn is_shared_ref(self) -> bool {
+        matches!(self, ProjectionKind::Ref(Mutability::Not))
     }
 }
 
@@ -196,7 +188,7 @@ impl<'tcx> Place<'tcx> {
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> (Vec<(Self, Self, ProjectionRefKind)>, Vec<Self>) {
+    ) -> (Vec<(Self, Self, ProjectionKind)>, Vec<Self>) {
         assert!(
             self.is_prefix(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
@@ -219,7 +211,7 @@ impl<'tcx> Place<'tcx> {
         self,
         from: &mut FxHashSet<Self>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<(Self, Self, ProjectionRefKind)> {
+    ) -> Vec<(Self, Self, ProjectionKind)> {
         let mut collapsed = Vec::new();
         let mut guide_places = vec![self];
         while let Some(guide_place) = guide_places.pop() {
@@ -256,7 +248,7 @@ impl<'tcx> Place<'tcx> {
         self,
         guide_place: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> (Self, Vec<Self>, ProjectionRefKind) {
+    ) -> (Self, Vec<Self>, ProjectionKind) {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
@@ -274,7 +266,7 @@ impl<'tcx> Place<'tcx> {
         let (other_places, kind) = match guide_place.projection[index] {
             ProjectionElem::Field(projected_field, _field_ty) => {
                 let other_places = self.expand_field(Some(projected_field.index()), repacker);
-                (other_places, ProjectionRefKind::Other)
+                (other_places, ProjectionKind::Field(projected_field))
             }
             ProjectionElem::ConstantIndex {
                 offset,
@@ -303,14 +295,14 @@ impl<'tcx> Place<'tcx> {
                             .into()
                     })
                     .collect();
-                (other_places, ProjectionRefKind::Other)
+                (other_places, ProjectionKind::Other)
             }
             ProjectionElem::Deref => {
                 let typ = self.ty(repacker);
                 let kind = match typ.ty.kind() {
-                    TyKind::Ref(_, _, mutbl) => ProjectionRefKind::Ref(*mutbl),
-                    TyKind::RawPtr(_, mutbl) => ProjectionRefKind::RawPtr(*mutbl),
-                    _ if typ.ty.is_box() => ProjectionRefKind::Box,
+                    TyKind::Ref(_, _, mutbl) => ProjectionKind::Ref(*mutbl),
+                    TyKind::RawPtr(_, mutbl) => ProjectionKind::RawPtr(*mutbl),
+                    _ if typ.ty.is_box() => ProjectionKind::Box,
                     _ => unreachable!(),
                 };
                 (Vec::new(), kind)
@@ -318,7 +310,7 @@ impl<'tcx> Place<'tcx> {
             ProjectionElem::Index(..)
             | ProjectionElem::Subslice { .. }
             | ProjectionElem::Downcast(..)
-            | ProjectionElem::OpaqueCast(..) => (Vec::new(), ProjectionRefKind::Other),
+            | ProjectionElem::OpaqueCast(..) => (Vec::new(), ProjectionKind::Other),
             ProjectionElem::Subtype(_) => todo!(),
         };
         for p in other_places.iter() {
@@ -355,6 +347,9 @@ impl<'tcx> Place<'tcx> {
                     .variant_index
                     .map(|i| def.variant(i))
                     .unwrap_or_else(|| def.non_enum_variant());
+                if let Some(without_field) = without_field {
+                    assert!(without_field <  variant.fields.len());
+                }
                 for (index, field_def) in variant.fields.iter().enumerate() {
                     if Some(index) != without_field {
                         let field = FieldIdx::from_usize(index);
@@ -366,8 +361,16 @@ impl<'tcx> Place<'tcx> {
                         places.push(field_place.into());
                     }
                 }
+                if without_field.is_some() {
+                    assert!(places.len() == variant.fields.len() - 1);
+                } else {
+                    assert!(places.len() == variant.fields.len());
+                }
             }
             TyKind::Tuple(slice) => {
+                if let Some(without_field) = without_field {
+                    assert!(without_field < slice.len());
+                }
                 for (index, arg) in slice.iter().enumerate() {
                     if Some(index) != without_field {
                         let field = FieldIdx::from_usize(index);
@@ -377,6 +380,11 @@ impl<'tcx> Place<'tcx> {
                                 .mk_place_field(self.to_rust_place(repacker), field, arg);
                         places.push(field_place.into());
                     }
+                }
+                if without_field.is_some() {
+                    assert!(places.len() == slice.len() - 1);
+                } else {
+                    assert!(places.len() == slice.len());
                 }
             }
             TyKind::Closure(_, substs) => {
@@ -440,11 +448,7 @@ impl<'tcx> Place<'tcx> {
             })
     }
 
-    pub fn is_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        matches!(self.ty(repacker).ty.ref_mutability(), Some(Mutability::Not))
-    }
-
-    pub fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub (crate) fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -457,32 +461,7 @@ impl<'tcx> Place<'tcx> {
         .is_some()
     }
 
-    pub fn projects_ptr(self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Place<'tcx>> {
-        self.projects_ty(
-            |typ| typ.ty.is_ref() || typ.ty.is_box() || typ.ty.is_unsafe_ptr(),
-            repacker,
-        )
-    }
-
-    pub fn can_deinit(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        let mut projects_shared_ref = false;
-        self.projects_ty(
-            |typ| {
-                projects_shared_ref = projects_shared_ref
-                    || typ
-                        .ty
-                        .ref_mutability()
-                        .map(|m| m.is_not())
-                        .unwrap_or_default();
-                projects_shared_ref = projects_shared_ref && !typ.ty.is_unsafe_ptr();
-                false
-            },
-            repacker,
-        );
-        !projects_shared_ref
-    }
-
-    pub fn projects_ty(
+    pub (crate) fn projects_ty(
         self,
         mut predicate: impl FnMut(PlaceTy<'tcx>) -> bool,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -495,7 +474,7 @@ impl<'tcx> Place<'tcx> {
             })
     }
 
-    pub fn projection_tys(
+    pub (crate) fn projection_tys(
         self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> impl Iterator<Item = (PlaceTy<'tcx>, &'tcx [PlaceElem<'tcx>])> {
@@ -507,38 +486,10 @@ impl<'tcx> Place<'tcx> {
         })
     }
 
-    pub fn mk_deref(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
-        self.mk_place_elem(PlaceElem::Deref, repacker)
-    }
-
-    pub fn mk_place_elem(self, elem: PlaceElem<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub (crate) fn mk_place_elem(self, elem: PlaceElem<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
         let elems = repacker
             .tcx
             .mk_place_elems_from_iter(self.projection.iter().copied().chain([elem]));
         Self::new(self.local, elems)
-    }
-
-    pub fn deref_to_region(
-        mut self,
-        r: RegionVid,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<Self> {
-        let mut ty = self.ty(repacker).ty;
-        while let TyKind::Ref(rr, inner_ty, _) = *ty.kind() {
-            ty = inner_ty;
-            self = self.mk_deref(repacker);
-            if rr.is_var() && rr.as_var() == r {
-                return Some(self);
-            }
-        }
-        None
-    }
-
-    pub fn param_kind(self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<Local> {
-        if self.local.as_usize() <= repacker.mir.arg_count {
-            Some(self.local)
-        } else {
-            None
-        }
     }
 }

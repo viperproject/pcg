@@ -19,5 +19,4 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     }
 }
 
-fn main() {
-}
+fn main() {}

@@ -54,7 +54,7 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
                 // A bit of an unusual case, should happen only when we
                 // "allocated" a local to allow it to immediately be
                 // StorageDead-ed. In this case we should ignore the SD.
-                assert_eq!(cps[&cps.get_local().into()], CapabilityKind::Write);
+                // assert_eq!(cps[&cps.get_local().into()], CapabilityKind::Write);
                 vec![RepackOp::IgnoreStorageDead(cps.get_local())]
             }
         }

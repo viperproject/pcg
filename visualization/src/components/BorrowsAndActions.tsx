@@ -61,10 +61,10 @@ function BridgeExpands({ expands }: { expands: PlaceExpand[] }) {
     <div>
       {expands.map((expand, idx) => (
         <div key={`expand-${idx}`}>
-          <MaybeOldPlaceDisplay maybeOldPlace={expand.base} />→
+          <PCGNodeDisplay node={expand.base} />→
           <span>
-            {expand.expansion.map((e) => (
-              <MaybeOldPlaceDisplay maybeOldPlace={e} />
+            {expand.expansion.map((e, idx2) => (
+              <PCGNodeDisplay key={`expand-${idx}-${idx2}`} node={e} />
             ))}
           </span>
         </div>
