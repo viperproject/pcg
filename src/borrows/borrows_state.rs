@@ -89,7 +89,7 @@ impl<'tcx> Default for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub fn debug_capability_lines(&self) -> Vec<String> {
+    pub(crate) fn debug_capability_lines(&self) -> Vec<String> {
         self.capabilities.debug_capability_lines()
     }
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {

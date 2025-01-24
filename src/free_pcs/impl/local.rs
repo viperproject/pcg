@@ -42,6 +42,13 @@ impl Default for CapabilityLocal<'_> {
 }
 
 impl<'tcx> CapabilityLocal<'tcx> {
+    pub(crate) fn debug_lines(&self) -> Vec<String> {
+        match self {
+            Self::Unallocated => vec![],
+            Self::Allocated(cps) => cps.debug_lines(),
+        }
+    }
+
     pub fn get_allocated(&self) -> &CapabilityProjections<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
@@ -74,6 +81,12 @@ impl<'tcx> Debug for CapabilityProjections<'tcx> {
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
+    pub(crate) fn debug_lines(&self) -> Vec<String> {
+        self.iter()
+            .map(|(p, k)| format!("{p:?}: {k:?}"))
+            .collect()
+    }
+
     pub fn new(local: Local, perm: CapabilityKind) -> Self {
         Self([(local.into(), perm)].into_iter().collect())
     }

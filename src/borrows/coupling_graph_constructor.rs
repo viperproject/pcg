@@ -17,7 +17,7 @@ use super::{
     borrows_graph::{BorrowsGraph, COUPLING_IMGCAT_DEBUG},
     domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
     has_pcs_elem::HasPcsElems,
-    region_projection::RegionProjection,
+    region_projection::{PCGRegion, RegionProjection},
 };
 
 /// A collection of coupled PCG nodes. They will expire at the same time, and only one
@@ -241,6 +241,7 @@ impl PartialOrd for CGNode<'_> {
 
 pub (crate) trait BorrowCheckerInterface<'tcx> {
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
 }
 
 /// Records a history of actions for debugging purpose;

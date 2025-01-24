@@ -586,8 +586,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
             if exit_blocks.len() >= 1 {
-                let result =
-                    self.join_loop(other, self_block, exit_blocks[0], repacker, bc);
+                let result = self.join_loop(other, self_block, exit_blocks[0], repacker, bc);
                 if BORROWS_IMGCAT_DEBUG {
                     if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                         DotGraph::render_with_imgcat(

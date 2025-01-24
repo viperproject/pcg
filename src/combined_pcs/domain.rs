@@ -45,6 +45,17 @@ pub enum EvalStmtPhase {
     PostMain,
 }
 
+impl EvalStmtPhase {
+    pub fn phases() -> [EvalStmtPhase; 4] {
+        [
+            EvalStmtPhase::PreOperands,
+            EvalStmtPhase::PostOperands,
+            EvalStmtPhase::PreMain,
+            EvalStmtPhase::PostMain,
+        ]
+    }
+}
+
 impl std::fmt::Display for EvalStmtPhase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -248,7 +259,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         )
     }
 
-    pub (crate) fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
+    pub(crate) fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
         if !*RECORD_PCG.lock().unwrap() {
             return;
         }
@@ -266,14 +277,14 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                     .borrow()
                     .relative_filename(phase, self.block(), statement_index);
             let filename = self.dot_filename_for(&output_dir, phase, statement_index);
-            if !self.dot_graphs()
+            if !self
+                .dot_graphs()
                 .borrow_mut()
                 .insert(statement_index, phase, relative_filename)
             {
                 panic!(
                     "Dot graph for entry ({}, {:?}) already exists",
-                    statement_index,
-                    phase
+                    statement_index, phase
                 )
             }
 
@@ -307,7 +318,8 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             cgx.rp,
             cgx.mir.output_facts.clone().unwrap(),
             cgx.mir.location_table.clone().unwrap(),
-            block
+            cgx.mir.region_inference_context.clone(),
+            block,
         );
         let pcg = PCG {
             owned: fpcs,

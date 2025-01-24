@@ -5,8 +5,7 @@ use std::io::Write;
 
 use std::cell::RefCell;
 
-use pcs::{combined_pcs::BodyWithBorrowckFacts, run_combined_pcs, rustc_interface};
-use rustc_interface::{
+use pcs::rustc_interface::{
     borrowck::consumers,
     data_structures::fx::FxHashMap,
     driver::{self, Compilation},
@@ -16,6 +15,10 @@ use rustc_interface::{
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt, util::Providers,
     },
     session::Session,
+};
+use pcs::{
+    combined_pcs::{BodyWithBorrowckFacts, EvalStmtPhase},
+    run_combined_pcs,
 };
 
 struct PcsCallbacks;
@@ -38,7 +41,7 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
         });
     }
     let mut providers = Providers::default();
-    rustc_interface::borrowck::provide(&mut providers);
+    pcs::rustc_interface::borrowck::provide(&mut providers);
     let original_mir_borrowck = providers.mir_borrowck;
     original_mir_borrowck(tcx, def_id)
 }
@@ -84,21 +87,38 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 }
                 eprintln!("Running PCG on function: {}", item_name);
                 if should_check_body(&body) {
+                    // Print the full source of the function
                     let mut output = run_combined_pcs(
                         &body,
                         tcx,
                         vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
                     );
-                    // for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                    //     let block = output.get_all_for_bb(idx);
-                    //     for stmt in block.statements {
-                    //         for (phase, state) in stmt.borrows.iter() {
-                    //             for line in state.debug_capability_lines() {
-                    //                 println!("{:?} {}: {}", stmt.location, phase, line);
-                    //             }
-                    //         }
-                    //     }
-                    // }
+                    if let Ok(source) = tcx.sess.source_map().span_to_snippet(body.body.span) {
+                        let expected_annotations = source
+                            .lines()
+                            .flat_map(|l| l.split("// PCG: ").nth(1))
+                            .map(|l| l.trim())
+                            .collect::<Vec<_>>();
+                        if !expected_annotations.is_empty() {
+                            eprintln!("Expected annotations: {:?}", expected_annotations);
+                            let mut debug_lines = Vec::new();
+                            for (idx, _) in body.body.basic_blocks.iter_enumerated() {
+                                let block = output.get_all_for_bb(idx);
+                                debug_lines.extend(block.debug_lines());
+                            }
+                            let missing_annotations = expected_annotations
+                                .iter()
+                                .filter(|a| !debug_lines.contains(&a.to_string()))
+                                .collect::<Vec<_>>();
+                            if !missing_annotations.is_empty() {
+                                panic!("Missing annotations: {:?}", missing_annotations);
+                            }
+                            // eprintln!("Debug lines:");
+                            // for line in debug_lines {
+                            //     eprintln!("{}", line);
+                            // }
+                        }
+                    }
                 }
                 item_names.push(item_name);
             }

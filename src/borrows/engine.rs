@@ -246,6 +246,25 @@ impl<T> EvalStmtData<T> {
     }
 }
 
+impl<T> std::ops::Index<EvalStmtPhase> for EvalStmtData<T> {
+    type Output = T;
+
+    fn index(&self, phase: EvalStmtPhase) -> &Self::Output {
+        self.get(phase)
+    }
+}
+
+impl<T> std::ops::IndexMut<EvalStmtPhase> for EvalStmtData<T> {
+    fn index_mut(&mut self, phase: EvalStmtPhase) -> &mut Self::Output {
+        match phase {
+            EvalStmtPhase::PreOperands => &mut self.pre_operands,
+            EvalStmtPhase::PostOperands => &mut self.post_operands,
+            EvalStmtPhase::PreMain => &mut self.pre_main,
+            EvalStmtPhase::PostMain => &mut self.post_main,
+        }
+    }
+}
+
 pub(crate) type BorrowsStates<'tcx> = EvalStmtData<BorrowsState<'tcx>>;
 
 impl<'tcx> BorrowsStates<'tcx> {
@@ -303,6 +322,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn is_valid(&self) -> bool {
         self.post_state().is_valid(self.repacker)
     }
+
     pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
         &mut self.states.post_main
     }
@@ -328,6 +348,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         output_facts: Rc<PoloniusOutput>,
         location_table: Rc<LocationTable>,
+        region_inference_context: Rc<RegionInferenceContext<'tcx>>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
@@ -338,7 +359,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             output_facts,
             location_table,
             error: None,
-            bc: BorrowCheckerImpl::new(&repacker),
+            bc: BorrowCheckerImpl::new(&repacker, region_inference_context),
         }
     }
 

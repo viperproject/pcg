@@ -91,21 +91,36 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
 #[derive(Clone)]
 pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+    region_cx: Rc<RegionInferenceContext<'tcx>>,
 }
 
 impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
-    pub(crate) fn new(repacker: &PlaceRepacker<'mir, 'tcx>) -> Self {
+    pub(crate) fn new(
+        repacker: &PlaceRepacker<'mir, 'tcx>,
+        region_cx: Rc<RegionInferenceContext<'tcx>>,
+    ) -> Self {
         let cursor = MaybeLiveLocals
             .into_engine(repacker.tcx(), repacker.body())
             .iterate_to_fixpoint()
             .into_results_cursor(repacker.body());
         Self {
             cursor: Rc::new(RefCell::new(cursor)),
+            region_cx,
         }
     }
 }
 
 impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+        match (sup, sub) {
+            (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => {
+                self.region_cx.eval_outlives(sup, sub)
+            }
+            (PCGRegion::ReStatic, _) => true,
+            _ => false,
+        }
+    }
+
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let local = match node {
             PCGNode::RegionProjection(rp) => {
@@ -221,7 +236,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
 
         for target_proj in target.region_projections(self.repacker) {
-            if let Some(true) = self.outlives(source_proj.region(), target_proj.region()) {
+            if self.outlives(source_proj.region(), target_proj.region()) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         Coupled::singleton(source_proj.into()),
@@ -429,6 +444,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
+    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+        self.state.bc.outlives(sup, sub)
+    }
+
     fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
         let location = if start {
             self.location_table.start_index(location)
@@ -446,16 +465,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
             })
             .collect()
-    }
-
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> Option<bool> {
-        match (sup, sub) {
-            (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => {
-                Some(self.region_inference_context.eval_outlives(sup, sub))
-            }
-            (PCGRegion::ReStatic, _) => Some(true),
-            _ => None,
-        }
     }
 
     /// Constructs a function call abstraction, if necessary.
@@ -598,7 +607,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         for (output_lifetime_idx, output_lifetime) in
             extract_regions(output_ty).into_iter().enumerate()
         {
-            if let Some(true) = self.outlives(input_lifetime.into(), output_lifetime.into()) {
+            if self.outlives(input_lifetime.into(), output_lifetime.into()) {
                 result.push(
                     output_place
                         .region_projection(output_lifetime_idx, self.repacker)

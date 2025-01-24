@@ -168,6 +168,13 @@ impl<'tcx> Debug for CapabilitySummary<'tcx> {
 }
 
 impl<'tcx> CapabilitySummary<'tcx> {
+    pub(crate) fn debug_lines(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .map(|c| c.debug_lines())
+            .collect::<Vec<_>>()
+            .concat()
+    }
     pub fn default(local_count: usize) -> Self {
         Self(IndexVec::from_elem_n(
             CapabilityLocal::default(),

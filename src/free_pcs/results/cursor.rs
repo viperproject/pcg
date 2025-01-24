@@ -6,6 +6,7 @@
 
 use crate::{
     borrows::{borrow_pcg_action::BorrowPCGAction, engine::EvalStmtData},
+    combined_pcs::EvalStmtPhase,
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
@@ -173,6 +174,20 @@ pub struct FreePcsBasicBlock<'tcx> {
     pub terminator: FreePcsTerminator<'tcx>,
 }
 
+impl<'tcx> FreePcsBasicBlock<'tcx> {
+    pub fn debug_lines(&self) -> Vec<String> {
+        let mut result = Vec::new();
+        for stmt in self.statements.iter() {
+            for phase in EvalStmtPhase::phases() {
+                for line in stmt.debug_lines(phase) {
+                    result.push(format!("{:?} {}: {}", stmt.location, phase, line));
+                }
+            }
+        }
+        result
+    }
+}
+
 pub type CapabilitySummaries<'tcx> = EvalStmtData<CapabilitySummary<'tcx>>;
 
 #[derive(Debug)]
@@ -187,6 +202,14 @@ pub struct FreePcsLocation<'tcx> {
     pub extra_middle: BorrowsBridge<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
     pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
+}
+
+impl<'tcx> FreePcsLocation<'tcx> {
+    pub (crate) fn debug_lines(&self, phase: EvalStmtPhase) -> Vec<String> {
+        let mut result = self.states[phase].debug_lines();
+        result.extend(self.borrows[phase].debug_capability_lines());
+        result
+    }
 }
 
 #[derive(Debug)]
