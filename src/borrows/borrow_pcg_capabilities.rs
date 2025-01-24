@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use crate::{free_pcs::CapabilityKind, utils::Place};
 
@@ -23,12 +23,18 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    pub(crate) fn insert<T: Into<PCGNode<'tcx>>>(
+    pub(super) fn insert<T: Into<PCGNode<'tcx>>>(
         &mut self,
         node: T,
         capability: CapabilityKind,
     ) -> bool {
-        self.0.insert(node.into(), capability) != Some(capability)
+        let node = node.into();
+        self.0.insert(node, capability) != Some(capability)
+    }
+
+    pub(crate) fn remove<T: Into<PCGNode<'tcx>>>(&mut self, node: T) -> bool {
+        let node = node.into();
+        self.0.remove(&node).is_some()
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {

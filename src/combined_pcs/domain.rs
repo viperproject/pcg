@@ -15,14 +15,16 @@ use std::{
 use rustc_interface::{
     dataflow::fmt::DebugWithContext,
     dataflow::JoinSemiLattice,
-    dataflow::{impls::MaybeLiveLocals, Results},
     middle::mir,
     middle::mir::BasicBlock,
 };
 
 use crate::{
     borrows::{
-        borrow_pcg_edge::PCGNode, borrows_visitor::BorrowCheckerImpl, domain::{MaybeOldPlace, MaybeRemotePlace}, engine::BorrowsDomain, unblock_graph::{UnblockGraph, UnblockType}
+        borrow_pcg_edge::PCGNode,
+        domain::{MaybeOldPlace, MaybeRemotePlace},
+        engine::BorrowsDomain,
+        unblock_graph::{UnblockGraph, UnblockType},
     },
     free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
     rustc_interface,
@@ -314,13 +316,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(
-            cgx.rp,
-            cgx.mir.output_facts.clone().unwrap(),
-            cgx.mir.location_table.clone().unwrap(),
-            cgx.mir.region_inference_context.clone(),
-            block,
-        );
+        let borrows = BorrowsDomain::new(cgx.rp, cgx.mir.region_inference_context.clone(), block);
         let pcg = PCG {
             owned: fpcs,
             borrow: borrows,

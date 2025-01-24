@@ -1,11 +1,13 @@
+use tracing::instrument;
+
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
-use super::borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge};
+use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
+use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::borrows_state::BorrowsState;
-use super::deref_expansion::DerefExpansion;
-use super::domain::ToJsonWithRepacker;
+use super::domain::{MaybeOldPlace, ToJsonWithRepacker};
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
 
@@ -13,10 +15,11 @@ use super::region_projection_member::RegionProjectionMember;
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
 /// their own effect (e.g. for an unblock, applying a magic wand).
 ///
-/// N.B. Currently annotations for consumers are generated via the `bridge`
-/// functionality which generates annotations between two arbitrary
-/// `BorrowsState`s. Ultimately, we want to remove that functionality and
-/// instead generate annotations for consumers directly in the `BorrowsVisitor`.
+/// N.B. For now these are only used for debugging. Currently annotations for
+/// consumers are generated via the `bridge` functionality which generates
+/// annotations between two arbitrary `BorrowsState`s. Perhaps we want to remove
+/// that functionality and instead generate annotations for consumers directly
+/// in the `BorrowsVisitor`?
 #[derive(Clone, Debug)]
 pub struct BorrowPCGAction<'tcx> {
     kind: BorrowPCGActionKind<'tcx>,
@@ -24,6 +27,13 @@ pub struct BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowPCGAction<'tcx> {
+    pub(super) fn rename_place(old: MaybeOldPlace<'tcx>, new: MaybeOldPlace<'tcx>) -> Self {
+        BorrowPCGAction {
+            kind: BorrowPCGActionKind::RenamePlace { old, new },
+            debug_context: None,
+        }
+    }
+
     pub(super) fn set_latest(
         place: Place<'tcx>,
         location: Location,
@@ -53,9 +63,12 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn insert_deref_expansion(de: DerefExpansion<'tcx>, location: Location) -> Self {
+    pub(super) fn insert_borrow_pcg_expansion(
+        de: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
+        location: Location,
+    ) -> Self {
         BorrowPCGAction {
-            kind: BorrowPCGActionKind::InsertDerefExpansion(de, location),
+            kind: BorrowPCGActionKind::InsertBorrowPCGExpansion(de, location),
             debug_context: None,
         }
     }
@@ -83,7 +96,11 @@ pub(crate) enum BorrowPCGActionKind<'tcx> {
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-    InsertDerefExpansion(DerefExpansion<'tcx>, Location),
+    InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx, LocalNode<'tcx>>, Location),
+    RenamePlace {
+        old: MaybeOldPlace<'tcx>,
+        new: MaybeOldPlace<'tcx>,
+    },
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
@@ -97,12 +114,13 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    #[instrument(skip(self, repacker), fields(action))]
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        match action.kind {
+        let result = match action.kind {
             BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker, None),
             BorrowPCGActionKind::SetLatest(place, location) => {
                 self.set_latest(place, location, repacker)
@@ -111,10 +129,36 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::AddRegionProjectionMember(member, pc) => {
                 self.add_region_projection_member(member, pc, repacker)
             }
-            BorrowPCGActionKind::InsertDerefExpansion(de, location) => {
-                self.insert(de.to_borrow_pcg_edge(PathConditions::new(location.block)))
+            BorrowPCGActionKind::InsertBorrowPCGExpansion(de, location) => {
+                let inserted = self.insert(
+                    de.clone()
+                        .to_borrow_pcg_edge(PathConditions::new(location.block)),
+                );
+                if inserted {
+                    let base = de.base();
+                    let capability = match self.get_capability(base) {
+                        Some(c) => c,
+                        None => {
+                            return inserted;
+                        }
+                    };
+                    match capability {
+                        CapabilityKind::Read => {
+                            self.set_capability(base, CapabilityKind::Read);
+                        }
+                        _ => {
+                            self.remove_capability(base);
+                        }
+                    }
+                    for p in de.expansion(repacker).iter() {
+                        self.set_capability(*p, capability);
+                    }
+                }
+                inserted
             }
-        }
+            BorrowPCGActionKind::RenamePlace { old, new } => self.change_pcs_elem(old, new),
+        };
+        result
     }
 
     /// Adds a region projection member to the graph and sets appropriate

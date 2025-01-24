@@ -18,7 +18,7 @@ pub mod utils;
 pub mod visualization;
 
 use borrows::{
-    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPCGAction, borrows_graph::Conditioned, deref_expansion::DerefExpansion, engine::EvalStmtData, latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph
+    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPCGAction, borrows_graph::Conditioned, borrow_pcg_expansion::BorrowPCGExpansion, engine::EvalStmtData, latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, RepackOp};
@@ -58,7 +58,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
 #[derive(Clone, Debug)]
 pub struct BorrowsBridge<'tcx> {
     pub added_region_projection_members: FxHashSet<Conditioned<RegionProjectionMember<'tcx>>>,
-    pub expands: FxHashSet<Conditioned<DerefExpansion<'tcx>>>,
+    pub expands: FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>>,
     pub added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>>,
     pub ug: UnblockGraph<'tcx>,
     pub weakens: FxHashSet<Weaken<'tcx>>,

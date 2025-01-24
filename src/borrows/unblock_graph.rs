@@ -67,13 +67,13 @@ impl<'tcx> UnblockGraph<'tcx> {
         ug.actions(repacker)
     }
 
-    pub fn for_place(
-        place: MaybeRemotePlace<'tcx>,
+    pub fn for_node(
+        node: impl Into<BlockedNode<'tcx>>,
         state: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
         let mut ug = Self::new();
-        ug.unblock_node(place.into(), state, repacker, UnblockType::ForExclusive);
+        ug.unblock_node(node.into(), state, repacker, UnblockType::ForExclusive);
         ug
     }
 

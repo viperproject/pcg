@@ -19,8 +19,10 @@ use crate::utils::PlaceRepacker;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowEdge<'tcx> {
+    /// The place that is blocked by the borrow, e.g. the y in `let x = &mut y;`
     pub blocked_place: MaybeRemotePlace<'tcx>,
-    pub assigned_place: MaybeOldPlace<'tcx>,
+    /// The place that is assigned by the borrow, e.g. the x in `let x = &mut y;`
+    pub(crate) assigned_ref: MaybeOldPlace<'tcx>,
     mutability: Mutability,
 
     /// The location when the reborrow was created
@@ -44,12 +46,10 @@ impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
-        // TODO: Region could be erased and we can't handle that yet
-        if let Some(rp) = self.assigned_region_projection(repacker) {
-            return vec![LocalNode::RegionProjection(rp.into())].into_iter().collect();
-        } else {
-            FxHashSet::default()
-        }
+        let rp = self.assigned_region_projection(repacker);
+        return vec![LocalNode::RegionProjection(rp.into())]
+            .into_iter()
+            .collect();
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -58,16 +58,18 @@ impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowEdge<'tcx> {
-    pub (crate) fn new(
+    pub(crate) fn new(
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: MaybeOldPlace<'tcx>,
         mutability: Mutability,
         reservation_location: Location,
         region: ty::Region<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
+        assert!(assigned_place.ty(repacker).ty.ref_mutability().is_some());
         Self {
             blocked_place,
-            assigned_place,
+            assigned_ref: assigned_place,
             mutability,
             reserve_location: reservation_location,
             region,
@@ -82,25 +84,24 @@ impl<'tcx> BorrowEdge<'tcx> {
         self.mutability == Mutability::Mut
     }
 
-    pub(crate) fn assigned_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
-        self.assigned_place
-            .prefix_place(repacker)
-            .unwrap()
-            .with_inherent_region(repacker)
+    /// The deref of the assigned place of the borrow. For example, if the borrow is
+    /// `let x = &mut y;`, then the deref place is `*x`.
+    pub fn deref_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        self.assigned_ref.project_deref(repacker)
     }
 
+    /// The region projection associated with the *type* of the assigned place
+    /// of the borrow. For example in `let x: &'x mut i32 = ???`, the assigned
+    /// region projection is `x↓'x`.
     pub(crate) fn assigned_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        let assigned_place_ref = self.assigned_ref(repacker);
-        if let ty::TyKind::Ref(region, _, _) = assigned_place_ref.ty(repacker).ty.kind() {
-            Some(RegionProjection::new(
-                (*region).into(),
-                assigned_place_ref.into(),
-            ))
-        } else {
-            None
+    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+        match self.assigned_ref.ty(repacker).ty.kind() {
+            ty::TyKind::Ref(region, _, _) => {
+                RegionProjection::new((*region).into(), self.assigned_ref.into())
+            }
+            other => unreachable!("{:?}", other),
         }
     }
 }
@@ -109,7 +110,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowEdge<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "blocked_place": self.blocked_place.to_json(repacker),
-            "assigned_place": self.assigned_place.to_json(repacker),
+            "assigned_place": self.assigned_ref.to_json(repacker),
             "is_mut": self.mutability == Mutability::Mut
         })
     }

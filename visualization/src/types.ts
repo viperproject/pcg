@@ -78,8 +78,8 @@ export type Conditioned<T> = {
 };
 
 export type PlaceExpand = {
-  base: MaybeOldPlace,
-  expansion: MaybeOldPlace[]
+  base: PCGNode<MaybeOldPlace>,
+  expansion: PCGNode<MaybeOldPlace>[]
 }
 
 export type Weaken = {

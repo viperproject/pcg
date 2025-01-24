@@ -5,15 +5,13 @@ use serde_json::json;
 
 use crate::{
     combined_pcs::{EvalStmtPhase, PCGError},
+    free_pcs::CapabilityKind,
     rustc_interface::{
         borrowck::{
             borrow_set::BorrowSet,
             consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
         },
-        dataflow::{
-            impls::MaybeLiveLocals, Analysis, AnalysisDomain, JoinSemiLattice, Results,
-            ResultsCursor,
-        },
+        dataflow::{Analysis, AnalysisDomain, JoinSemiLattice},
         middle::{
             mir::{
                 visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
@@ -31,10 +29,9 @@ use crate::{
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
-    borrow_pcg_edge::PCGNode,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowCheckerImpl, BorrowsVisitor, DebugCtx, StatementStage},
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
+    coupling_graph_constructor::Coupled,
     domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
@@ -47,7 +44,6 @@ pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) location_table: &'mir LocationTable,
     pub(crate) input_facts: &'mir PoloniusInput,
     pub(crate) borrow_set: Rc<BorrowSet<'tcx>>,
-    pub(crate) region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     pub(crate) output_facts: &'mir PoloniusOutput,
 }
 
@@ -58,7 +54,6 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
         location_table: &'mir LocationTable,
         input_facts: &'mir PoloniusInput,
         borrow_set: Rc<BorrowSet<'tcx>>,
-        region_inference_context: Rc<RegionInferenceContext<'tcx>>,
         output_facts: &'mir PoloniusOutput,
     ) -> Self {
         BorrowsEngine {
@@ -67,14 +62,23 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
             location_table,
             input_facts,
             borrow_set,
-            region_inference_context,
             output_facts,
         }
     }
 }
 
+const DEBUG_JOIN_ITERATION_LIMIT: usize = 100;
+
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
+        self.debug_join_iteration += 1;
+        if self.debug_join_iteration > DEBUG_JOIN_ITERATION_LIMIT {
+            panic!(
+                "Block {:?} has not terminated after {} join iterations, this is probably a bug",
+                self.block(),
+                self.debug_join_iteration
+            );
+        }
         if other.has_error() && !self.has_error() {
             self.error = other.error.clone();
             return true;
@@ -284,16 +288,19 @@ impl<'tcx> BorrowsStates<'tcx> {
     }
 }
 #[derive(Clone)]
+/// The domain of the Borrow PCG dataflow analysis. Note that this contains many
+/// fields which serve as context (e.g. reference to a borrow-checker impl to
+/// properly compute joins) but are not updated in the analysis itself.
 pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) states: BorrowsStates<'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
-    #[allow(unused)]
-    pub(crate) output_facts: Rc<PoloniusOutput>,
-    #[allow(unused)]
-    pub(crate) location_table: Rc<LocationTable>,
     pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
     pub(crate) bc: BorrowCheckerImpl<'mir, 'tcx>,
+    /// The number of times the join operation has been called, this is just
+    /// used for debugging to identify if the dataflow analysis is not
+    /// terminating.
+    debug_join_iteration: usize,
     error: Option<PCGError>,
 }
 
@@ -346,8 +353,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        output_facts: Rc<PoloniusOutput>,
-        location_table: Rc<LocationTable>,
         region_inference_context: Rc<RegionInferenceContext<'tcx>>,
         block: Option<BasicBlock>,
     ) -> Self {
@@ -356,8 +361,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             actions: EvalStmtData::default(),
             block,
             repacker,
-            output_facts,
-            location_table,
+            debug_join_iteration: 0,
             error: None,
             bc: BorrowCheckerImpl::new(&repacker, region_inference_context),
         }
@@ -367,9 +371,10 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
+            // TODO: Should these be region projection members instead?
             let _ = self.states.post_main.add_borrow(
                 MaybeRemotePlace::place_assigned_to_local(local),
-                arg_place.project_deref(self.repacker),
+                arg_place,
                 *mutability,
                 location,
                 *region,
@@ -400,6 +405,12 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
+            let arg_place: utils::Place<'tcx> = arg.into();
+            for rp in arg_place.region_projections(self.repacker) {
+                self.states
+                    .post_main
+                    .set_capability(rp, CapabilityKind::Exclusive);
+            }
             self.introduce_initial_borrows(arg, Location::START);
         }
     }

@@ -28,21 +28,10 @@ pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) summaries: EvalStmtData<CapabilitySummary<'tcx>>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) fn pre_operands(&self) -> &CapabilitySummary<'tcx> {
-        &self.summaries.pre_operands
-    }
-
-    pub(crate) fn post_operands(&self) -> &CapabilitySummary<'tcx> {
-        &self.summaries.post_operands
-    }
-
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
         &mut self.summaries.post_operands
     }
 
-    pub(crate) fn pre_main(&self) -> &CapabilitySummary<'tcx> {
-        &self.summaries.pre_main
-    }
     pub(crate) fn post_main(&self) -> &CapabilitySummary<'tcx> {
         &self.summaries.post_main
     }

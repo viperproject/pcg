@@ -7,11 +7,11 @@ use crate::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
-            mir::Local,
+            mir::{Local, PlaceElem},
             ty::{self, DebruijnIndex, RegionVid},
         },
     },
-    utils::Place,
+    utils::{Place, HasPlace},
 };
 
 use crate::utils::PlaceRepacker;
@@ -41,15 +41,6 @@ impl<'tcx> std::fmt::Display for PCGRegion {
             PCGRegion::ReBound(debruijn_index, region) => {
                 write!(f, "ReBound({:?}, {:?})", debruijn_index, region)
             }
-        }
-    }
-}
-
-impl PCGRegion {
-    pub(crate) fn as_vid(&self) -> Option<RegionVid> {
-        match self {
-            PCGRegion::RegionVid(vid) => Some(*vid),
-            _ => None,
         }
     }
 }
@@ -90,6 +81,20 @@ impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for RegionProje
 impl<'tcx, T: std::fmt::Display> fmt::Display for RegionProjection<'tcx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}↓{}", self.place, self.region)
+    }
+}
+
+impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    pub(crate) fn project_deeper(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+        RegionProjection {
+            place: self.place.project_deeper(repacker, elem),
+            region: self.region,
+            phantom: PhantomData,
+        }
     }
 }
 
