@@ -660,6 +660,21 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             let state = self.state.post_state_mut();
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
+                    if let Rvalue::Cast(_, _, ty) = rvalue {
+                        if ty.ref_mutability().is_some() {
+                            self.state.report_error(PCGError::Unsupported(format!(
+                                "Casts to reference-typed values are not yet supported: {:?}",
+                                statement
+                            )));
+                            return;
+                        } else if ty.is_unsafe_ptr() {
+                            self.state.report_error(PCGError::Unsupported(format!(
+                                "Unsafe pointer casts are not yet supported: {:?}",
+                                statement
+                            )));
+                            return;
+                        }
+                    }
                     // Any references to target should be made old because it
                     // will be overwritten in the assignment.
                     // In principle the target could be made old in the `Main`
@@ -669,13 +684,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         .ty
                         .is_ref()
                     {
-                        if let Rvalue::Cast(_, _, _) = rvalue {
-                            self.state.report_error(PCGError::Unsupported(format!(
-                                "Casts to reference-typed values are not yet supported: {:?}",
-                                statement
-                            )));
-                            return;
-                        }
                         let target = (*target).into();
                         state.make_place_old(target, self.repacker, self.debug_ctx);
                     }
