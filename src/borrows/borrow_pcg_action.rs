@@ -139,6 +139,9 @@ impl<'tcx> BorrowsState<'tcx> {
                     let capability = match self.get_capability(base) {
                         Some(c) => c,
                         None => {
+                            // The expansion presumably already exists under
+                            // different path conditions. TODO: Maybe this is
+                            // worth checking?
                             return inserted;
                         }
                     };
