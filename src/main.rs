@@ -89,7 +89,6 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 }
                 eprintln!("Running PCG on function: {}", item_name);
                 if should_check_body(&body) {
-                    // Print the full source of the function
                     let mut output = run_combined_pcs(
                         &body,
                         tcx,

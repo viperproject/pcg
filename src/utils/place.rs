@@ -33,6 +33,12 @@ use crate::{
 
 use super::{debug_info::DebugInfo, PlaceRepacker};
 
+/// A place that has been "corrected" from an original mir Place where
+/// the type of field projections may be different than what would be expected
+/// from the parent struct. See [`Place::with_inherent_region`] for more details.
+///
+/// The purpose of this wrapper is simply to indicate that this correction has
+/// already been performed.
 #[derive(Clone, Copy, Deref, DerefMut)]
 pub(crate) struct CorrectedPlace<'tcx>(Place<'tcx>);
 
@@ -48,6 +54,7 @@ impl<'tcx> CorrectedPlace<'tcx> {
     }
 }
 
+/// A place element obtained from a [`CorrectedPlace`].
 #[derive(Clone, Copy, Deref, DerefMut, PartialEq, Eq, Debug, Hash)]
 pub(crate) struct CorrectedPlaceElem<'tcx>(PlaceElem<'tcx>);
 
@@ -65,6 +72,7 @@ impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
     }
 }
 
+/// A trait for PCG nodes that contain a single place.
 pub trait HasPlace<'tcx> {
     fn place(&self) -> Place<'tcx>;
     fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self;

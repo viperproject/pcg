@@ -31,10 +31,23 @@ pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
     expansion: BorrowExpansion<'tcx>,
 }
 
+/// The projections resulting from a node in the Borrow PCG.
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub(crate) enum BorrowExpansion<'tcx> {
+    /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
+    /// Note that for region projections, not every field of the base type may
+    /// be included. For example consider the following:
+    /// ```
+    /// struct S<'a, 'b> { x: &'a mut i32, y: &'b mut i32 }
+    ///
+    /// let s: S<'a, 'b> = S { ??? };
+    /// ```
+    /// The projection of `s↓'a` contains only `{s.x↓'a}` because nothing under
+    /// `'a` is accessible via `s.y`.
     Fields(BTreeMap<FieldIdx, ty::Ty<'tcx>>),
+    /// A downcast, e.g. `{x} -> {x as Some}` where `x` is of type `Option<T>`
     Downcast(Option<Symbol>, VariantIdx),
+    /// A dereference, e.g. {x} -> {*x}
     Deref,
 }
 
@@ -48,7 +61,7 @@ impl<'tcx> BorrowExpansion<'tcx> {
 
         // The maximum number of places expected in the expansion, according to
         // the type
-        let expected_places = match place_ty.ty.kind() {
+        let max_places = match place_ty.ty.kind() {
             ty::TyKind::Adt(adt_def, _) => {
                 if adt_def.is_box() {
                     1
@@ -67,15 +80,15 @@ impl<'tcx> BorrowExpansion<'tcx> {
         };
 
         assert!(
-            places.len() <= expected_places,
+            places.len() <= max_places,
             "Based on the type {:?}, we expected no more than {} places, but got {} ({:?})",
             place_ty,
-            expected_places,
+            max_places,
             places.len(),
             places
         );
 
-        if expected_places > 1 {
+        if max_places > 1 {
             // This is definitely something with multiple fields.
             let fields = places
                 .iter()
@@ -104,7 +117,7 @@ impl<'tcx> BorrowExpansion<'tcx> {
                     }
                     other => todo!("{other:?} for type {:?}", place_ty.ty),
                 },
-                _ => panic!("Expected a projection"),
+                _ => unreachable!(),
             }
         }
     }
