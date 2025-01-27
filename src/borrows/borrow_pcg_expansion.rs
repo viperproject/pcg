@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use itertools::Itertools;
 use serde_json::json;
-use tracing::info;
 
 use crate::{
     edgedata_enum,
