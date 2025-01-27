@@ -7,7 +7,10 @@ use crate::{
     edgedata_enum,
     rustc_interface::{
         data_structures::fx::FxHashSet,
-        middle::{mir::PlaceElem, ty},
+        middle::{
+            mir::{Local, PlaceElem},
+            ty,
+        },
         span::Symbol,
         target::abi::FieldIdx,
         target::abi::VariantIdx,
@@ -32,6 +35,11 @@ pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
 }
 
 /// The projections resulting from a node in the Borrow PCG.
+///
+/// This representation is preferred to a `Vec<PlaceElem>` because it ensures
+/// it enables a more reasonable notion of equality between expansions. Directly
+/// storing the place elements in a `Vec` could lead to different representations
+/// for the same expansion, e.g. `{*x.f.a, *x.f.b}` and `{*x.f.b, *x.f.a}`.
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub(crate) enum BorrowExpansion<'tcx> {
     /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
@@ -45,10 +53,20 @@ pub(crate) enum BorrowExpansion<'tcx> {
     /// The projection of `s↓'a` contains only `{s.x↓'a}` because nothing under
     /// `'a` is accessible via `s.y`.
     Fields(BTreeMap<FieldIdx, ty::Ty<'tcx>>),
-    /// A downcast, e.g. `{x} -> {x as Some}` where `x` is of type `Option<T>`
+    /// See [`PlaceElem::Downcast`]
     Downcast(Option<Symbol>, VariantIdx),
-    /// A dereference, e.g. {x} -> {*x}
+    /// See [`PlaceElem::Deref`]
     Deref,
+    /// See [`PlaceElem::Index`]
+    Index(Local),
+    /// See [`PlaceElem::ConstantIndex`]
+    ConstantIndex {
+        offset: u64,
+        min_length: u64,
+        from_end: bool,
+    },
+    /// See [`PlaceElem::Subslice`]
+    Subslice { from: u64, to: u64, from_end: bool },
 }
 
 impl<'tcx> BorrowExpansion<'tcx> {
@@ -115,6 +133,23 @@ impl<'tcx> BorrowExpansion<'tcx> {
                     PlaceElem::Downcast(symbol, variant_idx) => {
                         return BorrowExpansion::Downcast(symbol, variant_idx);
                     }
+                    PlaceElem::Index(idx) => {
+                        return BorrowExpansion::Index(idx);
+                    }
+                    PlaceElem::ConstantIndex {
+                        offset,
+                        min_length,
+                        from_end,
+                    } => {
+                        return BorrowExpansion::ConstantIndex {
+                            offset,
+                            min_length,
+                            from_end,
+                        };
+                    }
+                    PlaceElem::Subslice { from, to, from_end } => {
+                        return BorrowExpansion::Subslice { from, to, from_end };
+                    }
                     other => todo!("{other:?} for type {:?}", place_ty.ty),
                 },
                 _ => unreachable!(),
@@ -132,6 +167,25 @@ impl<'tcx> BorrowExpansion<'tcx> {
             BorrowExpansion::Deref => vec![PlaceElem::Deref],
             BorrowExpansion::Downcast(symbol, variant_idx) => {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]
+            }
+            BorrowExpansion::Index(idx) => vec![PlaceElem::Index(*idx)],
+            BorrowExpansion::ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            } => {
+                vec![PlaceElem::ConstantIndex {
+                    offset: *offset,
+                    min_length: *min_length,
+                    from_end: *from_end,
+                }]
+            }
+            BorrowExpansion::Subslice { from, to, from_end } => {
+                vec![PlaceElem::Subslice {
+                    from: *from,
+                    to: *to,
+                    from_end: *from_end,
+                }]
             }
         }
     }
