@@ -30,13 +30,14 @@ pub enum ProjectionKind {
     RawPtr(Mutability),
     Box,
     Field(FieldIdx),
+    ConstantIndex(ConstantIndex),
     Other,
 }
 impl ProjectionKind {
-    pub (crate) fn is_box(self) -> bool {
+    pub(crate) fn is_box(self) -> bool {
         matches!(self, ProjectionKind::Box)
     }
-    pub (crate) fn is_shared_ref(self) -> bool {
+    pub(crate) fn is_shared_ref(self) -> bool {
         matches!(self, ProjectionKind::Ref(Mutability::Not))
     }
 }
@@ -167,6 +168,13 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub struct ConstantIndex {
+    pub(crate) offset: u64,
+    pub(crate) min_length: u64,
+    pub(crate) from_end: bool,
+}
+
 impl<'tcx> Place<'tcx> {
     fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
         MirPlace {
@@ -295,7 +303,14 @@ impl<'tcx> Place<'tcx> {
                             .into()
                     })
                     .collect();
-                (other_places, ProjectionKind::Other)
+                (
+                    other_places,
+                    ProjectionKind::ConstantIndex(ConstantIndex {
+                        offset,
+                        min_length,
+                        from_end,
+                    }),
+                )
             }
             ProjectionElem::Deref => {
                 let typ = self.ty(repacker);
@@ -348,7 +363,7 @@ impl<'tcx> Place<'tcx> {
                     .map(|i| def.variant(i))
                     .unwrap_or_else(|| def.non_enum_variant());
                 if let Some(without_field) = without_field {
-                    assert!(without_field <  variant.fields.len());
+                    assert!(without_field < variant.fields.len());
                 }
                 for (index, field_def) in variant.fields.iter().enumerate() {
                     if Some(index) != without_field {
@@ -448,7 +463,7 @@ impl<'tcx> Place<'tcx> {
             })
     }
 
-    pub (crate) fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -461,7 +476,7 @@ impl<'tcx> Place<'tcx> {
         .is_some()
     }
 
-    pub (crate) fn projects_ty(
+    pub(crate) fn projects_ty(
         self,
         mut predicate: impl FnMut(PlaceTy<'tcx>) -> bool,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -474,7 +489,7 @@ impl<'tcx> Place<'tcx> {
             })
     }
 
-    pub (crate) fn projection_tys(
+    pub(crate) fn projection_tys(
         self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> impl Iterator<Item = (PlaceTy<'tcx>, &'tcx [PlaceElem<'tcx>])> {
@@ -486,7 +501,11 @@ impl<'tcx> Place<'tcx> {
         })
     }
 
-    pub (crate) fn mk_place_elem(self, elem: PlaceElem<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub(crate) fn mk_place_elem(
+        self,
+        elem: PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Self {
         let elems = repacker
             .tcx
             .mk_place_elems_from_iter(self.projection.iter().copied().chain([elem]));

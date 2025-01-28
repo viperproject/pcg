@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use itertools::Itertools;
 use serde_json::json;
@@ -12,10 +12,9 @@ use crate::{
             ty,
         },
         span::Symbol,
-        target::abi::FieldIdx,
-        target::abi::VariantIdx,
+        target::abi::{FieldIdx, VariantIdx},
     },
-    utils::{CorrectedPlace, HasPlace, Place, PlaceRepacker},
+    utils::{ConstantIndex, CorrectedPlace, HasPlace, Place, PlaceRepacker},
 };
 
 use super::{
@@ -60,100 +59,58 @@ pub(crate) enum BorrowExpansion<'tcx> {
     /// See [`PlaceElem::Index`]
     Index(Local),
     /// See [`PlaceElem::ConstantIndex`]
-    ConstantIndex {
-        offset: u64,
-        min_length: u64,
-        from_end: bool,
-    },
+    ConstantIndices(BTreeSet<ConstantIndex>),
     /// See [`PlaceElem::Subslice`]
     Subslice { from: u64, to: u64, from_end: bool },
 }
 
 impl<'tcx> BorrowExpansion<'tcx> {
-    pub(super) fn from_places(
-        base_place: Place<'tcx>,
-        places: Vec<Place<'tcx>>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Self {
-        let place_ty = base_place.ty(repacker);
+    pub(super) fn from_places(places: Vec<Place<'tcx>>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+        let mut fields = BTreeMap::new();
+        let mut constant_indices = BTreeSet::new();
 
-        // The maximum number of places expected in the expansion, according to
-        // the type
-        let max_places = match place_ty.ty.kind() {
-            ty::TyKind::Adt(adt_def, _) => {
-                if adt_def.is_box() {
-                    1
-                } else if adt_def.is_enum() {
-                    place_ty
-                        .variant_index
-                        .map(|variant_idx| adt_def.variant(variant_idx).fields.len())
-                        .unwrap_or(1)
-                } else {
-                    adt_def.non_enum_variant().fields.len()
-                }
-            }
-            ty::TyKind::Tuple(tys) => tys.len(),
-            ty::TyKind::Closure(_, substs) => substs.as_closure().upvar_tys().len(),
-            _ => 1,
-        };
-
-        assert!(
-            places.len() <= max_places,
-            "Based on the type {:?}, we expected no more than {} places, but got {} ({:?})",
-            place_ty,
-            max_places,
-            places.len(),
-            places
-        );
-
-        if max_places > 1 {
-            // This is definitely something with multiple fields.
-            let fields = places
-                .iter()
-                .map(
-                    |p| match CorrectedPlace::new(*p, repacker).last_projection() {
-                        Some(elem) => match *elem {
-                            PlaceElem::Field(field_idx, ty) => (field_idx, ty),
-                            other => panic!("Expected a field projection, got {:?}", other),
-                        },
-                        _ => panic!("Expected a field projection"),
-                    },
-                )
-                .collect();
-            BorrowExpansion::Fields(fields)
-        } else {
-            match CorrectedPlace::new(places[0], repacker).last_projection() {
-                Some(elem) => match *elem {
+        for place in places {
+            let corrected_place = CorrectedPlace::new(place, repacker);
+            let last_projection = corrected_place.last_projection();
+            if let Some(elem) = last_projection {
+                match *elem {
                     PlaceElem::Field(field_idx, ty) => {
-                        return BorrowExpansion::Fields([(field_idx, ty)].into_iter().collect());
-                    }
-                    PlaceElem::Deref => {
-                        return BorrowExpansion::Deref;
-                    }
-                    PlaceElem::Downcast(symbol, variant_idx) => {
-                        return BorrowExpansion::Downcast(symbol, variant_idx);
-                    }
-                    PlaceElem::Index(idx) => {
-                        return BorrowExpansion::Index(idx);
+                        fields.insert(field_idx, ty);
                     }
                     PlaceElem::ConstantIndex {
                         offset,
                         min_length,
                         from_end,
                     } => {
-                        return BorrowExpansion::ConstantIndex {
+                        constant_indices.insert(ConstantIndex {
                             offset,
                             min_length,
                             from_end,
-                        };
+                        });
+                    }
+                    PlaceElem::Deref => return BorrowExpansion::Deref,
+                    PlaceElem::Downcast(symbol, variant_idx) => {
+                        return BorrowExpansion::Downcast(symbol, variant_idx);
+                    }
+                    PlaceElem::Index(idx) => {
+                        return BorrowExpansion::Index(idx);
                     }
                     PlaceElem::Subslice { from, to, from_end } => {
                         return BorrowExpansion::Subslice { from, to, from_end };
                     }
-                    other => todo!("{other:?} for type {:?}", place_ty.ty),
-                },
-                _ => unreachable!(),
+                    PlaceElem::OpaqueCast(_) => todo!(),
+                    PlaceElem::Subtype(_) => todo!(),
+                }
             }
+        }
+
+        if !fields.is_empty() {
+            assert!(constant_indices.is_empty());
+            BorrowExpansion::Fields(fields)
+        } else if !constant_indices.is_empty() {
+            BorrowExpansion::ConstantIndices(constant_indices)
+        } else {
+            unreachable!()
         }
     }
 
@@ -169,16 +126,16 @@ impl<'tcx> BorrowExpansion<'tcx> {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]
             }
             BorrowExpansion::Index(idx) => vec![PlaceElem::Index(*idx)],
-            BorrowExpansion::ConstantIndex {
-                offset,
-                min_length,
-                from_end,
-            } => {
-                vec![PlaceElem::ConstantIndex {
-                    offset: *offset,
-                    min_length: *min_length,
-                    from_end: *from_end,
-                }]
+            BorrowExpansion::ConstantIndices(constant_indices) => {
+                constant_indices
+                    .iter()
+                    .sorted_by_key(|a| a.offset)
+                    .map(|c| PlaceElem::ConstantIndex {
+                        offset: c.offset,
+                        min_length: c.min_length,
+                        from_end: c.from_end,
+                    })
+                    .collect()
             }
             BorrowExpansion::Subslice { from, to, from_end } => {
                 vec![PlaceElem::Subslice {
