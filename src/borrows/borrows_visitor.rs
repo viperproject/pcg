@@ -16,8 +16,8 @@ use crate::{
         dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
         middle::{
             mir::{
-                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
-                Statement, StatementKind, Terminator, TerminatorKind,
+                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, PlaceElem,
+                Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
@@ -78,7 +78,7 @@ pub(crate) enum StatementStage {
 
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub(super) state: &'state mut BorrowsDomain<'mir, 'tcx>,
+    pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
     input_facts: &'mir PoloniusInput,
     location_table: &'mir LocationTable,
     borrow_set: Rc<BorrowSet<'tcx>>,
@@ -147,7 +147,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     fn remove_edge_and_set_latest(&mut self, edge: &BorrowPCGEdge<'tcx>, location: Location) {
-        let actions = self.state.post_state_mut().remove_edge_and_set_latest(
+        let actions = self.domain.post_state_mut().remove_edge_and_set_latest(
             edge,
             location,
             self.repacker,
@@ -158,10 +158,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn curr_actions(&mut self) -> &mut Vec<BorrowPCGAction<'tcx>> {
         match (self.stage, self.preparing) {
-            (StatementStage::Operands, true) => self.state.actions.pre_operands.as_mut(),
-            (StatementStage::Operands, false) => self.state.actions.post_operands.as_mut(),
-            (StatementStage::Main, true) => self.state.actions.pre_main.as_mut(),
-            (StatementStage::Main, false) => self.state.actions.post_main.as_mut(),
+            (StatementStage::Operands, true) => self.domain.actions.pre_operands.as_mut(),
+            (StatementStage::Operands, false) => self.domain.actions.post_operands.as_mut(),
+            (StatementStage::Main, true) => self.domain.actions.pre_main.as_mut(),
+            (StatementStage::Main, false) => self.domain.actions.post_main.as_mut(),
         }
     }
 
@@ -175,7 +175,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) {
         self.curr_actions().push(action.clone());
-        self.state
+        self.domain
             .post_state_mut()
             .apply_action(action, self.repacker);
     }
@@ -208,7 +208,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
-            state,
+            domain: state,
             input_facts: engine.input_facts,
             stage,
             preparing,
@@ -250,7 +250,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     location,
                     "Target of Assignment",
                 ));
-                let state = self.state.post_state_mut();
+                let state = self.domain.post_state_mut();
                 if !target.is_owned(self.repacker) {
                     state.set_capability(target, CapabilityKind::Exclusive);
                 }
@@ -271,7 +271,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 let source_proj = source_proj.map_place(|p| {
                                     MaybeOldPlace::new(
                                         p,
-                                        Some(self.state.post_state().get_latest(p)),
+                                        Some(self.domain.post_state().get_latest(p)),
                                     )
                                 });
                                 self.connect_outliving_projections(source_proj, target, location);
@@ -319,7 +319,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             ));
                         }
 
-                        let actions = self.state.post_state_mut().delete_descendants_of(
+                        let actions = self.domain.post_state_mut().delete_descendants_of(
                             MaybeOldPlace::Current { place: from },
                             location,
                             self.repacker,
@@ -334,7 +334,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             .enumerate()
                         {
                             for mut orig_edge in self
-                                .state
+                                .domain
                                 .states
                                 .post_main
                                 .edges_blocked_by((*rp).into(), self.repacker)
@@ -348,12 +348,19 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             target.region_projection(idx, self.repacker).into()
                                     }
                                 }
-                                self.state.states.post_main.insert(orig_edge);
+                                self.domain.states.post_main.insert(orig_edge);
                             }
                         }
                     }
                     Rvalue::Ref(region, kind, blocked_place) => {
                         let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
+                        if !target.ty(self.repacker).ty.is_ref() {
+                            self.domain.report_error(PCGError::Unsupported(format!(
+                                "Assigning a borrow to a non-reference type is not yet supported.
+                                This could happen e.g. if you are assigning an `&'a str` to an opaque alias `impl Display`"
+                            )));
+                            return;
+                        }
                         let actions = state.add_borrow(
                             blocked_place.into(),
                             target,
@@ -379,7 +386,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
-        self.state.bc.outlives(sup, sub)
+        self.domain.bc.outlives(sup, sub)
     }
 
     fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
@@ -415,7 +422,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            self.state.report_error(PCGError::Unsupported(format!(
+            self.domain.report_error(PCGError::Unsupported(format!(
                 "Non-constant function calls are not yet supported: {:?}",
                 func
             )));
@@ -443,7 +450,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             };
             let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                 input_place,
-                self.state.post_state().get_latest(input_place),
+                self.domain.post_state().get_latest(input_place),
             ));
             let ty = input_place.ty(self.repacker).ty;
             let ty = match ty.kind() {
@@ -454,7 +461,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         let input_rp = input_place.region_projection(0, self.repacker);
                         for action in UnblockGraph::actions_to_unblock(
                             input_rp.into(),
-                            &self.state.post_state(),
+                            &self.domain.post_state(),
                             self.repacker,
                         ) {
                             self.apply_action(BorrowPCGAction::remove_edge(
@@ -476,7 +483,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
-                        self.state.report_error(PCGError::Unsupported(format!(
+                        self.domain.report_error(PCGError::Unsupported(format!(
                             "Closures that contain borrows are not yet supported as function arguments: {:?}",
                             location
                         )));
@@ -487,7 +494,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     // Only add the edge if the input projection already exists, i.e.
                     // is blocking something else. Otherwise, there is no point in tracking
                     // when it becomes accessible.
-                    if self.state.post_state().contains(input_rp, self.repacker) {
+                    if self.domain.post_state().contains(input_rp, self.repacker) {
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output].into_iter().collect(),
@@ -501,7 +508,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         // nested) mutable references
         if !edges.is_empty() {
             let actions =
-                self.state.post_state_mut().insert_abstraction_edge(
+                self.domain.post_state_mut().insert_abstraction_edge(
                     AbstractionEdge::new(AbstractionType::FunctionCall(
                         FunctionCallAbstraction::new(location, *func_def_id, substs, edges.clone()),
                     )),
@@ -535,7 +542,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn minimize(&mut self, location: Location) {
         let actions = self
-            .state
+            .domain
             .post_state_mut()
             .minimize(self.repacker, location);
         self.record_actions(actions);
@@ -554,7 +561,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         CapabilityKind::Exclusive
                     };
                     let place: utils::Place<'tcx> = (*place).into();
-                    let expansion_actions = self.state.post_state_mut().ensure_expansion_to(
+                    let expansion_actions = self.domain.post_state_mut().ensure_expansion_to(
                         self.repacker,
                         place,
                         location,
@@ -569,11 +576,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 Operand::Move(place) => {
                     let place: utils::Place<'tcx> = (*place).into();
                     for rp in place.region_projections(self.repacker) {
-                        self.state
+                        self.domain
                             .post_state_mut()
                             .set_capability(rp, CapabilityKind::Write);
                     }
-                    self.state
+                    self.domain
                         .post_state_mut()
                         .set_capability(place, CapabilityKind::Write);
                 }
@@ -636,7 +643,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 let loan = &self.borrow_set[loan];
                 let unblock_actions = UnblockGraph::actions_to_unblock(
                     loan.assigned_place.into(),
-                    self.state.post_state_mut(),
+                    self.domain.post_state_mut(),
                     self.repacker,
                 );
                 for action in unblock_actions {
@@ -645,30 +652,30 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             }
         }
 
-        let state = self.state.post_state_mut();
+        let state = self.domain.post_state_mut();
 
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
             // Remove places that are non longer live based on borrow checker information
-            let actions = self.state.states.post_main.pack_old_and_dead_leaves(
+            let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
                 self.repacker,
                 location,
-                &self.state.bc,
+                &self.domain.bc,
             );
             self.record_actions(actions);
 
-            let state = self.state.post_state_mut();
+            let state = self.domain.post_state_mut();
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
                     if let Rvalue::Cast(_, _, ty) = rvalue {
                         if ty.ref_mutability().is_some() {
-                            self.state.report_error(PCGError::Unsupported(format!(
+                            self.domain.report_error(PCGError::Unsupported(format!(
                                 "Casts to reference-typed values are not yet supported: {:?}",
                                 statement
                             )));
                             return;
                         } else if ty.is_unsafe_ptr() {
-                            self.state.report_error(PCGError::Unsupported(format!(
+                            self.domain.report_error(PCGError::Unsupported(format!(
                                 "Unsafe pointer casts are not yet supported: {:?}",
                                 statement
                             )));
@@ -710,16 +717,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     state.make_place_old(place, self.repacker, self.debug_ctx);
-                    let actions = self.state.states.post_main.pack_old_and_dead_leaves(
+                    let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
                         self.repacker,
                         location,
-                        &self.state.bc,
+                        &self.domain.bc,
                     );
                     self.record_actions(actions);
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    let expansion_actions = self.state.post_state_mut().ensure_expansion_to(
+                    let expansion_actions = self.domain.post_state_mut().ensure_expansion_to(
                         self.repacker,
                         target,
                         location,
@@ -762,6 +769,19 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 | &Len(place)
                 | &Discriminant(place)
                 | &CopyForDeref(place) => {
+                    for (p, proj) in place.iter_projections() {
+                        if p.ty(this.repacker.body(), this.repacker.tcx())
+                            .ty
+                            .is_unsafe_ptr()
+                            && matches!(proj, PlaceElem::Deref)
+                        {
+                            this.domain.report_error(PCGError::Unsupported(format!(
+                                "Dereferencing unsafe pointers is not supported: {:?}",
+                                location
+                            )));
+                            return;
+                        }
+                    }
                     let place: utils::Place<'tcx> = place.into();
                     let capability = if matches!(
                         rvalue,
@@ -773,7 +793,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         CapabilityKind::Read
                     };
                     if this.stage == StatementStage::Operands && this.preparing {
-                        let actions = this.state.post_state_mut().ensure_expansion_to(
+                        let actions = this.domain.post_state_mut().ensure_expansion_to(
                             this.repacker,
                             place,
                             location,
