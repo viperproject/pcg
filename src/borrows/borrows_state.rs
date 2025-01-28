@@ -711,7 +711,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         BorrowPCGAction::insert_borrow_pcg_expansion(
                             BorrowPCGExpansion::from_borrowed_base(
                                 rp.into(),
-                                BorrowExpansion::from_places(base, dest_places, repacker),
+                                BorrowExpansion::from_places(dest_places, repacker),
                                 repacker,
                             ),
                             location,
@@ -727,7 +727,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     let action = BorrowPCGAction::insert_borrow_pcg_expansion(
                         BorrowPCGExpansion::new(
                             origin_place.into(),
-                            BorrowExpansion::from_places(base, expansion, repacker),
+                            BorrowExpansion::from_places(expansion, repacker),
                             repacker,
                         ),
                         location,
