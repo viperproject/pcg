@@ -859,7 +859,14 @@ impl<'tcx> BorrowsState<'tcx> {
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> ExecutedActions<'tcx> {
-        assert!(assigned_place.ty(repacker).ty.ref_mutability().is_some());
+        assert!(
+            assigned_place.ty(repacker).ty.ref_mutability().is_some(),
+            "{:?}:{:?} Assigned place {:?} is not a reference. Ty: {:?}",
+            repacker.body().source.def_id(),
+            location,
+            assigned_place,
+            assigned_place.ty(repacker).ty
+        );
         let mut actions = ExecutedActions::new();
         let (blocked_cap, assigned_cap) = match mutability {
             Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
