@@ -126,17 +126,15 @@ impl<'tcx> BorrowExpansion<'tcx> {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]
             }
             BorrowExpansion::Index(idx) => vec![PlaceElem::Index(*idx)],
-            BorrowExpansion::ConstantIndices(constant_indices) => {
-                constant_indices
-                    .iter()
-                    .sorted_by_key(|a| a.offset)
-                    .map(|c| PlaceElem::ConstantIndex {
-                        offset: c.offset,
-                        min_length: c.min_length,
-                        from_end: c.from_end,
-                    })
-                    .collect()
-            }
+            BorrowExpansion::ConstantIndices(constant_indices) => constant_indices
+                .iter()
+                .sorted_by_key(|a| a.offset)
+                .map(|c| PlaceElem::ConstantIndex {
+                    offset: c.offset,
+                    min_length: c.min_length,
+                    from_end: c.from_end,
+                })
+                .collect(),
             BorrowExpansion::Subslice { from, to, from_end } => {
                 vec![PlaceElem::Subslice {
                     from: *from,

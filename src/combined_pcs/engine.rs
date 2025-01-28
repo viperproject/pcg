@@ -44,7 +44,7 @@ pub struct BodyWithBorrowckFacts<'tcx> {
     pub region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     pub location_table: Option<Rc<LocationTable>>,
     pub input_facts: Option<Box<PoloniusInput>>,
-    pub output_facts: Option<Rc<PoloniusOutput>>,
+    pub output_facts: Option<Box<PoloniusOutput>>,
 }
 
 impl<'tcx> BodyWithBorrowckFacts<'tcx> {
@@ -77,8 +77,8 @@ impl<'tcx> From<consumers::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFact
         Self {
             body: value.body,
             promoted: value.promoted,
-            borrow_set: value.borrow_set,
-            region_inference_context: value.region_inference_context,
+            borrow_set: value.borrow_set.into(),
+            region_inference_context: value.region_inference_context.into(),
             location_table: value.location_table.map(Rc::new),
             input_facts: value.input_facts,
             output_facts: value.output_facts,
