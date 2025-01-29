@@ -13,9 +13,7 @@ use std::{
 };
 
 use rustc_interface::{
-    dataflow::fmt::DebugWithContext,
-    dataflow::JoinSemiLattice,
-    middle::mir,
+    dataflow::fmt::DebugWithContext, dataflow::JoinSemiLattice, middle::mir,
     middle::mir::BasicBlock,
 };
 

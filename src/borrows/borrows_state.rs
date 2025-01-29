@@ -1,7 +1,7 @@
 use tracing::instrument;
 
 use crate::{
-    borrows::edge_data::EdgeData,
+    borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
@@ -602,6 +602,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                     RegionProjectionMember::new(
                                         Coupled::singleton(reborrow.blocked_place.into()),
                                         Coupled::singleton(ra.into()),
+                                        RegionProjectionMemberKind::Todo,
                                     ),
                                     PathConditions::new(location.block),
                                     "Ensure Expansion To",
@@ -688,6 +689,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 RegionProjection::new((*region).into(), base).into(),
                             ),
                             Coupled::singleton(target.into()),
+                            RegionProjectionMemberKind::Todo,
                         ),
                         PathConditions::new(location.block),
                         "Ensure Deref Expansion To At Least",
@@ -886,6 +888,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 RegionProjectionMember::new(
                     Coupled::singleton(rp.into()),
                     Coupled::singleton(assigned_place.into()),
+                    RegionProjectionMemberKind::Todo,
                 ),
                 PathConditions::new(location.block),
                 "Add Borrow",
