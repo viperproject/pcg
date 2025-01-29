@@ -35,7 +35,14 @@ use crate::{
 
 use super::{domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase};
 
+#[rustversion::nightly(2024-10-14)]
+type OutputFacts = Box<PoloniusOutput>;
+
+#[rustversion::nightly(2024-09-14)]
+type OutputFacts = Rc<PoloniusOutput>;
+
 #[derive(Clone)]
+
 
 pub struct BodyWithBorrowckFacts<'tcx> {
     pub body: Body<'tcx>,
@@ -44,7 +51,7 @@ pub struct BodyWithBorrowckFacts<'tcx> {
     pub region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     pub location_table: Option<Rc<LocationTable>>,
     pub input_facts: Option<Box<PoloniusInput>>,
-    pub output_facts: Option<Box<PoloniusOutput>>,
+    pub output_facts: Option<OutputFacts>,
 }
 
 impl<'tcx> BodyWithBorrowckFacts<'tcx> {
