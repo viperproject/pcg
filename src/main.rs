@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::Write;
 
 use std::cell::RefCell;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 use tracing_subscriber;
 
 use pcs::rustc_interface::{
@@ -30,12 +30,12 @@ thread_local! {
 
 fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
     let consumer_opts = consumers::ConsumerOptions::PoloniusInputFacts;
-    info!(
+    debug!(
         "Start mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
     let body_with_facts = consumers::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
-    info!(
+    debug!(
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
@@ -44,6 +44,10 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
         let body: BodyWithBorrowckFacts<'static> = std::mem::transmute(body);
         BODIES.with(|state| {
             let mut map = state.borrow_mut();
+            trace!(
+                "Inserting body for {}",
+                tcx.def_path_str(def_id.to_def_id())
+            );
             assert!(map.insert(def_id, body).is_none());
         });
     }
@@ -85,7 +89,12 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 let item_name = format!("{}", tcx.def_path_str(def_id.to_def_id()));
                 let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
                     let mut map = state.borrow_mut();
-                    unsafe { std::mem::transmute(map.remove(&def_id).unwrap()) }
+                    unsafe {
+                        std::mem::transmute(
+                            map.remove(&def_id)
+                                .unwrap_or_else(|| panic!("No body found for {}", item_name)),
+                        )
+                    }
                 });
 
                 let safety = tcx.fn_sig(def_id).skip_binder().safety();

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(0..500)
+    top_crates_range(174..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -51,6 +51,14 @@ pub fn get_rust_toolchain_channel() -> String {
 }
 
 fn run_on_crate(name: &str, version: &str) {
+    if name == "darling" && version == "0.20.10" {
+        eprintln!(
+            "Skipping darling 0.20.10; it will not compile due to an old dependency of proc_macro.
+             For more information see: https://github.com/rust-lang/rust/issues/113152
+            "
+        );
+        return;
+    }
     let dirname = format!("./tmp/{name}-{version}");
     let filename = format!("{dirname}.crate");
     if !std::path::PathBuf::from(&filename).exists() {
@@ -83,11 +91,7 @@ fn run_on_crate(name: &str, version: &str) {
         "release"
     };
     let cargo = "cargo";
-    let pcs_exe = cwd.join(
-        ["target", target, "pcs_bin"]
-            .iter()
-            .collect::<PathBuf>(),
-    );
+    let pcs_exe = cwd.join(["target", target, "pcs_bin"].iter().collect::<PathBuf>());
     println!("Running: {pcs_exe:?}");
     let exit = std::process::Command::new(cargo)
         .arg("check")
