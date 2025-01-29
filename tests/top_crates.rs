@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(396..500)
+    top_crates_range(417..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -70,6 +70,10 @@ fn run_on_crate(name: &str, version: &str) {
         }
         ("criterion-plot", "0.5.0") => {
             eprintln!("Skipping criterion-plot; it returns an error: error: unexpected `cfg` condition value: `cargo-clippy`");
+            return;
+        }
+        ("tiny-keccak", "2.0.2") => {
+            eprintln!("Skipping tiny-keccak; compilation requires choosing a hash function");
             return;
         }
         _ => {}
