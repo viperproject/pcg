@@ -15,17 +15,16 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::engine::EvalStmtData,
-    free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
-    rustc_interface,
-    utils::PlaceRepacker,
+    borrows::engine::EvalStmtData, combined_pcs::PCGError, free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp}, rustc_interface, utils::PlaceRepacker
 };
 
 use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 
+#[derive(Clone)]
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) summaries: EvalStmtData<CapabilitySummary<'tcx>>,
+    pub(crate) error: Option<PCGError>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
@@ -46,8 +45,10 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
                 pre_main: CapabilitySummary::empty(),
                 post_main: after,
             },
+            error: None,
         }
     }
+
     pub fn initialize_as_start_block(&mut self) {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
@@ -83,14 +84,6 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     }
 }
 
-impl Clone for FreePlaceCapabilitySummary<'_, '_> {
-    fn clone(&self) -> Self {
-        Self {
-            repacker: self.repacker,
-            summaries: self.summaries.clone(),
-        }
-    }
-}
 impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         self.summaries.post_main == other.summaries.post_main

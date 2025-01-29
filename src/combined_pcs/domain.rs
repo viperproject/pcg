@@ -198,7 +198,7 @@ impl<'a, 'tcx> PCG<'a, 'tcx> {
 
 impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn has_error(&self) -> bool {
-        self.borrow_pcg().has_error()
+        self.borrow_pcg().has_error() || self.owned_pcg().error.is_some()
     }
 
     pub(crate) fn pcg_mut(&mut self) -> &mut PCG<'a, 'tcx> {

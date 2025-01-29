@@ -87,12 +87,17 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
+
     fn apply_before(
         self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'tcx>,
         _location: Location,
     ) {
+        if let Some(error) = tw.error {
+            state.error = Some(error);
+            return;
+        }
         // Repack for operands
         state.summaries.pre_operands = state.summaries.post_main.clone();
         for &triple in &tw.operand_triples {
@@ -114,6 +119,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         tw: TripleWalker<'tcx>,
         _location: Location,
     ) {
+        if let Some(error) = tw.error {
+            state.error = Some(error);
+            return;
+        }
         // Repack for main
         state.summaries.pre_main = state.summaries.post_operands.clone();
         for &triple in &tw.main_triples {

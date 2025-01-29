@@ -10,9 +10,7 @@ use rustc_interface::middle::mir::{
 };
 
 use crate::{
-    free_pcs::CapabilityKind,
-    rustc_interface,
-    utils::{Place, PlaceRepacker},
+    combined_pcs::PCGError, free_pcs::CapabilityKind, rustc_interface, utils::{Place, PlaceRepacker}
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -116,6 +114,8 @@ pub(crate) struct TripleWalker<'tcx> {
     pub(crate) operand_triples: Vec<Triple<'tcx>>,
     /// Evaluate all other statements/terminators
     pub(crate) main_triples: Vec<Triple<'tcx>>,
+
+    pub(crate) error: Option<PCGError>,
 }
 
 impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
@@ -249,7 +249,12 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 pre: Condition::write(resume_arg),
                 post: Some(Condition::exclusive(resume_arg)),
             },
-            InlineAsm { .. } => todo!("{terminator:?}"),
+            InlineAsm { .. } => {
+                self.error = Some(PCGError::Unsupported(
+                    "Inline assembly is not yet supported".to_string(),
+                ));
+                return;
+            }
             CoroutineDrop => todo!(),
             _ => todo!("{terminator:?}"),
         };
