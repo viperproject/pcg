@@ -11,6 +11,8 @@ use super::{
     domain::MaybeOldPlace, has_pcs_elem::HasPcsElems, region_projection::RegionProjection,
 };
 
+/// A PCG hyperedge where at the nodes of at least one of the edge endpoints are
+/// all region projections.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {
     pub(crate) inputs: Coupled<PCGNode<'tcx>>,

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(174..500)
+    top_crates_range(314..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -51,13 +51,20 @@ pub fn get_rust_toolchain_channel() -> String {
 }
 
 fn run_on_crate(name: &str, version: &str) {
-    if name == "darling" && version == "0.20.10" {
-        eprintln!(
-            "Skipping darling 0.20.10; it will not compile due to an old dependency of proc_macro.
-             For more information see: https://github.com/rust-lang/rust/issues/113152
-            "
-        );
-        return;
+    match (name, version) {
+        ("darling", "0.20.10") | ("tokio-native-tls", "0.3.1") => {
+            eprintln!(
+                r#"Skipping {name} {version}; it will not compile due to an old dependency of proc_macro.
+            For more information see: https://github.com/rust-lang/rust/issues/113152
+            "#
+            );
+            return;
+        }
+        ("derive_more", _) => {
+            eprintln!("Skipping derive_more; compilation requires enabling a feature.");
+            return;
+        }
+        _ => {}
     }
     let dirname = format!("./tmp/{name}-{version}");
     let filename = format!("{dirname}.crate");
