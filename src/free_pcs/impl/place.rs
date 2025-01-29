@@ -82,6 +82,12 @@ impl PartialOrd for CapabilityKind {
         match (self, other) {
             (CapabilityKind::Write, _) | (_, CapabilityKind::Exclusive) => Some(Ordering::Less),
             (CapabilityKind::Exclusive, _) | (_, CapabilityKind::Write) => Some(Ordering::Greater),
+            (CapabilityKind::Read, _) | (_, CapabilityKind::Lent | CapabilityKind::Exclusive) => {
+                Some(Ordering::Less)
+            }
+            (CapabilityKind::Lent | CapabilityKind::Exclusive, _) | (_, CapabilityKind::Read) => {
+                Some(Ordering::Greater)
+            }
             _ => None,
         }
     }
