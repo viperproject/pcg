@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::Write;
 
 use std::cell::RefCell;
+use tracing::{info, trace, warn};
 use tracing_subscriber;
 
 use pcs::rustc_interface::{
@@ -17,10 +18,7 @@ use pcs::rustc_interface::{
     },
     session::Session,
 };
-use pcs::{
-    combined_pcs::BodyWithBorrowckFacts,
-    run_combined_pcs,
-};
+use pcs::{combined_pcs::BodyWithBorrowckFacts, run_combined_pcs};
 
 struct PcsCallbacks;
 
@@ -31,8 +29,16 @@ thread_local! {
 }
 
 fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
-    let consumer_opts = consumers::ConsumerOptions::PoloniusOutputFacts;
+    let consumer_opts = consumers::ConsumerOptions::PoloniusInputFacts;
+    info!(
+        "Start mir_borrowck for {}",
+        tcx.def_path_str(def_id.to_def_id())
+    );
     let body_with_facts = consumers::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
+    info!(
+        "End mir_borrowck for {}",
+        tcx.def_path_str(def_id.to_def_id())
+    );
     unsafe {
         let body: BodyWithBorrowckFacts<'tcx> = body_with_facts.into();
         let body: BodyWithBorrowckFacts<'static> = std::mem::transmute(body);
@@ -50,9 +56,9 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
 #[allow(unused)]
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // DEBUG
-    // body.body.basic_blocks.len() < 8
+    body.body.basic_blocks.len() < 8
 
-    true
+    // true
 }
 
 fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
@@ -84,10 +90,10 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
 
                 let safety = tcx.fn_sig(def_id).skip_binder().safety();
                 if safety == hir::Safety::Unsafe {
-                    eprintln!("Skipping unsafe function: {}", item_name);
+                    warn!("Skipping unsafe function: {}", item_name);
                     continue;
                 }
-                eprintln!("Running PCG on function: {}", item_name);
+                info!("Running PCG on function: {}", item_name);
                 if should_check_body(&body) {
                     let mut output = run_combined_pcs(
                         &body,
@@ -151,6 +157,7 @@ fn set_mir_borrowck(_session: &Session, providers: &mut Providers) {
 
 impl driver::Callbacks for PcsCallbacks {
     fn config(&mut self, config: &mut Config) {
+        info!("config");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }
@@ -172,14 +179,25 @@ fn main() {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
         .init();
 
-    let mut rustc_args = Vec::new();
+    // This first argument will be removed!
+    // See `driver::RunCompiler::run` for more details
+    let mut rustc_args = vec!["rustc".to_string()];
+
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());
     }
-    rustc_args.push("-Zpolonius=next".to_string());
+    // rustc_args.push("-Zpolonius=next".to_string());
     rustc_args.extend(std::env::args().skip(1));
+
+    let args_str = rustc_args
+        .iter()
+        .map(|arg| shell_escape::escape(arg.into()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    trace!("Running rustc with args: {}", args_str);
 
     let mut callbacks = PcsCallbacks;
     driver::RunCompiler::new(&rustc_args, &mut callbacks)

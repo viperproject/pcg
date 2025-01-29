@@ -44,17 +44,17 @@ pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) location_table: &'mir LocationTable,
     pub(crate) input_facts: &'mir PoloniusInput,
     pub(crate) borrow_set: Rc<BorrowSet<'tcx>>,
-    pub(crate) output_facts: &'mir PoloniusOutput,
+    pub(crate) output_facts: Option<&'mir PoloniusOutput>,
 }
 
 impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
-    pub fn new(
+    pub (crate) fn new(
         tcx: TyCtxt<'tcx>,
         body: &'mir Body<'tcx>,
         location_table: &'mir LocationTable,
         input_facts: &'mir PoloniusInput,
         borrow_set: Rc<BorrowSet<'tcx>>,
-        output_facts: &'mir PoloniusOutput,
+        output_facts: Option<&'mir PoloniusOutput>,
     ) -> Self {
         BorrowsEngine {
             tcx,
