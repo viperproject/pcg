@@ -86,7 +86,7 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     preparing: bool,
     debug_ctx: Option<DebugCtx>,
     #[allow(dead_code)]
-    output_facts: &'mir PoloniusOutput,
+    output_facts: Option<&'mir PoloniusOutput>,
 }
 
 #[derive(Clone)]
@@ -215,7 +215,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             location_table: engine.location_table,
             borrow_set: engine.borrow_set.clone(),
             debug_ctx: None,
-            output_facts: engine.output_facts,
+            output_facts: engine.output_facts
         }
     }
 
