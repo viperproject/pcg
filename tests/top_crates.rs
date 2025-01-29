@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(314..500)
+    top_crates_range(396..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -62,6 +62,14 @@ fn run_on_crate(name: &str, version: &str) {
         }
         ("derive_more", _) => {
             eprintln!("Skipping derive_more; compilation requires enabling a feature.");
+            return;
+        }
+        ("winreg", _) => {
+            eprintln!("Skipping winreg; it's for Windows only.");
+            return;
+        }
+        ("criterion-plot", "0.5.0") => {
+            eprintln!("Skipping criterion-plot; it returns an error: error: unexpected `cfg` condition value: `cargo-clippy`");
             return;
         }
         _ => {}

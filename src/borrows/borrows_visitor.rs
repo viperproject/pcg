@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use tracing::instrument;
 
 use crate::{
-    borrows::domain::RemotePlace,
+    borrows::{domain::RemotePlace, region_projection_member::RegionProjectionMemberKind},
     combined_pcs::PCGError,
     rustc_interface::{
         ast::Mutability,
@@ -215,7 +215,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             location_table: engine.location_table,
             borrow_set: engine.borrow_set.clone(),
             debug_ctx: None,
-            output_facts: engine.output_facts
+            output_facts: engine.output_facts,
         }
     }
 
@@ -224,13 +224,19 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
         location: Location,
+        kind: impl Fn(usize) -> RegionProjectionMemberKind,
     ) {
-        for target_proj in target.region_projections(self.repacker) {
+        for (idx, target_proj) in target
+            .region_projections(self.repacker)
+            .into_iter()
+            .enumerate()
+        {
             if self.outlives(source_proj.region(), target_proj.region()) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         Coupled::singleton(source_proj.into()),
                         Coupled::singleton(target_proj.into()),
+                        kind(idx),
                     ),
                     PathConditions::AtBlock(location.block),
                     "Outliving Projection",
@@ -274,7 +280,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                         Some(self.domain.post_state().get_latest(p)),
                                     )
                                 });
-                                self.connect_outliving_projections(source_proj, target, location);
+                                self.connect_outliving_projections(
+                                    source_proj,
+                                    target,
+                                    location,
+                                    |_| RegionProjectionMemberKind::Todo,
+                                );
                             }
                         }
                     }
@@ -297,6 +308,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             RegionProjection::new((*target_region).into(), target)
                                                 .into(),
                                         ),
+                                        RegionProjectionMemberKind::Todo,
                                     ),
                                     PathConditions::AtBlock(location.block),
                                     "Assign constant to local",
@@ -375,6 +387,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 source_proj.into(),
                                 target,
                                 location,
+                                |_| RegionProjectionMemberKind::Todo,
                             );
                         }
                     }

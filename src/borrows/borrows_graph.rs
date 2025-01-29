@@ -29,7 +29,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
-    region_projection_member::RegionProjectionMember,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
 };
 
 #[derive(Clone, Debug)]
@@ -471,6 +471,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 .map(|rp| rp.try_into().unwrap())
                                 .collect::<Vec<_>>()
                                 .into(),
+                            RegionProjectionMemberKind::Todo,
                         ));
                     let inserted =
                         self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));

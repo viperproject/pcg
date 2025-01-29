@@ -35,7 +35,7 @@ use super::{
     domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
-    region_projection_member::RegionProjectionMember,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
 };
 
 pub struct BorrowsEngine<'mir, 'tcx> {
@@ -394,6 +394,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                             .into(),
                         ),
                         Coupled::singleton(region_projection.into()),
+                        RegionProjectionMemberKind::Todo,
                     ),
                     PathConditions::AtBlock(location.block),
                     "Initialize Local",

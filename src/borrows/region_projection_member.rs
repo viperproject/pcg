@@ -17,6 +17,19 @@ use super::{
 pub struct RegionProjectionMember<'tcx> {
     pub(crate) inputs: Coupled<PCGNode<'tcx>>,
     pub(crate) outputs: Coupled<LocalNode<'tcx>>,
+    pub(crate) kind: RegionProjectionMemberKind,
+}
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum RegionProjectionMemberKind {
+    Aggregate {
+        field_idx: usize,
+        target_rp_index: usize,
+    },
+    /// Region projections resulting from a new borrow
+    BorrowRegionProjections,
+    /// TODO: Provide more useful kinds, this enum variant should be removed
+    Todo,
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for RegionProjectionMember<'tcx> {
@@ -74,8 +87,16 @@ impl<'tcx> RegionProjectionMember<'tcx> {
         self.inputs.mutability(repacker)
     }
 
-    pub(crate) fn new(inputs: Coupled<PCGNode<'tcx>>, outputs: Coupled<LocalNode<'tcx>>) -> Self {
-        Self { inputs, outputs }
+    pub(crate) fn new(
+        inputs: Coupled<PCGNode<'tcx>>,
+        outputs: Coupled<LocalNode<'tcx>>,
+        kind: RegionProjectionMemberKind,
+    ) -> Self {
+        Self {
+            inputs,
+            outputs,
+            kind,
+        }
     }
 
     pub fn inputs(&self) -> &Coupled<PCGNode<'tcx>> {
