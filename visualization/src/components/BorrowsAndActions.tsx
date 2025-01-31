@@ -5,7 +5,7 @@ import {
   BorrowAction,
   Reborrow,
   MaybeOldPlace,
-  BorrowsBridge as BorrowsBridge,
+  BorrowsBridge,
   PlaceExpand,
   PCGNode,
   MaybeRemotePlace,
