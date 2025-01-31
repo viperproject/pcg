@@ -140,6 +140,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                     repacks_start: state.post_main().bridge(&to.post_main(), rp),
                     repacks_middle: Vec::new(),
                     borrows: entry_set.get_curr_borrow_pcg().states.clone(),
+                    // TODO: It seems like extra_start should be similar to repacks_start
                     extra_start: BorrowsBridge::new(),
                     extra_middle: BorrowsBridge::new(),
                 }
@@ -171,11 +172,11 @@ pub struct FreePcsBasicBlock<'tcx> {
 }
 
 impl<'tcx> FreePcsBasicBlock<'tcx> {
-    pub fn debug_lines(&self) -> Vec<String> {
+    pub fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         let mut result = Vec::new();
         for stmt in self.statements.iter() {
             for phase in EvalStmtPhase::phases() {
-                for line in stmt.debug_lines(phase) {
+                for line in stmt.debug_lines(phase, repacker) {
                     result.push(format!("{:?} {}: {}", stmt.location, phase, line));
                 }
             }
@@ -201,9 +202,16 @@ pub struct FreePcsLocation<'tcx> {
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {
-    pub(crate) fn debug_lines(&self, phase: EvalStmtPhase) -> Vec<String> {
-        let mut result = self.states[phase].debug_lines();
-        result.extend(self.borrows[phase].debug_capability_lines());
+    pub(crate) fn debug_lines(
+        &self,
+        phase: EvalStmtPhase,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<String> {
+        let mut result = self.states[phase].debug_lines(repacker);
+        for action in self.actions[phase].iter() {
+            result.push(action.debug_line(repacker));
+        }
+        result.extend(self.borrows[phase].debug_capability_lines(repacker));
         result
     }
 }

@@ -3,6 +3,7 @@
 use std::fs::File;
 use std::io::Write;
 
+use pcs::utils::PlaceRepacker;
 use std::cell::RefCell;
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber;
@@ -65,14 +66,21 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // true
 }
 
-fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
+fn env_feature_enabled(feature: &str) -> bool {
+    ["true", "1"].contains(&std::env::var(feature).unwrap_or_default().as_str())
+}
+
+fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
     let mut item_names = vec![];
 
-    let vis_dir = if std::env::var("PCS_VISUALIZATION").unwrap_or_default() == "true" {
+    let vis_dir = if env_feature_enabled("PCG_VISUALIZATION") {
         Some("visualization/data")
     } else {
         None
     };
+
+    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS");
+    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS");
 
     if let Some(path) = &vis_dir {
         if std::path::Path::new(path).exists() {
@@ -109,30 +117,39 @@ fn run_pcs_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                         tcx,
                         vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
                     );
-                    if let Ok(source) = tcx.sess.source_map().span_to_snippet(body.body.span) {
-                        let expected_annotations = source
-                            .lines()
-                            .flat_map(|l| l.split("// PCG: ").nth(1))
-                            .map(|l| l.trim())
-                            .collect::<Vec<_>>();
-                        if !expected_annotations.is_empty() {
-                            eprintln!("Expected annotations: {:?}", expected_annotations);
-                            let mut debug_lines = Vec::new();
-                            for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                                let block = output.get_all_for_bb(idx);
-                                debug_lines.extend(block.debug_lines());
+                    if emit_pcg_annotations || check_pcg_annotations {
+                        let mut debug_lines = Vec::new();
+                        for (idx, _) in body.body.basic_blocks.iter_enumerated() {
+                            let block = output.get_all_for_bb(idx);
+                            debug_lines
+                                .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                        }
+                        if emit_pcg_annotations {
+                            for line in debug_lines.iter() {
+                                eprintln!("// PCG: {}", line);
                             }
-                            let missing_annotations = expected_annotations
-                                .iter()
-                                .filter(|a| !debug_lines.contains(&a.to_string()))
-                                .collect::<Vec<_>>();
-                            if !missing_annotations.is_empty() {
-                                panic!("Missing annotations: {:?}", missing_annotations);
+                        }
+                        if check_pcg_annotations {
+                            if let Ok(source) =
+                                tcx.sess.source_map().span_to_snippet(body.body.span)
+                            {
+                                let expected_annotations = source
+                                    .lines()
+                                    .flat_map(|l| l.split("// PCG: ").nth(1))
+                                    .map(|l| l.trim())
+                                    .collect::<Vec<_>>();
+                                if !expected_annotations.is_empty() {
+                                    let missing_annotations = expected_annotations
+                                        .iter()
+                                        .filter(|a| !debug_lines.contains(&a.to_string()))
+                                        .collect::<Vec<_>>();
+                                    if !missing_annotations.is_empty() {
+                                        panic!("Missing annotations: {:?}", missing_annotations);
+                                    }
+                                }
+                            } else {
+                                tracing::warn!("No source for function: {}", item_name);
                             }
-                            // eprintln!("Debug lines:");
-                            // for line in debug_lines {
-                            //     eprintln!("{}", line);
-                            // }
                         }
                     }
                 }
@@ -175,7 +192,7 @@ impl driver::Callbacks for PcsCallbacks {
         _compiler: &Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
-        queries.global_ctxt().unwrap().enter(run_pcs_on_all_fns);
+        queries.global_ctxt().unwrap().enter(run_pcg_on_all_fns);
         if std::env::var("CARGO").is_ok() {
             Compilation::Continue
         } else {

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::free_pcs::CapabilityKind;
+use crate::{
+    free_pcs::CapabilityKind,
+    utils::{display::DisplayWithRepacker, PlaceRepacker},
+};
 
 use super::borrow_pcg_edge::PCGNode;
 
@@ -16,9 +19,11 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
         Self(HashMap::new())
     }
 
-    pub(crate) fn debug_capability_lines(&self) -> Vec<String> {
+    pub(crate) fn debug_capability_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.iter()
-            .map(|(node, capability)| format!("{}: {:?}", node, capability))
+            .map(|(node, capability)| {
+                format!("{}: {:?}", node.to_short_string(repacker), capability)
+            })
             .collect()
     }
 

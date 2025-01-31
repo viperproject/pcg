@@ -19,7 +19,7 @@ pub struct LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!("Loop({:?})", self.block)
     }
 }
@@ -73,7 +73,7 @@ pub struct FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!("FunctionCall({:?}, {:?})", self.def_id, self.substs)
     }
 }
