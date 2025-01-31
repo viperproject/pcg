@@ -126,6 +126,7 @@ pub struct BorrowsBridge<'tcx> {
 }
 
 impl<'tcx> BorrowsBridge<'tcx> {
+    /// Actions applied to the PCG, in the order they occurred.
     pub fn actions(&self) -> &[BorrowPCGAction<'tcx>] {
         &self.actions
     }

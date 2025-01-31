@@ -16,12 +16,6 @@ use super::region_projection_member::RegionProjectionMember;
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
 /// their own effect (e.g. for an unblock, applying a magic wand).
-///
-/// N.B. For now these are only used for debugging. Currently annotations for
-/// consumers are generated via the `bridge` functionality which generates
-/// annotations between two arbitrary `BorrowsState`s. Perhaps we want to remove
-/// that functionality and instead generate annotations for consumers directly
-/// in the `BorrowsVisitor`?
 #[derive(Clone, Debug)]
 pub struct BorrowPCGAction<'tcx> {
     pub(crate) kind: BorrowPCGActionKind<'tcx>,
