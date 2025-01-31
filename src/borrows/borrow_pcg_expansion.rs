@@ -14,7 +14,9 @@ use crate::{
         span::Symbol,
         target::abi::{FieldIdx, VariantIdx},
     },
-    utils::{ConstantIndex, CorrectedPlace, HasPlace, Place, PlaceRepacker},
+    utils::{
+        display::DisplayWithRepacker, ConstantIndex, CorrectedPlace, HasPlace, Place, PlaceRepacker,
+    },
 };
 
 use super::{
@@ -262,6 +264,30 @@ pub enum BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     /// An expansion of a place in the Borrow PCG, e.g {*x.f} -> {*x.f.a,
     /// *x.f.b}
     FromBorrow(ExpansionOfBorrowed<'tcx, P>),
+}
+
+impl<
+        'tcx,
+        T: std::hash::Hash
+            + PartialEq
+            + Eq
+            + Copy
+            + HasPlace<'tcx>
+            + DisplayWithRepacker<'tcx>
+            + From<MaybeOldPlace<'tcx>>,
+    > DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx, T>
+{
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "{{{}}} -> {{{}}}",
+            self.base().to_short_string(repacker),
+            self.expansion(repacker)
+                .iter()
+                .map(|p| p.to_short_string(repacker))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
 }
 
 impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>

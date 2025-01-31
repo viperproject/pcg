@@ -7,6 +7,7 @@ use crate::{
     rustc_interface,
     utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
+    ToJsonWithRepacker,
 };
 
 use super::{
@@ -32,6 +33,20 @@ impl<'tcx> BorrowPCGUnblockAction<'tcx> {
     }
 }
 
+impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGUnblockAction<'tcx> {
+    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        serde_json::json!({
+            "edge": format!("{:?}", self.edge)
+        })
+    }
+}
+
+impl<'tcx> From<BorrowPCGEdge<'tcx>> for BorrowPCGUnblockAction<'tcx> {
+    fn from(edge: BorrowPCGEdge<'tcx>) -> Self {
+        Self { edge }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum UnblockType {
     ForRead,
@@ -43,6 +58,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         self.edges.iter()
     }
 
+    #[allow(unused)]
     pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         let dot_graph = generate_unblock_dot_graph(&repacker, self).unwrap();
         serde_json::json!({

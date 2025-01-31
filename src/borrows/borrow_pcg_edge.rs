@@ -6,7 +6,7 @@ use rustc_interface::{
 
 use crate::{
     edgedata_enum, rustc_interface,
-    utils::{HasPlace, Place, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker},
 };
 
 use super::{
@@ -27,6 +27,16 @@ use super::{
 pub struct BorrowPCGEdge<'tcx> {
     conditions: PathConditions,
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdge<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "{} under conditions {:?}",
+            self.kind.to_short_string(repacker),
+            self.conditions
+        )
+    }
 }
 
 /// Any node in the PCG that is "local" in the sense that it can be named
@@ -102,12 +112,12 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 }
 
 impl<'tcx> LocalNode<'tcx> {
-    pub(crate) fn is_current(&self) -> bool {
-        match self {
-            LocalNode::Place(p) => p.is_current(),
-            LocalNode::RegionProjection(rp) => rp.place.is_current(),
-        }
-    }
+    // pub(crate) fn is_current(&self) -> bool {
+    //     match self {
+    //         LocalNode::Place(p) => p.is_current(),
+    //         LocalNode::RegionProjection(rp) => rp.place.is_current(),
+    //     }
+    // }
 
     pub fn as_cg_node(&self) -> Option<CGNode<'tcx>> {
         match self {
@@ -129,6 +139,15 @@ impl<'tcx> LocalNode<'tcx> {
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>> {
     Place(T),
     RegionProjection(RegionProjection<'tcx, T>),
+}
+
+impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for PCGNode<'tcx, T> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            PCGNode::Place(p) => p.to_short_string(repacker),
+            PCGNode::RegionProjection(rp) => rp.to_short_string(repacker),
+        }
+    }
 }
 
 impl<'tcx, T: std::fmt::Display> std::fmt::Display for PCGNode<'tcx, T> {
@@ -368,6 +387,17 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx, LocalNode<'tcx>>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdgeKind<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            BorrowPCGEdgeKind::Borrow(borrow) => borrow.to_short_string(repacker),
+            BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => expansion.to_short_string(repacker),
+            BorrowPCGEdgeKind::Abstraction(abstraction) => abstraction.to_short_string(repacker),
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.to_short_string(repacker),
+        }
+    }
 }
 
 edgedata_enum!(

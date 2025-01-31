@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use crate::rustc_interface::middle::{ty, mir::BasicBlock};
+use crate::utils::display::DisplayWithRepacker;
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
 use super::domain::ToJsonWithRepacker;

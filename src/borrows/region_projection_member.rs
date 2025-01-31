@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
+use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 
 use super::borrow_pcg_edge::{LocalNode, PCGNode};
@@ -18,6 +19,16 @@ pub struct RegionProjectionMember<'tcx> {
     pub(crate) inputs: Coupled<PCGNode<'tcx>>,
     pub(crate) outputs: Coupled<LocalNode<'tcx>>,
     pub(crate) kind: RegionProjectionMemberKind,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for RegionProjectionMember<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "{} -> {}",
+            self.inputs.to_short_string(repacker),
+            self.outputs.to_short_string(repacker)
+        )
+    }
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]

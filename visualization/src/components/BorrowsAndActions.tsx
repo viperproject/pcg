@@ -5,7 +5,7 @@ import {
   BorrowAction,
   Reborrow,
   MaybeOldPlace,
-  ReborrowBridge as BorrowsBridge,
+  BorrowsBridge as BorrowsBridge,
   PlaceExpand,
   PCGNode,
   MaybeRemotePlace,
@@ -119,83 +119,11 @@ function LocalPCGNodeDisplay({ node }: { node: LocalNode }) {
 
 function BorrowsBridgeDisplay({ bridge }: { bridge: BorrowsBridge }) {
   return (
-    <div>
-      {bridge.added_region_projection_members.length > 0 && (
-        <>
-          Added Region Projection Members: <br />
-          {bridge.added_region_projection_members.map((rp, index) => (
-            <span key={`rp-${index}`}>
-              {"{"}
-              {rp.value.inputs.map((input, i) => (
-                <>
-                  <PCGNodeDisplay node={input} />
-                  {i < rp.value.inputs.length - 1 && ", "}
-                </>
-              ))}
-              {"}"} → {"{"}
-              {rp.value.outputs.map((output, i) => (
-                <>
-                  <LocalPCGNodeDisplay node={output} />
-                  {i < rp.value.outputs.length - 1 && ", "}
-                </>
-              ))}
-              {"}"}
-            </span>
-          ))}
-        </>
-      )}
-      {bridge.weakens.map((weaken, index) => (
-        <span key={`weaken-${index}`}>
-          Weaken <code>{weaken.place}</code>: {weaken.old} → {weaken.new}
-        </span>
+    <ul>
+      {bridge.actions.map((action, index) => (
+        <li key={`action-${index}`}>{action}</li>
       ))}
-      {bridge.expands.length > 0 && (
-        <div>
-          Expands:
-          <BridgeExpands expands={bridge.expands.map((e) => e.value)} />
-        </div>
-      )}
-      {bridge.added_borrows.length > 0 && (
-        <div>
-          Borrows
-          <ul>
-            {bridge.added_borrows.map((reborrow, index) => (
-              <li key={`reborrow-${index}`}>
-                <ReborrowDisplay reborrow={reborrow.value} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {!bridge.ug.empty && (
-        <a
-          href="#"
-          onClick={(event) => {
-            event.preventDefault();
-            Viz.instance().then((viz) => {
-              const svgElement = viz.renderSVGElement(bridge.ug.dot_graph);
-              const popup = window.open(
-                "",
-                "Dot Graph",
-                "width=800,height=600"
-              );
-              popup.document.body.appendChild(svgElement);
-            });
-          }}
-        >
-          View Dot Graph
-        </a>
-      )}
-    </div>
-  );
-}
-
-function BorrowActionDisplay({ action }: { action: BorrowAction }) {
-  return (
-    <div>
-      <p>Action: {action.action}</p>
-      <BorrowDisplay borrow={action.borrow} />
-    </div>
+    </ul>
   );
 }
 

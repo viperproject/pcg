@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{free_pcs::CapabilityKind, utils::Place};
+use crate::free_pcs::CapabilityKind;
 
 use super::borrow_pcg_edge::PCGNode;
 
@@ -39,14 +39,6 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
         self.0.iter().map(|(k, v)| (k.clone(), v.clone()))
-    }
-
-    pub(crate) fn place_capabilities(
-        &self,
-    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
-        self.0
-            .iter()
-            .flat_map(|(k, v)| k.as_current_place().map(|p| (p, v.clone())))
     }
 
     pub(crate) fn get<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {

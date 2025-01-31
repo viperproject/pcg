@@ -18,13 +18,21 @@ pub mod utils;
 pub mod visualization;
 
 use borrows::{
-    borrow_edge::BorrowEdge, borrow_pcg_action::BorrowPCGAction, borrows_graph::Conditioned, borrow_pcg_expansion::BorrowPCGExpansion, engine::EvalStmtData, latest::Latest, region_projection_member::RegionProjectionMember, unblock_graph::UnblockGraph
+    borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
+    borrow_pcg_edge::LocalNode,
+    borrow_pcg_expansion::BorrowPCGExpansion,
+    borrows_graph::Conditioned,
+    engine::EvalStmtData,
+    latest::Latest,
+    path_condition::PathConditions,
+    region_projection_member::RegionProjectionMember,
+    unblock_graph::BorrowPCGUnblockAction,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, RepackOp};
 use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
-use utils::{Place, PlaceRepacker};
+use utils::{display::DisplayWithRepacker, Place, PlaceRepacker};
 use visualization::mir_graph::generate_json_from_mir;
 
 use crate::borrows::domain::ToJsonWithRepacker;
@@ -37,52 +45,152 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
 >;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Weaken<'tcx>(pub Place<'tcx>, pub CapabilityKind, pub CapabilityKind);
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Weaken<'tcx> {
+    pub(crate) place: Place<'tcx>,
+    pub(crate) from: CapabilityKind,
+    pub(crate) to: CapabilityKind,
+}
+
+impl<'tcx> Weaken<'tcx> {
+    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "Weaken {} from {:?} to {:?}",
+            self.place.to_short_string(repacker),
+            self.from,
+            self.to
+        )
+    }
+
+    pub(crate) fn new(place: Place<'tcx>, from: CapabilityKind, to: CapabilityKind) -> Self {
+        assert!(from > to);
+        Self { place, from, to }
+    }
+
+    pub fn place(&self) -> Place<'tcx> {
+        self.place
+    }
+
+    pub fn from_cap(&self) -> CapabilityKind {
+        self.from
+    }
+
+    pub fn to_cap(&self) -> CapabilityKind {
+        self.to
+    }
+}
 
 /// Instructs that the current capability to the place should be restored to the given capability, e.g.
 /// a lent exclusive capability should be restored to an exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct RestoreCapability<'tcx>(pub Place<'tcx>, pub CapabilityKind);
+pub struct RestoreCapability<'tcx> {
+    node: LocalNode<'tcx>,
+    capability: CapabilityKind,
+}
+
+impl<'tcx> RestoreCapability<'tcx> {
+    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "Restore {} to {:?}",
+            self.node.to_short_string(repacker),
+            self.capability,
+        )
+    }
+
+    pub(crate) fn new(node: LocalNode<'tcx>, capability: CapabilityKind) -> Self {
+        Self { node, capability }
+    }
+
+    pub fn node(&self) -> LocalNode<'tcx> {
+        self.node
+    }
+
+    pub fn capability(&self) -> CapabilityKind {
+        self.capability
+    }
+}
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
-            "place": self.0.to_json(repacker),
-            "old": format!("{:?}", self.1),
-            "new": format!("{:?}", self.2),
+            "place": self.place.to_json(repacker),
+            "old": format!("{:?}", self.from),
+            "new": format!("{:?}", self.to),
         })
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct BorrowsBridge<'tcx> {
-    pub added_region_projection_members: FxHashSet<Conditioned<RegionProjectionMember<'tcx>>>,
-    pub expands: FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>>,
-    pub added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>>,
-    pub ug: UnblockGraph<'tcx>,
-    pub weakens: FxHashSet<Weaken<'tcx>>,
-    pub restores: FxHashSet<RestoreCapability<'tcx>>,
+    pub(crate) actions: Vec<BorrowPCGAction<'tcx>>,
 }
 
 impl<'tcx> BorrowsBridge<'tcx> {
-    pub fn new() -> BorrowsBridge<'tcx> {
-        BorrowsBridge {
-            added_region_projection_members: FxHashSet::default(),
-            expands: FxHashSet::default(),
-            added_borrows: FxHashSet::default(),
-            ug: UnblockGraph::new(),
-            weakens: FxHashSet::default(),
-            restores: FxHashSet::default(),
-        }
+    pub fn actions(&self) -> &[BorrowPCGAction<'tcx>] {
+        &self.actions
     }
+
+    pub fn added_region_projection_members(
+        &self,
+    ) -> FxHashSet<Conditioned<RegionProjectionMember<'tcx>>> {
+        self.actions
+            .iter()
+            .filter_map(|action| match action.kind() {
+                BorrowPCGActionKind::AddRegionProjectionMember(member, path_conditions) => {
+                    Some(Conditioned::new(member.clone(), path_conditions.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn weakens(&self) -> FxHashSet<Weaken<'tcx>> {
+        self.actions
+            .iter()
+            .filter_map(|action| match action.kind() {
+                BorrowPCGActionKind::Weaken(weaken) => Some(*weaken),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn unblock_actions(&self) -> Vec<BorrowPCGUnblockAction<'tcx>> {
+        self.actions
+            .iter()
+            .filter_map(|action| match action.kind() {
+                BorrowPCGActionKind::RemoveEdge(edge) => Some(edge.clone().into()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn expands(&self) -> FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>> {
+        self.actions
+            .iter()
+            .filter_map(|action| match action.kind() {
+                BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => Some(
+                    Conditioned::new(expansion.clone(), PathConditions::AtBlock(location.block)),
+                ),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+impl<'tcx> From<Vec<BorrowPCGAction<'tcx>>> for BorrowsBridge<'tcx> {
+    fn from(actions: Vec<BorrowPCGAction<'tcx>>) -> Self {
+        Self { actions }
+    }
+}
+
+impl<'tcx> BorrowsBridge<'tcx> {
+    pub(crate) fn new() -> Self {
+        Self { actions: vec![] }
+    }
+
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
-            "added_region_projection_members": self.added_region_projection_members.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
-            "expands": self.expands.iter().map(|e| e.to_json(repacker)).collect::<Vec<_>>(),
-            "added_borrows": self.added_borrows.iter().map(|r| r.to_json(repacker)).collect::<Vec<_>>(),
-            "ug": self.ug.to_json(repacker),
-            "weakens": self.weakens.iter().map(|w| w.to_json(repacker)).collect::<Vec<_>>(),
+            "actions": self.actions.iter().map(|a| a.debug_line(repacker)).collect::<Vec<_>>(),
         })
     }
 }

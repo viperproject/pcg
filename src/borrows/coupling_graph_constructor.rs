@@ -9,7 +9,7 @@ use crate::{
         ast::Mutability,
         middle::mir::{BasicBlock, Location},
     },
-    utils::PlaceRepacker,
+    utils::{display::DisplayWithRepacker, PlaceRepacker},
 };
 
 use super::{
@@ -30,6 +30,15 @@ use super::{
 /// Internally, the nodes are stored in a `Vec` to allow for mutation
 #[derive(Clone, Debug, Hash)]
 pub struct Coupled<T>(Vec<T>);
+
+impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "{{{}}}",
+            self.0.iter().map(|t| t.to_short_string(repacker)).collect::<Vec<_>>().join(", ")
+        )
+    }
+}
 
 impl<T: std::hash::Hash + Eq> PartialEq for Coupled<T> {
     fn eq(&self, other: &Self) -> bool {
