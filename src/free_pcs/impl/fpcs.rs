@@ -150,10 +150,10 @@ impl<'tcx> Debug for CapabilitySummary<'tcx> {
 }
 
 impl<'tcx> CapabilitySummary<'tcx> {
-    pub(crate) fn debug_lines(&self) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.0
             .iter()
-            .map(|c| c.debug_lines())
+            .map(|c| c.debug_lines(repacker))
             .collect::<Vec<_>>()
             .concat()
     }

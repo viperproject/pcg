@@ -36,6 +36,7 @@ fn run_all_tests() {
 
         let status = Command::new(&pcs_exe)
             .arg(&test_file)
+            .env("PCG_CHECK_ANNOTATIONS", "true")
             .status()
             .unwrap_or_else(|e| panic!("Failed to execute test {}: {}", test_file.display(), e));
 

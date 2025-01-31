@@ -91,8 +91,8 @@ impl<'tcx> Default for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn debug_capability_lines(&self) -> Vec<String> {
-        self.capabilities.debug_capability_lines()
+    pub(crate) fn debug_capability_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        self.capabilities.debug_capability_lines(repacker)
     }
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.graph.insert(edge)

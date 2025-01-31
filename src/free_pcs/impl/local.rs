@@ -15,7 +15,7 @@ use rustc_interface::{
 use crate::{
     free_pcs::{CapabilityKind, RelatedSet, RepackOp},
     rustc_interface,
-    utils::{Place, PlaceOrdering, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, Place, PlaceOrdering, PlaceRepacker},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -42,10 +42,10 @@ impl Default for CapabilityLocal<'_> {
 }
 
 impl<'tcx> CapabilityLocal<'tcx> {
-    pub(crate) fn debug_lines(&self) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         match self {
             Self::Unallocated => vec![],
-            Self::Allocated(cps) => cps.debug_lines(),
+            Self::Allocated(cps) => cps.debug_lines(repacker),
         }
     }
 
@@ -81,9 +81,9 @@ impl<'tcx> Debug for CapabilityProjections<'tcx> {
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
-    pub(crate) fn debug_lines(&self) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.iter()
-            .map(|(p, k)| format!("{p:?}: {k:?}"))
+            .map(|(p, k)| format!("{}: {:?}", p.to_short_string(repacker), k))
             .collect()
     }
 
