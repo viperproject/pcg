@@ -9,13 +9,19 @@ use rustc_interface::{
 
 use crate::{
     rustc_interface,
-    utils::{Place, HasPlace, PlaceSnapshot, SnapshotLocation},
+    utils::{display::DisplayWithRepacker, HasPlace, Place, PlaceSnapshot, SnapshotLocation},
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
     edge: AbstractionBlockEdge<'tcx>,
     block: BasicBlock,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!("Loop({:?})", self.block)
+    }
 }
 
 impl<'tcx, T> HasPcsElems<T> for LoopAbstraction<'tcx>
@@ -64,6 +70,12 @@ pub struct FunctionCallAbstraction<'tcx> {
     def_id: DefId,
     substs: GenericArgsRef<'tcx>,
     edges: Vec<AbstractionBlockEdge<'tcx>>,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!("FunctionCall({:?}, {:?})", self.def_id, self.substs)
+    }
 }
 
 impl<'tcx, T> HasPcsElems<T> for FunctionCallAbstraction<'tcx>
@@ -150,7 +162,7 @@ impl<'tcx> PartialEq for AbstractionBlockEdge<'tcx> {
 impl<'tcx> Eq for AbstractionBlockEdge<'tcx> {}
 
 impl<'tcx> AbstractionBlockEdge<'tcx> {
-    pub fn new(
+    pub(crate) fn new(
         inputs: HashSet<AbstractionInputTarget<'tcx>>,
         outputs: HashSet<AbstractionOutputTarget<'tcx>>,
     ) -> Self {
@@ -295,6 +307,21 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
+impl<'tcx> DisplayWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        let p = self.place().to_short_string(repacker);
+        format!(
+            "{}{}",
+            p,
+            if let Some(location) = self.location() {
+                format!(" at {:?}", location)
+            } else {
+                "".to_string()
+            }
+        )
+    }
+}
+
 impl<'tcx> MaybeOldPlace<'tcx> {
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
         self.place().projection
@@ -427,19 +454,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         })
     }
 
-    pub fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        let p = self.place().to_short_string(repacker);
-        format!(
-            "{}{}",
-            p,
-            if let Some(location) = self.location() {
-                format!(" at {:?}", location)
-            } else {
-                "".to_string()
-            }
-        )
-    }
-
     pub(crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
         if self.is_current() && place.is_prefix(self.place()) {
             *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
@@ -475,6 +489,15 @@ pub enum MaybeRemotePlace<'tcx> {
 
     /// A place that cannot be named, e.g. the source of a reference-type input argument
     Remote(RemotePlace),
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            MaybeRemotePlace::Local(p) => p.to_short_string(repacker),
+            MaybeRemotePlace::Remote(rp) => format!("{}", rp),
+        }
+    }
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {

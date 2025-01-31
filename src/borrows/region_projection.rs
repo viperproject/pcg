@@ -11,7 +11,7 @@ use crate::{
             ty::{self, DebruijnIndex, RegionVid},
         },
     },
-    utils::{Place, HasPlace},
+    utils::{display::DisplayWithRepacker, HasPlace, Place},
 };
 
 use crate::utils::PlaceRepacker;
@@ -67,6 +67,12 @@ pub struct RegionProjection<'tcx, P = MaybeRemotePlace<'tcx>> {
     pub(crate) place: P,
     region: PCGRegion,
     phantom: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for RegionProjection<'tcx, T> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!("{}↓{}", self.place.to_short_string(repacker), self.region)
+    }
 }
 
 impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for RegionProjection<'tcx, T> {

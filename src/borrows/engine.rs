@@ -30,7 +30,7 @@ use crate::{
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrows_state::BorrowsState,
-    borrows_visitor::{BorrowCheckerImpl, BorrowsVisitor, DebugCtx, StatementStage},
+    borrows_visitor::{BorrowCheckerImpl, BorrowsVisitor, StatementStage},
     coupling_graph_constructor::Coupled,
     domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
     path_condition::{PathCondition, PathConditions},
@@ -48,7 +48,7 @@ pub struct BorrowsEngine<'mir, 'tcx> {
 }
 
 impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
-    pub (crate) fn new(
+    pub(crate) fn new(
         tcx: TyCtxt<'tcx>,
         body: &'mir Body<'tcx>,
         location_table: &'mir LocationTable,
@@ -271,22 +271,6 @@ impl<T> std::ops::IndexMut<EvalStmtPhase> for EvalStmtData<T> {
 
 pub(crate) type BorrowsStates<'tcx> = EvalStmtData<BorrowsState<'tcx>>;
 
-impl<'tcx> BorrowsStates<'tcx> {
-    pub(crate) fn bridge_between_stmts(
-        &self,
-        next: &BorrowsStates<'tcx>,
-        debug_ctx: DebugCtx,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> (BorrowsBridge<'tcx>, BorrowsBridge<'tcx>) {
-        let start = self
-            .post_main
-            .bridge(&next.pre_operands, debug_ctx, repacker);
-        let middle = next
-            .post_operands
-            .bridge(&next.pre_main, debug_ctx, repacker);
-        (start, middle)
-    }
-}
 #[derive(Clone)]
 /// The domain of the Borrow PCG dataflow analysis. Note that this contains many
 /// fields which serve as context (e.g. reference to a borrow-checker impl to
@@ -322,6 +306,12 @@ impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
 }
 
 impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+    pub(crate) fn get_bridge(&self) -> (BorrowsBridge<'tcx>, BorrowsBridge<'tcx>) {
+        (
+            self.actions.pre_operands.clone().into(),
+            self.actions.pre_main.clone().into(),
+        )
+    }
     pub(crate) fn post_state(&self) -> &BorrowsState<'tcx> {
         &self.states.post_main
     }

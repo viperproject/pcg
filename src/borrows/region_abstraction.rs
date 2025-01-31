@@ -1,6 +1,6 @@
 use rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 
-use crate::{rustc_interface, utils::PlaceRepacker};
+use crate::{rustc_interface, utils::{display::DisplayWithRepacker, PlaceRepacker}};
 
 use super::{
     borrow_pcg_edge::PCGNode,
@@ -14,6 +14,15 @@ use super::{
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct AbstractionEdge<'tcx> {
     pub abstraction_type: AbstractionType<'tcx>,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionEdge<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match &self.abstraction_type {
+            AbstractionType::FunctionCall(c) => c.to_short_string(repacker),
+            AbstractionType::Loop(c) => c.to_short_string(repacker),
+        }
+    }
 }
 
 impl<'tcx, T> HasPcsElems<T> for AbstractionEdge<'tcx>

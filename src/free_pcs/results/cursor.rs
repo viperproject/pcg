@@ -5,7 +5,10 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::{borrow_pcg_action::BorrowPCGAction, engine::EvalStmtData},
+    borrows::{
+        borrow_pcg_action::BorrowPCGAction,
+        engine::{BorrowsDomain, EvalStmtData},
+    },
     combined_pcs::EvalStmtPhase,
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
@@ -14,7 +17,7 @@ use crate::{
 };
 
 use crate::{
-    borrows::{borrows_visitor::DebugCtx, engine::BorrowsStates},
+    borrows::engine::BorrowsStates,
     combined_pcs::PlaceCapabilitySummary,
     free_pcs::{
         CapabilitySummary, FreePlaceCapabilitySummary, RepackOp, RepackingBridgeSemiLattice,
@@ -25,19 +28,16 @@ use crate::{
 
 pub trait HasPcg<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
-    fn get_borrows_states(&self) -> &BorrowsStates<'tcx>;
-    fn get_borrow_pcg_actions(&self) -> &EvalStmtData<Vec<BorrowPCGAction<'tcx>>>;
+    fn get_curr_borrow_pcg(&self) -> &BorrowsDomain<'mir, 'tcx>;
 }
 
 impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
         &self.owned_pcg()
     }
-    fn get_borrows_states(&self) -> &BorrowsStates<'tcx> {
-        &self.borrow_pcg().states
-    }
-    fn get_borrow_pcg_actions(&self) -> &EvalStmtData<Vec<BorrowPCGAction<'tcx>>> {
-        &self.borrow_pcg().actions
+
+    fn get_curr_borrow_pcg(&self) -> &BorrowsDomain<'mir, 'tcx> {
+        &self.borrow_pcg()
     }
 }
 
@@ -87,30 +87,26 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         let state = self.cursor.get();
 
-        let after = state.get_curr_fpcg().post_main().clone();
-        let curr_borrows = state.get_borrows_states().clone();
+        let prev_post_main = state.get_curr_fpcg().post_main().clone();
 
         self.cursor.seek_after_primary_effect(location);
 
         let state = self.cursor.get();
         let curr_fpcs = state.get_curr_fpcg();
-        let (repacks_start, repacks_middle) = curr_fpcs.repack_ops(&after);
+        let curr_borrows = state.get_curr_borrow_pcg();
+        let (repacks_start, repacks_middle) = curr_fpcs.repack_ops(&prev_post_main);
 
-        let (extra_start, extra_middle) = curr_borrows.bridge_between_stmts(
-            state.get_borrows_states(),
-            DebugCtx::new(location),
-            self.repacker(),
-        );
+        let (extra_start, extra_middle) = curr_borrows.get_bridge();
 
         let result = FreePcsLocation {
             location,
-            actions: state.get_borrow_pcg_actions().clone(),
+            actions: curr_borrows.actions.clone(),
             states: curr_fpcs.summaries.clone(),
             repacks_start,
             repacks_middle,
             extra_start,
             extra_middle,
-            borrows: state.get_borrows_states().clone(),
+            borrows: curr_borrows.states.clone(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -139,11 +135,11 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                         block: succ,
                         statement_index: 0,
                     },
-                    actions: entry_set.get_borrow_pcg_actions().clone(),
+                    actions: entry_set.get_curr_borrow_pcg().actions.clone(),
                     states: to.summaries.clone(),
                     repacks_start: state.post_main().bridge(&to.post_main(), rp),
                     repacks_middle: Vec::new(),
-                    borrows: entry_set.get_borrows_states().clone(),
+                    borrows: entry_set.get_curr_borrow_pcg().states.clone(),
                     extra_start: BorrowsBridge::new(),
                     extra_middle: BorrowsBridge::new(),
                 }
@@ -205,7 +201,7 @@ pub struct FreePcsLocation<'tcx> {
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {
-    pub (crate) fn debug_lines(&self, phase: EvalStmtPhase) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, phase: EvalStmtPhase) -> Vec<String> {
         let mut result = self.states[phase].debug_lines();
         result.extend(self.borrows[phase].debug_capability_lines());
         result

@@ -2,7 +2,9 @@ use tracing::instrument;
 
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
+use crate::utils::display::DisplayWithRepacker;
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
+use crate::{RestoreCapability, Weaken};
 
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
@@ -22,11 +24,67 @@ use super::region_projection_member::RegionProjectionMember;
 /// in the `BorrowsVisitor`?
 #[derive(Clone, Debug)]
 pub struct BorrowPCGAction<'tcx> {
-    kind: BorrowPCGActionKind<'tcx>,
+    pub(crate) kind: BorrowPCGActionKind<'tcx>,
     debug_context: Option<String>,
 }
 
 impl<'tcx> BorrowPCGAction<'tcx> {
+    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match &self.kind {
+            BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
+            BorrowPCGActionKind::Restore(restore_capability) => {
+                restore_capability.debug_line(repacker)
+            }
+            BorrowPCGActionKind::MakePlaceOld(place) => {
+                format!("Make {} an old place", place.to_short_string(repacker))
+            }
+            BorrowPCGActionKind::SetLatest(place, location) => format!(
+                "Set Latest of {} to {:?}",
+                place.to_short_string(repacker),
+                location
+            ),
+            BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
+                format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
+            }
+            BorrowPCGActionKind::AddRegionProjectionMember(
+                region_projection_member,
+                path_conditions,
+            ) => format!(
+                "Add Region Projection Member: {}; path conditions: {}",
+                region_projection_member.to_short_string(repacker),
+                path_conditions
+            ),
+            BorrowPCGActionKind::InsertBorrowPCGExpansion(borrow_pcgexpansion, location) => {
+                format!(
+                    "Insert Expansion {} at {:?}",
+                    borrow_pcgexpansion.to_short_string(repacker),
+                    location
+                )
+            }
+            BorrowPCGActionKind::RenamePlace { old, new } => {
+                format!("Rename {:?} to {:?}", old, new)
+            }
+        }
+    }
+
+    pub fn kind(&self) -> &BorrowPCGActionKind<'tcx> {
+        &self.kind
+    }
+
+    pub(super) fn restore_capability(node: LocalNode<'tcx>, capability: CapabilityKind) -> Self {
+        BorrowPCGAction {
+            kind: BorrowPCGActionKind::Restore(RestoreCapability::new(node, capability)),
+            debug_context: None,
+        }
+    }
+
+    pub(super) fn weaken(place: Place<'tcx>, from: CapabilityKind, to: CapabilityKind) -> Self {
+        BorrowPCGAction {
+            kind: BorrowPCGActionKind::Weaken(Weaken::new(place, from, to)),
+            debug_context: None,
+        }
+    }
+
     pub(super) fn rename_place(old: MaybeOldPlace<'tcx>, new: MaybeOldPlace<'tcx>) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::RenamePlace { old, new },
@@ -91,7 +149,9 @@ impl<'tcx> From<BorrowPCGActionKind<'tcx>> for BorrowPCGAction<'tcx> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum BorrowPCGActionKind<'tcx> {
+pub enum BorrowPCGActionKind<'tcx> {
+    Weaken(Weaken<'tcx>),
+    Restore(RestoreCapability<'tcx>),
     MakePlaceOld(Place<'tcx>),
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
@@ -121,6 +181,16 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let result = match action.kind {
+            BorrowPCGActionKind::Restore(restore) => {
+                assert!(self.get_capability(restore.node()).unwrap() < restore.capability());
+                assert!(self.set_capability(restore.node(), restore.capability()));
+                true
+            }
+            BorrowPCGActionKind::Weaken(weaken) => {
+                assert_eq!(self.get_capability(weaken.place()), Some(weaken.from));
+                assert!(self.set_capability(weaken.place(), weaken.to));
+                true
+            }
             BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker, None),
             BorrowPCGActionKind::SetLatest(place, location) => {
                 self.set_latest(place, location, repacker)
@@ -130,34 +200,45 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.add_region_projection_member(member, pc, repacker)
             }
             BorrowPCGActionKind::InsertBorrowPCGExpansion(de, location) => {
-                let inserted = self.insert(
+                let updated = self.insert(
                     de.clone()
                         .to_borrow_pcg_edge(PathConditions::new(location.block)),
                 );
-                if inserted {
+                if updated {
                     let base = de.base();
-                    let capability = match self.get_capability(base) {
-                        Some(c) => c,
-                        None => {
-                            // The expansion presumably already exists under
-                            // different path conditions. TODO: Maybe this is
-                            // worth checking?
-                            return inserted;
+                    let capability = match &de {
+                        BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
+                            match expansion_of_owned.base().ty(repacker).ty.ref_mutability() {
+                                Some(Mutability::Mut) => CapabilityKind::Exclusive,
+                                Some(Mutability::Not) => CapabilityKind::Read,
+                                None => unreachable!(),
+                            }
+                        }
+                        BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
+                            if let Some(capability) =
+                                self.get_capability(expansion_of_borrowed.base)
+                            {
+                                capability
+                            } else {
+                                // Presumably already expanded in another branch
+                                // TODO: Check expansion capability exists
+                                return true;
+                            }
                         }
                     };
                     match capability {
                         CapabilityKind::Read => {
-                            self.set_capability(base, CapabilityKind::Read);
+                            _ = self.set_capability(base, CapabilityKind::Read);
                         }
                         _ => {
-                            self.remove_capability(base);
+                            _ = self.remove_capability(base);
                         }
                     }
                     for p in de.expansion(repacker).iter() {
-                        self.set_capability(*p, capability);
+                        _ = self.set_capability(*p, capability);
                     }
                 }
-                inserted
+                updated
             }
             BorrowPCGActionKind::RenamePlace { old, new } => self.change_pcs_elem(old, new),
         };

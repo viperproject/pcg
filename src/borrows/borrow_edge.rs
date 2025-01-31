@@ -7,14 +7,14 @@ use super::{
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
-use crate::rustc_interface::{
+use crate::{rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::{
         mir::Location,
         ty::{self},
     },
-};
+}, utils::display::DisplayWithRepacker};
 use crate::utils::PlaceRepacker;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -29,6 +29,17 @@ pub struct BorrowEdge<'tcx> {
     reserve_location: Location,
 
     pub region: ty::Region<'tcx>,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for BorrowEdge<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "borrow: {} = &{} {}",
+            self.assigned_ref.to_short_string(repacker),
+            if self.mutability == Mutability::Mut { "mut " } else { "" },
+            self.blocked_place.to_short_string(repacker)
+        )
+    }
 }
 
 impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, T>> for BorrowEdge<'tcx> {

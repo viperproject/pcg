@@ -1,6 +1,6 @@
 use crate::{
     rustc_interface,
-    utils::{Place, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
 };
 use serde_derive::Serialize;
 use std::{

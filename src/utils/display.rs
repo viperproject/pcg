@@ -45,17 +45,23 @@ impl<'tcx> PlaceDisplay<'tcx> {
     }
 }
 
-impl<'tcx> Place<'tcx> {
+pub trait DisplayWithRepacker<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String;
+}
 
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        serde_json::Value::String(self.to_short_string(repacker))
-    }
-
-    pub fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match self.to_string(repacker) {
             PlaceDisplay::Temporary(p) => format!("{:?}", p),
             PlaceDisplay::User(_p, s) => s,
         }
+    }
+}
+
+impl<'tcx> Place<'tcx> {
+
+    pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        serde_json::Value::String(self.to_short_string(repacker))
     }
 
     pub fn to_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceDisplay<'tcx> {

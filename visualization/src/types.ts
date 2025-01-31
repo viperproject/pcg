@@ -103,15 +103,14 @@ export type RegionProjectionMember = {
   outputs: LocalNode[];
 }
 
-export type ReborrowBridge = {
-  weakens: Weaken[];
-  added_region_projection_members: Conditioned<RegionProjectionMember>[];
-  expands: Conditioned<PlaceExpand>[];
-  added_borrows: Conditioned<Reborrow>[];
-  ug: {
-    dot_graph: string,
-    empty: boolean
-  }
+type BorrowPCGEdge = string;
+
+export type BorrowPCGUnblockAction = {
+  edge: BorrowPCGEdge;
+};
+
+export type BorrowsBridge = {
+  actions: string[];
 };
 
 export type PathData = {
@@ -123,6 +122,6 @@ export type PCGStmtVisualizationData = {
   latest: Record<string, string>;
   free_pcg_repacks_start: string[];
   free_pcg_repacks_middle: string[];
-  borrows_bridge_start: ReborrowBridge;
-  borrows_bridge_middle: ReborrowBridge;
+  borrows_bridge_start: BorrowsBridge;
+  borrows_bridge_middle: BorrowsBridge;
 };

@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use crate::rustc_interface::{
     data_structures::fx::FxHashSet,
-    middle::mir::{BasicBlock, Location},
+    middle::mir::BasicBlock,
 };
 use serde_json::json;
 
@@ -18,7 +18,6 @@ use super::{
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
-    borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_visitor::DebugCtx,
     coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
@@ -189,21 +188,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
-    pub(crate) fn region_projection_members(
-        &self,
-    ) -> FxHashSet<Conditioned<RegionProjectionMember<'tcx>>> {
-        self.edges
-            .iter()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::RegionProjectionMember(member) => Some(Conditioned {
-                    conditions: edge.conditions().clone(),
-                    value: member.clone(),
-                }),
-                _ => None,
-            })
-            .collect()
-    }
-
     pub(crate) fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
         self.edges
             .iter()
@@ -211,19 +195,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 BorrowPCGEdgeKind::Abstraction(abstraction) => Some(Conditioned {
                     conditions: edge.conditions().clone(),
                     value: abstraction.clone(),
-                }),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub(crate) fn borrow_pcg_expansions(&self) -> FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>> {
-        self.edges
-            .iter()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::BorrowPCGExpansion(de) => Some(Conditioned {
-                    conditions: edge.conditions().clone(),
-                    value: de.clone(),
                 }),
                 _ => None,
             })
@@ -241,16 +212,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 _ => None,
             })
             .collect()
-    }
-
-    pub(crate) fn has_borrow_at_location(&self, location: Location) -> bool {
-        self.edges.iter().any(|edge| {
-            if let BorrowPCGEdgeKind::Borrow(reborrow) = &edge.kind() {
-                reborrow.reserve_location() == location
-            } else {
-                false
-            }
-        })
     }
 
     pub(crate) fn borrows_blocked_by(
@@ -862,6 +823,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
 pub struct Conditioned<T> {
     pub conditions: PathConditions,
     pub value: T,
+}
+
+impl<T> Conditioned<T> {
+    pub fn new(value: T, conditions: PathConditions) -> Self {
+        Self { conditions, value }
+    }
 }
 
 impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Conditioned<T> {

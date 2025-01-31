@@ -11,13 +11,11 @@ use crate::{
         },
     },
     utils::{HasPlace, ProjectionKind},
-    RestoreCapability,
 };
 
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
-    BorrowsBridge, Weaken,
 };
 
 use super::{
@@ -30,7 +28,7 @@ use super::{
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion, ExpansionOfOwned},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::DebugCtx,
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, Coupled},
+    coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
@@ -116,12 +114,6 @@ impl<'tcx> BorrowsState<'tcx> {
         actions.record(action, changed);
     }
 
-    pub(crate) fn place_capabilities(
-        &self,
-    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
-        self.capabilities.place_capabilities()
-    }
-
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
@@ -146,6 +138,7 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
+    #[must_use]
     pub(crate) fn set_capability<T: Into<PCGNode<'tcx>> + std::fmt::Debug>(
         &mut self,
         node: T,
@@ -154,6 +147,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.capabilities.insert(node, capability)
     }
 
+    #[must_use]
     pub(crate) fn remove_capability<T: Into<PCGNode<'tcx>> + std::fmt::Debug>(
         &mut self,
         node: T,
@@ -230,7 +224,11 @@ impl<'tcx> BorrowsState<'tcx> {
         if result {
             for node in self.graph.leaf_nodes(repacker) {
                 if self.get_capability(node) == Some(CapabilityKind::Lent) {
-                    self.set_capability(node, CapabilityKind::Exclusive);
+                    self.record_and_apply_action(
+                        BorrowPCGAction::restore_capability(node.into(), CapabilityKind::Exclusive),
+                        &mut actions,
+                        repacker,
+                    );
                 }
             }
         }
@@ -371,208 +369,8 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocked_by(node, repacker)
     }
 
-    pub(crate) fn borrow_pcg_expansions(&self) -> FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>> {
-        self.graph.borrow_pcg_expansions()
-    }
-
     pub(crate) fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
         self.graph.borrows()
-    }
-
-    pub(crate) fn bridge(
-        &self,
-        to: &Self,
-        _debug_ctx: DebugCtx,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> BorrowsBridge<'tcx> {
-        let added_borrows: FxHashSet<Conditioned<BorrowEdge<'tcx>>> = to
-            .borrows()
-            .into_iter()
-            .filter(|rb| !self.has_borrow_at_location(rb.value.reserve_location()))
-            .collect();
-
-        let expands = to
-            .borrow_pcg_expansions()
-            .difference(&self.borrow_pcg_expansions())
-            .cloned()
-            .collect();
-
-        let added_region_projection_members = to
-            .graph
-            .region_projection_members()
-            .difference(&self.graph.region_projection_members())
-            .cloned()
-            .collect();
-
-        let mut ug = UnblockGraph::new();
-
-        for borrow in self.borrows() {
-            if !to.has_borrow_at_location(borrow.value.reserve_location()) {
-                ug.kill_edge(
-                    borrow.clone().into(),
-                    self,
-                    repacker,
-                    UnblockType::ForExclusive,
-                );
-            }
-        }
-
-        // Two nodes are conceptually the same place if:
-        // 1) they are actually equal
-        // 2) if `self_place` is a current place and `to_place` is a snapshotted
-        // version of that same place which is current w.r.t `self`
-        //
-        // TODO: Confirm that case 1 is correct (for example, if the place has
-        // been re-assigned in `other`)
-        let same_place =
-            |self_place: MaybeRemotePlace<'tcx>, to_place: MaybeRemotePlace<'tcx>| match (
-                self_place, to_place,
-            ) {
-                (MaybeRemotePlace::Local(self_place), MaybeRemotePlace::Local(to_place)) => {
-                    if self_place.place() != to_place.place() {
-                        return false;
-                    }
-                    if self_place.location() == to_place.location() {
-                        return true;
-                    }
-                    self_place.is_current()
-                        && to_place.location().unwrap() == self.latest.get(self_place.place())
-                }
-                (MaybeRemotePlace::Remote(p1), MaybeRemotePlace::Remote(p2)) => p1 == p2,
-                _ => false,
-            };
-
-        let same_cg_node =
-            |self_place: CGNode<'tcx>, to_place: CGNode<'tcx>| match (self_place, to_place) {
-                (CGNode::RegionProjection(rp1), CGNode::RegionProjection(rp2)) => {
-                    same_place(rp1.place.into(), rp2.place.into()) && rp1.region() == rp2.region()
-                }
-                (CGNode::RemotePlace(rp1), CGNode::RemotePlace(rp2)) => rp1 == rp2,
-                _ => false,
-            };
-
-        let same_local_node =
-            |self_node: LocalNode<'tcx>, to_node: LocalNode<'tcx>| match (self_node, to_node) {
-                (LocalNode::Place(p1), LocalNode::Place(p2)) => same_place(p1.into(), p2.into()),
-                (LocalNode::RegionProjection(rp1), LocalNode::RegionProjection(rp2)) => {
-                    same_cg_node(rp1.into(), rp2.into())
-                }
-                _ => false,
-            };
-
-        let same_pcg_node =
-            |self_node: PCGNode<'tcx>, to_node: PCGNode<'tcx>| match (self_node, to_node) {
-                (PCGNode::Place(p1), PCGNode::Place(p2)) => same_place(p1.into(), p2.into()),
-                (PCGNode::RegionProjection(rp1), PCGNode::RegionProjection(rp2)) => {
-                    same_cg_node(rp1.into(), rp2.into())
-                }
-                _ => false,
-            };
-
-        // TODO: perhaps this logic could be simplified?
-
-        'outer: for exp in self
-            .borrow_pcg_expansions()
-            .difference(&to.borrow_pcg_expansions())
-        {
-            if exp.value.base().is_current() {
-                for to in to.borrow_pcg_expansions() {
-                    if same_local_node(exp.value.base().into(), to.value.base().into()) {
-                        continue 'outer;
-                    }
-                }
-            }
-            ug.kill_edge(
-                exp.clone().into(),
-                self,
-                repacker,
-                UnblockType::ForExclusive,
-            );
-        }
-
-        'outer: for self_abstraction in self.abstraction_edges() {
-            'inner: for to_abstraction in to.abstraction_edges() {
-                let self_value = self_abstraction.value.abstraction_type.clone();
-                let to_value = to_abstraction.value.abstraction_type.clone();
-                for (n1, n2) in self_value.inputs().iter().zip(to_value.inputs().iter()) {
-                    if !same_cg_node(*n1, *n2) {
-                        continue 'inner;
-                    }
-                }
-                for (n1, n2) in self_value.outputs().iter().zip(to_value.outputs().iter()) {
-                    if !same_cg_node((*n1).into(), (*n2).into()) {
-                        continue 'inner;
-                    }
-                }
-                continue 'outer;
-            }
-            ug.kill_edge(
-                self_abstraction.clone().into(),
-                self,
-                repacker,
-                UnblockType::ForExclusive,
-            );
-        }
-
-        'outer: for self_member in self.graph.region_projection_members().iter() {
-            'inner: for to_member in to.graph.region_projection_members().iter() {
-                // Check if inputs match
-                for (self_input, to_input) in self_member
-                    .value
-                    .inputs
-                    .iter()
-                    .zip(to_member.value.inputs.iter())
-                {
-                    if !same_pcg_node(*self_input, *to_input) {
-                        // Some input doesn't match, try the next edge in to_graph
-                        continue 'inner;
-                    }
-                }
-
-                // Check if outputs match
-                for (self_output, to_output) in self_member
-                    .value
-                    .outputs
-                    .iter()
-                    .zip(to_member.value.outputs.iter())
-                {
-                    if !same_local_node(*self_output, *to_output) {
-                        // Some output doesn't match, try the next edge in to_graph
-                        continue 'inner;
-                    }
-                }
-
-                // All edges match, continue to the next edge in *self_graph*
-                continue 'outer;
-            }
-            ug.kill_edge(
-                self_member.clone().into(),
-                self,
-                repacker,
-                UnblockType::ForExclusive,
-            );
-        }
-
-        let mut weakens: FxHashSet<Weaken<'tcx>> = FxHashSet::default();
-        let mut restores: FxHashSet<RestoreCapability<'tcx>> = FxHashSet::default();
-        for (place, capability) in self.place_capabilities() {
-            if let Some(to_capability) = to.get_capability(place) {
-                if capability > to_capability {
-                    weakens.insert(Weaken(place.clone(), capability, to_capability));
-                } else if to_capability.is_exclusive() && capability.is_lent_exclusive() {
-                    restores.insert(RestoreCapability(place, capability));
-                }
-            }
-        }
-
-        BorrowsBridge {
-            added_borrows,
-            expands,
-            ug,
-            weakens,
-            restores,
-            added_region_projection_members,
-        }
     }
 
     /// Ensures that the place is expanded to the given place, with a certain
@@ -738,15 +536,15 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-        if let Some(mutbl) = projects_from {
-            self.set_capability(
-                to_place,
-                if mutbl.is_mut() {
-                    CapabilityKind::Exclusive
-                } else {
-                    CapabilityKind::Read
-                },
+        if !to_place.is_owned(repacker) && self.get_capability(to_place) != Some(capability) {
+            let action = BorrowPCGAction::weaken(
+                to_place.clone(),
+                self.get_capability(to_place).unwrap_or_else(|| {
+                    panic!("capability not set for {:?}", to_place);
+                }),
+                capability,
             );
+            self.record_and_apply_action(action, &mut actions, repacker);
         }
         actions
     }
@@ -905,14 +703,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         self.set_capability(assigned_place, assigned_cap);
         actions
-    }
-
-    pub(crate) fn has_borrow_at_location(&self, location: Location) -> bool {
-        self.graph.has_borrow_at_location(location)
-    }
-
-    pub(crate) fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
-        self.graph.abstraction_edges()
     }
 
     #[must_use]
