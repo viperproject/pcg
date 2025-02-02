@@ -83,6 +83,17 @@ impl<'tcx> Place<'tcx> {
         Self(PlaceRef { local, projection }, DebugInfo::new_static())
     }
 
+    pub(crate) fn contains_unsafe_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        for (p, proj) in self.iter_projections() {
+            if p.ty(repacker.body(), repacker.tcx()).ty.is_unsafe_ptr()
+                && matches!(proj, PlaceElem::Deref)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),

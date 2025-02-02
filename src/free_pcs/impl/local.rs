@@ -158,7 +158,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             from
         );
         debug_assert!(!self.contains_key(&to));
-        let (expanded, mut others) = from.expand(to, repacker);
+        let (expanded, mut others) = from.expand(to, repacker).unwrap();
         let mut perm = self.remove(&from).unwrap();
         others.push(to);
         let mut ops = Vec::new();

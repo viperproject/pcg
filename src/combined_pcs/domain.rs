@@ -174,7 +174,24 @@ impl DotGraphs {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGError {
-    Unsupported(String),
+    Unsupported(PCGUnsupportedError),
+}
+
+impl PCGError {
+    pub(crate) fn unsupported(msg: String) -> Self {
+        Self::Unsupported(PCGUnsupportedError::Other(msg))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PCGUnsupportedError {
+    AssignBorrowToNonReferenceType,
+    ClosuresCapturingBorrows,
+    CastToRef,
+    UnsafePtrCast,
+    DerefUnsafePtr,
+    InlineAssembly,
+    Other(String),
 }
 
 #[derive(Clone, PartialEq, Eq)]

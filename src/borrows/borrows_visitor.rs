@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::{
     borrows::{domain::RemotePlace, region_projection_member::RegionProjectionMemberKind},
-    combined_pcs::PCGError,
+    combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface::{
         ast::Mutability,
         borrowck::{
@@ -16,8 +16,10 @@ use crate::{
         dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
         middle::{
             mir::{
-                visit::Visitor, AggregateKind, BorrowKind, Const, Location, Operand, PlaceElem,
-                Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+                self,
+                visit::{PlaceContext, Visitor},
+                AggregateKind, BorrowKind, Const, Location, Operand, PlaceElem, Rvalue, Statement,
+                StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
@@ -367,10 +369,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     Rvalue::Ref(region, kind, blocked_place) => {
                         let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
                         if !target.ty(self.repacker).ty.is_ref() {
-                            self.domain.report_error(PCGError::Unsupported(format!(
-                                "Assigning a borrow to a non-reference type is not yet supported.
-                                This could happen e.g. if you are assigning an `&'a str` to an opaque alias `impl Display`"
-                            )));
+                            self.domain.report_error(PCGError::Unsupported(
+                                PCGUnsupportedError::AssignBorrowToNonReferenceType,
+                            ));
                             return;
                         }
                         let actions = state.add_borrow(
@@ -435,8 +436,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            self.domain.report_error(PCGError::Unsupported(format!(
-                "Non-constant function calls are not yet supported: {:?}",
+            self.domain.report_error(PCGError::unsupported(format!(
+                "This type of function call is not yet supported: {:?}",
                 func
             )));
             return;
@@ -496,10 +497,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
-                        self.domain.report_error(PCGError::Unsupported(format!(
-                            "Closures that contain borrows are not yet supported as function arguments: {:?}",
-                            location
-                        )));
+                        self.domain.report_error(PCGError::Unsupported(
+                            PCGUnsupportedError::ClosuresCapturingBorrows,
+                        ));
                         return;
                     }
                     let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
@@ -565,6 +565,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
+        if self.domain.has_error() {
+            return;
+        }
         if self.stage == StatementStage::Operands && self.preparing {
             match operand {
                 Operand::Copy(place) | Operand::Move(place) => {
@@ -580,7 +583,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         location,
                         capability,
                     );
-                    self.record_actions(expansion_actions);
+                    match expansion_actions {
+                        Ok(actions) => {
+                            self.record_actions(actions);
+                        }
+                        Err(e) => {
+                            self.domain.report_error(PCGError::unsupported(e));
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -682,16 +692,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::Assign(box (target, rvalue)) => {
                     if let Rvalue::Cast(_, _, ty) = rvalue {
                         if ty.ref_mutability().is_some() {
-                            self.domain.report_error(PCGError::Unsupported(format!(
-                                "Casts to reference-typed values are not yet supported: {:?}",
-                                statement
-                            )));
+                            self.domain.report_error(PCGError::Unsupported(
+                                PCGUnsupportedError::CastToRef,
+                            ));
                             return;
                         } else if ty.is_unsafe_ptr() {
-                            self.domain.report_error(PCGError::Unsupported(format!(
-                                "Unsafe pointer casts are not yet supported: {:?}",
-                                statement
-                            )));
+                            self.domain.report_error(PCGError::Unsupported(
+                                PCGUnsupportedError::UnsafePtrCast,
+                            ));
                             return;
                         }
                     }
@@ -718,7 +726,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             location,
                             CapabilityKind::Read,
                         );
-                        self.record_actions(actions);
+                        match actions {
+                            Ok(actions) => {
+                                self.record_actions(actions);
+                            }
+                            Err(e) => {
+                                self.domain.report_error(PCGError::unsupported(e));
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -745,13 +760,32 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         location,
                         CapabilityKind::Write,
                     );
-                    self.record_actions(expansion_actions);
+                    match expansion_actions {
+                        Ok(actions) => {
+                            self.record_actions(actions);
+                        }
+                        Err(e) => {
+                            self.domain.report_error(PCGError::unsupported(e));
+                        }
+                    }
                 }
                 _ => {}
             }
         } else if !self.preparing && self.stage == StatementStage::Main {
             self.stmt_post_main(statement, location);
         }
+    }
+
+    fn visit_place(&mut self, place: &mir::Place<'tcx>, context: PlaceContext, location: Location) {
+        {
+            let place: utils::Place<'tcx> = (*place).into();
+            if place.contains_unsafe_deref(self.repacker) {
+                self.domain
+                    .report_error(PCGError::Unsupported(PCGUnsupportedError::DerefUnsafePtr));
+                return;
+            }
+        }
+        self.super_place(place, context, location);
     }
 
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
@@ -765,6 +799,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 return;
             }
             this.super_rvalue(rvalue, location);
+            if this.domain.has_error() {
+                return;
+            }
             use Rvalue::*;
             match rvalue {
                 Use(_)
@@ -782,20 +819,13 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 | &Len(place)
                 | &Discriminant(place)
                 | &CopyForDeref(place) => {
-                    for (p, proj) in place.iter_projections() {
-                        if p.ty(this.repacker.body(), this.repacker.tcx())
-                            .ty
-                            .is_unsafe_ptr()
-                            && matches!(proj, PlaceElem::Deref)
-                        {
-                            this.domain.report_error(PCGError::Unsupported(format!(
-                                "Dereferencing unsafe pointers is not supported: {:?}",
-                                location
-                            )));
-                            return;
-                        }
-                    }
                     let place: utils::Place<'tcx> = place.into();
+                    if place.contains_unsafe_deref(this.repacker) {
+                        this.domain.report_error(PCGError::Unsupported(
+                            PCGUnsupportedError::DerefUnsafePtr,
+                        ));
+                        return;
+                    }
                     let capability = if matches!(
                         rvalue,
                         Rvalue::Ref(_, BorrowKind::Mut { .. }, _)
@@ -806,13 +836,19 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         CapabilityKind::Read
                     };
                     if this.stage == StatementStage::Operands && this.preparing {
-                        let actions = this.domain.post_state_mut().ensure_expansion_to(
+                        match this.domain.post_state_mut().ensure_expansion_to(
                             this.repacker,
                             place,
                             location,
                             capability,
-                        );
-                        this.record_actions(actions);
+                        ) {
+                            Ok(actions) => {
+                                this.record_actions(actions);
+                            }
+                            Err(e) => {
+                                this.domain.report_error(PCGError::unsupported(e));
+                            }
+                        }
                     }
                 }
             }
