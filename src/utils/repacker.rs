@@ -196,7 +196,7 @@ impl<'tcx> Place<'tcx> {
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> (Vec<(Self, Self, ProjectionKind)>, Vec<Self>) {
+    ) -> Result<(Vec<(Self, Self, ProjectionKind)>, Vec<Self>), String> {
         assert!(
             self.is_prefix(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
@@ -204,12 +204,12 @@ impl<'tcx> Place<'tcx> {
         let mut place_set = Vec::new();
         let mut expanded = Vec::new();
         while self.projection.len() < to.projection.len() {
-            let (new_minuend, places, kind) = self.expand_one_level(to, repacker);
+            let (new_minuend, places, kind) = self.expand_one_level(to, repacker)?;
             expanded.push((self, new_minuend, kind));
             place_set.extend(places);
             self = new_minuend;
         }
-        (expanded, place_set)
+        Ok((expanded, place_set))
     }
 
     /// Try to collapse all places in `from` by following the
@@ -235,7 +235,7 @@ impl<'tcx> Place<'tcx> {
                             `{guide_place:?}` in `{from:?}`."
                         )
                     });
-                let (expanded, new_places) = guide_place.expand(expand_guide, repacker);
+                let (expanded, new_places) = guide_place.expand(expand_guide, repacker).unwrap();
                 // Doing `collapsed.extend(expanded)` would result in a reversed order.
                 // Could also change this to `collapsed.push(expanded)` and return Vec<Vec<_>>.
                 collapsed.extend(expanded);
@@ -256,7 +256,7 @@ impl<'tcx> Place<'tcx> {
         self,
         guide_place: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> (Self, Vec<Self>, ProjectionKind) {
+    ) -> Result<(Self, Vec<Self>, ProjectionKind), String> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
@@ -273,7 +273,7 @@ impl<'tcx> Place<'tcx> {
         let new_current_place = Place::new(self.local, new_projection);
         let (other_places, kind) = match guide_place.projection[index] {
             ProjectionElem::Field(projected_field, _field_ty) => {
-                let other_places = self.expand_field(Some(projected_field.index()), repacker);
+                let other_places = self.expand_field(Some(projected_field.index()), repacker)?;
                 (other_places, ProjectionKind::Field(projected_field))
             }
             ProjectionElem::ConstantIndex {
@@ -336,7 +336,7 @@ impl<'tcx> Place<'tcx> {
                 self,
             );
         }
-        (new_current_place, other_places, kind)
+        Ok((new_current_place, other_places, kind))
     }
 
     /// Expands a place `x.f.g` of type struct into a vector of places for
@@ -347,7 +347,7 @@ impl<'tcx> Place<'tcx> {
         self,
         without_field: Option<usize>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<Self> {
+    ) -> Result<Vec<Self>, String> {
         let mut places = Vec::new();
         let typ = self.ty(repacker);
         if !matches!(typ.ty.kind(), TyKind::Adt(..)) {
@@ -423,9 +423,15 @@ impl<'tcx> Place<'tcx> {
                         .into(),
                 );
             }
-            ty => unreachable!("ty={:?} ({self:?})", ty),
+            TyKind::Alias(..) => {
+                return Err(format!(
+                    "Expansion of alias types is not yet supported. Encountered type: {:?}",
+                    typ
+                ));
+            }
+            _ => unreachable!("ty={:?} ({self:?})", typ),
         }
-        places
+        Ok(places)
     }
 }
 

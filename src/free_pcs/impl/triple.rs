@@ -10,7 +10,10 @@ use rustc_interface::middle::mir::{
 };
 
 use crate::{
-    combined_pcs::PCGError, free_pcs::CapabilityKind, rustc_interface, utils::{Place, PlaceRepacker}
+    combined_pcs::{PCGError, PCGUnsupportedError},
+    free_pcs::CapabilityKind,
+    rustc_interface,
+    utils::{Place, PlaceRepacker},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -239,20 +242,16 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 pre: Condition::write(place),
                 post: None,
             },
-            &Call { destination, .. } => {
-                Triple {
-                    pre: Condition::write(destination),
-                    post: Some(Condition::exclusive(destination)),
-                }
-            }
+            &Call { destination, .. } => Triple {
+                pre: Condition::write(destination),
+                post: Some(Condition::exclusive(destination)),
+            },
             &Yield { resume_arg, .. } => Triple {
                 pre: Condition::write(resume_arg),
                 post: Some(Condition::exclusive(resume_arg)),
             },
             InlineAsm { .. } => {
-                self.error = Some(PCGError::Unsupported(
-                    "Inline assembly is not yet supported".to_string(),
-                ));
+                self.error = Some(PCGError::Unsupported(PCGUnsupportedError::InlineAssembly));
                 return;
             }
             CoroutineDrop => todo!(),

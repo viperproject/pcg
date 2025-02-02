@@ -385,7 +385,7 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         location: Location,
         capability: CapabilityKind,
-    ) -> ExecutedActions<'tcx> {
+    ) -> Result<ExecutedActions<'tcx>, String> {
         let mut actions = ExecutedActions::new();
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
         for p in graph_edges {
@@ -449,9 +449,9 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         let extra_acts =
-            self.ensure_expansion_to_at_least(place.into(), repacker, location, capability);
+            self.ensure_expansion_to_at_least(place.into(), repacker, location, capability)?;
         actions.extend(extra_acts);
-        actions
+        Ok(actions)
     }
 
     #[must_use]
@@ -462,14 +462,14 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
         capability: CapabilityKind,
-    ) -> ExecutedActions<'tcx> {
+    ) -> Result<ExecutedActions<'tcx>, String> {
         let mut actions = ExecutedActions::new();
         let mut projects_from = None;
 
         for (base, _) in to_place.iter_projections() {
             let base: Place<'tcx> = base.into();
             let base = base.with_inherent_region(repacker);
-            let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker);
+            let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
             match kind {
                 ProjectionKind::Field(field_idx) => {
                     expansion.insert(field_idx.index(), target);
@@ -546,7 +546,7 @@ impl<'tcx> BorrowsState<'tcx> {
             );
             self.record_and_apply_action(action, &mut actions, repacker);
         }
-        actions
+        Ok(actions)
     }
 
     pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
