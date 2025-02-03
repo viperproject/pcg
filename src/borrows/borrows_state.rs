@@ -27,7 +27,7 @@ use super::{
     },
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion, ExpansionOfOwned},
     borrows_graph::{BorrowsGraph, Conditioned},
-    borrows_visitor::DebugCtx,
+    borrows_visitor::{BorrowPCGActions, DebugCtx},
     coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
@@ -41,14 +41,14 @@ use super::{
 
 #[derive(Debug)]
 pub(crate) struct ExecutedActions<'tcx> {
-    actions: Vec<BorrowPCGAction<'tcx>>,
+    actions: BorrowPCGActions<'tcx>,
     changed: bool,
 }
 
 impl<'tcx> ExecutedActions<'tcx> {
     fn new() -> Self {
         Self {
-            actions: vec![],
+            actions: BorrowPCGActions::new(),
             changed: false,
         }
     }
@@ -67,7 +67,7 @@ impl<'tcx> ExecutedActions<'tcx> {
         self.changed |= actions.changed;
     }
 
-    pub(super) fn actions(self) -> Vec<BorrowPCGAction<'tcx>> {
+    pub(super) fn actions(self) -> BorrowPCGActions<'tcx> {
         self.actions
     }
 }
@@ -448,8 +448,7 @@ impl<'tcx> BorrowsState<'tcx> {
             ));
         }
 
-        let extra_acts =
-            self.ensure_expansion_to_at_least(place.into(), repacker, location, capability)?;
+        let extra_acts = self.ensure_expansion_to_at_least(place.into(), repacker, location)?;
         actions.extend(extra_acts);
         Ok(actions)
     }
@@ -461,25 +460,19 @@ impl<'tcx> BorrowsState<'tcx> {
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-        capability: CapabilityKind,
     ) -> Result<ExecutedActions<'tcx>, String> {
         let mut actions = ExecutedActions::new();
-        let mut projects_from = None;
 
         for (base, _) in to_place.iter_projections() {
             let base: Place<'tcx> = base.into();
             let base = base.with_inherent_region(repacker);
             let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
-            match kind {
-                ProjectionKind::Field(field_idx) => {
-                    expansion.insert(field_idx.index(), target);
-                }
-                _ => {
-                    expansion.push(target);
-                }
-            }
+            kind.insert_target_into_expansion(target, &mut expansion);
+
             if let ty::TyKind::Ref(region, _, mutbl) = base.ty(repacker).ty.kind() {
-                projects_from = Some(mutbl);
+                // This is a dereference, taking the the form t -> *t where t
+                // has type &'a T. We insert a region projection member for t↓'a
+                // -> *t
                 self.record_and_apply_action(
                     BorrowPCGAction::add_region_projection_member(
                         RegionProjectionMember::new(
@@ -496,6 +489,22 @@ impl<'tcx> BorrowsState<'tcx> {
                     repacker,
                 );
             }
+
+            let origin_place: MaybeOldPlace<'tcx> = base.into();
+            if !origin_place.is_owned(repacker)
+                && !self.graph.contains_borrow_pcg_expansion_from(origin_place)
+            {
+                let action = BorrowPCGAction::insert_borrow_pcg_expansion(
+                    BorrowPCGExpansion::new(
+                        origin_place.into(),
+                        BorrowExpansion::from_places(expansion.clone(), repacker),
+                        repacker,
+                    ),
+                    location,
+                );
+                self.record_and_apply_action(action, &mut actions, repacker);
+            }
+
             for rp in base.region_projections(repacker) {
                 let dest_places = expansion
                     .iter()
@@ -521,30 +530,6 @@ impl<'tcx> BorrowsState<'tcx> {
                     );
                 }
             }
-            if projects_from.is_some() {
-                let origin_place: MaybeOldPlace<'tcx> = base.into();
-                if !self.graph.contains_borrow_pcg_expansion_from(origin_place) {
-                    let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                        BorrowPCGExpansion::new(
-                            origin_place.into(),
-                            BorrowExpansion::from_places(expansion, repacker),
-                            repacker,
-                        ),
-                        location,
-                    );
-                    self.record_and_apply_action(action, &mut actions, repacker);
-                }
-            }
-        }
-        if !to_place.is_owned(repacker) && self.get_capability(to_place) != Some(capability) {
-            let action = BorrowPCGAction::weaken(
-                to_place.clone(),
-                self.get_capability(to_place).unwrap_or_else(|| {
-                    panic!("capability not set for {:?}", to_place);
-                }),
-                capability,
-            );
-            self.record_and_apply_action(action, &mut actions, repacker);
         }
         Ok(actions)
     }
@@ -592,8 +577,8 @@ impl<'tcx> BorrowsState<'tcx> {
     /// bb0[2]: *x = 2;
     /// bb0[3]: ... // x is dead
     /// ```
-    /// would not remove the *x -> y edge until this function is called at bb0[3].
-    /// This ensures that the edge appears in the graph at the end of bb0[2]
+    /// would not remove the *x -> y edge until this function is called at `bb0[3]`.
+    /// This ensures that the edge appears in the graph at the end of `bb0[2]`
     /// (rather than never at all).
     ///
     /// Additional caveat: we do not remove dead places that are function
@@ -632,15 +617,35 @@ impl<'tcx> BorrowsState<'tcx> {
             let mut cont = false;
             let edges = self.graph.leaf_edges(repacker);
             for edge in edges {
-                let blocked_by_nodes = edge.blocked_by_nodes(repacker);
-                if blocked_by_nodes.iter().all(should_trim) {
+                let is_expansion_leaf = match &edge.kind() {
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(de) => {
+                        !de.is_owned_expansion()
+                            && de
+                                .expansion(repacker)
+                                .into_iter()
+                                .all(|p| !self.graph.has_edge_blocking(p, repacker))
+                    }
+                    _ => false,
+                };
+                if is_expansion_leaf {
                     actions.extend(self.remove_edge_and_set_latest(
                         &edge,
                         location,
                         repacker,
-                        &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
+                        &format!("Trim Old Leaves (expansion leaf)"),
                     ));
                     cont = true;
+                } else {
+                    let blocked_by_nodes = edge.blocked_by_nodes(repacker);
+                    if blocked_by_nodes.iter().all(should_trim) {
+                        actions.extend(self.remove_edge_and_set_latest(
+                            &edge,
+                            location,
+                            repacker,
+                            &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
+                        ));
+                        cont = true;
+                    }
                 }
             }
             if !cont {
@@ -721,14 +726,14 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                     for output in edge.outputs() {
                         self.set_capability(output, CapabilityKind::Exclusive);
-                        if output.place.is_ref(repacker) {
-                            let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                                ExpansionOfOwned::new(output.place).into(),
-                                function_call_abstraction.location(),
-                            );
-                            let result = self.apply_action(action.clone(), repacker);
-                            actions.record(action, result);
-                        }
+                        // if output.place.is_ref(repacker) {
+                        //     let action = BorrowPCGAction::insert_borrow_pcg_expansion(
+                        //         ExpansionOfOwned::new(output.place).into(),
+                        //         function_call_abstraction.location(),
+                        //     );
+                        //     let result = self.apply_action(action.clone(), repacker);
+                        //     actions.record(action, result);
+                        // }
                     }
                 }
             }

@@ -30,7 +30,7 @@ use crate::{
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrows_state::BorrowsState,
-    borrows_visitor::{BorrowCheckerImpl, BorrowsVisitor, StatementStage},
+    borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage},
     coupling_graph_constructor::Coupled,
     domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
     path_condition::{PathCondition, PathConditions},
@@ -228,6 +228,15 @@ impl<T: Default> Default for EvalStmtData<T> {
 }
 
 impl<T> EvalStmtData<T> {
+    pub fn map<U>(self, f: impl Fn(T) -> U) -> EvalStmtData<U> {
+        EvalStmtData {
+            pre_operands: f(self.pre_operands),
+            post_operands: f(self.post_operands),
+            pre_main: f(self.pre_main),
+            post_main: f(self.post_main),
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (EvalStmtPhase, &T)> {
         [
             (EvalStmtPhase::PreOperands, &self.pre_operands),
@@ -279,7 +288,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) states: BorrowsStates<'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
+    pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
     pub(crate) bc: BorrowCheckerImpl<'mir, 'tcx>,
     /// The number of times the join operation has been called, this is just
     /// used for debugging to identify if the dataflow analysis is not

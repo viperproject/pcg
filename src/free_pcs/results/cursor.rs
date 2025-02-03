@@ -13,7 +13,7 @@ use crate::{
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
-    },
+    }, BorrowPCGActions,
 };
 
 use crate::{
@@ -198,7 +198,7 @@ pub struct FreePcsLocation<'tcx> {
     pub extra_start: BorrowsBridge<'tcx>,
     pub extra_middle: BorrowsBridge<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
-    pub(crate) actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
+    pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {

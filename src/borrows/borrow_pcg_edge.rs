@@ -112,14 +112,6 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 }
 
 impl<'tcx> LocalNode<'tcx> {
-    pub(crate) fn as_cg_node(&self) -> Option<CGNode<'tcx>> {
-        match self {
-            LocalNode::Place(_) => None,
-            LocalNode::RegionProjection(rp) => {
-                Some(CGNode::RegionProjection(rp.map_place(|p| p.into())))
-            }
-        }
-    }
     pub(crate) fn is_old(&self) -> bool {
         match self {
             LocalNode::Place(maybe_old_place) => maybe_old_place.is_old(),

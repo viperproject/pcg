@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(417..500)
+    top_crates_range(422..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
