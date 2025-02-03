@@ -84,7 +84,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             }
             Condition::Capability(place, cap) => {
                 match cap {
-                    CapabilityKind::Read | CapabilityKind::Lent => {
+                    CapabilityKind::Read | CapabilityKind::Lent | CapabilityKind::LentShared => {
                         // TODO
                     }
                     CapabilityKind::Write => {

@@ -59,7 +59,6 @@ impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-
     pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         serde_json::Value::String(self.to_short_string(repacker))
     }
@@ -156,7 +155,7 @@ impl<'tcx> Place<'tcx> {
                     (ElemPosition::Suffix, format!("@{variant}",).into())
                 }
 
-                ProjectionElem::Index(_) => (ElemPosition::Suffix, "[_]".into()),
+                ProjectionElem::Index(idx) => (ElemPosition::Suffix, format!("[{idx:?}]").into()),
                 kind => unimplemented!("{kind:?}"),
             }
         };

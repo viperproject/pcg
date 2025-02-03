@@ -367,6 +367,14 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
+            self.states.post_main.set_capability(
+                MaybeRemotePlace::place_assigned_to_local(local),
+                if mutability.is_mut() {
+                    CapabilityKind::Exclusive
+                } else {
+                    CapabilityKind::Read
+                },
+            );
             // TODO: Should these be region projection members instead?
             let _ = self.states.post_main.add_borrow(
                 MaybeRemotePlace::place_assigned_to_local(local),

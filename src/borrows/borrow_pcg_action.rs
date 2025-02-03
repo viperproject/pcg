@@ -158,7 +158,7 @@ pub enum BorrowPCGActionKind<'tcx> {
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-    InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx, LocalNode<'tcx>>, Location),
+    InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx>, Location),
     RenamePlace {
         old: MaybeOldPlace<'tcx>,
         new: MaybeOldPlace<'tcx>,
@@ -228,14 +228,22 @@ impl<'tcx> BorrowsState<'tcx> {
                             }
                         }
                     };
-                    match capability {
-                        CapabilityKind::Read => {
-                            _ = self.set_capability(base, CapabilityKind::Read);
-                        }
-                        _ => {
-                            _ = self.remove_capability(base);
+
+                    // If the expansion is a deref of a borrow, its expansion should not
+                    // change the capability to the base. We are allowed to have e.g. exclusive
+                    // permission to `x: &'a mut T` and `*x` simultanesouly. Intuitively, `*x`
+                    // gets its permission from `x↓'a`.
+                    if !de.is_deref_of_borrow(repacker) {
+                        match capability {
+                            CapabilityKind::Read => {
+                                _ = self.set_capability(base, CapabilityKind::Read);
+                            }
+                            _ => {
+                                _ = self.remove_capability(base);
+                            }
                         }
                     }
+
                     for p in de.expansion(repacker).iter() {
                         _ = self.set_capability(*p, capability);
                     }

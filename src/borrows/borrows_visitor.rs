@@ -674,7 +674,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if self.preparing && self.stage == StatementStage::Operands {
             let state = self.domain.post_state_mut();
             match &statement.kind {
-                StatementKind::Assign(box (target, rvalue)) => {
+                StatementKind::Assign(box (_, rvalue)) => {
                     if let Rvalue::Cast(_, _, ty) = rvalue {
                         if ty.ref_mutability().is_some() {
                             self.domain.report_error(PCGError::Unsupported(
@@ -687,17 +687,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             ));
                             return;
                         }
-                    }
-                    // Any references to target should be made old because it
-                    // will be overwritten in the assignment.
-                    // In principle the target could be made old in the `Main`
-                    // stage as well, maybe that makes more sense?
-                    if target
-                        .ty(self.repacker.body(), self.repacker.tcx())
-                        .ty
-                        .is_ref()
-                    {
-                        self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
                     }
                 }
 
@@ -738,6 +727,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();
+                    // Any references to target should be made old because it
+                    // will be overwritten in the assignment.
+                    if target.is_ref(self.repacker) {
+                        self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
+                    }
                     let expansion_actions = self.domain.post_state_mut().ensure_expansion_to(
                         self.repacker,
                         target,
@@ -752,6 +746,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             self.domain.report_error(PCGError::unsupported(e));
                         }
                     }
+
                     if !target.is_owned(self.repacker)
                         && self.domain.post_state_mut().get_capability(target)
                             != Some(CapabilityKind::Write)

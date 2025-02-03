@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_expansion::{BorrowPCGExpansion, ExpansionOfOwned},
+    borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
     domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
@@ -369,7 +369,7 @@ where
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowPCGEdgeKind<'tcx> {
     Borrow(BorrowEdge<'tcx>),
-    BorrowPCGExpansion(BorrowPCGExpansion<'tcx, LocalNode<'tcx>>),
+    BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
@@ -388,22 +388,10 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdgeKind<'tcx> {
 edgedata_enum!(
     BorrowPCGEdgeKind<'tcx>,
     Borrow(BorrowEdge<'tcx>),
-    BorrowPCGExpansion(DerefExpansion<'tcx>),
+    BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>)
 );
-
-impl<'tcx> From<ExpansionOfOwned<'tcx>> for BorrowPCGEdgeKind<'tcx> {
-    fn from(owned_expansion: ExpansionOfOwned<'tcx>) -> Self {
-        BorrowPCGEdgeKind::BorrowPCGExpansion(BorrowPCGExpansion::FromOwned(owned_expansion))
-    }
-}
-
-impl<'tcx> From<RegionProjectionMember<'tcx>> for BorrowPCGEdgeKind<'tcx> {
-    fn from(member: RegionProjectionMember<'tcx>) -> Self {
-        BorrowPCGEdgeKind::RegionProjectionMember(member)
-    }
-}
 
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {

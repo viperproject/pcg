@@ -689,16 +689,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.remove(edge)
     }
 
-    pub(crate) fn contains_borrow_pcg_expansion_from(&self, place: MaybeOldPlace<'tcx>) -> bool {
-        self.edges.iter().any(|edge| {
-            if let BorrowPCGEdgeKind::BorrowPCGExpansion(de) = &edge.kind {
-                de.base() == place.into()
-            } else {
-                false
-            }
-        })
-    }
-
     pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(
         &'slf mut self,
         mut f: impl FnMut(&mut T) -> bool,

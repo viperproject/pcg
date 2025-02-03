@@ -306,8 +306,8 @@ impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>
 
 edgedata_enum!(
     BorrowPCGExpansion<'tcx>,
-    FromOwned(OwnedExpansion<'tcx>),
-    FromBorrow(BorrowDerefExpansion<'tcx>)
+    FromOwned(ExpansionOfOwned<'tcx>),
+    FromBorrow(ExpansionOfBorrowed<'tcx>)
 );
 
 impl<'tcx, P: Copy + From<MaybeOldPlace<'tcx>>> BorrowPCGExpansion<'tcx, P> {
@@ -343,12 +343,6 @@ where
     }
 }
 
-impl<'tcx> From<ExpansionOfOwned<'tcx>> for BorrowPCGExpansion<'tcx> {
-    fn from(owned: ExpansionOfOwned<'tcx>) -> Self {
-        BorrowPCGExpansion::FromOwned(owned)
-    }
-}
-
 impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PartialEq + Eq + std::hash::Hash>
     BorrowPCGExpansion<'tcx, P>
 {
@@ -367,15 +361,18 @@ impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PartialEq + Eq + std:
 impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>>
     BorrowPCGExpansion<'tcx, P>
 {
-    pub fn is_owned_expansion(&self) -> bool {
-        matches!(self, BorrowPCGExpansion::FromOwned { .. })
+    pub(crate) fn is_deref_of_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match self {
+            BorrowPCGExpansion::FromOwned(_) => true,
+            BorrowPCGExpansion::FromBorrow(e) => match e.base.into() {
+                BlockingNode::Place(p) => p.ty(repacker).ty.is_ref(),
+                BlockingNode::RegionProjection(_) => false,
+            },
+        }
     }
 
-    pub fn borrow_expansion(&self) -> Option<&ExpansionOfBorrowed<'tcx, P>> {
-        match self {
-            BorrowPCGExpansion::FromBorrow(e) => Some(e),
-            _ => None,
-        }
+    pub(crate) fn is_owned_expansion(&self) -> bool {
+        matches!(self, BorrowPCGExpansion::FromOwned { .. })
     }
 
     pub(super) fn new(
@@ -407,13 +404,6 @@ impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>
             assert!(!p.is_owned(repacker));
         }
         BorrowPCGExpansion::FromBorrow(ExpansionOfBorrowed { base, expansion })
-    }
-
-    pub fn expansion_elems(&self) -> Vec<PlaceElem<'tcx>> {
-        match self {
-            BorrowPCGExpansion::FromOwned { .. } => vec![PlaceElem::Deref],
-            BorrowPCGExpansion::FromBorrow(e) => e.expansion.elems(),
-        }
     }
 }
 
