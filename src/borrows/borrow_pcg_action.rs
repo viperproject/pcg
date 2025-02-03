@@ -270,6 +270,7 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
+    #[must_use]
     fn set_latest<T: Into<SnapshotLocation>>(
         &mut self,
         place: Place<'tcx>,

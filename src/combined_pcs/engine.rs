@@ -140,9 +140,6 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         let borrows = BorrowsEngine::new(
             cgx.rp.tcx(),
             cgx.rp.body(),
-            cgx.mir.location_table.as_ref().unwrap(),
-            cgx.mir.input_facts.as_ref().unwrap(),
-            cgx.mir.borrow_set.clone(),
             cgx.mir.output_facts.as_ref().map(|o| o.as_ref()),
         );
         Self {

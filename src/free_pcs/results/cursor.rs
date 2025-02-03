@@ -5,10 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::{
-        borrow_pcg_action::BorrowPCGAction,
-        engine::{BorrowsDomain, EvalStmtData},
-    },
+    borrows::engine::{BorrowsDomain, EvalStmtData},
     combined_pcs::EvalStmtPhase,
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
