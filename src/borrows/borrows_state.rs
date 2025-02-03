@@ -121,8 +121,13 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         self.graph.contains(node.into(), repacker)
     }
+
     pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
         &self.capabilities
+    }
+
+    pub(crate) fn contains_edge(&self, edge: &BorrowPCGEdge<'tcx>) -> bool {
+        self.graph.contains_edge(edge)
     }
 
     pub fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
@@ -426,22 +431,30 @@ impl<'tcx> BorrowsState<'tcx> {
             if let ty::TyKind::Ref(region, _, _) = base.ty(repacker).ty.kind() {
                 // This is a dereference, taking the the form t -> *t where t
                 // has type &'a T. We insert a region projection member for t↓'a
-                // -> *t
-                self.record_and_apply_action(
-                    BorrowPCGAction::add_region_projection_member(
-                        RegionProjectionMember::new(
-                            Coupled::singleton(
-                                RegionProjection::new((*region).into(), base).into(),
-                            ),
-                            Coupled::singleton(target.into()),
-                            RegionProjectionMemberKind::Todo,
-                        ),
-                        PathConditions::new(location.block),
-                        "Ensure Deref Expansion To At Least",
-                    ),
-                    &mut actions,
-                    repacker,
+                // -> *t if it doesn't already exist.
+
+                let region_projection_member = RegionProjectionMember::new(
+                    Coupled::singleton(RegionProjection::new((*region).into(), base).into()),
+                    Coupled::singleton(target.into()),
+                    RegionProjectionMemberKind::Todo,
                 );
+
+                let path_conditions = PathConditions::new(location.block);
+
+                if !self.contains_edge(&BorrowPCGEdge::new(
+                    region_projection_member.clone().into(),
+                    path_conditions.clone(),
+                )) {
+                    self.record_and_apply_action(
+                        BorrowPCGAction::add_region_projection_member(
+                            region_projection_member,
+                            PathConditions::new(location.block),
+                            "Ensure Deref Expansion To At Least",
+                        ),
+                        &mut actions,
+                        repacker,
+                    );
+                }
             }
 
             let origin_place: MaybeOldPlace<'tcx> = base.into();
@@ -455,6 +468,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         repacker,
                     ),
                     location,
+                    "Ensure Deref Expansion (Place)",
                 );
                 self.record_and_apply_action(action, &mut actions, repacker);
             }
@@ -470,18 +484,23 @@ impl<'tcx> BorrowsState<'tcx> {
                     .copied()
                     .collect::<Vec<_>>();
                 if dest_places.len() > 0 {
-                    self.record_and_apply_action(
-                        BorrowPCGAction::insert_borrow_pcg_expansion(
-                            BorrowPCGExpansion::from_borrowed_base(
-                                rp.into(),
-                                BorrowExpansion::from_places(dest_places, repacker),
-                                repacker,
-                            ),
-                            location,
-                        ),
-                        &mut actions,
+                    let expansion = BorrowPCGExpansion::from_borrowed_base(
+                        rp.into(),
+                        BorrowExpansion::from_places(dest_places, repacker),
                         repacker,
                     );
+                    let path_conditions = PathConditions::new(location.block);
+                    if !self.contains_edge(&expansion.clone().to_borrow_pcg_edge(path_conditions)) {
+                        self.record_and_apply_action(
+                            BorrowPCGAction::insert_borrow_pcg_expansion(
+                                expansion,
+                                location,
+                                "Ensure Deref Expansion (Region Projection)",
+                            ),
+                            &mut actions,
+                            repacker,
+                        );
+                    }
                 }
             }
         }

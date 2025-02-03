@@ -125,10 +125,11 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     pub(super) fn insert_borrow_pcg_expansion(
         de: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
         location: Location,
+        context: impl Into<String>,
     ) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::InsertBorrowPCGExpansion(de, location),
-            debug_context: None,
+            debug_context: Some(context.into()),
         }
     }
 

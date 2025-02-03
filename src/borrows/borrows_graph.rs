@@ -668,6 +668,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.insert(edge)
     }
 
+    #[must_use]
+    pub(crate) fn contains_edge(&self, edge: &BorrowPCGEdge<'tcx>) -> bool {
+        self.edges.contains(edge)
+    }
+
     pub(crate) fn edges_blocking(
         &self,
         node: BlockedNode<'tcx>,

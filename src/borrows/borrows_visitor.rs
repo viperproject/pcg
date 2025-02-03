@@ -116,7 +116,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         match (self.last(), actions.first()) {
             (Some(a), Some(b)) => assert_ne!(
                 a, b,
-                "The last action ({:?}) is the same as the first action in the list to extend with.",
+                "The last action ({:#?}) is the same as the first action in the list to extend with.",
                 a,
             ),
             _ => (),
