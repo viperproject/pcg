@@ -682,13 +682,20 @@ impl<'tcx> BorrowsState<'tcx> {
             .graph
             .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block))));
 
+        // Update the capability of the blocked place, if necessary
         if !blocked_place.is_owned(repacker) {
-            let blocked_cap = if mutability == Mutability::Mut {
-                CapabilityKind::Lent
+            if mutability == Mutability::Mut {
+                if self.get_capability(blocked_place) != Some(CapabilityKind::Lent) {
+                    assert!(self.set_capability(blocked_place, CapabilityKind::Lent));
+                }
             } else {
                 match self.get_capability(blocked_place) {
-                    Some(CapabilityKind::Exclusive) => CapabilityKind::LentShared,
-                    Some(CapabilityKind::Read) => CapabilityKind::Read,
+                    Some(CapabilityKind::Exclusive) => {
+                        assert!(self.set_capability(blocked_place, CapabilityKind::LentShared));
+                    }
+                    Some(CapabilityKind::Read | CapabilityKind::LentShared) => {
+                        // Do nothing, this just adds another shared borrow
+                    }
                     other => {
                         unreachable!(
                             "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
@@ -697,8 +704,8 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                 }
             };
-            self.set_capability(blocked_place, blocked_cap);
         }
+
         self.set_capability(assigned_place, assigned_cap);
     }
 
