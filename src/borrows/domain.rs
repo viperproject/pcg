@@ -428,10 +428,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(self.place().project_deref(repacker).into(), self.location())
     }
 
-    pub(crate) fn is_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.place().is_ref(repacker)
-    }
-
     pub fn is_current(&self) -> bool {
         matches!(self, MaybeOldPlace::Current { .. })
     }

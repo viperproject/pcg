@@ -7,12 +7,7 @@ use crate::{
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface::{
         ast::Mutability,
-        borrowck::{
-            borrow_set::BorrowSet,
-            consumers::{
-                BorrowIndex, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-            },
-        },
+        borrowck::consumers::{PoloniusOutput, RegionInferenceContext},
         dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
         middle::{
             mir::{
@@ -35,7 +30,7 @@ use crate::{
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
-    borrow_pcg_edge::{BorrowPCGEdge, PCGNode},
+    borrow_pcg_edge::PCGNode,
     borrows_state::ExecutedActions,
     coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
     domain::{MaybeOldPlace, MaybeRemotePlace},
@@ -88,6 +83,9 @@ impl<'tcx> Default for BorrowPCGActions<'tcx> {
 }
 
 impl<'tcx> BorrowPCGActions<'tcx> {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
     pub(crate) fn iter(&self) -> impl Iterator<Item = &BorrowPCGAction<'tcx>> {
         self.0.iter()
     }
@@ -135,9 +133,6 @@ impl<'tcx> BorrowPCGActions<'tcx> {
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
     pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
-    input_facts: &'mir PoloniusInput,
-    location_table: &'mir LocationTable,
-    borrow_set: Rc<BorrowSet<'tcx>>,
     stage: StatementStage,
     preparing: bool,
     debug_ctx: Option<DebugCtx>,
@@ -194,24 +189,11 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         };
         let mut cursor = self.cursor.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
-        // if !cursor.contains(local) {
-        //     eprintln!("{:?} is not live after {:?}", local, location);
-        // }
         cursor.contains(local)
     }
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
-    fn remove_edge_and_set_latest(&mut self, edge: &BorrowPCGEdge<'tcx>, location: Location) {
-        let actions = self.domain.post_state_mut().remove_edge_and_set_latest(
-            edge,
-            location,
-            self.repacker,
-            "Remove Edge",
-        );
-        self.record_actions(actions);
-    }
-
     fn curr_actions(&mut self) -> &mut BorrowPCGActions<'tcx> {
         match (self.stage, self.preparing) {
             (StatementStage::Operands, true) => &mut self.domain.actions.pre_operands,
@@ -265,11 +247,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
             domain: state,
-            input_facts: engine.input_facts,
             stage,
             preparing,
-            location_table: engine.location_table,
-            borrow_set: engine.borrow_set.clone(),
             debug_ctx: None,
             output_facts: engine.output_facts,
         }
@@ -428,7 +407,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             ));
                             return;
                         }
-                        let actions = state.add_borrow(
+                        state.add_borrow(
                             blocked_place.into(),
                             target,
                             kind.mutability(),
@@ -436,7 +415,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             *region,
                             self.repacker,
                         );
-                        self.record_actions(actions);
                         for source_proj in blocked_place.region_projections(self.repacker) {
                             self.connect_outliving_projections(
                                 source_proj.into(),
@@ -455,25 +433,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
         self.domain.bc.outlives(sup, sub)
-    }
-
-    fn loans_invalidated_at(&self, location: Location, start: bool) -> Vec<BorrowIndex> {
-        let location = if start {
-            self.location_table.start_index(location)
-        } else {
-            self.location_table.mid_index(location)
-        };
-        self.input_facts
-            .loan_invalidated_at
-            .iter()
-            .filter_map(|(loan_point, loan)| {
-                if *loan_point == location {
-                    Some(*loan)
-                } else {
-                    None
-                }
-            })
-            .collect()
     }
 
     /// Constructs a function call abstraction, if necessary.
@@ -605,12 +564,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
         result
     }
-
-    fn minimize(&mut self, location: Location) {
-        let post_state = &mut self.domain.states.post_main;
-        let actions = post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-        self.record_actions(actions);
-    }
 }
 
 impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
@@ -670,7 +623,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if self.preparing && self.stage == StatementStage::Operands {
-            self.minimize(location);
+            let post_state = &mut self.domain.states.post_main;
+            let actions =
+                post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
+            self.record_actions(actions);
         }
         self.super_terminator(terminator, location);
         if self.stage == StatementStage::Main && !self.preparing {
@@ -714,27 +670,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         self.super_statement(statement, location);
 
-        {
-            // TODO: Check if this logic is still necessary now that more general
-            //       liveness information is used.
-            let invalidated_loans =
-                self.loans_invalidated_at(location, self.stage == StatementStage::Operands);
-
-            for loan in invalidated_loans {
-                let loan = &self.borrow_set[loan];
-                let unblock_actions = UnblockGraph::actions_to_unblock(
-                    loan.assigned_place.into(),
-                    self.domain.post_state_mut(),
-                    self.repacker,
-                );
-                for action in unblock_actions {
-                    self.remove_edge_and_set_latest(&action.edge, location);
-                }
-            }
-        }
-
-        let state = self.domain.post_state_mut();
-
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
             let state = self.domain.post_state_mut();
@@ -762,8 +697,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         .ty
                         .is_ref()
                     {
-                        let target = (*target).into();
-                        state.make_place_old(target, self.repacker, self.debug_ctx);
+                        self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
                     }
                 }
 
@@ -794,7 +728,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             match &statement.kind {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
-                    state.make_place_old(place, self.repacker, self.debug_ctx);
+                    self.apply_action(BorrowPCGAction::make_place_old(place));
                     let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
                         self.repacker,
                         location,
@@ -825,7 +759,8 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         assert!(
                             self.domain.post_state_mut().get_capability(target)
                                 == Some(CapabilityKind::Exclusive),
-                            "Target {:?} has capability {:?} instead of {:?}",
+                            "{:?}: target {:?} has capability {:?} instead of {:?}",
+                            location,
                             target,
                             self.domain.post_state_mut().get_capability(target),
                             CapabilityKind::Exclusive

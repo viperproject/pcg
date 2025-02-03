@@ -143,7 +143,6 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    #[must_use]
     pub(crate) fn set_capability<T: Into<PCGNode<'tcx>> + std::fmt::Debug>(
         &mut self,
         node: T,
@@ -627,7 +626,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    #[must_use]
     pub(crate) fn add_borrow(
         &mut self,
         blocked_place: MaybeRemotePlace<'tcx>,
@@ -636,7 +634,7 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> ExecutedActions<'tcx> {
+    ) {
         assert!(
             assigned_place.ty(repacker).ty.ref_mutability().is_some(),
             "{:?}:{:?} Assigned place {:?} is not a reference. Ty: {:?}",
@@ -645,7 +643,6 @@ impl<'tcx> BorrowsState<'tcx> {
             assigned_place,
             assigned_place.ty(repacker).ty
         );
-        let mut actions = ExecutedActions::new();
         let (blocked_cap, assigned_cap) = match mutability {
             Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
             Mutability::Mut => (CapabilityKind::Lent, CapabilityKind::Exclusive),
@@ -659,28 +656,15 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        self.record_and_apply_action(
-            BorrowPCGAction::add_region_projection_member(
-                RegionProjectionMember::new(
-                    Coupled::singleton(rp.into()),
-                    Coupled::singleton(assigned_place.into()),
-                    RegionProjectionMemberKind::Todo,
-                ),
-                PathConditions::new(location.block),
-                "Add Borrow",
-            ),
-            &mut actions,
-            repacker,
-        );
         self.set_capability(rp, blocked_cap);
-        self.graph
-            .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block)));
+        assert!(self
+            .graph
+            .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block))));
 
         if !blocked_place.is_owned(repacker) {
             self.set_capability(blocked_place, blocked_cap);
         }
         self.set_capability(assigned_place, assigned_cap);
-        actions
     }
 
     /// Inserts the abstraction edge and sets capabilities for
@@ -704,10 +688,12 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             _ => todo!(),
         }
-        self.graph
-            .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block)));
+        assert!(self
+            .graph
+            .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block))));
     }
 
+    #[must_use]
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,

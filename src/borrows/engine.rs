@@ -7,10 +7,7 @@ use crate::{
     combined_pcs::{EvalStmtPhase, PCGError},
     free_pcs::CapabilityKind,
     rustc_interface::{
-        borrowck::{
-            borrow_set::BorrowSet,
-            consumers::{LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
-        },
+        borrowck::consumers::{PoloniusOutput, RegionInferenceContext},
         dataflow::{Analysis, AnalysisDomain, JoinSemiLattice},
         middle::{
             mir::{
@@ -41,9 +38,6 @@ use super::{
 pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) tcx: TyCtxt<'tcx>,
     pub(crate) body: &'mir Body<'tcx>,
-    pub(crate) location_table: &'mir LocationTable,
-    pub(crate) input_facts: &'mir PoloniusInput,
-    pub(crate) borrow_set: Rc<BorrowSet<'tcx>>,
     pub(crate) output_facts: Option<&'mir PoloniusOutput>,
 }
 
@@ -51,17 +45,11 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
     pub(crate) fn new(
         tcx: TyCtxt<'tcx>,
         body: &'mir Body<'tcx>,
-        location_table: &'mir LocationTable,
-        input_facts: &'mir PoloniusInput,
-        borrow_set: Rc<BorrowSet<'tcx>>,
         output_facts: Option<&'mir PoloniusOutput>,
     ) -> Self {
         BorrowsEngine {
             tcx,
             body,
-            location_table,
-            input_facts,
-            borrow_set,
             output_facts,
         }
     }
@@ -129,9 +117,18 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         if state.has_error() {
             return;
         }
+        state.states.pre_operands = state.states.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
-        state.states.pre_operands = state.states.post_main.clone();
+        if !state.actions.pre_operands.is_empty() {
+            state.states.pre_operands = state.states.post_main.clone();
+        } else {
+            debug_assert_eq!(
+                state.states.pre_operands, state.states.post_main,
+                "{:?}: No actions were emitted, but the state has changed",
+                location
+            );
+        }
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
         state.states.post_operands = state.states.post_main.clone();
