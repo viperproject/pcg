@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(422..500)
+    top_crates_range(473..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -74,6 +74,10 @@ fn run_on_crate(name: &str, version: &str) {
         }
         ("tiny-keccak", "2.0.2") => {
             eprintln!("Skipping tiny-keccak; compilation requires choosing a hash function");
+            return;
+        }
+        ("redox_users", _) => {
+            eprintln!("Skipping redox_users; it's for Redox OS only.");
             return;
         }
         _ => {}

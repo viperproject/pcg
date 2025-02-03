@@ -48,5 +48,13 @@ macro_rules! edgedata_enum {
                 }
             }
         }
+
+        $(
+            impl<$tcx> From<$inner_type> for $enum_name<$tcx> {
+                fn from(inner: $inner_type) -> Self {
+                    $enum_name::$variant_name(inner)
+                }
+            }
+        )+
     }
 }

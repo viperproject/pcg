@@ -345,7 +345,13 @@ impl<'tcx> BorrowsState<'tcx> {
         capability: CapabilityKind,
     ) -> Result<ExecutedActions<'tcx>, String> {
         let mut actions = ExecutedActions::new();
+
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
+
+        // If we are going to contract a place, borrows may need to be converted
+        // to region projection member edges. For example, if the type of `x.t` is
+        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to expand to `x`, then we need
+        // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
         for p in graph_edges {
             match p.kind() {
                 BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_ref {
@@ -411,6 +417,8 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(actions)
     }
 
+    /// Inserts edges to ensure that the borrow PCG is expanded to at least
+    /// `to_place`. We assume that no unblock operations are required
     #[must_use]
     #[instrument(skip(self, repacker), fields())]
     fn ensure_expansion_to_at_least(
@@ -457,19 +465,24 @@ impl<'tcx> BorrowsState<'tcx> {
             }
 
             let origin_place: MaybeOldPlace<'tcx> = base.into();
-            if !origin_place.is_owned(repacker)
-                && !self.graph.contains_borrow_pcg_expansion_from(origin_place)
-            {
-                let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                    BorrowPCGExpansion::new(
-                        origin_place.into(),
-                        BorrowExpansion::from_places(expansion.clone(), repacker),
-                        repacker,
-                    ),
-                    location,
-                    "Ensure Deref Expansion (Place)",
+            if !origin_place.is_owned(repacker) {
+                let expansion = BorrowPCGExpansion::new(
+                    origin_place.into(),
+                    BorrowExpansion::from_places(expansion.clone(), repacker),
+                    repacker,
                 );
-                self.record_and_apply_action(action, &mut actions, repacker);
+                if !self.contains_edge(
+                    &expansion
+                        .clone()
+                        .to_borrow_pcg_edge(PathConditions::AtBlock(location.block)),
+                ) {
+                    let action = BorrowPCGAction::insert_borrow_pcg_expansion(
+                        expansion,
+                        location,
+                        "Ensure Deref Expansion (Place)",
+                    );
+                    self.record_and_apply_action(action, &mut actions, repacker);
+                }
             }
 
             for rp in base.region_projections(repacker) {
@@ -643,9 +656,10 @@ impl<'tcx> BorrowsState<'tcx> {
             assigned_place,
             assigned_place.ty(repacker).ty
         );
-        let (blocked_cap, assigned_cap) = match mutability {
-            Mutability::Not => (CapabilityKind::Read, CapabilityKind::Read),
-            Mutability::Mut => (CapabilityKind::Lent, CapabilityKind::Exclusive),
+        let assigned_cap = if mutability == Mutability::Mut {
+            CapabilityKind::Exclusive
+        } else {
+            CapabilityKind::Read
         };
         let borrow_edge = BorrowEdge::new(
             blocked_place.into(),
@@ -656,12 +670,33 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        self.set_capability(rp, blocked_cap);
+        self.set_capability(
+            rp,
+            if mutability == Mutability::Mut {
+                CapabilityKind::Exclusive
+            } else {
+                CapabilityKind::Read
+            },
+        );
         assert!(self
             .graph
             .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block))));
 
         if !blocked_place.is_owned(repacker) {
+            let blocked_cap = if mutability == Mutability::Mut {
+                CapabilityKind::Lent
+            } else {
+                match self.get_capability(blocked_place) {
+                    Some(CapabilityKind::Exclusive) => CapabilityKind::LentShared,
+                    Some(CapabilityKind::Read) => CapabilityKind::Read,
+                    other => {
+                        unreachable!(
+                            "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
+                            location, blocked_place, other
+                        );
+                    }
+                }
+            };
             self.set_capability(blocked_place, blocked_cap);
         }
         self.set_capability(assigned_place, assigned_cap);
