@@ -10,7 +10,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{HasPlace, ProjectionKind},
+    utils::HasPlace,
 };
 
 use crate::{
@@ -25,7 +25,7 @@ use super::{
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
     },
-    borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion, ExpansionOfOwned},
+    borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::{BorrowPCGActions, DebugCtx},
     coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
@@ -235,52 +235,6 @@ impl<'tcx> BorrowsState<'tcx> {
         actions
     }
 
-    /// Collapses nodes using the following rules:
-    /// - If a node is only blocked by old leaves, then its expansion should be collapsed
-    /// - If a borrow PCG node's expansion is only leaves, then its expansion should be collapsed
-    ///
-    /// This function performs such collapses until a fixpoint is reached
-    #[must_use]
-    pub(crate) fn minimize(
-        &mut self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        location: Location,
-    ) -> ExecutedActions<'tcx> {
-        let mut actions = ExecutedActions::new();
-        loop {
-            let edges = self.graph.edges().cloned().collect::<Vec<_>>();
-            let num_edges_prev = edges.len();
-            let to_remove = edges
-                .into_iter()
-                .filter(|edge| {
-                    let is_old_unblocked = edge
-                        .blocked_by_nodes(repacker)
-                        .iter()
-                        .all(|p| p.is_old() && !self.graph.has_edge_blocking(*p, repacker));
-                    let is_borrow_pcg_expansion = match &edge.kind() {
-                        BorrowPCGEdgeKind::BorrowPCGExpansion(de) => {
-                            !de.is_owned_expansion()
-                                && de
-                                    .expansion(repacker)
-                                    .into_iter()
-                                    .all(|p| !self.graph.has_edge_blocking(p, repacker))
-                        }
-                        _ => false,
-                    };
-                    is_old_unblocked || is_borrow_pcg_expansion
-                })
-                .collect::<Vec<_>>();
-            if to_remove.is_empty() {
-                break actions;
-            }
-            for edge in to_remove {
-                actions
-                    .extend(self.remove_edge_and_set_latest(&edge, location, repacker, "Minimize"));
-            }
-            assert!(self.graph.edge_count() < num_edges_prev);
-        }
-    }
-
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
         self.graph.add_path_condition(pc)
     }
@@ -469,7 +423,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
             kind.insert_target_into_expansion(target, &mut expansion);
 
-            if let ty::TyKind::Ref(region, _, mutbl) = base.ty(repacker).ty.kind() {
+            if let ty::TyKind::Ref(region, _, _) = base.ty(repacker).ty.kind() {
                 // This is a dereference, taking the the form t -> *t where t
                 // has type &'a T. We insert a region projection member for t↓'a
                 // -> *t
@@ -710,14 +664,14 @@ impl<'tcx> BorrowsState<'tcx> {
         actions
     }
 
-    #[must_use]
+    /// Inserts the abstraction edge and sets capabilities for
+    /// inputs and outputs: input capabilities are set to [`CapabilityKind::Lent`]
+    /// outputs are set to [`CapabilityKind::Exclusive`]
     pub(crate) fn insert_abstraction_edge(
         &mut self,
         abstraction: AbstractionEdge<'tcx>,
         block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> ExecutedActions<'tcx> {
-        let mut actions = ExecutedActions::new();
+    ) {
         match &abstraction.abstraction_type {
             AbstractionType::FunctionCall(function_call_abstraction) => {
                 for edge in function_call_abstraction.edges() {
@@ -726,14 +680,6 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                     for output in edge.outputs() {
                         self.set_capability(output, CapabilityKind::Exclusive);
-                        // if output.place.is_ref(repacker) {
-                        //     let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                        //         ExpansionOfOwned::new(output.place).into(),
-                        //         function_call_abstraction.location(),
-                        //     );
-                        //     let result = self.apply_action(action.clone(), repacker);
-                        //     actions.record(action, result);
-                        // }
                     }
                 }
             }
@@ -741,7 +687,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         self.graph
             .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block)));
-        actions
     }
 
     pub(crate) fn make_place_old(

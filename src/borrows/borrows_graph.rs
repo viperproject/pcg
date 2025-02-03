@@ -71,10 +71,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub(crate) fn edge_count(&self) -> usize {
-        self.edges.len()
-    }
-
     pub fn edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
         self.edges.iter()
     }
