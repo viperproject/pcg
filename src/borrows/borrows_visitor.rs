@@ -78,6 +78,60 @@ pub(crate) enum StatementStage {
     Main,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct BorrowPCGActions<'tcx>(Vec<BorrowPCGAction<'tcx>>);
+
+impl<'tcx> Default for BorrowPCGActions<'tcx> {
+    fn default() -> Self {
+        Self(vec![])
+    }
+}
+
+impl<'tcx> BorrowPCGActions<'tcx> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &BorrowPCGAction<'tcx>> {
+        self.0.iter()
+    }
+
+    pub(crate) fn to_vec(self) -> Vec<BorrowPCGAction<'tcx>> {
+        self.0
+    }
+
+    pub(crate) fn new() -> Self {
+        Self(vec![])
+    }
+
+    pub(crate) fn first(&self) -> Option<&BorrowPCGAction<'tcx>> {
+        self.0.first()
+    }
+
+    pub(crate) fn last(&self) -> Option<&BorrowPCGAction<'tcx>> {
+        self.0.last()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
+        match (self.last(), actions.first()) {
+            (Some(a), Some(b)) => assert_ne!(
+                a, b,
+                "The last action ({:?}) is the same as the first action in the list to extend with.",
+                a,
+            ),
+            _ => (),
+        }
+        self.0.extend(actions.0);
+    }
+
+    pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>) {
+        if let Some(last) = self.last() {
+            assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
+        }
+        self.0.push(action);
+    }
+}
+
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
     pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
@@ -158,12 +212,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         self.record_actions(actions);
     }
 
-    fn curr_actions(&mut self) -> &mut Vec<BorrowPCGAction<'tcx>> {
+    fn curr_actions(&mut self) -> &mut BorrowPCGActions<'tcx> {
         match (self.stage, self.preparing) {
-            (StatementStage::Operands, true) => self.domain.actions.pre_operands.as_mut(),
-            (StatementStage::Operands, false) => self.domain.actions.post_operands.as_mut(),
-            (StatementStage::Main, true) => self.domain.actions.pre_main.as_mut(),
-            (StatementStage::Main, false) => self.domain.actions.post_main.as_mut(),
+            (StatementStage::Operands, true) => &mut self.domain.actions.pre_operands,
+            (StatementStage::Operands, false) => &mut self.domain.actions.post_operands,
+            (StatementStage::Main, true) => &mut self.domain.actions.pre_main,
+            (StatementStage::Main, false) => &mut self.domain.actions.post_main,
         }
     }
 
@@ -554,10 +608,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn minimize(&mut self, location: Location) {
-        let actions = self
-            .domain
-            .post_state_mut()
-            .minimize(self.repacker, location);
+        let post_state = &mut self.domain.states.post_main;
+        let actions = post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
         self.record_actions(actions);
     }
 }
@@ -650,15 +702,22 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
         self.debug_ctx = Some(DebugCtx::new(location));
+
+        // Remove places that are non longer live based on borrow checker information
         if self.preparing && self.stage == StatementStage::Operands {
-            self.minimize(location);
+            let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
+                self.repacker,
+                location,
+                &self.domain.bc,
+            );
+            self.record_actions(actions);
         }
+
         self.super_statement(statement, location);
 
         {
             // TODO: Check if this logic is still necessary now that more general
             //       liveness information is used.
-
             let invalidated_loans =
                 self.loans_invalidated_at(location, self.stage == StatementStage::Operands);
 
@@ -679,14 +738,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
-            // Remove places that are non longer live based on borrow checker information
-            let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
-                self.repacker,
-                location,
-                &self.domain.bc,
-            );
-            self.record_actions(actions);
-
             let state = self.domain.post_state_mut();
             match &statement.kind {
                 StatementKind::Assign(box (target, rvalue)) => {
@@ -767,6 +818,24 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         Err(e) => {
                             self.domain.report_error(PCGError::unsupported(e));
                         }
+                    }
+                    if !target.is_owned(self.repacker)
+                        && self.domain.post_state_mut().get_capability(target)
+                            != Some(CapabilityKind::Write)
+                    {
+                        assert!(
+                            self.domain.post_state_mut().get_capability(target)
+                                == Some(CapabilityKind::Exclusive),
+                            "Target {:?} has capability {:?} instead of {:?}",
+                            target,
+                            self.domain.post_state_mut().get_capability(target),
+                            CapabilityKind::Exclusive
+                        );
+                        self.apply_action(BorrowPCGAction::weaken(
+                            target,
+                            CapabilityKind::Exclusive,
+                            CapabilityKind::Write,
+                        ));
                     }
                 }
                 _ => {}

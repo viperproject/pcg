@@ -22,6 +22,7 @@ use borrows::{
     borrow_pcg_edge::LocalNode,
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
+    borrows_visitor::BorrowPCGActions,
     engine::EvalStmtData,
     latest::Latest,
     path_condition::PathConditions,
@@ -63,7 +64,12 @@ impl<'tcx> Weaken<'tcx> {
     }
 
     pub(crate) fn new(place: Place<'tcx>, from: CapabilityKind, to: CapabilityKind) -> Self {
-        assert!(from > to);
+        assert!(
+            from > to,
+            "FROM capability ({:?}) is not greater than TO capability ({:?})",
+            from,
+            to
+        );
         Self { place, from, to }
     }
 
@@ -178,9 +184,11 @@ impl<'tcx> BorrowsBridge<'tcx> {
     }
 }
 
-impl<'tcx> From<Vec<BorrowPCGAction<'tcx>>> for BorrowsBridge<'tcx> {
-    fn from(actions: Vec<BorrowPCGAction<'tcx>>) -> Self {
-        Self { actions }
+impl<'tcx> From<BorrowPCGActions<'tcx>> for BorrowsBridge<'tcx> {
+    fn from(actions: BorrowPCGActions<'tcx>) -> Self {
+        Self {
+            actions: actions.to_vec(),
+        }
     }
 }
 
@@ -189,9 +197,9 @@ impl<'tcx> BorrowsBridge<'tcx> {
         Self { actions: vec![] }
     }
 
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
-            "actions": self.actions.iter().map(|a| a.debug_line(repacker)).collect::<Vec<_>>(),
+            "actions": self.actions.iter().map(|a| a.debug_line_with_context(repacker)).collect::<Vec<_>>(),
         })
     }
 }
@@ -216,7 +224,7 @@ struct PCGStmtVisualizationData<'a, 'tcx> {
     free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
     borrows_bridge_start: &'a BorrowsBridge<'tcx>,
     borrows_bridge_middle: &'a BorrowsBridge<'tcx>,
-    actions: &'a EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
+    actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
 }
 
 impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
@@ -290,7 +298,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                     free_pcg_repacks_middle: &statement.repacks_middle,
                     borrows_bridge_start: &statement.extra_start,
                     borrows_bridge_middle: &statement.extra_middle,
-                    actions: &statement.actions,
+                    actions: statement.actions.clone().map(|actions| actions.to_vec()),
                 };
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",

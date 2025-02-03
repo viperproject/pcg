@@ -386,7 +386,12 @@ impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>
         if let LocalNode::Place(p) = base.into()
             && p.is_owned(repacker)
         {
-            assert!(matches!(expansion, BorrowExpansion::Deref));
+            assert!(
+                matches!(expansion, BorrowExpansion::Deref),
+                "Unexpected expansion for {:?}: {:?}",
+                base,
+                expansion
+            );
             BorrowPCGExpansion::FromOwned(ExpansionOfOwned::new(p))
         } else {
             BorrowPCGExpansion::from_borrowed_base(base, expansion, repacker)

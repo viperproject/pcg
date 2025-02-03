@@ -16,13 +16,20 @@ use super::region_projection_member::RegionProjectionMember;
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
 /// their own effect (e.g. for an unblock, applying a magic wand).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BorrowPCGAction<'tcx> {
     pub(crate) kind: BorrowPCGActionKind<'tcx>,
     debug_context: Option<String>,
 }
 
 impl<'tcx> BorrowPCGAction<'tcx> {
+    pub(crate) fn debug_line_with_context(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        if let Some(context) = &self.debug_context {
+            format!("{}: {}", context, self.debug_line(repacker))
+        } else {
+            self.debug_line(repacker)
+        }
+    }
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match &self.kind {
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
@@ -142,7 +149,7 @@ impl<'tcx> From<BorrowPCGActionKind<'tcx>> for BorrowPCGAction<'tcx> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPCGActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),

@@ -33,12 +33,28 @@ pub enum ProjectionKind {
     ConstantIndex(ConstantIndex),
     Other,
 }
+
 impl ProjectionKind {
     pub(crate) fn is_box(self) -> bool {
         matches!(self, ProjectionKind::Box)
     }
     pub(crate) fn is_shared_ref(self) -> bool {
         matches!(self, ProjectionKind::Ref(Mutability::Not))
+    }
+
+    pub(crate) fn insert_target_into_expansion<'tcx>(
+        self,
+        target: Place<'tcx>,
+        expansion: &mut Vec<Place<'tcx>>,
+    ) {
+        match self {
+            ProjectionKind::Field(field_idx) => {
+                expansion.insert(field_idx.index(), target);
+            }
+            _ => {
+                expansion.push(target);
+            }
+        }
     }
 }
 
