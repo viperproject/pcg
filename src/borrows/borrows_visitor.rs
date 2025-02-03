@@ -18,7 +18,7 @@ use crate::{
             mir::{
                 self,
                 visit::{PlaceContext, Visitor},
-                AggregateKind, BorrowKind, Const, Location, Operand, PlaceElem, Rvalue, Statement,
+                AggregateKind, BorrowKind, Const, Location, Operand, Rvalue, Statement,
                 StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
@@ -571,18 +571,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             }
         }
 
-        // No edges may be added e.g. if the inputs do not contain any (possibly
-        // nested) mutable references
+        // No edges may be added e.g. if the inputs do not contain any borrows
         if !edges.is_empty() {
-            let actions =
-                self.domain.post_state_mut().insert_abstraction_edge(
-                    AbstractionEdge::new(AbstractionType::FunctionCall(
-                        FunctionCallAbstraction::new(location, *func_def_id, substs, edges.clone()),
-                    )),
-                    location.block,
-                    self.repacker,
-                );
-            self.record_actions(actions);
+            self.domain.post_state_mut().insert_abstraction_edge(
+                AbstractionEdge::new(AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                    location,
+                    *func_def_id,
+                    substs,
+                    edges.clone(),
+                ))),
+                location.block,
+            );
         }
     }
 
