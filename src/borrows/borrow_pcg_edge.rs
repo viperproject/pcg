@@ -399,6 +399,12 @@ impl<'tcx> From<ExpansionOfOwned<'tcx>> for BorrowPCGEdgeKind<'tcx> {
     }
 }
 
+impl<'tcx> From<RegionProjectionMember<'tcx>> for BorrowPCGEdgeKind<'tcx> {
+    fn from(member: RegionProjectionMember<'tcx>) -> Self {
+        BorrowPCGEdgeKind::RegionProjectionMember(member)
+    }
+}
+
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         match self {
