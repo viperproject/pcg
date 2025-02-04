@@ -426,6 +426,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             ));
                             return;
                         }
+                        if matches!(kind, BorrowKind::Fake(_)) {
+                            return;
+                        }
                         state.add_borrow(
                             blocked_place.into(),
                             target,
