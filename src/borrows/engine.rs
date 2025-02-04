@@ -58,7 +58,7 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
     }
 }
 
-const DEBUG_JOIN_ITERATION_LIMIT: usize = 100;
+const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
@@ -351,7 +351,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
-        .as_ref()
+            .as_ref()
             .map_or(false, |e| matches!(e, PCGError::Internal(_)))
     }
 

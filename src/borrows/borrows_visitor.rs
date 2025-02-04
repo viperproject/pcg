@@ -15,8 +15,8 @@ use crate::{
             mir::{
                 self,
                 visit::{PlaceContext, Visitor},
-                AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
-                Statement, StatementKind, Terminator, TerminatorKind,
+                AggregateKind, BorrowKind, Const, Location, Operand, Rvalue, Statement,
+                StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
