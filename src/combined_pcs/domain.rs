@@ -175,11 +175,27 @@ impl DotGraphs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGError {
     Unsupported(PCGUnsupportedError),
+    Internal(PCGInternalError),
 }
 
 impl PCGError {
     pub(crate) fn unsupported(msg: String) -> Self {
         Self::Unsupported(PCGUnsupportedError::Other(msg))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PCGInternalError(String);
+
+impl PCGInternalError {
+    pub(crate) fn new(msg: String) -> Self {
+        Self(msg)
+    }
+}
+
+impl From<PCGInternalError> for PCGError {
+    fn from(e: PCGInternalError) -> Self {
+        PCGError::Internal(e)
     }
 }
 
@@ -388,6 +404,14 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             panic!("{:?}", other.block());
         }
         let fpcs = self.owned_pcg_mut().join(&other.owned_pcg());
+        if self.owned_pcg().has_internal_error() {
+            panic!(
+                "Error joining (self:{:?}, other:{:?}): {:?}",
+                self.block(),
+                other.block(),
+                self.owned_pcg().error.as_ref().unwrap()
+            );
+        }
         let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
         let mut g = UnblockGraph::new();
         for root in self.borrow_pcg().states.post_main.roots(self.cgx.rp) {

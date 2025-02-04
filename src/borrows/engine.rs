@@ -349,6 +349,12 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         self.error = Some(error);
     }
 
+    pub(crate) fn has_internal_error(&self) -> bool {
+        self.error
+        .as_ref()
+            .map_or(false, |e| matches!(e, PCGError::Internal(_)))
+    }
+
     pub(crate) fn has_error(&self) -> bool {
         self.error.is_some()
     }

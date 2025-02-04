@@ -13,6 +13,7 @@ use rustc_interface::{
 };
 
 use crate::{
+    combined_pcs::PCGInternalError,
     free_pcs::{CapabilityKind, RelatedSet, RepackOp},
     rustc_interface,
     utils::{display::DisplayWithRepacker, Place, PlaceOrdering, PlaceRepacker},
@@ -179,13 +180,22 @@ impl<'tcx> CapabilityProjections<'tcx> {
 
     // TODO: this could be implemented more efficiently, by assuming that a valid
     // state can always be packed up to the root
+    #[must_use]
     pub(crate) fn collapse(
         &mut self,
         mut from: FxHashSet<Place<'tcx>>,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<RepackOp<'tcx>> {
-        debug_assert!(!self.contains_key(&to), "{to:?} already exists in {self:?}");
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
+
+        // We could instead return this error, but failing early might be better
+        // for development
+        if self.contains_key(&to) {
+            let err = PCGInternalError::new(format!(
+                "Cannot collapse (from:{from:?}, to:{to:?}) because {to:?} already exists in {self:?}"
+            ));
+            panic!("{:?}", err);
+        }
         let mut old_caps: FxHashMap<_, _> = from
             .iter()
             .map(|&p| (p, self.remove(&p).unwrap()))
@@ -232,6 +242,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
             ops.push(RepackOp::Collapse(to, from, perm));
         }
         self.insert(to, old_caps[&to]);
-        ops
+        Ok(ops)
     }
 }

@@ -27,6 +27,11 @@ pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) error: Option<PCGError>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
+    pub(crate) fn has_internal_error(&self) -> bool {
+        self.error
+            .as_ref()
+            .map_or(false, |e| matches!(e, PCGError::Internal(_)))
+    }
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
         &mut self.summaries.post_operands
     }
