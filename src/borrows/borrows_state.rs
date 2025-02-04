@@ -1,14 +1,12 @@
 use crate::{
-    borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind},
-    rustc_interface::{
+    borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind}, combined_pcs::PCGError, rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
             ty::{self},
         },
-    },
-    utils::HasPlace,
+    }, utils::HasPlace
 };
 
 use crate::{
@@ -380,7 +378,7 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         location: Location,
         expansion_reason: ExpansionReason,
-    ) -> Result<ExecutedActions<'tcx>, String> {
+    ) -> Result<ExecutedActions<'tcx>, PCGError> {
 
         let mut actions = ExecutedActions::new();
 
@@ -497,7 +495,7 @@ impl<'tcx> BorrowsState<'tcx> {
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-    ) -> Result<ExecutedActions<'tcx>, String> {
+    ) -> Result<ExecutedActions<'tcx>, PCGError> {
         #[cfg(debug_assertions)]
         let mut actions = ExecutedActions::new();
 

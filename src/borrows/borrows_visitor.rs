@@ -614,7 +614,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             self.record_actions(actions);
                         }
                         Err(e) => {
-                            self.domain.report_error(PCGError::unsupported(e));
+                            self.domain.report_error(e);
                         }
                     }
                 }
@@ -726,7 +726,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 self.record_actions(actions);
                             }
                             Err(e) => {
-                                self.domain.report_error(PCGError::unsupported(e));
+                                self.domain.report_error(e);
                             }
                         }
                     }
@@ -765,7 +765,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             self.record_actions(actions);
                         }
                         Err(e) => {
-                            self.domain.report_error(PCGError::unsupported(e));
+                            self.domain.report_error(e);
                         }
                     }
 
@@ -831,13 +831,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 | &Len(place)
                 | &Discriminant(place)
                 | &CopyForDeref(place) => {
-                    let place: utils::Place<'tcx> = place.into();
-                    if place.contains_unsafe_deref(this.repacker) {
-                        this.domain.report_error(PCGError::Unsupported(
-                            PCGUnsupportedError::DerefUnsafePtr,
-                        ));
-                        return;
-                    }
                     let expansion_reason = match rvalue {
                         Rvalue::Ref(_, kind, _) => ExpansionReason::CreateReference(*kind),
                         Rvalue::RawPtr(mutbl, _) => ExpansionReason::CreatePtr(*mutbl),
@@ -846,7 +839,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     if this.stage == StatementStage::Operands && this.preparing {
                         match this.domain.post_state_mut().ensure_expansion_to(
                             this.repacker,
-                            place,
+                            place.into(),
                             location,
                             expansion_reason,
                         ) {
@@ -854,7 +847,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                                 this.record_actions(actions);
                             }
                             Err(e) => {
-                                this.domain.report_error(PCGError::unsupported(e));
+                                this.domain.report_error(e);
                             }
                         }
                     }

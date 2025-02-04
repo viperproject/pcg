@@ -55,10 +55,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
                 region_projection_member.to_short_string(repacker),
                 path_conditions
             ),
-            BorrowPCGActionKind::InsertBorrowPCGExpansion {
-                expansion,
-                location,
-            } => format!(
+            BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => format!(
                 "Insert Expansion {} at {:?}",
                 expansion.to_short_string(repacker),
                 location
@@ -129,10 +126,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         context: impl Into<String>,
     ) -> Self {
         BorrowPCGAction {
-            kind: BorrowPCGActionKind::InsertBorrowPCGExpansion {
-                expansion,
-                location,
-            },
+            kind: BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location),
             debug_context: Some(context.into()),
         }
     }
@@ -168,10 +162,7 @@ pub enum BorrowPCGActionKind<'tcx> {
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-    InsertBorrowPCGExpansion {
-        expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
-        location: Location,
-    },
+    InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx>, Location),
     RenamePlace {
         old: MaybeOldPlace<'tcx>,
         new: MaybeOldPlace<'tcx>,
@@ -217,10 +208,7 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::AddRegionProjectionMember(member, pc) => {
                 self.add_region_projection_member(member, pc, repacker)
             }
-            BorrowPCGActionKind::InsertBorrowPCGExpansion {
-                expansion,
-                location,
-            } => {
+            BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => {
                 let updated = self.insert(
                     expansion
                         .clone()
