@@ -44,7 +44,9 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
                     }
                 }
                 if !cps.contains_key(&local.into()) {
-                    let packs = cps.collapse(cps.keys().copied().collect(), local.into(), repacker);
+                    let packs = cps
+                        .collapse(cps.keys().copied().collect(), local.into(), repacker)
+                        .unwrap();
                     repacks.extend(packs);
                 };
                 repacks.push(RepackOp::StorageDead(local));
@@ -77,7 +79,9 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         break;
                     }
                     PlaceOrdering::Suffix => {
-                        let packs = from.collapse(related.get_places(), place, repacker);
+                        let packs = from
+                            .collapse(related.get_places(), place, repacker)
+                            .unwrap();
                         repacks.extend(packs);
                         break;
                     }
