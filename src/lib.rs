@@ -175,14 +175,9 @@ impl<'tcx> BorrowsBridge<'tcx> {
         self.actions
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::InsertBorrowPCGExpansion {
-                    expansion,
-                    location,
-                    ..
-                } => Some(Conditioned::new(
-                    expansion.clone(),
-                    PathConditions::AtBlock(location.block),
-                )),
+                BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => Some(
+                    Conditioned::new(expansion.clone(), PathConditions::AtBlock(location.block)),
+                ),
                 _ => None,
             })
             .collect()

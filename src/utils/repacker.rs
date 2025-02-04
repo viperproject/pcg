@@ -20,7 +20,10 @@ use rustc_interface::{
     target::abi::FieldIdx,
 };
 
-use crate::rustc_interface;
+use crate::{
+    combined_pcs::{PCGError, PCGUnsupportedError},
+    rustc_interface,
+};
 
 use super::Place;
 
@@ -212,7 +215,7 @@ impl<'tcx> Place<'tcx> {
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(Vec<(Self, Self, ProjectionKind)>, Vec<Self>), String> {
+    ) -> Result<(Vec<(Self, Self, ProjectionKind)>, Vec<Self>), PCGError> {
         assert!(
             self.is_prefix(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
@@ -272,7 +275,7 @@ impl<'tcx> Place<'tcx> {
         self,
         guide_place: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(Self, Vec<Self>, ProjectionKind), String> {
+    ) -> Result<(Self, Vec<Self>, ProjectionKind), PCGError> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
@@ -363,7 +366,7 @@ impl<'tcx> Place<'tcx> {
         self,
         without_field: Option<usize>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Vec<Self>, String> {
+    ) -> Result<Vec<Self>, PCGError> {
         let mut places = Vec::new();
         let typ = self.ty(repacker);
         if !matches!(typ.ty.kind(), TyKind::Adt(..)) {
@@ -440,9 +443,8 @@ impl<'tcx> Place<'tcx> {
                 );
             }
             TyKind::Alias(..) => {
-                return Err(format!(
-                    "Expansion of alias types is not yet supported. Encountered type: {:?}",
-                    typ
+                return Err(PCGError::Unsupported(
+                    PCGUnsupportedError::ExpansionOfAliasType,
                 ));
             }
             _ => unreachable!("ty={:?} ({self:?})", typ),
