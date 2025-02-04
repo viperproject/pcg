@@ -149,12 +149,6 @@ impl<'tcx> From<BorrowPCGActionKind<'tcx>> for BorrowPCGAction<'tcx> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExpansionCapability<'tcx> {
-    Uniform,
-    ForShareOf(LocalNode<'tcx>),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPCGActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
