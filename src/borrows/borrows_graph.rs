@@ -739,26 +739,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if let Some(valid) = self.cached_is_valid.get() {
             return valid;
         }
-        for node in self.roots(repacker) {
-            match node {
-                PCGNode::Place(place) => {
-                    // If *x at l is an interior node, we still currently have
-                    // x at l for the edge {x at l -> *x at l}. Except for these
-                    // cases, we should not have any old places that are roots.
-                    if place.is_old() && !place.is_owned(repacker) {
-                        self.cached_is_valid.set(Some(false));
-                        return false;
-                    }
-                }
-                PCGNode::RegionProjection(_) => {
-                    // TODO: Consider something like the invariant below:
-                    // if region_projection.place.is_old() {
-                    //     self.cached_is_valid.set(Some(false));
-                    //     return false;
-                    // }
-                }
-            }
-        }
         let valid = self.is_acyclic(repacker);
         self.cached_is_valid.set(Some(valid));
         valid
