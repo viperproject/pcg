@@ -1,12 +1,10 @@
-use tracing::instrument;
-
 use crate::{
     borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
-            mir::{BasicBlock, BorrowKind, Location, MutBorrowKind, Operand},
+            mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
             ty::{self},
         },
     },
@@ -20,7 +18,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_action::{BorrowPCGAction, ExpansionCapability},
+    borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
@@ -69,10 +67,6 @@ impl<'tcx> ExecutedActions<'tcx> {
 
     pub(super) fn actions(self) -> BorrowPCGActions<'tcx> {
         self.actions
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.actions.is_empty()
     }
 }
 
@@ -387,8 +381,6 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         expansion_reason: ExpansionReason,
     ) -> Result<ExecutedActions<'tcx>, String> {
-        #[cfg(debug_assertions)]
-        let mut old_self = self.clone();
 
         let mut actions = ExecutedActions::new();
 
@@ -489,18 +481,9 @@ impl<'tcx> BorrowsState<'tcx> {
             let extra_acts = self.ensure_expansion_to_at_least(
                 place.into(),
                 repacker,
-                location,
-                expansion_reason,
+                location
             )?;
             actions.extend(extra_acts);
-        }
-
-        #[cfg(debug_assertions)]
-        if actions.is_empty() {
-            debug_assert_eq!(
-                self, &old_self,
-                "No actions were emitted, but the state has changed"
-            );
         }
 
         Ok(actions)
@@ -514,11 +497,8 @@ impl<'tcx> BorrowsState<'tcx> {
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-        expansion_reason: ExpansionReason,
     ) -> Result<ExecutedActions<'tcx>, String> {
         #[cfg(debug_assertions)]
-        let mut old_self = self.clone();
-
         let mut actions = ExecutedActions::new();
 
         for (base, _) in to_place.iter_projections() {
@@ -609,14 +589,6 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
 
-        #[cfg(debug_assertions)]
-        if actions.is_empty() {
-            debug_assert_eq!(
-                self, &old_self,
-                "No actions were emitted, but the state has changed"
-            );
-        }
-
         Ok(actions)
     }
 
@@ -694,50 +666,35 @@ impl<'tcx> BorrowsState<'tcx> {
                 PCGNode::Place(p) => p.place(),
                 PCGNode::RegionProjection(rp) => rp.place.place(),
             };
+
             if place.projection.is_empty() && repacker.is_arg(place.local) {
                 return false;
             }
-            if place.is_deref() && !g.has_edge_blocking(place, repacker) {
+
+            if !place.projection.is_empty() && !g.has_edge_blocking(place, repacker) {
                 return true;
             }
+
             prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
         };
         loop {
             let mut cont = false;
             let edges = self.graph.leaf_edges(repacker);
             for edge in edges {
-                let is_expansion_leaf = match &edge.kind() {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(de) => {
-                        // !de.is_owned_expansion()
-                        de.expansion(repacker)
-                            .into_iter()
-                            .all(|p| !self.graph.has_edge_blocking(p, repacker))
-                    }
-                    _ => false,
-                };
-                if is_expansion_leaf {
+                let blocked_by_nodes = edge.blocked_by_nodes(repacker);
+                if blocked_by_nodes
+                    .iter()
+                    .all(|p| should_trim(*p, &self.graph))
+                {
                     actions.extend(self.remove_edge_and_set_latest(
                         &edge,
                         location,
                         repacker,
-                        &format!("Trim Old Leaves (expansion leaf)"),
+                        &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
                     ));
                     cont = true;
-                } else {
-                    let blocked_by_nodes = edge.blocked_by_nodes(repacker);
-                    if blocked_by_nodes
-                        .iter()
-                        .all(|p| should_trim(*p, &self.graph))
-                    {
-                        actions.extend(self.remove_edge_and_set_latest(
-                            &edge,
-                            location,
-                            repacker,
-                            &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
-                        ));
-                        cont = true;
-                    }
                 }
+                // }
             }
             if !cont {
                 break actions;
