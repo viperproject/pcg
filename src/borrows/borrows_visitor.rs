@@ -375,7 +375,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         let from: utils::Place<'tcx> = (*from).into();
                         let target: utils::Place<'tcx> = (*target).into();
                         if let Some(mutbl) = from.ref_mutability(self.repacker)
-                            && mutbl.is_mut()
+                            // && mutbl.is_mut()
                         {
                             let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
                             let new_place = target;
