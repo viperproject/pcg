@@ -52,8 +52,10 @@ pub enum CapabilityKind {
     /// This place is mutably borrowed.
     Lent,
 
-    /// There are outstanding shared borrows to this place. The capability to the place can
-    /// be restored to [`CapabilityKind::Exclusive`] when the borrows expire.
+    /// There are outstanding shared borrows to this place or to projections of
+    /// this place. The capability to the place can be restored to
+    /// [`CapabilityKind::Exclusive`] in exchange for the capabilities of its
+    /// projections when the borrows expire.
     LentShared,
 
     /// [`CapabilityKind::Exclusive`] for everything not through a dereference,

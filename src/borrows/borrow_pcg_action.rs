@@ -55,13 +55,14 @@ impl<'tcx> BorrowPCGAction<'tcx> {
                 region_projection_member.to_short_string(repacker),
                 path_conditions
             ),
-            BorrowPCGActionKind::InsertBorrowPCGExpansion(borrow_pcgexpansion, location) => {
-                format!(
-                    "Insert Expansion {} at {:?}",
-                    borrow_pcgexpansion.to_short_string(repacker),
-                    location
-                )
-            }
+            BorrowPCGActionKind::InsertBorrowPCGExpansion {
+                expansion,
+                location,
+            } => format!(
+                "Insert Expansion {} at {:?}",
+                expansion.to_short_string(repacker),
+                location
+            ),
             BorrowPCGActionKind::RenamePlace { old, new } => {
                 format!("Rename {:?} to {:?}", old, new)
             }
@@ -123,12 +124,15 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     }
 
     pub(super) fn insert_borrow_pcg_expansion(
-        de: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
+        expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
         location: Location,
         context: impl Into<String>,
     ) -> Self {
         BorrowPCGAction {
-            kind: BorrowPCGActionKind::InsertBorrowPCGExpansion(de, location),
+            kind: BorrowPCGActionKind::InsertBorrowPCGExpansion {
+                expansion,
+                location,
+            },
             debug_context: Some(context.into()),
         }
     }
@@ -151,6 +155,12 @@ impl<'tcx> From<BorrowPCGActionKind<'tcx>> for BorrowPCGAction<'tcx> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExpansionCapability<'tcx> {
+    Uniform,
+    ForShareOf(LocalNode<'tcx>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPCGActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
@@ -158,7 +168,10 @@ pub enum BorrowPCGActionKind<'tcx> {
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-    InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx>, Location),
+    InsertBorrowPCGExpansion {
+        expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
+        location: Location,
+    },
     RenamePlace {
         old: MaybeOldPlace<'tcx>,
         new: MaybeOldPlace<'tcx>,
@@ -177,6 +190,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
 
 impl<'tcx> BorrowsState<'tcx> {
     #[instrument(skip(self, repacker), fields(action))]
+    #[must_use]
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
@@ -184,7 +198,9 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let result = match action.kind {
             BorrowPCGActionKind::Restore(restore) => {
-                assert!(self.get_capability(restore.node()).unwrap() < restore.capability());
+                if let Some(cap) = self.get_capability(restore.node()) {
+                    assert!(cap < restore.capability());
+                }
                 assert!(self.set_capability(restore.node(), restore.capability()));
                 true
             }
@@ -201,14 +217,18 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::AddRegionProjectionMember(member, pc) => {
                 self.add_region_projection_member(member, pc, repacker)
             }
-            BorrowPCGActionKind::InsertBorrowPCGExpansion(de, location) => {
+            BorrowPCGActionKind::InsertBorrowPCGExpansion {
+                expansion,
+                location,
+            } => {
                 let updated = self.insert(
-                    de.clone()
+                    expansion
+                        .clone()
                         .to_borrow_pcg_edge(PathConditions::new(location.block)),
                 );
                 if updated {
-                    let base = de.base();
-                    let capability = match &de {
+                    let base = expansion.base();
+                    let expanded_capability = match &expansion {
                         BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
                             match expansion_of_owned.base().ty(repacker).ty.ref_mutability() {
                                 Some(Mutability::Mut) => CapabilityKind::Exclusive,
@@ -231,10 +251,10 @@ impl<'tcx> BorrowsState<'tcx> {
 
                     // If the expansion is a deref of a borrow, its expansion should not
                     // change the capability to the base. We are allowed to have e.g. exclusive
-                    // permission to `x: &'a mut T` and `*x` simultanesouly. Intuitively, `*x`
+                    // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
                     // gets its permission from `x↓'a`.
-                    if !de.is_deref_of_borrow(repacker) {
-                        match capability {
+                    if !expansion.is_deref_of_borrow(repacker) {
+                        match expanded_capability {
                             CapabilityKind::Read => {
                                 _ = self.set_capability(base, CapabilityKind::Read);
                             }
@@ -244,8 +264,8 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                     }
 
-                    for p in de.expansion(repacker).iter() {
-                        _ = self.set_capability(*p, capability);
+                    for p in expansion.expansion(repacker).iter() {
+                        _ = self.set_capability(*p, expanded_capability);
                     }
                 }
                 updated

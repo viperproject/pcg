@@ -251,6 +251,11 @@ impl PartialOrd for CGNode<'_> {
 pub (crate) trait BorrowCheckerInterface<'tcx> {
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
+
+    /// Returns the set of two-phase borrows that activate at `location`.
+    /// Each borrow in the returned set is represented by the MIR location
+    /// that it was created at.
+    fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 }
 
 /// Records a history of actions for debugging purpose;

@@ -6,7 +6,7 @@ use crate::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
-            mir::{BasicBlock, Location},
+            mir::{BasicBlock, BorrowKind, Location, MutBorrowKind, Operand},
             ty::{self},
         },
     },
@@ -20,7 +20,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_action::BorrowPCGAction,
+    borrow_pcg_action::{BorrowPCGAction, ExpansionCapability},
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
@@ -70,6 +70,10 @@ impl<'tcx> ExecutedActions<'tcx> {
     pub(super) fn actions(self) -> BorrowPCGActions<'tcx> {
         self.actions
     }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.actions.is_empty()
+    }
 }
 
 /// The "Borrow PCG"
@@ -86,6 +90,45 @@ impl<'tcx> Default for BorrowsState<'tcx> {
             latest: Latest::new(),
             graph: BorrowsGraph::new(),
             capabilities: BorrowPCGCapabilities::new(),
+        }
+    }
+}
+
+pub(crate) enum ExpansionReason {
+    MoveOperand,
+    CopyOperand,
+    FakeRead,
+    AssignTarget,
+    CreateReference(BorrowKind),
+    CreatePtr(Mutability),
+    /// Just to read the place, but not refer to it
+    RValueSimpleRead,
+}
+
+impl ExpansionReason {
+    pub(crate) fn min_post_expansion_capability(&self) -> CapabilityKind {
+        match self {
+            ExpansionReason::MoveOperand => CapabilityKind::Exclusive,
+            ExpansionReason::CopyOperand => CapabilityKind::Read,
+            ExpansionReason::FakeRead => CapabilityKind::Read,
+            ExpansionReason::AssignTarget => CapabilityKind::Write,
+            ExpansionReason::CreateReference(borrow_kind) => match borrow_kind {
+                BorrowKind::Shared => CapabilityKind::LentShared,
+                BorrowKind::Fake(_) => unreachable!(),
+                BorrowKind::Mut { kind } => match kind {
+                    MutBorrowKind::Default => CapabilityKind::Exclusive,
+                    MutBorrowKind::TwoPhaseBorrow => CapabilityKind::LentShared,
+                    MutBorrowKind::ClosureCapture => CapabilityKind::Exclusive,
+                },
+            },
+            ExpansionReason::CreatePtr(mutability) => {
+                if mutability.is_mut() {
+                    CapabilityKind::Exclusive
+                } else {
+                    CapabilityKind::LentShared
+                }
+            }
+            ExpansionReason::RValueSimpleRead => CapabilityKind::Read,
         }
     }
 }
@@ -143,6 +186,7 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
+    #[must_use]
     pub(crate) fn set_capability<T: Into<PCGNode<'tcx>> + std::fmt::Debug>(
         &mut self,
         node: T,
@@ -336,14 +380,16 @@ impl<'tcx> BorrowsState<'tcx> {
     ///
     /// This also handles corresponding region projections of the place.
     #[must_use]
-    #[instrument(skip(self, repacker), fields())]
     pub(crate) fn ensure_expansion_to(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
         place: Place<'tcx>,
         location: Location,
-        capability: CapabilityKind,
+        expansion_reason: ExpansionReason,
     ) -> Result<ExecutedActions<'tcx>, String> {
+        #[cfg(debug_assertions)]
+        let mut old_self = self.clone();
+
         let mut actions = ExecutedActions::new();
 
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
@@ -380,10 +426,28 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
 
-        let unblock_type = if capability == CapabilityKind::Read {
-            UnblockType::ForRead
-        } else {
-            UnblockType::ForExclusive
+        let unblock_type = match expansion_reason {
+            ExpansionReason::MoveOperand => UnblockType::ForRead,
+            ExpansionReason::CopyOperand => UnblockType::ForExclusive,
+            ExpansionReason::FakeRead => UnblockType::ForRead,
+            ExpansionReason::AssignTarget => UnblockType::ForExclusive,
+            ExpansionReason::CreateReference(borrow_kind) => match borrow_kind {
+                BorrowKind::Shared => UnblockType::ForRead,
+                BorrowKind::Fake(_) => unreachable!(),
+                BorrowKind::Mut { kind } => match kind {
+                    MutBorrowKind::Default => UnblockType::ForExclusive,
+                    MutBorrowKind::TwoPhaseBorrow => UnblockType::ForRead,
+                    MutBorrowKind::ClosureCapture => UnblockType::ForExclusive,
+                },
+            },
+            ExpansionReason::CreatePtr(mutability) => {
+                if mutability == Mutability::Mut {
+                    UnblockType::ForExclusive
+                } else {
+                    UnblockType::ForRead
+                }
+            }
+            ExpansionReason::RValueSimpleRead => UnblockType::ForRead,
         };
 
         let mut ug = UnblockGraph::new();
@@ -412,21 +476,49 @@ impl<'tcx> BorrowsState<'tcx> {
             ));
         }
 
-        let extra_acts = self.ensure_expansion_to_at_least(place.into(), repacker, location)?;
-        actions.extend(extra_acts);
+        if self.contains(place, repacker) {
+            if self.get_capability(place) == None {
+                let expected_capability = expansion_reason.min_post_expansion_capability();
+                self.record_and_apply_action(
+                    BorrowPCGAction::restore_capability(place.into(), expected_capability),
+                    &mut actions,
+                    repacker,
+                );
+            }
+        } else {
+            let extra_acts = self.ensure_expansion_to_at_least(
+                place.into(),
+                repacker,
+                location,
+                expansion_reason,
+            )?;
+            actions.extend(extra_acts);
+        }
+
+        #[cfg(debug_assertions)]
+        if actions.is_empty() {
+            debug_assert_eq!(
+                self, &old_self,
+                "No actions were emitted, but the state has changed"
+            );
+        }
+
         Ok(actions)
     }
 
     /// Inserts edges to ensure that the borrow PCG is expanded to at least
     /// `to_place`. We assume that no unblock operations are required
     #[must_use]
-    #[instrument(skip(self, repacker), fields())]
     fn ensure_expansion_to_at_least(
         &mut self,
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
+        expansion_reason: ExpansionReason,
     ) -> Result<ExecutedActions<'tcx>, String> {
+        #[cfg(debug_assertions)]
+        let mut old_self = self.clone();
+
         let mut actions = ExecutedActions::new();
 
         for (base, _) in to_place.iter_projections() {
@@ -464,13 +556,13 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
 
-            let origin_place: MaybeOldPlace<'tcx> = base.into();
-            if !origin_place.is_owned(repacker) {
+            if !target.is_owned(repacker) {
                 let expansion = BorrowPCGExpansion::new(
-                    origin_place.into(),
+                    base.into(),
                     BorrowExpansion::from_places(expansion.clone(), repacker),
                     repacker,
                 );
+
                 if !self.contains_edge(
                     &expansion
                         .clone()
@@ -516,6 +608,15 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
+
+        #[cfg(debug_assertions)]
+        if actions.is_empty() {
+            debug_assert_eq!(
+                self, &old_self,
+                "No actions were emitted, but the state has changed"
+            );
+        }
+
         Ok(actions)
     }
 
@@ -585,18 +686,21 @@ impl<'tcx> BorrowsState<'tcx> {
                 statement_index: location.statement_index - 1,
             })
         };
-        let should_trim = |p: &PCGNode<'tcx, MaybeOldPlace<'tcx>>| {
+        let should_trim = |p: PCGNode<'tcx, MaybeOldPlace<'tcx>>, g: &BorrowsGraph<'tcx>| {
             if p.is_old() {
                 return true;
             }
-            let p = match p {
+            let place = match p {
                 PCGNode::Place(p) => p.place(),
                 PCGNode::RegionProjection(rp) => rp.place.place(),
             };
-            if p.projection.is_empty() && repacker.is_arg(p.local) {
+            if place.projection.is_empty() && repacker.is_arg(place.local) {
                 return false;
             }
-            prev_location.is_some() && !bc.is_live(p.into(), prev_location.unwrap())
+            if place.is_deref() && !g.has_edge_blocking(place, repacker) {
+                return true;
+            }
+            prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
         };
         loop {
             let mut cont = false;
@@ -604,11 +708,10 @@ impl<'tcx> BorrowsState<'tcx> {
             for edge in edges {
                 let is_expansion_leaf = match &edge.kind() {
                     BorrowPCGEdgeKind::BorrowPCGExpansion(de) => {
-                        !de.is_owned_expansion()
-                            && de
-                                .expansion(repacker)
-                                .into_iter()
-                                .all(|p| !self.graph.has_edge_blocking(p, repacker))
+                        // !de.is_owned_expansion()
+                        de.expansion(repacker)
+                            .into_iter()
+                            .all(|p| !self.graph.has_edge_blocking(p, repacker))
                     }
                     _ => false,
                 };
@@ -622,7 +725,10 @@ impl<'tcx> BorrowsState<'tcx> {
                     cont = true;
                 } else {
                     let blocked_by_nodes = edge.blocked_by_nodes(repacker);
-                    if blocked_by_nodes.iter().all(should_trim) {
+                    if blocked_by_nodes
+                        .iter()
+                        .all(|p| should_trim(*p, &self.graph))
+                    {
                         actions.extend(self.remove_edge_and_set_latest(
                             &edge,
                             location,
@@ -643,7 +749,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: Place<'tcx>,
-        mutability: Mutability,
+        kind: BorrowKind,
         location: Location,
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -656,51 +762,50 @@ impl<'tcx> BorrowsState<'tcx> {
             assigned_place,
             assigned_place.ty(repacker).ty
         );
-        let assigned_cap = if mutability == Mutability::Mut {
-            CapabilityKind::Exclusive
-        } else {
-            CapabilityKind::Read
+        let assigned_cap = match kind {
+            BorrowKind::Mut {
+                kind: MutBorrowKind::Default,
+            } => CapabilityKind::Exclusive,
+            _ => CapabilityKind::Read,
         };
         let borrow_edge = BorrowEdge::new(
             blocked_place.into(),
             assigned_place.into(),
-            mutability,
+            kind.mutability(),
             location,
             region,
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        self.set_capability(
-            rp,
-            if mutability == Mutability::Mut {
-                CapabilityKind::Exclusive
-            } else {
-                CapabilityKind::Read
-            },
-        );
+        self.set_capability(rp, assigned_cap);
         assert!(self
             .graph
             .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block))));
 
         // Update the capability of the blocked place, if necessary
         if !blocked_place.is_owned(repacker) {
-            if mutability == Mutability::Mut {
-                if self.get_capability(blocked_place) != Some(CapabilityKind::Lent) {
-                    assert!(self.set_capability(blocked_place, CapabilityKind::Lent));
+            match kind {
+                BorrowKind::Mut {
+                    kind: MutBorrowKind::Default,
+                } => {
+                    if self.get_capability(blocked_place) != Some(CapabilityKind::Lent) {
+                        assert!(self.set_capability(blocked_place, CapabilityKind::Lent));
+                    }
                 }
-            } else {
-                match self.get_capability(blocked_place) {
-                    Some(CapabilityKind::Exclusive) => {
-                        assert!(self.set_capability(blocked_place, CapabilityKind::LentShared));
-                    }
-                    Some(CapabilityKind::Read | CapabilityKind::LentShared) => {
-                        // Do nothing, this just adds another shared borrow
-                    }
-                    other => {
-                        unreachable!(
-                            "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
-                            location, blocked_place, other
-                        );
+                _ => {
+                    match self.get_capability(blocked_place) {
+                        Some(CapabilityKind::Exclusive) => {
+                            assert!(self.set_capability(blocked_place, CapabilityKind::LentShared));
+                        }
+                        Some(CapabilityKind::Read | CapabilityKind::LentShared) => {
+                            // Do nothing, this just adds another shared borrow
+                        }
+                        other => {
+                            unreachable!(
+                                "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
+                                location, blocked_place, other
+                            );
+                        }
                     }
                 }
             };

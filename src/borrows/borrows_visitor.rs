@@ -6,15 +6,17 @@ use crate::{
     borrows::{domain::RemotePlace, region_projection_member::RegionProjectionMemberKind},
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface::{
-        ast::Mutability,
-        borrowck::consumers::{PoloniusOutput, RegionInferenceContext},
+        borrowck::{
+            borrow_set::BorrowSet,
+            consumers::{PoloniusOutput, RegionInferenceContext},
+        },
         dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
         middle::{
             mir::{
                 self,
                 visit::{PlaceContext, Visitor},
-                AggregateKind, BorrowKind, Const, Location, Operand, Rvalue, Statement,
-                StatementKind, Terminator, TerminatorKind,
+                AggregateKind, BorrowKind, Const, Location, Operand, Rvalue,
+                Statement, StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
@@ -31,7 +33,7 @@ use crate::{
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_edge::PCGNode,
-    borrows_state::ExecutedActions,
+    borrows_state::{ExecutedActions, ExpansionReason},
     coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
     domain::{MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
@@ -144,12 +146,18 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
 pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     region_cx: Rc<RegionInferenceContext<'tcx>>,
+
+    // TODO: Use this to determine when two-phase borrows are activated and
+    // update the PCG accordingly
+    #[allow(unused)]
+    borrows: Rc<BorrowSet<'tcx>>,
 }
 
 impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
     pub(crate) fn new(
-        repacker: &PlaceRepacker<'mir, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
         region_cx: Rc<RegionInferenceContext<'tcx>>,
+        borrows: Rc<BorrowSet<'tcx>>,
     ) -> Self {
         let cursor = MaybeLiveLocals
             .into_engine(repacker.tcx(), repacker.body())
@@ -158,6 +166,7 @@ impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
         Self {
             cursor: Rc::new(RefCell::new(cursor)),
             region_cx,
+            borrows,
         }
     }
 }
@@ -190,6 +199,16 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         let mut cursor = self.cursor.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
         cursor.contains(local)
+    }
+
+    fn twophase_borrow_activations(
+        &self,
+        location: Location,
+    ) -> std::collections::BTreeSet<Location> {
+        self.borrows.activation_map[&location]
+            .iter()
+            .map(|idx| self.borrows[*idx].reserve_location)
+            .collect()
     }
 }
 
@@ -410,7 +429,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         state.add_borrow(
                             blocked_place.into(),
                             target,
-                            kind.mutability(),
+                            kind.clone(),
                             location,
                             *region,
                             self.repacker,
@@ -575,17 +594,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         if self.stage == StatementStage::Operands && self.preparing {
             match operand {
                 Operand::Copy(place) | Operand::Move(place) => {
-                    let capability = if matches!(operand, Operand::Copy(..)) {
-                        CapabilityKind::Read
+                    let expansion_reason = if matches!(operand, Operand::Copy(..)) {
+                        ExpansionReason::CopyOperand
                     } else {
-                        CapabilityKind::Exclusive
+                        ExpansionReason::MoveOperand
                     };
                     let place: utils::Place<'tcx> = (*place).into();
                     let expansion_actions = self.domain.post_state_mut().ensure_expansion_to(
                         self.repacker,
                         place,
                         location,
-                        capability,
+                        expansion_reason,
                     );
                     match expansion_actions {
                         Ok(actions) => {
@@ -697,7 +716,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             self.repacker,
                             place,
                             location,
-                            CapabilityKind::Read,
+                            ExpansionReason::FakeRead,
                         );
                         match actions {
                             Ok(actions) => {
@@ -736,7 +755,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         self.repacker,
                         target,
                         location,
-                        CapabilityKind::Write,
+                        ExpansionReason::AssignTarget,
                     );
                     match expansion_actions {
                         Ok(actions) => {
@@ -747,24 +766,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         }
                     }
 
-                    if !target.is_owned(self.repacker)
-                        && self.domain.post_state_mut().get_capability(target)
-                            != Some(CapabilityKind::Write)
-                    {
-                        assert!(
-                            self.domain.post_state_mut().get_capability(target)
-                                == Some(CapabilityKind::Exclusive),
-                            "{:?}: target {:?} has capability {:?} instead of {:?}",
-                            location,
-                            target,
-                            self.domain.post_state_mut().get_capability(target),
-                            CapabilityKind::Exclusive
-                        );
-                        self.apply_action(BorrowPCGAction::weaken(
-                            target,
-                            CapabilityKind::Exclusive,
-                            CapabilityKind::Write,
-                        ));
+                    if !target.is_owned(self.repacker) {
+                        let target_cap =
+                            self.domain.post_state_mut().get_capability(target).unwrap();
+                        if target_cap != CapabilityKind::Write {
+                            self.apply_action(BorrowPCGAction::weaken(
+                                target,
+                                target_cap,
+                                CapabilityKind::Write,
+                            ));
+                        }
                     }
                 }
                 _ => {}
@@ -824,21 +835,17 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                         ));
                         return;
                     }
-                    let capability = if matches!(
-                        rvalue,
-                        Rvalue::Ref(_, BorrowKind::Mut { .. }, _)
-                            | Rvalue::RawPtr(Mutability::Mut, _)
-                    ) {
-                        CapabilityKind::Exclusive
-                    } else {
-                        CapabilityKind::Read
+                    let expansion_reason = match rvalue {
+                        Rvalue::Ref(_, kind, _) => ExpansionReason::CreateReference(*kind),
+                        Rvalue::RawPtr(mutbl, _) => ExpansionReason::CreatePtr(*mutbl),
+                        _ => ExpansionReason::RValueSimpleRead,
                     };
                     if this.stage == StatementStage::Operands && this.preparing {
                         match this.domain.post_state_mut().ensure_expansion_to(
                             this.repacker,
                             place,
                             location,
-                            capability,
+                            expansion_reason,
                         ) {
                             Ok(actions) => {
                                 this.record_actions(actions);
