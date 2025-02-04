@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[test]
 pub fn top_crates() {
-    top_crates_range(473..500)
+    top_crates_range(0..500)
 }
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -78,6 +78,10 @@ fn run_on_crate(name: &str, version: &str) {
         }
         ("redox_users", _) => {
             eprintln!("Skipping redox_users; it's for Redox OS only.");
+            return;
+        }
+        ("Inflector", _) => {
+            eprintln!("Skipping Inflector; it doesn't compile (probably too old).");
             return;
         }
         _ => {}
