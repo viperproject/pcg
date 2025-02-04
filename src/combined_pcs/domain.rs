@@ -191,6 +191,7 @@ pub enum PCGUnsupportedError {
     UnsafePtrCast,
     DerefUnsafePtr,
     InlineAssembly,
+    TwoPhaseBorrow,
     Other(String),
 }
 
@@ -331,7 +332,12 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(cgx.rp, cgx.mir.region_inference_context.clone(), block);
+        let borrows = BorrowsDomain::new(
+            cgx.rp,
+            cgx.mir.region_inference_context.clone(),
+            cgx.mir.borrow_set.clone(),
+            block,
+        );
         let pcg = PCG {
             owned: fpcs,
             borrow: borrows,

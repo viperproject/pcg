@@ -7,12 +7,15 @@ use crate::{
     combined_pcs::{EvalStmtPhase, PCGError},
     free_pcs::CapabilityKind,
     rustc_interface::{
-        borrowck::consumers::{PoloniusOutput, RegionInferenceContext},
+        borrowck::{
+            borrow_set::BorrowSet,
+            consumers::{PoloniusOutput, RegionInferenceContext},
+        },
         dataflow::{Analysis, AnalysisDomain, JoinSemiLattice},
         middle::{
             mir::{
-                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
-                Terminator, TerminatorEdges,
+                visit::Visitor, BasicBlock, Body, BorrowKind, CallReturnPlaces, Local, Location,
+                MutBorrowKind, Statement, Terminator, TerminatorEdges,
             },
             ty::{self, TyCtxt},
         },
@@ -120,14 +123,17 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         state.states.pre_operands = state.states.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
+
         if !state.actions.pre_operands.is_empty() {
             state.states.pre_operands = state.states.post_main.clone();
         } else {
-            debug_assert_eq!(
-                state.states.pre_operands, state.states.post_main,
-                "{:?}: No actions were emitted, but the state has changed",
-                location
-            );
+            if !state.has_error() {
+                debug_assert_eq!(
+                    state.states.pre_operands, state.states.post_main,
+                    "{:?}: No actions were emitted, but the state has changed",
+                    location
+                );
+            }
         }
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
@@ -350,6 +356,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
         region_inference_context: Rc<RegionInferenceContext<'tcx>>,
+        borrow_set: Rc<BorrowSet<'tcx>>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
@@ -359,7 +366,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             repacker,
             debug_join_iteration: 0,
             error: None,
-            bc: BorrowCheckerImpl::new(&repacker, region_inference_context),
+            bc: BorrowCheckerImpl::new(repacker, region_inference_context, borrow_set),
         }
     }
 
@@ -375,11 +382,13 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                     CapabilityKind::Read
                 },
             );
-            // TODO: Should these be region projection members instead?
+            // TODO: This shouldn't pretend to be a borrow edge
             let _ = self.states.post_main.add_borrow(
                 MaybeRemotePlace::place_assigned_to_local(local),
                 arg_place,
-                *mutability,
+                BorrowKind::Mut {
+                    kind: MutBorrowKind::Default,
+                },
                 location,
                 *region,
                 self.repacker,
