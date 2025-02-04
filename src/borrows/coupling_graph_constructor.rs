@@ -255,6 +255,8 @@ pub (crate) trait BorrowCheckerInterface<'tcx> {
     /// Returns the set of two-phase borrows that activate at `location`.
     /// Each borrow in the returned set is represented by the MIR location
     /// that it was created at.
+    /// TODO: Actually use this
+    #[allow(unused)]
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 }
 
