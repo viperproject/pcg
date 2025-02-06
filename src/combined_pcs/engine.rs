@@ -20,7 +20,7 @@ use rustc_interface::{
     middle::{
         mir::{
             BasicBlock, Body, CallReturnPlaces, Location, Promoted, Statement, Terminator,
-            TerminatorEdges, START_BLOCK,
+            TerminatorEdges, TerminatorKind, START_BLOCK,
         },
         ty::{self, GenericArgsRef, ParamEnv, TyCtxt},
     },
@@ -42,7 +42,6 @@ type OutputFacts = Box<PoloniusOutput>;
 type OutputFacts = Rc<PoloniusOutput>;
 
 #[derive(Clone)]
-
 
 pub struct BodyWithBorrowckFacts<'tcx> {
     pub body: Body<'tcx>,

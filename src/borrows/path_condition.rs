@@ -55,7 +55,15 @@ impl std::fmt::Display for PCGraph {
 }
 
 impl PCGraph {
-    pub fn roots(&self) -> HashSet<BasicBlock> {
+    pub(crate) fn edges_to(&self, block: BasicBlock) -> BTreeSet<PathCondition> {
+        self.0
+            .iter()
+            .filter(|pc| pc.to == block)
+            .map(|pc| *pc)
+            .collect()
+    }
+
+    pub(crate) fn roots(&self) -> HashSet<BasicBlock> {
         self.0
             .iter()
             .filter(|pc| !self.has_path_to_block(pc.from))
@@ -63,7 +71,7 @@ impl PCGraph {
             .collect()
     }
 
-    pub fn end(&self) -> Option<BasicBlock> {
+    pub(crate) fn end(&self) -> Option<BasicBlock> {
         let ends = self
             .0
             .iter()
@@ -77,11 +85,11 @@ impl PCGraph {
         }
     }
 
-    pub fn singleton(pc: PathCondition) -> Self {
+    pub(crate) fn singleton(pc: PathCondition) -> Self {
         Self(BTreeSet::from([pc]))
     }
 
-    pub fn join(&mut self, other: &Self) -> bool {
+    pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
         for pc in other.0.iter() {
             if self.insert(*pc) {
@@ -91,15 +99,15 @@ impl PCGraph {
         changed
     }
 
-    pub fn has_path_to_block(&self, block: BasicBlock) -> bool {
+    pub(crate) fn has_path_to_block(&self, block: BasicBlock) -> bool {
         self.0.iter().any(|pc| pc.to == block)
     }
 
-    pub fn has_path_from_block(&self, block: BasicBlock) -> bool {
+    pub(crate) fn has_path_from_block(&self, block: BasicBlock) -> bool {
         self.0.iter().any(|pc| pc.from == block)
     }
 
-    pub fn has_suffix_of(&self, path: &[BasicBlock]) -> bool {
+    pub(crate) fn has_suffix_of(&self, path: &[BasicBlock]) -> bool {
         let check_path = |path: &[BasicBlock]| {
             let mut i = 0;
             while i < path.len() - 1 {
@@ -122,7 +130,7 @@ impl PCGraph {
         false
     }
 
-    pub fn insert(&mut self, pc: PathCondition) -> bool {
+    pub(crate) fn insert(&mut self, pc: PathCondition) -> bool {
         self.0.insert(pc)
     }
 }
