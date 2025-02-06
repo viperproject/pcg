@@ -509,7 +509,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
-        #[cfg(debug_assertions)]
         let mut actions = ExecutedActions::new();
 
         for (base, _) in to_place.iter_projections() {

@@ -1,8 +1,14 @@
-use std::cell::Cell;
+use std::{
+    cell::Cell,
+    collections::HashMap,
+};
 
 use crate::{
     combined_pcs::PCGNode,
-    rustc_interface::{data_structures::fx::FxHashSet, middle::mir::BasicBlock},
+    rustc_interface::{
+        data_structures::fx::FxHashSet,
+        middle::mir::{BasicBlock, TerminatorEdges},
+    },
     utils::validity::HasValidityCheck,
 };
 use serde_json::json;
@@ -10,7 +16,7 @@ use serde_json::json;
 use crate::{
     borrows::domain::AbstractionType,
     coupling,
-    utils::{Place, PlaceRepacker},
+    utils::{env_feature_enabled, Place, PlaceRepacker},
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
@@ -45,8 +51,17 @@ impl<'tcx> PartialEq for BorrowsGraph<'tcx> {
     }
 }
 
-pub(crate) const COUPLING_IMGCAT_DEBUG: bool = false;
-pub(crate) const BORROWS_IMGCAT_DEBUG: bool = false;
+pub(crate) fn coupling_imgcat_debug() -> bool {
+    env_feature_enabled("PCG_COUPLING_DEBUG_IMGCAT").unwrap_or(false)
+}
+
+pub(crate) fn borrows_imgcat_debug() -> bool {
+    env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false)
+}
+
+pub(crate) fn validity_checks_enabled() -> bool {
+    env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
+}
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
@@ -345,26 +360,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         other: &Self,
         self_block: BasicBlock,
-        exit_block: BasicBlock,
+        other_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
         borrow_checker: &T,
     ) -> bool {
         self.cached_is_valid.set(None);
         let self_coupling_graph =
-            self.construct_coupling_graph(borrow_checker, repacker, exit_block);
+            self.construct_coupling_graph(borrow_checker, repacker, other_block);
         let other_coupling_graph =
-            other.construct_coupling_graph(borrow_checker, repacker, exit_block);
+            other.construct_coupling_graph(borrow_checker, repacker, other_block);
 
-        if COUPLING_IMGCAT_DEBUG {
+        if coupling_imgcat_debug() {
             self_coupling_graph
                 .render_with_imgcat(&format!("self coupling graph: {:?}", self_block));
             other_coupling_graph
-                .render_with_imgcat(&format!("other coupling graph: {:?}", exit_block));
+                .render_with_imgcat(&format!("other coupling graph: {:?}", other_block));
         }
 
         let mut result = self_coupling_graph;
         result.merge(&other_coupling_graph);
-        if COUPLING_IMGCAT_DEBUG {
+        if coupling_imgcat_debug() {
             result.render_with_imgcat("merged coupling graph");
         }
 
@@ -533,7 +548,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         let old_self = self.clone();
 
-        if BORROWS_IMGCAT_DEBUG {
+        if borrows_imgcat_debug() {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                 DotGraph::render_with_imgcat(&dot_graph, &format!("Self graph: {:?}", self_block))
                     .unwrap_or_else(|e| {
@@ -554,8 +569,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if repacker.is_back_edge(other_block, self_block) {
             let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
             if exit_blocks.len() >= 1 {
-                let result = self.join_loop(other, self_block, exit_blocks[0], repacker, bc);
-                if BORROWS_IMGCAT_DEBUG {
+                let result = self.join_loop(other, self_block, other_block, repacker, bc);
+                if borrows_imgcat_debug() {
                     if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                         DotGraph::render_with_imgcat(
                             &dot_graph,
@@ -613,7 +628,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let changed = old_self != *self;
 
-        if BORROWS_IMGCAT_DEBUG {
+        if borrows_imgcat_debug() {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                 DotGraph::render_with_imgcat(
                     &dot_graph,
@@ -627,8 +642,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         // TODO: Currently the graph can become cyclic after the join, for some reason.
         //       This test is postponed for now (we still ensure that the ultimate graph is valid).
-        if false && !self.is_valid(repacker) {
-            if BORROWS_IMGCAT_DEBUG {
+        if validity_checks_enabled() && !self.is_valid(repacker) {
+            if borrows_imgcat_debug() {
                 if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                     DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
                         |e| {
@@ -773,48 +788,112 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        let mut visited = FxHashSet::default();
-        let mut rec_stack = FxHashSet::default();
+        enum PushResult<'tcx> {
+            ExtendPath(Path<'tcx>),
+            Cycle,
+            PathConditionsUnsatisfiable,
+        }
 
-        fn has_cycle<'tcx>(
-            graph: &BorrowsGraph<'tcx>,
-            node: PCGNode<'tcx>,
-            visited: &mut FxHashSet<PCGNode<'tcx>>,
-            rec_stack: &mut FxHashSet<PCGNode<'tcx>>,
-            repacker: PlaceRepacker<'_, 'tcx>,
-        ) -> bool {
-            if rec_stack.contains(&node) {
+        #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+        struct Path<'tcx>(Vec<BorrowPCGEdge<'tcx>>);
+        impl<'tcx> Path<'tcx> {
+            /// Checks if the path is actually feasible, i.e. there is an
+            /// execution path of the program such that the path conditions of
+            /// each edge are satisfied.
+            ///
+            /// Note that this check is very conservative right now (basically
+            /// only checking some obvious cases)
+            fn is_feasible(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+                let leaf_blocks = repacker
+                    .body()
+                    .basic_blocks
+                    .iter_enumerated()
+                    .filter(|(_, bb)| matches!(bb.terminator().edges(), TerminatorEdges::None))
+                    .map(|(idx, _)| idx)
+                    .collect::<Vec<_>>();
+
+                // Maps leaf blocks `be` to a block `bs`, where the path feasibility
+                // requires an edge `bs` -> `be`. If `bs` is not unique for some
+                // `be`, then the path is definitely not feasible.
+                let mut end_blocks_map = HashMap::new();
+                for edge in self.0.iter() {
+                    match edge.conditions() {
+                        PathConditions::Paths(pcgraph) => {
+                            for block in leaf_blocks.iter() {
+                                let edges = pcgraph.edges_to(*block);
+                                if edges.len() == 1 {
+                                    let from_block = edges.iter().next().unwrap().from;
+                                    if let Some(bs) = end_blocks_map.insert(block, from_block) {
+                                        if bs != from_block {
+                                            return false;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        PathConditions::AtBlock(_) => {}
+                    }
+                }
                 return true;
             }
 
-            if visited.contains(&node) {
-                return false;
-            }
-
-            visited.insert(node.clone());
-            rec_stack.insert(node.clone());
-
-            for edge in graph.edges() {
-                if edge.blocks_node(node.clone(), repacker) {
-                    for blocked_node in edge.blocked_by_nodes(repacker) {
-                        if has_cycle(graph, blocked_node.into(), visited, rec_stack, repacker) {
-                            return true;
-                        }
+            fn try_push(
+                mut self,
+                edge: BorrowPCGEdge<'tcx>,
+                repacker: PlaceRepacker<'_, 'tcx>,
+            ) -> PushResult<'tcx> {
+                if let Some(p) = self.0.iter().position(|e| e == &edge) {
+                    PushResult::Cycle
+                } else {
+                    self.0.push(edge);
+                    if self.is_feasible(repacker) {
+                        PushResult::ExtendPath(self)
+                    } else {
+                        PushResult::PathConditionsUnsatisfiable
                     }
                 }
             }
 
-            rec_stack.remove(&node);
-            false
-        }
+            fn last(&self) -> &BorrowPCGEdge<'tcx> {
+                self.0.last().unwrap()
+            }
 
-        for root in self.roots(repacker) {
-            if has_cycle(self, root.into(), &mut visited, &mut rec_stack, repacker) {
-                return false;
+            fn new(edge: BorrowPCGEdge<'tcx>) -> Self {
+                Self(vec![edge])
+            }
+
+            fn leads_to_feasible_cycle(
+                &self,
+                graph: &BorrowsGraph<'tcx>,
+                repacker: PlaceRepacker<'_, 'tcx>,
+            ) -> bool {
+                let curr = self.last();
+                for node in curr.blocked_by_nodes(repacker) {
+                    for edge in graph.edges_blocking(node.into(), repacker) {
+                        match self.clone().try_push(edge, repacker) {
+                            PushResult::Cycle => {
+                                return true;
+                            }
+                            PushResult::ExtendPath(next_path) => {
+                                next_path.leads_to_feasible_cycle(graph, repacker);
+                            }
+                            PushResult::PathConditionsUnsatisfiable => {}
+                        }
+                    }
+                }
+                false
             }
         }
 
-        true
+        for root in self.roots(repacker) {
+            for edge in self.edges_blocking(root.into(), repacker) {
+                if Path::new(edge).leads_to_feasible_cycle(self, repacker) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 }
 

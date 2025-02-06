@@ -19,7 +19,7 @@ use pcs::rustc_interface::{
     },
     session::Session,
 };
-use pcs::{combined_pcs::BodyWithBorrowckFacts, run_combined_pcs};
+use pcs::{combined_pcs::BodyWithBorrowckFacts, run_combined_pcs, utils::env_feature_enabled};
 
 struct PcsCallbacks;
 
@@ -66,21 +66,17 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // true
 }
 
-fn env_feature_enabled(feature: &str) -> bool {
-    ["true", "1"].contains(&std::env::var(feature).unwrap_or_default().as_str())
-}
-
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
     let mut item_names = vec![];
 
-    let vis_dir = if env_feature_enabled("PCG_VISUALIZATION") {
+    let vis_dir = if env_feature_enabled("PCG_VISUALIZATION").unwrap_or(false) {
         Some("visualization/data")
     } else {
         None
     };
 
-    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS");
-    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS");
+    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
+    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 
     if let Some(path) = &vis_dir {
         if std::path::Path::new(path).exists() {

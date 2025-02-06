@@ -171,7 +171,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         }
 
         #[cfg(debug_assertions)]
-        if !self.is_acyclic() && COUPLING_IMGCAT_DEBUG {
+        if !self.is_acyclic() && coupling_imgcat_debug() {
             old_graph.render_with_imgcat("Before merging SCCs");
             self.render_with_imgcat("After merging SCCs");
         }
@@ -283,6 +283,6 @@ where
     }
 }
 
-use crate::borrows::borrows_graph::COUPLING_IMGCAT_DEBUG;
+use crate::borrows::borrows_graph::coupling_imgcat_debug;
 use crate::borrows::coupling_graph_constructor::Coupled;
 use crate::visualization::dot_graph::DotGraph;

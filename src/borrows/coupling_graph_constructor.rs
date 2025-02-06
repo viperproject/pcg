@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     borrow_pcg_edge::LocalNode,
-    borrows_graph::{BorrowsGraph, COUPLING_IMGCAT_DEBUG},
+    borrows_graph::{BorrowsGraph, coupling_imgcat_debug},
     domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
     has_pcs_elem::HasPcsElems,
     region_projection::{PCGRegion, RegionProjection},
@@ -438,7 +438,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         bg: &BorrowsGraph<'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         let full_graph = bg.base_coupling_graph(self.repacker);
-        if COUPLING_IMGCAT_DEBUG {
+        if coupling_imgcat_debug() {
             full_graph.render_with_imgcat("Base coupling graph");
         }
         let leaf_nodes = full_graph.leaf_nodes();
