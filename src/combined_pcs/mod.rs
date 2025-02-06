@@ -6,7 +6,8 @@
 
 mod engine;
 mod domain;
-mod remove;
+mod node;
 
 pub use engine::*;
 pub use domain::*;
+pub use node::*;

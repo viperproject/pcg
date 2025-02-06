@@ -186,7 +186,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 if let Some(cap) = self.get_capability(restore.node()) {
                     assert!(cap < restore.capability());
                 }
-                assert!(self.set_capability(restore.node(), restore.capability()));
+                assert!(
+                    self.set_capability(restore.node(), restore.capability())
+                );
                 true
             }
             BorrowPCGActionKind::Weaken(weaken) => {
@@ -194,7 +196,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 assert!(self.set_capability(weaken.place(), weaken.to));
                 true
             }
-            BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker, None),
+            BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker),
             BorrowPCGActionKind::SetLatest(place, location) => {
                 self.set_latest(place, location, repacker)
             }
@@ -238,7 +240,10 @@ impl<'tcx> BorrowsState<'tcx> {
                     if !expansion.is_deref_of_borrow(repacker) {
                         match expanded_capability {
                             CapabilityKind::Read => {
-                                _ = self.set_capability(base, CapabilityKind::Read);
+                                _ = self.set_capability(
+                                    base,
+                                    CapabilityKind::Read,
+                                );
                             }
                             _ => {
                                 _ = self.remove_capability(base);
@@ -252,7 +257,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 updated
             }
-            BorrowPCGActionKind::RenamePlace { old, new } => self.change_pcs_elem(old, new),
+            BorrowPCGActionKind::RenamePlace { old, new } => {
+                self.change_pcs_elem(old, new, repacker)
+            }
         };
         result
     }

@@ -1,10 +1,12 @@
 use serde_json::json;
 
+use crate::combined_pcs::PCGNode;
 use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::{LocalNode, PCGNode};
+use super::borrow_pcg_edge::LocalNode;
 use super::coupling_graph_constructor::Coupled;
 use super::domain::ToJsonWithRepacker;
 use super::edge_data::EdgeData;
@@ -19,6 +21,14 @@ pub struct RegionProjectionMember<'tcx> {
     pub(crate) inputs: Coupled<PCGNode<'tcx>>,
     pub(crate) outputs: Coupled<LocalNode<'tcx>>,
     pub(crate) kind: RegionProjectionMemberKind,
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for RegionProjectionMember<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.inputs.check_validity(repacker)?;
+        self.outputs.check_validity(repacker)?;
+        Ok(())
+    }
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for RegionProjectionMember<'tcx> {

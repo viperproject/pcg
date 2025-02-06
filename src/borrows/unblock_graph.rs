@@ -3,15 +3,11 @@ use std::collections::HashSet;
 use rustc_interface::middle::mir::BasicBlock;
 
 use crate::{
-    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
-    rustc_interface,
-    utils::PlaceRepacker,
-    visualization::generate_unblock_dot_graph,
-    ToJsonWithRepacker,
+    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData}, combined_pcs::PCGNode, rustc_interface, utils::PlaceRepacker, visualization::generate_unblock_dot_graph, ToJsonWithRepacker
 };
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, PCGNode},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
     domain::MaybeRemotePlace,
 };
 

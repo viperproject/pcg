@@ -7,15 +7,18 @@ use super::{
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,
 };
-use crate::{rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
-    middle::{
-        mir::Location,
-        ty::{self},
+use crate::utils::{validity::HasValidityCheck, PlaceRepacker};
+use crate::{
+    rustc_interface::{
+        ast::Mutability,
+        data_structures::fx::FxHashSet,
+        middle::{
+            mir::Location,
+            ty::{self},
+        },
     },
-}, utils::display::DisplayWithRepacker};
-use crate::utils::PlaceRepacker;
+    utils::display::DisplayWithRepacker,
+};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowEdge<'tcx> {
@@ -31,12 +34,24 @@ pub struct BorrowEdge<'tcx> {
     pub region: ty::Region<'tcx>,
 }
 
+impl<'tcx> HasValidityCheck<'tcx> for BorrowEdge<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.blocked_place.check_validity(repacker)?;
+        self.assigned_ref.check_validity(repacker)?;
+        Ok(())
+    }
+}
+
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowEdge<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "borrow: {} = &{} {}",
             self.assigned_ref.to_short_string(repacker),
-            if self.mutability == Mutability::Mut { "mut " } else { "" },
+            if self.mutability == Mutability::Mut {
+                "mut "
+            } else {
+                ""
+            },
             self.blocked_place.to_short_string(repacker)
         )
     }
@@ -110,7 +125,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self.assigned_ref.ty(repacker).ty.kind() {
             ty::TyKind::Ref(region, _, _) => {
-                RegionProjection::new((*region).into(), self.assigned_ref.into())
+                RegionProjection::new((*region).into(), self.assigned_ref.into(), repacker)
             }
             other => unreachable!("{:?}", other),
         }

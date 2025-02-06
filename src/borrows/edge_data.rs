@@ -1,7 +1,8 @@
+use crate::combined_pcs::PCGNode;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::{LocalNode, PCGNode};
+use super::borrow_pcg_edge::LocalNode;
 
 /// A trait for data that represents a hyperedge in the Borrow PCG.
 pub (crate) trait EdgeData<'tcx> {
@@ -24,7 +25,7 @@ macro_rules! edgedata_enum {
         $( $variant_name:ident($inner_type:ty) ),+ $(,)?
     ) => {
         impl<$tcx> crate::borrows::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
-            fn blocked_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<crate::borrows::borrow_pcg_edge::PCGNode<'tcx>> {
+            fn blocked_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<PCGNode<'tcx>> {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_nodes(repacker),

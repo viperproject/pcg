@@ -7,7 +7,7 @@
 #![feature(rustc_private)]
 #![feature(box_patterns, hash_extract_if, extract_if)]
 #![feature(if_let_guard, let_chains)]
-
+#![feature(never_type)]
 pub mod borrows;
 pub mod combined_pcs;
 pub mod coupling;

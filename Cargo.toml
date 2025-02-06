@@ -9,7 +9,7 @@ build = "build.rs"
 shell-escape = "0.1.5"
 rustversion = "1.0"
 itertools = "0.12.0"
-derive_more = "0.99"
+derive_more = { version = "2.0.1", features = ["full"] }
 dot = "0.1"
 smallvec = { version = "^1.11", features = ["union", "const_new"] }
 regex = "1"

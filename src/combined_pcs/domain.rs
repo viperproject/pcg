@@ -19,15 +19,10 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrow_pcg_edge::PCGNode,
         domain::{MaybeOldPlace, MaybeRemotePlace},
         engine::BorrowsDomain,
         unblock_graph::{UnblockGraph, UnblockType},
-    },
-    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
-    rustc_interface,
-    visualization::generate_dot_graph,
-    RECORD_PCG,
+    }, combined_pcs::PCGNode, free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary}, rustc_interface, visualization::generate_dot_graph, RECORD_PCG
 };
 
 use super::{PCGContext, PCGEngine};

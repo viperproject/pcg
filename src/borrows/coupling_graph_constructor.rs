@@ -4,16 +4,14 @@ use std::{
 };
 
 use crate::{
-    coupling,
-    rustc_interface::{
+    combined_pcs::{PCGNode, PCGNodeLike}, coupling, rustc_interface::{
         ast::Mutability,
         middle::mir::{BasicBlock, Location},
-    },
-    utils::{display::DisplayWithRepacker, PlaceRepacker},
+    }, utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker}, ToJsonWithRepacker
 };
 
 use super::{
-    borrow_pcg_edge::{LocalNode, PCGNode},
+    borrow_pcg_edge::LocalNode,
     borrows_graph::{BorrowsGraph, COUPLING_IMGCAT_DEBUG},
     domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
     has_pcs_elem::HasPcsElems,
@@ -31,11 +29,24 @@ use super::{
 #[derive(Clone, Debug, Hash)]
 pub struct Coupled<T>(Vec<T>);
 
+impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        for t in self.0.iter() {
+            t.check_validity(repacker)?;
+        }
+        Ok(())
+    }
+}
+
 impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "{{{}}}",
-            self.0.iter().map(|t| t.to_short_string(repacker)).collect::<Vec<_>>().join(", ")
+            self.0
+                .iter()
+                .map(|t| t.to_short_string(repacker))
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     }
 }
@@ -134,7 +145,7 @@ impl<T: Eq> From<Vec<T>> for Coupled<T> {
 }
 
 impl<'tcx> Coupled<PCGNode<'tcx>> {
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         let mut iter = self.iter();
         let first = iter.next().unwrap().mutability(repacker);
         assert!(iter.all(|rp| rp.mutability(repacker) == first));
@@ -148,6 +159,37 @@ pub enum CGNode<'tcx> {
     RemotePlace(RemotePlace),
 }
 
+impl<'tcx> PCGNodeLike<'tcx> for CGNode<'tcx> {
+    fn to_pcg_node(self) -> PCGNode<'tcx> {
+        match self {
+            CGNode::RegionProjection(rp) => rp.into(),
+            CGNode::RemotePlace(rp) => rp.into(),
+        }
+    }
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for CGNode<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        todo!()
+    }
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for CGNode<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        todo!()
+    }
+}
+
+
+
+impl<'tcx> HasValidityCheck<'tcx> for CGNode<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        match self {
+            CGNode::RegionProjection(rp) => rp.check_validity(repacker),
+            CGNode::RemotePlace(rp) => rp.check_validity(repacker),
+        }
+    }
+}
 impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for CGNode<'tcx> {
     type Error = ();
     fn try_from(node: MaybeRemotePlace<'tcx>) -> Result<Self, Self::Error> {
@@ -205,23 +247,20 @@ impl<'tcx> From<RemotePlace> for CGNode<'tcx> {
     }
 }
 
-impl<'tcx> CGNode<'tcx> {
-    pub fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        match self {
-            CGNode::RegionProjection(rp) => rp.mutability(repacker),
-            CGNode::RemotePlace(rp) => rp.mutability(repacker),
+impl<'tcx> TryFrom<CGNode<'tcx>> for RegionProjection<'tcx> {
+    type Error = ();
+    fn try_from(node: CGNode<'tcx>) -> Result<Self, Self::Error> {
+        match node {
+            CGNode::RegionProjection(rp) => Ok(rp),
+            CGNode::RemotePlace(_) => Err(()),
         }
     }
+}
 
-    pub fn as_region_projection(self) -> Option<RegionProjection<'tcx>> {
+impl<'tcx> CGNode<'tcx> {
+    pub(crate) fn is_old(&self) -> bool {
         match self {
-            CGNode::RegionProjection(rp) => Some(rp),
-            CGNode::RemotePlace(_) => None,
-        }
-    }
-    pub fn is_old(&self) -> bool {
-        match self {
-            CGNode::RegionProjection(rp) => rp.place.is_old(),
+            CGNode::RegionProjection(rp) => rp.place().is_old(),
             CGNode::RemotePlace(_) => false,
         }
     }
@@ -248,7 +287,7 @@ impl PartialOrd for CGNode<'_> {
     }
 }
 
-pub (crate) trait BorrowCheckerInterface<'tcx> {
+pub(crate) trait BorrowCheckerInterface<'tcx> {
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
 

@@ -5,12 +5,13 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::engine::{BorrowsDomain, EvalStmtData},
+    borrows::{engine::{BorrowsDomain, EvalStmtData}, latest::Latest},
     combined_pcs::EvalStmtPhase,
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
-    }, BorrowPCGActions,
+    },
+    BorrowPCGActions,
 };
 
 use crate::{
@@ -199,6 +200,11 @@ pub struct FreePcsLocation<'tcx> {
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {
+
+    pub fn latest(&self) -> &Latest<'tcx> {
+        &self.borrows.post_main.latest
+    }
+
     pub(crate) fn debug_lines(
         &self,
         phase: EvalStmtPhase,

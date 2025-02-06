@@ -1,12 +1,15 @@
 use crate::{
-    borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind}, combined_pcs::PCGError, rustc_interface::{
+    borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind},
+    combined_pcs::{LocalNodeLike, PCGError, PCGNode, PCGNodeLike},
+    rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
             ty::{self},
         },
-    }, utils::HasPlace
+    },
+    utils::HasPlace,
 };
 
 use crate::{
@@ -18,9 +21,7 @@ use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
-    borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
-    },
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
     borrows_graph::{BorrowsGraph, Conditioned},
     borrows_visitor::{BorrowPCGActions, DebugCtx},
@@ -173,25 +174,22 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
-    pub fn get_capability<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
-        self.capabilities.get(node.into())
+    pub fn get_capability<T: PCGNodeLike<'tcx>>(&self, node: T) -> Option<CapabilityKind> {
+        self.capabilities.get(node.to_pcg_node())
     }
 
     /// Returns true iff the capability was changed.
     #[must_use]
-    pub(crate) fn set_capability<T: Into<PCGNode<'tcx>> + std::fmt::Debug>(
+    pub(crate) fn set_capability<T: PCGNodeLike<'tcx>>(
         &mut self,
         node: T,
         capability: CapabilityKind,
     ) -> bool {
-        self.capabilities.insert(node, capability)
+        self.capabilities.insert(node.to_pcg_node(), capability)
     }
 
     #[must_use]
-    pub(crate) fn remove_capability<T: Into<PCGNode<'tcx>> + std::fmt::Debug>(
-        &mut self,
-        node: T,
-    ) -> bool {
+    pub(crate) fn remove_capability<T: PCGNodeLike<'tcx>>(&mut self, node: T) -> bool {
         self.capabilities.remove(node)
     }
 
@@ -226,12 +224,17 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn change_pcs_elem<T: 'tcx>(&mut self, old: T, new: T) -> bool
+    pub(crate) fn change_pcs_elem<T: 'tcx>(
+        &mut self,
+        old: T,
+        new: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool
     where
         T: PartialEq + Clone,
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
-        self.graph.change_pcs_elem(old, new)
+        self.graph.change_pcs_elem(old, new, repacker)
     }
 
     #[must_use]
@@ -322,8 +325,10 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     /// Returns the place that blocks `place` if:
-    /// 1. there is exactly one edge blocking `place`
-    /// 2. that edge is a borrow edge
+    /// 1. there is exactly one hyperedge blocking `place`
+    /// 2. that edge is a region projection member edge
+    /// 3. there is only one blocking node
+    /// 4. that node can be dereferenced
     ///
     /// This is used in the symbolic-execution based purification encoding to
     /// compute the backwards function for the argument local `place`. It
@@ -340,10 +345,22 @@ impl<'tcx> BorrowsState<'tcx> {
             return None;
         }
         match edges[0].kind() {
-            BorrowPCGEdgeKind::Borrow(reborrow) => Some(reborrow.deref_place(repacker)),
+            BorrowPCGEdgeKind::Borrow(_) => todo!(),
             BorrowPCGEdgeKind::BorrowPCGExpansion(_) => todo!(),
             BorrowPCGEdgeKind::Abstraction(_) => todo!(),
-            BorrowPCGEdgeKind::RegionProjectionMember(_) => None,
+            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
+                let nodes = member.blocked_by_nodes(repacker);
+                if nodes.len() != 1 {
+                    return None;
+                }
+                let node = nodes.into_iter().next().unwrap();
+                match node {
+                    PCGNode::Place(_) => todo!(),
+                    PCGNode::RegionProjection(region_projection) => {
+                        region_projection.deref(repacker)
+                    }
+                }
+            }
         }
     }
 
@@ -379,7 +396,6 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         expansion_reason: ExpansionReason,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
-
         let mut actions = ExecutedActions::new();
 
         let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
@@ -441,9 +457,9 @@ impl<'tcx> BorrowsState<'tcx> {
         };
 
         let mut ug = UnblockGraph::new();
-        ug.unblock_node(place.into(), self, repacker, unblock_type);
+        ug.unblock_node(place.to_pcg_node(), self, repacker, unblock_type);
         for rp in place.region_projections(repacker) {
-            ug.unblock_node(rp.into(), self, repacker, unblock_type);
+            ug.unblock_node(rp.to_pcg_node(), self, repacker, unblock_type);
         }
 
         // The place itself could be in the owned PCG, but we want to unblock
@@ -476,11 +492,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 );
             }
         } else {
-            let extra_acts = self.ensure_expansion_to_at_least(
-                place.into(),
-                repacker,
-                location
-            )?;
+            let extra_acts = self.ensure_expansion_to_at_least(place.into(), repacker, location)?;
             actions.extend(extra_acts);
         }
 
@@ -488,7 +500,8 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     /// Inserts edges to ensure that the borrow PCG is expanded to at least
-    /// `to_place`. We assume that no unblock operations are required
+    /// `to_place`. We assume that any unblock operations have already been
+    /// performed.
     #[must_use]
     fn ensure_expansion_to_at_least(
         &mut self,
@@ -511,7 +524,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 // -> *t if it doesn't already exist.
 
                 let region_projection_member = RegionProjectionMember::new(
-                    Coupled::singleton(RegionProjection::new((*region).into(), base).into()),
+                    Coupled::singleton(
+                        RegionProjection::new((*region).into(), base, repacker).to_pcg_node(),
+                    ),
                     Coupled::singleton(target.into()),
                     RegionProjectionMemberKind::Todo,
                 );
@@ -561,7 +576,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     .filter(|e| {
                         e.region_projections(repacker)
                             .into_iter()
-                            .any(|child_rp| rp.region() == child_rp.region())
+                            .any(|child_rp| rp.region(repacker) == child_rp.region(repacker))
                     })
                     .copied()
                     .collect::<Vec<_>>();
@@ -656,13 +671,13 @@ impl<'tcx> BorrowsState<'tcx> {
                 statement_index: location.statement_index - 1,
             })
         };
-        let should_trim = |p: PCGNode<'tcx, MaybeOldPlace<'tcx>>, g: &BorrowsGraph<'tcx>| {
+        let should_trim = |p: LocalNode<'tcx>, g: &BorrowsGraph<'tcx>| {
             if p.is_old() {
                 return true;
             }
             let place = match p {
                 PCGNode::Place(p) => p.place(),
-                PCGNode::RegionProjection(rp) => rp.place.place(),
+                PCGNode::RegionProjection(rp) => rp.place().place(),
             };
 
             if place.projection.is_empty() && repacker.is_arg(place.local) {
@@ -799,9 +814,8 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        _repacker: PlaceRepacker<'_, 'tcx>,
-        debug_ctx: Option<DebugCtx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.graph.make_place_old(place, &self.latest, debug_ctx)
+        self.graph.make_place_old(place, &self.latest, repacker)
     }
 }
