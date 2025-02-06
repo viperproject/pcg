@@ -1,11 +1,18 @@
 use rustc_interface::{data_structures::fx::FxHashSet, middle::mir::Location};
 
-use crate::{combined_pcs::{LocalNodeLike, PCGNode}, rustc_interface, utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker}};
+use crate::{
+    combined_pcs::{LocalNodeLike, PCGNode},
+    rustc_interface,
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
+};
 
 use super::{
-    borrow_pcg_edge::LocalNode, domain::{
-        AbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
-    }, edge_data::EdgeData, has_pcs_elem::HasPcsElems
+    borrow_pcg_edge::LocalNode,
+    domain::{
+        FunctionAbstractionBlockEdge, AbstractionInputTarget, AbstractionOutputTarget, AbstractionType,
+    },
+    edge_data::EdgeData,
+    has_pcs_elem::HasPcsElems,
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -42,11 +49,11 @@ impl<'tcx> EdgeData<'tcx> for AbstractionEdge<'tcx> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(
-        &self,
-        _repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        self.outputs().into_iter().map(|o| o.to_local_node()).collect()
+    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+        self.outputs()
+            .into_iter()
+            .map(|o| o.to_local_node())
+            .collect()
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -71,7 +78,7 @@ impl<'tcx> AbstractionEdge<'tcx> {
         self.abstraction_type.outputs()
     }
 
-    pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
+    pub fn edges(&self) -> Vec<FunctionAbstractionBlockEdge<'tcx>> {
         self.abstraction_type.edges()
     }
 }
