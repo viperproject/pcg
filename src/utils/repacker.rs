@@ -76,14 +76,6 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
 
-    /// For debugging only: this function defines a predicate for whether
-    /// validity of the PCG should be checked. One use case is to only check
-    /// validity for simple CFGs during testing, in order to find bugs that can
-    /// be easily reproduced.
-    pub(crate) fn should_check_validity(&self) -> bool {
-        true
-    }
-
     /// Returns `true` iff the edge from `from` to `to` is a back edge.
     pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
         self.mir.basic_blocks.dominators().dominates(to, from)

@@ -4,8 +4,7 @@ use crate::{
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
-        domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
-        region_abstraction::AbstractionEdge,
+        domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace, RemotePlace},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         unblock_graph::UnblockGraph,
     }, combined_pcs::{PCGNode, PCGNodeLike}, free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary}, rustc_interface::{self}, utils::{display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation}, visualization::dot_graph::RankAnnotation
@@ -155,7 +154,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_region_abstraction(&mut self, region_abstraction: &AbstractionEdge<'tcx>) {
+    fn insert_region_abstraction(&mut self, region_abstraction: &AbstractionType<'tcx>) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 

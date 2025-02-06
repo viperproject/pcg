@@ -18,11 +18,10 @@ use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
-    domain::{MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
+    domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
-    region_abstraction::AbstractionEdge,
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike},
     region_projection_member::RegionProjectionMember,
 };
@@ -362,7 +361,7 @@ where
 pub enum BorrowPCGEdgeKind<'tcx> {
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
-    Abstraction(AbstractionEdge<'tcx>),
+    Abstraction(AbstractionType<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
 
@@ -392,7 +391,7 @@ edgedata_enum!(
     BorrowPCGEdgeKind<'tcx>,
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
-    Abstraction(AbstractionEdge<'tcx>),
+    Abstraction(AbstractionType<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>)
 );
 
@@ -410,7 +409,7 @@ where
     BorrowEdge<'tcx>: HasPcsElems<T>,
     RegionProjectionMember<'tcx>: HasPcsElems<T>,
     BorrowPCGExpansion<'tcx>: HasPcsElems<T>,
-    AbstractionEdge<'tcx>: HasPcsElems<T>,
+    AbstractionType<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         match self {
@@ -443,7 +442,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowPCGExpansion<'tcx, LocalNode<'tcx>> {
     }
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionEdge<'tcx> {
+impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionType<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,

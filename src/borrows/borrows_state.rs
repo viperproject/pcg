@@ -1,5 +1,8 @@
 use crate::{
-    borrows::{edge_data::EdgeData, region_projection_member::RegionProjectionMemberKind},
+    borrows::{
+        borrows_graph::validity_checks_enabled, edge_data::EdgeData,
+        region_projection_member::RegionProjectionMemberKind,
+    },
     combined_pcs::{LocalNodeLike, PCGError, PCGNode, PCGNodeLike},
     rustc_interface::{
         ast::Mutability,
@@ -30,7 +33,6 @@ use super::{
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_abstraction::AbstractionEdge,
     region_projection::RegionProjection,
     region_projection_member::RegionProjectionMember,
     unblock_graph::{BorrowPCGUnblockAction, UnblockGraph, UnblockType},
@@ -201,7 +203,7 @@ impl<'tcx> BorrowsState<'tcx> {
         bc: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        if repacker.should_check_validity() {
+        if validity_checks_enabled() {
             debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
         }
         let mut changed = false;
@@ -767,11 +769,19 @@ impl<'tcx> BorrowsState<'tcx> {
                         Some(CapabilityKind::Read | CapabilityKind::LentShared) => {
                             // Do nothing, this just adds another shared borrow
                         }
+                        None => {
+                            // Some projections are currently incomplete (e.g. ConstantIndex)
+                            // therefore we don't expect a capability here. For more information
+                            // see the comment in `Place::expand_one_level`.
+                            // TODO: Make such projections complete
+                        }
                         other => {
-                            unreachable!(
-                                "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
-                                location, blocked_place, other
-                            );
+                            if validity_checks_enabled() {
+                                unreachable!(
+                                    "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
+                                    location, blocked_place, other
+                                );
+                            }
                         }
                     }
                 }
@@ -786,10 +796,10 @@ impl<'tcx> BorrowsState<'tcx> {
     /// outputs are set to [`CapabilityKind::Exclusive`]
     pub(crate) fn insert_abstraction_edge(
         &mut self,
-        abstraction: AbstractionEdge<'tcx>,
+        abstraction: AbstractionType<'tcx>,
         block: BasicBlock,
     ) {
-        match &abstraction.abstraction_type {
+        match &abstraction {
             AbstractionType::FunctionCall(function_call_abstraction) => {
                 for edge in function_call_abstraction.edges() {
                     for input in edge.inputs() {

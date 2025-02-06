@@ -1,7 +1,4 @@
-use std::{
-    cell::Cell,
-    collections::HashMap,
-};
+use std::{cell::Cell, collections::HashMap};
 
 use crate::{
     combined_pcs::PCGNode,
@@ -31,7 +28,6 @@ use super::{
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_abstraction::AbstractionEdge,
     region_projection::RegionProjection,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
 };
@@ -199,7 +195,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
-    pub(crate) fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionEdge<'tcx>>> {
+    pub(crate) fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionType<'tcx>>> {
         self.edges
             .iter()
             .filter_map(|edge| match &edge.kind() {
@@ -389,9 +385,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .iter()
             .filter(|edge| {
                 if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
-                    if let AbstractionType::Loop(loop_abstraction) =
-                        &abstraction_edge.abstraction_type
-                    {
+                    if let AbstractionType::Loop(loop_abstraction) = &abstraction_edge {
                         loop_abstraction.location().block == self_block
                     } else {
                         false
@@ -543,7 +537,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         bc: &T,
     ) -> bool {
-        if repacker.should_check_validity() {
+        if validity_checks_enabled() {
             debug_assert!(other.is_valid(repacker), "Other graph is invalid");
         }
         let old_self = self.clone();
