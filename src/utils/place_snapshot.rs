@@ -5,7 +5,7 @@ use crate::{
     rustc_interface::middle::mir::{BasicBlock, Location},
 };
 
-use super::{Place, PlaceRepacker};
+use super::{validity::HasValidityCheck, Place, PlaceRepacker};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub enum SnapshotLocation {
@@ -14,7 +14,7 @@ pub enum SnapshotLocation {
 }
 
 impl SnapshotLocation {
-    pub (crate) fn start() -> Self {
+    pub(crate) fn start() -> Self {
         SnapshotLocation::After(Location::START)
     }
 
@@ -36,6 +36,12 @@ impl From<Location> for SnapshotLocation {
 pub struct PlaceSnapshot<'tcx> {
     pub place: Place<'tcx>,
     pub at: SnapshotLocation,
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.place.check_validity(repacker)
+    }
 }
 
 impl<'tcx> std::fmt::Display for PlaceSnapshot<'tcx> {
@@ -61,21 +67,10 @@ impl<'tcx> PlaceSnapshot<'tcx> {
         }
     }
 
-    pub fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceSnapshot<'tcx> {
-        PlaceSnapshot {
-            place: self.place.project_deref(repacker),
-            at: self.at,
-        }
-    }
-
-    pub fn prefix_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PlaceSnapshot<'tcx>> {
-        self.place.prefix_place(repacker).map(|p| PlaceSnapshot {
-            place: p,
-            at: self.at,
-        })
-    }
-
-    pub fn with_inherent_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceSnapshot<'tcx> {
+    pub(crate) fn with_inherent_region(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> PlaceSnapshot<'tcx> {
         PlaceSnapshot {
             place: self.place.with_inherent_region(repacker),
             at: self.at,

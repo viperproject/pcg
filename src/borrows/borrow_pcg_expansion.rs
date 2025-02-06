@@ -4,6 +4,7 @@ use itertools::Itertools;
 use serde_json::json;
 
 use crate::{
+    combined_pcs::{PCGNode, PCGNodeLike},
     edgedata_enum,
     rustc_interface::{
         data_structures::fx::FxHashSet,
@@ -15,12 +16,13 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, ConstantIndex, CorrectedPlace, HasPlace, Place, PlaceRepacker,
+        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex, CorrectedPlace,
+        HasPlace, Place, PlaceRepacker,
     },
 };
 
 use super::{
-    borrow_pcg_edge::{BlockingNode, LocalNode, PCGNode},
+    borrow_pcg_edge::{BlockingNode, LocalNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
@@ -35,6 +37,12 @@ pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
     expansion: BorrowExpansion<'tcx>,
 }
 
+impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for ExpansionOfBorrowed<'tcx, P> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.base.check_validity(repacker)?;
+        self.expansion.check_validity(repacker)
+    }
+}
 /// The projections resulting from a node in the Borrow PCG.
 ///
 /// This representation is preferred to a `Vec<PlaceElem>` because it ensures
@@ -64,6 +72,12 @@ pub(crate) enum BorrowExpansion<'tcx> {
     ConstantIndices(BTreeSet<ConstantIndex>),
     /// See [`PlaceElem::Subslice`]
     Subslice { from: u64, to: u64, from_end: bool },
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for BorrowExpansion<'tcx> {
+    fn check_validity(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl<'tcx> BorrowExpansion<'tcx> {
@@ -148,7 +162,7 @@ impl<'tcx> BorrowExpansion<'tcx> {
     }
 }
 
-impl<'tcx, P: HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
+impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
     pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
         self.expansion
             .elems()
@@ -205,11 +219,14 @@ pub struct ExpansionOfOwned<'tcx> {
     base: MaybeOldPlace<'tcx>,
 }
 
+impl<'tcx> HasValidityCheck<'tcx> for ExpansionOfOwned<'tcx> {
+    fn check_validity(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 impl<'tcx> EdgeData<'tcx> for ExpansionOfOwned<'tcx> {
-    fn blocked_nodes(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<super::borrow_pcg_edge::PCGNode<'tcx>> {
+    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut blocked_nodes = vec![self.base.into()];
         if self.base.has_region_projections(repacker) {
             blocked_nodes.push(self.base_region_projection(repacker).into());
@@ -266,16 +283,8 @@ pub enum BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     FromBorrow(ExpansionOfBorrowed<'tcx, P>),
 }
 
-impl<
-        'tcx,
-        T: std::hash::Hash
-            + PartialEq
-            + Eq
-            + Copy
-            + HasPlace<'tcx>
-            + DisplayWithRepacker<'tcx>
-            + From<MaybeOldPlace<'tcx>>,
-    > DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx, T>
+impl<'tcx, T: PCGNodeLike<'tcx> + From<MaybeOldPlace<'tcx>> + HasPlace<'tcx>>
+    DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx, T>
 {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
@@ -287,6 +296,15 @@ impl<
                 .collect::<Vec<_>>()
                 .join(", ")
         )
+    }
+}
+
+impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx, P> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        match self {
+            BorrowPCGExpansion::FromOwned(owned) => owned.check_validity(repacker),
+            BorrowPCGExpansion::FromBorrow(borrowed) => borrowed.check_validity(repacker),
+        }
     }
 }
 
@@ -310,7 +328,7 @@ edgedata_enum!(
     FromBorrow(ExpansionOfBorrowed<'tcx>)
 );
 
-impl<'tcx, P: Copy + From<MaybeOldPlace<'tcx>>> BorrowPCGExpansion<'tcx, P> {
+impl<'tcx, P: PCGNodeLike<'tcx> + From<MaybeOldPlace<'tcx>>> BorrowPCGExpansion<'tcx, P> {
     pub fn base(&self) -> P {
         match self {
             BorrowPCGExpansion::FromOwned(owned) => owned.base().into(),
@@ -343,7 +361,7 @@ where
     }
 }
 
-impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PartialEq + Eq + std::hash::Hash>
+impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PCGNodeLike<'tcx>>
     BorrowPCGExpansion<'tcx, P>
 {
     pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {

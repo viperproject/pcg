@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
+    combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::CapabilityKind,
     utils::{display::DisplayWithRepacker, PlaceRepacker},
 };
-
-use super::borrow_pcg_edge::PCGNode;
 
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
 /// information in the borrows graph directly to facilitate simpler logic for
@@ -28,17 +27,16 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    pub(super) fn insert<T: Into<PCGNode<'tcx>>>(
+    pub(super) fn insert<T: PCGNodeLike<'tcx>>(
         &mut self,
         node: T,
         capability: CapabilityKind,
     ) -> bool {
-        let node = node.into();
-        self.0.insert(node, capability) != Some(capability)
+        self.0.insert(node.to_pcg_node(), capability) != Some(capability)
     }
 
-    pub(crate) fn remove<T: Into<PCGNode<'tcx>>>(&mut self, node: T) -> bool {
-        let node = node.into();
+    pub(crate) fn remove<T: PCGNodeLike<'tcx>>(&mut self, node: T) -> bool {
+        let node = node.to_pcg_node();
         self.0.remove(&node).is_some()
     }
 

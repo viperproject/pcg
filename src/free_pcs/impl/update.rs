@@ -149,13 +149,13 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 }
                 PlaceOrdering::Equal => (),
                 PlaceOrdering::Suffix => {
-                    self.collapse(related.get_places(), to, repacker);
+                    self.collapse(related.get_places(), to, repacker).unwrap();
                     return;
                 }
                 PlaceOrdering::Both => {
                     let cp = related.common_prefix(to);
                     // Collapse
-                    self.collapse(related.get_places(), cp, repacker);
+                    self.collapse(related.get_places(), cp, repacker).unwrap();
                     // Expand
                     self.expand(cp, to, repacker);
                 }

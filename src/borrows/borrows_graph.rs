@@ -1,8 +1,9 @@
 use std::cell::Cell;
 
-use crate::rustc_interface::{
-    data_structures::fx::FxHashSet,
-    middle::mir::BasicBlock,
+use crate::{
+    combined_pcs::PCGNode,
+    rustc_interface::{data_structures::fx::FxHashSet, middle::mir::BasicBlock},
+    utils::validity::HasValidityCheck,
 };
 use serde_json::json;
 
@@ -15,10 +16,7 @@ use crate::{
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, PCGNode, ToBorrowsEdge,
-    },
-    borrows_visitor::DebugCtx,
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
     },
@@ -28,12 +26,14 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_abstraction::AbstractionEdge,
+    region_projection::RegionProjection,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
 };
 
 #[derive(Clone, Debug)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashSet<BorrowPCGEdge<'tcx>>,
+    /// See [`BorrowsGraph::is_valid`] for more details.
     cached_is_valid: Cell<Option<bool>>,
 }
 
@@ -210,6 +210,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
+    /// Returns all borrow edges where the assigned ref is `place`
     pub(crate) fn borrows_blocked_by(
         &self,
         place: MaybeOldPlace<'tcx>,
@@ -325,9 +326,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        _debug_ctx: Option<DebugCtx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.mut_edges(|edge| edge.make_place_old(place, latest))
+        self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }
 
     fn construct_coupling_graph<T: BorrowCheckerInterface<'tcx>>(
@@ -355,14 +356,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
             other.construct_coupling_graph(borrow_checker, repacker, exit_block);
 
         if COUPLING_IMGCAT_DEBUG {
-            self_coupling_graph.render_with_imgcat("Self coupling graph");
-            other_coupling_graph.render_with_imgcat("Other coupling graph");
+            self_coupling_graph
+                .render_with_imgcat(&format!("self coupling graph: {:?}", self_block));
+            other_coupling_graph
+                .render_with_imgcat(&format!("other coupling graph: {:?}", exit_block));
         }
 
         let mut result = self_coupling_graph;
         result.merge(&other_coupling_graph);
         if COUPLING_IMGCAT_DEBUG {
-            result.render_with_imgcat("Merged coupling graph");
+            result.render_with_imgcat("merged coupling graph");
         }
 
         // Collect existing abstraction edges at this block
@@ -393,9 +396,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // nodes should be moved to the corresponding coupled nodes.
         // TODO: Make sure `changed` is set correctly.
         for isolated in result.endpoints() {
-            let rps = isolated
+            let rps: Vec<RegionProjection<'tcx>> = isolated
                 .iter()
-                .flat_map(|node| node.as_region_projection())
+                .flat_map(|node| (*node).try_into())
                 .collect::<Vec<_>>();
 
             // e.g. for place r: &'r mut T, if we have the region projection
@@ -403,7 +406,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // TODO: Handle the general case, e.g r: (&'a mut T, &'b mut U)
             let cg_places = rps
                 .iter()
-                .flat_map(|rp| rp.deref(repacker))
+                .flat_map(|rp| rp.place().try_into())
                 .collect::<Vec<_>>();
 
             let edges_to_move = cg_places
@@ -532,12 +535,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         if BORROWS_IMGCAT_DEBUG {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                DotGraph::render_with_imgcat(&dot_graph, "Self graph:").unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {}", e);
-                });
+                DotGraph::render_with_imgcat(&dot_graph, &format!("Self graph: {:?}", self_block))
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error rendering self graph: {}", e);
+                    });
             }
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
-                DotGraph::render_with_imgcat(&dot_graph, "Other graph:").unwrap_or_else(|e| {
+                DotGraph::render_with_imgcat(
+                    &dot_graph,
+                    &format!("Other graph: {:?}", other_block),
+                )
+                .unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {}", e);
                 });
             }
@@ -617,6 +625,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
+        // TODO: Currently the graph can become cyclic after the join, for some reason.
+        //       This test is postponed for now (we still ensure that the ultimate graph is valid).
         if false && !self.is_valid(repacker) {
             if BORROWS_IMGCAT_DEBUG {
                 if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
@@ -647,19 +657,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub(crate) fn change_pcs_elem<T: 'tcx>(&mut self, old: T, new: T) -> bool
+    pub(crate) fn change_pcs_elem<T: 'tcx>(
+        &mut self,
+        old: T,
+        new: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool
     where
         T: PartialEq + Clone,
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
-        self.mut_pcs_elems(|thing| {
-            if *thing == old {
-                *thing = new.clone();
-                true
-            } else {
-                false
-            }
-        })
+        self.mut_pcs_elems(
+            |thing| {
+                if *thing == old {
+                    *thing = new.clone();
+                    true
+                } else {
+                    false
+                }
+            },
+            repacker,
+        )
     }
 
     #[must_use]
@@ -692,6 +710,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(
         &'slf mut self,
         mut f: impl FnMut(&mut T) -> bool,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool
     where
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
@@ -702,6 +721,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 if f(rp) {
                     changed = true;
                 }
+            }
+            if cfg!(debug_assertions) {
+                edge.assert_validity(repacker);
             }
             changed
         })
@@ -735,6 +757,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.insert_path_condition(pc.clone()))
     }
 
+    /// Returns true iff the expected invariants of the graph hold. This
+    /// function is only used for debugging and testing.
+    ///
+    /// This predicate should definitely be true for every final graph in the computed
+    /// PCG. There are probably other points where it should hold as well, but these
+    /// aren't documented yet.
     pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         if let Some(valid) = self.cached_is_valid.get() {
             return valid;

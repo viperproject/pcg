@@ -15,6 +15,7 @@ use derive_more::{Deref, DerefMut};
 
 use rustc_interface::{
     ast::Mutability,
+    index::IndexVec,
     middle::{
         mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
         ty::{self, Ty, TyCtxt, TyKind},
@@ -24,14 +25,19 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_visitor::{extract_nested_regions, extract_regions},
+        borrow_pcg_edge::{BlockedNode, LocalNode},
+        borrows_visitor::extract_regions,
         domain::MaybeOldPlace,
-        region_projection::{PCGRegion, RegionProjection},
+        region_projection::{
+            MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
+            RegionProjectionBaseLike,
+        },
     },
-    rustc_interface,
+    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
+    rustc_interface, ToJsonWithRepacker,
 };
 
-use super::{debug_info::DebugInfo, PlaceRepacker};
+use super::{debug_info::DebugInfo, validity::HasValidityCheck, PlaceRepacker};
 
 /// A place that has been "corrected" from an original mir Place where
 /// the type of field projections may be different than what would be expected
@@ -66,21 +72,78 @@ pub struct Place<'tcx>(
     DebugInfo<'static>,
 );
 
-impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
+impl<'tcx> ToJsonWithRepacker<'tcx> for Place<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        self.to_json(repacker)
+    }
+}
+
+impl<'tcx> LocalNodeLike<'tcx> for Place<'tcx> {
+    fn to_local_node(self) -> LocalNode<'tcx> {
+        LocalNode::Place(self.into())
+    }
+}
+
+impl<'tcx> PCGNodeLike<'tcx> for Place<'tcx> {
+    fn to_pcg_node(self) -> PCGNode<'tcx> {
+        self.into()
+    }
+}
+
+impl<'tcx> RegionProjectionBaseLike<'tcx> for Place<'tcx> {
+    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+        self.regions(repacker)
+    }
+
+    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
+        (*self).into()
+    }
+}
+
+impl<'tcx> From<Place<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
-        MaybeOldPlace::Current { place }
+        MaybeRemoteRegionProjectionBase::Place(place.into())
+    }
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
+    fn check_validity(
+        &self,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<(), std::string::String> {
+        Ok(())
     }
 }
 
 /// A trait for PCG nodes that contain a single place.
 pub trait HasPlace<'tcx> {
     fn place(&self) -> Place<'tcx>;
+
+    fn place_mut(&mut self) -> &mut Place<'tcx>;
+
     fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self;
+}
+
+impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
+    fn place(&self) -> Place<'tcx> {
+        *self
+    }
+    fn place_mut(&mut self) -> &mut Place<'tcx> {
+        self
+    }
+
+    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self {
+        self.0.project_deeper(&[elem], repacker.tcx()).into()
+    }
 }
 
 impl<'tcx> Place<'tcx> {
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
         Self(PlaceRef { local, projection }, DebugInfo::new_static())
+    }
+
+    pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
+        self.0.projection
     }
 
     pub(crate) fn contains_unsafe_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -94,7 +157,7 @@ impl<'tcx> Place<'tcx> {
         false
     }
 
-    pub fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
+    pub(crate) fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
@@ -138,20 +201,27 @@ impl<'tcx> Place<'tcx> {
 
     pub fn region_projection(
         &self,
-        idx: usize,
+        idx: RegionIdx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx, Self> {
         self.region_projections(repacker)[idx]
     }
 
+    pub(crate) fn regions(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> IndexVec<RegionIdx, PCGRegion> {
+        extract_regions(self.ty(repacker).ty)
+    }
+
     pub(crate) fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<RegionProjection<'tcx, Self>> {
+    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place.into()))
+            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker))
             .collect()
     }
 
@@ -163,13 +233,11 @@ impl<'tcx> Place<'tcx> {
         &self,
         region: PCGRegion,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<usize> {
-        extract_nested_regions(self.ty(repacker).ty)
-            .iter()
-            .position(|r| {
-                let r: PCGRegion = (*r).into();
-                r == region
-            })
+    ) -> Option<RegionIdx> {
+        extract_regions(self.ty(repacker).ty)
+            .into_iter_enumerated()
+            .find(|(_, r)| *r == region)
+            .map(|(idx, _)| idx)
     }
 
     pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

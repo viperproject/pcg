@@ -4,7 +4,7 @@ use std::rc::Rc;
 use serde_json::json;
 
 use crate::{
-    combined_pcs::{EvalStmtPhase, PCGError},
+    combined_pcs::{EvalStmtPhase, PCGError, PCGNodeLike},
     free_pcs::CapabilityKind,
     rustc_interface::{
         borrowck::{
@@ -14,8 +14,8 @@ use crate::{
         dataflow::{Analysis, AnalysisDomain, JoinSemiLattice},
         middle::{
             mir::{
-                visit::Visitor, BasicBlock, Body, BorrowKind, CallReturnPlaces, Local, Location,
-                MutBorrowKind, Statement, Terminator, TerminatorEdges,
+                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location,
+                Statement, Terminator, TerminatorEdges,
             },
             ty::{self, TyCtxt},
         },
@@ -349,6 +349,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         self.error = Some(error);
     }
 
+    #[allow(unused)]
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
             .as_ref()
@@ -376,50 +377,54 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         }
     }
 
-    pub(super) fn introduce_initial_borrows(&mut self, local: Local, location: Location) {
+    fn introduce_initial_borrows(&mut self, local: Local) {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
-            self.states.post_main.set_capability(
+            assert!(self.states.post_main.set_capability(
                 MaybeRemotePlace::place_assigned_to_local(local),
                 if mutability.is_mut() {
                     CapabilityKind::Exclusive
                 } else {
                     CapabilityKind::Read
                 },
-            );
-            // TODO: This shouldn't pretend to be a borrow edge
-            let _ = self.states.post_main.add_borrow(
-                MaybeRemotePlace::place_assigned_to_local(local),
-                arg_place,
-                BorrowKind::Mut {
-                    kind: MutBorrowKind::Default,
-                },
-                location,
-                *region,
+            ));
+            let _ = self.states.post_main.apply_action(
+                BorrowPCGAction::add_region_projection_member(
+                    RegionProjectionMember::new(
+                        Coupled::singleton(MaybeRemotePlace::place_assigned_to_local(local).into()),
+                        Coupled::singleton(
+                            RegionProjection::new((*region).into(), arg_place, self.repacker).into(),
+                        ),
+                        RegionProjectionMemberKind::Todo,
+                    ),
+                    PathConditions::AtBlock((Location::START).block),
+                    "Introduce initial borrow",
+                ),
                 self.repacker,
             );
         }
         let local_place: utils::Place<'tcx> = arg_place.into();
         for region_projection in local_place.region_projections(self.repacker) {
-            self.states.post_main.apply_action(
+            assert!(self.states.post_main.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         Coupled::singleton(
                             RegionProjection::new(
-                                region_projection.region(),
+                                region_projection.region(self.repacker),
                                 RemotePlace::new(local),
+                                self.repacker,
                             )
-                            .into(),
+                            .to_pcg_node(),
                         ),
                         Coupled::singleton(region_projection.into()),
                         RegionProjectionMemberKind::Todo,
                     ),
-                    PathConditions::AtBlock(location.block),
+                    PathConditions::AtBlock((Location::START).block),
                     "Initialize Local",
                 ),
                 self.repacker,
-            );
+            ));
         }
     }
 
@@ -427,11 +432,12 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         for arg in self.repacker.body().args_iter() {
             let arg_place: utils::Place<'tcx> = arg.into();
             for rp in arg_place.region_projections(self.repacker) {
-                self.states
+                assert!(self
+                    .states
                     .post_main
-                    .set_capability(rp, CapabilityKind::Exclusive);
+                    .set_capability(rp, CapabilityKind::Exclusive));
             }
-            self.introduce_initial_borrows(arg, Location::START);
+            self.introduce_initial_borrows(arg);
         }
     }
 }

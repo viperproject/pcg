@@ -3,14 +3,18 @@ use std::{cell::RefCell, rc::Rc};
 use tracing::instrument;
 
 use crate::{
-    borrows::{domain::RemotePlace, region_projection_member::RegionProjectionMemberKind},
-    combined_pcs::{PCGError, PCGUnsupportedError},
+    borrows::{
+        domain::RemotePlace, region_projection::MaybeRemoteRegionProjectionBase,
+        region_projection_member::RegionProjectionMemberKind,
+    },
+    combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::{
             borrow_set::BorrowSet,
             consumers::{PoloniusOutput, RegionInferenceContext},
         },
         dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
+        index::IndexVec,
         middle::{
             mir::{
                 self,
@@ -32,13 +36,12 @@ use crate::{
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
-    borrow_pcg_edge::PCGNode,
     borrows_state::{ExecutedActions, ExpansionReason},
     coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
     domain::{MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
-    region_projection::{PCGRegion, RegionProjection},
+    region_projection::{PCGRegion, RegionIdx, RegionProjection},
     region_projection_member::RegionProjectionMember,
     unblock_graph::UnblockGraph,
 };
@@ -285,7 +288,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .into_iter()
             .enumerate()
         {
-            if self.outlives(source_proj.region(), target_proj.region()) {
+            if self.outlives(
+                source_proj.region(self.repacker),
+                target_proj.region(self.repacker),
+            ) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         Coupled::singleton(source_proj.into()),
@@ -328,7 +334,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                     continue;
                                 };
                             for source_proj in operand_place.region_projections(self.repacker) {
-                                let source_proj = source_proj.map_place(|p| {
+                                let source_proj = source_proj.map_base(|p| {
                                     MaybeOldPlace::new(
                                         p,
                                         Some(self.domain.post_state().get_latest(p)),
@@ -354,13 +360,18 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                         Coupled::singleton(
                                             RegionProjection::new(
                                                 (*const_region).into(),
-                                                RemotePlace::new(target.as_local().unwrap()),
+                                                MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                                self.repacker,
                                             )
-                                            .into(),
+                                            .to_pcg_node(),
                                         ),
                                         Coupled::singleton(
-                                            RegionProjection::new((*target_region).into(), target)
-                                                .into(),
+                                            RegionProjection::new(
+                                                (*target_region).into(),
+                                                target,
+                                                self.repacker,
+                                            )
+                                            .into(),
                                         ),
                                         RegionProjectionMemberKind::Todo,
                                     ),
@@ -374,9 +385,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     Rvalue::Use(Operand::Move(from)) => {
                         let from: utils::Place<'tcx> = (*from).into();
                         let target: utils::Place<'tcx> = (*target).into();
-                        if let Some(mutbl) = from.ref_mutability(self.repacker)
-                            // && mutbl.is_mut()
-                        {
+                        if from.is_ref(self.repacker) {
                             let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
                             let new_place = target;
                             self.apply_action(BorrowPCGAction::rename_place(
@@ -396,8 +405,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         let from_place: utils::Place<'tcx> = (*from).into();
                         for (idx, rp) in from_place
                             .region_projections(self.repacker)
-                            .iter()
-                            .enumerate()
+                            .iter_enumerated()
                         {
                             for mut orig_edge in self
                                 .domain
@@ -504,8 +512,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             let ty = input_place.ty(self.repacker).ty;
             let ty = match ty.kind() {
                 ty::TyKind::Ref(region, ty, _) => {
-                    let output_borrow_projections =
-                        self.projections_borrowing_from_input_lifetime(*region, destination.into());
+                    let output_borrow_projections = self.projections_borrowing_from_input_lifetime(
+                        (*region).into(),
+                        destination.into(),
+                    );
                     for output in output_borrow_projections {
                         let input_rp = input_place.region_projection(0, self.repacker);
                         for action in UnblockGraph::actions_to_unblock(
@@ -568,13 +578,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn projections_borrowing_from_input_lifetime(
         &self,
-        input_lifetime: ty::Region<'tcx>,
+        input_lifetime: PCGRegion,
         output_place: utils::Place<'tcx>,
     ) -> Vec<AbstractionOutputTarget<'tcx>> {
         let mut result = vec![];
         let output_ty = output_place.ty(self.repacker).ty;
         for (output_lifetime_idx, output_lifetime) in
-            extract_regions(output_ty).into_iter().enumerate()
+            extract_regions(output_ty).into_iter_enumerated()
         {
             if self.outlives(input_lifetime.into(), output_lifetime.into()) {
                 result.push(
@@ -881,17 +891,8 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
 /// `['c, 'd]` respectively. This enables substitution of regions to handle
 /// moves in the PCG e.g for the statement `let x: T<'a, 'b> = move c: T<'c,
 /// 'd>`.
-pub(crate) fn extract_regions<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
+pub(crate) fn extract_regions<'tcx>(ty: ty::Ty<'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
     let mut visitor = LifetimeExtractor { lifetimes: vec![] };
     ty.visit_with(&mut visitor);
-    visitor.lifetimes
-}
-
-/// Similar to [`extract_regions`], but if the type is a reference type e.g.
-/// `&'a mut T`, then this is equivalent to `extract_regions(T)`.
-pub(crate) fn extract_nested_regions<'tcx>(ty: ty::Ty<'tcx>) -> Vec<ty::Region<'tcx>> {
-    match ty.kind() {
-        ty::TyKind::Ref(_, ty, _) => extract_nested_regions(*ty),
-        _ => extract_regions(ty),
-    }
+    IndexVec::from_iter(visitor.lifetimes.iter().map(|r| (*r).into()))
 }

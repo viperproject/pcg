@@ -13,7 +13,7 @@ mod root_place;
 // pub mod ty;
 pub mod r#const;
 pub mod debug_info;
-
+pub mod validity;
 pub use mutable::*;
 pub use place::*;
 pub use place_snapshot::*;
