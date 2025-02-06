@@ -14,8 +14,8 @@ use crate::{
         dataflow::{Analysis, AnalysisDomain, JoinSemiLattice},
         middle::{
             mir::{
-                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location,
-                Statement, Terminator, TerminatorEdges,
+                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Local, Location, Statement,
+                Terminator, TerminatorEdges,
             },
             ty::{self, TyCtxt},
         },
@@ -392,11 +392,12 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let _ = self.states.post_main.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        Coupled::singleton(MaybeRemotePlace::place_assigned_to_local(local).into()),
-                        Coupled::singleton(
-                            RegionProjection::new((*region).into(), arg_place, self.repacker).into(),
-                        ),
-                        RegionProjectionMemberKind::Todo,
+                        vec![MaybeRemotePlace::place_assigned_to_local(local).into()],
+                        vec![
+                            RegionProjection::new((*region).into(), arg_place, self.repacker)
+                                .into(),
+                        ],
+                        RegionProjectionMemberKind::FunctionInput,
                     ),
                     PathConditions::AtBlock((Location::START).block),
                     "Introduce initial borrow",
@@ -409,15 +410,13 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             assert!(self.states.post_main.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        Coupled::singleton(
-                            RegionProjection::new(
-                                region_projection.region(self.repacker),
-                                RemotePlace::new(local),
-                                self.repacker,
-                            )
-                            .to_pcg_node(),
-                        ),
-                        Coupled::singleton(region_projection.into()),
+                        vec![RegionProjection::new(
+                            region_projection.region(self.repacker),
+                            RemotePlace::new(local),
+                            self.repacker,
+                        )
+                        .to_pcg_node(),],
+                        vec![region_projection.into()],
                         RegionProjectionMemberKind::Todo,
                     ),
                     PathConditions::AtBlock((Location::START).block),

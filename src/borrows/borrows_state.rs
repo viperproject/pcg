@@ -414,8 +414,8 @@ impl<'tcx> BorrowsState<'tcx> {
                             self.record_and_apply_action(
                                 BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        Coupled::singleton(reborrow.blocked_place.into()),
-                                        Coupled::singleton(ra.into()),
+                                        vec![reborrow.blocked_place.into()],
+                                        vec![ra.into()],
                                         RegionProjectionMemberKind::Todo,
                                     ),
                                     PathConditions::new(location.block),
@@ -523,10 +523,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 // -> *t if it doesn't already exist.
 
                 let region_projection_member = RegionProjectionMember::new(
-                    Coupled::singleton(
-                        RegionProjection::new((*region).into(), base, repacker).to_pcg_node(),
-                    ),
-                    Coupled::singleton(target.into()),
+                    vec![RegionProjection::new((*region).into(), base, repacker).to_pcg_node()],
+                    vec![target.into()],
                     RegionProjectionMemberKind::Todo,
                 );
 
@@ -763,7 +761,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 _ => {
                     match self.get_capability(blocked_place) {
-                        Some(CapabilityKind::Exclusive) => {
+                        Some(CapabilityKind::Exclusive | CapabilityKind::Lent) => {
                             assert!(self.set_capability(blocked_place, CapabilityKind::LentShared));
                         }
                         Some(CapabilityKind::Read | CapabilityKind::LentShared) => {

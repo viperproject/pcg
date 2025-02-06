@@ -26,7 +26,7 @@ use super::{
     coupling_graph_constructor::{
         BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
     },
-    domain::{AbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
+    domain::{FunctionAbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -440,7 +440,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 {
                     let new_edge_kind =
                         BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
-                            Coupled::singleton(edge.value.blocked_place.into()),
+                            vec![edge.value.blocked_place.into()],
                             rps.clone()
                                 .into_iter()
                                 .map(|rp| rp.try_into().unwrap())
@@ -458,7 +458,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
-                AbstractionBlockEdge::new(
+                FunctionAbstractionBlockEdge::new(
                     blocked.clone().into_iter().collect(),
                     assigned
                         .clone()

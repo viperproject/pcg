@@ -29,7 +29,7 @@ use crate::{
 };
 
 use crate::{
-    borrows::{domain::AbstractionBlockEdge, region_abstraction::AbstractionEdge},
+    borrows::{domain::FunctionAbstractionBlockEdge, region_abstraction::AbstractionEdge},
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
@@ -294,8 +294,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        Coupled::singleton(source_proj.into()),
-                        Coupled::singleton(target_proj.into()),
+                        vec![source_proj.into()],
+                        vec![target_proj.into()],
                         kind(idx),
                     ),
                     PathConditions::AtBlock(location.block),
@@ -357,22 +357,18 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             {
                                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        Coupled::singleton(
-                                            RegionProjection::new(
-                                                (*const_region).into(),
-                                                MaybeRemoteRegionProjectionBase::Const(c.const_),
-                                                self.repacker,
-                                            )
-                                            .to_pcg_node(),
-                                        ),
-                                        Coupled::singleton(
-                                            RegionProjection::new(
-                                                (*target_region).into(),
-                                                target,
-                                                self.repacker,
-                                            )
-                                            .into(),
-                                        ),
+                                        vec![RegionProjection::new(
+                                            (*const_region).into(),
+                                            MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                            self.repacker,
+                                        )
+                                        .to_pcg_node()],
+                                        vec![RegionProjection::new(
+                                            (*target_region).into(),
+                                            target,
+                                            self.repacker,
+                                        ).into()
+                                        ],
                                         RegionProjectionMemberKind::Todo,
                                     ),
                                     PathConditions::AtBlock(location.block),
@@ -528,7 +524,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 "For Function Call Abstraction",
                             ));
                         }
-                        edges.push(AbstractionBlockEdge::new(
+                        edges.push(FunctionAbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output.into()].into_iter().collect(),
                         ));
@@ -553,7 +549,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     // is blocking something else. Otherwise, there is no point in tracking
                     // when it becomes accessible.
                     if self.domain.post_state().contains(input_rp, self.repacker) {
-                        edges.push(AbstractionBlockEdge::new(
+                        edges.push(FunctionAbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output].into_iter().collect(),
                         ));

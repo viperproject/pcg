@@ -107,6 +107,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                     continue;
                 }
                 info!("Running PCG on function: {}", item_name);
+                info!("Path: {:?}", body.body.span);
                 if should_check_body(&body) {
                     let mut output = run_combined_pcs(
                         &body,

@@ -20,7 +20,7 @@ use crate::{
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    edge: AbstractionBlockEdge<'tcx>,
+    edge: FunctionAbstractionBlockEdge<'tcx>,
     block: BasicBlock,
 }
 
@@ -38,7 +38,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
 
 impl<'tcx, T> HasPcsElems<T> for LoopAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
+    FunctionAbstractionBlockEdge<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         self.edge.pcs_elems()
@@ -57,18 +57,15 @@ impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> LoopAbstraction<'tcx> {
-    pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
-        self.edge.inputs().into_iter().collect()
-    }
-
-    pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
+    pub(crate) fn edges(&self) -> Vec<FunctionAbstractionBlockEdge<'tcx>> {
         vec![self.edge.clone()]
     }
-    pub fn new(edge: AbstractionBlockEdge<'tcx>, block: BasicBlock) -> Self {
+
+    pub(crate) fn new(edge: FunctionAbstractionBlockEdge<'tcx>, block: BasicBlock) -> Self {
         Self { edge, block }
     }
 
-    pub fn location(&self) -> Location {
+    pub(crate) fn location(&self) -> Location {
         Location {
             block: self.block,
             statement_index: 0,
@@ -81,7 +78,7 @@ pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
     def_id: DefId,
     substs: GenericArgsRef<'tcx>,
-    edges: Vec<AbstractionBlockEdge<'tcx>>,
+    edges: Vec<FunctionAbstractionBlockEdge<'tcx>>,
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
@@ -101,7 +98,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for FunctionCallAbstraction<'tcx> {
 
 impl<'tcx, T> HasPcsElems<T> for FunctionCallAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
+    FunctionAbstractionBlockEdge<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         self.edges
@@ -123,7 +120,7 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
         self.location
     }
 
-    pub fn edges(&self) -> &Vec<AbstractionBlockEdge<'tcx>> {
+    pub fn edges(&self) -> &Vec<FunctionAbstractionBlockEdge<'tcx>> {
         &self.edges
     }
 
@@ -131,7 +128,7 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
         location: Location,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
-        edges: Vec<AbstractionBlockEdge<'tcx>>,
+        edges: Vec<FunctionAbstractionBlockEdge<'tcx>>,
     ) -> Self {
         assert!(!edges.is_empty());
         Self {
@@ -172,12 +169,12 @@ where
 }
 
 #[derive(Clone, Debug, Hash)]
-pub struct AbstractionBlockEdge<'tcx> {
+pub struct FunctionAbstractionBlockEdge<'tcx> {
     inputs: Vec<AbstractionInputTarget<'tcx>>,
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for FunctionAbstractionBlockEdge<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         for input in self.inputs.iter() {
             input.check_validity(repacker)?;
@@ -189,21 +186,21 @@ impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for FunctionAbstractionBlockEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         self.outputs.iter_mut().collect()
     }
 }
 
-impl<'tcx> PartialEq for AbstractionBlockEdge<'tcx> {
+impl<'tcx> PartialEq for FunctionAbstractionBlockEdge<'tcx> {
     fn eq(&self, other: &Self) -> bool {
         self.inputs() == other.inputs() && self.outputs() == other.outputs()
     }
 }
 
-impl<'tcx> Eq for AbstractionBlockEdge<'tcx> {}
+impl<'tcx> Eq for FunctionAbstractionBlockEdge<'tcx> {}
 
-impl<'tcx> AbstractionBlockEdge<'tcx> {
+impl<'tcx> FunctionAbstractionBlockEdge<'tcx> {
     pub(crate) fn new(
         inputs: HashSet<AbstractionInputTarget<'tcx>>,
         outputs: HashSet<AbstractionOutputTarget<'tcx>>,
@@ -223,7 +220,7 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for FunctionAbstractionBlockEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut result = vec![];
         for input in self.inputs.iter_mut() {
@@ -260,7 +257,7 @@ impl<'tcx> AbstractionType<'tcx> {
             .collect()
     }
 
-    pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
+    pub fn edges(&self) -> Vec<FunctionAbstractionBlockEdge<'tcx>> {
         match self {
             AbstractionType::FunctionCall(c) => c.edges.clone(),
             AbstractionType::Loop(c) => c.edges().clone(),
