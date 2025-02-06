@@ -28,14 +28,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_action::BorrowPCGAction,
-    borrows_state::BorrowsState,
-    borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage},
-    coupling_graph_constructor::Coupled,
-    domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
-    path_condition::{PathCondition, PathConditions},
-    region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
+    borrow_pcg_action::BorrowPCGAction, borrows_graph::validity_checks_enabled, borrows_state::BorrowsState, borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage}, coupling_graph_constructor::Coupled, domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker}, path_condition::{PathCondition, PathConditions}, region_projection::RegionProjection, region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind}
 };
 
 pub struct BorrowsEngine<'mir, 'tcx> {
@@ -76,7 +69,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         } else if self.has_error() {
             return false;
         }
-        if self.repacker.should_check_validity() {
+        if validity_checks_enabled() {
             debug_assert!(other.is_valid(), "Other graph is invalid");
         }
         let mut other_after = other.post_state().clone();

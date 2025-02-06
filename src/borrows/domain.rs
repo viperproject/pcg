@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use derive_more::{From, Into};
 use rustc_interface::{
     ast::Mutability,
+    data_structures::fx::FxHashSet,
     hir::def_id::DefId,
     index::IndexVec,
     middle::mir::{self, tcx::PlaceTy, BasicBlock, Location, PlaceElem},
@@ -10,7 +11,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface,
     utils::{
         display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceSnapshot,
@@ -48,9 +49,7 @@ where
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
     fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge::new(
-            super::borrow_pcg_edge::BorrowPCGEdgeKind::Abstraction(AbstractionEdge {
-                abstraction_type: AbstractionType::Loop(self),
-            }),
+            super::borrow_pcg_edge::BorrowPCGEdgeKind::Abstraction(AbstractionType::Loop(self)),
             path_conditions,
         )
     }
@@ -140,10 +139,36 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
     }
 }
 
+impl<'tcx> EdgeData<'tcx> for AbstractionType<'tcx> {
+    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        self.inputs().into_iter().map(|i| i.into()).collect()
+    }
+
+    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+        self.outputs()
+            .into_iter()
+            .map(|o| o.to_local_node())
+            .collect()
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        false
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum AbstractionType<'tcx> {
     FunctionCall(FunctionCallAbstraction<'tcx>),
     Loop(LoopAbstraction<'tcx>),
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionType<'tcx> {
+    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            AbstractionType::FunctionCall(c) => c.to_short_string(_repacker),
+            AbstractionType::Loop(c) => c.to_short_string(_repacker),
+        }
+    }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for AbstractionType<'tcx> {
@@ -186,7 +211,9 @@ impl<'tcx> HasValidityCheck<'tcx> for FunctionAbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for FunctionAbstractionBlockEdge<'tcx> {
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
+    for FunctionAbstractionBlockEdge<'tcx>
+{
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         self.outputs.iter_mut().collect()
     }
@@ -548,13 +575,13 @@ use serde_json::json;
 
 use super::{
     borrow_edge::BorrowEdge,
-    borrow_pcg_edge::{BorrowPCGEdge, ToBorrowsEdge},
+    borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge},
     borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
+    edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::PathConditions,
-    region_abstraction::AbstractionEdge,
     region_projection::{
         MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
         RegionProjectionBaseLike,

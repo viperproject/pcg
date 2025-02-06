@@ -29,7 +29,7 @@ use crate::{
 };
 
 use crate::{
-    borrows::{domain::FunctionAbstractionBlockEdge, region_abstraction::AbstractionEdge},
+    borrows::domain::FunctionAbstractionBlockEdge,
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
@@ -367,8 +367,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             (*target_region).into(),
                                             target,
                                             self.repacker,
-                                        ).into()
-                                        ],
+                                        )
+                                        .into()],
                                         RegionProjectionMemberKind::Todo,
                                     ),
                                     PathConditions::AtBlock(location.block),
@@ -561,12 +561,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         // No edges may be added e.g. if the inputs do not contain any borrows
         if !edges.is_empty() {
             self.domain.post_state_mut().insert_abstraction_edge(
-                AbstractionEdge::new(AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                     location,
                     *func_def_id,
                     substs,
                     edges.clone(),
-                ))),
+                )),
                 location.block,
             );
         }

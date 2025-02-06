@@ -19,9 +19,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        domain::{MaybeOldPlace, MaybeRemotePlace},
-        engine::BorrowsDomain,
-        unblock_graph::{UnblockGraph, UnblockType},
+        borrows_graph::validity_checks_enabled, domain::{MaybeOldPlace, MaybeRemotePlace}, engine::BorrowsDomain, unblock_graph::{UnblockGraph, UnblockType}
     }, combined_pcs::PCGNode, free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary}, rustc_interface, visualization::generate_dot_graph, RECORD_PCG
 };
 
@@ -384,7 +382,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         } else if self.has_error() {
             return false;
         }
-        if self.cgx.rp.should_check_validity() {
+        if validity_checks_enabled() {
             if !other.is_valid() {
                 eprintln!(
                     "Block {:?} is invalid. Body source: {:?}, span: {:?}",
