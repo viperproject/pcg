@@ -102,7 +102,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         state.summaries.pre_operands = state.summaries.post_main.clone();
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.0);
-            state.summaries.pre_operands.requires(triple.pre(), self.0);
+            if let Err(e) = state.summaries.pre_operands.requires(triple.pre(), self.0) {
+                state.error = Some(e);
+                return;
+            }
         }
 
         // Apply operands effects

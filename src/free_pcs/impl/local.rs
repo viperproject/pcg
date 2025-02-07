@@ -13,7 +13,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    combined_pcs::PCGInternalError,
+    combined_pcs::{PCGError, PCGInternalError},
     free_pcs::{CapabilityKind, RelatedSet, RepackOp},
     rustc_interface,
     utils::{display::DisplayWithRepacker, Place, PlaceOrdering, PlaceRepacker},
@@ -147,19 +147,20 @@ impl<'tcx> CapabilityProjections<'tcx> {
         RelatedSet::new(related.into_iter().collect())
     }
 
+    #[must_use]
     pub(crate) fn expand(
         &mut self,
         from: Place<'tcx>,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<RepackOp<'tcx>> {
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         assert!(
             !from.is_mut_ref(repacker.body(), repacker.tcx()),
             "Mutable reference {:?} should be expanded in reborrowing dag, not PCS",
             from
         );
         debug_assert!(!self.contains_key(&to));
-        let (expanded, mut others) = from.expand(to, repacker).unwrap();
+        let (expanded, mut others) = from.expand(to, repacker)?;
         let mut perm = self.remove(&from).unwrap();
         others.push(to);
         let mut ops = Vec::new();
@@ -175,7 +176,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         }
         self.extend(others.into_iter().map(|p| (p, perm)));
         // assert!(self.contains_key(&to), "{self:?}\n{to:?}");
-        ops
+        Ok(ops)
     }
 
     // TODO: this could be implemented more efficiently, by assuming that a valid
