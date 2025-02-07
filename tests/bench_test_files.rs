@@ -26,7 +26,7 @@ fn extract_i_refs(output: &str) -> u64 {
                 .expect("Failed to parse I refs value");
         }
     }
-    panic!("Could not find I refs in valgrind output");
+    panic!("Could not find I refs in valgrind output {}", output);
 }
 
 fn run_cachegrind(file_path: &PathBuf) -> u64 {
