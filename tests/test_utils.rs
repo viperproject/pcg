@@ -1,11 +1,7 @@
-use serde_derive::{Deserialize, Serialize};
-use std::path::PathBuf;
-mod test_utils;
-
-#[test]
-pub fn top_crates() {
-    top_crates_range(193..500)
-}
+use serde_derive::Deserialize;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::io::Write;
 
 fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
     println!("Getting: {url}");
@@ -14,16 +10,6 @@ fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
         .build()?
         .get(url)
         .send()
-}
-
-pub fn top_crates_range(range: std::ops::Range<usize>) {
-    std::fs::create_dir_all("tmp").unwrap();
-    let top_crates = CratesIter::top(range);
-    for (i, krate) in top_crates {
-        let version = krate.version.unwrap_or(krate.newest_version);
-        println!("Starting: {i} ({})", krate.name);
-        run_on_crate(&krate.name, &version);
-    }
 }
 
 pub fn get_rust_toolchain_channel() -> String {
@@ -51,7 +37,57 @@ pub fn get_rust_toolchain_channel() -> String {
     }
 }
 
-fn run_on_crate(name: &str, version: &str) {
+pub fn run_pcs_on_dir(dir: &Path) {
+    let cwd = std::env::current_dir().unwrap();
+    assert!(
+        cfg!(debug_assertions),
+        "Must be run in debug mode, to enable full checking"
+    );
+    let target = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let cargo = "cargo";
+    let pcs_exe = cwd.join(["target", target, "pcs_bin"].iter().collect::<PathBuf>());
+    println!("Running PCS on directory: {}", dir.display());
+    let exit = Command::new(cargo)
+        .arg("check")
+        .env("RUST_TOOLCHAIN", get_rust_toolchain_channel())
+        .env("RUSTUP_TOOLCHAIN", get_rust_toolchain_channel())
+        .env("RUSTC", &pcs_exe)
+        .current_dir(dir)
+        .status()
+        .expect(&format!("Failed to execute cargo check on {}", dir.display()));
+
+    assert!(
+        exit.success(),
+        "PCS check failed for directory {} with status: {}",
+        dir.display(),
+        exit
+    );
+}
+
+pub fn run_pcs_on_file(file: &Path) {
+    let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let pcs_exe = workspace_dir.join("target/debug/pcs_bin");
+    println!("Running PCS on file: {}", file.display());
+
+    let status = Command::new(&pcs_exe)
+        .arg(file)
+        .env("PCG_CHECK_ANNOTATIONS", "true")
+        .status()
+        .unwrap_or_else(|e| panic!("Failed to execute test {}: {}", file.display(), e));
+
+    assert!(
+        status.success(),
+        "Test {} failed with status: {}",
+        file.display(),
+        status
+    );
+}
+
+pub fn run_on_crate(name: &str, version: &str) {
     match (name, version) {
         ("darling", "0.20.10") | ("tokio-native-tls", "0.3.1") => {
             eprintln!(
@@ -96,7 +132,7 @@ fn run_on_crate(name: &str, version: &str) {
         resp.copy_to(&mut file).unwrap();
     }
     println!("Unwrapping: {filename}");
-    let status = std::process::Command::new("tar")
+    let status = Command::new("tar")
         .args(["-xf", &filename, "-C", "./tmp/"])
         .status()
         .unwrap();
@@ -106,76 +142,8 @@ fn run_on_crate(name: &str, version: &str) {
         .append(true)
         .open(format!("{dirname}/Cargo.toml"))
         .unwrap();
-    use std::io::Write;
     writeln!(file, "\n[workspace]").unwrap();
-    let dirname_path = std::path::PathBuf::from(&dirname);
-    test_utils::run_pcs_on_dir(&dirname_path);
+    let dirname_path = PathBuf::from(&dirname);
+    run_pcs_on_dir(&dirname_path);
     std::fs::remove_dir_all(dirname).unwrap();
-}
-
-/// A create on crates.io.
-#[derive(Debug, Deserialize, Serialize)]
-struct Crate {
-    #[serde(rename = "id")]
-    name: String,
-    #[serde(rename = "max_stable_version")]
-    version: Option<String>,
-    #[serde(rename = "newest_version")]
-    newest_version: String,
-}
-
-/// The list of crates from crates.io
-#[derive(Debug, Deserialize)]
-struct CratesList {
-    crates: Vec<Crate>,
-}
-
-const PAGE_SIZE: usize = 100;
-struct CratesIter {
-    curr_idx: usize,
-    curr_page: usize,
-    crates: Vec<Crate>,
-}
-
-impl CratesIter {
-    pub fn new(start: usize) -> Self {
-        Self {
-            curr_idx: start,
-            curr_page: start / PAGE_SIZE + 1,
-            crates: Vec::new(),
-        }
-    }
-    pub fn top(range: std::ops::Range<usize>) -> impl Iterator<Item = (usize, Crate)> {
-        Self::new(range.start).take(range.len())
-    }
-}
-
-impl Iterator for CratesIter {
-    type Item = (usize, Crate);
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.crates.is_empty() {
-            let url = format!(
-                "https://crates.io/api/v1/crates?page={}&per_page={PAGE_SIZE}&sort=downloads",
-                self.curr_page,
-            );
-            let resp = get(&url).expect("Could not fetch top crates");
-            assert!(
-                resp.status().is_success(),
-                "Response status: {}",
-                resp.status()
-            );
-            let page_crates: CratesList = match serde_json::from_reader(resp) {
-                Ok(page_crates) => page_crates,
-                Err(e) => panic!("Invalid JSON {e}"),
-            };
-            assert_eq!(page_crates.crates.len(), PAGE_SIZE);
-            self.crates = page_crates.crates;
-            self.crates.reverse();
-            self.crates
-                .truncate(self.crates.len() - self.curr_idx % PAGE_SIZE);
-            self.curr_page += 1;
-        }
-        self.curr_idx += 1;
-        Some((self.curr_idx - 1, self.crates.pop().unwrap()))
-    }
 }
