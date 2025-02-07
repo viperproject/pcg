@@ -1,4 +1,3 @@
-use derive_more::{Into, TryFrom};
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -6,7 +5,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::PCGNode,
     edgedata_enum, rustc_interface,
     utils::{
         display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceRepacker,
@@ -18,11 +17,11 @@ use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
-    domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace, ToJsonWithRepacker},
+    domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
-    region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike},
+    region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
     region_projection_member::RegionProjectionMember,
 };
 
@@ -78,7 +77,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
                 let maybe_old_place = maybe_remote_place.try_into()?;
                 Ok(value.map_base(|_| maybe_old_place))
             }
-            MaybeRemoteRegionProjectionBase::Const(const_operand) => Err(()),
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
         }
     }
 }

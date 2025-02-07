@@ -21,7 +21,7 @@ use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     coupling_graph_constructor::{
-        BorrowCheckerInterface, CGNode, Coupled, CouplingGraphConstructor,
+        BorrowCheckerInterface, CGNode, CouplingGraphConstructor,
     },
     domain::{FunctionAbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
@@ -836,7 +836,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 edge: BorrowPCGEdge<'tcx>,
                 repacker: PlaceRepacker<'_, 'tcx>,
             ) -> PushResult<'tcx> {
-                if let Some(p) = self.0.iter().position(|e| e == &edge) {
+                if let Some(_) = self.0.iter().position(|e| e == &edge) {
                     PushResult::Cycle
                 } else {
                     self.0.push(edge);

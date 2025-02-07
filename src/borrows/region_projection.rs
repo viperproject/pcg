@@ -1,6 +1,6 @@
 use std::{fmt, marker::PhantomData};
 
-use derive_more::{Display, From};
+use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
 use crate::utils::PlaceRepacker;
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, LocalNode},
+    borrow_pcg_edge::LocalNode,
     borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
     domain::{MaybeOldPlace, ToJsonWithRepacker},
@@ -52,7 +52,7 @@ impl<'tcx> std::fmt::Display for PCGRegion {
                 write!(f, "ReBound({:?}, {:?})", debruijn_index, region)
             }
             PCGRegion::PCGInternalErr => write!(f, "ERR"),
-            PCGRegion::ReLateParam(late_param_region) => todo!(),
+            PCGRegion::ReLateParam(_) => todo!(),
         }
     }
 }
@@ -94,7 +94,7 @@ impl Idx for RegionIdx {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Display, From)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Display, From, TryFrom)]
 pub enum MaybeRemoteRegionProjectionBase<'tcx> {
     Place(MaybeRemotePlace<'tcx>),
     Const(Const<'tcx>),
@@ -119,7 +119,7 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.check_validity(repacker),
-            MaybeRemoteRegionProjectionBase::Const(c) => todo!(),
+            MaybeRemoteRegionProjectionBase::Const(_) => todo!(),
         }
     }
 }
@@ -128,7 +128,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.to_json(repacker),
-            MaybeRemoteRegionProjectionBase::Const(c) => todo!(),
+            MaybeRemoteRegionProjectionBase::Const(_) => todo!(),
         }
     }
 }

@@ -28,7 +28,14 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_action::BorrowPCGAction, borrows_graph::validity_checks_enabled, borrows_state::BorrowsState, borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage}, coupling_graph_constructor::Coupled, domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker}, path_condition::{PathCondition, PathConditions}, region_projection::RegionProjection, region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind}
+    borrow_pcg_action::BorrowPCGAction,
+    borrows_graph::validity_checks_enabled,
+    borrows_state::BorrowsState,
+    borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage},
+    domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
+    path_condition::{PathCondition, PathConditions},
+    region_projection::RegionProjection,
+    region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
 };
 
 pub struct BorrowsEngine<'mir, 'tcx> {

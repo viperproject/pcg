@@ -20,7 +20,7 @@ use rustc_interface::{
     middle::{
         mir::{
             BasicBlock, Body, CallReturnPlaces, Location, Promoted, Statement, Terminator,
-            TerminatorEdges, TerminatorKind, START_BLOCK,
+            TerminatorEdges, START_BLOCK,
         },
         ty::{self, GenericArgsRef, ParamEnv, TyCtxt},
     },
