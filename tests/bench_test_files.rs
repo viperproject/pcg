@@ -86,7 +86,7 @@ fn benchmark_test_files() {
     // Get the workspace directory and setup paths
     let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let test_dir = workspace_dir.join("test-files");
-    let results_path = workspace_dir.join("../benchmark_results.txt");
+    let results_path = workspace_dir.join("benchmark_results.txt");
 
     let previous_results = read_previous_results(&results_path).unwrap_or_default();
 
