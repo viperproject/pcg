@@ -5,6 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
+    combined_pcs::PCGError,
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
@@ -12,23 +13,35 @@ use crate::{
 };
 
 pub trait RepackingBridgeSemiLattice<'tcx> {
-    fn bridge(&self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<RepackOp<'tcx>>;
+    fn bridge(
+        &self,
+        other: &Self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError>;
 }
 impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilitySummary<'tcx> {
-    fn bridge(&self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<RepackOp<'tcx>> {
+    fn bridge(
+        &self,
+        other: &Self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         let mut repacks = Vec::new();
         for (l, from) in self.iter_enumerated() {
-            let local_repacks = from.bridge(&other[l], repacker);
+            let local_repacks = from.bridge(&other[l], repacker)?;
             repacks.extend(local_repacks);
         }
-        repacks
+        Ok(repacks)
     }
 }
 
 impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
-    fn bridge(&self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<RepackOp<'tcx>> {
+    fn bridge(
+        &self,
+        other: &Self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         match (self, other) {
-            (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Vec::new(),
+            (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(Vec::new()),
             (CapabilityLocal::Allocated(from_places), CapabilityLocal::Allocated(to_places)) => {
                 from_places.bridge(to_places, repacker)
             }
@@ -50,21 +63,25 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
                     repacks.extend(packs);
                 };
                 repacks.push(RepackOp::StorageDead(local));
-                repacks
+                Ok(repacks)
             }
             (CapabilityLocal::Unallocated, CapabilityLocal::Allocated(cps)) => {
                 // A bit of an unusual case, should happen only when we
                 // "allocated" a local to allow it to immediately be
                 // StorageDead-ed. In this case we should ignore the SD.
                 // assert_eq!(cps[&cps.get_local().into()], CapabilityKind::Write);
-                vec![RepackOp::IgnoreStorageDead(cps.get_local())]
+                Ok(vec![RepackOp::IgnoreStorageDead(cps.get_local())])
             }
         }
     }
 }
 
 impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
-    fn bridge(&self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<RepackOp<'tcx>> {
+    fn bridge(
+        &self,
+        other: &Self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         // TODO: remove need for clone
         let mut from = self.clone();
 
@@ -74,7 +91,7 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
             for (from_place, _) in (*related).iter().copied() {
                 match from_place.partial_cmp(place).unwrap() {
                     PlaceOrdering::Prefix => {
-                        let unpacks = from.expand(from_place, place, repacker);
+                        let unpacks = from.expand(from_place, place, repacker)?;
                         repacks.extend(unpacks);
                         break;
                     }
@@ -98,6 +115,6 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                 repacks.push(RepackOp::RegainLoanedCapability(place, kind));
             }
         }
-        repacks
+        Ok(repacks)
     }
 }

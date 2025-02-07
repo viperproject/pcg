@@ -80,11 +80,11 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         &self,
         previous: &CapabilitySummary<'tcx>,
     ) -> (Vec<RepackOp<'tcx>>, Vec<RepackOp<'tcx>>) {
-        let from_prev = previous.bridge(&self.summaries.pre_operands, self.repacker);
+        let from_prev = previous.bridge(&self.summaries.pre_operands, self.repacker).unwrap();
         let middle = self
             .summaries
             .post_operands
-            .bridge(&self.summaries.pre_main, self.repacker);
+            .bridge(&self.summaries.pre_main, self.repacker).unwrap();
         (from_prev, middle)
     }
 }

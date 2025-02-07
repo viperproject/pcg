@@ -135,7 +135,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                     },
                     actions: entry_set.get_curr_borrow_pcg().actions.clone(),
                     states: to.summaries.clone(),
-                    repacks_start: state.post_main().bridge(&to.post_main(), rp),
+                    repacks_start: state.post_main().bridge(&to.post_main(), rp).unwrap(),
                     repacks_middle: Vec::new(),
                     borrows: entry_set.get_curr_borrow_pcg().states.clone(),
                     // TODO: It seems like extra_start should be similar to repacks_start

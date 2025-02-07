@@ -5,6 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
+    combined_pcs::PCGError,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     rustc_interface::middle::mir::{Local, RETURN_PLACE},
     utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
@@ -16,7 +17,12 @@ use super::{
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
-    pub(crate) fn requires(&mut self, cond: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+    #[must_use]
+    pub(crate) fn requires(
+        &mut self,
+        cond: Condition<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<(), PCGError> {
         match cond {
             Condition::Unalloc(_) => {}
             Condition::AllocateOrDeallocate(local) => {
@@ -28,15 +34,17 @@ impl<'tcx> CapabilitySummary<'tcx> {
                         // `bridge` and emit a IgnoreSD op.
                         *cap = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
                     }
-                    CapabilityLocal::Allocated(_) => self.requires(
-                        Condition::Capability(local.into(), CapabilityKind::Write),
-                        repacker,
-                    ),
+                    CapabilityLocal::Allocated(_) => {
+                        self.requires(
+                            Condition::Capability(local.into(), CapabilityKind::Write),
+                            repacker,
+                        )?;
+                    }
                 }
             }
             Condition::Capability(place, cap) => {
                 let cp = self[place.local].get_allocated_mut();
-                cp.repack(place, repacker);
+                cp.repack(place, repacker)?;
                 if cp[&place].is_exclusive() && cap.is_write() {
                     // Requires write should deinit an exclusive
                     cp.insert(place, cap);
@@ -63,6 +71,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 }
             }
         }
+        Ok(())
     }
 
     fn check_pre_satisfied(&self, pre: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
@@ -140,26 +149,32 @@ impl<'tcx> CapabilitySummary<'tcx> {
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
-    pub(super) fn repack(&mut self, to: Place<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+    #[must_use]
+    pub(super) fn repack(
+        &mut self,
+        to: Place<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<(), PCGError> {
         let related = self.find_all_related(to, None);
         for (from_place, _) in (*related).iter().copied() {
             match from_place.partial_cmp(to).unwrap() {
                 PlaceOrdering::Prefix => {
-                    self.expand(related.get_only_place(), to, repacker);
+                    self.expand(related.get_only_place(), to, repacker)?;
                 }
                 PlaceOrdering::Equal => (),
                 PlaceOrdering::Suffix => {
-                    self.collapse(related.get_places(), to, repacker).unwrap();
-                    return;
+                    self.collapse(related.get_places(), to, repacker)?;
+                    return Ok(());
                 }
                 PlaceOrdering::Both => {
                     let cp = related.common_prefix(to);
                     // Collapse
-                    self.collapse(related.get_places(), cp, repacker).unwrap();
+                    self.collapse(related.get_places(), cp, repacker)?;
                     // Expand
-                    self.expand(cp, to, repacker);
+                    self.expand(cp, to, repacker)?;
                 }
             }
         }
+        Ok(())
     }
 }
