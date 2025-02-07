@@ -11,7 +11,6 @@ import {
 } from "./components/BasicBlockTable";
 import {
   BasicBlockData,
-  BorrowAction,
   CurrentPoint,
   DagreEdge,
   DagreInputNode,
@@ -146,11 +145,11 @@ async function main() {
       localStorage.getItem("showPathBlocksOnly") === "true"
     );
     const [showUnwindEdges, setShowUnwindEdges] = useState(true);
-    const [showPCS, setShowPCS] = useState(
-      localStorage.getItem("showPCS") === "true"
+    const [showPCG, setShowPCG] = useState(
+      localStorage.getItem("showPCG") !== "false"
     );
     const [showStorageStmts, setShowStorageStmts] = useState(
-      localStorage.getItem("showStorageStmts") === "true"
+      localStorage.getItem("showStorageStmts") !== "false"
     );
 
     const { filteredNodes, filteredEdges } = filterNodesAndEdges(nodes, edges, {
@@ -260,12 +259,12 @@ async function main() {
 
     useEffect(() => {
       const graph = document.getElementById("dot-graph");
-      if (showPCS) {
+      if (showPCG) {
         graph.style.display = "block";
       } else {
         graph.style.display = "none";
       }
-    }, [showPCS]);
+    }, [showPCG]);
 
     useEffect(() => {
       loadPCSDotGraph();
@@ -450,7 +449,7 @@ async function main() {
     addLocalStorageCallback("selectedFunction", selectedFunction);
     addLocalStorageCallback("selectedPath", selectedPath);
     addLocalStorageCallback("showPathBlocksOnly", showPathBlocksOnly);
-    addLocalStorageCallback("showPCS", showPCS);
+    addLocalStorageCallback("showPCG", showPCG);
     addLocalStorageCallback("showStorageStmts", showStorageStmts);
 
     const isBlockOnSelectedPath = useCallback(
@@ -514,10 +513,10 @@ async function main() {
           <label>
             <input
               type="checkbox"
-              checked={showPCS}
-              onChange={(e) => setShowPCS(e.target.checked)}
+              checked={showPCG}
+              onChange={(e) => setShowPCG(e.target.checked)}
             />
-            Show PCS
+            Show PCG
           </label>
           <button
             style={{ marginLeft: "10px" }}
