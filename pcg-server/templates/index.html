@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>PCG Visualization Upload</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            form {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+                width: 100%;
+            }
+            input[type="file"] {
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                width: 100%;
+            }
+            textarea {
+                min-height: 400px;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 14px;
+                line-height: 1.4;
+                padding: 15px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                width: 100%;
+                box-sizing: border-box;
+                resize: vertical;
+                tab-size: 4;
+                background-color: #f8f9fa;
+            }
+            textarea:focus {
+                outline: none;
+                border-color: #007bff;
+                box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+            }
+            input[type="submit"] {
+                padding: 10px 20px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                width: 200px;
+                align-self: center;
+            }
+            input[type="submit"]:hover {
+                background-color: #0056b3;
+            }
+            .input-group {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                width: 100%;
+            }
+            .radio-group {
+                display: flex;
+                gap: 20px;
+                margin-bottom: 10px;
+            }
+            .radio-option {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #code-input {
+                display: none;
+            }
+            #file-input {
+                display: none;
+            }
+        </style>
+        <script>
+            function toggleInputMethod() {
+                const fileInput = document.getElementById('file-input');
+                const codeInput = document.getElementById('code-input');
+                const useFile = document.getElementById('use-file').checked;
+
+                fileInput.style.display = useFile ? 'block' : 'none';
+                codeInput.style.display = useFile ? 'none' : 'block';
+            }
+        </script>
+    </head>
+    <body>
+        <h1>Upload Rust File for PCG Visualization</h1>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <div class="radio-group">
+                <div class="radio-option">
+                    <input type="radio" id="use-file" name="input-method" value="file" checked onchange="toggleInputMethod()">
+                    <label for="use-file">Upload File</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="use-code" name="input-method" value="code" onchange="toggleInputMethod()">
+                    <label for="use-code">Enter Code</label>
+                </div>
+            </div>
+
+            <div id="file-input" class="input-group">
+                <input type="file" name="file" accept=".rs">
+            </div>
+
+            <div id="code-input" class="input-group">
+                <textarea name="code" placeholder="Enter your Rust code here..."></textarea>
+            </div>
+
+            <input type="submit" value="Upload and Visualize">
+        </form>
+        <script>
+            // Initialize the visibility
+            toggleInputMethod();
+        </script>
+    </body>
+</html>

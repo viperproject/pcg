@@ -69,8 +69,12 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
     let mut item_names = vec![];
 
-    let vis_dir = if env_feature_enabled("PCG_VISUALIZATION").unwrap_or(false) {
-        Some("visualization/data")
+    let user_specified_vis_dir = std::env::var("PCG_VISUALIZATION_DATA_DIR");
+    let vis_dir: Option<&str> = if env_feature_enabled("PCG_VISUALIZATION").unwrap_or(false) {
+        Some(match user_specified_vis_dir.as_ref() {
+            Ok(dir) => dir,
+            Err(_) => "visualization/data",
+        })
     } else {
         None
     };
