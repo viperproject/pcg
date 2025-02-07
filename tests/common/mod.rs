@@ -94,6 +94,11 @@ pub fn run_pcg_on_file(file: &Path) {
 #[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str) {
     match (name, version) {
+        ("plotters", "0.3.7") => {
+            // TODO: This should be relatively easy to fix
+            eprintln!("Skipping plotters; haven't figured out how to run it on NixOS yet.");
+            return;
+        }
         ("darling", "0.20.10") | ("tokio-native-tls", "0.3.1") => {
             eprintln!(
                 r#"Skipping {name} {version}; it will not compile due to an old dependency of proc_macro.
