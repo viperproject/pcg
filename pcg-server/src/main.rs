@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     net::SocketAddr,
+    error::Error,
+    backtrace::Backtrace,
 };
 use tempfile::TempDir;
 use tower_http::services::ServeDir;
@@ -49,7 +51,11 @@ async fn serve_upload_form() -> impl IntoResponse {
 async fn handle_upload(mut multipart: Multipart) -> Response {
     match handle_upload_inner(multipart).await {
         Ok(response) => response,
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => {
+            let backtrace = Backtrace::capture();
+            let error_with_trace = format!("Error: {}\n\nBacktrace:\n{}", e, backtrace);
+            (StatusCode::INTERNAL_SERVER_ERROR, error_with_trace).into_response()
+        }
     }
 }
 
@@ -124,14 +130,9 @@ async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, Strin
     debug!("Using absolute data dir: {:?}", abs_data_dir);
 
     // Run pcs_bin with visualization flags
-    let output = Command::new("cargo")
-        .current_dir(Path::new(".."))  // Move up to parent directory where pcs_bin is
+    let output = Command::new("./pcs_bin")
         .env("PCG_VISUALIZATION", "true")
         .env("PCG_VISUALIZATION_DATA_DIR", abs_data_dir.to_str().unwrap())
-        .arg("run")
-        .arg("--bin")
-        .arg("pcs_bin")
-        .arg("--")
         .arg(abs_file_path)
         .output()
         .map_err(|e| e.to_string())?;
@@ -149,13 +150,13 @@ async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, Strin
 
     // Copy visualization files
     copy_dir(
-        PathBuf::from("../visualization/dist"),
+        PathBuf::from("visualization/dist"),
         unique_dir.join("dist"),
     )
     .map_err(|e| e.to_string())?;
 
     fs::copy(
-        "../visualization/index.html",
+        "visualization/index.html",
         unique_dir.join("index.html"),
     )
     .map_err(|e| e.to_string())?;
