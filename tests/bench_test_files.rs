@@ -14,9 +14,9 @@ fn build_release() {
 }
 
 fn extract_i_refs(output: &str) -> u64 {
-    // Example line we're looking for: "I   refs:      2,859,668"
+    // Example line we're looking for: "==3770436== I refs:        58,812,310"
     for line in output.lines() {
-        if line.trim().starts_with("I   refs:") {
+        if line.contains("I refs:") {
             return line
                 .split_whitespace()
                 .last()
