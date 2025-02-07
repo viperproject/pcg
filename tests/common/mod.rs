@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::io::Write;
 
+#[allow(dead_code)]
 pub fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
     println!("Getting: {url}");
     reqwest::blocking::ClientBuilder::new()
@@ -12,6 +13,7 @@ pub fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
         .send()
 }
 
+#[allow(dead_code)]
 pub fn get_rust_toolchain_channel() -> String {
     #[derive(Deserialize)]
     struct RustToolchainFile {
@@ -25,7 +27,7 @@ pub fn get_rust_toolchain_channel() -> String {
         components: Option<Vec<String>>,
     }
 
-    let content = include_str!("../rust-toolchain");
+    let content = include_str!("../../rust-toolchain");
     // Be ready to accept TOML format
     // See: https://github.com/rust-lang/rustup/pull/2438
     if content.starts_with("[toolchain]") {
@@ -37,7 +39,8 @@ pub fn get_rust_toolchain_channel() -> String {
     }
 }
 
-pub fn run_pcs_on_dir(dir: &Path) {
+#[allow(dead_code)]
+pub fn run_pcg_on_crate_in_dir(dir: &Path) {
     let cwd = std::env::current_dir().unwrap();
     assert!(
         cfg!(debug_assertions),
@@ -68,7 +71,8 @@ pub fn run_pcs_on_dir(dir: &Path) {
     );
 }
 
-pub fn run_pcs_on_file(file: &Path) {
+#[allow(dead_code)]
+pub fn run_pcg_on_file(file: &Path) {
     let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let pcs_exe = workspace_dir.join("target/debug/pcs_bin");
     println!("Running PCS on file: {}", file.display());
@@ -87,6 +91,7 @@ pub fn run_pcs_on_file(file: &Path) {
     );
 }
 
+#[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str) {
     match (name, version) {
         ("darling", "0.20.10") | ("tokio-native-tls", "0.3.1") => {
@@ -144,6 +149,27 @@ pub fn run_on_crate(name: &str, version: &str) {
         .unwrap();
     writeln!(file, "\n[workspace]").unwrap();
     let dirname_path = PathBuf::from(&dirname);
-    run_pcs_on_dir(&dirname_path);
+    run_pcg_on_crate_in_dir(&dirname_path);
     std::fs::remove_dir_all(dirname).unwrap();
+}
+
+#[allow(dead_code)]
+pub fn get_test_files(test_dir: &Path) -> Vec<PathBuf> {
+    let mut test_files: Vec<_> = std::fs::read_dir(test_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let file_name = path.file_name()?.to_str()?;
+            if file_name.chars().next()?.is_ascii_digit() && file_name.ends_with(".rs") {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Sort test files by name
+    test_files.sort();
+    test_files
 }

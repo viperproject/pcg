@@ -1,6 +1,7 @@
 use serde_derive::{Deserialize, Serialize};
-use test_utils::{get, run_on_crate};
-mod test_utils;
+
+mod common;
+use common::{get, run_on_crate};
 
 #[test]
 pub fn top_crates() {
