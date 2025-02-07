@@ -3,8 +3,7 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         domain::{MaybeOldPlace, MaybeRemotePlace},
         region_projection::{
-            MaybeRemoteRegionProjectionBase, RegionProjection,
-            RegionProjectionBaseLike,
+            MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
@@ -88,6 +87,26 @@ pub trait PCGNodeLike<'tcx>:
     + ToJsonWithRepacker<'tcx>
 {
     fn to_pcg_node(self) -> PCGNode<'tcx>;
+
+    fn try_to_local_node(self) -> Option<LocalNode<'tcx>> {
+        match self.to_pcg_node() {
+            PCGNode::Place(p) => match p {
+                MaybeRemotePlace::Local(maybe_old_place) => Some(maybe_old_place.to_local_node()),
+                MaybeRemotePlace::Remote(_) => None,
+            },
+            PCGNode::RegionProjection(rp) => match rp.base() {
+                MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
+                    match maybe_remote_place {
+                        MaybeRemotePlace::Local(maybe_old_place) => {
+                            Some(rp.map_base(|_| maybe_old_place).to_local_node())
+                        }
+                        MaybeRemotePlace::Remote(_) => None,
+                    }
+                }
+                MaybeRemoteRegionProjectionBase::Const(_) => None,
+            },
+        }
+    }
 }
 
 pub(crate) trait LocalNodeLike<'tcx> {

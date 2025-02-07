@@ -13,8 +13,7 @@ use std::{
 };
 
 use rustc_interface::{
-    dataflow::fmt::DebugWithContext, dataflow::JoinSemiLattice, middle::mir,
-    middle::mir::BasicBlock,
+    dataflow::fmt::DebugWithContext, dataflow::JoinSemiLattice, middle::mir::BasicBlock,
 };
 
 use crate::{
@@ -434,18 +433,9 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                 }
             }
         }
-        let self_block = self.block();
-        let ub = self.pcg.borrow.states.post_main.apply_unblock_graph(
-            g,
-            self.cgx.rp,
-            mir::Location {
-                block: self_block,
-                statement_index: 0,
-            },
-        );
         self.dot_graphs().borrow_mut().register_new_iteration(0);
         self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
-        fpcs || borrows || ub.changed()
+        fpcs || borrows
     }
 }
 
