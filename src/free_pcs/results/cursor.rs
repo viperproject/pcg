@@ -5,13 +5,10 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::{engine::{BorrowsDomain, EvalStmtData}, latest::Latest},
-    combined_pcs::EvalStmtPhase,
-    rustc_interface::{
+    borrows::{engine::{BorrowsDomain, EvalStmtData}, latest::Latest}, combined_pcs::EvalStmtPhase, rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
-    },
-    BorrowPCGActions,
+    }, utils::validity::HasValidityCheck, BorrowPCGActions
 };
 
 use crate::{
@@ -197,6 +194,12 @@ pub struct FreePcsLocation<'tcx> {
     pub extra_middle: BorrowsBridge<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
     pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for FreePcsLocation<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.borrows.check_validity(repacker)
+    }
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {

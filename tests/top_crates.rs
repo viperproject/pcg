@@ -1,19 +1,10 @@
 use serde_derive::{Deserialize, Serialize};
-use std::path::PathBuf;
+use test_utils::{get, run_on_crate};
 mod test_utils;
 
 #[test]
 pub fn top_crates() {
     top_crates_range(193..500)
-}
-
-fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
-    println!("Getting: {url}");
-    reqwest::blocking::ClientBuilder::new()
-        .user_agent("Rust Corpus - Top Crates Scrapper")
-        .build()?
-        .get(url)
-        .send()
 }
 
 pub fn top_crates_range(range: std::ops::Range<usize>) {
@@ -24,93 +15,6 @@ pub fn top_crates_range(range: std::ops::Range<usize>) {
         println!("Starting: {i} ({})", krate.name);
         run_on_crate(&krate.name, &version);
     }
-}
-
-pub fn get_rust_toolchain_channel() -> String {
-    #[derive(Deserialize)]
-    struct RustToolchainFile {
-        toolchain: RustToolchain,
-    }
-
-    #[derive(Deserialize)]
-    struct RustToolchain {
-        channel: String,
-        #[allow(dead_code)]
-        components: Option<Vec<String>>,
-    }
-
-    let content = include_str!("../rust-toolchain");
-    // Be ready to accept TOML format
-    // See: https://github.com/rust-lang/rustup/pull/2438
-    if content.starts_with("[toolchain]") {
-        let rust_toolchain: RustToolchainFile =
-            toml::from_str(content).expect("failed to parse rust-toolchain file");
-        rust_toolchain.toolchain.channel
-    } else {
-        content.trim().to_string()
-    }
-}
-
-fn run_on_crate(name: &str, version: &str) {
-    match (name, version) {
-        ("darling", "0.20.10") | ("tokio-native-tls", "0.3.1") => {
-            eprintln!(
-                r#"Skipping {name} {version}; it will not compile due to an old dependency of proc_macro.
-            For more information see: https://github.com/rust-lang/rust/issues/113152
-            "#
-            );
-            return;
-        }
-        ("derive_more", _) => {
-            eprintln!("Skipping derive_more; compilation requires enabling a feature.");
-            return;
-        }
-        ("winreg", _) => {
-            eprintln!("Skipping winreg; it's for Windows only.");
-            return;
-        }
-        ("criterion-plot", "0.5.0") => {
-            eprintln!("Skipping criterion-plot; it returns an error: error: unexpected `cfg` condition value: `cargo-clippy`");
-            return;
-        }
-        ("tiny-keccak", "2.0.2") => {
-            eprintln!("Skipping tiny-keccak; compilation requires choosing a hash function");
-            return;
-        }
-        ("redox_users", _) => {
-            eprintln!("Skipping redox_users; it's for Redox OS only.");
-            return;
-        }
-        ("Inflector", _) => {
-            eprintln!("Skipping Inflector; it doesn't compile (probably too old).");
-            return;
-        }
-        _ => {}
-    }
-    let dirname = format!("./tmp/{name}-{version}");
-    let filename = format!("{dirname}.crate");
-    if !std::path::PathBuf::from(&filename).exists() {
-        let dl = format!("https://crates.io/api/v1/crates/{name}/{version}/download");
-        let mut resp = get(&dl).expect("Could not fetch top crates");
-        let mut file = std::fs::File::create(&filename).unwrap();
-        resp.copy_to(&mut file).unwrap();
-    }
-    println!("Unwrapping: {filename}");
-    let status = std::process::Command::new("tar")
-        .args(["-xf", &filename, "-C", "./tmp/"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open(format!("{dirname}/Cargo.toml"))
-        .unwrap();
-    use std::io::Write;
-    writeln!(file, "\n[workspace]").unwrap();
-    let dirname_path = std::path::PathBuf::from(&dirname);
-    test_utils::run_pcs_on_dir(&dirname_path);
-    std::fs::remove_dir_all(dirname).unwrap();
 }
 
 /// A create on crates.io.

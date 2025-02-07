@@ -19,8 +19,15 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrows_graph::validity_checks_enabled, domain::{MaybeOldPlace, MaybeRemotePlace}, engine::BorrowsDomain, unblock_graph::{UnblockGraph, UnblockType}
-    }, combined_pcs::PCGNode, free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary}, rustc_interface, visualization::generate_dot_graph, RECORD_PCG
+        domain::{MaybeOldPlace, MaybeRemotePlace},
+        engine::BorrowsDomain,
+        unblock_graph::{UnblockGraph, UnblockType},
+    },
+    combined_pcs::PCGNode,
+    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
+    rustc_interface,
+    visualization::generate_dot_graph,
+    RECORD_PCG,
 };
 
 use super::{PCGContext, PCGEngine};
@@ -212,10 +219,6 @@ pub(crate) struct PCG<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> PCG<'a, 'tcx> {
-    pub(crate) fn is_valid(&self) -> bool {
-        self.borrow.is_valid()
-    }
-
     pub(crate) fn initialize_as_start_block(&mut self) {
         self.owned.initialize_as_start_block();
         self.borrow.initialize_as_start_block();
@@ -245,10 +248,6 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
     pub(crate) fn borrow_pcg(&self) -> &BorrowsDomain<'a, 'tcx> {
         &self.pcg.borrow
-    }
-
-    pub(crate) fn is_valid(&self) -> bool {
-        self.pcg.is_valid()
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
@@ -382,17 +381,18 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         } else if self.has_error() {
             return false;
         }
-        if validity_checks_enabled() {
-            if !other.is_valid() {
-                eprintln!(
-                    "Block {:?} is invalid. Body source: {:?}, span: {:?}",
-                    other.block(),
-                    self.cgx.mir.body.source,
-                    self.cgx.mir.body.span
-                );
-            }
-            debug_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
-        }
+        // For performance reasons we don't check validity here.
+        // if validity_checks_enabled() {
+        //     if !other.is_valid() {
+        //         eprintln!(
+        //             "Block {:?} is invalid. Body source: {:?}, span: {:?}",
+        //             other.block(),
+        //             self.cgx.mir.body.source,
+        //             self.cgx.mir.body.span
+        //         );
+        //     }
+        //     debug_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
+        // }
         assert!(self.is_initialized() && other.is_initialized());
         if self.block().as_usize() == 0 {
             panic!("{:?}", other.block());

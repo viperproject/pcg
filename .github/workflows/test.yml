@@ -10,12 +10,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  test_files:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly-2024-09-15
-    - name: Run tests
-      run: cargo test --test run_all_tests
+    - name: Run tests on files
+      run: cargo test --test test_files
+
+  test_crates:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2024-09-15
+    - name: Run tests on selected crates
+      run: cargo test --test test_crates

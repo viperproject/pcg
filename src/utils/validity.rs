@@ -8,4 +8,8 @@ pub trait HasValidityCheck<'tcx> {
             panic!("{}", e);
         }
     }
+
+    fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.check_validity(repacker).is_ok()
+    }
 }

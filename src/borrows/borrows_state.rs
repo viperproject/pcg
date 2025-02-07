@@ -12,7 +12,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::HasPlace,
+    utils::{validity::HasValidityCheck, HasPlace},
 };
 
 use crate::{
@@ -79,6 +79,12 @@ pub struct BorrowsState<'tcx> {
     capabilities: BorrowPCGCapabilities<'tcx>,
 }
 
+impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.graph.check_validity(repacker)
+    }
+}
+
 impl<'tcx> Default for BorrowsState<'tcx> {
     fn default() -> Self {
         Self {
@@ -137,9 +143,6 @@ impl<'tcx> BorrowsState<'tcx> {
     }
     pub(super) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>) -> bool {
         self.graph.remove(edge)
-    }
-    pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.graph.is_valid(repacker)
     }
 
     fn record_and_apply_action(
@@ -202,9 +205,10 @@ impl<'tcx> BorrowsState<'tcx> {
         bc: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        if validity_checks_enabled() {
-            debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
-        }
+        // For performance reasons we don't check validity here.
+        // if validity_checks_enabled() {
+        //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
+        // }
         let mut changed = false;
         if self
             .graph
@@ -370,7 +374,7 @@ impl<'tcx> BorrowsState<'tcx> {
         node: BlockedNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<BorrowPCGEdge<'tcx>> {
-        self.graph.edges_blocking(node, repacker)
+        self.graph.edges_blocking(node, repacker).cloned().collect()
     }
 
     pub(crate) fn edges_blocked_by(

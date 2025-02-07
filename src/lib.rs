@@ -21,7 +21,7 @@ use borrows::{
     borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
     borrow_pcg_edge::LocalNode,
     borrow_pcg_expansion::BorrowPCGExpansion,
-    borrows_graph::Conditioned,
+    borrows_graph::{validity_checks_enabled, Conditioned},
     borrows_visitor::BorrowPCGActions,
     engine::EvalStmtData,
     latest::Latest,
@@ -33,7 +33,7 @@ use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapability
 use free_pcs::{CapabilityKind, RepackOp};
 use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
-use utils::{display::DisplayWithRepacker, Place, PlaceRepacker};
+use utils::{display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker};
 use visualization::mir_graph::generate_json_from_mir;
 
 use crate::borrows::domain::ToJsonWithRepacker;
@@ -292,6 +292,9 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         for (block, _data) in mir.body.basic_blocks.iter_enumerated() {
             let pcs_block = fpcs_analysis.get_all_for_bb(block);
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
+                if validity_checks_enabled() {
+                    statement.assert_validity(rp);
+                }
                 let data = PCGStmtVisualizationData {
                     latest: &statement.borrows.post_main.latest,
                     free_pcg_repacks_start: &statement.repacks_start,

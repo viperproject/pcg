@@ -10,7 +10,7 @@ use std::{
     rc::Rc,
 };
 
-use rustc_interface::{
+use crate::rustc_interface::{
     borrowck::{
         borrow_set::BorrowSet,
         consumers::{self, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
@@ -29,7 +29,6 @@ use rustc_interface::{
 use crate::{
     borrows::engine::BorrowsEngine,
     free_pcs::{engine::FpcsEngine, CapabilityKind},
-    rustc_interface,
     utils::PlaceRepacker,
 };
 
