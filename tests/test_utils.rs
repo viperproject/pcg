@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::io::Write;
 
-fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
+pub fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
     println!("Getting: {url}");
     reqwest::blocking::ClientBuilder::new()
         .user_agent("Rust Corpus - Top Crates Scrapper")

@@ -1,4 +1,7 @@
-use std::{cell::Cell, collections::HashMap};
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+};
 
 use crate::{
     combined_pcs::PCGNode,
@@ -8,6 +11,7 @@ use crate::{
     },
     utils::validity::HasValidityCheck,
 };
+use itertools::Itertools;
 use serde_json::json;
 
 use crate::{
@@ -20,9 +24,7 @@ use crate::{
 use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
-    coupling_graph_constructor::{
-        BorrowCheckerInterface, CGNode, CouplingGraphConstructor,
-    },
+    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
     domain::{FunctionAbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
@@ -37,6 +39,19 @@ pub struct BorrowsGraph<'tcx> {
     edges: FxHashSet<BorrowPCGEdge<'tcx>>,
     /// See [`BorrowsGraph::is_valid`] for more details.
     cached_is_valid: Cell<Option<bool>>,
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        if let Some(true) = self.cached_is_valid.get() {
+            return Ok(());
+        }
+        if !self.is_acyclic(repacker) {
+            return Err("Graph is not acyclic".to_string());
+        }
+        self.cached_is_valid.set(Some(true));
+        Ok(())
+    }
 }
 
 impl<'tcx> Eq for BorrowsGraph<'tcx> {}
@@ -493,7 +508,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // graph. These should be removed.
         for root in self.roots(repacker) {
             if root.is_old() {
-                for edge in self.edges_blocking(root, repacker) {
+                for edge in self
+                    .edges_blocking(root, repacker)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                {
                     self.remove(&edge);
                     changed = true;
                 }
@@ -537,9 +556,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         bc: &T,
     ) -> bool {
-        if validity_checks_enabled() {
-            debug_assert!(other.is_valid(repacker), "Other graph is invalid");
-        }
+        // For performance reasons we don't check validity here.
+        // if validity_checks_enabled() {
+        //     debug_assert!(other.is_valid(repacker), "Other graph is invalid");
+        // }
         let old_self = self.clone();
 
         if borrows_imgcat_debug() {
@@ -575,7 +595,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         });
                     }
                 }
-                assert!(self.is_valid(repacker), "Graph became invalid after join");
+                // For performance reasons we don't check validity here.
+                // if validity_checks_enabled() {
+                //     assert!(self.is_valid(repacker), "Graph became invalid after join");
+                // }
                 return result;
             }
             // TODO: Handle multiple exit blocks
@@ -634,29 +657,24 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        // TODO: Currently the graph can become cyclic after the join, for some reason.
-        //       This test is postponed for now (we still ensure that the ultimate graph is valid).
-        if validity_checks_enabled() && !self.is_valid(repacker) {
-            if borrows_imgcat_debug() {
-                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                    DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
-                        |e| {
-                            eprintln!("Error rendering self graph: {}", e);
-                        },
-                    );
-                }
-                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, &old_self) {
-                    DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(
-                        |e| {
-                            eprintln!("Error rendering old self graph: {}", e);
-                        },
-                    );
-                }
-                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
-                    DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
-                        eprintln!("Error rendering other graph: {}", e);
-                    });
-                }
+        // For performance reasons we only check validity here if we are also producing debug graphs
+        if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(repacker) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
+                    |e| {
+                        eprintln!("Error rendering self graph: {}", e);
+                    },
+                );
+            }
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, &old_self) {
+                DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(|e| {
+                    eprintln!("Error rendering old self graph: {}", e);
+                });
+            }
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
+                DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
+                    eprintln!("Error rendering other graph: {}", e);
+                });
             }
             panic!(
                 "Graph became invalid after join. self: {:?}, other: {:?}",
@@ -700,15 +718,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.contains(edge)
     }
 
-    pub(crate) fn edges_blocking(
-        &self,
+    pub(crate) fn edges_blocking<'slf, 'mir: 'slf>(
+        &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowPCGEdge<'tcx>> {
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> impl Iterator<Item = &'slf BorrowPCGEdge<'tcx>> + 'slf {
         self.edges()
-            .filter(|edge| edge.blocks_node(node, repacker))
-            .cloned()
-            .collect()
+            .filter(move |edge| edge.blocks_node(node, repacker))
     }
 
     pub(crate) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>) -> bool {
@@ -766,22 +782,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.insert_path_condition(pc.clone()))
     }
 
-    /// Returns true iff the expected invariants of the graph hold. This
-    /// function is only used for debugging and testing.
-    ///
-    /// This predicate should definitely be true for every final graph in the computed
-    /// PCG. There are probably other points where it should hold as well, but these
-    /// aren't documented yet.
-    pub(crate) fn is_valid(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        if let Some(valid) = self.cached_is_valid.get() {
-            return valid;
-        }
-        let valid = self.is_acyclic(repacker);
-        self.cached_is_valid.set(Some(valid));
-        valid
-    }
-
     fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        // The representation of an allowed path prefix, e.g. paths
+        // with this representation definitely cannot reach a feasible cycle.
+        type AllowedPathPrefix<'tcx> = Path<'tcx>;
+
+        let mut allowed_path_prefixes: HashSet<AllowedPathPrefix<'tcx>> = HashSet::new();
+
         enum PushResult<'tcx> {
             ExtendPath(Path<'tcx>),
             Cycle,
@@ -856,32 +863,49 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 Self(vec![edge])
             }
 
+            fn path_prefix_repr(&self) -> AllowedPathPrefix<'tcx> {
+                self.clone()
+            }
+
             fn leads_to_feasible_cycle(
                 &self,
                 graph: &BorrowsGraph<'tcx>,
                 repacker: PlaceRepacker<'_, 'tcx>,
+                prefixes: &mut HashSet<AllowedPathPrefix<'tcx>>,
             ) -> bool {
+                let path_prefix_repr = self.path_prefix_repr();
+                if prefixes.contains(&path_prefix_repr) {
+                    return false;
+                }
                 let curr = self.last();
-                for node in curr.blocked_by_nodes(repacker) {
-                    for edge in graph.edges_blocking(node.into(), repacker) {
-                        match self.clone().try_push(edge, repacker) {
-                            PushResult::Cycle => {
-                                return true;
-                            }
-                            PushResult::ExtendPath(next_path) => {
-                                next_path.leads_to_feasible_cycle(graph, repacker);
-                            }
-                            PushResult::PathConditionsUnsatisfiable => {}
+                let blocking_edges = curr
+                    .blocked_by_nodes(repacker)
+                    .into_iter()
+                    .flat_map(|node| graph.edges_blocking(node.into(), repacker))
+                    .unique();
+                for edge in blocking_edges {
+                    match self.clone().try_push(edge.clone(), repacker) {
+                        PushResult::Cycle => {
+                            return true;
                         }
+                        PushResult::ExtendPath(next_path) => {
+                            next_path.leads_to_feasible_cycle(graph, repacker, prefixes);
+                        }
+                        PushResult::PathConditionsUnsatisfiable => {}
                     }
                 }
+                prefixes.insert(path_prefix_repr);
                 false
             }
         }
 
         for root in self.roots(repacker) {
             for edge in self.edges_blocking(root.into(), repacker) {
-                if Path::new(edge).leads_to_feasible_cycle(self, repacker) {
+                if Path::new(edge.clone()).leads_to_feasible_cycle(
+                    self,
+                    repacker,
+                    &mut allowed_path_prefixes,
+                ) {
                     return false;
                 }
             }

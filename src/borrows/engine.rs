@@ -20,6 +20,7 @@ use crate::{
             ty::{self, TyCtxt},
         },
     },
+    utils::validity::HasValidityCheck,
 };
 
 use crate::{
@@ -29,7 +30,6 @@ use crate::{
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
-    borrows_graph::validity_checks_enabled,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage},
     domain::{MaybeRemotePlace, RemotePlace, ToJsonWithRepacker},
@@ -76,9 +76,10 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         } else if self.has_error() {
             return false;
         }
-        if validity_checks_enabled() {
-            debug_assert!(other.is_valid(), "Other graph is invalid");
-        }
+        // For performance reasons we don't check validity here.
+        // if validity_checks_enabled() {
+        //     debug_assert!(other.is_valid(), "Other graph is invalid");
+        // }
         let mut other_after = other.post_state().clone();
 
         // For edges in the other graph that actually belong to it,
@@ -283,6 +284,15 @@ impl<T> std::ops::IndexMut<EvalStmtPhase> for EvalStmtData<T> {
 
 pub(crate) type BorrowsStates<'tcx> = EvalStmtData<BorrowsState<'tcx>>;
 
+impl<'tcx> HasValidityCheck<'tcx> for BorrowsStates<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.pre_operands.check_validity(repacker)?;
+        self.post_operands.check_validity(repacker)?;
+        self.pre_main.check_validity(repacker)?;
+        self.post_main.check_validity(repacker)
+    }
+}
+
 #[derive(Clone)]
 /// The domain of the Borrow PCG dataflow analysis. Note that this contains many
 /// fields which serve as context (e.g. reference to a borrow-checker impl to
@@ -326,10 +336,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     }
     pub(crate) fn post_state(&self) -> &BorrowsState<'tcx> {
         &self.states.post_main
-    }
-
-    pub(crate) fn is_valid(&self) -> bool {
-        self.post_state().is_valid(self.repacker)
     }
 
     pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 mod test_utils;
 
 #[test]
