@@ -1,13 +1,13 @@
-#[test]
-fn run_all_tests() {
-    use std::path::PathBuf;
-    use std::process::Command;
+use std::path::PathBuf;
+mod test_utils;
 
+#[test]
+fn check_test_files() {
     // Get the workspace directory from CARGO_MANIFEST_DIR
     let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
 
     // Find all numbered test files
-    let test_dir = workspace_dir.join("tests");
+    let test_dir = workspace_dir.join("test-files");
     let mut test_files: Vec<_> = std::fs::read_dir(&test_dir)
         .unwrap()
         .filter_map(|entry| {
@@ -27,24 +27,8 @@ fn run_all_tests() {
     // Sort test files by name to ensure consistent order
     test_files.sort();
 
-    // Get the path to our executable
-    let pcs_exe = workspace_dir.join("target/debug/pcs_bin");
-
     // Run each test file
     for test_file in test_files {
-        println!("Running test: {}", test_file.display());
-
-        let status = Command::new(&pcs_exe)
-            .arg(&test_file)
-            .env("PCG_CHECK_ANNOTATIONS", "true")
-            .status()
-            .unwrap_or_else(|e| panic!("Failed to execute test {}: {}", test_file.display(), e));
-
-        assert!(
-            status.success(),
-            "Test {} failed with status: {}",
-            test_file.display(),
-            status
-        );
+        test_utils::run_pcs_on_file(&test_file);
     }
 }
