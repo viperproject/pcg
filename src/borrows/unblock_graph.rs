@@ -1,9 +1,13 @@
 use std::collections::HashSet;
 
-use rustc_interface::middle::mir::BasicBlock;
+use crate::rustc_interface::middle::mir::BasicBlock;
 
 use crate::{
-    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData}, combined_pcs::PCGNode, rustc_interface, utils::PlaceRepacker, visualization::generate_unblock_dot_graph, ToJsonWithRepacker
+    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
+    combined_pcs::PCGNode,
+    utils::PlaceRepacker,
+    visualization::generate_unblock_dot_graph,
+    ToJsonWithRepacker,
 };
 
 use super::{
@@ -134,8 +138,8 @@ impl<'tcx> UnblockGraph<'tcx> {
         actions
     }
 
-    fn add_dependency(&mut self, unblock_edge: UnblockEdge<'tcx>) {
-        self.edges.insert(unblock_edge);
+    fn add_dependency(&mut self, unblock_edge: UnblockEdge<'tcx>) -> bool {
+        self.edges.insert(unblock_edge)
     }
 
     pub(crate) fn kill_edge(
@@ -158,16 +162,17 @@ impl<'tcx> UnblockGraph<'tcx> {
                 }
             }
         }
-        self.add_dependency(edge.clone());
-        for blocking_node in edge.blocked_by_nodes(repacker) {
-            if !edge.is_owned_expansion() {
-                // We always unblock for exclusive since the input edge is dead
-                self.unblock_node(
-                    blocking_node.into(),
-                    borrows,
-                    repacker,
-                    UnblockType::ForExclusive,
-                );
+        if self.add_dependency(edge.clone()) {
+            for blocking_node in edge.blocked_by_nodes(repacker) {
+                if !edge.is_owned_expansion() {
+                    // We always unblock for exclusive since the input edge is dead
+                    self.unblock_node(
+                        blocking_node.into(),
+                        borrows,
+                        repacker,
+                        UnblockType::ForExclusive,
+                    );
+                }
             }
         }
     }
@@ -179,6 +184,13 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         typ: UnblockType,
     ) {
+        // DotGraph::render_with_imgcat(
+        //     &generate_borrows_dot_graph(repacker, borrows.graph()).unwrap(),
+        //     &format!("Borrows state before unblocking: {:?}", node),
+        // )
+        // .unwrap_or_else(|e| {
+        //     eprintln!("Error rendering borrows state: {}", e);
+        // });
         for edge in borrows.edges_blocking(node, repacker) {
             self.kill_edge(edge, borrows, repacker, typ);
         }

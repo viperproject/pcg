@@ -298,6 +298,14 @@ pub enum MaybeOldPlace<'tcx> {
     OldPlace(PlaceSnapshot<'tcx>),
 }
 
+impl<'tcx> LocalNodeLike<'tcx> for MaybeOldPlace<'tcx> {
+    fn to_local_node(self) -> LocalNode<'tcx> {
+        match self {
+            MaybeOldPlace::Current { place } => place.to_local_node(),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_local_node(),
+        }
+    }
+}
 impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
     fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
         match self {

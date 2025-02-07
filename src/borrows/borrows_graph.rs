@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    combined_pcs::PCGNode,
+    combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::{BasicBlock, TerminatorEdges},
@@ -25,7 +25,7 @@ use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
-    domain::{FunctionAbstractionBlockEdge, LoopAbstraction, MaybeOldPlace, ToJsonWithRepacker},
+    domain::{FunctionAbstractionBlockEdge, LoopAbstraction, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -236,25 +236,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    /// Returns all borrow edges where the assigned ref is `place`
-    pub(crate) fn borrows_blocked_by(
-        &self,
-        place: MaybeOldPlace<'tcx>,
-    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.edges
-            .iter()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Borrow(reborrow) if reborrow.assigned_ref == place => {
-                    Some(Conditioned {
-                        conditions: edge.conditions().clone(),
-                        value: reborrow.clone(),
-                    })
-                }
-                _ => None,
-            })
-            .collect()
-    }
-
     /// All edges that are not blocked by any other edge
     pub(crate) fn is_leaf_edge(
         &self,
@@ -394,7 +375,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             result.render_with_imgcat("merged coupling graph");
         }
 
-        // Collect existing abstraction edges at this block
+        // Collect existing loop abstraction edges at this block
         let existing_edges: FxHashSet<_> = self
             .edges
             .iter()
@@ -416,40 +397,44 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut new_edges = FxHashSet::default();
         let mut changed = false;
 
-        // Borrow edges originally going through individual region projection
+        // Borrow PCG edges originally going through individual region projection
         // nodes should be moved to the corresponding coupled nodes.
         // TODO: Make sure `changed` is set correctly.
-        for isolated in result.endpoints() {
-            let rps: Vec<RegionProjection<'tcx>> = isolated
+        for endpoint in result.endpoints() {
+            let rps: Vec<RegionProjection<'tcx>> = endpoint
                 .iter()
                 .flat_map(|node| (*node).try_into())
                 .collect::<Vec<_>>();
 
-            // e.g. for place r: &'r mut T, if we have the region projection
-            // r↓'r, the blocked place is *r.
-            // TODO: Handle the general case, e.g r: (&'a mut T, &'b mut U)
-            let cg_places = rps
+            let local_rps: Vec<LocalNode<'tcx>> = rps
                 .iter()
-                .flat_map(|rp| rp.place().try_into())
+                .flat_map(|rp| rp.try_to_local_node())
                 .collect::<Vec<_>>();
 
-            let edges_to_move = cg_places
+            let edges_to_move = local_rps
                 .iter()
                 .flat_map(|p| {
-                    self.borrows_blocked_by(*p)
+                    self.edges_blocked_by((*p).into(), repacker)
                         .into_iter()
-                        .chain(other.borrows_blocked_by(*p))
+                        .chain(other.edges_blocked_by((*p).into(), repacker))
                 })
                 .collect::<Vec<_>>();
+
+            let in_rps = |p: PCGNode<'tcx>| rps.iter().any(|rp| (*rp).to_pcg_node() == p);
             for edge in edges_to_move {
-                // If this edge would become a loop, it can be removed.
-                if cg_places
-                    .iter()
-                    .all(|p| Some(*p) != edge.value.blocked_place.as_local_place())
-                {
+                for node in edge.blocked_nodes(repacker) {
+                    // If this blocked node is in the endpoint, no edge should
+                    // be added (otherwise it would just connect the endpoint to
+                    // itself)
+                    if in_rps(node) {
+                        break;
+                    }
+
+                    // This node is not in the endpoint, so we create a corresponding
+                    // region projection member edge.
                     let new_edge_kind =
                         BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
-                            vec![edge.value.blocked_place.into()],
+                            vec![node],
                             rps.clone()
                                 .into_iter()
                                 .map(|rp| rp.try_into().unwrap())
@@ -458,7 +443,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             RegionProjectionMemberKind::Todo,
                         ));
                     let inserted =
-                        self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions.clone()));
+                        self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions().clone()));
                     changed |= inserted;
                 }
                 self.remove(&edge.into());

@@ -52,10 +52,6 @@ impl<'tcx> ExecutedActions<'tcx> {
         }
     }
 
-    pub(crate) fn changed(&self) -> bool {
-        self.changed
-    }
-
     fn record(&mut self, action: BorrowPCGAction<'tcx>, changed: bool) {
         self.actions.push(action);
         self.changed |= changed;
@@ -620,19 +616,6 @@ impl<'tcx> BorrowsState<'tcx> {
         context: &str,
     ) -> ExecutedActions<'tcx> {
         self.remove_edge_and_set_latest(&action.edge(), location, repacker, context)
-    }
-
-    pub(crate) fn apply_unblock_graph(
-        &mut self,
-        graph: UnblockGraph<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        location: Location,
-    ) -> ExecutedActions<'tcx> {
-        let mut actions = ExecutedActions::new();
-        for action in graph.actions(repacker) {
-            actions.extend(self.apply_unblock_action(action, repacker, location, "Unblock Graph"));
-        }
-        actions
     }
 
     pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {

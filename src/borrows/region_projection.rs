@@ -172,6 +172,12 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
+    pub(crate) fn base(&self) -> P {
+        self.base
+    }
+}
+
 impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, Place<'tcx>> {
     fn to_local_node(self) -> LocalNode<'tcx> {
         LocalNode::RegionProjection(self.map_base(|base| MaybeOldPlace::Current { place: base }))

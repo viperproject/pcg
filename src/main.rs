@@ -61,7 +61,7 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
 #[allow(unused)]
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // DEBUG
-    body.body.basic_blocks.len() < 32
+    body.body.basic_blocks.len() < 64
 
     // true
 }

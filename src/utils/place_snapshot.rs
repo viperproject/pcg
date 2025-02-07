@@ -1,7 +1,8 @@
 use serde_json::json;
 
 use crate::{
-    borrows::{domain::ToJsonWithRepacker, has_pcs_elem::HasPcsElems},
+    borrows::{borrow_pcg_edge::LocalNode, domain::ToJsonWithRepacker, has_pcs_elem::HasPcsElems},
+    combined_pcs::LocalNodeLike,
     rustc_interface::middle::mir::{BasicBlock, Location},
 };
 
@@ -36,6 +37,12 @@ impl From<Location> for SnapshotLocation {
 pub struct PlaceSnapshot<'tcx> {
     pub place: Place<'tcx>,
     pub at: SnapshotLocation,
+}
+
+impl<'tcx> LocalNodeLike<'tcx> for PlaceSnapshot<'tcx> {
+    fn to_local_node(self) -> LocalNode<'tcx> {
+        LocalNode::Place(self.into())
+    }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
