@@ -2,7 +2,7 @@ use serde_json::json;
 
 use crate::combined_pcs::PCGNode;
 use crate::rustc_interface::{
-    ast::Mutability, data_structures::fx::FxHashSet, middle::mir::BasicBlock,
+    ast::Mutability, data_structures::fx::FxHashSet,
 };
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::validity::HasValidityCheck;

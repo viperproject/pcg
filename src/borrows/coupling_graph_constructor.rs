@@ -4,15 +4,16 @@ use std::{
 };
 
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike}, coupling, rustc_interface::{
-        ast::Mutability,
-        middle::mir::{BasicBlock, Location},
-    }, utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker}, ToJsonWithRepacker
+    combined_pcs::{PCGNode, PCGNodeLike},
+    coupling,
+    rustc_interface::middle::mir::{BasicBlock, Location},
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
+    ToJsonWithRepacker,
 };
 
 use super::{
     borrow_pcg_edge::LocalNode,
-    borrows_graph::{BorrowsGraph, coupling_imgcat_debug},
+    borrows_graph::{coupling_imgcat_debug, BorrowsGraph},
     domain::{MaybeOldPlace, MaybeRemotePlace, RemotePlace},
     has_pcs_elem::HasPcsElems,
     region_projection::{PCGRegion, RegionProjection},
@@ -144,15 +145,6 @@ impl<T: Eq> From<Vec<T>> for Coupled<T> {
     }
 }
 
-impl<'tcx> Coupled<PCGNode<'tcx>> {
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        let mut iter = self.iter();
-        let first = iter.next().unwrap().mutability(repacker);
-        assert!(iter.all(|rp| rp.mutability(repacker) == first));
-        first
-    }
-}
-
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
 pub enum CGNode<'tcx> {
     RegionProjection(RegionProjection<'tcx>),
@@ -169,18 +161,16 @@ impl<'tcx> PCGNodeLike<'tcx> for CGNode<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for CGNode<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
         todo!()
     }
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for CGNode<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         todo!()
     }
 }
-
-
 
 impl<'tcx> HasValidityCheck<'tcx> for CGNode<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {

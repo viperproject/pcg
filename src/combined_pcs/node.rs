@@ -1,15 +1,12 @@
-use derive_more::{From, TryFrom};
-
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BlockedNode, LocalNode},
+        borrow_pcg_edge::LocalNode,
         domain::{MaybeOldPlace, MaybeRemotePlace},
         region_projection::{
-            MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
+            MaybeRemoteRegionProjectionBase, RegionProjection,
             RegionProjectionBaseLike,
         },
     },
-    rustc_interface::index::IndexVec,
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
     ToJsonWithRepacker,
 };
@@ -68,7 +65,7 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithR
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithRepacker<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         todo!()
     }
 }
@@ -79,7 +76,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
     }
 }
 
-pub(crate) trait PCGNodeLike<'tcx>:
+pub trait PCGNodeLike<'tcx>:
     Clone
     + Copy
     + std::fmt::Debug

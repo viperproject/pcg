@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use derive_more::{From, Into};
+use derive_more::From;
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -330,12 +330,9 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx
     fn try_from(value: MaybeRemoteRegionProjectionBase<'tcx>) -> Result<Self, Self::Error> {
         match value {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
-                match maybe_remote_place {
-                    MaybeRemotePlace::Local(maybe_old_place) => Ok(maybe_old_place),
-                    MaybeRemotePlace::Remote(remote_place) => Err(()),
-                }
+                maybe_remote_place.try_into()
             }
-            MaybeRemoteRegionProjectionBase::Const(const_operand) => Err(()),
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
         }
     }
 }
@@ -654,13 +651,13 @@ impl<'tcx> From<RemotePlace> for PCGNode<'tcx> {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for RemotePlace {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         todo!()
     }
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for RemotePlace {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
         todo!()
     }
 }

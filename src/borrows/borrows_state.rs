@@ -3,7 +3,7 @@ use crate::{
         borrows_graph::validity_checks_enabled, edge_data::EdgeData,
         region_projection_member::RegionProjectionMemberKind,
     },
-    combined_pcs::{LocalNodeLike, PCGError, PCGNode, PCGNodeLike},
+    combined_pcs::{PCGError, PCGNode, PCGNodeLike},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
@@ -27,8 +27,8 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
     borrows_graph::{BorrowsGraph, Conditioned},
-    borrows_visitor::{BorrowPCGActions, DebugCtx},
-    coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
+    borrows_visitor::BorrowPCGActions,
+    coupling_graph_constructor::BorrowCheckerInterface,
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
@@ -181,7 +181,6 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    #[must_use]
     pub(crate) fn set_capability<T: PCGNodeLike<'tcx>>(
         &mut self,
         node: T,

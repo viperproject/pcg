@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::{
     borrows::{
-        domain::RemotePlace, region_projection::MaybeRemoteRegionProjectionBase,
+        region_projection::MaybeRemoteRegionProjectionBase,
         region_projection_member::RegionProjectionMemberKind,
     },
     combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
@@ -37,7 +37,7 @@ use crate::{
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrows_state::{ExecutedActions, ExpansionReason},
-    coupling_graph_constructor::{BorrowCheckerInterface, Coupled},
+    coupling_graph_constructor::BorrowCheckerInterface,
     domain::{MaybeOldPlace, MaybeRemotePlace},
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
@@ -233,11 +233,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         self.curr_actions().extend(actions.actions());
     }
 
-    fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) {
+    fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
         self.curr_actions().push(action.clone());
         self.domain
             .post_state_mut()
-            .apply_action(action, self.repacker);
+            .apply_action(action, self.repacker)
     }
 
     pub(super) fn preparing(

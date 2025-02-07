@@ -105,7 +105,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         assert!(from.is_prefix(joinable_place));
                         if joinable_place != from {
                             changed = true;
-                            self.expand(from, joinable_place, repacker);
+                            self.expand(from, joinable_place, repacker).unwrap();
                         }
                         Some(joinable_place)
                     }

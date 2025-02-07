@@ -13,7 +13,7 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 
-use rustc_interface::{
+use crate::rustc_interface::{
     ast::Mutability,
     index::IndexVec,
     middle::{
@@ -25,16 +25,15 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BlockedNode, LocalNode},
+        borrow_pcg_edge::LocalNode,
         borrows_visitor::extract_regions,
-        domain::MaybeOldPlace,
         region_projection::{
             MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
             RegionProjectionBaseLike,
         },
     },
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
-    rustc_interface, ToJsonWithRepacker,
+    ToJsonWithRepacker,
 };
 
 use super::{debug_info::DebugInfo, validity::HasValidityCheck, PlaceRepacker};
