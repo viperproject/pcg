@@ -66,12 +66,16 @@ fn read_previous_results(results_path: &PathBuf) -> io::Result<HashMap<String, u
     Ok(results)
 }
 
-fn write_results(results: &HashMap<String, u64>, results_path: &PathBuf) -> io::Result<()> {
-    let mut file = fs::File::create(results_path)?;
-    for (test_file, i_refs) in results {
-        writeln!(file, "{}: {}", test_file, i_refs)?;
+fn format_results(results: &[(String, u64)]) -> String {
+    let mut output = String::new();
+    for (file_name, i_refs) in results {
+        output.push_str(&format!("{}: {}\n", file_name, i_refs));
     }
-    Ok(())
+    output
+}
+
+fn write_results(results: &[(String, u64)], results_path: &PathBuf) -> io::Result<()> {
+    fs::write(results_path, format_results(results))
 }
 
 #[test]
@@ -90,15 +94,15 @@ fn benchmark_test_files() {
     println!("==========================");
 
     let test_files = common::get_test_files(&test_dir);
-    let mut results = HashMap::new();
+    let mut results = Vec::with_capacity(test_files.len());
     let mut regression_detected = false;
 
-    for test_file in test_files {
+    for test_file in &test_files {
         let file_name = test_file.file_name().unwrap().to_str().unwrap().to_string();
         println!("Benchmarking {}", file_name);
 
         let i_refs = run_cachegrind(&test_file);
-        results.insert(file_name.clone(), i_refs);
+        results.push((file_name.clone(), i_refs));
 
         if let Some(&prev_refs) = previous_results.get(&file_name) {
             let ratio = i_refs as f64 / prev_refs as f64;
@@ -123,6 +127,10 @@ fn benchmark_test_files() {
     if !results_path.exists() {
         write_results(&results, &results_path).expect("Failed to write benchmark results");
         println!("Benchmark results written to {:?}", results_path);
+
+        println!("\nFinal Results:");
+        println!("==============");
+        print!("{}", format_results(&results));
     }
 
     assert!(!regression_detected, "Performance regression detected!");
