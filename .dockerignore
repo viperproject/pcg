@@ -1,0 +1,13 @@
+# Rust build artifacts
+**/target/
+
+# Node.js
+visualization/node_modules/
+visualization/dist/
+visualization/data/
+
+# Editor and OS files
+.git
+.DS_Store
+**/*.swp
+**/*.swo
