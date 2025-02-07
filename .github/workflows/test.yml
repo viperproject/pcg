@@ -20,6 +20,18 @@ jobs:
     - name: Run tests on files
       run: cargo test --test test_files
 
+  bench_test_files:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2024-09-15
+    - name: Install valgrind
+      run: sudo apt-get update && sudo apt-get install -y valgrind
+    - name: Run benchmark tests
+      run: cargo test --test bench_test_files -- --nocapture --show-output
+
   test_crates:
     runs-on: ubuntu-latest
     steps:
