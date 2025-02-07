@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
-use std::collections::HashMap;
 
 mod common;
+
+const REGRESSION_THRESHOLD: f64 = 1.1;
 
 fn build_release() {
     let status = Command::new("cargo")
@@ -43,31 +47,83 @@ fn run_cachegrind(file_path: &PathBuf) -> u64 {
     extract_i_refs(&stderr)
 }
 
+fn read_previous_results(results_path: &PathBuf) -> io::Result<HashMap<String, u64>> {
+    if !results_path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let content = fs::read_to_string(results_path)?;
+    let mut results = HashMap::new();
+
+    for line in content.lines() {
+        if let Some((file, value)) = line.split_once(": ") {
+            if let Ok(value) = value.parse() {
+                results.insert(file.to_string(), value);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+fn write_results(results: &HashMap<String, u64>, results_path: &PathBuf) -> io::Result<()> {
+    let mut file = fs::File::create(results_path)?;
+    for (test_file, i_refs) in results {
+        writeln!(file, "{}: {}", test_file, i_refs)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn benchmark_test_files() {
     // First build in release mode
     build_release();
 
-    // Get the workspace directory
+    // Get the workspace directory and setup paths
     let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let test_dir = workspace_dir.join("test-files");
+    let results_path = workspace_dir.join("../benchmark_results.txt");
+
+    let previous_results = read_previous_results(&results_path).unwrap_or_default();
+
+    println!("\nBenchmark Results (I refs):");
+    println!("==========================");
 
     let test_files = common::get_test_files(&test_dir);
-    // Run benchmarks and collect results
     let mut results = HashMap::new();
+    let mut regression_detected = false;
 
     for test_file in test_files {
         let file_name = test_file.file_name().unwrap().to_str().unwrap().to_string();
         println!("Benchmarking {}", file_name);
 
         let i_refs = run_cachegrind(&test_file);
-        results.insert(file_name, i_refs);
+        results.insert(file_name.clone(), i_refs);
+
+        if let Some(&prev_refs) = previous_results.get(&file_name) {
+            let ratio = i_refs as f64 / prev_refs as f64;
+            println!(
+                "{}: {} (prev: {}, ratio: {:.2})",
+                file_name, i_refs, prev_refs, ratio
+            );
+
+            if ratio > REGRESSION_THRESHOLD {
+                println!(
+                    "⚠️  PERFORMANCE REGRESSION for {}: ratio {:.2} exceeds threshold {:.2}",
+                    file_name, ratio, REGRESSION_THRESHOLD
+                );
+                regression_detected = true;
+            }
+        } else {
+            println!("{}: {} (first run)", file_name, i_refs);
+        }
+        println!(); // Add blank line for readability
     }
 
-    // Print results
-    println!("\nBenchmark Results (I refs):");
-    println!("==========================");
-    for (file, i_refs) in &results {
-        println!("{}: {}", file, i_refs);
+    if !results_path.exists() {
+        write_results(&results, &results_path).expect("Failed to write benchmark results");
+        println!("Benchmark results written to {:?}", results_path);
     }
+
+    assert!(!regression_detected, "Performance regression detected!");
 }
