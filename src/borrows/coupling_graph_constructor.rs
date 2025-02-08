@@ -427,12 +427,15 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         mut self,
         bg: &BorrowsGraph<'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
+        tracing::debug!("Construct coupling graph start");
         let full_graph = bg.base_coupling_graph(self.repacker);
         if coupling_imgcat_debug() {
             full_graph.render_with_imgcat("Base coupling graph");
         }
         let leaf_nodes = full_graph.leaf_nodes();
-        for node in leaf_nodes {
+        let num_leaf_nodes = leaf_nodes.len();
+        for (i, node) in leaf_nodes.into_iter().enumerate() {
+            tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
             self.coupling_graph.insert_endpoint(node.clone());
             let node_set: BTreeSet<_> = node.into_iter().collect();
             self.add_edges_from(
@@ -442,6 +445,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
                 DebugRecursiveCallHistory::new(),
             );
         }
+        tracing::debug!("Construct coupling graph end");
         self.coupling_graph
     }
 }

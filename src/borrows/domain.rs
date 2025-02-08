@@ -513,10 +513,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub(crate) fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.region_projections(repacker).len() > 0
-    }
-
     pub(crate) fn region_projections(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
