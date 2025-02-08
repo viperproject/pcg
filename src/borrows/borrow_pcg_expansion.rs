@@ -228,8 +228,8 @@ impl<'tcx> HasValidityCheck<'tcx> for ExpansionOfOwned<'tcx> {
 impl<'tcx> EdgeData<'tcx> for ExpansionOfOwned<'tcx> {
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut blocked_nodes = vec![self.base.into()];
-        if self.base.has_region_projections(repacker) {
-            blocked_nodes.push(self.base_region_projection(repacker).into());
+        for rp in self.base.region_projections(repacker) {
+            blocked_nodes.push(rp.into());
         }
         blocked_nodes.into_iter().collect()
     }
@@ -260,13 +260,6 @@ impl<'tcx> ExpansionOfOwned<'tcx> {
 
     pub(crate) fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         self.base.project_deref(repacker)
-    }
-
-    pub(crate) fn base_region_projection(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-        self.base.region_projection(0, repacker)
     }
 }
 
