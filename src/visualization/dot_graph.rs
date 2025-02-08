@@ -19,6 +19,7 @@ impl DotGraph {
 
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
         eprintln!("{}", comment);
+        tracing::info!("DOT graph render started");
         let mut dot_process = Command::new("dot")
             .args(&["-Tpng"])
             .stdin(Stdio::piped())
@@ -32,6 +33,7 @@ impl DotGraph {
         dot_stdin.write_all(dot_str.as_bytes())?;
 
         let dot_output = dot_process.wait_with_output()?;
+        tracing::info!("DOT graph render finished");
 
         if !dot_output.status.success() {
             return Err(std::io::Error::new(

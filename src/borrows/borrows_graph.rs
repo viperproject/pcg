@@ -46,9 +46,14 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         if let Some(true) = self.cached_is_valid.get() {
             return Ok(());
         }
+        tracing::debug!(
+            "Checking acyclicity of borrows graph ({} edges)",
+            self.edges.len()
+        );
         if !self.is_acyclic(repacker) {
             return Err("Graph is not acyclic".to_string());
         }
+        tracing::debug!("Acyclicity check passed");
         self.cached_is_valid.set(Some(true));
         Ok(())
     }
@@ -106,37 +111,51 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         let mut graph: coupling::DisjointSetGraph<CGNode<'tcx>> = coupling::DisjointSetGraph::new();
-        // TODO: For performance, we could not track the path in release mode,
-        // we only use it to detect infinite loops
-        #[derive(Clone)]
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         struct ExploreFrom<'tcx> {
-            path: Vec<PCGNode<'tcx>>,
+            current: PCGNode<'tcx>,
+            connect: Option<CGNode<'tcx>>,
         }
 
         impl<'tcx> ExploreFrom<'tcx> {
             pub fn new(current: PCGNode<'tcx>) -> Self {
                 Self {
-                    path: vec![current],
+                    current,
+                    connect: current.as_cg_node(),
                 }
             }
 
             pub fn connect(&self) -> Option<CGNode<'tcx>> {
-                self.path.iter().rev().find_map(|node| node.as_cg_node())
+                self.connect
             }
 
             pub fn current(&self) -> PCGNode<'tcx> {
-                self.path.last().unwrap().clone()
+                self.current
             }
 
-            pub fn extend(&self, node: PCGNode<'tcx>) -> Option<Self> {
-                let mut result = self.clone();
-                if result.path.contains(&node) {
-                    panic!("Cycle detected: {:?} already in {:?}", node, result.path);
+            pub fn extend(&self, node: PCGNode<'tcx>) -> Self {
+                Self {
+                    current: node,
+                    connect: node.as_cg_node().or(self.connect),
                 }
-                result.path.push(node);
-                Some(result)
             }
         }
+
+        impl<'tcx> std::fmt::Display for ExploreFrom<'tcx> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    f,
+                    "Current: {}, Connect: {}",
+                    self.current,
+                    match self.connect {
+                        Some(cg_node) => format!("{}", cg_node),
+                        None => "None".to_string(),
+                    }
+                )
+            }
+        }
+
+        let mut seen = HashSet::new();
 
         let mut queue = vec![];
         for node in self.roots(repacker) {
@@ -144,6 +163,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         while let Some(ef) = queue.pop() {
+            if seen.contains(&ef) {
+                continue;
+            }
+            seen.insert(ef);
+            tracing::debug!("Exploring from {}", ef.current());
             let edges_blocking = self.edges_blocking(ef.current(), repacker);
             for edge in edges_blocking {
                 match edge.kind() {
@@ -201,9 +225,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 for node in edge.blocked_by_nodes(repacker) {
-                    if let Some(ef) = ef.extend(node.into()) {
-                        queue.push(ef);
-                    }
+                    queue.push(ef.extend(node.into()));
                 }
             }
         }
@@ -584,7 +606,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 // if validity_checks_enabled() {
                 //     assert!(self.is_valid(repacker), "Graph became invalid after join");
                 // }
-                return result;
+                return *self == old_self;
             }
             // TODO: Handle multiple exit blocks
         }
@@ -596,14 +618,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let mut new_conditions = our_edge.conditions().clone();
                         new_conditions.join(&other_edge.conditions());
                         self.edges.remove(our_edge);
-                        _ = self.insert(BorrowPCGEdge::new(
+                        self.insert(BorrowPCGEdge::new(
                             other_edge.kind().clone(),
                             new_conditions,
                         ));
                     }
                 }
                 None => {
-                    _ = self.insert(other_edge.clone());
+                    self.insert(other_edge.clone());
                 }
             }
         }
@@ -692,7 +714,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         )
     }
 
-    #[must_use]
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.cached_is_valid.set(None);
         self.edges.insert(edge)

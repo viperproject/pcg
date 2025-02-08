@@ -224,10 +224,6 @@ impl<'tcx> Place<'tcx> {
             .collect()
     }
 
-    pub fn has_region_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.region_projections(repacker).len() > 0
-    }
-
     pub fn projection_index(
         &self,
         region: PCGRegion,
