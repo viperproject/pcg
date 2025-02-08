@@ -5,6 +5,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
+use crate::borrows::borrows_graph::coupling_imgcat_debug;
+use crate::borrows::coupling_graph_constructor::Coupled;
+use crate::visualization::dot_graph::DotGraph;
+
 /// A DAG where each node is a set of elements of type `N`. Cycles are resolved
 /// by merging the nodes in the cycle into a single node. The graph is always in
 /// a transitively reduced form (see
@@ -282,7 +286,3 @@ where
         Ok(())
     }
 }
-
-use crate::borrows::borrows_graph::coupling_imgcat_debug;
-use crate::borrows::coupling_graph_constructor::Coupled;
-use crate::visualization::dot_graph::DotGraph;
