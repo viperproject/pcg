@@ -15,10 +15,19 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::engine::EvalStmtData, combined_pcs::PCGError, free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp}, rustc_interface, utils::PlaceRepacker
+    borrows::engine::EvalStmtData,
+    combined_pcs::PCGError,
+    free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
+    rustc_interface,
+    utils::PlaceRepacker,
 };
 
 use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
+
+pub(crate) struct RepackOps<'tcx> {
+    pub(crate) start: Vec<RepackOp<'tcx>>,
+    pub(crate) middle: Vec<RepackOp<'tcx>>,
+}
 
 #[derive(Clone)]
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -76,16 +85,16 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         }
     }
 
-    pub fn repack_ops(
+    pub(crate) fn repack_ops(
         &self,
         previous: &CapabilitySummary<'tcx>,
-    ) -> (Vec<RepackOp<'tcx>>, Vec<RepackOp<'tcx>>) {
-        let from_prev = previous.bridge(&self.summaries.pre_operands, self.repacker).unwrap();
+    ) -> std::result::Result<RepackOps<'tcx>, PCGError> {
+        let start = previous.bridge(&self.summaries.pre_operands, self.repacker)?;
         let middle = self
             .summaries
             .post_operands
-            .bridge(&self.summaries.pre_main, self.repacker).unwrap();
-        (from_prev, middle)
+            .bridge(&self.summaries.pre_main, self.repacker)?;
+        Ok(RepackOps { start, middle })
     }
 }
 
@@ -108,16 +117,12 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
         _ctxt: &FpcsEngine<'a, 'tcx>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        let (from_prev, middle) = self.repack_ops(&old.summaries.post_main);
-        if !from_prev.is_empty() {
-            writeln!(f, "{from_prev:?}")?;
+        let RepackOps { start, middle } = self.repack_ops(&old.summaries.post_main).unwrap();
+        if !start.is_empty() {
+            writeln!(f, "{start:?}")?;
         }
-        CapabilitySummaryCompare(
-            &self.summaries.pre_operands,
-            &old.summaries.post_main,
-            "",
-        )
-        .fmt(f)?;
+        CapabilitySummaryCompare(&self.summaries.pre_operands, &old.summaries.post_main, "")
+            .fmt(f)?;
         CapabilitySummaryCompare(
             &self.summaries.post_operands,
             &self.summaries.pre_operands,
@@ -127,12 +132,8 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
         if !middle.is_empty() {
             writeln!(f, "{middle:?}")?;
         }
-        CapabilitySummaryCompare(
-            &self.summaries.pre_main,
-            &self.summaries.post_operands,
-            "",
-        )
-        .fmt(f)?;
+        CapabilitySummaryCompare(&self.summaries.pre_main, &self.summaries.post_operands, "")
+            .fmt(f)?;
         CapabilitySummaryCompare(
             &self.summaries.post_main,
             &self.summaries.pre_main,

@@ -160,6 +160,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             match from_place.partial_cmp(to).unwrap() {
                 PlaceOrdering::Prefix => {
                     self.expand(related.get_only_place(), to, repacker)?;
+                    return Ok(());
                 }
                 PlaceOrdering::Equal => (),
                 PlaceOrdering::Suffix => {
@@ -172,6 +173,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     self.collapse(related.get_places(), cp, repacker)?;
                     // Expand
                     self.expand(cp, to, repacker)?;
+                    return Ok(());
                 }
             }
         }

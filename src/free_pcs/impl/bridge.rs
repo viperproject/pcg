@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    combined_pcs::PCGError,
+    combined_pcs::{PCGError, PCGInternalError},
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
@@ -102,7 +102,15 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         repacks.extend(packs);
                         break;
                     }
-                    PlaceOrdering::Both => todo!(),
+                    PlaceOrdering::Both => {
+                        let common_prefix = related.common_prefix(place);
+                        let collapse_repacks =
+                            from.collapse(related.get_places(), common_prefix, repacker)?;
+                        let expand_repacks = from.expand(common_prefix, place, repacker)?;
+                        repacks.extend(collapse_repacks);
+                        repacks.extend(expand_repacks);
+                        break;
+                    }
                     PlaceOrdering::Equal => {}
                 }
             }
