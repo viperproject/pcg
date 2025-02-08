@@ -11,7 +11,7 @@
 11_display.rs: 93223907
 12_jasper.rs: 91136565
 13_heap_visitor.rs: 69875849
-14_serde_err.rs: 406670953
+14_serde_err.rs: 2354211238
 15_bernoulli.rs: 123197056
 16_lookahead.rs: 72818514
 17_entry.rs: 98115369
@@ -38,3 +38,4 @@
 38_regex_autonoma_iter_pattern_match_ids.rs: 136464596
 39_cfi.rs: 152153203
 40_object_archive.rs: 356682810
+41_itertools_k_smallest.rs: 260089801

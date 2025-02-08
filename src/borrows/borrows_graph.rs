@@ -162,13 +162,38 @@ impl<'tcx> BorrowsGraph<'tcx> {
             queue.push(ExploreFrom::new(node.into()));
         }
 
+        struct EdgesBlockingMap<'graph, 'tcx> {
+            graph: &'graph BorrowsGraph<'tcx>,
+            cache: HashMap<PCGNode<'tcx>, FxHashSet<&'graph BorrowPCGEdge<'tcx>>>,
+        }
+
+        impl<'graph, 'tcx> EdgesBlockingMap<'graph, 'tcx> {
+            pub fn new(graph: &'graph BorrowsGraph<'tcx>) -> Self {
+                Self { graph, cache: HashMap::new() }
+            }
+
+            pub fn get<'mir: 'graph>(
+                &mut self,
+                node: PCGNode<'tcx>,
+                repacker: PlaceRepacker<'mir, 'tcx>,
+            ) -> &FxHashSet<&'graph BorrowPCGEdge<'tcx>> {
+                self.cache.entry(node).or_insert_with(|| {
+                    self.graph
+                        .edges_blocking(node, repacker)
+                        .collect()
+                })
+            }
+        }
+
+        let mut blocking_map = EdgesBlockingMap::new(self);
+
         while let Some(ef) = queue.pop() {
             if seen.contains(&ef) {
                 continue;
             }
             seen.insert(ef);
             tracing::debug!("Exploring from {}", ef.current());
-            let edges_blocking = self.edges_blocking(ef.current(), repacker);
+            let edges_blocking = blocking_map.get(ef.current(), repacker);
             for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
