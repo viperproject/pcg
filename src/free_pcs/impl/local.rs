@@ -188,7 +188,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
-
         // We could instead return this error, but failing early might be better
         // for development
         if self.contains_key(&to) {
@@ -199,7 +198,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         }
         let mut old_caps: FxHashMap<_, _> = from
             .iter()
-            .map(|&p| (p, self.remove(&p).unwrap()))
+            .flat_map(|&p| self.remove(&p).map(|cap| (p, cap)))
             .collect();
         let collapsed = to.collapse(&mut from, repacker);
         assert!(from.is_empty(), "{from:?} ({collapsed:?}) {to:?}");

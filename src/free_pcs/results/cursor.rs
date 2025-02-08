@@ -5,7 +5,10 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::{engine::{BorrowsDomain, EvalStmtData}, latest::Latest}, combined_pcs::EvalStmtPhase, rustc_interface::{
+    borrows::{
+        engine::{BorrowsDomain, EvalStmtData},
+        latest::Latest,
+    }, combined_pcs::EvalStmtPhase, free_pcs::RepackOps, rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
     }, utils::validity::HasValidityCheck, BorrowPCGActions
@@ -89,7 +92,14 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
         let state = self.cursor.get();
         let curr_fpcs = state.get_curr_fpcg();
         let curr_borrows = state.get_curr_borrow_pcg();
-        let (repacks_start, repacks_middle) = curr_fpcs.repack_ops(&prev_post_main);
+        let repack_ops = curr_fpcs.repack_ops(&prev_post_main).unwrap_or_else(|e| {
+            panic!(
+                "Repack ops error for cursor transition {:?} -> {:?}: {:?}",
+                location,
+                location.successor_within_block(),
+                e
+            );
+        });
 
         let (extra_start, extra_middle) = curr_borrows.get_bridge();
 
@@ -97,8 +107,8 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
             location,
             actions: curr_borrows.actions.clone(),
             states: curr_fpcs.summaries.clone(),
-            repacks_start,
-            repacks_middle,
+            repacks_start: repack_ops.start,
+            repacks_middle: repack_ops.middle,
             extra_start,
             extra_middle,
             borrows: curr_borrows.states.clone(),
@@ -203,7 +213,6 @@ impl<'tcx> HasValidityCheck<'tcx> for FreePcsLocation<'tcx> {
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {
-
     pub fn latest(&self) -> &Latest<'tcx> {
         &self.borrows.post_main.latest
     }
