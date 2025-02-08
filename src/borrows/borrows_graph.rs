@@ -162,29 +162,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             queue.push(ExploreFrom::new(node.into()));
         }
 
-        struct EdgesBlockingMap<'graph, 'tcx> {
-            graph: &'graph BorrowsGraph<'tcx>,
-            cache: HashMap<PCGNode<'tcx>, FxHashSet<&'graph BorrowPCGEdge<'tcx>>>,
-        }
-
-        impl<'graph, 'tcx> EdgesBlockingMap<'graph, 'tcx> {
-            pub fn new(graph: &'graph BorrowsGraph<'tcx>) -> Self {
-                Self { graph, cache: HashMap::new() }
-            }
-
-            pub fn get<'mir: 'graph>(
-                &mut self,
-                node: PCGNode<'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
-            ) -> &FxHashSet<&'graph BorrowPCGEdge<'tcx>> {
-                self.cache.entry(node).or_insert_with(|| {
-                    self.graph
-                        .edges_blocking(node, repacker)
-                        .collect()
-                })
-            }
-        }
-
         let mut blocking_map = EdgesBlockingMap::new(self);
 
         while let Some(ef) = queue.pop() {
@@ -193,7 +170,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
             seen.insert(ef);
             tracing::debug!("Exploring from {}", ef.current());
-            let edges_blocking = blocking_map.get(ef.current(), repacker);
+            let edges_blocking = blocking_map.get_edges_blocking(ef.current(), repacker);
             for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
@@ -257,6 +234,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
+    pub fn edges_blocking_map(&self) -> EdgesBlockingMap<'_, 'tcx> {
+        EdgesBlockingMap::new(self)
+    }
+
     pub(crate) fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionType<'tcx>>> {
         self.edges
             .iter()
@@ -283,24 +264,39 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    /// All edges that are not blocked by any other edge
-    pub(crate) fn is_leaf_edge(
-        &self,
+    /// All edges that are not blocked by any other edge The argument
+    /// `blocking_map` can be provided to use a shared cache for computation
+    /// of blocking calculations. The argument should be used if this function
+    /// is to be called multiple times on the same graph.
+    pub(crate) fn is_leaf_edge<'graph, 'mir: 'graph>(
+        &'graph self,
         edge: &BorrowPCGEdge<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+        mut blocking_map: Option<&mut EdgesBlockingMap<'graph, 'tcx>>,
     ) -> bool {
-        edge.kind()
-            .blocked_by_nodes(repacker)
-            .iter()
-            .all(|p| !self.has_edge_blocking(*p, repacker))
+        let mut has_edge_blocking =
+            |p: PCGNode<'tcx>| {
+                if let Some(blocking_map) = blocking_map.as_mut() {
+                    blocking_map.has_edge_blocking(p, repacker)
+                } else {
+                    self.has_edge_blocking(p, repacker)
+                }
+            };
+        for n in edge.blocked_by_nodes(repacker) {
+            if has_edge_blocking(n.into()) {
+                return false;
+            }
+        }
+        true
     }
 
     pub(crate) fn leaf_edges(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdge<'tcx>> {
+        let mut blocking_map = self.edges_blocking_map();
         let mut candidates = self.edges.clone();
-        candidates.retain(|edge| self.is_leaf_edge(edge, repacker));
+        candidates.retain(|edge| self.is_leaf_edge(edge, repacker, Some(&mut blocking_map)));
         candidates
     }
 
@@ -333,8 +329,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    /// Returns true iff any edge in the graph blocks `blocked_node`
-    /// Worst-case time-complexity: O(E)
+    /// Returns true iff any edge in the graph blocks `blocked_node` The
+    /// worst-case time-complexity of the function is linear w.r.t the number of
+    /// edges in the graph. If you need to call this function multiple times,
+    /// you can get better performance using [`EdgesBlockingMap`], (c.f.
+    /// [`BorrowsGraph::edges_blocking_map`]).
     pub(crate) fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
         &self,
         blocked_node: T,
@@ -966,5 +965,37 @@ impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Conditioned
             "conditions": self.conditions.to_json(repacker),
             "value": self.value.to_json(repacker)
         })
+    }
+}
+
+pub struct EdgesBlockingMap<'graph, 'tcx> {
+    graph: &'graph BorrowsGraph<'tcx>,
+    cache: HashMap<PCGNode<'tcx>, FxHashSet<&'graph BorrowPCGEdge<'tcx>>>,
+}
+
+impl<'graph, 'tcx> EdgesBlockingMap<'graph, 'tcx> {
+    pub(crate) fn new(graph: &'graph BorrowsGraph<'tcx>) -> Self {
+        Self {
+            graph,
+            cache: HashMap::new(),
+        }
+    }
+
+    pub fn get_edges_blocking<'mir: 'graph>(
+        &mut self,
+        node: PCGNode<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> &FxHashSet<&'graph BorrowPCGEdge<'tcx>> {
+        self.cache
+            .entry(node)
+            .or_insert_with(|| self.graph.edges_blocking(node, repacker).collect())
+    }
+
+    pub fn has_edge_blocking<'mir: 'graph>(
+        &mut self,
+        node: PCGNode<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> bool {
+        !self.get_edges_blocking(node, repacker).is_empty()
     }
 }
