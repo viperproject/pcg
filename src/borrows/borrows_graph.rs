@@ -866,9 +866,11 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         &'slf self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
-        let roots = self.roots_cache.borrow();
-        if roots.is_some() {
-            return Ref::map(roots, |o| o.as_ref().unwrap());
+        {
+            let roots = self.roots_cache.borrow();
+            if roots.is_some() {
+                return Ref::map(roots, |o| o.as_ref().unwrap());
+            }
         }
         let roots = self.graph.roots(repacker);
         self.roots_cache.replace(Some(roots));
