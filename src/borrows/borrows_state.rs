@@ -378,7 +378,10 @@ impl<'tcx> BorrowsState<'tcx> {
         node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdge<'tcx>> {
-        self.graph.edges_blocked_by(node, repacker)
+        self.graph
+            .edges_blocked_by(node, repacker)
+            .cloned()
+            .collect()
     }
 
     pub(crate) fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {

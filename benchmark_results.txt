@@ -39,3 +39,4 @@
 39_cfi.rs: 152153203
 40_object_archive.rs: 356682810
 41_itertools_k_smallest.rs: 260089801
+42_dfa_dense.rs: 10399426696
