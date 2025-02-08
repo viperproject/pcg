@@ -333,6 +333,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
+    /// Returns true iff any edge in the graph blocks `blocked_node`
+    /// Worst-case time-complexity: O(E)
     pub(crate) fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
         &self,
         blocked_node: T,
