@@ -206,6 +206,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
 
         let pcg = state.pcg_mut();
 
+        let borrows = pcg.borrow.states.post_main.frozen_graph();
+
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
         for cap in pcg.owned.post_operands_mut().iter_mut() {
@@ -213,7 +215,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
                 crate::free_pcs::CapabilityLocal::Unallocated => {}
                 crate::free_pcs::CapabilityLocal::Allocated(capability_projections) => {
                     for (root, kind) in capability_projections.iter_mut() {
-                        if !pcg.borrow.states.post_main.contains(*root, self.cgx.rp) {
+                        if !borrows.contains((*root).into(), self.cgx.rp) {
                             if kind.is_read() || kind.is_lent_exclusive() {
                                 *kind = CapabilityKind::Exclusive;
                             }

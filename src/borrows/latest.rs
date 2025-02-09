@@ -2,14 +2,23 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use crate::rustc_interface::middle::{ty, mir::BasicBlock};
-use crate::utils::display::DisplayWithRepacker;
+use crate::rustc_interface::middle::{mir::BasicBlock, ty};
+use crate::utils::display::{DebugLines, DisplayWithRepacker};
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
 use super::domain::ToJsonWithRepacker;
 
 #[derive(Clone, Debug)]
 pub struct Latest<'tcx>(Vec<(Place<'tcx>, SnapshotLocation)>);
+
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Latest<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        self.0
+            .iter()
+            .map(|(p, l)| format!("{} -> {:?}", p.to_short_string(repacker), l))
+            .collect()
+    }
+}
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
@@ -28,7 +37,10 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
                 } else {
                     format!("{}", ty)
                 };
-                (format!("{}: {}", p.to_short_string(repacker), ty_str), format!("{:?}", l))
+                (
+                    format!("{}: {}", p.to_short_string(repacker), ty_str),
+                    format!("{:?}", l),
+                )
             })
             .collect::<BTreeMap<_, _>>())
     }

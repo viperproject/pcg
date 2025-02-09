@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::CapabilityKind,
-    utils::{display::DisplayWithRepacker, PlaceRepacker},
+    utils::{display::{DebugLines, DisplayWithRepacker}, PlaceRepacker},
 };
 
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
@@ -13,17 +13,19 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BorrowPCGCapabilities<'tcx>(HashMap<PCGNode<'tcx>, CapabilityKind>);
 
-impl<'tcx> BorrowPCGCapabilities<'tcx> {
-    pub(crate) fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub(crate) fn debug_capability_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
                 format!("{}: {:?}", node.to_short_string(repacker), capability)
             })
             .collect()
+    }
+}
+
+impl<'tcx> BorrowPCGCapabilities<'tcx> {
+    pub(crate) fn new() -> Self {
+        Self(HashMap::new())
     }
 
     /// Returns true iff the capability was changed.

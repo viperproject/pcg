@@ -13,6 +13,7 @@ use crate::{
         },
     },
     utils::{
+        display::{DebugLines, DisplayDiff},
         join_lattice_verifier::{JoinComputation, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
@@ -30,7 +31,7 @@ use super::{
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
-    borrows_graph::{BorrowsGraph, Conditioned},
+    borrows_graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
     borrows_visitor::BorrowPCGActions,
     coupling_graph_constructor::BorrowCheckerInterface,
     domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
@@ -72,12 +73,29 @@ impl<'tcx> ExecutedActions<'tcx> {
 }
 
 #[cfg(debug_assertions)]
-type JoinTransitionElem<'tcx> = (
-    Latest<'tcx>,
-    BorrowsGraph<'tcx>,
-    BorrowPCGCapabilities<'tcx>,
-);
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JoinTransitionElem<'tcx> {
+    latest: Latest<'tcx>,
+    graph: BorrowsGraph<'tcx>,
+    capabilities: BorrowPCGCapabilities<'tcx>,
+}
 
+#[cfg(debug_assertions)]
+impl<'mir, 'tcx> DebugLines<PlaceRepacker<'mir, 'tcx>> for JoinTransitionElem<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Vec<String> {
+        let mut lines = Vec::new();
+        for line in self.latest.debug_lines(repacker) {
+            lines.push(format!("Latest: {}", line));
+        }
+        for line in self.graph.debug_lines(repacker) {
+            lines.push(format!("Graph: {}", line));
+        }
+        for line in self.capabilities.debug_lines(repacker) {
+            lines.push(format!("Capabilities: {}", line));
+        }
+        lines
+    }
+}
 /// The "Borrow PCG"
 #[derive(Clone, Debug)]
 pub struct BorrowsState<'tcx> {
@@ -157,7 +175,7 @@ impl ExpansionReason {
 
 impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn debug_capability_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.capabilities.debug_capability_lines(repacker)
+        self.capabilities.debug_lines(repacker)
     }
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.graph.insert(edge)
@@ -184,23 +202,23 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.contains(node.into(), repacker)
     }
 
-    pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
-        &self.capabilities
-    }
-
     pub(crate) fn contains_edge(&self, edge: &BorrowPCGEdge<'tcx>) -> bool {
         self.graph.contains_edge(edge)
     }
 
-    pub fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
+    pub(crate) fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
         self.graph.edges()
     }
 
-    pub fn graph(&self) -> &BorrowsGraph<'tcx> {
+    pub(crate) fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }
 
-    pub fn get_capability<T: PCGNodeLike<'tcx>>(&self, node: T) -> Option<CapabilityKind> {
+    pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
+        self.graph().frozen_graph()
+    }
+
+    pub(crate) fn get_capability<T: PCGNodeLike<'tcx>>(&self, node: T) -> Option<CapabilityKind> {
         self.capabilities.get(node.to_pcg_node())
     }
 
@@ -221,7 +239,11 @@ impl<'tcx> BorrowsState<'tcx> {
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
     fn join_transition_elem(self) -> JoinTransitionElem<'tcx> {
-        (self.latest, self.graph, self.capabilities)
+        JoinTransitionElem {
+            latest: self.latest,
+            graph: self.graph,
+            capabilities: self.capabilities,
+        }
     }
 
     pub(crate) fn join<'mir, T: BorrowCheckerInterface<'tcx>>(
@@ -236,7 +258,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // if validity_checks_enabled() {
         //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
         // }
-        // let old = self.clone();
+        let old = self.clone();
         let mut changed = false;
         if self
             .graph
@@ -253,15 +275,18 @@ impl<'tcx> BorrowsState<'tcx> {
         if self.capabilities.join(&other.capabilities) {
             changed = true;
         }
-        // These checks are disabled even for debugging currently because they are very expensive
-        // if changed && cfg!(debug_assertions) {
-        //     debug_assert_ne!(*self, old);
-        //     self.join_transitions.record_join_result(JoinComputation {
-        //         lhs: old.join_transition_elem(),
-        //         rhs: other.clone().join_transition_elem(),
-        //         result: self.clone().join_transition_elem(),
-        //     });
-        // }
+        // // These checks are disabled even for debugging currently because they are very expensive
+        if changed && cfg!(debug_assertions) {
+            debug_assert_ne!(*self, old);
+            self.join_transitions.record_join_result(
+                JoinComputation {
+                    lhs: old.join_transition_elem(),
+                    rhs: other.clone().join_transition_elem(),
+                    result: self.clone().join_transition_elem(),
+                },
+                repacker,
+            );
+        }
         changed
     }
 
@@ -307,7 +332,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // If removing the edge results in a leaf node with a Lent capability, this
         // it should be set to Exclusive, as it is no longer being lent.
         if result {
-            for node in self.graph.leaf_nodes(repacker) {
+            for node in self.graph.leaf_nodes(repacker, None) {
                 if self.get_capability(node) == Some(CapabilityKind::Lent) {
                     self.record_and_apply_action(
                         BorrowPCGAction::restore_capability(node.into(), CapabilityKind::Exclusive),
@@ -721,7 +746,7 @@ impl<'tcx> BorrowsState<'tcx> {
         };
         loop {
             let mut cont = false;
-            let edges = self.graph.leaf_edges(repacker);
+            let edges = self.graph.leaf_edges(repacker, None);
             for edge in edges {
                 let blocked_by_nodes = edge.blocked_by_nodes(repacker);
                 if blocked_by_nodes
