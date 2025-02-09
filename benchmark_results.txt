@@ -34,9 +34,10 @@
 34_pair_into_value.rs: 52407987
 35_miniz_oxide_new_output_buffer.rs: 350706721
 36_gimli_endian_slice.rs: 312571500
-37_loop.rs: 156829428
+37_loop.rs: 173173011
 38_regex_autonoma_iter_pattern_match_ids.rs: 136464596
 39_cfi.rs: 152153203
 40_object_archive.rs: 356682810
-41_itertools_k_smallest.rs: 260089801
-42_dfa_dense.rs: 10399426696
+41_itertools_k_smallest.rs: 298975709
+42_dfa_dense.rs: 12958626349
+43_der_length.rs: 136203285
