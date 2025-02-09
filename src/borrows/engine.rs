@@ -63,6 +63,7 @@ const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
         self.debug_join_iteration += 1;
+        tracing::debug!("Join iteration: {}", self.debug_join_iteration);
         if self.debug_join_iteration > DEBUG_JOIN_ITERATION_LIMIT {
             panic!(
                 "Block {:?} has not terminated after {} join iterations, this is probably a bug",

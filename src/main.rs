@@ -61,9 +61,15 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
 #[allow(unused)]
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     // DEBUG
-    body.body.basic_blocks.len() < 64
+    // if format!("{:?}", body.body.span).contains("src/ser.rs:1204") {
+    //     eprintln!("Hit: {:?}", body.body.span);
+    //     return true;
+    // } else {
+    //     eprintln!("Miss: {:?}", body.body.span);
+    //     return false;
+    // }
 
-    // true
+    true
 }
 
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {

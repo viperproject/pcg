@@ -18,6 +18,7 @@ pub use mutable::*;
 pub use place::*;
 pub use place_snapshot::*;
 pub use repacker::*;
+pub mod join_lattice_verifier;
 
 pub fn env_feature_enabled(feature: &str) -> Option<bool> {
     match std::env::var(feature) {
