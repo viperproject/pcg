@@ -1,4 +1,3 @@
-#[derive(Debug)]
 pub enum Error {
     InvalidInput,
     InvalidWeight,
@@ -8,7 +7,6 @@ pub enum Error {
 pub struct WeightedIndex<X> {
     cumulative_weights: Vec<X>,
     total_weight: X,
-    weight_distribution: X,
 }
 
 impl<X> WeightedIndex<X>
@@ -26,7 +24,7 @@ where
 
         let zero = <X as Default>::default();
 
-        let mut total_weight = self.total_weight.clone();
+        let total_weight = self.total_weight.clone();
 
         // Check for errors first, so we don't modify `self` in case something
         // goes wrong.
@@ -66,7 +64,7 @@ where
         let mut iter = new_weights.iter();
 
         let mut prev_weight = zero.clone();
-        let mut next_new_weight = iter.next();
+        let next_new_weight = iter.next();
         let &(first_new_index, _) = next_new_weight.unwrap();
         let mut cumulative_weight = if first_new_index > 0 {
             self.cumulative_weights[first_new_index - 1].clone()
@@ -96,13 +94,4 @@ where
 }
 
 fn main() {
-    // Example usage
-    let mut wi: WeightedIndex<f64> = WeightedIndex {
-        cumulative_weights: vec![1.0, 3.0, 6.0],
-        total_weight: 6.0,
-        weight_distribution: 6.0,
-    };
-
-    let new_weights = vec![(1, &2.0)];
-    let _ = wi.update_weights(&new_weights);
 }
