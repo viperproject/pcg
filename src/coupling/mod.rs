@@ -104,7 +104,9 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         old_idx: petgraph::prelude::NodeIndex,
     ) {
         let old_node_data = self.inner.node_weight(old_idx).unwrap().clone();
-        let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap();
+        let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap_or_else(|| {
+            panic!("Cannot merge {:?} and {:?} because node {:?} not found", new_idx, old_idx, new_idx);
+        });
         new_idx_weight.merge(old_node_data);
         let to_add = self
             .inner
