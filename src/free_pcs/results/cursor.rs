@@ -11,7 +11,7 @@ use crate::{
     }, combined_pcs::EvalStmtPhase, free_pcs::RepackOps, rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
-    }, utils::validity::HasValidityCheck, BorrowPCGActions
+    }, utils::{display::DebugLines, validity::HasValidityCheck}, BorrowPCGActions
 };
 
 use crate::{
@@ -226,7 +226,7 @@ impl<'tcx> FreePcsLocation<'tcx> {
         for action in self.actions[phase].iter() {
             result.push(action.debug_line(repacker));
         }
-        result.extend(self.borrows[phase].debug_capability_lines(repacker));
+        result.extend(self.borrows[phase].debug_lines(repacker));
         result
     }
 }

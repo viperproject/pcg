@@ -29,7 +29,7 @@ use crate::{
 };
 
 use crate::{
-    borrows::domain::FunctionAbstractionBlockEdge,
+    borrows::domain::AbstractionBlockEdge,
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
@@ -524,7 +524,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 "For Function Call Abstraction",
                             ));
                         }
-                        edges.push(FunctionAbstractionBlockEdge::new(
+                        edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output.into()].into_iter().collect(),
                         ));
@@ -549,7 +549,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     // is blocking something else. Otherwise, there is no point in tracking
                     // when it becomes accessible.
                     if self.domain.post_state().contains(input_rp, self.repacker) {
-                        edges.push(FunctionAbstractionBlockEdge::new(
+                        edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output].into_iter().collect(),
                         ));
