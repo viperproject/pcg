@@ -40,7 +40,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGEdge<'tcx> {
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdge<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
-            "{} under conditions {:?}",
+            "{} under conditions {}",
             self.kind.to_short_string(repacker),
             self.conditions
         )

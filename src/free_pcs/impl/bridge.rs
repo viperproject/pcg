@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    combined_pcs::{PCGError, PCGInternalError},
+    combined_pcs::PCGError,
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
