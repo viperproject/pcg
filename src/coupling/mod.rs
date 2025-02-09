@@ -95,17 +95,19 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         idx
     }
 
-    /// Merges the node at `old_idx` into the node at `new_idx`. All elements in the endpoint
-    /// at `old_idx` are added to the endpoint at `new_idx`. Edges to / from `old_idx` are
-    /// (except for those to / from `new_idx` resp.) are redirected to `new_idx`.
-    pub(crate) fn merge_into_idx(
+    /// Merges the nodes at `old_idx` and `new_idx`.
+    /// IMPORTANT: This will invalidate existing node indices
+    pub(crate) fn merge_idxs(
         &mut self,
         new_idx: petgraph::prelude::NodeIndex,
         old_idx: petgraph::prelude::NodeIndex,
     ) {
         let old_node_data = self.inner.node_weight(old_idx).unwrap().clone();
         let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap_or_else(|| {
-            panic!("Cannot merge {:?} and {:?} because node {:?} not found", new_idx, old_idx, new_idx);
+            panic!(
+                "Cannot merge {:?} and {:?} because node {:?} not found",
+                new_idx, old_idx, new_idx
+            );
         });
         new_idx_weight.merge(old_node_data);
         let to_add = self
@@ -122,17 +124,20 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         for (source, target) in to_add.collect::<Vec<_>>() {
             self.inner.update_edge(source, target, ());
         }
-        self.inner.remove_node(old_idx);
+        assert!(self.inner.remove_node(old_idx).is_some());
         debug_assert!(self.is_acyclic(), "Graph contains cycles after merging");
     }
 
     fn join_nodes(&mut self, nodes: &Coupled<N>) -> petgraph::prelude::NodeIndex {
         let mut iter = nodes.iter().cloned();
-        let idx = self.insert(iter.next().unwrap());
+        let first_elem = iter.next().unwrap();
+        let mut idx = self.insert(first_elem);
         while let Some(node) = iter.next() {
             let idx2 = self.insert(node);
             if idx2 != idx {
-                self.merge_into_idx(idx, idx2);
+                self.merge_idxs(idx, idx2);
+                // Indexes are invalidated after merging
+                idx = self.lookup(first_elem).unwrap();
             }
         }
         self.merge_sccs();
@@ -168,7 +173,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             if scc.len() > 1 {
                 // Merge all nodes in the SCC into the first node
                 for other in &scc[1..] {
-                    self.merge_into_idx(first, *other);
+                    self.merge_idxs(first, *other);
                 }
             }
             if let Some(edge) = self.inner.find_edge(first, first) {
