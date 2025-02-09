@@ -219,6 +219,7 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[cfg(debug_assertions)]
+    #[allow(dead_code)]
     fn join_transition_elem(self) -> JoinTransitionElem<'tcx> {
         (self.latest, self.graph, self.capabilities)
     }

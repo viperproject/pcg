@@ -1,8 +1,10 @@
 #[derive(Debug, Clone)]
 pub(crate) struct JoinLatticeVerifier<T> {
+    #[allow(dead_code)]
     graph: petgraph::Graph<T, ()>,
 }
 
+#[allow(unused)]
 pub(crate) struct JoinComputation<T> {
     pub(crate) lhs: T,
     pub(crate) rhs: T,
@@ -16,6 +18,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn record_join_result(&mut self, computation: JoinComputation<T>) {
         // Add nodes if they don't exist
         let lhs_idx = self.get_or_add_node(computation.lhs.clone());
