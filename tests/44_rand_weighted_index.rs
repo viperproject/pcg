@@ -30,13 +30,13 @@ where
 
         // Check for errors first, so we don't modify `self` in case something
         // goes wrong.
-        let mut prev_i = None;
+        // let mut prev_i = None;
         for &(i, w) in new_weights {
-            if let Some(old_i) = prev_i {
-                if old_i >= i {
-                    return Err(Error::InvalidInput);
-                }
-            }
+            // if let Some(old_i) = prev_i {
+            //     if old_i >= i {
+            //         return Err(Error::InvalidInput);
+            //     }
+            // }
             if !(*w >= zero) {
                 return Err(Error::InvalidWeight);
             }
@@ -53,13 +53,13 @@ where
                 old_w -= &self.cumulative_weights[i - 1];
             }
 
-            total_weight -= &old_w;
-            total_weight += w;
-            prev_i = Some(i);
+            // total_weight -= &old_w;
+            // total_weight += w;
+            // prev_i = Some(i);
         }
-        if total_weight <= zero {
-            return Err(Error::InsufficientNonZero);
-        }
+        // if total_weight <= zero {
+        //     return Err(Error::InsufficientNonZero);
+        // }
 
         // Update the weights. Because we checked all the preconditions in the
         // previous loop, this should never panic.
@@ -73,11 +73,10 @@ where
         } else {
             zero.clone()
         };
+
         for i in first_new_index..self.cumulative_weights.len() {
             match next_new_weight {
-                Some(&(j, w)) if i == j => {
-                    cumulative_weight += w;
-                    next_new_weight = iter.next();
+                Some(&(j, w)) => {
                 }
                 _ => {
                     let mut tmp = self.cumulative_weights[i].clone();
@@ -89,8 +88,8 @@ where
             core::mem::swap(&mut prev_weight, &mut self.cumulative_weights[i]);
         }
 
-        self.total_weight = total_weight.clone();
-        self.weight_distribution = total_weight;
+        // self.total_weight = total_weight.clone();
+        // self.weight_distribution = total_weight;
 
         Ok(())
     }
