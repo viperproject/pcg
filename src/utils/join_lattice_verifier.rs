@@ -1,5 +1,16 @@
 use super::display::{DebugLines, DisplayDiff};
 
+/// `JoinLatticeVerifier` is used to detect correctness violations of the `join`
+/// operation on a domain of type `T`, based on recorded join computations.
+///
+/// Currently, the verifier can detect certain cases when the invariants
+/// `join(a, b) ≤ a` and `join(a, b) ≤ b` are violated. This is checked by
+/// storing elements of `T` in a graph, where, for all recorded computations of
+/// the form `join(a, b) = c`, there is an edge `a` -> `c` if `a != c` and there
+/// is an edge `b` -> `c` if `b != c`.  If the join operation is implemented
+/// correctly, then if an edge `a` can reach a distinct edge `b`, then a < b.
+/// Conversely, if the graph forms a cycle, the join operation is not implemented
+/// correctly, with the cycle being a counterexample.
 #[derive(Debug, Clone)]
 pub(crate) struct JoinLatticeVerifier<T> {
     #[allow(dead_code)]
@@ -54,13 +65,13 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
                 visited: &mut HashSet<petgraph::graph::NodeIndex>,
                 stack: &mut Vec<petgraph::graph::NodeIndex>,
                 on_stack: &mut HashSet<petgraph::graph::NodeIndex>,
-            ) -> Option<Vec<T>> {
+            ) -> Option<Vec<(petgraph::graph::NodeIndex, T)>> {
                 if on_stack.contains(&node) {
                     // Found cycle. Collect nodes from the cycle
                     let cycle_start_idx = stack.iter().position(|&x| x == node).unwrap();
                     let cycle: Vec<_> = stack[cycle_start_idx..]
                         .iter()
-                        .map(|&idx| graph[idx].clone())
+                        .map(|&idx| (idx, graph[idx].clone()))
                         .collect();
                     return Some(cycle);
                 }
@@ -85,9 +96,16 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
             }
 
             if let Some(cycle) = dfs(&self.graph, start, &mut visited, &mut stack, &mut on_stack) {
-                eprintln!("Found cycle:");
-                for (i, elem) in cycle.iter().enumerate() {
-                    eprintln!("Node #{}", i);
+                eprintln!(
+                    "The `join` implementation is not correct for type {}.
+                    Either join(a, b) ⊑ a or join(a, b) ⊑ b is not satisfied.
+                    Namely, there is a cycle in the subgraph of recorded join computations.
+                    For more information see the documentation of JoinLatticeVerifier.`
+                    The counterexample cycle is:",
+                    std::any::type_name::<T>()
+                );
+                for (i, (idx, elem)) in cycle.iter().enumerate() {
+                    eprintln!("Node #{} (index: {:?})", i, idx);
                     for line in elem.debug_lines(ctxt) {
                         eprintln!("{}", line);
                     }
@@ -95,10 +113,27 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
                 }
                 eprintln!("Node diffs:");
                 for i in 0..cycle.len() {
-                    let curr = &cycle[i];
-                    let next = &cycle[(i + 1) % cycle.len()];
+                    let (_, curr) = &cycle[i];
+                    let (_, next) = &cycle[(i + 1) % cycle.len()];
                     eprintln!("{}\n---\n", curr.fmt_diff(next, ctxt));
                 }
+
+                // Print the entire graph structure
+                eprintln!("\nComplete Graph Structure:");
+                eprintln!("Nodes:");
+                for node_idx in self.graph.node_indices() {
+                    eprintln!("Node {:?}", node_idx);
+                    for line in self.graph[node_idx].debug_lines(ctxt) {
+                        eprintln!("  {}", line);
+                    }
+                    eprintln!();
+                }
+                eprintln!("\nEdges:");
+                for edge in self.graph.edge_indices() {
+                    let (source, target) = self.graph.edge_endpoints(edge).unwrap();
+                    eprintln!("{:?} -> {:?}", source, target);
+                }
+
                 panic!("Join lattice must be acyclic.");
             }
         }

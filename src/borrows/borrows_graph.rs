@@ -29,7 +29,7 @@ use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
-    domain::{FunctionAbstractionBlockEdge, LoopAbstraction, ToJsonWithRepacker},
+    domain::{AbstractionBlockEdge, LoopAbstraction, ToJsonWithRepacker},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -523,7 +523,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for (blocked, assigned) in result.edges() {
             let abstraction = LoopAbstraction::new(
-                FunctionAbstractionBlockEdge::new(
+                AbstractionBlockEdge::new(
                     blocked.clone().into_iter().collect(),
                     assigned
                         .clone()
@@ -551,8 +551,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         // Edges that only connect nodes within the region abstraction (but are
-        // not the abstraction edge itself, should be removed
-        let edges = self.edges().cloned().collect::<Vec<_>>();
+        // not the abstraction edge itself), should be removed
+        let edges = self
+            .edges()
+            .filter(|edge| !new_edges.contains(edge))
+            .cloned()
+            .collect::<Vec<_>>();
         for edge in edges {
             if self.is_encapsulated_by_abstraction(&edge, repacker) {
                 self.remove(&edge);

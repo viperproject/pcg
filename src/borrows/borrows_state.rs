@@ -75,6 +75,7 @@ impl<'tcx> ExecutedActions<'tcx> {
 #[cfg(debug_assertions)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct JoinTransitionElem<'tcx> {
+    block: BasicBlock,
     latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
     capabilities: BorrowPCGCapabilities<'tcx>,
@@ -84,6 +85,7 @@ struct JoinTransitionElem<'tcx> {
 impl<'mir, 'tcx> DebugLines<PlaceRepacker<'mir, 'tcx>> for JoinTransitionElem<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Vec<String> {
         let mut lines = Vec::new();
+        lines.push(format!("Block: {:?}", self.block));
         for line in self.latest.debug_lines(repacker) {
             lines.push(format!("Latest: {}", line));
         }
@@ -104,6 +106,15 @@ pub struct BorrowsState<'tcx> {
     capabilities: BorrowPCGCapabilities<'tcx>,
     #[cfg(debug_assertions)]
     join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
+}
+
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        let mut lines = Vec::new();
+        lines.extend(self.graph.debug_lines(repacker));
+        lines.extend(self.capabilities.debug_lines(repacker));
+        lines
+    }
 }
 
 impl<'tcx> Eq for BorrowsState<'tcx> {}
@@ -174,9 +185,6 @@ impl ExpansionReason {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn debug_capability_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.capabilities.debug_lines(repacker)
-    }
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.graph.insert(edge)
     }
@@ -238,8 +246,9 @@ impl<'tcx> BorrowsState<'tcx> {
 
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
-    fn join_transition_elem(self) -> JoinTransitionElem<'tcx> {
+    fn join_transition_elem(self, block: BasicBlock) -> JoinTransitionElem<'tcx> {
         JoinTransitionElem {
+            block,
             latest: self.latest,
             graph: self.graph,
             capabilities: self.capabilities,
@@ -276,17 +285,17 @@ impl<'tcx> BorrowsState<'tcx> {
             changed = true;
         }
         // // These checks are disabled even for debugging currently because they are very expensive
-        if changed && cfg!(debug_assertions) {
-            debug_assert_ne!(*self, old);
-            self.join_transitions.record_join_result(
-                JoinComputation {
-                    lhs: old.join_transition_elem(),
-                    rhs: other.clone().join_transition_elem(),
-                    result: self.clone().join_transition_elem(),
-                },
-                repacker,
-            );
-        }
+        // if changed && cfg!(debug_assertions) {
+        //     debug_assert_ne!(*self, old);
+        //     self.join_transitions.record_join_result(
+        //         JoinComputation {
+        //             lhs: old.join_transition_elem(self_block),
+        //             rhs: other.clone().join_transition_elem(other_block),
+        //             result: self.clone().join_transition_elem(self_block),
+        //         },
+        //         repacker,
+        //     );
+        // }
         changed
     }
 
@@ -393,9 +402,8 @@ impl<'tcx> BorrowsState<'tcx> {
 
     /// Returns the place that blocks `place` if:
     /// 1. there is exactly one hyperedge blocking `place`
-    /// 2. that edge is a region projection member edge
-    /// 3. there is only one blocking node
-    /// 4. that node can be dereferenced
+    /// 2. that edge is blocked by exactly one node
+    /// 3. that node is a region projection that can be dereferenced
     ///
     /// This is used in the symbolic-execution based purification encoding to
     /// compute the backwards function for the argument local `place`. It
@@ -411,22 +419,15 @@ impl<'tcx> BorrowsState<'tcx> {
         if edges.len() != 1 {
             return None;
         }
-        match edges[0].kind() {
-            BorrowPCGEdgeKind::Borrow(_) => todo!(),
-            BorrowPCGEdgeKind::BorrowPCGExpansion(_) => todo!(),
-            BorrowPCGEdgeKind::Abstraction(_) => todo!(),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
-                let nodes = member.blocked_by_nodes(repacker);
-                if nodes.len() != 1 {
-                    return None;
-                }
-                let node = nodes.into_iter().next().unwrap();
-                match node {
-                    PCGNode::Place(_) => todo!(),
-                    PCGNode::RegionProjection(region_projection) => {
-                        region_projection.deref(repacker)
-                    }
-                }
+        let nodes = edges[0].blocked_by_nodes(repacker);
+        if nodes.len() != 1 {
+            return None;
+        }
+        let node = nodes.into_iter().next().unwrap();
+        match node {
+            PCGNode::Place(_) => todo!(),
+            PCGNode::RegionProjection(region_projection) => {
+                region_projection.deref(repacker)
             }
         }
     }

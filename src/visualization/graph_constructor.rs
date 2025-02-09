@@ -7,7 +7,15 @@ use crate::{
         domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace, RemotePlace},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         unblock_graph::UnblockGraph,
-    }, combined_pcs::{PCGNode, PCGNodeLike}, free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary}, rustc_interface::{self}, utils::{display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation}, visualization::dot_graph::RankAnnotation
+    },
+    combined_pcs::{PCGNode, PCGNodeLike},
+    free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
+    rustc_interface::{self},
+    utils::{
+        display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
+        SnapshotLocation,
+    },
+    visualization::dot_graph::RankAnnotation,
 };
 
 use std::{
@@ -154,7 +162,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_region_abstraction(&mut self, region_abstraction: &AbstractionType<'tcx>) {
+    fn insert_abstraction(&mut self, region_abstraction: &AbstractionType<'tcx>) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 
@@ -378,7 +386,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 });
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
-                let _r = self.constructor().insert_region_abstraction(abstraction);
+                let _r = self.constructor().insert_abstraction(abstraction);
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 for input in member.inputs.iter() {
