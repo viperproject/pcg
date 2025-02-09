@@ -636,7 +636,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 // if validity_checks_enabled() {
                 //     assert!(self.is_valid(repacker), "Graph became invalid after join");
                 // }
-                return *self == old_self;
+                return *self != old_self;
             }
             // TODO: Handle multiple exit blocks
         }

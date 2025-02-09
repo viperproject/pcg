@@ -12,7 +12,11 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{validity::HasValidityCheck, HasPlace},
+    utils::{
+        join_lattice_verifier::{JoinComputation, JoinLatticeVerifier},
+        validity::HasValidityCheck,
+        HasPlace,
+    },
 };
 
 use crate::{
@@ -67,12 +71,31 @@ impl<'tcx> ExecutedActions<'tcx> {
     }
 }
 
+#[cfg(debug_assertions)]
+type JoinTransitionElem<'tcx> = (
+    Latest<'tcx>,
+    BorrowsGraph<'tcx>,
+    BorrowPCGCapabilities<'tcx>,
+);
+
 /// The "Borrow PCG"
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
     capabilities: BorrowPCGCapabilities<'tcx>,
+    #[cfg(debug_assertions)]
+    join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
+}
+
+impl<'tcx> Eq for BorrowsState<'tcx> {}
+
+impl<'tcx> PartialEq for BorrowsState<'tcx> {
+    fn eq(&self, other: &Self) -> bool {
+        self.latest == other.latest
+            && self.graph == other.graph
+            && self.capabilities == other.capabilities
+    }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
@@ -87,6 +110,8 @@ impl<'tcx> Default for BorrowsState<'tcx> {
             latest: Latest::new(),
             graph: BorrowsGraph::new(),
             capabilities: BorrowPCGCapabilities::new(),
+            #[cfg(debug_assertions)]
+            join_transitions: JoinLatticeVerifier::new(),
         }
     }
 }
@@ -193,6 +218,11 @@ impl<'tcx> BorrowsState<'tcx> {
         self.capabilities.remove(node)
     }
 
+    #[cfg(debug_assertions)]
+    fn join_transition_elem(self) -> JoinTransitionElem<'tcx> {
+        (self.latest, self.graph, self.capabilities)
+    }
+
     pub(crate) fn join<'mir, T: BorrowCheckerInterface<'tcx>>(
         &mut self,
         other: &Self,
@@ -205,6 +235,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // if validity_checks_enabled() {
         //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
         // }
+        // let old = self.clone();
         let mut changed = false;
         if self
             .graph
@@ -221,6 +252,15 @@ impl<'tcx> BorrowsState<'tcx> {
         if self.capabilities.join(&other.capabilities) {
             changed = true;
         }
+        // These checks are disabled even for debugging currently because they are very expensive
+        // if changed && cfg!(debug_assertions) {
+        //     debug_assert_ne!(*self, old);
+        //     self.join_transitions.record_join_result(JoinComputation {
+        //         lhs: old.join_transition_elem(),
+        //         rhs: other.clone().join_transition_elem(),
+        //         result: self.clone().join_transition_elem(),
+        //     });
+        // }
         changed
     }
 
