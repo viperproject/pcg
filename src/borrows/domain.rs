@@ -264,6 +264,9 @@ pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> AbstractionType<'tcx> {
+    pub(crate) fn is_function_call(&self) -> bool {
+        matches!(self, AbstractionType::FunctionCall(_))
+    }
     pub fn location(&self) -> Location {
         match self {
             AbstractionType::FunctionCall(c) => c.location,

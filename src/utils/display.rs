@@ -193,6 +193,7 @@ impl<'tcx> Place<'tcx> {
 }
 
 pub(crate) trait DisplayDiff<Ctxt> {
+    #[must_use]
     fn fmt_diff(&self, to: &Self, ctxt: Ctxt) -> String;
 }
 

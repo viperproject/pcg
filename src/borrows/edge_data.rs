@@ -2,10 +2,10 @@ use crate::combined_pcs::PCGNode;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::LocalNode;
+use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
 /// A trait for data that represents a hyperedge in the Borrow PCG.
-pub (crate) trait EdgeData<'tcx> {
+pub trait EdgeData<'tcx> {
     /// For an edge A -> B, this returns the set of nodes A. In general, the capabilities
     /// of nodes B are obtained from these nodes.
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>>;
@@ -16,6 +16,10 @@ pub (crate) trait EdgeData<'tcx> {
 
     /// True iff this is an edge from the owned PCG to the borrow PCG, e.g. x -> *x iff x is a reference type
     fn is_owned_expansion(&self) -> bool;
+
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.blocked_nodes(repacker).contains(&node)
+    }
 }
 
 #[macro_export]

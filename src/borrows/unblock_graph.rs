@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
+use crate::combined_pcs::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
+use crate::visualization::dot_graph::DotGraph;
+use crate::visualization::generate_borrows_dot_graph;
 use crate::{
     borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
     combined_pcs::PCGNode,
@@ -10,6 +13,7 @@ use crate::{
     ToJsonWithRepacker,
 };
 
+use super::borrow_pcg_edge::BorrowPCGEdgeLike;
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
     domain::MaybeRemotePlace,
@@ -77,7 +81,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         node: PCGNode<'tcx>,
         state: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowPCGUnblockAction<'tcx>> {
+    ) -> Result<Vec<BorrowPCGUnblockAction<'tcx>>, PCGInternalError> {
         let mut ug = UnblockGraph::new();
         ug.unblock_node(node, state, repacker, UnblockType::ForExclusive);
         ug.actions(repacker)
@@ -101,7 +105,10 @@ impl<'tcx> UnblockGraph<'tcx> {
         self.edges.retain(|edge| edge.valid_for_path(path));
     }
 
-    pub fn actions(self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<BorrowPCGUnblockAction<'tcx>> {
+    pub fn actions(
+        self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<Vec<BorrowPCGUnblockAction<'tcx>>, PCGInternalError> {
         let mut edges = self.edges;
         let mut actions = vec![];
 
@@ -128,14 +135,15 @@ impl<'tcx> UnblockGraph<'tcx> {
                     to_keep.remove(edge);
                 }
             }
-            debug_assert!(
-                to_keep.len() < edges.len(),
-                "Didn't remove any leaves! {:#?}",
-                edges
-            );
+            if to_keep.len() >= edges.len() {
+                return Err(PCGInternalError::new(format!(
+                    "Didn't remove any leaves! {:#?}",
+                    edges
+                )));
+            }
             edges = to_keep;
         }
-        actions
+        Ok(actions)
     }
 
     fn add_dependency(&mut self, unblock_edge: UnblockEdge<'tcx>) -> bool {
@@ -144,7 +152,7 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     pub(crate) fn kill_edge(
         &mut self,
-        edge: BorrowPCGEdge<'tcx>,
+        edge: impl BorrowPCGEdgeLike<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         typ: UnblockType,
@@ -162,7 +170,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                 }
             }
         }
-        if self.add_dependency(edge.clone()) {
+        if self.add_dependency(edge.clone().to_owned_edge()) {
             for blocking_node in edge.blocked_by_nodes(repacker) {
                 if !edge.is_owned_expansion() {
                     // We always unblock for exclusive since the input edge is dead
@@ -197,7 +205,8 @@ impl<'tcx> UnblockGraph<'tcx> {
         if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node
         {
             for reborrow in borrows.borrows_blocking_prefix_of(place) {
-                self.kill_edge(reborrow.into(), borrows, repacker, typ);
+                let edge: BorrowPCGEdge<'tcx> = reborrow.into();
+                self.kill_edge(edge, borrows, repacker, typ);
             }
         }
     }

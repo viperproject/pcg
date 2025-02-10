@@ -13,11 +13,12 @@ use crate::{
         },
     },
     utils::{
-        display::{DebugLines, DisplayDiff},
-        join_lattice_verifier::{JoinComputation, JoinLatticeVerifier},
+        display::DebugLines,
+        join_lattice_verifier::{HasBlock, JoinComputation, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
     },
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use crate::{
@@ -29,7 +30,10 @@ use super::{
     borrow_edge::BorrowEdge,
     borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge},
+    borrow_pcg_edge::{
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
+        LocalNode, ToBorrowsEdge,
+    },
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
     borrows_graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
     borrows_visitor::BorrowPCGActions,
@@ -79,6 +83,12 @@ struct JoinTransitionElem<'tcx> {
     latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
     capabilities: BorrowPCGCapabilities<'tcx>,
+}
+
+impl<'tcx> HasBlock for JoinTransitionElem<'tcx> {
+    fn block(&self) -> BasicBlock {
+        self.block
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -145,6 +155,7 @@ impl<'tcx> Default for BorrowsState<'tcx> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum ExpansionReason {
     MoveOperand,
     CopyOperand,
@@ -214,7 +225,9 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.contains_edge(edge)
     }
 
-    pub(crate) fn graph_edges(&self) -> impl Iterator<Item = &BorrowPCGEdge<'tcx>> {
+    pub(crate) fn graph_edges<'slf>(
+        &'slf self,
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.graph.edges()
     }
 
@@ -276,7 +289,7 @@ impl<'tcx> BorrowsState<'tcx> {
             changed = true;
         }
         if self.latest.join(&other.latest, self_block, repacker) {
-            // TODO: Setting changed to true prevents divergence for loops,
+            // TODO: Setting changed to true causes analysis to diverge
             // think about how latest should work in loops
 
             // changed = true;
@@ -285,17 +298,17 @@ impl<'tcx> BorrowsState<'tcx> {
             changed = true;
         }
         // // These checks are disabled even for debugging currently because they are very expensive
-        // if changed && cfg!(debug_assertions) {
-        //     debug_assert_ne!(*self, old);
-        //     self.join_transitions.record_join_result(
-        //         JoinComputation {
-        //             lhs: old.join_transition_elem(self_block),
-        //             rhs: other.clone().join_transition_elem(other_block),
-        //             result: self.clone().join_transition_elem(self_block),
-        //         },
-        //         repacker,
-        //     );
-        // }
+        if changed && cfg!(debug_assertions) {
+            debug_assert_ne!(*self, old);
+            self.join_transitions.record_join_result(
+                JoinComputation {
+                    lhs: old.join_transition_elem(self_block),
+                    rhs: other.clone().join_transition_elem(other_block),
+                    result: self.clone().join_transition_elem(self_block),
+                },
+                repacker,
+            );
+        }
         changed
     }
 
@@ -316,7 +329,7 @@ impl<'tcx> BorrowsState<'tcx> {
     #[must_use]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
-        edge: &BorrowPCGEdge<'tcx>,
+        edge: impl BorrowPCGEdgeLike<'tcx>,
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
         context: &str,
@@ -335,7 +348,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-        let remove_edge_action = BorrowPCGAction::remove_edge(edge.clone(), context);
+        let remove_edge_action = BorrowPCGAction::remove_edge(edge.to_owned_edge(), context);
         let result = self.apply_action(remove_edge_action.clone(), repacker);
         actions.record(remove_edge_action, result);
         // If removing the edge results in a leaf node with a Lent capability, this
@@ -385,13 +398,17 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> ExecutedActions<'tcx> {
         let mut actions = ExecutedActions::new();
-        let edges = self.edges_blocking(place.into(), repacker);
+        let edges = self
+            .edges_blocking(place.into(), repacker)
+            .into_iter()
+            .map(|e| e.to_owned_edge())
+            .collect::<Vec<_>>();
         if edges.is_empty() {
             return actions;
         }
         for edge in edges {
             actions.extend(self.remove_edge_and_set_latest(
-                &edge,
+                edge,
                 location,
                 repacker,
                 "Delete Descendants",
@@ -426,29 +443,24 @@ impl<'tcx> BorrowsState<'tcx> {
         let node = nodes.into_iter().next().unwrap();
         match node {
             PCGNode::Place(_) => todo!(),
-            PCGNode::RegionProjection(region_projection) => {
-                region_projection.deref(repacker)
-            }
+            PCGNode::RegionProjection(region_projection) => region_projection.deref(repacker),
         }
     }
 
-    pub(crate) fn edges_blocking(
-        &self,
+    pub(crate) fn edges_blocking<'slf, 'mir: 'slf>(
+        &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<BorrowPCGEdge<'tcx>> {
-        self.graph.edges_blocking(node, repacker).cloned().collect()
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
+        self.graph.edges_blocking(node, repacker).collect()
     }
 
-    pub(crate) fn edges_blocked_by(
-        &self,
+    pub(crate) fn edges_blocked_by<'slf, 'mir: 'slf>(
+        &'slf self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdge<'tcx>> {
-        self.graph
-            .edges_blocked_by(node, repacker)
-            .cloned()
-            .collect()
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
+        self.graph.edges_blocked_by(node, repacker).collect()
     }
 
     pub(crate) fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
@@ -469,7 +481,11 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
-        let graph_edges = self.graph.edges().cloned().collect::<Vec<_>>();
+        let graph_edges = self
+            .graph
+            .edges()
+            .map(|e| e.to_owned_edge())
+            .collect::<Vec<_>>();
 
         // If we are going to contract a place, borrows may need to be converted
         // to region projection member edges. For example, if the type of `x.t` is
@@ -543,8 +559,18 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-
-        for action in ug.actions(repacker) {
+        let unblock_actions = ug.actions(repacker).unwrap_or_else(|e| {
+            let dot_graph = generate_borrows_dot_graph(repacker, self.graph()).unwrap();
+            DotGraph::render_with_imgcat(&dot_graph, "Borrows graph for unblock actions")
+                .unwrap_or_else(|e| {
+                    eprintln!("Error rendering borrows graph: {}", e);
+                });
+            panic!(
+                "Error when ensuring expansion to {:?} for {:?}: {:?}",
+                place, expansion_reason, e
+            );
+        });
+        for action in unblock_actions {
             actions.extend(self.apply_unblock_action(
                 action,
                 repacker,
@@ -685,7 +711,7 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         context: &str,
     ) -> ExecutedActions<'tcx> {
-        self.remove_edge_and_set_latest(&action.edge(), location, repacker, context)
+        self.remove_edge_and_set_latest(action.edge, location, repacker, context)
     }
 
     pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
@@ -747,7 +773,12 @@ impl<'tcx> BorrowsState<'tcx> {
         };
         loop {
             let mut cont = false;
-            let edges = self.graph.leaf_edges(repacker, None);
+            let edges = self
+                .graph
+                .leaf_edges(repacker, None)
+                .into_iter()
+                .map(|e| e.to_owned_edge())
+                .collect::<Vec<_>>();
             for edge in edges {
                 let blocked_by_nodes = edge.blocked_by_nodes(repacker);
                 if blocked_by_nodes
@@ -755,7 +786,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     .all(|p| should_trim(*p, &self.graph))
                 {
                     actions.extend(self.remove_edge_and_set_latest(
-                        &edge,
+                        edge,
                         location,
                         repacker,
                         &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),

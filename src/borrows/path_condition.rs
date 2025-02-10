@@ -107,6 +107,9 @@ impl PCGraph {
         self.0.iter().any(|pc| pc.from == block)
     }
 
+    /// Returns `true` iff for any root `bb_r` of the graph, there is a suffix
+    /// of `path` [bb_r, ..., bb_l] such that there is a path from `bb_r` to
+    /// `bb_l` in the graph.
     pub(crate) fn has_suffix_of(&self, path: &[BasicBlock]) -> bool {
         let check_path = |path: &[BasicBlock]| {
             let mut i = 0;
@@ -189,14 +192,17 @@ impl PathConditions {
     }
 
     pub fn join(&mut self, other: &Self) -> bool {
-        match (self, other) {
+        match (&mut *self, other) {
             (PathConditions::AtBlock(b1), PathConditions::AtBlock(b2)) => {
                 assert!(*b1 == *b2);
                 false
             }
             (PathConditions::Paths(p1), PathConditions::Paths(p2)) => p1.join(p2),
-            (PathConditions::AtBlock(_b), PathConditions::Paths(_p)) => false, // TODO: check
-            (PathConditions::Paths(_p), PathConditions::AtBlock(_b)) => false, // TODO: check
+            (PathConditions::AtBlock(_b), PathConditions::Paths(p)) => {
+                *self = PathConditions::Paths(p.clone());
+                true
+            }
+            (PathConditions::Paths(p), PathConditions::AtBlock(_b)) => false,
         }
     }
 
@@ -211,6 +217,9 @@ impl PathConditions {
         }
     }
 
+    /// Returns `true` iff for any root `bb_r` of the graph, there is a suffix
+    /// of `path` [bb_r, ..., bb_l] such that there is a path from `bb_r` to
+    /// `bb_l` in the graph.
     pub fn valid_for_path(&self, path: &[BasicBlock]) -> bool {
         match self {
             PathConditions::AtBlock(b) => path.last() == Some(b),
