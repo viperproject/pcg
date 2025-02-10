@@ -4,7 +4,8 @@ use tracing::instrument;
 
 use crate::{
     borrows::{
-        borrow_pcg_edge::BorrowPCGEdgeLike, region_projection::MaybeRemoteRegionProjectionBase, region_projection_member::RegionProjectionMemberKind
+        borrow_pcg_edge::BorrowPCGEdgeLike, region_projection::MaybeRemoteRegionProjectionBase,
+        region_projection_member::RegionProjectionMemberKind,
     },
     combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
@@ -116,7 +117,8 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
     pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
-        match (self.last(), actions.first()) {
+        if cfg!(debug_assertions) {
+            match (self.last(), actions.first()) {
             (Some(a), Some(b)) => assert_ne!(
                 a, b,
                 "The last action ({:#?}) is the same as the first action in the list to extend with.",
@@ -124,12 +126,15 @@ impl<'tcx> BorrowPCGActions<'tcx> {
             ),
             _ => (),
         }
+        }
         self.0.extend(actions.0);
     }
 
     pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>) {
-        if let Some(last) = self.last() {
-            assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
+        if cfg!(debug_assertions) {
+            if let Some(last) = self.last() {
+                debug_assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
+            }
         }
         self.0.push(action);
     }

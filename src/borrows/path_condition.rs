@@ -55,6 +55,17 @@ impl std::fmt::Display for PCGraph {
 }
 
 impl PCGraph {
+    pub(crate) fn remove(&mut self, other: &Self) -> bool {
+        debug_assert_ne!(self, other);
+        let mut changed = false;
+        for pc in other.0.iter() {
+            if self.0.remove(pc) {
+                changed = true;
+            }
+        }
+        changed
+    }
+
     pub(crate) fn edges_to(&self, block: BasicBlock) -> BTreeSet<PathCondition> {
         self.0
             .iter()
@@ -173,6 +184,16 @@ impl PathConditions {
         Self::AtBlock(block)
     }
 
+    pub(crate) fn remove(&mut self, other: &Self) -> bool {
+        debug_assert_ne!(self, other);
+        match (self, other) {
+            (PathConditions::Paths(ref mut p), PathConditions::Paths(other)) => {
+                p.remove(other)
+            }
+            _ => todo!(),
+        }
+    }
+
     pub fn start() -> Self {
         Self::AtBlock(START_BLOCK)
     }
@@ -202,7 +223,7 @@ impl PathConditions {
                 *self = PathConditions::Paths(p.clone());
                 true
             }
-            (PathConditions::Paths(p), PathConditions::AtBlock(_b)) => false,
+            (PathConditions::Paths(_), PathConditions::AtBlock(_b)) => false,
         }
     }
 

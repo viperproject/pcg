@@ -27,7 +27,7 @@ use super::{
 /// `a` and `b` are coupled and only one can be accessed.
 ///
 /// Internally, the nodes are stored in a `Vec` to allow for mutation
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Coupled<T>(Vec<T>);
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
@@ -52,27 +52,11 @@ impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T
     }
 }
 
-impl<T: std::hash::Hash + Eq> PartialEq for Coupled<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.elems_hash_set() == other.elems_hash_set()
+impl<T: Clone> Coupled<T> {
+    pub(crate) fn to_vec(&self) -> Vec<T> {
+        self.0.clone()
     }
-}
 
-impl<T: std::hash::Hash + std::cmp::Eq> Eq for Coupled<T> {}
-
-impl<T: Ord + std::hash::Hash + std::cmp::Eq> PartialOrd for Coupled<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.elems_btree_set().cmp(&other.elems_btree_set()))
-    }
-}
-
-impl<T: Ord + std::hash::Hash + std::cmp::Eq> Ord for Coupled<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.elems_btree_set().cmp(&other.elems_btree_set())
-    }
-}
-
-impl<T> Coupled<T> {
     pub fn size(&self) -> usize {
         self.0.len()
     }
@@ -103,12 +87,6 @@ impl<T> IntoIterator for Coupled<T> {
     }
 }
 
-impl<T: std::hash::Hash + std::cmp::Eq> Coupled<T> {
-    pub fn elems_hash_set(&self) -> HashSet<&T> {
-        self.0.iter().collect()
-    }
-}
-
 impl<T: Ord> Coupled<T> {
     pub fn elems_btree_set(&self) -> BTreeSet<&T> {
         self.0.iter().collect()
@@ -133,15 +111,13 @@ impl<T> From<BTreeSet<T>> for Coupled<T> {
     }
 }
 
-impl<T: Eq> From<Vec<T>> for Coupled<T> {
+impl<T: Ord> From<Vec<T>> for Coupled<T> {
     fn from(vec: Vec<T>) -> Self {
-        let mut deduped = Vec::new();
+        let mut bts = BTreeSet::new();
         for item in vec {
-            if !deduped.contains(&item) {
-                deduped.push(item);
-            }
+            bts.insert(item);
         }
-        Self(deduped)
+        Self(bts.into_iter().collect())
     }
 }
 
@@ -161,8 +137,11 @@ impl<'tcx> PCGNodeLike<'tcx> for CGNode<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for CGNode<'tcx> {
-    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        todo!()
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            CGNode::RegionProjection(rp) => rp.to_short_string(repacker),
+            CGNode::RemotePlace(rp) => rp.to_short_string(repacker),
+        }
     }
 }
 

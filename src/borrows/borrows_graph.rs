@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     cell::{Cell, Ref, RefCell},
     collections::{HashMap, HashSet},
 };
@@ -701,25 +700,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self.remove(&edge);
             }
         }
-        // let mut finished = false;
-        // while !finished {
-        //     finished = true;
-        //     for leaf_node in self.leaf_nodes(repacker, None) {
-        //         if !other
-        //             .leaf_nodes(repacker, Some(&other_frozen))
-        //             .contains(&leaf_node)
-        //         {
-        //             for edge in self
-        //                 .edges_blocked_by(leaf_node.into(), repacker)
-        //                 .cloned()
-        //                 .collect::<Vec<_>>()
-        //             {
-        //                 finished = false;
-        //                 self.remove(&edge);
-        //             }
-        //         }
-        //     }
-        // }
 
         let changed = old_self != *self;
 
@@ -788,7 +768,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.cached_is_valid.set(None);
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            return conditions.join(&edge.conditions)
+            return conditions.join(&edge.conditions);
         } else {
             self.edges.insert(edge.kind, edge.conditions);
             true
@@ -815,10 +795,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn remove(&mut self, edge: &impl BorrowPCGEdgeLike<'tcx>) -> bool {
         self.cached_is_valid.set(None);
-        if let Some(conditions) = self.edges.get(edge.kind()) {
-            assert_eq!(conditions, edge.conditions());
+        if let Some(conditions) = self.edges.get_mut(edge.kind()) {
+            if conditions == edge.conditions() {
+                self.edges.remove(edge.kind());
+            } else {
+                assert!(conditions.remove(edge.conditions()));
+            }
+            true
+        } else {
+            false
         }
-        self.edges.remove(edge.kind()).is_some()
     }
 
     pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(

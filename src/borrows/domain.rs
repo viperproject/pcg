@@ -1,6 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use derive_more::From;
+use itertools::Itertools;
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -21,7 +22,7 @@ use crate::{
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    edge: AbstractionBlockEdge<'tcx>,
+    pub(crate) edge: AbstractionBlockEdge<'tcx>,
     block: BasicBlock,
 }
 
@@ -33,7 +34,11 @@ impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
 
 impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
     fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        format!("Loop({:?})", self.block)
+        format!(
+            "Loop({:?}): {}",
+            self.block,
+            self.edge.to_short_string(_repacker)
+        )
     }
 }
 
@@ -56,10 +61,6 @@ impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> LoopAbstraction<'tcx> {
-    pub(crate) fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
-        vec![self.edge.clone()]
-    }
-
     pub(crate) fn new(edge: AbstractionBlockEdge<'tcx>, block: BasicBlock) -> Self {
         Self { edge, block }
     }
@@ -199,6 +200,22 @@ pub struct AbstractionBlockEdge<'tcx> {
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
 }
 
+impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionBlockEdge<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "[{}] -> [{}]",
+            self.inputs
+                .iter()
+                .map(|i| i.to_short_string(repacker))
+                .join(", "),
+            self.outputs
+                .iter()
+                .map(|o| o.to_short_string(repacker))
+                .join(", ")
+        )
+    }
+}
+
 impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         for input in self.inputs.iter() {
@@ -227,8 +244,8 @@ impl<'tcx> Eq for AbstractionBlockEdge<'tcx> {}
 
 impl<'tcx> AbstractionBlockEdge<'tcx> {
     pub(crate) fn new(
-        inputs: HashSet<AbstractionInputTarget<'tcx>>,
-        outputs: HashSet<AbstractionOutputTarget<'tcx>>,
+        inputs: BTreeSet<AbstractionInputTarget<'tcx>>,
+        outputs: BTreeSet<AbstractionOutputTarget<'tcx>>,
     ) -> Self {
         Self {
             inputs: inputs.into_iter().collect(),
@@ -236,11 +253,11 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
         }
     }
 
-    pub fn outputs(&self) -> HashSet<AbstractionOutputTarget<'tcx>> {
+    pub fn outputs(&self) -> BTreeSet<AbstractionOutputTarget<'tcx>> {
         self.outputs.clone().into_iter().collect()
     }
 
-    pub fn inputs(&self) -> HashSet<AbstractionInputTarget<'tcx>> {
+    pub fn inputs(&self) -> BTreeSet<AbstractionInputTarget<'tcx>> {
         self.inputs.clone().into_iter().collect()
     }
 }
@@ -288,12 +305,12 @@ impl<'tcx> AbstractionType<'tcx> {
     pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
         match self {
             AbstractionType::FunctionCall(c) => c.edges.clone(),
-            AbstractionType::Loop(c) => c.edges().clone(),
+            AbstractionType::Loop(c) => vec![c.edge.clone()],
         }
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd)]
 pub enum MaybeOldPlace<'tcx> {
     Current { place: Place<'tcx> },
     OldPlace(PlaceSnapshot<'tcx>),
@@ -663,7 +680,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for RemotePlace {
 
 impl<'tcx> DisplayWithRepacker<'tcx> for RemotePlace {
     fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        todo!()
+        format!("Remote({:?})", self.local)
     }
 }
 

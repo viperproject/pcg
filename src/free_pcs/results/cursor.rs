@@ -8,10 +8,14 @@ use crate::{
     borrows::{
         engine::{BorrowsDomain, EvalStmtData},
         latest::Latest,
-    }, combined_pcs::EvalStmtPhase, free_pcs::RepackOps, rustc_interface::{
+    },
+    combined_pcs::EvalStmtPhase,
+    rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
-    }, utils::{display::DebugLines, validity::HasValidityCheck}, BorrowPCGActions
+    },
+    utils::{display::DebugLines, validity::HasValidityCheck},
+    BorrowPCGActions,
 };
 
 use crate::{
