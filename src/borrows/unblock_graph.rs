@@ -3,8 +3,6 @@ use std::collections::HashSet;
 use crate::combined_pcs::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
-use crate::visualization::dot_graph::DotGraph;
-use crate::visualization::generate_borrows_dot_graph;
 use crate::{
     borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
     combined_pcs::PCGNode,

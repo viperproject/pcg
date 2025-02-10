@@ -15,12 +15,15 @@ use derive_more::{Deref, DerefMut};
 
 use crate::rustc_interface::{
     ast::Mutability,
+    data_structures::fx::FxHasher,
+    hir::def_id::CrateNum,
     index::IndexVec,
     middle::{
-        mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
+        mir::{self, Body, Const, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
         ty::{self, Ty, TyCtxt, TyKind},
     },
-    target::abi::VariantIdx,
+    span::{def_id::DefIndex, Symbol},
+    target::abi::{FieldIdx, VariantIdx},
 };
 
 use crate::{
@@ -61,7 +64,7 @@ impl<'tcx> CorrectedPlace<'tcx> {
 
 /// A place element obtained from a [`CorrectedPlace`].
 #[derive(Clone, Copy, Deref, DerefMut, PartialEq, Eq, Debug, Hash)]
-pub(crate) struct CorrectedPlaceElem<'tcx>(PlaceElem<'tcx>);
+pub(crate) struct CorrectedPlaceElem<'tcx>(mir::PlaceElem<'tcx>);
 
 #[derive(Clone, Copy, Deref, DerefMut)]
 pub struct Place<'tcx>(
@@ -70,6 +73,31 @@ pub struct Place<'tcx>(
     PlaceRef<'tcx>,
     DebugInfo<'static>,
 );
+
+impl<'tcx> PartialOrd for Place<'tcx> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'tcx> Ord for Place<'tcx> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self == other {
+            Ordering::Equal
+        } else {
+            let mut h1 = FxHasher::default();
+            let mut h2 = FxHasher::default();
+            self.hash(&mut h1);
+            other.hash(&mut h2);
+            match h1.finish().cmp(&h2.finish()) {
+                Ordering::Equal => {
+                    panic!("Places have same hash, but they aren't equal!")
+                }
+                other => other,
+            }
+        }
+    }
+}
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Place<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {

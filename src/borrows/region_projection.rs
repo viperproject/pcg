@@ -81,7 +81,7 @@ impl<'tcx> From<ty::Region<'tcx>> for PCGRegion {
 /// For example is `a` has type `A<'t>` and `b` has type `B<'u>`,
 /// an assignment e.g. `b = move a` will have region projections from `b`
 /// to `u`
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionIdx(usize);
 
 impl Idx for RegionIdx {
@@ -165,7 +165,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     base: P,
     region_idx: RegionIdx,

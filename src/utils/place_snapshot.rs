@@ -8,7 +8,7 @@ use crate::{
 
 use super::{validity::HasValidityCheck, Place, PlaceRepacker};
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub enum SnapshotLocation {
     After(Location),
     Start(BasicBlock),
@@ -33,7 +33,7 @@ impl From<Location> for SnapshotLocation {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct PlaceSnapshot<'tcx> {
     pub place: Place<'tcx>,
     pub at: SnapshotLocation,
