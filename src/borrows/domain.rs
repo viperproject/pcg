@@ -211,9 +211,7 @@ impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
-    for AbstractionBlockEdge<'tcx>
-{
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         self.outputs.iter_mut().collect()
     }

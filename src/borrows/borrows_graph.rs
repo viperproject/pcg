@@ -689,7 +689,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for other_edge in other.edges() {
             self.insert(other_edge.to_owned_edge());
         }
-        for edge in self.edges().map(|edge| edge.to_owned_edge()).collect::<Vec<_>>() {
+        for edge in self
+            .edges()
+            .map(|edge| edge.to_owned_edge())
+            .collect::<Vec<_>>()
+        {
             if let BorrowPCGEdgeKind::Abstraction(_) = edge.kind() {
                 continue;
             }
@@ -783,7 +787,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.cached_is_valid.set(None);
-        self.edges.insert(edge.kind, edge.conditions.clone()) != Some(edge.conditions)
+        if let Some(conditions) = self.edges.get_mut(edge.kind()) {
+            return conditions.join(&edge.conditions)
+        } else {
+            self.edges.insert(edge.kind, edge.conditions);
+            true
+        }
     }
 
     #[must_use]
@@ -806,6 +815,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn remove(&mut self, edge: &impl BorrowPCGEdgeLike<'tcx>) -> bool {
         self.cached_is_valid.set(None);
+        if let Some(conditions) = self.edges.get(edge.kind()) {
+            assert_eq!(conditions, edge.conditions());
+        }
         self.edges.remove(edge.kind()).is_some()
     }
 
@@ -885,7 +897,8 @@ impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Conditioned
 pub(crate) struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
     nodes_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
-    edges_blocking_cache: RefCell<HashMap<PCGNode<'tcx>, FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>>>>,
+    edges_blocking_cache:
+        RefCell<HashMap<PCGNode<'tcx>, FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>>>>,
     edges_blocked_by_cache:
         RefCell<HashMap<LocalNode<'tcx>, FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>>>>,
     roots_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
