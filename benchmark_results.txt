@@ -11,7 +11,7 @@
 11_display.rs: 93223907
 12_jasper.rs: 91136565
 13_heap_visitor.rs: 69875849
-14_serde_err.rs: 2354211238
+14_serde_err.rs: 3209176987
 15_bernoulli.rs: 123197056
 16_lookahead.rs: 72818514
 17_entry.rs: 98115369
