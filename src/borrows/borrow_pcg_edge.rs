@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
@@ -25,24 +27,84 @@ use super::{
     region_projection_member::RegionProjectionMember,
 };
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct BorrowPCGEdgeRef<'tcx, 'graph> {
+    pub(crate) kind: &'graph BorrowPCGEdgeKind<'tcx>,
+    pub(crate) conditions: &'graph PathConditions,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPCGEdge<'tcx> {
-    conditions: PathConditions,
+    pub(crate) conditions: PathConditions,
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGEdge<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        self.kind.check_validity(repacker)
+pub(crate) trait BorrowPCGEdgeLike<'tcx>:
+    EdgeData<'tcx> + Clone
+{
+    fn kind(&self) -> &BorrowPCGEdgeKind<'tcx>;
+    fn conditions(&self) -> &PathConditions;
+    fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
+
+    /// true iff any of the blocked places can be mutated via the blocking places
+    fn is_shared_borrow(&self) -> bool {
+        self.kind().is_shared_borrow()
+    }
+
+    fn blocked_places(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
+        self.blocked_nodes(repacker)
+            .into_iter()
+            .flat_map(|node| node.as_place())
+            .collect()
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdge<'tcx> {
+impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
+    fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
+        &self.kind
+    }
+
+    fn conditions(&self) -> &PathConditions {
+        &self.conditions
+    }
+
+    fn to_owned_edge(self) -> BorrowPCGEdge<'tcx> {
+        self
+    }
+}
+
+impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
+    fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
+        &self.kind
+    }
+
+    fn conditions(&self) -> &PathConditions {
+        &self.conditions
+    }
+
+    fn to_owned_edge(self) -> BorrowPCGEdge<'tcx> {
+        BorrowPCGEdge {
+            conditions: self.conditions.clone(),
+            kind: self.kind.clone(),
+        }
+    }
+}
+
+impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.kind().check_validity(repacker)
+    }
+}
+
+impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithRepacker<'tcx> for T {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "{} under conditions {}",
-            self.kind.to_short_string(repacker),
-            self.conditions
+            self.kind().to_short_string(repacker),
+            self.conditions()
         )
     }
 }
@@ -170,8 +232,12 @@ impl<'tcx, T: std::fmt::Display> std::fmt::Display for PCGNode<'tcx, T> {
     }
 }
 
-impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> for PCGNode<'tcx, T> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> {
+impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>>
+    for PCGNode<'tcx, T>
+{
+    fn pcs_elems(
+        &mut self,
+    ) -> Vec<&mut RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> {
         match self {
             PCGNode::Place(_) => vec![],
             PCGNode::RegionProjection(rp) => vec![rp],
@@ -293,9 +359,11 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 }
 
 impl<'tcx> BorrowPCGEdge<'tcx> {
-    /// true iff any of the blocked places can be mutated via the blocking places
-    pub(crate) fn is_shared_borrow(&self) -> bool {
-        self.kind.is_shared_borrow()
+    pub(crate) fn as_ref<'slf>(&'slf self) -> BorrowPCGEdgeRef<'tcx, 'slf> {
+        BorrowPCGEdgeRef {
+            kind: &self.kind,
+            conditions: &self.conditions,
+        }
     }
 
     pub fn insert_path_condition(&mut self, pc: PathCondition) -> bool {
@@ -317,33 +385,19 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
     pub(crate) fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
         Self { conditions, kind }
     }
-
-    pub fn blocked_places(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.blocked_nodes(repacker)
-            .into_iter()
-            .flat_map(|node| node.as_place())
-            .collect()
-    }
-
-    pub fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.blocked_nodes(repacker).contains(&node)
-    }
 }
 
-impl<'tcx> EdgeData<'tcx> for BorrowPCGEdge<'tcx> {
+impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
-        self.kind.blocked_by_nodes(repacker)
+        self.kind().blocked_by_nodes(repacker)
     }
 
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
-        self.kind.blocked_nodes(repacker)
+        self.kind().blocked_nodes(repacker)
     }
 
     fn is_owned_expansion(&self) -> bool {
-        self.kind.is_owned_expansion()
+        self.kind().is_owned_expansion()
     }
 }
 

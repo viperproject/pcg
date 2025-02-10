@@ -4,8 +4,7 @@ use tracing::instrument;
 
 use crate::{
     borrows::{
-        region_projection::MaybeRemoteRegionProjectionBase,
-        region_projection_member::RegionProjectionMemberKind,
+        borrow_pcg_edge::BorrowPCGEdgeLike, region_projection::MaybeRemoteRegionProjectionBase, region_projection_member::RegionProjectionMemberKind
     },
     combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
@@ -26,6 +25,7 @@ use crate::{
         },
     },
     utils::Place,
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use crate::{
@@ -408,6 +408,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 .states
                                 .post_main
                                 .edges_blocked_by((*rp).into(), self.repacker)
+                                .into_iter()
+                                .map(|e| e.to_owned_edge())
+                                .collect::<Vec<_>>()
                             {
                                 let edge_region_projections: Vec<
                                     &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -469,6 +472,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) {
+        if self
+            .domain
+            .post_state()
+            .graph()
+            .has_function_call_abstraction_at(location)
+        {
+            return;
+        }
         let (func_def_id, substs) = if let Operand::Constant(box c) = func
             && let Const::Val(_, ty) = c.const_
             && let ty::TyKind::FnDef(def_id, substs) = ty.kind()
@@ -514,11 +525,30 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     );
                     for output in output_borrow_projections {
                         let input_rp = input_place.region_projection(0, self.repacker);
-                        for action in UnblockGraph::actions_to_unblock(
+                        let actions = UnblockGraph::actions_to_unblock(
                             input_rp.into(),
                             &self.domain.post_state(),
                             self.repacker,
-                        ) {
+                        )
+                        .unwrap_or_else(|e| {
+                            if let Ok(dot_graph) = generate_borrows_dot_graph(
+                                self.repacker,
+                                self.domain.states.post_main.graph(),
+                            ) {
+                                DotGraph::render_with_imgcat(
+                                    &dot_graph,
+                                    "Borrows graph for unblock actions",
+                                )
+                                .unwrap_or_else(|e| {
+                                    eprintln!("Error rendering borrows graph: {}", e);
+                                });
+                            }
+                            panic!(
+                                "Error getting unblock actions to unblock {:?} for function call at {:?}: {:?}",
+                                input_rp, location, e
+                            );
+                        });
+                        for action in actions {
                             self.apply_action(BorrowPCGAction::remove_edge(
                                 action.edge,
                                 "For Function Call Abstraction",

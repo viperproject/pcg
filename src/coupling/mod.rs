@@ -96,7 +96,8 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
     }
 
     /// Merges the nodes at `old_idx` and `new_idx`.
-    /// IMPORTANT: This will invalidate existing node indices
+    ///
+    /// **IMPORTANT**: This will invalidate existing node indices
     pub(crate) fn merge_idxs(
         &mut self,
         new_idx: petgraph::prelude::NodeIndex,
@@ -110,14 +111,13 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             );
         });
         new_idx_weight.merge(old_node_data);
-        let to_add = self
-            .inner
-            .edges_directed(old_idx, Direction::Incoming)
+        let edges_to_old = self.inner.edges_directed(old_idx, Direction::Outgoing);
+        let edges_from_old = self.inner.edges_directed(old_idx, Direction::Incoming);
+        let to_add = edges_to_old
             .filter(|e| e.source() != new_idx)
             .map(|e| (e.source(), new_idx))
             .chain(
-                self.inner
-                    .edges_directed(old_idx, Direction::Outgoing)
+                edges_from_old
                     .filter(|e| e.target() != new_idx)
                     .map(|e| (new_idx, e.target())),
             );
@@ -125,9 +125,11 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             self.inner.update_edge(source, target, ());
         }
         assert!(self.inner.remove_node(old_idx).is_some());
-        debug_assert!(self.is_acyclic(), "Graph contains cycles after merging");
     }
 
+    /// Joins the nodes in `nodes` into a single coupled node.
+    ///
+    /// **IMPORTANT**: This will invalidate existing node indices
     fn join_nodes(&mut self, nodes: &Coupled<N>) -> petgraph::prelude::NodeIndex {
         let mut iter = nodes.iter().cloned();
         let first_elem = iter.next().unwrap();
@@ -167,18 +169,20 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         #[cfg(debug_assertions)]
         let old_graph = self.clone(); // For debugging
 
-        let sccs = petgraph::algo::kosaraju_scc(&self.inner);
-        for scc in sccs {
-            let first = scc[0];
-            if scc.len() > 1 {
-                // Merge all nodes in the SCC into the first node
-                for other in &scc[1..] {
-                    self.merge_idxs(first, *other);
+        'outer: loop {
+            let sccs = petgraph::algo::kosaraju_scc(&self.inner);
+            for scc in sccs {
+                if scc.len() > 1 {
+                    self.merge_idxs(scc[0], scc[1]);
+                    // We need to recompute sccs because node indices may have changed
+                    continue 'outer;
+                } else {
+                    if let Some(edge_idx) = self.inner.find_edge(scc[0], scc[0]) {
+                        self.inner.remove_edge(edge_idx);
+                    }
                 }
             }
-            if let Some(edge) = self.inner.find_edge(first, first) {
-                self.inner.remove_edge(edge);
-            }
+            break;
         }
 
         #[cfg(debug_assertions)]
@@ -224,6 +228,10 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
 
     pub(crate) fn add_edge(&mut self, from: &Coupled<N>, to: &Coupled<N>) {
         debug_assert!(
+            self.is_acyclic(),
+            "Graph contains cycles before adding edge"
+        );
+        debug_assert!(
             from != to,
             "Self-loop edge {}",
             from.iter()
@@ -234,12 +242,29 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         if from.is_empty() {
             assert!(!to.is_empty());
             self.join_nodes(to);
+            debug_assert!(
+                self.is_acyclic(),
+                "Graph contains cycles after joining to nodes (from nodes empty)"
+            );
         } else if to.is_empty() {
             assert!(!from.is_empty());
             self.join_nodes(from);
+            debug_assert!(
+                self.is_acyclic(),
+                "Graph contains cycles after joining from nodes (to nodes empty)"
+            );
         } else {
-            let from_idx = self.join_nodes(from);
+            self.join_nodes(from);
+            debug_assert!(
+                self.is_acyclic(),
+                "Graph contains cycles after joining from nodes"
+            );
             let to_idx = self.join_nodes(to);
+            debug_assert!(
+                self.is_acyclic(),
+                "Graph contains cycles after joining to nodes"
+            );
+            let from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
             self.inner.update_edge(from_idx, to_idx, ());
         }
         self.merge_sccs();

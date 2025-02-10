@@ -1,4 +1,5 @@
-use super::display::{DebugLines, DisplayDiff};
+use super::{display::{DebugLines, DisplayDiff}, PlaceRepacker};
+use crate::rustc_interface::middle::mir;
 
 /// `JoinLatticeVerifier` is used to detect correctness violations of the `join`
 /// operation on a domain of type `T`, based on recorded join computations.
@@ -6,15 +7,15 @@ use super::display::{DebugLines, DisplayDiff};
 /// Currently, the verifier can detect certain cases when the invariants
 /// `join(a, b) ≤ a` and `join(a, b) ≤ b` are violated. This is checked by
 /// storing elements of `T` in a graph, where, for all recorded computations of
-/// the form `join(a, b) = c`, there is an edge `a` -> `c` if `a != c` and there
-/// is an edge `b` -> `c` if `b != c`.  If the join operation is implemented
+/// the form `join(a, b) = c`, there is an edge `a` -> `c` with weight `b` if `a != c` and there
+/// is an edge `b` -> `c` with weight `a` if `b != c`.  If the join operation is implemented
 /// correctly, then if an edge `a` can reach a distinct edge `b`, then a < b.
 /// Conversely, if the graph forms a cycle, the join operation is not implemented
 /// correctly, with the cycle being a counterexample.
 #[derive(Debug, Clone)]
 pub(crate) struct JoinLatticeVerifier<T> {
     #[allow(dead_code)]
-    graph: petgraph::Graph<T, ()>,
+    graph: petgraph::Graph<T, T>,
 }
 
 #[allow(unused)]
@@ -22,6 +23,10 @@ pub(crate) struct JoinComputation<T> {
     pub(crate) lhs: T,
     pub(crate) rhs: T,
     pub(crate) result: T,
+}
+
+pub(crate) trait HasBlock {
+    fn block(&self) -> mir::BasicBlock;
 }
 
 impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
@@ -32,21 +37,26 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn record_join_result<U: Copy>(&mut self, computation: JoinComputation<T>, ctxt: U)
-    where
-        T: DebugLines<U>,
+    pub(crate) fn record_join_result<'mir, 'tcx>(
+        &mut self,
+        computation: JoinComputation<T>,
+        ctxt: PlaceRepacker<'mir, 'tcx>,
+    ) where
+        T: DebugLines<PlaceRepacker<'mir, 'tcx>> + HasBlock,
     {
         // Add nodes if they don't exist
         let lhs_idx = self.get_or_add_node(computation.lhs.clone());
         let rhs_idx = self.get_or_add_node(computation.rhs.clone());
         let result_idx = self.get_or_add_node(computation.result.clone());
 
-        // Add edges from inputs to result
+        // Add edges from inputs to result with weights being the other operand
         if lhs_idx != result_idx {
-            self.graph.add_edge(lhs_idx, result_idx, ());
+            self.graph
+                .add_edge(lhs_idx, result_idx, computation.rhs.clone());
         }
         if rhs_idx != result_idx {
-            self.graph.add_edge(rhs_idx, result_idx, ());
+            self.graph
+                .add_edge(rhs_idx, result_idx, computation.lhs.clone());
         }
 
         // Verify acyclicity
@@ -58,14 +68,16 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
             let mut visited = HashSet::new();
             let mut stack = vec![];
             let mut on_stack = HashSet::new();
+            let mut edge_stack = vec![];
 
             fn dfs<T: Clone + PartialEq + std::fmt::Debug>(
-                graph: &petgraph::Graph<T, ()>,
+                graph: &petgraph::Graph<T, T>,
                 node: petgraph::graph::NodeIndex,
                 visited: &mut HashSet<petgraph::graph::NodeIndex>,
                 stack: &mut Vec<petgraph::graph::NodeIndex>,
+                edge_stack: &mut Vec<T>,
                 on_stack: &mut HashSet<petgraph::graph::NodeIndex>,
-            ) -> Option<Vec<(petgraph::graph::NodeIndex, T)>> {
+            ) -> Option<(Vec<(petgraph::graph::NodeIndex, T)>, Vec<T>)> {
                 if on_stack.contains(&node) {
                     // Found cycle. Collect nodes from the cycle
                     let cycle_start_idx = stack.iter().position(|&x| x == node).unwrap();
@@ -73,7 +85,8 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
                         .iter()
                         .map(|&idx| (idx, graph[idx].clone()))
                         .collect();
-                    return Some(cycle);
+                    let weights = edge_stack[cycle_start_idx..].to_vec();
+                    return Some((cycle, weights));
                 }
 
                 if visited.contains(&node) {
@@ -85,9 +98,16 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
                 stack.push(node);
 
                 for neighbor in graph.neighbors(node) {
-                    if let Some(cycle) = dfs(graph, neighbor, visited, stack, on_stack) {
+                    let edge_weight = graph
+                        .edge_weight(graph.find_edge(node, neighbor).unwrap())
+                        .unwrap()
+                        .clone();
+                    edge_stack.push(edge_weight);
+                    if let Some(cycle) = dfs(graph, neighbor, visited, stack, edge_stack, on_stack)
+                    {
                         return Some(cycle);
                     }
+                    edge_stack.pop();
                 }
 
                 stack.pop();
@@ -95,67 +115,88 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
                 None
             }
 
-            if let Some(cycle) = dfs(&self.graph, start, &mut visited, &mut stack, &mut on_stack) {
+            if let Some((cycle, weights)) = dfs(
+                &self.graph,
+                start,
+                &mut visited,
+                &mut stack,
+                &mut edge_stack,
+                &mut on_stack,
+            ) {
                 eprintln!(
                     "The `join` implementation is not correct for type {}.
                     Either join(a, b) ⊑ a or join(a, b) ⊑ b is not satisfied.
                     Namely, there is a cycle in the subgraph of recorded join computations.
-                    For more information see the documentation of JoinLatticeVerifier.`
-                    The counterexample cycle is:",
+                    For more information see the documentation of JoinLatticeVerifier.",
                     std::any::type_name::<T>()
                 );
-                for (i, (idx, elem)) in cycle.iter().enumerate() {
-                    eprintln!("Node #{} (index: {:?})", i, idx);
-                    for line in elem.debug_lines(ctxt) {
-                        eprintln!("{}", line);
-                    }
-                    eprintln!("---");
-                }
-                eprintln!("Node diffs:");
+
+                let block = cycle[0].1.block();
+
+                eprintln!("The violation is in block {:?}", block);
+
+                // Print the join sequence that led to the cycle
                 for i in 0..cycle.len() {
-                    let (_, curr) = &cycle[i];
-                    let (_, next) = &cycle[(i + 1) % cycle.len()];
-                    eprintln!("{}\n---\n", curr.fmt_diff(next, ctxt));
+                    assert_eq!(cycle[i].1.block(), block);
+                    let other_block = weights[i].block();
+                    eprintln!("Join #{}: {:?} {}", i, other_block, if ctxt.is_back_edge(other_block, block) {
+                        " (backedge)"
+                    } else {
+                        ""
+                    });
                 }
 
-                // Print the entire graph structure
-                eprintln!("\nComplete Graph Structure:");
-                eprintln!("Nodes:");
-                for node_idx in self.graph.node_indices() {
-                    eprintln!("Node {:?}", node_idx);
-                    for line in self.graph[node_idx].debug_lines(ctxt) {
-                        eprintln!("  {}", line);
-                    }
-                    eprintln!();
+                eprintln!("{:?} initial state:", block,);
+                for line in cycle[0].1.debug_lines(ctxt) {
+                    eprintln!("  {}", line);
                 }
-                eprintln!("\nEdges:");
-                for edge in self.graph.edge_indices() {
-                    let (source, target) = self.graph.edge_endpoints(edge).unwrap();
-                    eprintln!("{:?} -> {:?}", source, target);
+                for i in 1..cycle.len() + 1 {
+                    let prev_state = &cycle[i - 1].1;
+                    let prev_other_state = &weights[i - 1];
+                    let next_state = &cycle[i % cycle.len()].1;
+                    eprintln!(
+                        "Joined with block {:?}, with the following diff vs {:?}",
+                        prev_other_state.block(),
+                        block
+                    );
+                    eprintln!("{}", prev_state.fmt_diff(prev_other_state, ctxt));
+
+                    eprintln!(
+                        "The result diff vs {:?} was:\n {}",
+                        block,
+                        prev_state.fmt_diff(next_state, ctxt)
+                    );
+
+                    // eprintln!("With resulting state:");
+                    // for line in next_state.debug_lines(ctxt) {
+                    //     eprintln!("  {}", line);
+                    // }
                 }
+                // eprintln!("Node diffs:");
+                // for i in 0..cycle.len() {
+                //     let (_, curr) = &cycle[i];
+                //     let (_, next) = &cycle[(i + 1) % cycle.len()];
+                //     eprintln!("{}\n---\n", curr.fmt_diff(next, ctxt));
+                // }
+
+                // // Print the entire graph structure
+                // eprintln!("\nComplete Graph Structure:");
+                // eprintln!("Nodes:");
+                // for node_idx in self.graph.node_indices() {
+                //     eprintln!("Node {:?}", node_idx);
+                //     for line in self.graph[node_idx].debug_lines(ctxt) {
+                //         eprintln!("  {}", line);
+                //     }
+                //     eprintln!();
+                // }
+                // eprintln!("\nEdges:");
+                // for edge in self.graph.edge_indices() {
+                //     let (source, target) = self.graph.edge_endpoints(edge).unwrap();
+                //     let weight = self.graph.edge_weight(edge).unwrap();
+                //     eprintln!("{:?} -[{:?}]-> {:?}", source, weight, target);
+                // }
 
                 panic!("Join lattice must be acyclic.");
-            }
-        }
-
-        // Verify join property: if there exists a node R with edges from both lhs and rhs, it must be equal to result
-        for node_idx in self.graph.node_indices() {
-            let has_lhs_edge = self
-                .graph
-                .edges_connecting(lhs_idx, node_idx)
-                .next()
-                .is_some();
-            let has_rhs_edge = self
-                .graph
-                .edges_connecting(rhs_idx, node_idx)
-                .next()
-                .is_some();
-
-            if has_lhs_edge && has_rhs_edge {
-                assert_eq!(
-                    self.graph[node_idx], computation.result,
-                    "Node with edges from both join inputs must equal join result"
-                );
             }
         }
     }

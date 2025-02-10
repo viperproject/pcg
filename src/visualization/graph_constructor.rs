@@ -1,6 +1,6 @@
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode},
+        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, BorrowPCGEdgeLike, LocalNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
@@ -284,7 +284,7 @@ impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
 
     pub fn construct_graph(mut self) -> Graph {
         for edge in self.unblock_graph.edges().cloned().collect::<Vec<_>>() {
-            self.draw_borrow_pcg_edge(&edge, &NullCapabilityGetter);
+            self.draw_borrow_pcg_edge(edge, &NullCapabilityGetter);
         }
         self.constructor.to_graph()
     }
@@ -351,7 +351,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
     fn draw_borrow_pcg_edge(
         &mut self,
-        edge: &BorrowPCGEdge<'tcx>,
+        edge: impl BorrowPCGEdgeLike<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
     ) {
         match edge.kind() {
@@ -441,7 +441,7 @@ impl<'a, 'tcx> BorrowsGraphConstructor<'a, 'tcx> {
 
     pub fn construct_graph(mut self) -> Graph {
         for edge in self.borrows_graph.edges() {
-            self.draw_borrow_pcg_edge(&edge, &NullCapabilityGetter);
+            self.draw_borrow_pcg_edge(edge, &NullCapabilityGetter);
         }
         self.constructor.to_graph()
     }
@@ -616,7 +616,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             }
         }
         for edge in self.borrows_domain.graph_edges() {
-            self.draw_borrow_pcg_edge(&edge, &self.capability_getter());
+            self.draw_borrow_pcg_edge(edge, &self.capability_getter());
         }
 
         self.constructor.to_graph()

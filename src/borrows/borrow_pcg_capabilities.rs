@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::CapabilityKind,
-    utils::{display::{DebugLines, DisplayWithRepacker}, PlaceRepacker},
+    utils::{
+        display::{DebugLines, DisplayWithRepacker},
+        PlaceRepacker,
+    },
 };
 
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
