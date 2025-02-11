@@ -479,7 +479,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect();
 
         // Create new abstraction edges from the merged coupling graph
-        let mut new_edges = FxHashSet::default();
         let mut changed = false;
 
         // Borrow PCG edges originally going through individual region projection
@@ -550,7 +549,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self_block,
             )
             .to_borrow_pcg_edge(PathConditions::new(self_block));
-            new_edges.insert(abstraction.clone());
 
             if !existing_edges.contains(&abstraction) {
                 let inserted = self.insert(abstraction);
@@ -558,41 +556,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        // Remove existing edges that aren't in the new abstraction
-        for edge in existing_edges {
-            if !new_edges.contains(&edge) {
-                self.remove(&edge);
-                changed = true;
-            }
-        }
-
         // Edges that only connect nodes within the region abstraction (but are
         // not the abstraction edge itself), should be removed
-        let edges = self
+        let encapsulated_edges = self
             .edges()
             .map(|edge| edge.to_owned_edge())
-            .filter(|edge| !new_edges.contains(&edge))
-            .collect::<Vec<_>>();
-        for edge in edges {
-            if self.is_encapsulated_by_abstraction(&edge, repacker) {
-                self.remove(&edge);
-                changed = true;
-            }
-        }
-
-        // The process may result interior (old) places now being roots in the
-        // graph. These should be removed.
-        for root in self.roots(repacker) {
-            if root.is_old() {
-                for edge in self
-                    .edges_blocking(root, repacker)
-                    .map(|edge| edge.to_owned_edge())
-                    .collect::<Vec<_>>()
+            .filter(|edge| {
+                if let BorrowPCGEdgeKind::Abstraction(AbstractionType::Loop(loop_abstraction)) =
+                    edge.kind()
                 {
-                    self.remove(&edge);
-                    changed = true;
+                    if loop_abstraction.block == self_block {
+                        return false;
+                    }
                 }
-            }
+                self.is_encapsulated_by_abstraction(edge, repacker)
+            })
+            .collect::<Vec<_>>();
+
+        for edge in encapsulated_edges {
+            self.remove(&edge);
+            changed = true;
         }
 
         changed
@@ -638,6 +621,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // }
         let old_self = self.clone();
 
+        #[allow(unused)]
         let other_frozen = other.frozen_graph();
 
         if borrows_imgcat_debug() {
@@ -663,27 +647,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let _guard = span.enter();
 
         if repacker.is_back_edge(other_block, self_block) {
-            let exit_blocks = repacker.get_loop_exit_blocks(self_block, other_block);
-            if exit_blocks.len() >= 1 {
-                let result = self.join_loop(other, self_block, other_block, repacker, bc);
-                if borrows_imgcat_debug() {
-                    if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                        DotGraph::render_with_imgcat(
-                            &dot_graph,
-                            &format!("After join (loop, changed={:?}):", result),
-                        )
-                        .unwrap_or_else(|e| {
-                            eprintln!("Error rendering self graph: {}", e);
-                        });
-                    }
+            let result = self.join_loop(other, self_block, other_block, repacker, bc);
+            if borrows_imgcat_debug() {
+                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                    DotGraph::render_with_imgcat(
+                        &dot_graph,
+                        &format!("After join (loop, changed={:?}):", result),
+                    )
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error rendering self graph: {}", e);
+                    });
                 }
-                // For performance reasons we don't check validity here.
-                // if validity_checks_enabled() {
-                //     assert!(self.is_valid(repacker), "Graph became invalid after join");
-                // }
-                return *self != old_self;
             }
-            // TODO: Handle multiple exit blocks
+            // For performance reasons we don't check validity here.
+            // if validity_checks_enabled() {
+            //     assert!(self.is_valid(repacker), "Graph became invalid after join");
+            // }
+            return *self != old_self;
         }
         for other_edge in other.edges() {
             self.insert(other_edge.to_owned_edge());

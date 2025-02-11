@@ -1,6 +1,6 @@
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, BorrowPCGEdgeLike, LocalNode},
+        borrow_pcg_edge::{BorrowPCGEdgeKind, BorrowPCGEdgeLike, LocalNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
@@ -10,7 +10,6 @@ use crate::{
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
-    rustc_interface::{self},
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
@@ -23,7 +22,7 @@ use std::{
     ops::Deref,
 };
 
-use rustc_interface::middle::ty::{self, TyCtxt};
+use crate::rustc_interface::middle::ty::{self, TyCtxt};
 
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 

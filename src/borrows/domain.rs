@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 use derive_more::From;
 use itertools::Itertools;
@@ -23,7 +23,7 @@ use crate::{
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
     pub(crate) edge: AbstractionBlockEdge<'tcx>,
-    block: BasicBlock,
+    pub(crate) block: BasicBlock,
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
