@@ -578,6 +578,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
             changed = true;
         }
 
+        // The process may result interior (old) places now being roots in the
+        // graph. These should be removed.
+        for root in self.roots(repacker) {
+            if root.is_old() {
+                for edge in self
+                    .edges_blocking(root, repacker)
+                    .map(|edge| edge.to_owned_edge())
+                    .collect::<Vec<_>>()
+                {
+                    self.remove(&edge);
+                    changed = true;
+                }
+            }
+        }
+
         changed
     }
 

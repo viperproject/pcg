@@ -10,7 +10,7 @@ use tracing_subscriber;
 
 use pcs::rustc_interface::{
     borrowck::consumers,
-    data_structures::fx::FxHashMap,
+    data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config, Queries},
@@ -140,18 +140,32 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                             if let Ok(source) =
                                 tcx.sess.source_map().span_to_snippet(body.body.span)
                             {
+                                let debug_lines_set: FxHashSet<_> = debug_lines.iter().collect();
                                 let expected_annotations = source
                                     .lines()
                                     .flat_map(|l| l.split("// PCG: ").nth(1))
                                     .map(|l| l.trim())
                                     .collect::<Vec<_>>();
-                                if !expected_annotations.is_empty() {
-                                    let missing_annotations = expected_annotations
-                                        .iter()
-                                        .filter(|a| !debug_lines.contains(&a.to_string()))
-                                        .collect::<Vec<_>>();
-                                    if !missing_annotations.is_empty() {
-                                        panic!("Missing annotations: {:?}", missing_annotations);
+                                let not_expected_annotations = source
+                                    .lines()
+                                    .flat_map(|l| l.split("// ~PCG: ").nth(1))
+                                    .map(|l| l.trim())
+                                    .collect::<Vec<_>>();
+                                let missing_annotations = expected_annotations
+                                    .iter()
+                                    .filter(|a| !debug_lines_set.contains(&a.to_string()))
+                                    .collect::<Vec<_>>();
+                                if !missing_annotations.is_empty() {
+                                    panic!("Missing annotations: {:?}", missing_annotations);
+                                }
+                                for not_expected_annotation in not_expected_annotations {
+                                    if debug_lines_set
+                                        .contains(&not_expected_annotation.to_string())
+                                    {
+                                        panic!(
+                                            "Unexpected annotation: {}",
+                                            not_expected_annotation
+                                        );
                                     }
                                 }
                             } else {
