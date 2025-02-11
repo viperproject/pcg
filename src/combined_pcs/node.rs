@@ -16,6 +16,15 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
     RegionProjection(RegionProjection<'tcx, U>),
 }
 
+impl<'tcx> PCGNode<'tcx> {
+    pub(crate) fn is_old(&self) -> bool {
+        match self {
+            PCGNode::Place(p) => p.is_old(),
+            PCGNode::RegionProjection(rp) => rp.base().is_old(),
+        }
+    }
+}
+
 impl<'tcx, T, U> From<T> for PCGNode<'tcx, T, U> {
     fn from(value: T) -> Self {
         PCGNode::Place(value)

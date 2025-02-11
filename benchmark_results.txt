@@ -6,12 +6,12 @@
 06_cursor.rs: 104715377
 07_fmt.rs: 321894030
 08_parse_parens.rs: 79103281
-09_punct.rs: 406555004
+09_punct.rs: 829551469
 10_members.rs: 77289675
 11_display.rs: 93223907
 12_jasper.rs: 91136565
 13_heap_visitor.rs: 69875849
-14_serde_err.rs: 3209176987
+14_serde_err.rs: 29800905506
 15_bernoulli.rs: 123197056
 16_lookahead.rs: 72818514
 17_entry.rs: 98115369
@@ -41,3 +41,4 @@
 41_itertools_k_smallest.rs: 298975709
 42_dfa_dense.rs: 12958626349
 43_der_length.rs: 136203285
+44_rand_weighted_index.rs: 19355224358
