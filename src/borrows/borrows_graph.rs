@@ -10,7 +10,7 @@ use crate::{
         middle::mir::{self, BasicBlock, TerminatorEdges},
     },
     utils::{
-        display::{DebugLines, DisplayWithRepacker},
+        display::{DebugLines, DisplayDiff, DisplayWithRepacker},
         validity::HasValidityCheck,
     },
 };
@@ -461,22 +461,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
             result.render_with_imgcat("merged coupling graph");
         }
 
+        let is_loop_abstraction_for_this_block = |edge: BorrowPCGEdgeRef<'_, '_>| {
+            if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
+                if let AbstractionType::Loop(loop_abstraction) = &abstraction_edge {
+                    return loop_abstraction.location().block == self_block;
+                }
+            }
+            false
+        };
+
         // Collect existing loop abstraction edges at this block
         let existing_edges: FxHashSet<_> = self
             .edges()
-            .filter(|edge| {
-                if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
-                    if let AbstractionType::Loop(loop_abstraction) = &abstraction_edge {
-                        loop_abstraction.location().block == self_block
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            })
+            .filter(|edge| is_loop_abstraction_for_this_block(*edge))
             .map(|edge| edge.to_owned_edge())
             .collect();
+
+        let old_self = self.clone();
 
         // Create new abstraction edges from the merged coupling graph
         let mut changed = false;
@@ -508,6 +509,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
             let in_rps = |p: PCGNode<'tcx>| rps.iter().any(|rp| (*rp).to_pcg_node() == p);
             for edge in edges_to_move {
+                if is_loop_abstraction_for_this_block(edge.as_ref()) {
+                    continue;
+                }
                 for node in edge.blocked_nodes(repacker) {
                     // If this blocked node is in the endpoint, no edge should
                     // be added (otherwise it would just connect the endpoint to
@@ -634,6 +638,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // if validity_checks_enabled() {
         //     debug_assert!(other.is_valid(repacker), "Other graph is invalid");
         // }
+        #[allow(unused)]
         let old_self = self.clone();
 
         #[allow(unused)]
