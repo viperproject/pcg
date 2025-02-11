@@ -743,9 +743,9 @@ impl<'tcx> BorrowsState<'tcx> {
     /// arguments. At least for now this interferes with the implementation in
     /// the Prusti purified encoding for accessing the final value of a
     /// reference-typed function argument in its postcondition.
-    pub(super) fn pack_old_and_dead_leaves(
-        &mut self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+    pub(super) fn pack_old_and_dead_leaves<'slf, 'mir>(
+        &'slf mut self,
+        repacker: PlaceRepacker<'mir, 'tcx>,
         location: Location,
         bc: &impl BorrowCheckerInterface<'tcx>,
     ) -> ExecutedActions<'tcx> {
@@ -758,7 +758,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 statement_index: location.statement_index - 1,
             })
         };
-        let should_trim = |p: LocalNode<'tcx>, g: &BorrowsGraph<'tcx>| {
+        let should_trim = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'tcx, 'tcx>| {
             if p.is_old() {
                 return true;
             }
@@ -771,39 +771,39 @@ impl<'tcx> BorrowsState<'tcx> {
                 return false;
             }
 
-            if !place.projection.is_empty() && !g.has_edge_blocking(place, repacker) {
+            if !place.projection.is_empty() && !fg.has_edge_blocking(place.into(), repacker) {
                 return true;
             }
 
             prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
         };
-        loop {
-            let mut cont = false;
-            let edges = self
-                .graph
-                .leaf_edges(repacker, None)
+        let mut num_edges_prev = self.graph.num_edges();
+        'outer: loop {
+            let fg: FrozenGraphRef<'tcx, 'tcx> = unsafe {
+                // SAFETY: `self.graph` is only modified during `remove_edge_and_set_latest`,
+                // at which point `fg` is no longer live.
+                self.graph.frozen_graph_unsafe()
+            };
+            for edge in fg
+                .leaf_edges(repacker)
                 .into_iter()
                 .map(|e| e.to_owned_edge())
-                .collect::<Vec<_>>();
-            for edge in edges {
+            {
                 let blocked_by_nodes = edge.blocked_by_nodes(repacker);
-                if blocked_by_nodes
-                    .iter()
-                    .all(|p| should_trim(*p, &self.graph))
-                {
+                if blocked_by_nodes.iter().all(|p| should_trim(*p, &fg)) {
                     actions.extend(self.remove_edge_and_set_latest(
                         edge,
                         location,
                         repacker,
                         &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
                     ));
-                    cont = true;
+                    let curr_num_edges = self.graph.num_edges();
+                    assert!(curr_num_edges < num_edges_prev);
+                    num_edges_prev = curr_num_edges;
+                    continue 'outer;
                 }
-                // }
             }
-            if !cont {
-                break actions;
-            }
+            return actions;
         }
     }
 

@@ -307,7 +307,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     /// The number of times the join operation has been called, this is just
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
-    debug_join_iteration: usize,
+    pub(crate) debug_join_iteration: usize,
     error: Option<PCGError>,
 }
 
