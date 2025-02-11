@@ -684,6 +684,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(join_iteration = ?self.domain.debug_join_iteration))]
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if self.preparing && self.stage == StatementStage::Operands {
             let post_state = &mut self.domain.states.post_main;
@@ -718,6 +719,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(join_iteration = ?self.domain.debug_join_iteration))]
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
         self.debug_ctx = Some(DebugCtx::new(location));
 
