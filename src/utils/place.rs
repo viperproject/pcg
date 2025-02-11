@@ -16,14 +16,12 @@ use derive_more::{Deref, DerefMut};
 use crate::rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHasher,
-    hir::def_id::CrateNum,
     index::IndexVec,
     middle::{
-        mir::{self, Body, Const, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
+        mir::{self, Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
         ty::{self, Ty, TyCtxt, TyKind},
     },
-    span::{def_id::DefIndex, Symbol},
-    target::abi::{FieldIdx, VariantIdx},
+    target::abi::VariantIdx,
 };
 
 use crate::{

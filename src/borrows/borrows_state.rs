@@ -14,7 +14,7 @@ use crate::{
     },
     utils::{
         display::DebugLines,
-        join_lattice_verifier::{HasBlock, JoinComputation, JoinLatticeVerifier},
+        join_lattice_verifier::{HasBlock, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
     },
@@ -115,6 +115,7 @@ pub struct BorrowsState<'tcx> {
     graph: BorrowsGraph<'tcx>,
     capabilities: BorrowPCGCapabilities<'tcx>,
     #[cfg(debug_assertions)]
+    #[allow(dead_code)]
     join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
 }
 
@@ -280,6 +281,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // if validity_checks_enabled() {
         //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
         // }
+        #[allow(unused)]
         let old = self.clone();
         let mut changed = false;
         if self
@@ -298,17 +300,17 @@ impl<'tcx> BorrowsState<'tcx> {
             changed = true;
         }
         // // These checks are disabled even for debugging currently because they are very expensive
-        if changed && cfg!(debug_assertions) {
-            debug_assert_ne!(*self, old);
-            self.join_transitions.record_join_result(
-                JoinComputation {
-                    lhs: old.join_transition_elem(self_block),
-                    rhs: other.clone().join_transition_elem(other_block),
-                    result: self.clone().join_transition_elem(self_block),
-                },
-                repacker,
-            );
-        }
+        // if changed && cfg!(debug_assertions) {
+        //     debug_assert_ne!(*self, old);
+        //     self.join_transitions.record_join_result(
+        //         JoinComputation {
+        //             lhs: old.join_transition_elem(self_block),
+        //             rhs: other.clone().join_transition_elem(other_block),
+        //             result: self.clone().join_transition_elem(self_block),
+        //         },
+        //         repacker,
+        //     );
+        // }
         changed
     }
 

@@ -59,8 +59,6 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
                 .add_edge(rhs_idx, result_idx, computation.lhs.clone());
         }
 
-        // Verify acyclicity
-        use petgraph::visit::{DfsPostOrder, Walker};
         use std::collections::HashSet;
 
         // For each node, try to find a cycle starting from it

@@ -274,12 +274,6 @@ impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn is_old(&self) -> bool {
-        match self {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(region_projection) => region_projection.place().is_old(),
-        }
-    }
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         match self {
             PCGNode::Place(rp) => rp.mutability(repacker),

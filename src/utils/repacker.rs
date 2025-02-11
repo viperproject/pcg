@@ -4,15 +4,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::collections::HashSet;
-
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     dataflow::storage,
     index::{bit_set::BitSet, Idx},
     middle::{
         mir::{
-            self, tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
+            tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
             Place as MirPlace, PlaceElem, ProjectionElem,
         },
         ty::{Region, Ty, TyCtxt, TyKind},
@@ -83,71 +81,6 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
                 .terminator()
                 .successors()
                 .any(|s| s == to)
-    }
-
-    /// Computes all the blocks in the loop given a back edge from `back_edge_source` to `loop_header`.
-    fn compute_loop_blocks(
-        &self,
-        loop_header: BasicBlock,
-        back_edge_source: BasicBlock,
-    ) -> BitSet<BasicBlock> {
-        let mut loop_blocks = BitSet::new_empty(self.mir.basic_blocks.len());
-
-        // Stack for reverse DFS traversal
-        let mut stack = vec![back_edge_source];
-
-        while let Some(bb) = stack.pop() {
-            if !loop_blocks.insert(bb) {
-                // Already visited
-                continue;
-            }
-
-            // For each predecessor of `bb`, except the loop header
-            for &pred in self.mir.basic_blocks.predecessors()[bb].iter() {
-                if pred != loop_header {
-                    stack.push(pred);
-                }
-            }
-        }
-
-        // Include the loop header
-        loop_blocks.insert(loop_header);
-
-        loop_blocks
-    }
-
-    /// Finds the exit blocks of the loop.
-    fn find_loop_exit_blocks(&self, loop_blocks: &BitSet<BasicBlock>) -> Vec<BasicBlock> {
-        let mut exit_blocks = HashSet::new();
-
-        for bb in loop_blocks.iter() {
-            let terminator = self.mir.basic_blocks[bb].terminator();
-            let successors = match &terminator.kind {
-                mir::TerminatorKind::Call { target, .. } => vec![target.unwrap()],
-                mir::TerminatorKind::FalseUnwind { real_target, .. } => vec![*real_target],
-                mir::TerminatorKind::FalseEdge { real_target, .. } => vec![*real_target],
-                mir::TerminatorKind::Drop { target, .. } => vec![*target],
-                mir::TerminatorKind::Assert { target, .. } => vec![*target],
-                _ => terminator.successors().into_iter().collect(),
-            };
-            for successor in successors {
-                if !loop_blocks.contains(successor) {
-                    exit_blocks.insert(successor);
-                }
-            }
-        }
-
-        exit_blocks.into_iter().collect()
-    }
-
-    /// Given a back edge from `back_edge_source` to `loop_header`, finds the blocks immediately after the loop.
-    pub(crate) fn get_loop_exit_blocks(
-        &self,
-        loop_header: BasicBlock,
-        back_edge_source: BasicBlock,
-    ) -> Vec<BasicBlock> {
-        let loop_blocks = self.compute_loop_blocks(loop_header, back_edge_source);
-        self.find_loop_exit_blocks(&loop_blocks)
     }
 
     pub fn num_args(self) -> usize {

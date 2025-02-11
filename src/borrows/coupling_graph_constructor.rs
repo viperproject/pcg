@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeSet, HashSet},
+    collections::BTreeSet,
 };
 
 use crate::{
@@ -53,10 +53,6 @@ impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T
 }
 
 impl<T: Clone> Coupled<T> {
-    pub(crate) fn to_vec(&self) -> Vec<T> {
-        self.0.clone()
-    }
-
     pub fn size(&self) -> usize {
         self.0.len()
     }
