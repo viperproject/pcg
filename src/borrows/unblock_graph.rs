@@ -103,6 +103,11 @@ impl<'tcx> UnblockGraph<'tcx> {
         self.edges.retain(|edge| edge.valid_for_path(path));
     }
 
+    /// Returns an ordered list of actions to unblock the edges in the graph.
+    /// This is essentially a topological sort of the edges.
+    ///
+    /// If this method returns an error, it is definitely a bug in the PCG
+    /// implementation and should be reported.
     pub fn actions(
         self,
         repacker: PlaceRepacker<'_, 'tcx>,

@@ -1,6 +1,7 @@
 use crate::{
     borrows::{
-        borrows_graph::validity_checks_enabled, edge_data::EdgeData,
+        borrows_graph::{borrows_imgcat_debug, validity_checks_enabled},
+        edge_data::EdgeData,
         region_projection_member::RegionProjectionMemberKind,
     },
     combined_pcs::{PCGError, PCGNode, PCGNodeLike},
@@ -85,6 +86,7 @@ struct JoinTransitionElem<'tcx> {
     capabilities: BorrowPCGCapabilities<'tcx>,
 }
 
+#[cfg(debug_assertions)]
 impl<'tcx> HasBlock for JoinTransitionElem<'tcx> {
     fn block(&self) -> BasicBlock {
         self.block
@@ -562,11 +564,13 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
         let unblock_actions = ug.actions(repacker).unwrap_or_else(|e| {
-            let dot_graph = generate_borrows_dot_graph(repacker, self.graph()).unwrap();
-            DotGraph::render_with_imgcat(&dot_graph, "Borrows graph for unblock actions")
-                .unwrap_or_else(|e| {
-                    eprintln!("Error rendering borrows graph: {}", e);
-                });
+            if borrows_imgcat_debug() {
+                let dot_graph = generate_borrows_dot_graph(repacker, self.graph()).unwrap();
+                DotGraph::render_with_imgcat(&dot_graph, "Borrows graph for unblock actions")
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error rendering borrows graph: {}", e);
+                    });
+            }
             panic!(
                 "Error when ensuring expansion to {:?} for {:?}: {:?}",
                 place, expansion_reason, e
