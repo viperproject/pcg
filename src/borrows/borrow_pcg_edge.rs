@@ -351,6 +351,13 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 }
 
 impl<'tcx> BorrowPCGEdge<'tcx> {
+    pub(crate) fn as_ref(&self) -> BorrowPCGEdgeRef<'tcx, '_> {
+        BorrowPCGEdgeRef {
+            kind: &self.kind,
+            conditions: &self.conditions,
+        }
+    }
+
     pub fn insert_path_condition(&mut self, pc: PathCondition) -> bool {
         self.conditions.insert(pc)
     }
