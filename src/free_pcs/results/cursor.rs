@@ -7,7 +7,7 @@
 use crate::{
     borrows::{
         borrow_pcg_action::BorrowPCGActionKind,
-        engine::{BorrowsDomain, EvalStmtData},
+        engine::BorrowsDomain,
         latest::Latest,
     },
     combined_pcs::EvalStmtPhase,
@@ -28,6 +28,7 @@ use crate::{
     utils::PlaceRepacker,
     BorrowsBridge,
 };
+use crate::utils::eval_stmt_data::EvalStmtData;
 
 pub trait HasPcg<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;

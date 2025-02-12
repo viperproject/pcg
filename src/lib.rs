@@ -23,7 +23,6 @@ use borrows::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::{validity_checks_enabled, Conditioned},
     borrows_visitor::BorrowPCGActions,
-    engine::EvalStmtData,
     latest::Latest,
     path_condition::PathConditions,
     region_projection_member::RegionProjectionMember,
@@ -205,6 +204,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
 }
 
 use std::sync::Mutex;
+use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {
     /// Whether to record PCG information for each block. This is used for

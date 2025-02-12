@@ -15,13 +15,12 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::engine::EvalStmtData,
     combined_pcs::PCGError,
     free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
     rustc_interface,
     utils::PlaceRepacker,
 };
-
+use crate::utils::eval_stmt_data::EvalStmtData;
 use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 
 pub(crate) struct RepackOps<'tcx> {
