@@ -1,148 +1,230 @@
-use rustc_interface::{
-    ast::Mutability
-
-    ,
-    index::IndexVec,
-    middle::mir::{self}
-    ,
+use crate::borrows::borrow_pcg_action::BorrowPCGAction;
+use crate::borrows::borrows_state::BorrowsState;
+use crate::borrows::borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions};
+use crate::borrows::path_condition::{PathCondition, PathConditions};
+use crate::borrows::region_projection_member::{
+    RegionProjectionMember, RegionProjectionMemberKind,
 };
-
-use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
-    rustc_interface,
-    utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place
-        ,
-    },
-};
+use crate::combined_pcs::{PCGError, PCGNodeLike};
+use crate::free_pcs::CapabilityKind;
+use crate::utils::domain_data::DomainData;
+use crate::utils::eval_stmt_data::EvalStmtData;
+use crate::utils::maybe_remote::MaybeRemotePlace;
+use crate::utils::{Place, PlaceRepacker};
+use crate::{utils, BorrowsBridge};
+use std::rc::Rc;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
-use crate::utils::PlaceRepacker;
-use crate::borrows::edge::borrow::BorrowEdge;
+use super::{coupling_graph_constructor::CGNode, region_projection::RegionProjection};
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use super::{
-    coupling_graph_constructor::CGNode
-    ,
-    has_pcs_elem::HasPcsElems
+use crate::utils::remote::RemotePlace;
 
-    ,
-    region_projection::{
-        MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
-        RegionProjectionBaseLike,
+use crate::rustc_interface::{
+    borrowck::{borrow_set::BorrowSet, consumers::RegionInferenceContext},
+    dataflow::JoinSemiLattice,
+    middle::{
+        mir::{BasicBlock, Local, Location},
+        ty::{self},
     },
 };
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
-pub struct RemotePlace {
-    pub(crate) local: mir::Local,
-}
+const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
 
-impl<'tcx> From<RemotePlace> for PCGNode<'tcx> {
-    fn from(remote_place: RemotePlace) -> Self {
-        PCGNode::Place(remote_place.into())
-    }
-}
+impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
+    fn join(&mut self, other: &Self) -> bool {
+        self.data.enter_join();
+        self.debug_join_iteration += 1;
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for RemotePlace {
-    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        todo!()
-    }
-}
+        if self.debug_join_iteration > DEBUG_JOIN_ITERATION_LIMIT {
+            panic!(
+                "Block {:?} has not terminated after {} join iterations, this is probably a bug",
+                self.block(),
+                self.debug_join_iteration
+            );
+        }
+        if other.has_error() && !self.has_error() {
+            self.error = other.error.clone();
+            return true;
+        } else if self.has_error() {
+            return false;
+        }
+        // For performance reasons we don't check validity here.
+        // if validity_checks_enabled() {
+        //     debug_assert!(other.is_valid(), "Other graph is invalid");
+        // }
+        let mut other_after = other.post_main_state().clone();
 
-impl<'tcx> DisplayWithRepacker<'tcx> for RemotePlace {
-    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        format!("Remote({:?})", self.local)
-    }
-}
+        // For edges in the other graph that actually belong to it,
+        // add the path condition that leads them to this block
+        let pc = PathCondition::new(other.block(), self.block());
+        other_after.add_path_condition(pc);
 
-impl<'tcx> PCGNodeLike<'tcx> for RemotePlace {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
-        self.into()
-    }
-}
+        let self_block = self.block();
 
-impl<'tcx> From<RemotePlace> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn from(remote_place: RemotePlace) -> Self {
-        MaybeRemoteRegionProjectionBase::Place(remote_place.into())
-    }
-}
-
-impl<'tcx> RegionProjectionBaseLike<'tcx> for RemotePlace {
-    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
-        let place: Place<'_> = self.local.into();
-        place.regions(repacker)
-    }
-
-    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
-        MaybeRemoteRegionProjectionBase::Place((*self).into())
-    }
-}
-
-impl<'tcx> HasValidityCheck<'tcx> for RemotePlace {
-    fn check_validity(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-impl std::fmt::Display for RemotePlace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Remote({:?})", self.local)
-    }
-}
-
-impl RemotePlace {
-    pub(crate) fn new(local: mir::Local) -> Self {
-        Self { local }
-    }
-
-    pub(crate) fn assigned_local(self) -> mir::Local {
-        self.local
-    }
-
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, '_>) -> Mutability {
-        let place: Place<'_> = self.local.into();
-        place.ref_mutability(repacker).unwrap_or_else(|| {
-            if let Ok(root_place) =
-                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
-                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
-            {
-                Mutability::Mut
-            } else {
-                Mutability::Not
-            }
-        })
-    }
-}
-
-impl<'tcx> std::fmt::Display for BorrowEdge<'tcx> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "reborrow blocking {} assigned to {}",
-            self.blocked_place, self.assigned_ref
+        self.data.entry_state.join(
+            &other_after,
+            self_block,
+            other.block(),
+            &self.bc,
+            self.repacker,
         )
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowEdge<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut vec = vec![&mut self.assigned_ref];
-        vec.extend(self.blocked_place.pcs_elems());
-        vec
+#[derive(Clone)]
+/// The domain of the Borrow PCG dataflow analysis. Note that this contains many
+/// fields which serve as context (e.g. reference to a borrow-checker impl to
+/// properly compute joins) but are not updated in the analysis itself.
+pub struct BorrowsDomain<'mir, 'tcx> {
+    pub(crate) data: DomainData<BorrowsState<'tcx>>,
+    pub(crate) block: Option<BasicBlock>,
+    pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
+    pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
+    pub(crate) bc: BorrowCheckerImpl<'mir, 'tcx>,
+    /// The number of times the join operation has been called, this is just
+    /// used for debugging to identify if the dataflow analysis is not
+    /// terminating.
+    pub(crate) debug_join_iteration: usize,
+    error: Option<PCGError>,
+}
+
+impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data && self.block == other.block
     }
 }
 
-pub trait ToJsonWithRepacker<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value;
+impl<'mir, 'tcx> Eq for BorrowsDomain<'mir, 'tcx> {}
+
+impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BorrowsDomain")
+            .field("states", &self.data.states)
+            .field("block", &self.block)
+            .finish()
+    }
 }
 
-impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Vec<T> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        self.iter()
-            .map(|a| a.to_json(repacker))
-            .collect::<Vec<_>>()
-            .into()
+impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+    pub(crate) fn get_bridge(&self) -> (BorrowsBridge<'tcx>, BorrowsBridge<'tcx>) {
+        (
+            self.actions.pre_operands.clone().into(),
+            self.actions.pre_main.clone().into(),
+        )
+    }
+    pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
+        &self.data.states.post_main
+    }
+
+    pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
+        &mut self.data.states.post_main
+    }
+
+    pub(crate) fn set_block(&mut self, block: BasicBlock) {
+        self.block = Some(block);
+    }
+
+    pub(crate) fn block(&self) -> BasicBlock {
+        self.block.unwrap()
+    }
+
+    pub(crate) fn report_error(&mut self, error: PCGError) {
+        eprintln!("PCG Error: {:?}", error);
+        self.error = Some(error);
+    }
+
+    #[allow(unused)]
+    pub(crate) fn has_internal_error(&self) -> bool {
+        self.error
+            .as_ref()
+            .map_or(false, |e| matches!(e, PCGError::Internal(_)))
+    }
+
+    pub(crate) fn has_error(&self) -> bool {
+        self.error.is_some()
+    }
+
+    pub(crate) fn new(
+        repacker: PlaceRepacker<'mir, 'tcx>,
+        region_inference_context: Rc<RegionInferenceContext<'tcx>>,
+        borrow_set: Rc<BorrowSet<'tcx>>,
+        block: Option<BasicBlock>,
+    ) -> Self {
+        Self {
+            data: DomainData::default(),
+            actions: EvalStmtData::default(),
+            block,
+            repacker,
+            debug_join_iteration: 0,
+            error: None,
+            bc: BorrowCheckerImpl::new(repacker, region_inference_context, borrow_set),
+        }
+    }
+
+    fn introduce_initial_borrows(&mut self, local: Local) {
+        let local_decl = &self.repacker.body().local_decls[local];
+        let arg_place: Place<'tcx> = local.into();
+        if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
+            assert!(self.data.entry_state.set_capability(
+                MaybeRemotePlace::place_assigned_to_local(local).into(),
+                if mutability.is_mut() {
+                    CapabilityKind::Exclusive
+                } else {
+                    CapabilityKind::Read
+                },
+                self.repacker,
+            ));
+            let _ = self.data.entry_state.apply_action(
+                BorrowPCGAction::add_region_projection_member(
+                    RegionProjectionMember::new(
+                        vec![MaybeRemotePlace::place_assigned_to_local(local).into()],
+                        vec![
+                            RegionProjection::new((*region).into(), arg_place, self.repacker)
+                                .into(),
+                        ],
+                        RegionProjectionMemberKind::FunctionInput,
+                    ),
+                    PathConditions::AtBlock((Location::START).block),
+                    "Introduce initial borrow",
+                ),
+                self.repacker,
+            );
+        }
+        let local_place: utils::Place<'tcx> = arg_place.into();
+        for region_projection in local_place.region_projections(self.repacker) {
+            assert!(self.data.entry_state.apply_action(
+                BorrowPCGAction::add_region_projection_member(
+                    RegionProjectionMember::new(
+                        vec![RegionProjection::new(
+                            region_projection.region(self.repacker),
+                            RemotePlace::new(local),
+                            self.repacker,
+                        )
+                        .to_pcg_node(),],
+                        vec![region_projection.into()],
+                        RegionProjectionMemberKind::Todo,
+                    ),
+                    PathConditions::AtBlock((Location::START).block),
+                    "Initialize Local",
+                ),
+                self.repacker,
+            ));
+        }
+    }
+
+    pub(crate) fn initialize_as_start_block(&mut self) {
+        for arg in self.repacker.body().args_iter() {
+            let arg_place: utils::Place<'tcx> = arg.into();
+            for rp in arg_place.region_projections(self.repacker) {
+                assert!(self.data.entry_state.set_capability(
+                    rp.into(),
+                    CapabilityKind::Exclusive,
+                    self.repacker
+                ));
+            }
+            self.introduce_initial_borrows(arg);
+        }
     }
 }

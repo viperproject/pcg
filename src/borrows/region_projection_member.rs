@@ -10,7 +10,7 @@ use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 
 use super::borrow_pcg_edge::LocalNode;
-use super::domain::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use super::edge_data::EdgeData;
 use super::{
     has_pcs_elem::HasPcsElems, region_projection::RegionProjection,

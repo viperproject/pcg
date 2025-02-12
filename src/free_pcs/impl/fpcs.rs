@@ -14,14 +14,13 @@ use rustc_interface::{
     middle::mir::{Local, RETURN_PLACE},
 };
 
+use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 use crate::{
     combined_pcs::PCGError,
     free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
     rustc_interface,
-    utils::PlaceRepacker,
+    utils::{domain_data::DomainData, PlaceRepacker},
 };
-use crate::utils::eval_stmt_data::EvalStmtData;
-use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 
 pub(crate) struct RepackOps<'tcx> {
     pub(crate) start: Vec<RepackOp<'tcx>>,
@@ -31,7 +30,7 @@ pub(crate) struct RepackOps<'tcx> {
 #[derive(Clone)]
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) summaries: EvalStmtData<CapabilitySummary<'tcx>>,
+    pub(crate) data: DomainData<CapabilitySummary<'tcx>>,
     pub(crate) error: Option<PCGError>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -41,23 +40,17 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
             .map_or(false, |e| matches!(e, PCGError::Internal(_)))
     }
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
-        &mut self.summaries.post_operands
+        &mut self.data.states.post_operands
     }
 
     pub(crate) fn post_main(&self) -> &CapabilitySummary<'tcx> {
-        &self.summaries.post_main
+        &self.data.states.post_main
     }
 
     pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
-        let after = CapabilitySummary::default(repacker.local_count());
         Self {
             repacker,
-            summaries: EvalStmtData {
-                pre_operands: CapabilitySummary::empty(),
-                post_operands: CapabilitySummary::empty(),
-                pre_main: CapabilitySummary::empty(),
-                post_main: after,
-            },
+            data: DomainData::new(CapabilitySummary::default(repacker.local_count())),
             error: None,
         }
     }
@@ -66,7 +59,7 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(self.repacker.body().arg_count);
-        for (local, cap) in self.summaries.post_main.iter_enumerated_mut() {
+        for (local, cap) in self.data.entry_state.iter_enumerated_mut() {
             let new_cap = if local == return_local {
                 // Return local is allocated but uninitialized
                 CapabilityLocal::new(local, CapabilityKind::Write)
@@ -88,25 +81,26 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         &self,
         previous: &CapabilitySummary<'tcx>,
     ) -> std::result::Result<RepackOps<'tcx>, PCGError> {
-        let start = previous.bridge(&self.summaries.pre_operands, self.repacker)?;
+        let start = previous.bridge(&self.data.states.pre_operands, self.repacker)?;
         let middle = self
-            .summaries
+            .data
+            .states
             .post_operands
-            .bridge(&self.summaries.pre_main, self.repacker)?;
+            .bridge(&self.data.states.pre_main, self.repacker)?;
         Ok(RepackOps { start, middle })
     }
 }
 
 impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.summaries.post_main == other.summaries.post_main
+        self.data.states.post_main == other.data.states.post_main
     }
 }
 impl Eq for FreePlaceCapabilitySummary<'_, '_> {}
 
 impl Debug for FreePlaceCapabilitySummary<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.summaries.post_main.fmt(f)
+        self.data.states.post_main.fmt(f)
     }
 }
 impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -116,26 +110,34 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
         _ctxt: &FpcsEngine<'a, 'tcx>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        let RepackOps { start, middle } = self.repack_ops(&old.summaries.post_main).unwrap();
+        let RepackOps { start, middle } = self.repack_ops(&old.data.states.post_main).unwrap();
         if !start.is_empty() {
             writeln!(f, "{start:?}")?;
         }
-        CapabilitySummaryCompare(&self.summaries.pre_operands, &old.summaries.post_main, "")
-            .fmt(f)?;
         CapabilitySummaryCompare(
-            &self.summaries.post_operands,
-            &self.summaries.pre_operands,
+            &self.data.states.pre_operands,
+            &old.data.states.post_main,
+            "",
+        )
+        .fmt(f)?;
+        CapabilitySummaryCompare(
+            &self.data.states.post_operands,
+            &self.data.states.pre_operands,
             "ARGUMENTS:\n",
         )
         .fmt(f)?;
         if !middle.is_empty() {
             writeln!(f, "{middle:?}")?;
         }
-        CapabilitySummaryCompare(&self.summaries.pre_main, &self.summaries.post_operands, "")
-            .fmt(f)?;
         CapabilitySummaryCompare(
-            &self.summaries.post_main,
-            &self.summaries.pre_main,
+            &self.data.states.pre_main,
+            &self.data.states.post_operands,
+            "",
+        )
+        .fmt(f)?;
+        CapabilitySummaryCompare(
+            &self.data.states.post_main,
+            &self.data.states.pre_main,
             "STATEMENT:\n",
         )
         .fmt(f)?;
@@ -146,6 +148,12 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
 /// The free pcs of all locals
 pub struct CapabilitySummary<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
+
+impl<'tcx> Default for CapabilitySummary<'tcx> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
 impl<'tcx> Debug for CapabilitySummary<'tcx> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {

@@ -11,7 +11,6 @@ export function PCSGraphSelector({
   selected: Selection;
   onSelect: (selection: Selection) => void;
 }) {
-  return <div />
   let selectedIdx =
     selected > iterations.length ? iterations.length - 1 : selected;
   return (

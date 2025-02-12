@@ -7,7 +7,7 @@ use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use serde_json::json;
 use crate::borrows::borrow_pcg_edge::LocalNode;
 use crate::borrows::borrows_visitor::extract_regions;
-use crate::borrows::domain::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::latest::Latest;
 use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection, RegionProjectionBaseLike};

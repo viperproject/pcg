@@ -9,7 +9,7 @@ use crate::rustc_interface::{
 
 use serde_json::json;
 use crate::borrows::borrow_pcg_edge::{BlockedNode, LocalNode};
-use crate::borrows::domain::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::borrows::edge_data::EdgeData;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::region_projection::RegionProjection;
@@ -138,5 +138,23 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowEdge<'tcx> {
             "assigned_place": self.assigned_ref.to_json(repacker),
             "is_mut": self.mutability == Mutability::Mut
         })
+    }
+}
+
+impl<'tcx> std::fmt::Display for BorrowEdge<'tcx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "reborrow blocking {} assigned to {}",
+            self.blocked_place, self.assigned_ref
+        )
+    }
+}
+
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowEdge<'tcx> {
+    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        let mut vec = vec![&mut self.assigned_ref];
+        vec.extend(self.blocked_place.pcs_elems());
+        vec
     }
 }

@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use itertools::Itertools;
 
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::CapabilityKind,
+    rustc_interface::data_structures::fx::FxHashMap,
     utils::{
         display::{DebugLines, DisplayWithRepacker},
         PlaceRepacker,
@@ -14,7 +15,7 @@ use crate::{
 /// joins (in particular, to identify when capabilities to a place in the PCG
 /// need to be weakened).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BorrowPCGCapabilities<'tcx>(HashMap<PCGNode<'tcx>, CapabilityKind>);
+pub struct BorrowPCGCapabilities<'tcx>(FxHashMap<PCGNode<'tcx>, CapabilityKind>);
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
@@ -22,13 +23,14 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
             .map(|(node, capability)| {
                 format!("{}: {:?}", node.to_short_string(repacker), capability)
             })
+            .sorted()
             .collect()
     }
 }
 
 impl<'tcx> BorrowPCGCapabilities<'tcx> {
     pub(crate) fn new() -> Self {
-        Self(HashMap::new())
+        Self(Default::default())
     }
 
     /// Returns true iff the capability was changed.
@@ -50,7 +52,7 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
     }
 
     pub(crate) fn get<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
-        self.0.get(&node.into()).cloned()
+        self.0.get(&node.into()).copied()
     }
 
     /// TODO: The logic here isn't quite right yet.

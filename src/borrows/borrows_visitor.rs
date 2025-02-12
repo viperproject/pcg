@@ -29,13 +29,6 @@ use crate::{
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
-use crate::{
-    free_pcs::CapabilityKind,
-    utils::{self, PlaceRepacker, PlaceSnapshot},
-};
-use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction};
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrows_state::{ExecutedActions, ExpansionReason},
@@ -46,9 +39,16 @@ use super::{
     region_projection_member::RegionProjectionMember,
     unblock_graph::UnblockGraph,
 };
-use super::{
-    domain::AbstractionOutputTarget,
-    engine::{BorrowsDomain, BorrowsEngine},
+use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
+use crate::borrows::domain::BorrowsDomain;
+use crate::borrows::edge::abstraction::{
+    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
+};
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{
+    free_pcs::CapabilityKind,
+    utils::{self, PlaceRepacker, PlaceSnapshot},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -323,7 +323,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 ));
                 let state = self.domain.post_state_mut();
                 if !target.is_owned(self.repacker) {
-                    state.set_capability(target, CapabilityKind::Exclusive);
+                    state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
                 }
                 match rvalue {
                     Rvalue::Aggregate(
@@ -410,6 +410,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         {
                             for mut orig_edge in self
                                 .domain
+                                .data
                                 .states
                                 .post_main
                                 .edges_blocked_by((*rp).into(), self.repacker)
@@ -426,7 +427,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             target.region_projection(idx, self.repacker).into()
                                     }
                                 }
-                                self.domain.states.post_main.insert(orig_edge);
+                                self.domain.data.states.post_main.insert(orig_edge);
                             }
                         }
                     }
@@ -538,7 +539,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         .unwrap_or_else(|e| {
                             if let Ok(dot_graph) = generate_borrows_dot_graph(
                                 self.repacker,
-                                self.domain.states.post_main.graph(),
+                                self.domain.data.states.post_main.graph(),
                             ) {
                                 DotGraph::render_with_imgcat(
                                     &dot_graph,
@@ -583,7 +584,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     // Only add the edge if the input projection already exists, i.e.
                     // is blocking something else. Otherwise, there is no point in tracking
                     // when it becomes accessible.
-                    if self.domain.post_main_state().contains(input_rp, self.repacker) {
+                    if self
+                        .domain
+                        .post_main_state()
+                        .contains(input_rp, self.repacker)
+                    {
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output].into_iter().collect(),
@@ -603,6 +608,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     edges.clone(),
                 )),
                 location.block,
+                self.repacker,
             );
         }
     }
@@ -666,13 +672,19 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 Operand::Move(place) => {
                     let place: utils::Place<'tcx> = (*place).into();
                     for rp in place.region_projections(self.repacker) {
-                        self.domain
-                            .post_state_mut()
-                            .set_capability(rp, CapabilityKind::Write);
+                        self.domain.post_state_mut().set_capability(
+                            rp.into(),
+                            CapabilityKind::Write,
+                            self.repacker,
+                        );
                     }
-                    self.domain
-                        .post_state_mut()
-                        .set_capability(place, CapabilityKind::Write);
+                    if !place.is_owned(self.repacker) {
+                        self.domain.post_state_mut().set_capability(
+                            place.into(),
+                            CapabilityKind::Write,
+                            self.repacker,
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -684,10 +696,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
-    #[tracing::instrument(skip(self), fields(join_iteration = ?self.domain.debug_join_iteration))]
+    #[tracing::instrument(skip(self, terminator), fields(join_iteration = ?self.domain.debug_join_iteration))]
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if self.preparing && self.stage == StatementStage::Operands {
-            let post_state = &mut self.domain.states.post_main;
+            let post_state = &mut self.domain.data.states.post_main;
             let actions =
                 post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
@@ -724,9 +736,8 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         self.debug_ctx = Some(DebugCtx::new(location));
 
         if self.preparing && self.stage == StatementStage::Operands {
-
             // Remove places that are non longer live based on borrow checker information
-            let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
+            let actions = self.domain.data.states.post_main.pack_old_and_dead_leaves(
                 self.repacker,
                 location,
                 &self.domain.bc,
@@ -784,7 +795,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     self.apply_action(BorrowPCGAction::make_place_old(place));
-                    let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
+                    let actions = self.domain.data.states.post_main.pack_old_and_dead_leaves(
                         self.repacker,
                         location,
                         &self.domain.bc,
@@ -815,7 +826,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
                     if !target.is_owned(self.repacker) {
                         let target_cap =
-                            self.domain.post_state_mut().get_capability(target).unwrap();
+                            self.domain.post_state_mut().get_capability(target.into()).unwrap();
                         if target_cap != CapabilityKind::Write {
                             self.apply_action(BorrowPCGAction::weaken(
                                 target,

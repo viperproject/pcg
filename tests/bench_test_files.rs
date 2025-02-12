@@ -74,10 +74,6 @@ fn format_results(results: &[(String, u64)]) -> String {
     output
 }
 
-fn write_results(results: &[(String, u64)], results_path: &PathBuf) -> io::Result<()> {
-    fs::write(results_path, format_results(results))
-}
-
 #[test]
 fn benchmark_test_files() {
     // First build in release mode

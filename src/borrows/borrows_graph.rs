@@ -26,13 +26,13 @@ use crate::{
 use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
 use crate::borrows::edge::borrow::BorrowEdge;
 use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::json::ToJsonWithRepacker;
 use super::{
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
         LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
-    domain::ToJsonWithRepacker,
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,
@@ -269,13 +269,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
         FrozenGraphRef::new(self)
-    }
-
-    // Return a frozen graph that is not tied to the lifetime of the borrows
-    // graph The client must ensures that the result of the FrozenGraphRef is
-    // not used if the underlying graph is modified
-    pub(crate) unsafe fn frozen_graph_unsafe(&self) -> FrozenGraphRef<'tcx, 'tcx> {
-        unsafe { std::mem::transmute(self.frozen_graph()) }
     }
 
     pub(crate) fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

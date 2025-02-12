@@ -113,3 +113,78 @@ impl CapabilityKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_capability_kind_partial_order() {
+        // Get all variants of CapabilityKind
+        let variants = [
+            CapabilityKind::Read,
+            CapabilityKind::Write,
+            CapabilityKind::Exclusive,
+            CapabilityKind::Lent,
+            CapabilityKind::LentShared,
+            CapabilityKind::ShallowExclusive,
+        ];
+
+        // Test reflexivity: a ≤ a for all a
+        for &a in &variants {
+            assert_eq!(
+                Some(Ordering::Equal),
+                a.partial_cmp(&a),
+                "Reflexivity failed for {:?}",
+                a
+            );
+        }
+
+        // Test antisymmetry: if a ≤ b and b ≤ a then a = b
+        for &a in &variants {
+            for &b in &variants {
+                if let (Some(ord1), Some(ord2)) = (a.partial_cmp(&b), b.partial_cmp(&a)) {
+                    if ord1 != Ordering::Greater && ord2 != Ordering::Greater {
+                        assert_eq!(
+                            a, b,
+                            "Antisymmetry failed: {:?} and {:?} form a cycle but are not equal",
+                            a, b
+                        );
+                    }
+                }
+            }
+        }
+
+        // Test transitivity: if a ≤ b and b ≤ c then a ≤ c
+        for &a in &variants {
+            for &b in &variants {
+                for &c in &variants {
+                    if let (Some(ord1), Some(ord2)) = (a.partial_cmp(&b), b.partial_cmp(&c)) {
+                        if ord1 != Ordering::Greater && ord2 != Ordering::Greater {
+                            assert!(
+                                matches!(a.partial_cmp(&c), Some(ord) if ord != Ordering::Greater),
+                                "Transitivity failed: {:?} ≤ {:?} and {:?} ≤ {:?}, but {:?} ≰ {:?}",
+                                a,
+                                b,
+                                b,
+                                c,
+                                a,
+                                c
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify specific known relationships from the implementation
+        assert!(matches!(
+            CapabilityKind::Write.partial_cmp(&CapabilityKind::Exclusive),
+            Some(Ordering::Less)
+        ));
+        assert!(matches!(
+            CapabilityKind::Read.partial_cmp(&CapabilityKind::Lent),
+            Some(Ordering::Less)
+        ));
+    }
+}

@@ -35,7 +35,7 @@ use serde_json::json;
 use utils::{display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker};
 use visualization::mir_graph::generate_json_from_mir;
 
-use crate::borrows::domain::ToJsonWithRepacker;
+use utils::json::ToJsonWithRepacker;
 
 pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     'mir,

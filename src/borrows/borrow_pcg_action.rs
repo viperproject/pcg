@@ -1,18 +1,19 @@
 use tracing::instrument;
 
-use crate::free_pcs::CapabilityKind;
-use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
-use crate::utils::display::DisplayWithRepacker;
-use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
-use crate::{RestoreCapability, Weaken};
-use crate::borrows::edge::abstraction::AbstractionType;
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::borrows_state::BorrowsState;
-use super::domain::ToJsonWithRepacker;
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
+use crate::borrows::edge::abstraction::AbstractionType;
+use crate::combined_pcs::PCGNode;
+use crate::free_pcs::CapabilityKind;
+use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
+use crate::utils::display::{DebugLines, DisplayWithRepacker};
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
+use crate::{RestoreCapability, Weaken};
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
@@ -34,7 +35,11 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match &self.kind {
             BorrowPCGActionKind::AddAbstractionEdge(abstraction, path_conditions) => {
-                format!("Add Abstraction Edge: {}; path conditions: {}", abstraction.to_short_string(repacker), path_conditions)
+                format!(
+                    "Add Abstraction Edge: {}; path conditions: {}",
+                    abstraction.to_short_string(repacker),
+                    path_conditions
+                )
             }
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPCGActionKind::Restore(restore_capability) => {
@@ -191,17 +196,29 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.insert(abstraction.to_borrow_pcg_edge(pc))
             }
             BorrowPCGActionKind::Restore(restore) => {
-                if let Some(cap) = self.get_capability(restore.node()) {
+                let restore_node: PCGNode<'tcx> = restore.node().into();
+                if let Some(cap) = self.get_capability(restore_node) {
                     assert!(cap < restore.capability());
                 }
-                assert!(
-                    self.set_capability(restore.node(), restore.capability())
-                );
+                if !restore_node.is_owned(repacker) {
+                    if !self.set_capability(restore_node, restore.capability(), repacker) {
+                        tracing::error!(
+                            "Capability was already {:?} for {}",
+                            restore.capability(),
+                            restore_node.to_short_string(repacker)
+                        );
+                        for line in self.capabilities.debug_lines(repacker) {
+                            tracing::error!("{}", line);
+                        }
+                        panic!("Capability should have been updated")
+                    }
+                }
                 true
             }
             BorrowPCGActionKind::Weaken(weaken) => {
-                assert_eq!(self.get_capability(weaken.place()), Some(weaken.from));
-                assert!(self.set_capability(weaken.place(), weaken.to));
+                let weaken_place: PCGNode<'tcx> = weaken.place().into();
+                assert_eq!(self.get_capability(weaken_place), Some(weaken.from));
+                assert!(self.set_capability(weaken_place, weaken.to, repacker));
                 true
             }
             BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker),
@@ -230,7 +247,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                         BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
                             if let Some(capability) =
-                                self.get_capability(expansion_of_borrowed.base)
+                                self.get_capability(expansion_of_borrowed.base.into())
                             {
                                 capability
                             } else {
@@ -249,8 +266,9 @@ impl<'tcx> BorrowsState<'tcx> {
                         match expanded_capability {
                             CapabilityKind::Read => {
                                 _ = self.set_capability(
-                                    base,
+                                    base.into(),
                                     CapabilityKind::Read,
+                                    repacker,
                                 );
                             }
                             _ => {
@@ -260,7 +278,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
 
                     for p in expansion.expansion(repacker).iter() {
-                        _ = self.set_capability(*p, expanded_capability);
+                        _ = self.set_capability((*p).into(), expanded_capability, repacker);
                     }
                 }
                 updated
@@ -287,10 +305,10 @@ impl<'tcx> BorrowsState<'tcx> {
             (CapabilityKind::Read, CapabilityKind::Read)
         };
         for i in member.inputs.iter() {
-            changed |= self.set_capability(*i, input_cap);
+            changed |= self.set_capability(*i, input_cap, repacker);
         }
         for o in member.outputs.iter() {
-            changed |= self.set_capability(*o, output_cap);
+            changed |= self.set_capability((*o).into(), output_cap, repacker);
         }
         changed
     }

@@ -7,6 +7,8 @@ build = "build.rs"
 
 [dependencies]
 rustc_ast = {path = "/Users/zgrannan/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_ast", optional = true}
+rustc_borrowck = {path = "/Users/zgrannan/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_borrowck", optional = true}
+rustc_mir_dataflow = {path = "/Users/zgrannan/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_mir_dataflow", optional = true}
 rustc_data_structures = {path = "/Users/zgrannan/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_data_structures", optional = true}
 rustc_hir = {path = "/Users/zgrannan/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_hir", optional = true}
 rustc_index = {path = "/Users/zgrannan/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_index", optional = true}

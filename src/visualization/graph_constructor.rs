@@ -4,7 +4,6 @@ use crate::{
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
-        domain::RemotePlace,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         unblock_graph::UnblockGraph,
     },
@@ -26,6 +25,7 @@ use crate::borrows::edge::kind::BorrowPCGEdgeKind;
 use crate::rustc_interface::middle::ty::{self, TyCtxt};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::place::remote::RemotePlace;
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 
 #[derive(Eq, PartialEq, Hash)]
@@ -459,14 +459,14 @@ trait CapabilityGetter<'tcx> {
     fn get<T: PCGNodeLike<'tcx>>(&self, node: T) -> Option<CapabilityKind>;
 }
 
-struct PCSCapabilityGetter<'a, 'tcx> {
+struct PCGCapabilityGetter<'a, 'tcx> {
     summary: &'a CapabilitySummary<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
 }
 
-impl<'a, 'tcx> CapabilityGetter<'tcx> for PCSCapabilityGetter<'a, 'tcx> {
+impl<'a, 'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'a, 'tcx> {
     fn get<T: PCGNodeLike<'tcx>>(&self, node: T) -> Option<CapabilityKind> {
-        if let Some(cap) = self.borrows_domain.get_capability(node) {
+        if let Some(cap) = self.borrows_domain.get_capability(node.to_pcg_node()) {
             return Some(cap);
         }
         let place = node.to_pcg_node().as_current_place()?;
@@ -507,7 +507,7 @@ impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
     }
 
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
-        PCSCapabilityGetter {
+        PCGCapabilityGetter {
             summary: self.summary,
             borrows_domain: self.borrows_domain,
         }
@@ -590,7 +590,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
     }
 
     fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
-        let capability_getter = &PCSCapabilityGetter {
+        let capability_getter = &PCGCapabilityGetter {
             summary: self.summary,
             borrows_domain: self.borrows_domain,
         };
@@ -607,7 +607,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 CapabilityLocal::Unallocated => {}
                 CapabilityLocal::Allocated(projections) => {
                     for (place, _) in projections.iter() {
-                        let capability_getter = &PCSCapabilityGetter {
+                        let capability_getter = &PCGCapabilityGetter {
                             summary: self.summary,
                             borrows_domain: self.borrows_domain,
                         };

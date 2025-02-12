@@ -8,9 +8,9 @@ use crate::{
     combined_pcs::PCGNode,
     utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
-    ToJsonWithRepacker,
 };
 use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::borrow_pcg_edge::BorrowPCGEdgeLike;

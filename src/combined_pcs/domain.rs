@@ -12,24 +12,20 @@ use std::{
     rc::Rc,
 };
 
-use rustc_interface::{
-    dataflow::fmt::DebugWithContext, dataflow::JoinSemiLattice, middle::mir::BasicBlock,
-};
+use crate::{rustc_interface::{
+    dataflow::{fmt::DebugWithContext, JoinSemiLattice}, middle::mir::BasicBlock,
+}, RECORD_PCG};
 
-use crate::{
-    borrows::{
-        engine::BorrowsDomain,
-        unblock_graph::{UnblockGraph, UnblockType},
-    },
-    combined_pcs::PCGNode,
-    free_pcs::{CapabilityLocal, CapabilitySummary, FreePlaceCapabilitySummary},
-    rustc_interface,
-    visualization::generate_dot_graph,
-    RECORD_PCG,
-};
+use super::{PCGContext, PCGEngine};
+use crate::borrows::domain::BorrowsDomain;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use super::{PCGContext, PCGEngine};
+use crate::{
+    borrows::unblock_graph::{UnblockGraph, UnblockType},
+    combined_pcs::PCGNode,
+    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
+    visualization::generate_dot_graph,
+};
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -285,12 +281,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         )
     }
 
-    pub(crate) fn generate_dot_graph(
-        &mut self,
-        phase: DataflowStmtPhase,
-        statement_index: usize,
-        initial_owned_pcg: Option<&CapabilitySummary<'tcx>>,
-    ) {
+    pub(crate) fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
         if !*RECORD_PCG.lock().unwrap() {
             return;
         }
@@ -322,15 +313,11 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             let pcg = &self.pcg;
 
             let (fpcs, borrows) = match phase {
-                DataflowStmtPhase::Initial => {
-                    (initial_owned_pcg.unwrap(), &pcg.borrow.entry_state)
-                }
-                DataflowStmtPhase::EvalStmt(phase) => {
-                    (pcg.owned.summaries.get(phase), pcg.borrow.states.get(phase))
-                }
-                DataflowStmtPhase::Join(_) => {
-                    (&pcg.owned.summaries.post_main, &pcg.borrow.entry_state)
-                }
+                DataflowStmtPhase::EvalStmt(phase) => (
+                    &pcg.owned.data.states[phase],
+                    &pcg.borrow.data.states[phase],
+                ),
+                _ => (&pcg.owned.data.entry_state, &pcg.borrow.data.entry_state),
             };
 
             generate_dot_graph(self.cgx.rp, fpcs, borrows, &filename).unwrap();
@@ -411,15 +398,15 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         }
         let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
         let mut g = UnblockGraph::new();
-        for root in self.borrow_pcg().entry_state.roots(self.cgx.rp) {
+        for root in self.borrow_pcg().data.entry_state.roots(self.cgx.rp) {
             if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
                 root
             {
-                match &self.owned_pcg().summaries.post_main[root.local] {
+                match &self.owned_pcg().data.entry_state[root.local] {
                     CapabilityLocal::Unallocated => {
                         g.unblock_node(
                             root.into(),
-                            &self.borrow_pcg().entry_state,
+                            &self.borrow_pcg().data.entry_state,
                             self.cgx.rp,
                             UnblockType::ForRead,
                         );
@@ -428,7 +415,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                         if !(*projs).contains_key(&root) {
                             g.unblock_node(
                                 root.into(),
-                                &self.borrow_pcg().entry_state,
+                                &self.borrow_pcg().data.entry_state,
                                 self.cgx.rp,
                                 UnblockType::ForExclusive,
                             );
@@ -438,7 +425,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             }
         }
         self.dot_graphs().borrow_mut().register_new_iteration(0);
-        self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0, None);
+        self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         fpcs || borrows
     }
 }

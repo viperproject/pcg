@@ -1,11 +1,11 @@
 use serde_json::json;
 
 use crate::{
-    borrows::{borrow_pcg_edge::LocalNode, domain::ToJsonWithRepacker, has_pcs_elem::HasPcsElems},
+    borrows::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcsElems},
     combined_pcs::LocalNodeLike,
     rustc_interface::middle::mir::{BasicBlock, Location},
 };
-
+use crate::utils::json::ToJsonWithRepacker;
 use super::{validity::HasValidityCheck, Place, PlaceRepacker};
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]

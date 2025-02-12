@@ -6,7 +6,7 @@ use crate::rustc_interface::middle::{mir::BasicBlock, ty};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
-use super::domain::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 
 #[derive(Clone, Debug)]
 pub struct Latest<'tcx>(Vec<(Place<'tcx>, SnapshotLocation)>);

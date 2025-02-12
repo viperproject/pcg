@@ -1,13 +1,14 @@
 use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::index::IndexVec;
-use crate::borrows::domain::{RemotePlace, ToJsonWithRepacker};
+use crate::utils::json::ToJsonWithRepacker;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike};
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::utils::{HasPlace, Place, PlaceRepacker};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::remote::RemotePlace;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub enum MaybeRemotePlace<'tcx> {
@@ -163,5 +164,29 @@ impl<'tcx> From<Place<'tcx>> for MaybeRemotePlace<'tcx> {
 impl<'tcx> From<mir::Place<'tcx>> for MaybeRemotePlace<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
         MaybeRemotePlace::Local(place.into())
+    }
+}
+
+impl RemotePlace {
+    pub(crate) fn new(local: mir::Local) -> Self {
+        Self { local }
+    }
+
+    pub(crate) fn assigned_local(self) -> mir::Local {
+        self.local
+    }
+
+    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, '_>) -> Mutability {
+        let place: Place<'_> = self.local.into();
+        place.ref_mutability(repacker).unwrap_or_else(|| {
+            if let Ok(root_place) =
+                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
+                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
+            {
+                Mutability::Mut
+            } else {
+                Mutability::Not
+            }
+        })
     }
 }
