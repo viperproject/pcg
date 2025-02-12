@@ -91,27 +91,33 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'tcx>,
-        _location: Location,
+        location: Location,
     ) {
         if let Some(error) = tw.error {
             state.error = Some(error);
             return;
         }
+        state.data.enter_location(location);
         // Repack for operands
-        state.summaries.pre_operands = state.summaries.post_main.clone();
+        state.data.states.pre_operands = state.data.states.post_main.clone();
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.0);
-            if let Err(e) = state.summaries.pre_operands.requires(triple.pre(), self.0) {
+            if let Err(e) = state
+                .data
+                .states
+                .pre_operands
+                .requires(triple.pre(), self.0)
+            {
                 state.error = Some(e);
                 return;
             }
         }
 
         // Apply operands effects
-        state.summaries.post_operands = state.summaries.pre_operands.clone();
+        state.data.states.post_operands = state.data.states.pre_operands.clone();
         for triple in tw.operand_triples {
             let triple = triple.replace_place(self.0);
-            state.summaries.post_operands.ensures(triple, self.0);
+            state.data.states.post_operands.ensures(triple, self.0);
         }
     }
 
@@ -126,21 +132,22 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             return;
         }
         // Repack for main
-        state.summaries.pre_main = state.summaries.post_operands.clone();
+        state.data.states.pre_main = state.data.states.post_operands.clone();
         for &triple in &tw.main_triples {
             let triple = triple.replace_place(self.0);
             state
-                .summaries
+                .data
+                .states
                 .pre_main
                 .requires(triple.pre(), self.0)
                 .unwrap();
         }
 
         // Apply main effects
-        state.summaries.post_main = state.summaries.pre_main.clone();
+        state.data.states.post_main = state.data.states.pre_main.clone();
         for triple in tw.main_triples {
             let triple = triple.replace_place(self.0);
-            state.summaries.post_main.ensures(triple, self.0);
+            state.data.states.post_main.ensures(triple, self.0);
         }
     }
 }

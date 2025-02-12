@@ -7,7 +7,7 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-use super::domain::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 
 #[derive(Copy, PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct PathCondition {

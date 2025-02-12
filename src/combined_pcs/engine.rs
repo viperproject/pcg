@@ -11,7 +11,6 @@ use std::{
 };
 
 use crate::{
-    free_pcs::CapabilitySummary,
     rustc_interface::{
         borrowck::{
             borrow_set::BorrowSet,
@@ -160,9 +159,8 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         state: &mut PlaceCapabilitySummary<'a, 'tcx>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
-        initial_owned_pcg: Option<&CapabilitySummary<'tcx>>,
     ) {
-        state.generate_dot_graph(phase.into(), statement_index, initial_owned_pcg);
+        state.generate_dot_graph(phase.into(), statement_index);
     }
 }
 
@@ -204,7 +202,6 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        let init_owned_state = state.owned_pcg().summaries.pre_operands.clone();
         self.fpcs
             .apply_before_statement_effect(state.owned_pcg_mut(), statement, location);
         self.borrows
@@ -212,7 +209,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
 
         let pcg = state.pcg_mut();
 
-        let borrows = pcg.borrow.states.post_main.frozen_graph();
+        let borrows = pcg.borrow.data.states.post_main.frozen_graph();
 
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
@@ -230,24 +227,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
                 }
             }
         }
-        self.generate_dot_graph(
-            state,
-            DataflowStmtPhase::Initial,
-            location.statement_index,
-            Some(&init_owned_state),
-        );
-        self.generate_dot_graph(
-            state,
-            EvalStmtPhase::PreOperands,
-            location.statement_index,
-            None,
-        );
-        self.generate_dot_graph(
-            state,
-            EvalStmtPhase::PostOperands,
-            location.statement_index,
-            None,
-        );
+        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
     }
     fn apply_statement_effect(
         &mut self,
@@ -262,18 +244,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             .apply_statement_effect(state.owned_pcg_mut(), statement, location);
         self.borrows
             .apply_statement_effect(state.borrow_pcg_mut(), statement, location);
-        self.generate_dot_graph(
-            state,
-            EvalStmtPhase::PreMain,
-            location.statement_index,
-            None,
-        );
-        self.generate_dot_graph(
-            state,
-            EvalStmtPhase::PostMain,
-            location.statement_index,
-            None,
-        );
+        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
     }
     fn apply_before_terminator_effect(
         &mut self,
@@ -285,29 +257,13 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        let init_owned_state = state.owned_pcg().summaries.pre_operands.clone();
         self.borrows
             .apply_before_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs
             .apply_before_terminator_effect(state.owned_pcg_mut(), terminator, location);
-        self.generate_dot_graph(
-            state,
-            DataflowStmtPhase::Initial,
-            location.statement_index,
-            Some(&init_owned_state),
-        );
-        self.generate_dot_graph(
-            state,
-            EvalStmtPhase::PreOperands,
-            location.statement_index,
-            None,
-        );
-        self.generate_dot_graph(
-            state,
-            EvalStmtPhase::PostOperands,
-            location.statement_index,
-            None,
-        );
+        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
     }
     fn apply_terminator_effect<'mir>(
         &mut self,
@@ -322,8 +278,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         self.fpcs
             .apply_terminator_effect(state.owned_pcg_mut(), terminator, location);
-        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index, None);
-        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index, None);
+        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
         terminator.edges()
     }
 

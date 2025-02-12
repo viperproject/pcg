@@ -16,15 +16,15 @@ use crate::{
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
 };
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::PlaceRepacker;
-
+use crate::utils::remote::RemotePlace;
 use super::{
     borrow_pcg_edge::LocalNode,
     borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
-    domain::ToJsonWithRepacker,
 };
 use super::has_pcs_elem::HasPcsElems;
 
@@ -482,5 +482,11 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemoteRegionProjectionBase<
             MaybeRemoteRegionProjectionBase::Place(p) => p.pcs_elems(),
             MaybeRemoteRegionProjectionBase::Const(_) => vec![],
         }
+    }
+}
+
+impl<'tcx> From<RemotePlace> for MaybeRemoteRegionProjectionBase<'tcx> {
+    fn from(remote_place: RemotePlace) -> Self {
+        MaybeRemoteRegionProjectionBase::Place(remote_place.into())
     }
 }

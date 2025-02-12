@@ -8,14 +8,14 @@ use crate::{
     coupling,
     rustc_interface::middle::mir::{BasicBlock, Location},
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
-    ToJsonWithRepacker,
 };
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::place::remote::RemotePlace;
 use super::{
     borrow_pcg_edge::LocalNode,
     borrows_graph::{coupling_imgcat_debug, BorrowsGraph},
-    domain::RemotePlace,
     has_pcs_elem::HasPcsElems,
     region_projection::{PCGRegion, RegionProjection},
 };

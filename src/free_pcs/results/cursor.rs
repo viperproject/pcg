@@ -5,11 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrows::{
-        borrow_pcg_action::BorrowPCGActionKind,
-        engine::BorrowsDomain,
-        latest::Latest,
-    },
+    borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
     combined_pcs::EvalStmtPhase,
     rustc_interface::{
         dataflow::{Analysis, ResultsCursor},
@@ -19,6 +15,8 @@ use crate::{
     BorrowPCGActions,
 };
 
+use crate::borrows::domain::BorrowsDomain;
+use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     borrows::engine::BorrowsStates,
     combined_pcs::PlaceCapabilitySummary,
@@ -28,7 +26,6 @@ use crate::{
     utils::PlaceRepacker,
     BorrowsBridge,
 };
-use crate::utils::eval_stmt_data::EvalStmtData;
 
 pub trait HasPcg<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
@@ -112,12 +109,12 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
         let result = FreePcsLocation {
             location,
             actions: curr_borrows.actions.clone(),
-            states: curr_fpcs.summaries.clone(),
+            states: curr_fpcs.data.states.clone(),
             repacks_start: repack_ops.start,
             repacks_middle: repack_ops.middle,
             extra_start,
             extra_middle,
-            borrows: curr_borrows.states.clone(),
+            borrows: curr_borrows.data.states.clone(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -149,22 +146,29 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                         statement_index: 0,
                     },
                     actions: to_borrows_state.actions.clone(),
-                    states: to.summaries.clone(),
+                    states: to.data.states.clone(),
                     repacks_start: from_fpcg_state
-                        .post_main()
-                        .bridge(&to.summaries.post_main, rp)
+                        .data
+                        .states
+                        .post_main
+                        .bridge(&to.data.entry_state, rp)
                         .unwrap(),
                     repacks_middle: Vec::new(),
-                    borrows: to_borrows_state.states.clone(),
+                    borrows: to_borrows_state.data.states.clone(),
                     // TODO: It seems like extra_start should be similar to repacks_start
                     extra_start: {
                         let mut actions = BorrowPCGActions::new();
                         let self_abstraction_edges = from_borrows_state
+                            .data
                             .states
                             .post_main
                             .graph()
                             .abstraction_edges();
-                        for abstraction in to_borrows_state.entry_state.graph().abstraction_edges()
+                        for abstraction in to_borrows_state
+                            .data
+                            .entry_state
+                            .graph()
+                            .abstraction_edges()
                         {
                             if !self_abstraction_edges.contains(&abstraction) {
                                 actions.push(

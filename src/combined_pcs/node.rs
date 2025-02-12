@@ -1,3 +1,8 @@
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::remote::RemotePlace;
+use crate::utils::Place;
 use crate::{
     borrows::{
         borrow_pcg_edge::LocalNode,
@@ -6,10 +11,7 @@ use crate::{
         },
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
-    ToJsonWithRepacker,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjectionBase<'tcx>> {
@@ -24,6 +26,12 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::RegionProjection(rp) => rp.base().is_old(),
         }
     }
+    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match self {
+            PCGNode::Place(p) => p.is_owned(repacker),
+            PCGNode::RegionProjection(_) => false,
+        }
+    }
 }
 
 impl<'tcx, T, U> From<T> for PCGNode<'tcx, T, U> {
@@ -35,6 +43,13 @@ impl<'tcx, T, U> From<T> for PCGNode<'tcx, T, U> {
 impl<'tcx, U> From<RegionProjection<'tcx, U>> for PCGNode<'tcx, MaybeRemotePlace<'tcx>, U> {
     fn from(value: RegionProjection<'tcx, U>) -> Self {
         PCGNode::RegionProjection(value)
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for PCGNode<'tcx> {
+    fn from(value: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        let rp: RegionProjection<'tcx> = value.map_base(|base| base.into());
+        rp.into()
     }
 }
 
@@ -121,4 +136,10 @@ pub trait PCGNodeLike<'tcx>:
 
 pub(crate) trait LocalNodeLike<'tcx> {
     fn to_local_node(self) -> LocalNode<'tcx>;
+}
+
+impl<'tcx> From<RemotePlace> for PCGNode<'tcx> {
+    fn from(remote_place: RemotePlace) -> Self {
+        PCGNode::Place(remote_place.into())
+    }
 }

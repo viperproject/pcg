@@ -4,18 +4,6 @@ use rustc_interface::{
     middle::mir::{self, BasicBlock},
 };
 
-use crate::{
-    combined_pcs::PCGNode,
-    edgedata_enum, rustc_interface,
-    utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceRepacker,
-    },
-};
-use crate::borrows::edge::abstraction::AbstractionType;
-use crate::borrows::edge::borrow::BorrowEdge;
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
@@ -25,6 +13,18 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
     region_projection_member::RegionProjectionMember,
+};
+use crate::borrows::edge::abstraction::AbstractionType;
+use crate::borrows::edge::borrow::BorrowEdge;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{
+    combined_pcs::PCGNode,
+    edgedata_enum, rustc_interface,
+    utils::{
+        display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceRepacker,
+    },
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -39,9 +39,7 @@ pub struct BorrowPCGEdge<'tcx> {
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
-pub(crate) trait BorrowPCGEdgeLike<'tcx>:
-    EdgeData<'tcx> + Clone
-{
+pub(crate) trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPCGEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
     fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
@@ -120,7 +118,7 @@ impl<'tcx> LocalNode<'tcx> {
 
 /// Any node in the PCG that is "local" in the sense that it can be named
 /// (include nodes that potentially refer to a past program point), i.e. any
-/// node other than a [`super::domain::RemotePlace`]
+/// node other than a [`RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for LocalNode<'tcx> {
@@ -185,7 +183,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 }
 
 /// A node that could potentially block other nodes in the PCG, i.e. any node
-/// other than a [`super::domain::RemotePlace`] (which are roots by definition)
+/// other than a [`RemotePlace`] (which are roots by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
