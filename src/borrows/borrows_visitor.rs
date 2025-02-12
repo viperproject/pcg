@@ -30,16 +30,16 @@ use crate::{
 };
 
 use crate::{
-    borrows::domain::AbstractionBlockEdge,
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
-
+use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction};
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrows_state::{ExecutedActions, ExpansionReason},
     coupling_graph_constructor::BorrowCheckerInterface,
-    domain::{MaybeOldPlace, MaybeRemotePlace},
+    domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
@@ -47,7 +47,7 @@ use super::{
     unblock_graph::UnblockGraph,
 };
 use super::{
-    domain::{AbstractionOutputTarget, AbstractionType, FunctionCallAbstraction},
+    domain::AbstractionOutputTarget,
     engine::{BorrowsDomain, BorrowsEngine},
 };
 

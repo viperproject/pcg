@@ -16,7 +16,7 @@ use crate::{
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
 };
-
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::PlaceRepacker;
 
 use super::{
@@ -25,7 +25,7 @@ use super::{
     coupling_graph_constructor::CGNode,
     domain::{MaybeOldPlace, ToJsonWithRepacker},
 };
-use super::{domain::MaybeRemotePlace, has_pcs_elem::HasPcsElems};
+use super::has_pcs_elem::HasPcsElems;
 
 /// A region occuring in region projections
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]

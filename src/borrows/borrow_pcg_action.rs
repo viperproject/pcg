@@ -5,11 +5,11 @@ use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
-
+use crate::borrows::edge::abstraction::AbstractionType;
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::borrows_state::BorrowsState;
-use super::domain::{AbstractionType, MaybeOldPlace, ToJsonWithRepacker};
+use super::domain::{MaybeOldPlace, ToJsonWithRepacker};
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
 

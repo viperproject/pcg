@@ -18,7 +18,7 @@ use rustc_interface::{
 
 use crate::{
     borrows::{
-        domain::{MaybeOldPlace, MaybeRemotePlace},
+        domain::MaybeOldPlace,
         engine::BorrowsDomain,
         unblock_graph::{UnblockGraph, UnblockType},
     },
@@ -28,7 +28,7 @@ use crate::{
     visualization::generate_dot_graph,
     RECORD_PCG,
 };
-
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{PCGContext, PCGEngine};
 
 #[derive(Copy, Clone)]
