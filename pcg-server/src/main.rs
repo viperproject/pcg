@@ -36,8 +36,8 @@ async fn main() {
         .route("/upload", post(handle_upload))
         .fallback_service(ServeDir::new("./").append_index_html_on_directories(false));
 
-    info!("Starting server on 0.0.0.0:3000");
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    info!("Starting server on 0.0.0.0:4000");
+    let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     let listener = TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

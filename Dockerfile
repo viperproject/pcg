@@ -64,6 +64,6 @@ COPY --from=node-builder /usr/src/app/visualization/index.html ./visualization/
 ENV RUST_BACKTRACE=1
 
 # Expose port for pcg-server
-EXPOSE 3000
+EXPOSE 4000
 
 CMD ["./pcg-server"]

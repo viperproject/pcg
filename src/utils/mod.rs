@@ -6,6 +6,7 @@
 
 pub mod place;
 pub(crate) mod repacker;
+pub mod eval_stmt_data;
 pub mod display;
 mod mutable;
 pub mod place_snapshot;

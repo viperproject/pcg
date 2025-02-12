@@ -124,14 +124,9 @@ fn benchmark_test_files() {
         println!(); // Add blank line for readability
     }
 
-    if !results_path.exists() {
-        write_results(&results, &results_path).expect("Failed to write benchmark results");
-        println!("Benchmark results written to {:?}", results_path);
-
-        println!("\nFinal Results:");
-        println!("==============");
-        print!("{}", format_results(&results));
-    }
+    println!("\nFinal Results:");
+    println!("==============");
+    print!("{}", format_results(&results));
 
     assert!(!regression_detected, "Performance regression detected!");
 }
