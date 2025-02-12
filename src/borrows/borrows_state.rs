@@ -15,7 +15,7 @@ use crate::{
     },
     utils::{
         display::DebugLines,
-        join_lattice_verifier::{HasBlock, JoinComputation, JoinLatticeVerifier},
+        join_lattice_verifier::{HasBlock, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
     },
@@ -26,9 +26,8 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
-
+use crate::borrows::edge::borrow::BorrowEdge;
 use super::{
-    borrow_edge::BorrowEdge,
     borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{

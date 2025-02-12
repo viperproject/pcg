@@ -11,9 +11,8 @@ use crate::{
         display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceRepacker,
     },
 };
-
+use crate::borrows::edge::borrow::BorrowEdge;
 use super::{
-    borrow_edge::BorrowEdge,
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,

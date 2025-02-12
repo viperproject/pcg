@@ -24,9 +24,8 @@ use crate::{
     utils::{env_feature_enabled, Place, PlaceRepacker},
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
-
+use crate::borrows::edge::borrow::BorrowEdge;
 use super::{
-    borrow_edge::BorrowEdge,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
         LocalNode, ToBorrowsEdge,

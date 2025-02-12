@@ -1,3 +1,4 @@
+pub mod edge;
 pub mod borrow_edge;
 pub mod borrow_pcg_action;
 pub mod borrow_pcg_capabilities;
