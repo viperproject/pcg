@@ -4,15 +4,17 @@ use crate::combined_pcs::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
 use crate::{
-    borrows::{borrows_state::BorrowsState, domain::MaybeOldPlace, edge_data::EdgeData},
+    borrows::{borrows_state::BorrowsState, edge_data::EdgeData},
     combined_pcs::PCGNode,
     utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
     ToJsonWithRepacker,
 };
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::borrow_pcg_edge::BorrowPCGEdgeLike;
-use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind};
+use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge};
 
 type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
 type UnblockEdgeType<'tcx> = BorrowPCGEdgeKind<'tcx>;

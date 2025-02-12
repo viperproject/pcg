@@ -21,9 +21,10 @@ use crate::{
     },
 };
 use crate::utils::place::corrected::CorrectedPlace;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use super::{
     borrow_pcg_edge::{BlockingNode, LocalNode},
-    domain::{MaybeOldPlace, ToJsonWithRepacker},
+    domain::ToJsonWithRepacker,
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     region_projection::RegionProjection,

@@ -1,10 +1,10 @@
 use crate::{
     borrows::{
-        borrow_pcg_edge::{BorrowPCGEdgeKind, BorrowPCGEdgeLike, LocalNode},
+        borrow_pcg_edge::{BorrowPCGEdgeLike, LocalNode},
         borrows_graph::BorrowsGraph,
         borrows_state::BorrowsState,
         coupling_graph_constructor::CGNode,
-        domain::{MaybeOldPlace, RemotePlace},
+        domain::RemotePlace,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         unblock_graph::UnblockGraph,
     },
@@ -22,7 +22,9 @@ use std::{
     ops::Deref,
 };
 use crate::borrows::edge::abstraction::AbstractionType;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
 use crate::rustc_interface::middle::ty::{self, TyCtxt};
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 

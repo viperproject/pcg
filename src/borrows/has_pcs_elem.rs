@@ -1,6 +1,6 @@
 use crate::utils::{validity::HasValidityCheck, Place, PlaceRepacker};
-
-use super::{domain::MaybeOldPlace, latest::Latest};
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use super::latest::Latest;
 
 pub(crate) trait HasPcsElems<T> {
     fn pcs_elems(&mut self) -> Vec<&mut T>;

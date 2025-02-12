@@ -13,12 +13,13 @@ use crate::{
 };
 use crate::borrows::edge::abstraction::AbstractionType;
 use crate::borrows::edge::borrow::BorrowEdge;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
-    domain::MaybeOldPlace,
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
@@ -403,36 +404,6 @@ where
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BorrowPCGEdgeKind<'tcx> {
-    Borrow(BorrowEdge<'tcx>),
-    BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
-    Abstraction(AbstractionType<'tcx>),
-    RegionProjectionMember(RegionProjectionMember<'tcx>),
-}
-
-impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGEdgeKind<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        match self {
-            BorrowPCGEdgeKind::Borrow(borrow) => borrow.check_validity(repacker),
-            BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => expansion.check_validity(repacker),
-            BorrowPCGEdgeKind::Abstraction(abstraction) => abstraction.check_validity(repacker),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.check_validity(repacker),
-        }
-    }
-}
-
-impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdgeKind<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        match self {
-            BorrowPCGEdgeKind::Borrow(borrow) => borrow.to_short_string(repacker),
-            BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => expansion.to_short_string(repacker),
-            BorrowPCGEdgeKind::Abstraction(abstraction) => abstraction.to_short_string(repacker),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.to_short_string(repacker),
-        }
-    }
-}
-
 edgedata_enum!(
     BorrowPCGEdgeKind<'tcx>,
     Borrow(BorrowEdge<'tcx>),
@@ -441,40 +412,6 @@ edgedata_enum!(
     RegionProjectionMember(RegionProjectionMember<'tcx>)
 );
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
-        match self {
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
-            _ => vec![],
-        }
-    }
-}
-
-impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdgeKind<'tcx>
-where
-    BorrowEdge<'tcx>: HasPcsElems<T>,
-    RegionProjectionMember<'tcx>: HasPcsElems<T>,
-    BorrowPCGExpansion<'tcx>: HasPcsElems<T>,
-    AbstractionType<'tcx>: HasPcsElems<T>,
-{
-    fn pcs_elems(&mut self) -> Vec<&mut T> {
-        match self {
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
-            BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.pcs_elems(),
-            BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => deref_expansion.pcs_elems(),
-            BorrowPCGEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
-        }
-    }
-}
-
-impl<'tcx> BorrowPCGEdgeKind<'tcx> {
-    pub(crate) fn is_shared_borrow(&self) -> bool {
-        match self {
-            BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(),
-            _ => false,
-        }
-    }
-}
 pub(crate) trait ToBorrowsEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }

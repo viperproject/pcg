@@ -1,7 +1,6 @@
 use crate::{
     borrows::{
         borrow_pcg_edge::LocalNode,
-        domain::MaybeOldPlace,
         region_projection::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
@@ -9,6 +8,7 @@ use crate::{
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
     ToJsonWithRepacker,
 };
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
