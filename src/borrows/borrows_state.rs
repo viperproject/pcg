@@ -15,7 +15,7 @@ use crate::{
     },
     utils::{
         display::DebugLines,
-        join_lattice_verifier::{HasBlock, JoinLatticeVerifier},
+        join_lattice_verifier::{HasBlock, JoinComputation, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
     },
@@ -795,7 +795,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         edge,
                         location,
                         repacker,
-                        &format!("Trim Old Leaves (blocked by: {:?})", blocked_by_nodes),
+                        "Trim Old Leaves",
                     ));
                     let curr_num_edges = self.graph.num_edges();
                     assert!(curr_num_edges < num_edges_prev);

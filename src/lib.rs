@@ -30,7 +30,7 @@ use borrows::{
     unblock_graph::BorrowPCGUnblockAction,
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
-use free_pcs::{CapabilityKind, RepackOp};
+use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
 use utils::{display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker};
@@ -240,6 +240,19 @@ impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx> From<&'a FreePcsLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
+    fn from(location: &'a FreePcsLocation<'tcx>) -> Self {
+        Self {
+            latest: &location.borrows.post_main.latest,
+            free_pcg_repacks_start: &location.repacks_start,
+            free_pcg_repacks_middle: &location.repacks_middle,
+            borrows_bridge_start: &location.extra_start,
+            borrows_bridge_middle: &location.extra_middle,
+            actions: location.actions.clone().map(|actions| actions.to_vec()),
+        }
+    }
+}
+
 pub fn run_combined_pcs<'mir, 'tcx>(
     mir: &'mir BodyWithBorrowckFacts<'tcx>,
     tcx: TyCtxt<'tcx>,
@@ -295,14 +308,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                 if validity_checks_enabled() {
                     statement.assert_validity(rp);
                 }
-                let data = PCGStmtVisualizationData {
-                    latest: &statement.borrows.post_main.latest,
-                    free_pcg_repacks_start: &statement.repacks_start,
-                    free_pcg_repacks_middle: &statement.repacks_middle,
-                    borrows_bridge_start: &statement.extra_start,
-                    borrows_bridge_middle: &statement.extra_middle,
-                    actions: statement.actions.clone().map(|actions| actions.to_vec()),
-                };
+                let data = PCGStmtVisualizationData::from(statement);
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",
                     &dir_path,
@@ -312,6 +318,19 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                 let pcg_data_json = data.to_json(rp);
                 std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
                     .expect("Failed to write pcg data to JSON file");
+
+                for succ in pcs_block.terminator.succs.iter() {
+                    let data = PCGStmtVisualizationData::from(succ);
+                    let pcg_data_file_path = format!(
+                        "{}/block_{}_term_block_{}_pcg_data.json",
+                        &dir_path,
+                        block.index(),
+                        succ.location.block.index()
+                    );
+                    let pcg_data_json = data.to_json(rp);
+                    std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
+                        .expect("Failed to write pcg data to JSON file");
+                }
             }
         }
     }

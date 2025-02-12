@@ -60,6 +60,7 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
 
 #[allow(unused)]
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
+    // body.body.basic_blocks.len() < 10
     // DEBUG
     // if format!("{:?}", body.body.span).contains("make_varule.rs:342") {
     //     eprintln!("Hit: {:?}", body.body.span);

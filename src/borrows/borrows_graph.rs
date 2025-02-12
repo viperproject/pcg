@@ -331,11 +331,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         true
     }
 
-    pub(crate) fn leaf_edges<'slf, 'mir>(
+    pub(crate) fn leaf_edges_set<'slf, 'mir>(
         &'slf self,
         repacker: PlaceRepacker<'mir, 'tcx>,
         frozen_graph: Option<&FrozenGraphRef<'slf, 'tcx>>,
-    ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
+    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
         let fg = match frozen_graph {
             Some(fg) => fg,
             None => &self.frozen_graph(),
@@ -343,6 +343,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges()
             .filter(move |edge| self.is_leaf_edge(edge, repacker, Some(fg)))
             .collect()
+    }
+
+    pub(crate) fn leaf_edges<'fg, 'slf: 'fg, 'mir: 'slf>(
+        &'slf self,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+        fg: &'fg FrozenGraphRef<'slf, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + 'fg {
+        self.edges()
+            .filter(move |edge| self.is_leaf_edge(edge, repacker, Some(fg)))
     }
 
     pub(crate) fn nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
@@ -362,7 +371,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         frozen_graph: Option<&FrozenGraphRef<'slf, 'tcx>>,
     ) -> FxHashSet<LocalNode<'tcx>> {
-        self.leaf_edges(repacker, frozen_graph)
+        let fg = match frozen_graph {
+            Some(fg) => fg,
+            None => &self.frozen_graph(),
+        };
+        self.leaf_edges(repacker, fg)
             .into_iter()
             .flat_map(|edge| edge.blocked_by_nodes(repacker).into_iter())
             .collect()
@@ -452,7 +465,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
         borrow_checker: &T,
-    ) -> bool {
+    ) {
         self.cached_is_valid.set(None);
         let self_coupling_graph =
             self.construct_coupling_graph(borrow_checker, repacker, other_block);
@@ -487,11 +500,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .filter(|edge| is_loop_abstraction_for_this_block(*edge))
             .map(|edge| edge.to_owned_edge())
             .collect();
-
-        let old_self = self.clone();
-
-        // Create new abstraction edges from the merged coupling graph
-        let mut changed = false;
 
         // Borrow PCG edges originally going through individual region projection
         // nodes should be moved to the corresponding coupled nodes.
@@ -543,9 +551,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 .into(),
                             RegionProjectionMemberKind::Todo,
                         ));
-                    let inserted =
-                        self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions().clone()));
-                    changed |= inserted;
+                    self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions().clone()));
                 }
                 self.remove(&edge);
             }
@@ -566,8 +572,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .to_borrow_pcg_edge(PathConditions::new(self_block));
 
             if !existing_edges.contains(&abstraction) {
-                let inserted = self.insert(abstraction);
-                changed |= inserted;
+                self.insert(abstraction);
             }
         }
 
@@ -590,7 +595,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for edge in encapsulated_edges {
             self.remove(&edge);
-            changed = true;
         }
 
         // The process may result interior (old) places now being roots in the
@@ -603,12 +607,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     .collect::<Vec<_>>()
                 {
                     self.remove(&edge);
-                    changed = true;
                 }
             }
         }
-
-        changed
     }
 
     /// Returns true iff `edge` connects two nodes within an abstraction edge
@@ -678,7 +679,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let _guard = span.enter();
 
         if repacker.is_back_edge(other_block, self_block) {
-            let result = self.join_loop(other, self_block, other_block, repacker, bc);
+            self.join_loop(other, self_block, other_block, repacker, bc);
+            let result = *self != old_self;
             if borrows_imgcat_debug() {
                 if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                     DotGraph::render_with_imgcat(
@@ -688,13 +690,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     .unwrap_or_else(|e| {
                         eprintln!("Error rendering self graph: {}", e);
                     });
+                    if result {
+                        eprintln!("{}", old_self.fmt_diff(self, repacker))
+                    }
                 }
             }
             // For performance reasons we don't check validity here.
             // if validity_checks_enabled() {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
             // }
-            return *self != old_self;
+            return result;
         }
         for other_edge in other.edges() {
             self.insert(other_edge.to_owned_edge());
@@ -723,6 +728,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 .unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {}", e);
                 });
+                if changed {
+                    eprintln!("{}", old_self.fmt_diff(self, repacker))
+                }
             }
         }
 
@@ -958,9 +966,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub(crate) fn leaf_edges<'slf>(
+    pub(crate) fn leaf_edges<'slf, 'mir>(
         &'slf self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         {
             let edges = self.leaf_edges_cache.borrow();
@@ -968,11 +976,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 return edges.as_ref().unwrap().clone();
             }
         }
-        let edges: FxHashSet<_> = self
-            .graph
-            .leaf_edges(repacker, Some(self))
-            .into_iter()
-            .collect();
+        let edges: FxHashSet<_> = self.graph.leaf_edges_set(repacker, Some(self));
         self.leaf_edges_cache.replace(Some(edges.clone()));
         edges
     }

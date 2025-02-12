@@ -9,7 +9,7 @@ use crate::{RestoreCapability, Weaken};
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::borrows_state::BorrowsState;
-use super::domain::{MaybeOldPlace, ToJsonWithRepacker};
+use super::domain::{AbstractionType, MaybeOldPlace, ToJsonWithRepacker};
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
 
@@ -32,6 +32,9 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     }
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match &self.kind {
+            BorrowPCGActionKind::AddAbstractionEdge(abstraction, path_conditions) => {
+                format!("Add Abstraction Edge: {}; path conditions: {}", abstraction.to_short_string(repacker), path_conditions)
+            }
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPCGActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
@@ -157,6 +160,7 @@ pub enum BorrowPCGActionKind<'tcx> {
     RemoveEdge(BorrowPCGEdge<'tcx>),
     AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
     InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx>, Location),
+    AddAbstractionEdge(AbstractionType<'tcx>, PathConditions),
     RenamePlace {
         old: MaybeOldPlace<'tcx>,
         new: MaybeOldPlace<'tcx>,
@@ -182,6 +186,9 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let result = match action.kind {
+            BorrowPCGActionKind::AddAbstractionEdge(abstraction, pc) => {
+                self.insert(abstraction.to_borrow_pcg_edge(pc))
+            }
             BorrowPCGActionKind::Restore(restore) => {
                 if let Some(cap) = self.get_capability(restore.node()) {
                     assert!(cap < restore.capability());

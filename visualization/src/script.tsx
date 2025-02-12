@@ -319,14 +319,11 @@ async function main() {
 
       const fetchPcgStmtVisualizationData = async () => {
         try {
-          if (currentPoint.type === "stmt") {
-            const pcgStmtVisualizationData = await getPCGStmtVisualizationData(
-              selectedFunction,
-              currentPoint.block,
-              currentPoint.stmt
-            );
-            setPcgStmtVisualizationData(pcgStmtVisualizationData);
-          }
+          const pcgStmtVisualizationData = await getPCGStmtVisualizationData(
+            selectedFunction,
+            currentPoint
+          );
+          setPcgStmtVisualizationData(pcgStmtVisualizationData);
         } catch (error) {
           console.error("Error fetching pcg stmt visualization data:", error);
         }

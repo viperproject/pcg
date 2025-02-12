@@ -87,7 +87,6 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
-
     fn apply_before(
         self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
@@ -130,7 +129,11 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         state.summaries.pre_main = state.summaries.post_operands.clone();
         for &triple in &tw.main_triples {
             let triple = triple.replace_place(self.0);
-            state.summaries.pre_main.requires(triple.pre(), self.0).unwrap();
+            state
+                .summaries
+                .pre_main
+                .requires(triple.pre(), self.0)
+                .unwrap();
         }
 
         // Apply main effects

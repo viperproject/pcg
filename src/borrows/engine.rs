@@ -20,7 +20,10 @@ use crate::{
             ty::{self, TyCtxt},
         },
     },
-    utils::validity::HasValidityCheck,
+    utils::{
+        display::{DebugLines, DisplayDiff},
+        validity::HasValidityCheck,
+    },
 };
 
 use crate::{
@@ -62,8 +65,12 @@ const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
+        if self.phase != DataflowPhase::Init {
+            self.entry_state = self.states.post_main.clone();
+            self.phase = DataflowPhase::Join;
+        }
         self.debug_join_iteration += 1;
-        tracing::debug!("Join iteration: {}", self.debug_join_iteration);
+
         if self.debug_join_iteration > DEBUG_JOIN_ITERATION_LIMIT {
             panic!(
                 "Block {:?} has not terminated after {} join iterations, this is probably a bug",
@@ -81,17 +88,18 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         // if validity_checks_enabled() {
         //     debug_assert!(other.is_valid(), "Other graph is invalid");
         // }
-        let mut other_after = other.post_state().clone();
+        let mut other_after = other.post_main_state().clone();
 
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let pc = PathCondition::new(other.block(), self.block());
         other_after.add_path_condition(pc);
 
-        // Overlay both graphs
-        self.states.post_main.join(
+        let self_block = self.block();
+
+        self.entry_state.join(
             &other_after,
-            self.block(),
+            self_block,
             other.block(),
             &self.bc,
             self.repacker,
@@ -122,6 +130,15 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         if state.has_error() {
             return;
         }
+        if location.statement_index == 0 {
+            // The entry state may have taken into account previous joins
+            state.states.post_main = state.entry_state.clone();
+            state.phase = DataflowPhase::Transfer;
+        } else {
+            // This statement is not the first one in the block, so it's initial
+            // state is the after_main state of the previous statement
+            state.entry_state = state.states.post_main.clone();
+        }
         state.states.pre_operands = state.states.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
@@ -130,11 +147,16 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
             state.states.pre_operands = state.states.post_main.clone();
         } else {
             if !state.has_error() {
-                debug_assert_eq!(
-                    state.states.pre_operands, state.states.post_main,
-                    "{:?}: No actions were emitted, but the state has changed",
-                    location
-                );
+                if state.states.pre_operands != state.entry_state {
+                    panic!(
+                        "{:?}: No actions were emitted, but the state has changed:\n{}",
+                        location,
+                        state.entry_state.fmt_diff(
+                            &state.states.pre_operands,
+                            PlaceRepacker::new(self.body, self.tcx)
+                        )
+                    );
+                }
             }
         }
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
@@ -166,6 +188,15 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
     ) {
         if state.has_error() {
             return;
+        }
+        if location.statement_index == 0 {
+            // The entry state may have taken into account previous joins
+            state.states.post_main = state.entry_state.clone();
+            state.phase = DataflowPhase::Transfer;
+        } else {
+            // This statement is not the first one in the block, so it's initial
+            // state is the after_main state of the previous statement
+            state.entry_state = state.states.post_main.clone();
         }
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_terminator(terminator, location);
@@ -251,6 +282,17 @@ impl<T> EvalStmtData<T> {
         ]
         .into_iter()
     }
+
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (EvalStmtPhase, &mut T)> {
+        [
+            (EvalStmtPhase::PreOperands, &mut self.pre_operands),
+            (EvalStmtPhase::PostOperands, &mut self.post_operands),
+            (EvalStmtPhase::PreMain, &mut self.pre_main),
+            (EvalStmtPhase::PostMain, &mut self.post_main),
+        ]
+        .into_iter()
+    }
+
     pub(crate) fn get(&self, phase: EvalStmtPhase) -> &T {
         match phase {
             EvalStmtPhase::PreOperands => &self.pre_operands,
@@ -294,11 +336,21 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsStates<'tcx> {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum DataflowPhase {
+    Init,
+    Join,
+    Transfer,
+}
+
 #[derive(Clone)]
 /// The domain of the Borrow PCG dataflow analysis. Note that this contains many
 /// fields which serve as context (e.g. reference to a borrow-checker impl to
 /// properly compute joins) but are not updated in the analysis itself.
 pub struct BorrowsDomain<'mir, 'tcx> {
+    /// The state before evaluating the statement. If this statement is not the first statement
+    /// of a block, this is simply the post_main state of the previous block.
+    pub(crate) entry_state: BorrowsState<'tcx>,
     pub(crate) states: BorrowsStates<'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
@@ -308,12 +360,15 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
     pub(crate) debug_join_iteration: usize,
+    pub(crate) phase: DataflowPhase,
     error: Option<PCGError>,
 }
 
 impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
     fn eq(&self, other: &Self) -> bool {
-        self.states == other.states && self.block == other.block
+        self.entry_state == other.entry_state
+            && self.states == other.states
+            && self.block == other.block
     }
 }
 
@@ -335,7 +390,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             self.actions.pre_main.clone().into(),
         )
     }
-    pub(crate) fn post_state(&self) -> &BorrowsState<'tcx> {
+    pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
         &self.states.post_main
     }
 
@@ -374,6 +429,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
+            phase: DataflowPhase::Init,
+            entry_state: BorrowsState::default(),
             states: BorrowsStates::default(),
             actions: EvalStmtData::default(),
             block,
@@ -388,7 +445,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
-            assert!(self.states.post_main.set_capability(
+            assert!(self.entry_state.set_capability(
                 MaybeRemotePlace::place_assigned_to_local(local),
                 if mutability.is_mut() {
                     CapabilityKind::Exclusive
@@ -396,7 +453,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                     CapabilityKind::Read
                 },
             ));
-            let _ = self.states.post_main.apply_action(
+            let _ = self.entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         vec![MaybeRemotePlace::place_assigned_to_local(local).into()],
@@ -414,7 +471,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         }
         let local_place: utils::Place<'tcx> = arg_place.into();
         for region_projection in local_place.region_projections(self.repacker) {
-            assert!(self.states.post_main.apply_action(
+            assert!(self.entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         vec![RegionProjection::new(
@@ -439,8 +496,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let arg_place: utils::Place<'tcx> = arg.into();
             for rp in arg_place.region_projections(self.repacker) {
                 assert!(self
-                    .states
-                    .post_main
+                    .entry_state
                     .set_capability(rp, CapabilityKind::Exclusive));
             }
             self.introduce_initial_borrows(arg);

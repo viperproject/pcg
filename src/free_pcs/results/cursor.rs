@@ -6,6 +6,7 @@
 
 use crate::{
     borrows::{
+        borrow_pcg_action::BorrowPCGActionKind,
         engine::{BorrowsDomain, EvalStmtData},
         latest::Latest,
     },
@@ -130,7 +131,8 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         // TODO: cleanup
         let rp: PlaceRepacker = self.repacker();
-        let state = self.cursor.get().get_curr_fpcg().clone();
+        let from_fpcg_state = self.cursor.get().get_curr_fpcg().clone();
+        let from_borrows_state = self.cursor.get().get_curr_borrow_pcg().clone();
         let block = &self.body()[location.block];
         let succs = block
             .terminator()
@@ -139,18 +141,42 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
                 let to = entry_set.get_curr_fpcg();
+                let to_borrows_state = entry_set.get_curr_borrow_pcg();
                 FreePcsLocation {
                     location: Location {
                         block: succ,
                         statement_index: 0,
                     },
-                    actions: entry_set.get_curr_borrow_pcg().actions.clone(),
+                    actions: to_borrows_state.actions.clone(),
                     states: to.summaries.clone(),
-                    repacks_start: state.post_main().bridge(&to.post_main(), rp).unwrap(),
+                    repacks_start: from_fpcg_state
+                        .post_main()
+                        .bridge(&to.summaries.post_main, rp)
+                        .unwrap(),
                     repacks_middle: Vec::new(),
-                    borrows: entry_set.get_curr_borrow_pcg().states.clone(),
+                    borrows: to_borrows_state.states.clone(),
                     // TODO: It seems like extra_start should be similar to repacks_start
-                    extra_start: BorrowsBridge::new(),
+                    extra_start: {
+                        let mut actions = BorrowPCGActions::new();
+                        let self_abstraction_edges = from_borrows_state
+                            .states
+                            .post_main
+                            .graph()
+                            .abstraction_edges();
+                        for abstraction in to_borrows_state.entry_state.graph().abstraction_edges()
+                        {
+                            if !self_abstraction_edges.contains(&abstraction) {
+                                actions.push(
+                                    BorrowPCGActionKind::AddAbstractionEdge(
+                                        abstraction.value,
+                                        abstraction.conditions,
+                                    )
+                                    .into(),
+                                );
+                            }
+                        }
+                        actions.into()
+                    },
                     extra_middle: BorrowsBridge::new(),
                 }
             })
@@ -188,6 +214,11 @@ impl<'tcx> FreePcsBasicBlock<'tcx> {
                 for line in stmt.debug_lines(phase, repacker) {
                     result.push(format!("{:?} {}: {}", stmt.location, phase, line));
                 }
+            }
+        }
+        for term_succ in self.terminator.succs.iter() {
+            for line in term_succ.debug_lines(EvalStmtPhase::PostMain, repacker) {
+                result.push(format!("Terminator: {}", line));
             }
         }
         result
