@@ -23,7 +23,7 @@ use crate::{
         unblock_graph::{UnblockGraph, UnblockType},
     },
     combined_pcs::PCGNode,
-    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
+    free_pcs::{CapabilityLocal, CapabilitySummary, FreePlaceCapabilitySummary},
     rustc_interface,
     visualization::generate_dot_graph,
     RECORD_PCG,
@@ -93,7 +93,7 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
     cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) block: Option<BasicBlock>,
 
-    pcg: PCG<'a, 'tcx>,
+    pub(crate) pcg: PCG<'a, 'tcx>,
     dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
 
     dot_output_dir: Option<String>,
@@ -285,7 +285,12 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         )
     }
 
-    pub(crate) fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
+    pub(crate) fn generate_dot_graph(
+        &mut self,
+        phase: DataflowStmtPhase,
+        statement_index: usize,
+        initial_owned_pcg: Option<&CapabilitySummary<'tcx>>,
+    ) {
         if !*RECORD_PCG.lock().unwrap() {
             return;
         }
@@ -317,15 +322,14 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             let pcg = &self.pcg;
 
             let (fpcs, borrows) = match phase {
-                DataflowStmtPhase::Initial => (
-                    &pcg.owned.summaries.pre_operands,
-                    &pcg.borrow.states.pre_operands,
-                ),
+                DataflowStmtPhase::Initial => {
+                    (initial_owned_pcg.unwrap(), &pcg.borrow.entry_state)
+                }
                 DataflowStmtPhase::EvalStmt(phase) => {
                     (pcg.owned.summaries.get(phase), pcg.borrow.states.get(phase))
                 }
                 DataflowStmtPhase::Join(_) => {
-                    (&pcg.owned.summaries.post_main, &pcg.borrow.states.post_main)
+                    (&pcg.owned.summaries.post_main, &pcg.borrow.entry_state)
                 }
             };
 
@@ -407,15 +411,15 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         }
         let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
         let mut g = UnblockGraph::new();
-        for root in self.borrow_pcg().states.post_main.roots(self.cgx.rp) {
+        for root in self.borrow_pcg().entry_state.roots(self.cgx.rp) {
             if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
                 root
             {
-                match &self.owned_pcg().post_main()[root.local] {
+                match &self.owned_pcg().summaries.post_main[root.local] {
                     CapabilityLocal::Unallocated => {
                         g.unblock_node(
                             root.into(),
-                            &self.borrow_pcg().states.post_main,
+                            &self.borrow_pcg().entry_state,
                             self.cgx.rp,
                             UnblockType::ForRead,
                         );
@@ -424,7 +428,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                         if !(*projs).contains_key(&root) {
                             g.unblock_node(
                                 root.into(),
-                                &self.borrow_pcg().states.post_main,
+                                &self.borrow_pcg().entry_state,
                                 self.cgx.rp,
                                 UnblockType::ForExclusive,
                             );
@@ -434,7 +438,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             }
         }
         self.dot_graphs().borrow_mut().register_new_iteration(0);
-        self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
+        self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0, None);
         fpcs || borrows
     }
 }

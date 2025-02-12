@@ -33,7 +33,6 @@ pub enum PCGRegion {
     RegionVid(RegionVid),
     ReErased,
     ReStatic,
-    /// TODO: Do we need this?
     ReBound(DebruijnIndex, ty::BoundRegion),
 
     ReLateParam(ty::LateParamRegion),

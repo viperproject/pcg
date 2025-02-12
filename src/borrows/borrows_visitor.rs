@@ -342,7 +342,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 let source_proj = source_proj.map_base(|p| {
                                     MaybeOldPlace::new(
                                         p,
-                                        Some(self.domain.post_state().get_latest(p)),
+                                        Some(self.domain.post_main_state().get_latest(p)),
                                     )
                                 });
                                 self.connect_outliving_projections(
@@ -479,7 +479,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     ) {
         if self
             .domain
-            .post_state()
+            .post_main_state()
             .graph()
             .has_function_call_abstraction_at(location)
         {
@@ -519,7 +519,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             };
             let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                 input_place,
-                self.domain.post_state().get_latest(input_place),
+                self.domain.post_main_state().get_latest(input_place),
             ));
             let ty = input_place.ty(self.repacker).ty;
             let ty = match ty.kind() {
@@ -532,7 +532,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         let input_rp = input_place.region_projection(0, self.repacker);
                         let actions = UnblockGraph::actions_to_unblock(
                             input_rp.into(),
-                            &self.domain.post_state(),
+                            &self.domain.post_main_state(),
                             self.repacker,
                         )
                         .unwrap_or_else(|e| {
@@ -583,7 +583,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     // Only add the edge if the input projection already exists, i.e.
                     // is blocking something else. Otherwise, there is no point in tracking
                     // when it becomes accessible.
-                    if self.domain.post_state().contains(input_rp, self.repacker) {
+                    if self.domain.post_main_state().contains(input_rp, self.repacker) {
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
                             vec![output].into_iter().collect(),
@@ -723,8 +723,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
         self.debug_ctx = Some(DebugCtx::new(location));
 
-        // Remove places that are non longer live based on borrow checker information
         if self.preparing && self.stage == StatementStage::Operands {
+
+            // Remove places that are non longer live based on borrow checker information
             let actions = self.domain.states.post_main.pack_old_and_dead_leaves(
                 self.repacker,
                 location,

@@ -1,7 +1,7 @@
 use serde_derive::Deserialize;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::io::Write;
 
 #[allow(dead_code)]
 pub fn get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
@@ -61,7 +61,10 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path) {
         .env("RUSTC", &pcs_exe)
         .current_dir(dir)
         .status()
-        .expect(&format!("Failed to execute cargo check on {}", dir.display()));
+        .expect(&format!(
+            "Failed to execute cargo check on {}",
+            dir.display()
+        ));
 
     assert!(
         exit.success(),
@@ -94,6 +97,10 @@ pub fn run_pcg_on_file(file: &Path) {
 #[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str) {
     match (name, version) {
+        ("generic-array", "1.2.0") if rustversion::cfg!(nightly(2024 - 09 - 14)) => {
+            eprintln!("Skipping generic-array; it's not supported on nightly 2024-09-14");
+            return;
+        }
         ("plotters", "0.3.7") | ("clang-sys", "1.8.1") => {
             // TODO: This should be relatively easy to fix
             eprintln!("Skipping {name} {version}; haven't figured out how to run it on NixOS yet.");

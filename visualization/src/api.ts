@@ -1,5 +1,5 @@
 import { Assertion } from "./components/Assertions";
-import { PCGStmtVisualizationData } from "./types";
+import { CurrentPoint, PCGStmtVisualizationData } from "./types";
 
 export type MirGraphNode = {
   id: string;
@@ -52,7 +52,7 @@ export const getPaths = async (functionName: string) => {
     );
     return paths;
   } catch (error) {
-    console.error(error);
+    // Paths are only present for symbolic execution
     return [];
   }
 };
@@ -64,19 +64,21 @@ export const getAssertions = async (functionName: string) => {
     );
     return assertions;
   } catch (error) {
-    console.error(error);
+    // Assertions are only present for symbolic execution
     return [];
   }
 };
 
 export async function getPCGStmtVisualizationData(
   functionName: string,
-  block: number,
-  stmt: number
+  currentPoint: CurrentPoint
 ): Promise<PCGStmtVisualizationData> {
-  return await fetchJsonFile(
-    `data/${functionName}/block_${block}_stmt_${stmt}_pcg_data.json`
-  );
+  let path =
+    currentPoint.type === "stmt"
+      ? `block_${currentPoint.block}_stmt_${currentPoint.stmt}`
+      : `block_${currentPoint.block1}_term_block_${currentPoint.block2}`;
+
+  return await fetchJsonFile(`data/${functionName}/${path}_pcg_data.json`);
 }
 
 export async function getPathData(
