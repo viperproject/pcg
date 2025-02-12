@@ -6,8 +6,8 @@ use crate::rustc_interface::{
     middle::ty::GenericArgsRef,
 };
 
-use crate::borrows::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeKind, LocalNode, ToBorrowsEdge};
-use crate::borrows::domain::{AbstractionInputTarget, AbstractionOutputTarget, MaybeOldPlace};
+use crate::borrows::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
+use crate::borrows::domain::{AbstractionInputTarget, AbstractionOutputTarget};
 use crate::borrows::edge_data::EdgeData;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::path_condition::PathConditions;
@@ -18,6 +18,8 @@ use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 use itertools::Itertools;
 use std::collections::BTreeSet;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {

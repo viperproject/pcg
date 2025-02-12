@@ -1,12 +1,13 @@
 use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::index::IndexVec;
-use crate::borrows::domain::{MaybeOldPlace, RemotePlace, ToJsonWithRepacker};
+use crate::borrows::domain::{RemotePlace, ToJsonWithRepacker};
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike};
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::utils::{HasPlace, Place, PlaceRepacker};
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub enum MaybeRemotePlace<'tcx> {

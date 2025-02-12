@@ -16,6 +16,7 @@ use crate::{
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
 };
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::PlaceRepacker;
 
@@ -23,7 +24,7 @@ use super::{
     borrow_pcg_edge::LocalNode,
     borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
-    domain::{MaybeOldPlace, ToJsonWithRepacker},
+    domain::ToJsonWithRepacker,
 };
 use super::has_pcs_elem::HasPcsElems;
 

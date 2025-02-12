@@ -9,11 +9,12 @@ use crate::rustc_interface::{
 
 use serde_json::json;
 use crate::borrows::borrow_pcg_edge::{BlockedNode, LocalNode};
-use crate::borrows::domain::{MaybeOldPlace, ToJsonWithRepacker};
+use crate::borrows::domain::ToJsonWithRepacker;
 use crate::borrows::edge_data::EdgeData;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::region_projection::RegionProjection;
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::PlaceRepacker;
 use crate::utils::validity::HasValidityCheck;

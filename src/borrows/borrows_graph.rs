@@ -25,9 +25,10 @@ use crate::{
 };
 use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
 use crate::borrows::edge::borrow::BorrowEdge;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
 use super::{
     borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
         LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},

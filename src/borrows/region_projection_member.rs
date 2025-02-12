@@ -5,6 +5,7 @@ use crate::rustc_interface::{
     ast::Mutability, data_structures::fx::FxHashSet,
 };
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 
@@ -12,7 +13,7 @@ use super::borrow_pcg_edge::LocalNode;
 use super::domain::ToJsonWithRepacker;
 use super::edge_data::EdgeData;
 use super::{
-    domain::MaybeOldPlace, has_pcs_elem::HasPcsElems, region_projection::RegionProjection,
+    has_pcs_elem::HasPcsElems, region_projection::RegionProjection,
 };
 
 /// A PCG hyperedge where at the nodes of at least one of the edge endpoints are

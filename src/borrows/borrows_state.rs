@@ -28,19 +28,20 @@ use crate::{
 };
 use crate::borrows::edge::abstraction::AbstractionType;
 use crate::borrows::edge::borrow::BorrowEdge;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
         LocalNode, ToBorrowsEdge,
     },
     borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
     borrows_graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
     borrows_visitor::BorrowPCGActions,
     coupling_graph_constructor::BorrowCheckerInterface,
-    domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
