@@ -19,11 +19,11 @@ use serde_json::json;
 use tracing::{span, Level};
 
 use crate::{
-    borrows::domain::AbstractionType,
     coupling,
     utils::{env_feature_enabled, Place, PlaceRepacker},
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
+use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
 use crate::borrows::edge::borrow::BorrowEdge;
 use super::{
     borrow_pcg_edge::{
@@ -31,7 +31,7 @@ use super::{
         LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
-    domain::{AbstractionBlockEdge, LoopAbstraction, ToJsonWithRepacker},
+    domain::ToJsonWithRepacker,
     edge_data::EdgeData,
     has_pcs_elem::{HasPcsElems, MakePlaceOld},
     latest::Latest,

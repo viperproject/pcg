@@ -11,12 +11,14 @@ use crate::{
         display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceRepacker,
     },
 };
+use crate::borrows::edge::abstraction::AbstractionType;
 use crate::borrows::edge::borrow::BorrowEdge;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     borrows_graph::Conditioned,
     coupling_graph_constructor::CGNode,
-    domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
+    domain::MaybeOldPlace,
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},

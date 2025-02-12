@@ -26,11 +26,12 @@ use crate::{
     BorrowsBridge,
 };
 use crate::utils::eval_stmt_data::EvalStmtData;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrows_state::BorrowsState,
     borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions, BorrowsVisitor, StatementStage},
-    domain::{MaybeRemotePlace, RemotePlace},
+    domain::RemotePlace,
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},

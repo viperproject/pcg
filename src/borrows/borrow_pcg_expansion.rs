@@ -16,11 +16,11 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex, CorrectedPlace,
+        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex,
         HasPlace, Place, PlaceRepacker,
     },
 };
-
+use crate::utils::place::corrected::CorrectedPlace;
 use super::{
     borrow_pcg_edge::{BlockingNode, LocalNode},
     domain::{MaybeOldPlace, ToJsonWithRepacker},

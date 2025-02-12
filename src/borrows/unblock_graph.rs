@@ -10,12 +10,9 @@ use crate::{
     visualization::generate_unblock_dot_graph,
     ToJsonWithRepacker,
 };
-
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::borrow_pcg_edge::BorrowPCGEdgeLike;
-use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind},
-    domain::MaybeRemotePlace,
-};
+use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeKind};
 
 type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
 type UnblockEdgeType<'tcx> = BorrowPCGEdgeKind<'tcx>;

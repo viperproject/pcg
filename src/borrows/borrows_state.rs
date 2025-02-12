@@ -26,7 +26,9 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
+use crate::borrows::edge::abstraction::AbstractionType;
 use crate::borrows::edge::borrow::BorrowEdge;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use super::{
     borrow_pcg_action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
@@ -38,7 +40,7 @@ use super::{
     borrows_graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
     borrows_visitor::BorrowPCGActions,
     coupling_graph_constructor::BorrowCheckerInterface,
-    domain::{AbstractionType, MaybeOldPlace, MaybeRemotePlace},
+    domain::MaybeOldPlace,
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
