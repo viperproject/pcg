@@ -591,9 +591,8 @@ impl<'tcx> MaybeOldPlace<'tcx> {
 
 use crate::utils::PlaceRepacker;
 use serde_json::json;
-
+use crate::borrows::edge::borrow::BorrowEdge;
 use super::{
-    borrow_edge::BorrowEdge,
     borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge},
     borrows_visitor::extract_regions,
     coupling_graph_constructor::CGNode,
