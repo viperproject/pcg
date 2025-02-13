@@ -31,7 +31,10 @@ use borrows::{
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{
-    data_structures::fx::FxHashSet, dataflow::{compute_fixpoint, Analysis, PCGAnalysis}, middle::ty::TyCtxt, mir_dataflow,
+    data_structures::fx::FxHashSet,
+    dataflow::{compute_fixpoint, Analysis, PCGAnalysis},
+    middle::ty::TyCtxt,
+    mir_dataflow,
 };
 use serde_json::json;
 use utils::{
@@ -279,7 +282,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
     }
-    let analysis = compute_fixpoint(fpcg, tcx, &mir.body);
+    let analysis = compute_fixpoint(PCGAnalysis(fpcg), tcx, &mir.body);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = false;
