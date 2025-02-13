@@ -209,6 +209,8 @@ impl driver::Callbacks for PcsCallbacks {
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }
+
+    #[rustversion::before(2024-12-14)]
     fn after_analysis<'tcx>(
         &mut self,
         _compiler: &Compiler,
@@ -221,6 +223,28 @@ impl driver::Callbacks for PcsCallbacks {
             Compilation::Stop
         }
     }
+
+    #[rustversion::since(2024-12-14)]
+    fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        run_pcg_on_all_fns(tcx);
+        if std::env::var("CARGO").is_ok() {
+            Compilation::Continue
+        } else {
+            Compilation::Stop
+        }
+    }
+}
+
+#[rustversion::before(2024-12-14)]
+fn go(args: Vec<String>) {
+    driver::RunCompiler::new(&args, &mut PcsCallbacks)
+        .run()
+        .unwrap()
+}
+
+#[rustversion::since(2024-12-14)]
+fn go(args: Vec<String>) {
+    driver::RunCompiler::new(&args, &mut PcsCallbacks).run()
 }
 
 fn main() {
@@ -247,8 +271,5 @@ fn main() {
         .join(" ");
     trace!("Running rustc with args: {}", args_str);
 
-    let mut callbacks = PcsCallbacks;
-    driver::RunCompiler::new(&rustc_args, &mut callbacks)
-        .run()
-        .unwrap();
+    go(rustc_args);
 }

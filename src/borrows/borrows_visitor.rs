@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::rustc_interface::mir_dataflow::Analysis as MirAnalysis;
+use crate::rustc_interface::{dataflow::compute_fixpoint, mir_dataflow::Analysis as MirAnalysis};
 use tracing::instrument;
 
 use crate::{
@@ -11,10 +11,9 @@ use crate::{
     combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::{
-            borrow_set::BorrowSet,
+            consumers::BorrowSet,
             consumers::{PoloniusOutput, RegionInferenceContext},
         },
-        mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor},
         index::IndexVec,
         middle::{
             mir::{
@@ -25,6 +24,7 @@ use crate::{
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
+        mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor},
     },
     utils::Place,
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
@@ -168,9 +168,7 @@ impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
         region_cx: Rc<RegionInferenceContext<'tcx>>,
         borrows: Rc<BorrowSet<'tcx>>,
     ) -> Self {
-        let cursor = MaybeLiveLocals
-            .into_engine(repacker.tcx(), repacker.body())
-            .iterate_to_fixpoint()
+        let cursor = compute_fixpoint(MaybeLiveLocals, repacker.tcx(), repacker.body())
             .into_results_cursor(repacker.body());
         Self {
             cursor: Rc::new(RefCell::new(cursor)),
@@ -191,6 +189,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         }
     }
 
+    #[rustversion::before(2024-12-14)]
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let local = match node {
             PCGNode::RegionProjection(rp) => {
@@ -210,13 +209,33 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         cursor.contains(local)
     }
 
+    #[rustversion::since(2024-12-14)]
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        let local = match node {
+            PCGNode::RegionProjection(rp) => {
+                if let Some(local) = rp.local() {
+                    local
+                } else {
+                    todo!()
+                }
+            }
+            PCGNode::Place(MaybeRemotePlace::Local(p)) => p.local(),
+            _ => {
+                return true;
+            }
+        };
+        let mut cursor = self.cursor.as_ref().borrow_mut();
+        cursor.seek_before_primary_effect(location);
+        cursor.get().contains(local)
+    }
+
     fn twophase_borrow_activations(
         &self,
         location: Location,
     ) -> std::collections::BTreeSet<Location> {
-        self.borrows.activation_map[&location]
+        self.borrows.activation_map()[&location]
             .iter()
-            .map(|idx| self.borrows[*idx].reserve_location)
+            .map(|idx| self.borrows[*idx].reserve_location())
             .collect()
     }
 }

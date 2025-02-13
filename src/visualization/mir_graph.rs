@@ -190,10 +190,7 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) 
         mir::StatementKind::AscribeUserType(_, _) => {
             format!("AscribeUserType(...)")
         }
-        mir::StatementKind::Coverage(_) => todo!(),
-        mir::StatementKind::Intrinsic(_) => todo!(),
-        mir::StatementKind::ConstEvalCounter => todo!(),
-        mir::StatementKind::Nop => todo!(),
+        _ => todo!(),
     }
 }
 

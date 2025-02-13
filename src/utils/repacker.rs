@@ -6,7 +6,7 @@
 
 use rustc_interface::{
     data_structures::fx::FxHashSet,
-    mir_dataflow::storage,
+    mir_dataflow,
     index::{bit_set::BitSet, Idx},
     middle::{
         mir::{
@@ -91,9 +91,16 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         self.mir.local_decls().len()
     }
 
+    #[rustversion::before(2024-12-14)]
     pub fn always_live_locals(self) -> BitSet<Local> {
-        storage::always_storage_live_locals(self.mir)
+        mir_dataflow::storage::always_storage_live_locals(self.mir)
     }
+
+    #[rustversion::since(2024-12-14)]
+    pub fn always_live_locals(self) -> BitSet<Local> {
+        mir_dataflow::impls::always_storage_live_locals(self.mir)
+    }
+
     pub fn always_live_locals_non_args(self) -> BitSet<Local> {
         let mut all = self.always_live_locals();
         for arg in 0..self.mir.arg_count + 1 {
