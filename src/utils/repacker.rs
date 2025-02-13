@@ -6,7 +6,7 @@
 
 use rustc_interface::{
     data_structures::fx::FxHashSet,
-    dataflow::storage,
+    mir_dataflow::storage,
     index::{bit_set::BitSet, Idx},
     middle::{
         mir::{

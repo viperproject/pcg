@@ -10,23 +10,19 @@ use std::{
     rc::Rc,
 };
 
-use crate::{
-    rustc_interface::{
-        borrowck::{
-            borrow_set::BorrowSet,
-            consumers::{
-                self, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-            },
+use crate::rustc_interface::{
+    borrowck::{
+        borrow_set::BorrowSet,
+        consumers::{self, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
+    },
+    dataflow::Analysis,
+    index::{Idx, IndexVec},
+    middle::{
+        mir::{
+            BasicBlock, Body, Location, Promoted, Statement, Terminator,
+            TerminatorEdges, START_BLOCK,
         },
-        dataflow::{Analysis, AnalysisDomain},
-        index::{Idx, IndexVec},
-        middle::{
-            mir::{
-                BasicBlock, Body, CallReturnPlaces, Location, Promoted, Statement, Terminator,
-                TerminatorEdges, START_BLOCK,
-            },
-            ty::{self, GenericArgsRef, ParamEnv, TyCtxt},
-        },
+        ty::{self, GenericArgsRef, ParamEnv, TyCtxt},
     },
 };
 
@@ -164,7 +160,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
+impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
     type Domain = PlaceCapabilitySummary<'a, 'tcx>;
     const NAME: &'static str = "pcs";
 
@@ -189,9 +185,6 @@ impl<'a, 'tcx> AnalysisDomain<'tcx> for PCGEngine<'a, 'tcx> {
         self.curr_block.set(START_BLOCK);
         state.pcg_mut().initialize_as_start_block();
     }
-}
-
-impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
     fn apply_before_statement_effect(
         &mut self,
         state: &mut Self::Domain,
@@ -281,14 +274,5 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
         terminator.edges()
-    }
-
-    fn apply_call_return_effect(
-        &mut self,
-        _state: &mut Self::Domain,
-        _block: BasicBlock,
-        _return_places: CallReturnPlaces<'_, 'tcx>,
-    ) {
-        // Nothing to do here
     }
 }

@@ -1,10 +1,10 @@
 use crate::{
     rustc_interface::{
         borrowck::consumers::PoloniusOutput,
-        dataflow::{Analysis, AnalysisDomain},
+        dataflow::Analysis,
         middle::{
             mir::{
-                visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement,
+                visit::Visitor, Body, Location, Statement,
                 Terminator, TerminatorEdges,
             },
             ty::TyCtxt,
@@ -41,7 +41,7 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
     }
 }
 
-impl<'tcx, 'a> AnalysisDomain<'tcx> for BorrowsEngine<'a, 'tcx> {
+impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
     type Domain = BorrowsDomain<'a, 'tcx>;
     const NAME: &'static str = "borrows";
 
@@ -52,9 +52,6 @@ impl<'tcx, 'a> AnalysisDomain<'tcx> for BorrowsEngine<'a, 'tcx> {
     fn initialize_start_block(&self, _body: &Body<'tcx>, _state: &mut Self::Domain) {
         todo!()
     }
-}
-
-impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
     fn apply_before_statement_effect(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
@@ -140,15 +137,6 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         BorrowsVisitor::applying(self, state, StatementStage::Main)
             .visit_terminator(terminator, location);
         terminator.edges()
-    }
-
-    fn apply_call_return_effect(
-        &mut self,
-        _state: &mut Self::Domain,
-        _block: BasicBlock,
-        _return_places: CallReturnPlaces<'_, 'tcx>,
-    ) {
-        todo!()
     }
 }
 

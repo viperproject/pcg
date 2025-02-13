@@ -23,7 +23,7 @@ use crate::utils::remote::RemotePlace;
 
 use crate::rustc_interface::{
     borrowck::{borrow_set::BorrowSet, consumers::RegionInferenceContext},
-    dataflow::JoinSemiLattice,
+    mir_dataflow::JoinSemiLattice,
     middle::{
         mir::{BasicBlock, Local, Location},
         ty::{self},

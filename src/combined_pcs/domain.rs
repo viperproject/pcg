@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::{rustc_interface::{
-    dataflow::{fmt::DebugWithContext, JoinSemiLattice}, middle::mir::BasicBlock,
-}, RECORD_PCG};
+    middle::mir::BasicBlock, mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice}
+}, PCGAnalysis, RECORD_PCG};
 
 use super::{PCGContext, PCGEngine};
 use crate::borrows::domain::BorrowsDomain;
@@ -430,13 +430,13 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGEngine<'a, 'tcx>> for PlaceCapabilitySummary<'a, 'tcx> {
+impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>> for PlaceCapabilitySummary<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
         old: &Self,
-        ctxt: &PCGEngine<'a, 'tcx>,
+        ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        self.pcg.owned.fmt_diff_with(&old.pcg.owned, &ctxt.fpcs, f)
+        self.pcg.owned.fmt_diff_with(&old.pcg.owned, &ctxt.0.fpcs, f)
     }
 }
