@@ -30,9 +30,18 @@ use borrows::{
 };
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
-use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
+use rustc_interface::{
+    data_structures::fx::FxHashSet,
+    dataflow::PCGAnalysis,
+    middle::ty::TyCtxt,
+    mir_dataflow,
+};
 use serde_json::json;
-use utils::{display::{DebugLines, DisplayWithRepacker}, validity::HasValidityCheck, Place, PlaceRepacker};
+use utils::{
+    display::{DebugLines, DisplayWithRepacker},
+    validity::HasValidityCheck,
+    Place, PlaceRepacker,
+};
 use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithRepacker;
@@ -41,7 +50,7 @@ pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
     'mir,
     'tcx,
     PlaceCapabilitySummary<'mir, 'tcx>,
-    PCGEngine<'mir, 'tcx>,
+    PCGAnalysis<PCGEngine<'mir, 'tcx>>,
 >;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
@@ -273,10 +282,8 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
     }
-    let analysis = fpcg
-        .into_engine(tcx, &mir.body)
-        .pass_name("free_pcg")
-        .iterate_to_fixpoint();
+    let engine = mir_dataflow::Engine::new_generic(tcx, &mir.body, PCGAnalysis(fpcg));
+    let analysis = engine.pass_name("free_pcg").iterate_to_fixpoint();
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = false;

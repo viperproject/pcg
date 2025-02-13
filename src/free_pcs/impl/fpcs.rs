@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use derive_more::{Deref, DerefMut};
 use rustc_interface::{
-    dataflow::fmt::DebugWithContext,
+    mir_dataflow::fmt::DebugWithContext,
     index::Idx,
     index::IndexVec,
     middle::mir::{Local, RETURN_PLACE},
