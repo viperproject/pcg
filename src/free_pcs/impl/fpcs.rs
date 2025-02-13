@@ -43,10 +43,6 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         &mut self.data.states.post_operands
     }
 
-    pub(crate) fn post_main(&self) -> &CapabilitySummary<'tcx> {
-        &self.data.states.post_main
-    }
-
     pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
         Self {
             repacker,
