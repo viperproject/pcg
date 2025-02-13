@@ -46,6 +46,8 @@ impl<T: Clone + Default> DomainData<T> {
             // The entry state may have taken into account previous joins
             self.states.post_main = self.entry_state.clone();
             self.phase = DataflowPhase::Transfer;
+        } else {
+            self.entry_state = self.states.post_main.clone();
         }
     }
     pub(crate) fn enter_join(&mut self) {

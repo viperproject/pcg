@@ -88,11 +88,11 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
 
         let state = self.cursor.get();
 
-        let prev_post_main = state.get_curr_fpcg().post_main().clone();
-
         self.cursor.seek_after_primary_effect(location);
 
+
         let state = self.cursor.get();
+        let prev_post_main = state.get_curr_fpcg().data.entry_state.clone();
         let curr_fpcs = state.get_curr_fpcg();
         let curr_borrows = state.get_curr_borrow_pcg();
         let repack_ops = curr_fpcs.repack_ops(&prev_post_main).unwrap_or_else(|e| {
