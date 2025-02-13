@@ -86,10 +86,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
 
-        let state = self.cursor.get();
-
         self.cursor.seek_after_primary_effect(location);
-
 
         let state = self.cursor.get();
         let prev_post_main = state.get_curr_fpcg().data.entry_state.clone();
@@ -223,7 +220,10 @@ impl<'tcx> FreePcsBasicBlock<'tcx> {
         }
         for term_succ in self.terminator.succs.iter() {
             for line in term_succ.debug_lines(EvalStmtPhase::PostMain, repacker) {
-                result.push(format!("Terminator: {}", line));
+                result.push(format!(
+                    "Terminator({:?}): {}",
+                    term_succ.location.block, line
+                ));
             }
         }
         result
@@ -267,6 +267,12 @@ impl<'tcx> FreePcsLocation<'tcx> {
             result.push(action.debug_line(repacker));
         }
         result.extend(self.borrows[phase].debug_lines(repacker));
+        for line in self.extra_start.debug_lines(repacker) {
+            result.push(format!("Extra Start: {}", line));
+        }
+        for line in self.extra_middle.debug_lines(repacker) {
+            result.push(format!("Extra Middle: {}", line));
+        }
         result
     }
 }

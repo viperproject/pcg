@@ -32,7 +32,7 @@ use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapability
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
 use serde_json::json;
-use utils::{display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker};
+use utils::{display::{DebugLines, DisplayWithRepacker}, validity::HasValidityCheck, Place, PlaceRepacker};
 use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithRepacker;
@@ -128,6 +128,15 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
 #[derive(Clone, Debug)]
 pub struct BorrowsBridge<'tcx> {
     pub(crate) actions: Vec<BorrowPCGAction<'tcx>>,
+}
+
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsBridge<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        self.actions
+            .iter()
+            .map(|action| action.debug_line(repacker))
+            .collect()
+    }
 }
 
 impl<'tcx> BorrowsBridge<'tcx> {
