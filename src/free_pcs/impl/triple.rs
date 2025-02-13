@@ -203,7 +203,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 pre: Condition::exclusive(place),
                 post: None,
             },
-            AscribeUserType(..) | Coverage(..) | Intrinsic(..) | ConstEvalCounter | Nop => return,
+            _ => return,
         };
         self.main_triples.push(t);
         if let Assign(box (_, Rvalue::Ref(_, kind, place))) = &statement.kind {

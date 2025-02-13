@@ -11,18 +11,17 @@ use std::{
 };
 
 use crate::rustc_interface::{
-    borrowck::{
-        borrow_set::BorrowSet,
-        consumers::{self, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext},
+    borrowck::consumers::{
+        self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
     },
     dataflow::Analysis,
     index::{Idx, IndexVec},
     middle::{
         mir::{
-            BasicBlock, Body, Location, Promoted, Statement, Terminator,
-            TerminatorEdges, START_BLOCK,
+            BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
+            START_BLOCK,
         },
-        ty::{self, GenericArgsRef, ParamEnv, TyCtxt},
+        ty::{self, GenericArgsRef, TyCtxt},
     },
 };
 
@@ -34,7 +33,7 @@ use crate::{
 
 use super::{domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase};
 
-#[rustversion::nightly(2024-10-14)]
+#[rustversion::since(2024-10-14)]
 type OutputFacts = Box<PoloniusOutput>;
 
 #[rustversion::nightly(2024-09-14)]
@@ -52,12 +51,18 @@ pub struct BodyWithBorrowckFacts<'tcx> {
     pub output_facts: Option<OutputFacts>,
 }
 
+#[rustversion::before(2024-12-14)]
+type MonomorphizeEnv<'tcx> = ty::ParamEnv<'tcx>;
+
+#[rustversion::since(2024-12-14)]
+type MonomorphizeEnv<'tcx> = ty::TypingEnv<'tcx>;
+
 impl<'tcx> BodyWithBorrowckFacts<'tcx> {
     pub fn monomorphize(
         self,
         tcx: ty::TyCtxt<'tcx>,
         substs: GenericArgsRef<'tcx>,
-        param_env: ParamEnv<'tcx>,
+        param_env: MonomorphizeEnv<'tcx>,
     ) -> Self {
         let body = tcx.erase_regions(self.body.clone());
         let monomorphized_body = tcx.instantiate_and_normalize_erasing_regions(

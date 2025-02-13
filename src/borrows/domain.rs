@@ -22,12 +22,12 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::remote::RemotePlace;
 
 use crate::rustc_interface::{
-    borrowck::{borrow_set::BorrowSet, consumers::RegionInferenceContext},
-    mir_dataflow::JoinSemiLattice,
+    borrowck::{consumers::BorrowSet, consumers::RegionInferenceContext},
     middle::{
         mir::{BasicBlock, Local, Location},
         ty::{self},
     },
+    mir_dataflow::JoinSemiLattice,
 };
 
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
