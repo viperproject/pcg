@@ -7,7 +7,9 @@ pub extern crate rustc_hir as hir;
 pub extern crate rustc_index as index;
 pub extern crate rustc_interface as interface;
 pub extern crate rustc_middle as middle;
-pub extern crate rustc_mir_dataflow as dataflow;
+pub extern crate rustc_mir_dataflow as mir_dataflow;
 pub extern crate rustc_span as span;
 pub extern crate rustc_target as target;
 pub extern crate rustc_session as session;
+
+pub mod dataflow;

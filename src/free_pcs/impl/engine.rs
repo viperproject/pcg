@@ -5,10 +5,9 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use rustc_interface::{
-    dataflow::{Analysis, AnalysisDomain},
+    dataflow::Analysis,
     middle::mir::{
-        visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
-        TerminatorEdges,
+        visit::Visitor, Body,Location, Statement, Terminator, TerminatorEdges,
     },
 };
 
@@ -19,23 +18,24 @@ use super::{triple::TripleWalker, FreePlaceCapabilitySummary};
 #[derive(Clone, Copy)]
 pub struct FpcsEngine<'a, 'tcx>(pub PlaceRepacker<'a, 'tcx>);
 
-impl<'a, 'tcx> AnalysisDomain<'tcx> for FpcsEngine<'a, 'tcx> {
+impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
     type Domain = FreePlaceCapabilitySummary<'a, 'tcx>;
     const NAME: &'static str = "free_pcs";
 
-    fn bottom_value(&self, _body: &Body<'tcx>) -> Self::Domain {
+    fn bottom_value(&self, _body: &Body<'tcx>) -> FreePlaceCapabilitySummary<'a, 'tcx> {
         FreePlaceCapabilitySummary::new(self.0)
     }
 
-    fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
+    fn initialize_start_block(
+        &self,
+        _body: &Body<'tcx>,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
+    ) {
         state.initialize_as_start_block();
     }
-}
-
-impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
     fn apply_before_statement_effect(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
     ) {
@@ -45,7 +45,7 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
     }
     fn apply_statement_effect(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
     ) {
@@ -56,7 +56,7 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
 
     fn apply_before_terminator_effect(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
@@ -66,7 +66,7 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
     }
     fn apply_terminator_effect<'mir>(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
@@ -74,15 +74,6 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         tw.visit_terminator(terminator, location);
         self.apply_main(state, tw, location);
         terminator.edges()
-    }
-
-    fn apply_call_return_effect(
-        &mut self,
-        _state: &mut Self::Domain,
-        _block: BasicBlock,
-        _return_places: CallReturnPlaces<'_, 'tcx>,
-    ) {
-        // Nothing to do here
     }
 }
 

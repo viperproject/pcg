@@ -8,7 +8,7 @@ use crate::{
     borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
     combined_pcs::EvalStmtPhase,
     rustc_interface::{
-        dataflow::{Analysis, ResultsCursor},
+        mir_dataflow::{self, ResultsCursor},
         middle::mir::{BasicBlock, Body, Location},
     },
     utils::{display::DebugLines, validity::HasValidityCheck},
@@ -44,13 +44,13 @@ impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx, D, E: Analysis<'tcx, Domain = D>> {
+pub struct FreePcsAnalysis<'mir, 'tcx, D, E: mir_dataflow::Analysis<'tcx, Domain = D>> {
     pub cursor: Cursor<'mir, 'tcx, E>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: Analysis<'tcx, Domain = D>>
+impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain = D>>
     FreePcsAnalysis<'mir, 'tcx, D, E>
 {
     pub(crate) fn new(cursor: Cursor<'mir, 'tcx, E>) -> Self {

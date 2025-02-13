@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use crate::rustc_interface::mir_dataflow::Analysis as MirAnalysis;
 use tracing::instrument;
 
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
             borrow_set::BorrowSet,
             consumers::{PoloniusOutput, RegionInferenceContext},
         },
-        dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
+        mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor},
         index::IndexVec,
         middle::{
             mir::{
@@ -825,8 +826,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
 
                     if !target.is_owned(self.repacker) {
-                        let target_cap =
-                            self.domain.post_state_mut().get_capability(target.into()).unwrap();
+                        let target_cap = self
+                            .domain
+                            .post_state_mut()
+                            .get_capability(target.into())
+                            .unwrap();
                         if target_cap != CapabilityKind::Write {
                             self.apply_action(BorrowPCGAction::weaken(
                                 target,
