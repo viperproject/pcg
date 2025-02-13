@@ -1,6 +1,10 @@
 use super::{
-    middle::mir::{
-        self, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator, TerminatorEdges,
+    middle::{
+        mir::{
+            self, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
+            TerminatorEdges,
+        },
+        ty,
     },
     mir_dataflow,
 };
@@ -39,6 +43,21 @@ pub trait Analysis<'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx>;
+}
+
+pub(crate) fn compute_fixpoint<'tcx, T: Analysis<'tcx>>(
+    analysis: T,
+    tcx: ty::TyCtxt<'tcx>,
+    body: &Body<'tcx>,
+) -> mir_dataflow::Results<'tcx, PCGAnalysis<T>>
+where
+    T: Sized,
+    PCGAnalysis<T>: mir_dataflow::Analysis<'tcx>,
+    <PCGAnalysis<T> as mir_dataflow::AnalysisDomain<'tcx>>::Domain:
+        mir_dataflow::fmt::DebugWithContext<PCGAnalysis<T>>,
+{
+    let engine = mir_dataflow::Engine::new_generic(tcx, body, PCGAnalysis(analysis));
+    engine.pass_name("free_pcg").iterate_to_fixpoint()
 }
 
 #[derive(Debug, Eq, PartialEq)]
