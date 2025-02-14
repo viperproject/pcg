@@ -31,6 +31,7 @@ petgraph = "0.6.5"
 bumpalo = "3.16.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+rustc_utils = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"]}
 
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking"] }

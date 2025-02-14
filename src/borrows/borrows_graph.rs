@@ -7,30 +7,23 @@ use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
-        middle::mir::{self, BasicBlock, TerminatorEdges},
+        middle::mir::{self, BasicBlock, TerminatorEdges, START_BLOCK},
     },
     utils::{
         display::{DebugLines, DisplayDiff, DisplayWithRepacker},
+        place::maybe_old::MaybeOldPlace,
+        place::maybe_remote::MaybeRemotePlace,
         validity::HasValidityCheck,
+        HasPlace,
     },
 };
 use itertools::Itertools;
 use serde_json::json;
 use tracing::{span, Level};
 
-use crate::{
-    coupling,
-    utils::{env_feature_enabled, Place, PlaceRepacker},
-    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
-};
-use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
-use crate::borrows::edge::borrow::BorrowEdge;
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
-use crate::utils::json::ToJsonWithRepacker;
 use super::{
     borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef,
-        LocalNode, ToBorrowsEdge,
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
     edge_data::EdgeData,
@@ -39,6 +32,15 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
     region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
+};
+use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
+use crate::borrows::edge::borrow::BorrowEdge;
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::json::ToJsonWithRepacker;
+use crate::{
+    coupling,
+    utils::{env_feature_enabled, Place, PlaceRepacker},
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 #[derive(Clone, Debug)]
@@ -94,7 +96,149 @@ pub(crate) fn validity_checks_enabled() -> bool {
     env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
 }
 
+#[cfg(test)]
+#[test]
+fn test_aliases() {
+    use rustc_utils::test_utils::Placer;
+
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
+        .init();
+
+    use crate::run_combined_pcs;
+
+    let input = r#"
+    fn main() {
+      fn foo<'a, 'b>(x: &'a i32, y: &'b i32) -> &'a i32 { x }
+
+      let a = 1;
+      let b = 2;
+      let c = &a;
+      let d = &b;
+      let e = foo(c, d);
+    }"#;
+    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+        let mut pcg = run_combined_pcs(body, tcx, None);
+        let placer = Placer::new(tcx, &body.body);
+        let bb0 = pcg.get_all_for_bb(START_BLOCK);
+        assert!(
+            bb0.statements.last().unwrap().aliases(
+                placer.local("e").deref().mk().into(),
+                PlaceRepacker::new(&body.body, tcx)
+            ).contains(&placer.local("a").mk().into())
+        );
+    });
+}
+
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn all_place_aliases(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashMap<Place<'tcx>, FxHashSet<Place<'tcx>>> {
+        let mut result = FxHashMap::default();
+
+        // Get all places from the graph nodes
+        let places: FxHashSet<_> = self
+            .nodes(repacker)
+            .iter()
+            .filter_map(|node| node.as_place())
+            .filter_map(|maybe_remote| match maybe_remote {
+                MaybeRemotePlace::Local(maybe_old) => Some(maybe_old.place()),
+                _ => None,
+            })
+            .collect();
+
+        // For each place, get its aliases and add to the map
+        for place in places {
+            let aliases = self.aliases(place.into(), repacker);
+            let place_aliases: FxHashSet<Place<'tcx>> = aliases
+                .iter()
+                .flat_map(|alias| {
+                    alias
+                        .as_maybe_old_place()
+                        .map(|maybe_old| maybe_old.place())
+                })
+                .collect();
+            result.insert(place, place_aliases);
+        }
+
+        result
+    }
+
+    pub(crate) fn aliases(
+        &self,
+        node: PCGNode<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
+        tracing::info!("Collecting aliases for node: {:?}", node);
+        let mut result = FxHashSet::default();
+        let mut seen = FxHashSet::default();
+        let mut seen_remote = FxHashSet::default();
+
+        seen.insert(node);
+        seen_remote.insert(node);
+        result.insert(node);
+
+        // Helper function to recursively collect places
+        fn collect_nodes_up<'tcx>(
+            graph: &BorrowsGraph<'tcx>,
+            node: PCGNode<'tcx>,
+            result: &mut FxHashSet<PCGNode<'tcx>>,
+            seen: &mut FxHashSet<PCGNode<'tcx>>,
+            repacker: PlaceRepacker<'_, 'tcx>,
+        ) {
+            // Add places from blocked nodes
+            if let Some(local_node) = node.as_local_node() {
+                for edge in graph.edges_blocked_by(local_node, repacker) {
+                    for blocked in edge.blocked_nodes(repacker) {
+                        if seen.insert(blocked) {
+                            result.insert(blocked);
+                            collect_nodes_up(graph, blocked, result, seen, repacker);
+                        }
+                    }
+                }
+            }
+        }
+
+        fn collect_nodes_down<'tcx>(
+            graph: &BorrowsGraph<'tcx>,
+            node: PCGNode<'tcx>,
+            result: &mut FxHashSet<PCGNode<'tcx>>,
+            seen: &mut FxHashSet<PCGNode<'tcx>>,
+            repacker: PlaceRepacker<'_, 'tcx>,
+        ) {
+            for edge in graph.edges_blocking(node, repacker) {
+                for blocking in edge.blocked_by_nodes(repacker) {
+                    let node: PCGNode<'tcx> = blocking.into();
+                    if seen.insert(node) {
+                        result.insert(node);
+                        collect_nodes_down(graph, node, result, seen, repacker);
+                    }
+                }
+            }
+        }
+
+        collect_nodes_up(self, node.into(), &mut result, &mut seen, repacker);
+
+        collect_nodes_down(self, node.into(), &mut result, &mut seen, repacker);
+
+        if let Some(place) = node.as_current_place()
+            && place.is_deref()
+        {
+            let ref_place = place.last_projection().unwrap().0;
+            tracing::info!("Ref place: {:?}", ref_place);
+            if let Some(ref_region) = ref_place.get_ref_region(repacker) {
+                tracing::info!("Collecting aliases for region projection: {:?}", ref_region);
+                let rp = RegionProjection::new(ref_region, ref_place, repacker);
+                let aliases = self.aliases(rp.into(), repacker);
+                result.extend(aliases);
+            }
+        }
+
+        result
+    }
+
     pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {
         for edge in self.edges() {
             match edge.kind() {

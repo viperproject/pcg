@@ -12,9 +12,15 @@ use std::{
     rc::Rc,
 };
 
-use crate::{rustc_interface::{
-    middle::mir::BasicBlock, mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice}
-}, PCGAnalysis, RECORD_PCG};
+use crate::{
+    rustc_interface::{
+        data_structures::fx::FxHashSet,
+        middle::mir::BasicBlock,
+        mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
+    },
+    utils::{Place, PlaceRepacker},
+    PCGAnalysis, RECORD_PCG,
+};
 
 use super::{PCGContext, PCGEngine};
 use crate::borrows::domain::BorrowsDomain;
@@ -331,12 +337,8 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(
-            cgx.rp,
-            cgx.mir.region_inference_context.clone(),
-            cgx.mir.borrow_set.clone(),
-            block,
-        );
+        let borrows =
+            BorrowsDomain::new(cgx.rp, cgx.region_inference_context, cgx.borrow_set, block);
         let pcg = PCG {
             owned: fpcs,
             borrow: borrows,
@@ -430,13 +432,17 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>> for PlaceCapabilitySummary<'a, 'tcx> {
+impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>>
+    for PlaceCapabilitySummary<'a, 'tcx>
+{
     fn fmt_diff_with(
         &self,
         old: &Self,
         ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        self.pcg.owned.fmt_diff_with(&old.pcg.owned, &ctxt.0.fpcs, f)
+        self.pcg
+            .owned
+            .fmt_diff_with(&old.pcg.owned, &ctxt.0.fpcs, f)
     }
 }

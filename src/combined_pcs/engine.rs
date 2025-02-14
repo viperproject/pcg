@@ -10,19 +10,22 @@ use std::{
     rc::Rc,
 };
 
-use crate::rustc_interface::{
-    borrowck::consumers::{
-        self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-    },
-    dataflow::Analysis,
-    index::{Idx, IndexVec},
-    middle::{
-        mir::{
-            BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
-            START_BLOCK,
+use crate::{
+    rustc_interface::{
+        borrowck::consumers::{
+            self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
         },
-        ty::{self, GenericArgsRef, TyCtxt},
+        dataflow::Analysis,
+        index::{Idx, IndexVec},
+        middle::{
+            mir::{
+                BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
+                START_BLOCK,
+            },
+            ty::{self, GenericArgsRef, TyCtxt},
+        },
     },
+    BodyAndBorrows,
 };
 
 use crate::{
@@ -49,6 +52,18 @@ pub struct BodyWithBorrowckFacts<'tcx> {
     pub location_table: Option<Rc<LocationTable>>,
     pub input_facts: Option<Box<PoloniusInput>>,
     pub output_facts: Option<OutputFacts>,
+}
+
+impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
+    fn body(&self) -> &Body<'tcx> {
+        &self.body
+    }
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        &self.borrow_set
+    }
+    fn region_inference_context(&self) -> &RegionInferenceContext<'tcx> {
+        &self.region_inference_context
+    }
 }
 
 #[rustversion::before(2024-12-14)]
@@ -96,15 +111,29 @@ impl<'tcx> From<consumers::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFact
     }
 }
 
-pub(crate) struct PCGContext<'a, 'tcx> {
-    pub(crate) rp: PlaceRepacker<'a, 'tcx>,
-    pub(crate) mir: &'a BodyWithBorrowckFacts<'tcx>,
+pub(crate) struct PCGContext<'mir, 'tcx> {
+    pub(crate) rp: PlaceRepacker<'mir, 'tcx>,
+    pub(crate) borrow_set: &'mir BorrowSet<'tcx>,
+    pub(crate) region_inference_context: &'mir RegionInferenceContext<'tcx>,
+    #[allow(dead_code)]
+    pub(crate) output_facts: Option<OutputFacts>,
 }
 
-impl<'a, 'tcx> PCGContext<'a, 'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>, mir: &'a BodyWithBorrowckFacts<'tcx>) -> Self {
-        let rp = PlaceRepacker::new(&mir.body, tcx);
-        Self { rp, mir }
+impl<'mir, 'tcx> PCGContext<'mir, 'tcx> {
+    pub fn new(
+        tcx: TyCtxt<'tcx>,
+        mir: &'mir Body<'tcx>,
+        borrow_set: &'mir BorrowSet<'tcx>,
+        region_inference_context: &'mir RegionInferenceContext<'tcx>,
+        output_facts: Option<OutputFacts>,
+    ) -> Self {
+        let rp = PlaceRepacker::new(mir, tcx);
+        Self {
+            rp,
+            borrow_set,
+            region_inference_context,
+            output_facts,
+        }
     }
 }
 
@@ -136,17 +165,17 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         }
         let dot_graphs = IndexVec::from_fn_n(
             |_| Rc::new(RefCell::new(DotGraphs::new())),
-            cgx.mir.body.basic_blocks.len(),
+            cgx.rp.body().basic_blocks.len(),
         );
-        let cgx = Rc::new(cgx);
         let fpcs = FpcsEngine(cgx.rp);
         let borrows = BorrowsEngine::new(
             cgx.rp.tcx(),
             cgx.rp.body(),
-            cgx.mir.output_facts.as_ref().map(|o| o.as_ref()),
+            None, // TODO
+                  // cgx.output_facts.as_ref().map(|o| o.as_ref()),
         );
         Self {
-            cgx,
+            cgx: Rc::new(cgx),
             dot_graphs,
             fpcs,
             borrows,
