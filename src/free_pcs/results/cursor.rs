@@ -6,12 +6,16 @@
 
 use crate::{
     borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
-    combined_pcs::EvalStmtPhase,
+    combined_pcs::{EvalStmtPhase, PCGNode},
     rustc_interface::{
+        data_structures::fx::{FxHashMap, FxHashSet},
+        middle::{
+            mir::{self, BasicBlock, Body, Location},
+            ty::TyCtxt,
+        },
         mir_dataflow::{self, ResultsCursor},
-        middle::mir::{BasicBlock, Body, Location},
     },
-    utils::{display::DebugLines, validity::HasValidityCheck},
+    utils::{display::DebugLines, validity::HasValidityCheck, Place},
     BorrowPCGActions,
 };
 
@@ -59,6 +63,48 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
             curr_stmt: None,
             end_stmt: None,
         }
+    }
+    pub fn all_place_aliases(
+        &mut self,
+        mir: &'mir Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+    ) -> FxHashMap<mir::PlaceRef<'tcx>, FxHashSet<mir::PlaceRef<'tcx>>> {
+        let mut result =
+            FxHashMap::<mir::PlaceRef<'tcx>, FxHashSet<mir::PlaceRef<'tcx>>>::default();
+
+        let repacker = PlaceRepacker::new(mir, tcx);
+
+        // Get aliases from all locations in each basic block
+        for block in self.body().basic_blocks.indices() {
+            let stmts = self.get_all_for_bb(block);
+            for stmt in stmts.statements.iter() {
+                for (place, aliases) in stmt.all_place_aliases(repacker) {
+                    if let Some(existing) = result.get_mut(&(place.into())) {
+                        existing.extend(aliases.into_iter().map(|p| *p));
+                    } else {
+                        result.insert(place.into(), aliases.into_iter().map(|p| *p).collect());
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    pub fn aliases(
+        &mut self,
+        place: Place<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
+        let mut result = FxHashSet::default();
+
+        // Get aliases from all locations in each basic block
+        for block in self.body().basic_blocks.indices() {
+            let stmts = self.get_all_for_bb(block);
+            for stmt in stmts.statements.iter() {
+                result.extend(stmt.aliases(place.into(), repacker));
+            }
+        }
+        result
     }
 
     pub(crate) fn analysis_for_bb(&mut self, block: BasicBlock) {
@@ -253,6 +299,24 @@ impl<'tcx> HasValidityCheck<'tcx> for FreePcsLocation<'tcx> {
 }
 
 impl<'tcx> FreePcsLocation<'tcx> {
+    pub fn all_place_aliases(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashMap<Place<'tcx>, FxHashSet<Place<'tcx>>> {
+        self.borrows.post_main.graph().all_place_aliases(repacker)
+    }
+
+    pub fn aliases(
+        &self,
+        place: Place<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
+        self.borrows
+            .post_main
+            .graph()
+            .aliases(place.into(), repacker)
+    }
+
     pub fn latest(&self) -> &Latest<'tcx> {
         &self.borrows.post_main.latest
     }

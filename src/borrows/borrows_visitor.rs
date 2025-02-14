@@ -154,19 +154,19 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
 #[derive(Clone)]
 pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
-    region_cx: Rc<RegionInferenceContext<'tcx>>,
+    region_cx: &'mir RegionInferenceContext<'tcx>,
 
     // TODO: Use this to determine when two-phase borrows are activated and
     // update the PCG accordingly
     #[allow(unused)]
-    borrows: Rc<BorrowSet<'tcx>>,
+    borrows: &'mir BorrowSet<'tcx>
 }
 
 impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        region_cx: Rc<RegionInferenceContext<'tcx>>,
-        borrows: Rc<BorrowSet<'tcx>>,
+        region_cx: &'mir RegionInferenceContext<'tcx>,
+        borrows: &'mir BorrowSet<'tcx>,
     ) -> Self {
         let cursor = compute_fixpoint(MaybeLiveLocals, repacker.tcx(), repacker.body())
             .into_results_cursor(repacker.body());

@@ -31,9 +31,10 @@ use borrows::{
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{
+    borrowck::consumers::{self, BorrowSet, RegionInferenceContext},
     data_structures::fx::FxHashSet,
     dataflow::{compute_fixpoint, Analysis, PCGAnalysis},
-    middle::ty::TyCtxt,
+    middle::{mir::Body, ty::TyCtxt},
     mir_dataflow,
 };
 use serde_json::json;
@@ -221,7 +222,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
     }
 }
 
-use std::sync::Mutex;
+use std::{rc::Rc, sync::Mutex};
 use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {
@@ -271,24 +272,48 @@ impl<'a, 'tcx> From<&'a FreePcsLocation<'tcx>> for PCGStmtVisualizationData<'a, 
     }
 }
 
+pub trait BodyAndBorrows<'tcx> {
+    fn body(&self) -> &Body<'tcx>;
+    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+    fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
+}
+
+impl<'tcx> BodyAndBorrows<'tcx> for consumers::BodyWithBorrowckFacts<'tcx> {
+    fn body(&self) -> &Body<'tcx> {
+        &self.body
+    }
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        &self.borrow_set
+    }
+    fn region_inference_context(&self) -> &RegionInferenceContext<'tcx> {
+        &self.region_inference_context
+    }
+}
+
 pub fn run_combined_pcs<'mir, 'tcx>(
-    mir: &'mir BodyWithBorrowckFacts<'tcx>,
+    mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
-    let cgx = PCGContext::new(tcx, mir);
+    let cgx = PCGContext::new(
+        tcx,
+        mir.body(),
+        mir.borrow_set(),
+        mir.region_inference_context(),
+        None,
+    );
     let fpcg = PCGEngine::new(cgx, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
     }
-    let analysis = compute_fixpoint(PCGAnalysis(fpcg), tcx, &mir.body);
+    let analysis = compute_fixpoint(PCGAnalysis(fpcg), tcx, mir.body());
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = false;
     }
     if let Some(dir_path) = &visualization_output_path {
-        for block in mir.body.basic_blocks.indices() {
+        for block in mir.body().basic_blocks.indices() {
             let state = analysis.entry_set_for_block(block);
             assert!(state.block() == block);
             let block_iterations_json_file =
@@ -299,7 +324,8 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                 .write_json_file(&block_iterations_json_file);
         }
     }
-    let mut fpcs_analysis = free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(&mir.body));
+    let mut fpcs_analysis =
+        free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(mir.body()));
 
     if let Some(dir_path) = visualization_output_path {
         let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
@@ -311,13 +337,20 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
         std::fs::write(&node_legend_file_path, node_legend_graph)
             .expect("Failed to write node legend");
-        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, &mir.body)
+        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir.body())
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PCGContext::new(tcx, mir).rp;
+        let rp = PCGContext::new(
+            tcx,
+            mir.body(),
+            mir.borrow_set(),
+            mir.region_inference_context(),
+            None,
+        )
+        .rp;
 
         // Iterate over each statement in the MIR
-        for (block, _data) in mir.body.basic_blocks.iter_enumerated() {
+        for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
             let pcs_block = fpcs_analysis.get_all_for_bb(block);
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {

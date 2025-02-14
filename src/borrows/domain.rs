@@ -148,8 +148,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        region_inference_context: Rc<RegionInferenceContext<'tcx>>,
-        borrow_set: Rc<BorrowSet<'tcx>>,
+        region_inference_context: &'mir RegionInferenceContext<'tcx>,
+        borrow_set: &'mir BorrowSet<'tcx>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
