@@ -6,19 +6,20 @@
 
 use rustc_interface::{
     data_structures::fx::FxHashSet,
-    mir_dataflow,
     index::{bit_set::BitSet, Idx},
     middle::{
         mir::{
-            tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
-            Place as MirPlace, PlaceElem, ProjectionElem,
+            tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace,
+            PlaceElem, ProjectionElem,
         },
         ty::{Region, Ty, TyCtxt, TyKind},
     },
+    mir_dataflow,
     target::abi::FieldIdx,
 };
 
 use crate::{
+    borrows::region_projection::PCGRegion,
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface,
 };
@@ -390,33 +391,14 @@ impl<'tcx> Place<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }
 
-    /// Should only be called on a `Place` obtained from `RootPlace::get_parent`.
-    pub fn get_ref_mutability(self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        let typ = self.ty(repacker);
-        if let TyKind::Ref(_, _, mutability) = typ.ty.kind() {
-            *mutability
-        } else {
-            unreachable!("get_ref_mutability called on non-ref type: {:?}", typ.ty);
-        }
-    }
-
-    /// Returns all `TyKind::Ref` and `TyKind::RawPtr` that `self` projects through.
-    /// The `Option` acts as an either where `TyKind::RawPtr` corresponds to a `None`.
-    pub fn projection_refs(
-        self,
+    pub(crate) fn get_ref_region(
+        &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> impl Iterator<
-        Item = (
-            Option<(Region<'tcx>, Ty<'tcx>, Mutability)>,
-            &'tcx [PlaceElem<'tcx>],
-        ),
-    > {
-        self.projection_tys(repacker)
-            .filter_map(|(ty, projs)| match ty.ty.kind() {
-                &TyKind::Ref(r, ty, m) => Some((Some((r, ty, m)), projs)),
-                &TyKind::RawPtr(..) => Some((None, projs)),
-                _ => None,
-            })
+    ) -> Option<PCGRegion> {
+        match self.ty(repacker).ty.kind() {
+            TyKind::Ref(region, ..) => Some((*region).into()),
+            _ => None,
+        }
     }
 
     pub(crate) fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

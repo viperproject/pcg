@@ -24,6 +24,8 @@ use crate::rustc_interface::{
     target::abi::VariantIdx,
 };
 
+use super::{debug_info::DebugInfo, validity::HasValidityCheck, PlaceRepacker};
+use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrows::{
         borrow_pcg_edge::LocalNode,
@@ -35,8 +37,6 @@ use crate::{
     },
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
 };
-use crate::utils::json::ToJsonWithRepacker;
-use super::{debug_info::DebugInfo, validity::HasValidityCheck, PlaceRepacker};
 
 pub mod corrected;
 pub mod maybe_old;
@@ -50,6 +50,12 @@ pub struct Place<'tcx>(
     PlaceRef<'tcx>,
     DebugInfo<'static>,
 );
+
+impl<'tcx> From<Place<'tcx>> for PlaceRef<'tcx> {
+    fn from(place: Place<'tcx>) -> Self {
+        *place
+    }
+}
 
 impl<'tcx> PartialOrd for Place<'tcx> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
