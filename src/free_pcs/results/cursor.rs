@@ -4,6 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::collections::VecDeque;
+
+use rustc_utils::hashset;
+
 use crate::{
     borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
     combined_pcs::{EvalStmtPhase, PCGNode},
@@ -68,9 +72,8 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         &mut self,
         mir: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
-    ) -> FxHashMap<mir::PlaceRef<'tcx>, FxHashSet<mir::PlaceRef<'tcx>>> {
-        let mut result =
-            FxHashMap::<mir::PlaceRef<'tcx>, FxHashSet<mir::PlaceRef<'tcx>>>::default();
+    ) -> PlaceAliases<'tcx> {
+        let mut result = PlaceAliases::default();
 
         let repacker = PlaceRepacker::new(mir, tcx);
 
@@ -78,13 +81,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         for block in self.body().basic_blocks.indices() {
             let stmts = self.get_all_for_bb(block);
             for stmt in stmts.statements.iter() {
-                for (place, aliases) in stmt.all_place_aliases(repacker) {
-                    if let Some(existing) = result.get_mut(&(place.into())) {
-                        existing.extend(aliases.into_iter().map(|p| *p));
-                    } else {
-                        result.insert(place.into(), aliases.into_iter().map(|p| *p).collect());
-                    }
-                }
+                result.merge(stmt.all_place_aliases(repacker));
             }
         }
         result
@@ -298,12 +295,45 @@ impl<'tcx> HasValidityCheck<'tcx> for FreePcsLocation<'tcx> {
     }
 }
 
-impl<'tcx> FreePcsLocation<'tcx> {
-    pub fn all_place_aliases(
+#[derive(Debug, Default)]
+pub struct PlaceAliases<'tcx>(FxHashMap<Place<'tcx>, FxHashSet<Place<'tcx>>>);
+
+impl<'tcx> PlaceAliases<'tcx> {
+    pub(crate) fn merge(&mut self, other: Self) {
+        for (place, aliases) in other.0 {
+            self.0
+                .entry(place)
+                .or_insert_with(|| FxHashSet::default())
+                .extend(aliases);
+        }
+    }
+    pub fn get(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashMap<Place<'tcx>, FxHashSet<Place<'tcx>>> {
-        self.borrows.post_main.graph().all_place_aliases(repacker)
+        place: mir::Place<'tcx>,
+        tcx: TyCtxt<'tcx>,
+    ) -> FxHashSet<mir::Place<'tcx>> {
+        let mut result: FxHashSet<mir::Place<'tcx>> = FxHashSet::default();
+        result.extend(
+            self.0
+                .get(&(place.into()))
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| p.to_place(tcx)),
+        );
+        if let Some((prefix, elem)) = place.iter_projections().last() {
+            let parent_aliases = self.get(prefix.to_place(tcx), tcx);
+            for alias in parent_aliases.iter() {
+                result.insert(alias.project_deeper(&[elem], tcx));
+            }
+        }
+        result
+    }
+}
+
+impl<'tcx> FreePcsLocation<'tcx> {
+    pub fn all_place_aliases(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceAliases<'tcx> {
+        PlaceAliases(self.borrows.post_main.graph().all_place_aliases(repacker))
     }
 
     pub fn aliases(
