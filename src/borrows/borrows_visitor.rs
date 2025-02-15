@@ -394,7 +394,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             self.repacker,
                                         )
                                         .into()],
-                                        RegionProjectionMemberKind::Todo,
+                                        RegionProjectionMemberKind::Ref,
                                     ),
                                     PathConditions::AtBlock(location.block),
                                     "Assign constant to local",

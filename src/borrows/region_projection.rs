@@ -1,13 +1,26 @@
+use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 use std::{fmt, marker::PhantomData};
 
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
+use super::has_pcs_elem::HasPcsElems;
+use super::{
+    borrow_pcg_edge::LocalNode, borrows_visitor::extract_regions,
+    coupling_graph_constructor::CGNode,
+};
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::remote::RemotePlace;
+use crate::utils::PlaceRepacker;
 use crate::{
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
+        data_structures::fx::FxHasher,
         index::{Idx, IndexVec},
         middle::{
             mir::{Const, Local, PlaceElem},
@@ -16,17 +29,6 @@ use crate::{
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
 };
-use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::utils::PlaceRepacker;
-use crate::utils::remote::RemotePlace;
-use super::{
-    borrow_pcg_edge::LocalNode,
-    borrows_visitor::extract_regions,
-    coupling_graph_constructor::CGNode,
-};
-use super::has_pcs_elem::HasPcsElems;
 
 /// A region occuring in region projections
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
@@ -167,8 +169,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
-    base: P,
-    region_idx: RegionIdx,
+    pub(crate) base: P,
+    pub(crate) region_idx: RegionIdx,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -336,6 +338,16 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionP
             ))
         } else {
             Ok(())
+        }
+    }
+}
+
+impl<'tcx, T> RegionProjection<'tcx, T> {
+    pub(crate) fn new_raw(base: T, region_idx: RegionIdx) -> Self {
+        Self {
+            base,
+            region_idx,
+            phantom: PhantomData,
         }
     }
 }

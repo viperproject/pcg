@@ -66,6 +66,10 @@ pub enum RegionProjectionMemberKind {
     /// The input to the top-level function, in this case the inputs
     /// should only contain remote places
     FunctionInput,
+    /// e.g. t|'a -> *t
+    DerefRegionProjection,
+    /// e.g. x -> r|'a
+    Ref,
     /// TODO: Provide more useful kinds, this enum variant should be removed
     Todo,
 }

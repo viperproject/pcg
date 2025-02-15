@@ -15,7 +15,7 @@ build = "build.rs"
 # rustc_index = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_index", optional = true}
 # rustc_middle = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_middle", optional = true}
 # rustc_target = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_target", optional = true}
-egg = "0.1.0"
+egg = "0.10.0"
 shell-escape = "0.1.5"
 rustversion = "1.0"
 itertools = "0.12.0"

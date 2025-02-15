@@ -35,7 +35,7 @@ use super::{
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
-    expansion: BorrowExpansion<'tcx>,
+    pub(crate) expansion: BorrowExpansion<'tcx>,
 }
 
 impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for ExpansionOfBorrowed<'tcx, P> {
@@ -82,6 +82,10 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowExpansion<'tcx> {
 }
 
 impl<'tcx> BorrowExpansion<'tcx> {
+    pub(crate) fn is_deref(&self) -> bool {
+        matches!(self, BorrowExpansion::Deref)
+    }
+
     pub(super) fn from_places(places: Vec<Place<'tcx>>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
         let mut constant_indices = BTreeSet::new();
@@ -373,6 +377,7 @@ impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PCGNodeLike<'tcx>>
 impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>>
     BorrowPCGExpansion<'tcx, P>
 {
+
     pub(crate) fn is_deref_of_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self {
             BorrowPCGExpansion::FromOwned(_) => true,
