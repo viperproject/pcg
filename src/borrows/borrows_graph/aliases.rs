@@ -9,7 +9,7 @@ use crate::{
     },
     combined_pcs::PCGNode,
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::PlaceRepacker,
+    utils::{display::DisplayWithRepacker, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
@@ -69,8 +69,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // Add places from blocked nodes
             if let Some(local_node) = node.as_local_node() {
                 for edge in graph.edges_blocked_by(local_node, repacker) {
-                    for blocked in edge.blocked_nodes(repacker) {
+                    let blocked_nodes = match edge.kind() {
+                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                            vec![expansion.base().into()].into_iter().collect()
+                        }
+                        _ => edge.blocked_nodes(repacker),
+                    };
+                    for blocked in blocked_nodes {
                         if seen.insert(blocked) {
+                            // eprintln!(
+                            //     "up: {} -> {}",
+                            //     node.to_short_string(repacker),
+                            //     blocked.to_short_string(repacker)
+                            // );
                             let blocked_node = egraph.add(get_node(blocked, place_ids));
                             add_to_egraph(blocked_node, blocking_node, edge, egraph);
                             collect_nodes_up(graph, blocked, egraph, seen, place_ids, repacker);
@@ -168,6 +179,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             repacker,
         );
 
+        graph.rebuild();
         let mut result = FxHashSet::default();
         let canonical_id = graph.lookup(get_node(node, &mut place_ids)).unwrap();
         for node in seen {
@@ -197,7 +209,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 fn test_aliases() {
     use rustc_utils::test_utils::Placer;
 
-    use crate::rustc_interface::middle::mir::START_BLOCK;
+    use crate::rustc_interface::middle::mir::{self, START_BLOCK};
 
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -251,5 +263,27 @@ fn test_aliases() {
         assert!(last_bg
             .aliases(star_yyy.into(), repacker)
             .contains(&x.into()));
+    });
+
+    let input = r#"
+        fn main() {
+            fn other(x: &mut i32, y: i32, z: i32) { *x += y; }
+            let mut x = 1;
+            let y = 1;
+            let z = 1;
+            other(&mut x, y, z);
+            (x);
+        }
+    "#;
+    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+        let mut pcg = run_combined_pcs(body, tcx, None);
+        let placer = Placer::new(tcx, &body.body);
+        let bb0 = pcg.get_all_for_bb(START_BLOCK);
+        let last_bg = &bb0.statements[13];
+        let temp: mir::Place<'_> = mir::Local::from(5 as usize).into();
+        let star_5 = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
+        let repacker = PlaceRepacker::new(&body.body, tcx);
+        let x = placer.local("x").mk();
+        assert!(last_bg.aliases(star_5.into(), repacker).contains(&x.into()));
     });
 }
