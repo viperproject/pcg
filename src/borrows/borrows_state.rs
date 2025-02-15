@@ -500,7 +500,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
         for p in graph_edges {
             match p.kind() {
-                BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_ref {
+                BorrowPCGEdgeKind::Borrow(borrow) => match borrow.assigned_ref {
                     MaybeOldPlace::Current {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
@@ -508,9 +508,9 @@ impl<'tcx> BorrowsState<'tcx> {
                             self.record_and_apply_action(
                                 BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        vec![reborrow.blocked_place.into()],
+                                        vec![borrow.blocked_place.into()],
                                         vec![ra.into()],
-                                        RegionProjectionMemberKind::Todo,
+                                        RegionProjectionMemberKind::Ref,
                                     ),
                                     PathConditions::new(location.block),
                                     "Ensure Expansion To",
@@ -631,7 +631,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 let region_projection_member = RegionProjectionMember::new(
                     vec![RegionProjection::new((*region).into(), base, repacker).to_pcg_node()],
                     vec![target.into()],
-                    RegionProjectionMemberKind::Todo,
+                    RegionProjectionMemberKind::DerefRegionProjection,
                 );
 
                 let path_conditions = PathConditions::new(location.block);

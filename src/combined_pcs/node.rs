@@ -13,7 +13,7 @@ use crate::{
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
 };
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjectionBase<'tcx>> {
     Place(T),
     RegionProjection(RegionProjection<'tcx, U>),

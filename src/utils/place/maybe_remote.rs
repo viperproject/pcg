@@ -10,7 +10,7 @@ use crate::utils::display::DisplayWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {
     /// A place that has a name in the program
     Local(MaybeOldPlace<'tcx>),
