@@ -387,7 +387,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     Rvalue::Use(Operand::Constant(box c)) => match c.ty().kind() {
                         ty::TyKind::Ref(const_region, _, _) => {
-                            assert!(target.projection.len() == 0);
                             if let ty::TyKind::Ref(target_region, _, _) =
                                 target.ty(self.repacker).ty.kind()
                             {
@@ -408,7 +407,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                         RegionProjectionMemberKind::Ref,
                                     ),
                                     PathConditions::AtBlock(location.block),
-                                    "Assign constant to local",
+                                    "Assign constant",
                                 ));
                             }
                         }
