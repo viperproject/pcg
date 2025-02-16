@@ -254,7 +254,10 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 self.error = Some(PCGError::Unsupported(PCGUnsupportedError::InlineAssembly));
                 return;
             }
-            CoroutineDrop => todo!(),
+            CoroutineDrop => {
+                self.error = Some(PCGError::Unsupported(PCGUnsupportedError::Coroutines));
+                return;
+            }
             _ => todo!("{terminator:?}"),
         };
         self.main_triples.push(t);

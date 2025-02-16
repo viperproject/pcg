@@ -8,10 +8,10 @@ use std::fmt::{Debug, Formatter, Result};
 
 use derive_more::{Deref, DerefMut};
 use rustc_interface::{
-    mir_dataflow::fmt::DebugWithContext,
     index::Idx,
     index::IndexVec,
     middle::mir::{Local, RETURN_PLACE},
+    mir_dataflow::fmt::DebugWithContext,
 };
 
 use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
@@ -77,6 +77,9 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         &self,
         previous: &CapabilitySummary<'tcx>,
     ) -> std::result::Result<RepackOps<'tcx>, PCGError> {
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
         let start = previous.bridge(&self.data.states.pre_operands, self.repacker)?;
         let middle = self
             .data

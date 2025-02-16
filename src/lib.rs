@@ -351,7 +351,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
-            let pcs_block = fpcs_analysis.get_all_for_bb(block);
+            let pcs_block = fpcs_analysis.get_all_for_bb(block).unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
                     statement.assert_validity(rp);
