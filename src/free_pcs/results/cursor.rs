@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 
 use crate::{
     borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGNode},
+    combined_pcs::{EvalStmtPhase, PCGError, PCGNode},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::{
@@ -70,36 +70,19 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         &mut self,
         mir: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
-    ) -> PlaceAliases<'tcx> {
+    ) -> Result<PlaceAliases<'tcx>, PCGError> {
         let mut result = PlaceAliases::default();
 
         let repacker = PlaceRepacker::new(mir, tcx);
 
         // Get aliases from all locations in each basic block
         for block in self.body().basic_blocks.indices() {
-            let stmts = self.get_all_for_bb(block);
+            let stmts = self.get_all_for_bb(block)?;
             for stmt in stmts.statements.iter() {
                 result.merge(stmt.all_place_aliases(repacker));
             }
         }
-        result
-    }
-
-    pub fn aliases(
-        &mut self,
-        place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
-        let mut result = FxHashSet::default();
-
-        // Get aliases from all locations in each basic block
-        for block in self.body().basic_blocks.indices() {
-            let stmts = self.get_all_for_bb(block);
-            for stmt in stmts.statements.iter() {
-                result.extend(stmt.aliases(place.into(), repacker));
-            }
-        }
-        result
+        Ok(result)
     }
 
     pub(crate) fn analysis_for_bb(&mut self, block: BasicBlock) {
@@ -122,7 +105,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
     /// to the *end* of that location.
-    pub(crate) fn next(&mut self, exp_loc: Location) -> FreePcsLocation<'tcx> {
+    pub(crate) fn next(&mut self, exp_loc: Location) -> Result<FreePcsLocation<'tcx>, PCGError> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
@@ -133,14 +116,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         let prev_post_main = state.get_curr_fpcg().data.entry_state.clone();
         let curr_fpcs = state.get_curr_fpcg();
         let curr_borrows = state.get_curr_borrow_pcg();
-        let repack_ops = curr_fpcs.repack_ops(&prev_post_main).unwrap_or_else(|e| {
-            panic!(
-                "Repack ops error for cursor transition {:?} -> {:?}: {:?}",
-                location,
-                location.successor_within_block(),
-                e
-            );
-        });
+        let repack_ops = curr_fpcs.repack_ops(&prev_post_main)?;
 
         let (extra_start, extra_middle) = curr_borrows.get_bridge();
 
@@ -157,7 +133,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
 
         self.curr_stmt = Some(location.successor_within_block());
 
-        result
+        Ok(result)
     }
     pub(crate) fn terminator(&mut self) -> FreePcsTerminator<'tcx> {
         let location = self.curr_stmt.unwrap();
@@ -229,18 +205,18 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
 
     /// Recommended interface.
     /// Does *not* require that one calls `analysis_for_bb` first
-    pub fn get_all_for_bb(&mut self, block: BasicBlock) -> FreePcsBasicBlock<'tcx> {
+    pub fn get_all_for_bb(&mut self, block: BasicBlock) -> Result<FreePcsBasicBlock<'tcx>, PCGError> {
         self.analysis_for_bb(block);
         let mut statements = Vec::new();
         while self.curr_stmt.unwrap() != self.end_stmt.unwrap() {
-            let stmt = self.next(self.curr_stmt.unwrap());
+            let stmt = self.next(self.curr_stmt.unwrap())?;
             statements.push(stmt);
         }
         let terminator = self.terminator();
-        FreePcsBasicBlock {
+        Ok(FreePcsBasicBlock {
             statements,
             terminator,
-        }
+        })
     }
 }
 

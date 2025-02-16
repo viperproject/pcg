@@ -210,6 +210,7 @@ pub enum PCGUnsupportedError {
     UnsafePtrCast,
     DerefUnsafePtr,
     InlineAssembly,
+    Coroutines,
     TwoPhaseBorrow,
     ExpansionOfAliasType,
     Other(String),
