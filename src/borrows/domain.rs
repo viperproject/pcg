@@ -147,8 +147,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        region_inference_context: &'mir RegionInferenceContext<'tcx>,
-        borrow_set: &'mir BorrowSet<'tcx>,
+        bc: BorrowCheckerImpl<'mir, 'tcx>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
@@ -158,7 +157,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             repacker,
             debug_join_iteration: 0,
             error: None,
-            bc: BorrowCheckerImpl::new(repacker, region_inference_context, borrow_set),
+            bc,
         }
     }
 
