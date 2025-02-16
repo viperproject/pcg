@@ -29,7 +29,7 @@ use crate::rustc_interface::{
     mir_dataflow::JoinSemiLattice,
 };
 
-const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
+const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
