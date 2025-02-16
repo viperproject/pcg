@@ -9,7 +9,7 @@ use tracing::{debug, info, trace, warn};
 use tracing_subscriber;
 
 use pcs::rustc_interface::{
-    borrowck::consumers,
+    borrowck,
     data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
     hir::{self, def_id::LocalDefId},
@@ -30,12 +30,12 @@ thread_local! {
 }
 
 fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
-    let consumer_opts = consumers::ConsumerOptions::PoloniusInputFacts;
+    let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
     debug!(
         "Start mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
-    let body_with_facts = consumers::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
+    let body_with_facts = borrowck::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
     debug!(
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
@@ -53,7 +53,7 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
         });
     }
     let mut providers = Providers::default();
-    pcs::rustc_interface::borrowck::provide(&mut providers);
+    borrowck::provide(&mut providers);
     let original_mir_borrowck = providers.mir_borrowck;
     original_mir_borrowck(tcx, def_id)
 }

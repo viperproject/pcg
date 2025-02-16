@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     rustc_interface::{
-        borrowck::consumers::{
+        borrowck::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
         },
         dataflow::Analysis,
@@ -97,8 +97,8 @@ impl<'tcx> BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-impl<'tcx> From<consumers::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts<'tcx> {
-    fn from(value: consumers::BodyWithBorrowckFacts<'tcx>) -> Self {
+impl<'tcx> From<borrowck::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts<'tcx> {
+    fn from(value: borrowck::BodyWithBorrowckFacts<'tcx>) -> Self {
         Self {
             body: value.body,
             promoted: value.promoted,
