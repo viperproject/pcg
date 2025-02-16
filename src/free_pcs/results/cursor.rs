@@ -6,8 +6,6 @@
 
 use std::collections::VecDeque;
 
-use rustc_utils::hashset;
-
 use crate::{
     borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
     combined_pcs::{EvalStmtPhase, PCGNode},

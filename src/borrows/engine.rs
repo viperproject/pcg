@@ -1,6 +1,6 @@
 use crate::{
     rustc_interface::{
-        borrowck::consumers::PoloniusOutput,
+        borrowck::PoloniusOutput,
         dataflow::Analysis,
         middle::{
             mir::{
