@@ -809,7 +809,6 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             let new_num_edges = self.graph.num_edges();
             assert!(new_num_edges < num_edges_prev);
-            eprintln!("{} < {}", new_num_edges, num_edges_prev);
             num_edges_prev = new_num_edges;
         }
     }

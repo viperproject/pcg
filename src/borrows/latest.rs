@@ -97,15 +97,28 @@ impl<'tcx> Latest<'tcx> {
         if self.get_exact(place) == Some(location) {
             return false;
         }
-        self.0.retain(|p, _| !place.is_prefix(*p));
 
-        for (p, loc) in self.0.iter_mut() {
-            if p.is_prefix(place) {
+        self.0.retain(|existing, loc| {
+
+            // After insertion of this place, if we were to lookup `existing`,
+            // we'd get this location for `place`. For example if existing is `x.f.g`
+            // and place is `x.f`, then `Latest::get_opt(x.f.g)` would not find `x.f.g` and
+            // return the location for `x.f`.
+            if place.is_prefix(*existing) {
+                return false;
+            }
+
+            // Places that we're a prefix of should be updated to this new location.
+            // For example if existing is `x` and place is `x.f`, then we should
+            // snapshot `x` to this location. However, the snapshot for e.g. `x.g` would
+            // keep its old label.
+            if existing.is_prefix(place) {
                 if *loc != location {
                     *loc = location;
                 }
             }
-        }
+            true
+        });
         self.0.insert(place, location);
         true
     }
