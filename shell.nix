@@ -2,12 +2,20 @@
   pkgs ? import <nixpkgs> {}
 }:
 
+let
+  toolchainTOML = builtins.fromTOML(builtins.readFile ./rust-toolchain);
+  channel = toolchainTOML.toolchain.channel;
+  components = toolchainTOML.toolchain.components;
+  # Strip the "nightly-" prefix from the channel name
+  rustNightly = pkgs.rust-bin.nightly.${builtins.substring 8 10 channel}.default.override {
+    extensions = components;
+  };
+in
 pkgs.mkShell {
   buildInputs = with pkgs; [
     openssl
     pkg-config
-    rustc
-    cargo
+    rustNightly
     libiconv
   ] ++ (if pkgs.stdenv.isDarwin then [
     darwin.apple_sdk.frameworks.Security
