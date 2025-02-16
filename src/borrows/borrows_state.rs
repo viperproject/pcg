@@ -1,21 +1,25 @@
 use crate::{
     borrows::{
-        borrows_graph::borrows_imgcat_debug,
-        edge_data::EdgeData,
+        borrows_graph::borrows_imgcat_debug, edge_data::EdgeData,
         region_projection_member::RegionProjectionMemberKind,
-    }, combined_pcs::{PCGError, PCGNode, PCGNodeLike}, rustc_interface::{
+    },
+    combined_pcs::{PCGError, PCGNode, PCGNodeLike},
+    rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
             ty::{self},
         },
-    }, utils::{
+    },
+    utils::{
         display::DebugLines,
         join_lattice_verifier::{HasBlock, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
-    }, validity_checks_enabled, visualization::{dot_graph::DotGraph, generate_borrows_dot_graph}
+    },
+    validity_checks_enabled,
+    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use super::{
@@ -752,13 +756,13 @@ impl<'tcx> BorrowsState<'tcx> {
             })
         };
         let mut num_edges_prev = self.graph.num_edges();
-        'outer: loop {
+        loop {
             fn go<'slf, 'mir, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
                 repacker: PlaceRepacker<'mir, 'tcx>,
                 prev_location: Option<Location>,
                 bc: &impl BorrowCheckerInterface<'tcx>,
-            ) -> Option<BorrowPCGEdge<'tcx>> {
+            ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
                 let should_trim = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
                     if p.is_old() {
@@ -781,6 +785,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
                 };
 
+                let mut edges_to_trim = Vec::new();
                 for edge in fg
                     .leaf_edges(repacker)
                     .into_iter()
@@ -788,25 +793,28 @@ impl<'tcx> BorrowsState<'tcx> {
                 {
                     let blocked_by_nodes = edge.blocked_by_nodes(repacker);
                     if blocked_by_nodes.iter().all(|p| should_trim(*p, &fg)) {
-                        return Some(edge);
+                        edges_to_trim.push(edge);
                     }
                 }
-                None
+                edges_to_trim
             }
-            if let Some(edge) = go(self, repacker, prev_location, bc) {
+            let edges_to_trim = go(self, repacker, prev_location, bc);
+            if edges_to_trim.is_empty() {
+                break actions;
+            }
+            for edge in edges_to_trim {
                 actions.extend(self.remove_edge_and_set_latest(
                     edge,
                     location,
                     repacker,
                     "Trim Old Leaves",
                 ));
-                assert!(self.graph.num_edges() < num_edges_prev);
-                num_edges_prev = self.graph.num_edges();
-                continue 'outer;
             }
-            break;
+            let new_num_edges = self.graph.num_edges();
+            assert!(new_num_edges < num_edges_prev);
+            eprintln!("{} < {}", new_num_edges, num_edges_prev);
+            num_edges_prev = new_num_edges;
         }
-        actions
     }
 
     pub(crate) fn add_borrow(

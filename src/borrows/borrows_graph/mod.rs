@@ -15,7 +15,8 @@ use crate::{
         display::{DebugLines, DisplayDiff, DisplayWithRepacker},
         validity::HasValidityCheck,
         HasPlace,
-    }, validity_checks_enabled,
+    },
+    validity_checks_enabled,
 };
 use itertools::Itertools;
 use serde_json::json;
@@ -444,20 +445,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        !self.has_edge_blocked_by(node.into(), repacker)
+        match node.into().as_local_node() {
+            Some(node) => match node {
+                PCGNode::Place(place) if place.is_owned(repacker) => true,
+                _ => !self.has_edge_blocked_by(node, repacker),
+            },
+            None => true,
+        }
     }
 
     pub(crate) fn has_edge_blocked_by(
         &self,
-        node: PCGNode<'tcx>,
+        node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        match node.as_local_node() {
-            Some(node) => self
-                .edges()
-                .any(|edge| edge.blocked_by_nodes(repacker).contains(&node)),
-            None => false,
-        }
+        self.edges().any(|edge| edge.is_blocked_by(node, repacker))
     }
 
     pub(crate) fn num_edges(&self) -> usize {
