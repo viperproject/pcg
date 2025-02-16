@@ -99,6 +99,8 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
     dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
 
     dot_output_dir: Option<String>,
+
+    join_history: FxHashSet<BasicBlock>,
 }
 
 /// Outermost Vec can be considered a map StatementIndex -> Vec<BTreeMap<DataflowStmtPhase, String>>
@@ -349,6 +351,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             pcg,
             dot_graphs,
             dot_output_dir,
+            join_history: FxHashSet::default(),
         }
     }
 }
@@ -372,6 +375,15 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             return true;
         } else if self.has_error() {
             return false;
+        }
+
+        // We've already joined this block, so in principle we can exit early
+        if self.cgx.rp.is_back_edge(other.block(), self.block())
+            && self.join_history.contains(&other.block())
+        {
+            return false;
+        } else {
+            self.join_history.insert(other.block());
         }
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
