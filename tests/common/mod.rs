@@ -50,11 +50,7 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool) {
         .expect("Failed to build pcs_bin");
 
     assert!(cargo_build.success(), "Failed to build pcs_bin");
-    let target = if debug {
-        "debug"
-    } else {
-        "release"
-    };
+    let target = if debug { "debug" } else { "release" };
     let cargo = "cargo";
     let pcs_exe = cwd.join(["target", target, "pcs_bin"].iter().collect::<PathBuf>());
     println!("Running PCS on directory: {}", dir.display());
@@ -99,7 +95,7 @@ pub fn run_pcg_on_file(file: &Path) {
 }
 
 #[allow(dead_code)]
-pub fn run_on_crate(name: &str, version: &str) {
+pub fn run_on_crate(name: &str, version: &str, debug: bool) {
     match (name, version) {
         ("generic-array", "1.2.0") if rustversion::cfg!(nightly(2024 - 09 - 14)) => {
             eprintln!("Skipping generic-array; it's not supported on nightly 2024-09-14");
@@ -165,7 +161,7 @@ pub fn run_on_crate(name: &str, version: &str) {
         .unwrap();
     writeln!(file, "\n[workspace]").unwrap();
     let dirname_path = PathBuf::from(&dirname);
-    run_pcg_on_crate_in_dir(&dirname_path, false);
+    run_pcg_on_crate_in_dir(&dirname_path, debug);
     std::fs::remove_dir_all(dirname).unwrap();
 }
 

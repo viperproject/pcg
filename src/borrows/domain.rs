@@ -12,7 +12,6 @@ use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::{utils, BorrowsBridge};
-use std::rc::Rc;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;

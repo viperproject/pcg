@@ -28,18 +28,20 @@ use borrows::{
     region_projection_member::RegionProjectionMember,
     unblock_graph::BorrowPCGUnblockAction,
 };
-use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
+use combined_pcs::{PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{
     borrowck::{self, BorrowSet, RegionInferenceContext},
     data_structures::fx::FxHashSet,
-    dataflow::{compute_fixpoint, Analysis, PCGAnalysis},
+    dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
-    mir_dataflow,
 };
 use serde_json::json;
 use utils::{
-    display::{DebugLines, DisplayWithRepacker}, env_feature_enabled, validity::HasValidityCheck, Place, PlaceRepacker
+    display::{DebugLines, DisplayWithRepacker},
+    env_feature_enabled,
+    validity::HasValidityCheck,
+    Place, PlaceRepacker,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -220,7 +222,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
     }
 }
 
-use std::{rc::Rc, sync::Mutex};
+use std::sync::Mutex;
 use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {

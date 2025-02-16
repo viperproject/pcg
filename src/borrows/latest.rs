@@ -2,14 +2,17 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use crate::rustc_interface::middle::{mir::BasicBlock, ty};
+use crate::rustc_interface::{
+    data_structures::fx::FxHashMap,
+    middle::{mir::BasicBlock, ty},
+};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
 use crate::utils::json::ToJsonWithRepacker;
 
 #[derive(Clone, Debug)]
-pub struct Latest<'tcx>(Vec<(Place<'tcx>, SnapshotLocation)>);
+pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Latest<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
@@ -48,11 +51,11 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
 
 impl<'tcx> Latest<'tcx> {
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self(FxHashMap::default())
     }
 
     fn get_exact(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
-        self.0.iter().find(|(p, _)| *p == place).map(|(_, l)| *l)
+        self.0.get(&place).copied()
     }
 
     fn get_opt(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
@@ -94,7 +97,7 @@ impl<'tcx> Latest<'tcx> {
         if self.get_exact(place) == Some(location) {
             return false;
         }
-        self.0.retain(|(p, _)| !place.is_prefix(*p));
+        self.0.retain(|p, _| !place.is_prefix(*p));
 
         for (p, loc) in self.0.iter_mut() {
             if p.is_prefix(place) {
@@ -103,7 +106,7 @@ impl<'tcx> Latest<'tcx> {
                 }
             }
         }
-        self.0.push((place, location));
+        self.0.insert(place, location);
         true
     }
 
@@ -131,17 +134,18 @@ impl<'tcx> Latest<'tcx> {
 
 impl<'tcx> PartialEq for Latest<'tcx> {
     fn eq(&self, other: &Self) -> bool {
-        for (p, _) in self.0.iter() {
-            if other.get(*p) != self.get(*p) {
-                return false;
-            }
-        }
-        for (p, _) in other.0.iter() {
-            if other.get(*p) != self.get(*p) {
-                return false;
-            }
-        }
-        true
+        self.0 == other.0
+        // for (p, _) in self.0.iter() {
+        //     if other.get(*p) != self.get(*p) {
+        //         return false;
+        //     }
+        // }
+        // for (p, _) in other.0.iter() {
+        //     if other.get(*p) != self.get(*p) {
+        //         return false;
+        //     }
+        // }
+        // true
     }
 }
 

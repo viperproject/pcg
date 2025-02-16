@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{rustc_interface::{dataflow::compute_fixpoint, mir_dataflow::Analysis as MirAnalysis}, validity_checks_enabled};
+use crate::{rustc_interface::dataflow::compute_fixpoint, validity_checks_enabled};
 use tracing::instrument;
 
 use crate::{
