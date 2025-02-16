@@ -21,7 +21,6 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::remote::RemotePlace;
 
 use crate::rustc_interface::{
-    borrowck::{BorrowSet, RegionInferenceContext},
     middle::{
         mir::{BasicBlock, Local, Location},
         ty::{self},
