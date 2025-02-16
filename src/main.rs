@@ -1,5 +1,17 @@
 #![feature(rustc_private)]
 
+#[cfg(feature = "memory_profiling")]
+#[cfg(not(target_env = "msvc"))]
+#[cfg(not(target_os = "macos"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(feature = "memory_profiling")]
+#[cfg(not(target_os = "macos"))]
+#[allow(non_upper_case_globals)]
+#[export_name = "malloc_conf"]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 use std::fs::File;
 use std::io::Write;
 
@@ -13,7 +25,7 @@ use pcs::rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
     hir::{self, def_id::LocalDefId},
-    interface::{interface::Compiler, Config, Queries},
+    interface::{interface::Compiler, Config},
     middle::{
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt, util::Providers,
     },
@@ -247,21 +259,40 @@ fn go(args: Vec<String>) {
     driver::RunCompiler::new(&args, &mut PcsCallbacks).run()
 }
 
-fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_writer(std::io::stderr)
-        .init();
+#[cfg(feature = "memory_profiling")]
+async fn handle_get_heap() -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
+    let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
+    if !prof_ctl.activated() {
+        return Err((
+            axum::http::StatusCode::FORBIDDEN,
+            "heap profiling not activated".into(),
+        ));
+    }
+    let pprof = prof_ctl
+        .dump_pprof()
+        .map_err(|err| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    Ok(pprof)
+}
 
-    // This first argument will be removed!
-    // See `driver::RunCompiler::run` for more details
+#[cfg(feature = "memory_profiling")]
+async fn start_profiling_server() {
+    let app = axum::Router::new()
+        .route("/debug/pprof/heap", axum::routing::get(handle_get_heap));
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:4444").await.unwrap();
+    info!("Started profiling server on port 4444");
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+}
+
+fn setup_rustc_args() -> Vec<String> {
+    // This first argument is ultimately removed, actually
     let mut rustc_args = vec!["rustc".to_string()];
 
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());
     }
-    // rustc_args.push("-Zpolonius=next".to_string());
     rustc_args.extend(std::env::args().skip(1));
 
     let args_str = rustc_args
@@ -271,5 +302,26 @@ fn main() {
         .join(" ");
     trace!("Running rustc with args: {}", args_str);
 
-    go(rustc_args);
+    rustc_args
+}
+
+fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+#[cfg(feature = "memory_profiling")]
+#[tokio::main]
+async fn main() {
+    init_tracing();
+    start_profiling_server().await;
+    go(setup_rustc_args());
+}
+
+#[cfg(not(feature = "memory_profiling"))]
+fn main() {
+    init_tracing();
+    go(setup_rustc_args());
 }

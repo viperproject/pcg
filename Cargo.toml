@@ -5,6 +5,14 @@ authors = ["Prusti Devs <prusti_developers@sympa.ethz.ch>"]
 edition = "2021"
 build = "build.rs"
 
+[features]
+default = ["memory_profiling"]
+memory_profiling = [
+    "tikv-jemallocator",
+    "axum",
+    "tokio",
+    "jemalloc_pprof",
+]
 
 [dependencies]
 # For RustRover
@@ -34,6 +42,10 @@ shell-escape = "0.1.5"
 smallvec = { version = "^1.11", features = ["union", "const_new"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_malloc_on_supported_platforms"], optional = true }
+axum = { version = "0.7", features = ["multipart"], optional = true }
+tokio = { version = "1.0", features = ["full", "rt-multi-thread"], optional = true }
+jemalloc_pprof = { version = "0.6", optional = true }
 
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking"] }

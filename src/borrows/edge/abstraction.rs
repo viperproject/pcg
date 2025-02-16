@@ -214,11 +214,11 @@ pub struct AbstractionBlockEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs()
             .into_iter()
             .map(|o| o.to_local_node())

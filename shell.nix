@@ -17,6 +17,7 @@ pkgs.mkShell {
     pkg-config
     rustNightly
     libiconv
+    zlib
   ] ++ (if pkgs.stdenv.isDarwin then [
     darwin.apple_sdk.frameworks.Security
     darwin.apple_sdk.frameworks.SystemConfiguration

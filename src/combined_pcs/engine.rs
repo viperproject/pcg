@@ -34,7 +34,9 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-use super::{domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase};
+use super::{
+    domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
+};
 
 #[rustversion::since(2024-10-14)]
 type OutputFacts = Box<PoloniusOutput>;
@@ -137,36 +139,59 @@ impl<'mir, 'tcx> PCGContext<'mir, 'tcx> {
     }
 }
 
+struct PCGEngineDebugData {
+    debug_output_dir: String,
+    dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
+}
+
 pub struct PCGEngine<'a, 'tcx> {
     pub(crate) cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
-    debug_output_dir: Option<String>,
-    dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
+    debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
 }
 impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
+    fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
+        self.debug_data
+            .as_ref()
+            .map(|data| data.dot_graphs[block].clone())
+    }
+    fn debug_output_dir(&self) -> Option<String> {
+        self.debug_data
+            .as_ref()
+            .map(|data| data.debug_output_dir.clone())
+    }
     fn initialize(&self, state: &mut PlaceCapabilitySummary<'a, 'tcx>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
         }
         state.set_block(block);
-        state.set_dot_graphs(self.dot_graphs[block].clone());
+        if let Some(debug_data) = &self.debug_data {
+            state.set_debug_data(
+                debug_data.debug_output_dir.clone(),
+                debug_data.dot_graphs[block].clone(),
+            );
+        }
         assert!(state.is_initialized());
     }
 
     pub(crate) fn new(cgx: PCGContext<'a, 'tcx>, debug_output_dir: Option<String>) -> Self {
-        if let Some(dir_path) = &debug_output_dir {
-            if std::path::Path::new(dir_path).exists() {
-                std::fs::remove_dir_all(dir_path).expect("Failed to delete directory contents");
+        let debug_data = debug_output_dir.map(|dir_path| {
+            if std::path::Path::new(&dir_path).exists() {
+                std::fs::remove_dir_all(&dir_path).expect("Failed to delete directory contents");
             }
             create_dir_all(&dir_path).expect("Failed to create directory for DOT files");
-        }
-        let dot_graphs = IndexVec::from_fn_n(
-            |_| Rc::new(RefCell::new(DotGraphs::new())),
-            cgx.rp.body().basic_blocks.len(),
-        );
+            let dot_graphs = IndexVec::from_fn_n(
+                |_| Rc::new(RefCell::new(DotGraphs::new())),
+                cgx.rp.body().basic_blocks.len(),
+            );
+            PCGEngineDebugData {
+                debug_output_dir: dir_path.clone(),
+                dot_graphs,
+            }
+        });
         let fpcs = FpcsEngine(cgx.rp);
         let borrows = BorrowsEngine::new(
             cgx.rp.tcx(),
@@ -176,10 +201,9 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         );
         Self {
             cgx: Rc::new(cgx),
-            dot_graphs,
             fpcs,
             borrows,
-            debug_output_dir,
+            debug_data,
             curr_block: Cell::new(START_BLOCK),
         }
     }
@@ -199,20 +223,19 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {
-        let block = self.curr_block.get();
-        let (block, dot_graphs) = if block.as_usize() < body.basic_blocks.len() {
-            self.curr_block.set(block.plus(1));
-            (Some(block), Some(self.dot_graphs[block].clone()))
+        let curr_block = self.curr_block.get();
+        let (block, debug_data) = if curr_block.as_usize() < body.basic_blocks.len() {
+            self.curr_block.set(curr_block.plus(1));
+            let debug_data = self.debug_output_dir().map(|dir| PCGDebugData {
+                dot_output_dir: dir,
+                dot_graphs: self.dot_graphs(curr_block).unwrap(),
+            });
+            (Some(curr_block), debug_data)
         } else {
-            // For results cursor, don't set block
+            // For results cursor, don't set block or consider debug data
             (None, None)
         };
-        PlaceCapabilitySummary::new(
-            self.cgx.clone(),
-            block,
-            self.debug_output_dir.clone(),
-            dot_graphs,
-        )
+        PlaceCapabilitySummary::new(self.cgx.clone(), block, debug_data)
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
