@@ -13,10 +13,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    combined_pcs::{PCGError, PCGInternalError},
-    free_pcs::{CapabilityKind, RelatedSet, RepackOp},
-    rustc_interface,
-    utils::{display::DisplayWithRepacker, Place, PlaceOrdering, PlaceRepacker},
+    combined_pcs::{PCGError, PCGInternalError}, free_pcs::{CapabilityKind, RelatedSet, RepackOp}, pcg_validity_assert, rustc_interface, utils::{display::DisplayWithRepacker, Place, PlaceOrdering, PlaceRepacker}
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -159,7 +156,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             "Mutable reference {:?} should be expanded in reborrowing dag, not PCS",
             from
         );
-        debug_assert!(!self.contains_key(&to));
+        pcg_validity_assert!(!self.contains_key(&to));
         let (expanded, mut others) = from.expand(to, repacker)?;
         let mut perm = self.remove(&from).unwrap();
         others.push(to);

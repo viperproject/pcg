@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::combined_pcs::PCGNode;
+use crate::pcg_validity_assert;
 use crate::rustc_interface::{
     ast::Mutability, data_structures::fx::FxHashSet,
 };
@@ -131,7 +132,7 @@ impl<'tcx> RegionProjectionMember<'tcx> {
             .iter()
             .map(|p| p.mutability(repacker))
             .collect::<Vec<_>>();
-        debug_assert!(
+        pcg_validity_assert!(
             mut_values.windows(2).all(|w| w[0] == w[1]),
             "All mutability values must be the same"
         );

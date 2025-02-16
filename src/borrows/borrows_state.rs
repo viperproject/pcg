@@ -1,25 +1,21 @@
 use crate::{
     borrows::{
-        borrows_graph::{borrows_imgcat_debug, validity_checks_enabled},
+        borrows_graph::borrows_imgcat_debug,
         edge_data::EdgeData,
         region_projection_member::RegionProjectionMemberKind,
-    },
-    combined_pcs::{PCGError, PCGNode, PCGNodeLike},
-    rustc_interface::{
+    }, combined_pcs::{PCGError, PCGNode, PCGNodeLike}, rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
             ty::{self},
         },
-    },
-    utils::{
+    }, utils::{
         display::DebugLines,
         join_lattice_verifier::{HasBlock, JoinLatticeVerifier},
         validity::HasValidityCheck,
         HasPlace,
-    },
-    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
+    }, validity_checks_enabled, visualization::{dot_graph::DotGraph, generate_borrows_dot_graph}
 };
 
 use super::{
@@ -282,14 +278,6 @@ impl<'tcx> BorrowsState<'tcx> {
         bc: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-
-
-        // For performance reasons we don't check validity here.
-        // if validity_checks_enabled() {
-        //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
-        // }
-        #[allow(unused)]
-        let old = self.clone();
         let mut changed = false;
         if self
             .graph

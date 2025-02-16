@@ -5,10 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    combined_pcs::PCGError,
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
-    rustc_interface::middle::mir::{Local, RETURN_PLACE},
-    utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker},
+    combined_pcs::PCGError, free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections}, pcg_validity_assert, rustc_interface::middle::mir::{Local, RETURN_PLACE}, utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker}
 };
 
 use super::{
@@ -98,7 +95,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     }
                     CapabilityKind::Write => {
                         // Cannot get write on a shared ref
-                        debug_assert!(place
+                        pcg_validity_assert!(place
                             .is_mutable(LocalMutationIsAllowed::Yes, repacker)
                             .is_ok());
                     }

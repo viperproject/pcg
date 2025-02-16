@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::rustc_interface::{dataflow::compute_fixpoint, mir_dataflow::Analysis as MirAnalysis};
+use crate::{rustc_interface::{dataflow::compute_fixpoint, mir_dataflow::Analysis as MirAnalysis}, validity_checks_enabled};
 use tracing::instrument;
 
 use crate::{
@@ -117,7 +117,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
     pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             match (self.last(), actions.first()) {
             (Some(a), Some(b)) => assert_ne!(
                 a, b,
@@ -131,9 +131,9 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
     pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>) {
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             if let Some(last) = self.last() {
-                debug_assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
+                assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
             }
         }
         self.0.push(action);

@@ -4,12 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::{
+use crate::{rustc_interface::{
     index::{Idx, IndexVec},
     middle::mir::{BasicBlock, Body, START_BLOCK},
-};
-
-use crate::rustc_interface;
+}, validity_checks_enabled};
 
 #[derive(Clone, Debug)]
 struct LoopSet {
@@ -110,7 +108,7 @@ impl LoopAnalysis {
             }
             visited_bbs[bb] = true;
         }
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             analysis.consistency_check();
         }
         analysis

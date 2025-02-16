@@ -15,7 +15,7 @@ use crate::{
         display::{DebugLines, DisplayDiff, DisplayWithRepacker},
         validity::HasValidityCheck,
         HasPlace,
-    },
+    }, validity_checks_enabled,
 };
 use itertools::Itertools;
 use serde_json::json;
@@ -90,10 +90,6 @@ pub(crate) fn coupling_imgcat_debug() -> bool {
 
 pub(crate) fn borrows_imgcat_debug() -> bool {
     env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false)
-}
-
-pub(crate) fn validity_checks_enabled() -> bool {
-    env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
@@ -686,7 +682,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
-        //     debug_assert!(other.is_valid(repacker), "Other graph is invalid");
+        //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
         // }
         #[allow(unused)]
         let old_self = self.clone();
@@ -889,7 +885,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     changed = true;
                 }
             }
-            if cfg!(debug_assertions) {
+            if validity_checks_enabled() {
                 edge.assert_validity(repacker);
             }
             changed
