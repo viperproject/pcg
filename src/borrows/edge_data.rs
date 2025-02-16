@@ -20,6 +20,10 @@ pub trait EdgeData<'tcx> {
     fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.blocked_nodes(repacker).contains(&node)
     }
+
+    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.blocked_by_nodes(repacker).contains(&node)
+    }
 }
 
 #[macro_export]
@@ -41,6 +45,13 @@ macro_rules! edgedata_enum {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_by_nodes(repacker),
+                    )+
+                }
+            }
+
+            fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool { match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.blocks_node(node, repacker),
                     )+
                 }
             }

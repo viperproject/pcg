@@ -3,6 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use serde_json::json;
 
+use super::{
+    borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
+    edge_data::EdgeData,
+    has_pcs_elem::HasPcsElems,
+    region_projection::RegionProjection,
+};
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::corrected::CorrectedPlace;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     edgedata_enum,
@@ -16,18 +25,9 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex,
-        HasPlace, Place, PlaceRepacker,
+        display::DisplayWithRepacker, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck,
+        ConstantIndex, HasPlace, Place, PlaceRepacker,
     },
-};
-use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::corrected::CorrectedPlace;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use super::{
-    borrow_pcg_edge::{BlockingNode, LocalNode},
-    edge_data::EdgeData,
-    has_pcs_elem::HasPcsElems,
-    region_projection::RegionProjection,
 };
 
 /// An expansion of a place in the Borrow PCG, e.g {*x.f} -> {*x.f.a,
@@ -231,6 +231,15 @@ impl<'tcx> HasValidityCheck<'tcx> for ExpansionOfOwned<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for ExpansionOfOwned<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match node {
+            PCGNode::Place(MaybeRemotePlace::Local(p)) => self.base == p,
+            // We block all the region projections of this place, so it's only necessary to compare the base
+            PCGNode::RegionProjection(p) => p.base() == self.base.into(),
+            _ => false,
+        }
+    }
+
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut blocked_nodes = vec![self.base.into()];
         for rp in self.base.region_projections(repacker) {
@@ -377,7 +386,6 @@ impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PCGNodeLike<'tcx>>
 impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>>
     BorrowPCGExpansion<'tcx, P>
 {
-
     pub(crate) fn is_deref_of_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self {
             BorrowPCGExpansion::FromOwned(_) => true,

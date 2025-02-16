@@ -2,20 +2,16 @@ use serde_json::json;
 
 use crate::combined_pcs::PCGNode;
 use crate::pcg_validity_assert;
-use crate::rustc_interface::{
-    ast::Mutability, data_structures::fx::FxHashSet,
-};
+use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::LocalNode;
-use crate::utils::json::ToJsonWithRepacker;
+use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 use super::edge_data::EdgeData;
-use super::{
-    has_pcs_elem::HasPcsElems, region_projection::RegionProjection,
-};
+use super::{has_pcs_elem::HasPcsElems, region_projection::RegionProjection};
+use crate::utils::json::ToJsonWithRepacker;
 
 /// A PCG hyperedge where at the nodes of at least one of the edge endpoints are
 /// all region projections.
@@ -95,6 +91,10 @@ impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
 
     fn is_owned_expansion(&self) -> bool {
         false
+    }
+
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.inputs.contains(&node)
     }
 }
 
