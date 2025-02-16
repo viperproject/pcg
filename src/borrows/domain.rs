@@ -52,7 +52,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         }
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
-        //     debug_assert!(other.is_valid(), "Other graph is invalid");
+        //     pcg_validity_assert!(other.is_valid(), "Other graph is invalid");
         // }
         let mut other_after = other.post_main_state().clone();
 

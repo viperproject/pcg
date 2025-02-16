@@ -21,7 +21,7 @@ use borrows::{
     borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
     borrow_pcg_edge::LocalNode,
     borrow_pcg_expansion::BorrowPCGExpansion,
-    borrows_graph::{validity_checks_enabled, Conditioned},
+    borrows_graph::Conditioned,
     borrows_visitor::BorrowPCGActions,
     latest::Latest,
     path_condition::PathConditions,
@@ -39,9 +39,7 @@ use rustc_interface::{
 };
 use serde_json::json;
 use utils::{
-    display::{DebugLines, DisplayWithRepacker},
-    validity::HasValidityCheck,
-    Place, PlaceRepacker,
+    display::{DebugLines, DisplayWithRepacker}, env_feature_enabled, validity::HasValidityCheck, Place, PlaceRepacker
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -384,4 +382,17 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     }
 
     fpcs_analysis
+}
+
+#[macro_export]
+macro_rules! pcg_validity_assert {
+    ($($arg:tt)*) => {
+        if crate::validity_checks_enabled() {
+            assert!($($arg)*);
+        }
+    };
+}
+
+pub(crate) fn validity_checks_enabled() -> bool {
+    env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
 }

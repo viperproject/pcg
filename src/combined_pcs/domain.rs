@@ -396,7 +396,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         //             self.cgx.mir.body.span
         //         );
         //     }
-        //     debug_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
+        //     pcg_validity_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
         // }
         assert!(self.is_initialized() && other.is_initialized());
         if self.block().as_usize() == 0 {

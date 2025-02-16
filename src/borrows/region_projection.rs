@@ -15,6 +15,7 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::PlaceRepacker;
+use crate::validity_checks_enabled;
 use crate::{
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -365,7 +366,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             region_idx,
             phantom: PhantomData,
         };
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             result.assert_validity(repacker);
         }
         result
