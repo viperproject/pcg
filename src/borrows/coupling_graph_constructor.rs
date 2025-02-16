@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
-    coupling,
-    rustc_interface::middle::mir::{BasicBlock, Location},
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
+    combined_pcs::{PCGNode, PCGNodeLike}, coupling, pcg_validity_assert, rustc_interface::middle::mir::{BasicBlock, Location}, utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker}
 };
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -381,7 +378,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         let upper_candidate = upper_candidate.clone().into();
         let endpoints = bg.endpoints_pointing_to(&upper_candidate);
         for coupled in endpoints {
-            debug_assert!(
+            pcg_validity_assert!(
                 coupled != upper_candidate,
                 "Coupling graph should be acyclic"
             );
