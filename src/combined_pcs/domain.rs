@@ -18,7 +18,6 @@ use crate::{
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
-    utils::{Place, PlaceRepacker},
     PCGAnalysis, RECORD_PCG,
 };
 

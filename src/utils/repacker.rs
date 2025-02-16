@@ -12,7 +12,7 @@ use rustc_interface::{
             tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace,
             PlaceElem, ProjectionElem,
         },
-        ty::{Region, Ty, TyCtxt, TyKind},
+        ty::{TyCtxt, TyKind},
     },
     mir_dataflow,
     target::abi::FieldIdx,

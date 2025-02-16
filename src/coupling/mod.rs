@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
-#[cfg(debug_assertions)]
 use crate::borrows::borrows_graph::coupling_imgcat_debug;
 use crate::borrows::coupling_graph_constructor::Coupled;
 use crate::visualization::dot_graph::DotGraph;

@@ -1,5 +1,4 @@
-use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::{fmt, marker::PhantomData};
 
 use derive_more::{Display, From, TryFrom};
@@ -21,7 +20,6 @@ use crate::{
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
-        data_structures::fx::FxHasher,
         index::{Idx, IndexVec},
         middle::{
             mir::{Const, Local, PlaceElem},
@@ -339,16 +337,6 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionP
             ))
         } else {
             Ok(())
-        }
-    }
-}
-
-impl<'tcx, T> RegionProjection<'tcx, T> {
-    pub(crate) fn new_raw(base: T, region_idx: RegionIdx) -> Self {
-        Self {
-            base,
-            region_idx,
-            phantom: PhantomData,
         }
     }
 }
