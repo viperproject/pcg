@@ -11,6 +11,7 @@ use std::{
 };
 
 use crate::{
+    borrows::borrows_visitor::BorrowCheckerImpl,
     rustc_interface::{
         borrowck::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -148,6 +149,7 @@ pub struct PCGEngine<'a, 'tcx> {
     pub(crate) cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
+    borrow_checker: BorrowCheckerImpl<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
 }
@@ -199,12 +201,18 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
             None, // TODO
                   // cgx.output_facts.as_ref().map(|o| o.as_ref()),
         );
+        let cgx = Rc::new(cgx);
         Self {
-            cgx: Rc::new(cgx),
+            cgx: cgx.clone(),
             fpcs,
             borrows,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
+            borrow_checker: BorrowCheckerImpl::new(
+                cgx.rp,
+                cgx.region_inference_context,
+                cgx.borrow_set,
+            ),
         }
     }
 
@@ -235,7 +243,12 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             // For results cursor, don't set block or consider debug data
             (None, None)
         };
-        PlaceCapabilitySummary::new(self.cgx.clone(), block, debug_data)
+        PlaceCapabilitySummary::new(
+            self.cgx.clone(),
+            self.borrow_checker.clone(),
+            block,
+            debug_data,
+        )
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
