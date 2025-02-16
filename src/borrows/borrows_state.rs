@@ -379,16 +379,13 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn borrows_blocking_prefix_of(
         &self,
         place: Place<'tcx>,
-    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.borrows()
-            .into_iter()
-            .filter(|rb| match rb.value.blocked_place {
-                MaybeRemotePlace::Local(MaybeOldPlace::Current {
-                    place: blocked_place,
-                }) => blocked_place.is_prefix(place),
-                _ => false,
-            })
-            .collect()
+    ) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
+        self.borrows().filter(move |rb| match rb.value.blocked_place {
+            MaybeRemotePlace::Local(MaybeOldPlace::Current {
+                place: blocked_place,
+            }) => blocked_place.is_prefix(place),
+            _ => false,
+        })
     }
 
     #[must_use]
@@ -464,7 +461,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocked_by(node, repacker).collect()
     }
 
-    pub(crate) fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
+    pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
         self.graph.borrows()
     }
 

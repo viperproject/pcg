@@ -398,6 +398,10 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.kind().blocks_node(node, repacker)
     }
+
+    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.kind().is_blocked_by(node, repacker)
+    }
 }
 
 impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdge<'tcx>
