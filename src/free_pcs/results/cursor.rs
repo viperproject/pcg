@@ -175,7 +175,8 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
                             .states
                             .post_main
                             .graph()
-                            .abstraction_edges();
+                            .abstraction_edges()
+                            .collect::<FxHashSet<_>>();
                         for abstraction in to_borrows_state
                             .data
                             .entry_state
@@ -185,7 +186,7 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
                             if !self_abstraction_edges.contains(&abstraction) {
                                 actions.push(
                                     BorrowPCGActionKind::AddAbstractionEdge(
-                                        abstraction.value,
+                                        abstraction.value.clone(),
                                         abstraction.conditions,
                                     )
                                     .into(),
@@ -203,7 +204,10 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
 
     /// Recommended interface.
     /// Does *not* require that one calls `analysis_for_bb` first
-    pub fn get_all_for_bb(&mut self, block: BasicBlock) -> Result<FreePcsBasicBlock<'tcx>, PCGError> {
+    pub fn get_all_for_bb(
+        &mut self,
+        block: BasicBlock,
+    ) -> Result<FreePcsBasicBlock<'tcx>, PCGError> {
         self.analysis_for_bb(block);
         let mut statements = Vec::new();
         while self.curr_stmt.unwrap() != self.end_stmt.unwrap() {
@@ -279,11 +283,7 @@ impl<'tcx> PlaceAliases<'tcx> {
                 .extend(aliases);
         }
     }
-    pub fn get(
-        &self,
-        place: mir::Place<'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) -> FxHashSet<mir::Place<'tcx>> {
+    pub fn get(&self, place: mir::Place<'tcx>, tcx: TyCtxt<'tcx>) -> FxHashSet<mir::Place<'tcx>> {
         let mut result: FxHashSet<mir::Place<'tcx>> = FxHashSet::default();
         result.extend(
             self.0

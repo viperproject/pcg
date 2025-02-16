@@ -56,6 +56,13 @@ macro_rules! edgedata_enum {
                 }
             }
 
+            fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool { match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.is_blocked_by(node, repacker),
+                    )+
+                }
+            }
+
             fn is_owned_expansion(&self) -> bool {
                 match self {
                     $(
