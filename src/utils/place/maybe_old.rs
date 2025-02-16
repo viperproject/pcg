@@ -1,21 +1,24 @@
-use derive_more::From;
-use crate::rustc_interface::index::IndexVec;
-use crate::rustc_interface::middle::mir;
-use crate::rustc_interface::middle::mir::PlaceElem;
-use crate::rustc_interface::ast::Mutability;
-use crate::rustc_interface::middle::mir::tcx::PlaceTy;
-use serde_json::json;
 use crate::borrows::borrow_pcg_edge::LocalNode;
 use crate::borrows::borrows_visitor::extract_regions;
-use crate::utils::json::ToJsonWithRepacker;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::latest::Latest;
-use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection, RegionProjectionBaseLike};
+use crate::borrows::region_projection::{
+    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
+    RegionProjectionBaseLike,
+};
 use crate::combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike};
-use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use crate::rustc_interface::ast::Mutability;
+use crate::rustc_interface::index::IndexVec;
+use crate::rustc_interface::middle::mir;
+use crate::rustc_interface::middle::mir::tcx::PlaceTy;
+use crate::rustc_interface::middle::mir::PlaceElem;
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
+use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use derive_more::From;
+use serde_json::json;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd)]
 pub enum MaybeOldPlace<'tcx> {
@@ -205,10 +208,13 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().ty_region(repacker)
     }
 
-    pub fn last_projection(&self) -> Option<(Place<'tcx>, PlaceElem<'tcx>)> {
+    pub fn last_projection(&self) -> Option<(MaybeOldPlace<'tcx>, PlaceElem<'tcx>)> {
         match self {
-            MaybeOldPlace::Current { place } => place.last_projection(),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.place.last_projection(),
+            MaybeOldPlace::Current { place } => place.last_projection().map(|(p, e)| (p.into(), e)),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot
+                .place
+                .last_projection()
+                .map(|(p, e)| (PlaceSnapshot::new(p, snapshot.at).into(), e)),
         }
     }
 
