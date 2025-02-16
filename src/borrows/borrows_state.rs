@@ -282,6 +282,8 @@ impl<'tcx> BorrowsState<'tcx> {
         bc: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
+
+
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");

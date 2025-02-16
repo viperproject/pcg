@@ -40,13 +40,17 @@ pub fn get_rust_toolchain_channel() -> String {
 }
 
 #[allow(dead_code)]
-pub fn run_pcg_on_crate_in_dir(dir: &Path) {
+pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool) {
     let cwd = std::env::current_dir().unwrap();
-    assert!(
-        cfg!(debug_assertions),
-        "Must be run in debug mode, to enable full checking"
-    );
-    let target = if cfg!(debug_assertions) {
+    let cargo_build = Command::new("cargo")
+        .arg("build")
+        .args(if !debug { vec!["--release"] } else { vec![] })
+        .current_dir(&cwd)
+        .status()
+        .expect("Failed to build pcs_bin");
+
+    assert!(cargo_build.success(), "Failed to build pcs_bin");
+    let target = if debug {
         "debug"
     } else {
         "release"
@@ -161,7 +165,7 @@ pub fn run_on_crate(name: &str, version: &str) {
         .unwrap();
     writeln!(file, "\n[workspace]").unwrap();
     let dirname_path = PathBuf::from(&dirname);
-    run_pcg_on_crate_in_dir(&dirname_path);
+    run_pcg_on_crate_in_dir(&dirname_path, false);
     std::fs::remove_dir_all(dirname).unwrap();
 }
 
