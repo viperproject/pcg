@@ -36,7 +36,7 @@ import {
   PCSIterations,
 } from "./api";
 import { filterNodesAndEdges } from "./mir_graph";
-import { Selection, PCSGraphSelector } from "./components/PCSGraphSelector";
+import { Selection, PCGGraphSelector } from "./components/PCSGraphSelector";
 
 const layoutSizedNodes = (
   nodes: DagreInputNode<BasicBlockData>[],
@@ -150,6 +150,9 @@ async function main() {
     );
     const [showStorageStmts, setShowStorageStmts] = useState(
       localStorage.getItem("showStorageStmts") !== "false"
+    );
+    const [showPCGSelector, setShowPCGSelector] = useState(
+      localStorage.getItem("showPCGSelector") !== "false"
     );
 
     const { filteredNodes, filteredEdges } = filterNodesAndEdges(nodes, edges, {
@@ -448,6 +451,7 @@ async function main() {
     addLocalStorageCallback("showPathBlocksOnly", showPathBlocksOnly);
     addLocalStorageCallback("showPCG", showPCG);
     addLocalStorageCallback("showStorageStmts", showStorageStmts);
+    addLocalStorageCallback("showPCGSelector", showPCGSelector);
 
     const isBlockOnSelectedPath = useCallback(
       (block: number) => {
@@ -459,7 +463,7 @@ async function main() {
 
     const pcsGraphSelector =
       currentPoint.type === "stmt" && iterations.length > currentPoint.stmt ? (
-        <PCSGraphSelector
+        <PCGGraphSelector
           iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
           selected={selected}
           onSelect={setSelected}
@@ -565,6 +569,15 @@ async function main() {
             />
             Show storage statements
           </label>
+          <br />
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCGSelector}
+              onChange={(e) => setShowPCGSelector(e.target.checked)}
+            />
+            Show PCG selector
+          </label>
           <button
             onClick={openLegendWindow}
             className="control-button"
@@ -644,7 +657,13 @@ async function main() {
             </div>
           </>
         )}
-        {pcsGraphSelector}
+        {pcsGraphSelector && showPCGSelector && currentPoint.type === "stmt" && (
+          <PCGGraphSelector
+            iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        )}
       </div>
     );
   };

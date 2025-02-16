@@ -128,7 +128,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                     if emit_pcg_annotations || check_pcg_annotations {
                         let mut debug_lines = Vec::new();
                         for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                            let block = output.get_all_for_bb(idx);
+                            let block = output.get_all_for_bb(idx).unwrap();
                             debug_lines
                                 .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
                         }

@@ -2,7 +2,7 @@ import React from "react";
 
 export type Selection = number;
 
-export function PCSGraphSelector({
+export function PCGGraphSelector({
   iterations,
   selected,
   onSelect,
