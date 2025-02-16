@@ -96,7 +96,6 @@ pub(crate) fn validity_checks_enabled() -> bool {
     env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
 }
 
-
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn all_place_aliases(
         &self,
@@ -140,7 +139,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         result
     }
-
 
     pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {
         for edge in self.edges() {
@@ -506,6 +504,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         borrow_checker: &T,
     ) {
+        let is_loop_abstraction_for_this_block = |edge: BorrowPCGEdgeRef<'_, '_>| {
+            if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
+                if let AbstractionType::Loop(loop_abstraction) = &abstraction_edge {
+                    return loop_abstraction.location().block == self_block;
+                }
+            }
+            false
+        };
+
         self.cached_is_valid.set(None);
         let self_coupling_graph =
             self.construct_coupling_graph(borrow_checker, repacker, other_block);
@@ -524,15 +531,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if coupling_imgcat_debug() {
             result.render_with_imgcat("merged coupling graph");
         }
-
-        let is_loop_abstraction_for_this_block = |edge: BorrowPCGEdgeRef<'_, '_>| {
-            if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
-                if let AbstractionType::Loop(loop_abstraction) = &abstraction_edge {
-                    return loop_abstraction.location().block == self_block;
-                }
-            }
-            false
-        };
 
         // Collect existing loop abstraction edges at this block
         let existing_edges: FxHashSet<_> = self
