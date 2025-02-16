@@ -317,28 +317,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.frozen_graph().is_acyclic(repacker)
     }
 
-    pub(crate) fn abstraction_edges(&self) -> FxHashSet<Conditioned<AbstractionType<'tcx>>> {
-        self.edges()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Abstraction(abstraction) => Some(Conditioned {
-                    conditions: edge.conditions().clone(),
-                    value: abstraction.clone(),
-                }),
-                _ => None,
-            })
-            .collect()
+    pub(crate) fn abstraction_edges<'slf>(
+        &'slf self,
+    ) -> impl Iterator<Item = Conditioned<&'slf AbstractionType<'tcx>>> + 'slf {
+        self.edges().filter_map(|edge| match edge.kind {
+            BorrowPCGEdgeKind::Abstraction(abstraction) => Some(Conditioned {
+                conditions: edge.conditions().clone(),
+                value: abstraction,
+            }),
+            _ => None,
+        })
     }
 
-    pub(crate) fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
-        self.edges()
-            .filter_map(|edge| match &edge.kind() {
-                BorrowPCGEdgeKind::Borrow(reborrow) => Some(Conditioned {
-                    conditions: edge.conditions().clone(),
-                    value: reborrow.clone(),
-                }),
-                _ => None,
-            })
-            .collect()
+    pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
+        self.edges().filter_map(|edge| match &edge.kind() {
+            BorrowPCGEdgeKind::Borrow(reborrow) => Some(Conditioned {
+                conditions: edge.conditions().clone(),
+                value: reborrow.clone(),
+            }),
+            _ => None,
+        })
     }
 
     /// All edges that are not blocked by any other edge The argument
@@ -656,16 +654,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         'outer: for abstraction in self.abstraction_edges() {
             for blocked in edge.blocked_nodes(repacker) {
-                if !abstraction.value.blocked_nodes(repacker).contains(&blocked) {
+                if !abstraction.value.blocks_node(blocked, repacker) {
                     continue 'outer;
                 }
             }
             for blocked_by in edge.blocked_by_nodes(repacker) {
-                if !abstraction
-                    .value
-                    .blocked_by_nodes(repacker)
-                    .contains(&blocked_by)
-                {
+                if !abstraction.value.is_blocked_by(blocked_by, repacker) {
                     continue 'outer;
                 }
             }

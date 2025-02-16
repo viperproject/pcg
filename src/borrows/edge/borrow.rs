@@ -1,23 +1,26 @@
-use crate::{combined_pcs::PCGNode, rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHashSet,
-    middle::{
-        mir::Location,
-        ty::{self},
+use crate::{
+    combined_pcs::PCGNode,
+    rustc_interface::{
+        ast::Mutability,
+        data_structures::fx::FxHashSet,
+        middle::{
+            mir::Location,
+            ty::{self},
+        },
     },
-}};
+};
 
-use serde_json::json;
 use crate::borrows::borrow_pcg_edge::{BlockedNode, LocalNode};
-use crate::utils::json::ToJsonWithRepacker;
 use crate::borrows::edge_data::EdgeData;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::region_projection::RegionProjection;
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::utils::PlaceRepacker;
 use crate::utils::validity::HasValidityCheck;
+use crate::utils::PlaceRepacker;
+use serde_json::json;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BorrowEdge<'tcx> {
@@ -70,14 +73,20 @@ impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
         }
     }
 
+    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match node {
+            PCGNode::Place(_) => false,
+            PCGNode::RegionProjection(region_projection) => {
+                region_projection == self.assigned_region_projection(repacker)
+            }
+        }
+    }
+
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         vec![self.blocked_place.into()].into_iter().collect()
     }
 
-    fn blocked_by_nodes(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         let rp = self.assigned_region_projection(repacker);
         return vec![LocalNode::RegionProjection(rp.into())]
             .into_iter()

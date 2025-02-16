@@ -1,25 +1,29 @@
-use crate::rustc_interface::{
-    data_structures::fx::FxHashSet,
-    hir::def_id::DefId
-    ,
-    middle::mir::{BasicBlock, Location},
-    middle::ty::GenericArgsRef,
+use crate::{
+    borrows::borrow_pcg_edge::BlockedNode,
+    rustc_interface::{
+        data_structures::fx::FxHashSet,
+        hir::def_id::DefId,
+        middle::{
+            mir::{BasicBlock, Location},
+            ty::GenericArgsRef,
+        },
+    },
 };
 
 use crate::borrows::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use crate::borrows::domain::{AbstractionInputTarget, AbstractionOutputTarget};
+use crate::borrows::edge::kind::BorrowPCGEdgeKind;
 use crate::borrows::edge_data::EdgeData;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::path_condition::PathConditions;
 use crate::borrows::region_projection::RegionProjection;
 use crate::combined_pcs::{LocalNodeLike, PCGNode};
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 use itertools::Itertools;
 use std::collections::BTreeSet;
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
-use crate::utils::place::maybe_old::MaybeOldPlace;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
@@ -153,6 +157,14 @@ impl<'tcx> EdgeData<'tcx> for AbstractionType<'tcx> {
             .collect()
     }
 
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        let as_abstraction_input: Result<AbstractionInputTarget<'tcx>, _> = node.try_into();
+        match as_abstraction_input {
+            Ok(abstraction_input) => self.has_input(abstraction_input),
+            Err(_) => false,
+        }
+    }
+
     fn is_owned_expansion(&self) -> bool {
         false
     }
@@ -197,8 +209,25 @@ where
 
 #[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
-    inputs: Vec<AbstractionInputTarget<'tcx>>,
+    pub(crate) inputs: Vec<AbstractionInputTarget<'tcx>>,
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
+}
+
+impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
+    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        self.inputs().into_iter().map(|i| i.into()).collect()
+    }
+
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+        self.outputs()
+            .into_iter()
+            .map(|o| o.to_local_node())
+            .collect()
+    }
+
+    fn is_owned_expansion(&self) -> bool {
+        false
+    }
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionBlockEdge<'tcx> {
@@ -293,6 +322,7 @@ impl<'tcx> AbstractionType<'tcx> {
             .flat_map(|edge| edge.inputs())
             .collect()
     }
+
     pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
         self.edges()
             .into_iter()
@@ -304,6 +334,16 @@ impl<'tcx> AbstractionType<'tcx> {
         match self {
             AbstractionType::FunctionCall(c) => c.edges.clone(),
             AbstractionType::Loop(c) => vec![c.edge.clone()],
+        }
+    }
+
+    pub fn has_input(&self, node: AbstractionInputTarget<'tcx>) -> bool {
+        match self {
+            AbstractionType::FunctionCall(function_call_abstraction) => function_call_abstraction
+                .edges()
+                .iter()
+                .any(|edge| edge.inputs.contains(&node)),
+            AbstractionType::Loop(loop_abstraction) => loop_abstraction.edge.inputs.contains(&node),
         }
     }
 }
