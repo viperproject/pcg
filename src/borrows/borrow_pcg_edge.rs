@@ -394,6 +394,10 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn is_owned_expansion(&self) -> bool {
         self.kind().is_owned_expansion()
     }
+
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.kind().blocks_node(node, repacker)
+    }
 }
 
 impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdge<'tcx>

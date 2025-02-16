@@ -1,11 +1,11 @@
-use crate::rustc_interface::{
+use crate::{combined_pcs::PCGNode, rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::{
         mir::Location,
         ty::{self},
     },
-};
+}};
 
 use serde_json::json;
 use crate::borrows::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -63,6 +63,13 @@ impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, T>> for BorrowEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match node {
+            PCGNode::Place(p) => self.blocked_place == p,
+            PCGNode::RegionProjection(_) => false,
+        }
+    }
+
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         vec![self.blocked_place.into()].into_iter().collect()
     }
