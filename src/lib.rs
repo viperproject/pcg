@@ -320,6 +320,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
             state
                 .dot_graphs()
+                .unwrap()
                 .borrow()
                 .write_json_file(&block_iterations_json_file);
         }

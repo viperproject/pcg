@@ -90,14 +90,18 @@ impl DataflowStmtPhase {
 }
 
 #[derive(Clone)]
+pub (crate) struct PCGDebugData {
+    pub(crate) dot_output_dir: String,
+    pub(crate) dot_graphs: Rc<RefCell<DotGraphs>>,
+}
+
+#[derive(Clone)]
 pub struct PlaceCapabilitySummary<'a, 'tcx> {
     cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) block: Option<BasicBlock>,
 
     pub(crate) pcg: PCG<'a, 'tcx>,
-    dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
-
-    dot_output_dir: Option<String>,
+    debug_data: Option<PCGDebugData>,
 
     join_history: FxHashSet<BasicBlock>,
 }
@@ -262,16 +266,19 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         self.pcg.borrow.set_block(block);
     }
 
-    pub fn set_dot_graphs(&mut self, dot_graphs: Rc<RefCell<DotGraphs>>) {
-        self.dot_graphs = Some(dot_graphs);
+    pub fn set_debug_data(&mut self, output_dir: String, dot_graphs: Rc<RefCell<DotGraphs>>) {
+        self.debug_data = Some(PCGDebugData {
+            dot_output_dir: output_dir,
+            dot_graphs,
+        });
     }
 
     pub(crate) fn block(&self) -> BasicBlock {
         self.block.unwrap()
     }
 
-    pub fn dot_graphs(&self) -> Rc<RefCell<DotGraphs>> {
-        self.dot_graphs.clone().unwrap()
+    pub fn dot_graphs(&self) -> Option<Rc<RefCell<DotGraphs>>> {
+        self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
     }
 
     fn dot_filename_for(
@@ -283,9 +290,11 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         format!(
             "{}/{}",
             output_dir,
-            self.dot_graphs()
-                .borrow()
-                .relative_filename(phase, self.block(), statement_index)
+            self.dot_graphs().unwrap().borrow().relative_filename(
+                phase,
+                self.block(),
+                statement_index
+            )
         )
     }
 
@@ -296,19 +305,22 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         if self.block().as_usize() == 0 {
             assert!(!matches!(phase, DataflowStmtPhase::Join(_)));
         }
-        if let Some(output_dir) = &self.dot_output_dir {
+        if let Some(debug_data) = &self.debug_data {
             if phase == DataflowStmtPhase::Initial {
-                self.dot_graphs()
+                debug_data
+                    .dot_graphs
                     .borrow_mut()
                     .register_new_iteration(statement_index);
             }
-            let relative_filename =
-                self.dot_graphs()
-                    .borrow()
-                    .relative_filename(phase, self.block(), statement_index);
-            let filename = self.dot_filename_for(&output_dir, phase, statement_index);
-            if !self
-                .dot_graphs()
+            let relative_filename = debug_data.dot_graphs.borrow().relative_filename(
+                phase,
+                self.block(),
+                statement_index,
+            );
+            let filename =
+                self.dot_filename_for(&debug_data.dot_output_dir, phase, statement_index);
+            if !debug_data
+                .dot_graphs
                 .borrow_mut()
                 .insert(statement_index, phase, relative_filename)
             {
@@ -335,8 +347,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn new(
         cgx: Rc<PCGContext<'a, 'tcx>>,
         block: Option<BasicBlock>,
-        dot_output_dir: Option<String>,
-        dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
+        debug_data: Option<PCGDebugData>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
         let borrows =
@@ -349,8 +360,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             cgx,
             block,
             pcg,
-            dot_graphs,
-            dot_output_dir,
+            debug_data,
             join_history: FxHashSet::default(),
         }
     }
@@ -438,8 +448,10 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                 }
             }
         }
-        self.dot_graphs().borrow_mut().register_new_iteration(0);
-        self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
+        if let Some(debug_data) = &self.debug_data {
+            debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
+            self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
+        }
         fpcs || borrows
     }
 }
