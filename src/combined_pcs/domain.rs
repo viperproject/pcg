@@ -13,6 +13,7 @@ use std::{
 };
 
 use crate::{
+    borrows::borrows_visitor::BorrowCheckerImpl,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
@@ -90,7 +91,7 @@ impl DataflowStmtPhase {
 }
 
 #[derive(Clone)]
-pub (crate) struct PCGDebugData {
+pub(crate) struct PCGDebugData {
     pub(crate) dot_output_dir: String,
     pub(crate) dot_graphs: Rc<RefCell<DotGraphs>>,
 }
@@ -346,12 +347,12 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
     pub(crate) fn new(
         cgx: Rc<PCGContext<'a, 'tcx>>,
+        bc: BorrowCheckerImpl<'a, 'tcx>,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows =
-            BorrowsDomain::new(cgx.rp, cgx.region_inference_context, cgx.borrow_set, block);
+        let borrows = BorrowsDomain::new(cgx.rp, bc, block);
         let pcg = PCG {
             owned: fpcs,
             borrow: borrows,
