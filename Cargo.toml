@@ -5,6 +5,7 @@ authors = ["Prusti Devs <prusti_developers@sympa.ethz.ch>"]
 edition = "2021"
 build = "build.rs"
 
+
 [dependencies]
 # For RustRover
 # rustc_ast = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_ast", optional = true}
@@ -15,28 +16,29 @@ build = "build.rs"
 # rustc_index = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_index", optional = true}
 # rustc_middle = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_middle", optional = true}
 # rustc_target = {path = "~/.rustup/toolchains/nightly-2024-09-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_target", optional = true}
-egg = "0.10.0"
-shell-escape = "0.1.5"
-rustversion = "1.0"
-itertools = "0.12.0"
+
+bumpalo = "3.16.0"
 derive_more = { version = "2.0.1", features = ["full"] }
 dot = "0.1"
-smallvec = { version = "^1.11", features = ["union", "const_new"] }
+egg = "0.10.0"
+itertools = "0.12.0"
+lazy_static = "1.4.0"
+petgraph = "0.6.5"
+polonius-engine = "0.13.0"
 regex = "1"
+rustversion = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-polonius-engine = "0.13.0"
-lazy_static = "1.4.0"
-petgraph = "0.6.5"
-bumpalo = "3.16.0"
+shell-escape = "0.1.5"
+smallvec = { version = "^1.11", features = ["union", "const_new"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-rustc_utils = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"]}
 
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking"] }
 toml = "0.7"
+rustc_utils = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"]}
 
 [package.metadata.rust-analyzer]
 # This crate uses #[feature(rustc_private)]

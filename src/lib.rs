@@ -31,7 +31,7 @@ use borrows::{
 use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{
-    borrowck::consumers::{self, BorrowSet, RegionInferenceContext},
+    borrowck::{self, BorrowSet, RegionInferenceContext},
     data_structures::fx::FxHashSet,
     dataflow::{compute_fixpoint, Analysis, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
@@ -278,7 +278,7 @@ pub trait BodyAndBorrows<'tcx> {
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
 }
 
-impl<'tcx> BodyAndBorrows<'tcx> for consumers::BodyWithBorrowckFacts<'tcx> {
+impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     fn body(&self) -> &Body<'tcx> {
         &self.body
     }

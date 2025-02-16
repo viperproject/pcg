@@ -11,8 +11,7 @@ use crate::{
     combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::{
-            consumers::BorrowSet,
-            consumers::{PoloniusOutput, RegionInferenceContext},
+            BorrowSet, {PoloniusOutput, RegionInferenceContext},
         },
         index::IndexVec,
         middle::{
@@ -159,7 +158,7 @@ pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
     // TODO: Use this to determine when two-phase borrows are activated and
     // update the PCG accordingly
     #[allow(unused)]
-    borrows: &'mir BorrowSet<'tcx>
+    borrows: &'mir BorrowSet<'tcx>,
 }
 
 impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
@@ -229,6 +228,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         cursor.get().contains(local)
     }
 
+    #[rustversion::since(2024-12-14)]
     fn twophase_borrow_activations(
         &self,
         location: Location,
@@ -236,6 +236,17 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         self.borrows.activation_map()[&location]
             .iter()
             .map(|idx| self.borrows[*idx].reserve_location())
+            .collect()
+    }
+
+    #[rustversion::before(2024-12-14)]
+    fn twophase_borrow_activations(
+        &self,
+        location: Location,
+    ) -> std::collections::BTreeSet<Location> {
+        self.borrows.activation_map[&location]
+            .iter()
+            .map(|idx| self.borrows[*idx].reserve_location)
             .collect()
     }
 }
