@@ -112,6 +112,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     RegionProjectionMemberKind::DerefRegionProjection => {
                         egraph.union(blocked_node, blocking_node);
                     }
+                    RegionProjectionMemberKind::Ref => {
+                        egraph.union(blocked_node, blocking_node);
+                    }
+                    // RegionProjectionMemberKind::Aggregate {
+                    //     field_idx,
+                    //     target_rp_index,
+                    // } => todo!(),
+                    // RegionProjectionMemberKind::Borrow => todo!(),
+                    // RegionProjectionMemberKind::FunctionInput => todo!(),
+                    // RegionProjectionMemberKind::Todo => {
                     _ => {
                         // We don't know exactly how these nodes are related.
                         // We conservatively assume various relations between blocked and blocking nodes
@@ -183,8 +193,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut result = FxHashSet::default();
         let canonical_id = graph.lookup(get_node(node, &mut place_ids)).unwrap();
         for node in seen {
-            let node_id = graph.add(get_node(node, &mut place_ids));
-            if graph.find(node_id) == canonical_id {
+            let node_id = graph.lookup(get_node(node, &mut place_ids));
+            // eprintln!("{} -> {}", node.to_short_string(repacker), node_id.unwrap());
+            if node_id == Some(canonical_id) {
                 result.insert(node);
             }
         }
@@ -217,6 +228,27 @@ fn test_aliases() {
         .init();
 
     use crate::run_combined_pcs;
+
+    let input = r#"
+            fn main() {
+                use std::time::Instant;
+                fn run_expensive_calculation(){}
+                let start = Instant::now();
+                run_expensive_calculation();
+                let elapsed = start.elapsed();
+                println!("Elapsed: {}s", elapsed.as_secs());
+            }"#;
+    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+        let mut pcg = run_combined_pcs(body, tcx, None);
+        let bb = pcg.get_all_for_bb((3 as usize).into());
+        let stmt = &bb.statements[8];
+        let temp: mir::Place<'_> = mir::Local::from(19 as usize).into();
+        let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
+        let repacker = PlaceRepacker::new(&body.body, tcx);
+        assert!(!stmt
+            .aliases(star_temp.into(), repacker)
+            .contains(&temp.into()));
+    });
 
     let input = r#"
     fn main() {
