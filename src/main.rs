@@ -131,6 +131,8 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 }
                 info!("Running PCG on function: {}", item_name);
                 info!("Path: {:?}", body.body.span);
+                info!("Number of basic blocks: {}", body.body.basic_blocks.len());
+                info!("Number of locals: {}", body.body.local_decls.len());
                 if should_check_body(&body) {
                     let mut output = run_combined_pcs(
                         &body,

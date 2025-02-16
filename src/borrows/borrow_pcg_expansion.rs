@@ -137,11 +137,13 @@ impl<'tcx> BorrowExpansion<'tcx> {
 
     pub(super) fn elems(&self) -> Vec<PlaceElem<'tcx>> {
         match self {
-            BorrowExpansion::Fields(fields) => fields
+            BorrowExpansion::Fields(fields) => {
+                assert!(fields.len() <= 1024, "Too many fields: {:?}", fields);
+                fields
                 .iter()
                 .sorted_by_key(|(idx, _)| *idx)
                 .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
-                .collect(),
+                .collect()},
             BorrowExpansion::Deref => vec![PlaceElem::Deref],
             BorrowExpansion::Downcast(symbol, variant_idx) => {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]
@@ -168,11 +170,11 @@ impl<'tcx> BorrowExpansion<'tcx> {
 }
 
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
-    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
+    pub fn expansion<'slf>(&'slf self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
         self.expansion
             .elems()
             .into_iter()
-            .map(|p| self.base.project_deeper(repacker, p))
+            .map(move |p| self.base.project_deeper(repacker, p))
             .collect()
     }
 }
@@ -213,7 +215,40 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfBorrowed<'tcx> {
     }
 
     fn is_owned_expansion(&self) -> bool {
-        todo!()
+        false
+    }
+
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        if let Some(local) = node.as_local_node() {
+            self.base == local
+        } else {
+            false
+        }
+    }
+
+    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match (self.base, node) {
+            (PCGNode::Place(p1), PCGNode::Place(p2)) => {
+                if let Some((node_prefix, last_proj)) = p2.last_projection()
+                    && node_prefix == p1
+                {
+                    self.expansion.elems().contains(&last_proj)
+                } else {
+                    false
+                }
+            }
+            (PCGNode::RegionProjection(rp1), PCGNode::RegionProjection(rp2)) => {
+                if let Some((node_prefix, last_proj)) = rp2.base().last_projection()
+                    && node_prefix == rp1.base()
+                {
+                    self.expansion.elems().contains(&last_proj)
+                        && rp1.region(repacker) == rp2.region(repacker)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 }
 

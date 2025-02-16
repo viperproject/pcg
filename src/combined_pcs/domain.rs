@@ -422,33 +422,6 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             );
         }
         let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
-        let mut g = UnblockGraph::new();
-        for root in self.borrow_pcg().data.entry_state.roots(self.cgx.rp) {
-            if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
-                root
-            {
-                match &self.owned_pcg().data.entry_state[root.local] {
-                    CapabilityLocal::Unallocated => {
-                        g.unblock_node(
-                            root.into(),
-                            &self.borrow_pcg().data.entry_state,
-                            self.cgx.rp,
-                            UnblockType::ForRead,
-                        );
-                    }
-                    CapabilityLocal::Allocated(projs) => {
-                        if !(*projs).contains_key(&root) {
-                            g.unblock_node(
-                                root.into(),
-                                &self.borrow_pcg().data.entry_state,
-                                self.cgx.rp,
-                                UnblockType::ForExclusive,
-                            );
-                        }
-                    }
-                }
-            }
-        }
         if let Some(debug_data) = &self.debug_data {
             debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
             self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
