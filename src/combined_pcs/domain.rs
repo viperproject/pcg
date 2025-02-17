@@ -24,12 +24,8 @@ use crate::{
 
 use super::{PCGContext, PCGEngine};
 use crate::borrows::domain::BorrowsDomain;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
-    borrows::unblock_graph::{UnblockGraph, UnblockType},
-    combined_pcs::PCGNode,
-    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
+    free_pcs::FreePlaceCapabilitySummary,
     visualization::generate_dot_graph,
 };
 
