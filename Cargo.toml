@@ -16,14 +16,14 @@ memory_profiling = [
 
 [dependencies]
 # For RustRover
- rustc_ast = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_ast", optional = true}
- rustc_borrowck = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_borrowck", optional = true}
- rustc_mir_dataflow = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_mir_dataflow", optional = true}
- rustc_data_structures = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_data_structures", optional = true}
- rustc_hir = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_hir", optional = true}
- rustc_index = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_index", optional = true}
- rustc_middle = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_middle", optional = true}
- rustc_target = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_target", optional = true}
+ # rustc_ast = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_ast", optional = true}
+ # rustc_borrowck = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_borrowck", optional = true}
+ # rustc_mir_dataflow = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_mir_dataflow", optional = true}
+ # rustc_data_structures = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_data_structures", optional = true}
+ # rustc_hir = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_hir", optional = true}
+ # rustc_index = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_index", optional = true}
+ # rustc_middle = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_middle", optional = true}
+ # rustc_target = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_target", optional = true}
 
 bumpalo = "3.16.0"
 derive_more = { version = "2.0.1", features = ["full"] }
