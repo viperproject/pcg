@@ -1,7 +1,8 @@
 pub mod aliases;
 
+use smallvec::smallvec;
 use std::{
-    cell::{Cell, Ref, RefCell},
+    cell::{Ref, RefCell},
     collections::{HashMap, HashSet},
 };
 
@@ -32,7 +33,9 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
-    region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
+    region_projection_member::{
+        RegionProjectionMember, RegionProjectionMemberKind, RegionProjectionMemberOutputs,
+    },
 };
 use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
 use crate::borrows::edge::borrow::BorrowEdge;
@@ -47,8 +50,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashMap<BorrowPCGEdgeKind<'tcx>, PathConditions>,
-    /// See [`BorrowsGraph::is_valid`] for more details.
-    cached_is_valid: Cell<Option<bool>>,
+    cached_leaf_nodes: RefCell<Option<FxHashSet<LocalNode<'tcx>>>>,
 }
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsGraph<'tcx> {
@@ -61,9 +63,6 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsGraph<'tcx> {
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        if let Some(true) = self.cached_is_valid.get() {
-            return Ok(());
-        }
         tracing::debug!(
             "Checking acyclicity of borrows graph ({} edges)",
             self.edges.len()
@@ -72,7 +71,6 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
             return Err("Graph is not acyclic".to_string());
         }
         tracing::debug!("Acyclicity check passed");
-        self.cached_is_valid.set(Some(true));
         Ok(())
     }
 }
@@ -169,7 +167,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn new() -> Self {
         Self {
             edges: FxHashMap::default(),
-            cached_is_valid: Cell::new(None),
+            cached_leaf_nodes: RefCell::new(None),
         }
     }
 
@@ -413,21 +411,31 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         frozen_graph: Option<&FrozenGraphRef<'slf, 'tcx>>,
     ) -> FxHashSet<LocalNode<'tcx>> {
+        if let Some(leaf_nodes) = self.cached_leaf_nodes.borrow().as_ref() {
+            return leaf_nodes.clone();
+        }
         let fg = match frozen_graph {
             Some(fg) => fg,
             None => &self.frozen_graph(),
         };
-        self.leaf_edges(repacker, fg)
+        let leaf_nodes: FxHashSet<_> = self
+            .leaf_edges(repacker, fg)
             .into_iter()
             .flat_map(|edge| edge.blocked_by_nodes(repacker).into_iter())
-            .collect()
+            .collect();
+        self.cached_leaf_nodes
+            .borrow_mut()
+            .replace(leaf_nodes.clone());
+        leaf_nodes
     }
 
     pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        self.nodes(repacker)
+        let roots: FxHashSet<PCGNode<'tcx>> = self
+            .nodes(repacker)
             .into_iter()
             .filter(|node| self.is_root(*node, repacker))
-            .collect()
+            .collect();
+        roots
     }
 
     /// Returns true iff any edge in the graph blocks `blocked_node`
@@ -471,10 +479,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn num_edges(&self) -> usize {
         self.edges.len()
-    }
-
-    pub(crate) fn is_leaf(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.edges_blocked_by(node, repacker).next().is_none()
     }
 
     pub(crate) fn edges_blocked_by<'graph, 'mir: 'graph>(
@@ -522,7 +526,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             false
         };
 
-        self.cached_is_valid.set(None);
         let self_coupling_graph =
             self.construct_coupling_graph(borrow_checker, repacker, other_block);
         let other_coupling_graph =
@@ -590,12 +593,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     // region projection member edge.
                     let new_edge_kind =
                         BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
-                            vec![node],
+                            smallvec![node],
                             rps.clone()
                                 .into_iter()
                                 .map(|rp| rp.try_into().unwrap())
-                                .collect::<Vec<_>>()
-                                .into(),
+                                .collect::<RegionProjectionMemberOutputs<'tcx>>(),
                             RegionProjectionMemberKind::Todo,
                         ));
                     self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions().clone()));
@@ -828,11 +830,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
-        self.cached_is_valid.set(None);
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
             return conditions.join(&edge.conditions);
         } else {
             self.edges.insert(edge.kind, edge.conditions);
+            self.cached_leaf_nodes.borrow_mut().take();
             true
         }
     }
@@ -866,10 +868,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn remove(&mut self, edge: &impl BorrowPCGEdgeLike<'tcx>) -> bool {
-        self.cached_is_valid.set(None);
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
             if conditions == edge.conditions() {
                 self.edges.remove(edge.kind());
+                self.cached_leaf_nodes.borrow_mut().take();
             } else {
                 assert!(conditions.remove(edge.conditions()));
             }
@@ -917,17 +919,33 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 (edge.kind, edge.conditions)
             })
             .collect();
+        if changed {
+            self.cached_leaf_nodes.borrow_mut().take();
+        }
+        changed
+    }
+
+    fn mut_edge_conditions<'slf>(
+        &'slf mut self,
+        mut f: impl FnMut(&mut PathConditions) -> bool,
+    ) -> bool {
+        let mut changed = false;
+        for (_, conditions) in self.edges.iter_mut() {
+            if f(conditions) {
+                changed = true;
+            }
+        }
         changed
     }
 
     pub fn filter_for_path(&mut self, path: &[BasicBlock]) {
-        self.cached_is_valid.set(None);
         self.edges
             .retain(|_, conditions| conditions.valid_for_path(path));
+        self.cached_leaf_nodes.borrow_mut().take();
     }
 
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
-        self.mut_edges(|edge| edge.insert_path_condition(pc.clone()))
+        self.mut_edge_conditions(|conditions| conditions.insert(pc.clone()))
     }
 }
 
