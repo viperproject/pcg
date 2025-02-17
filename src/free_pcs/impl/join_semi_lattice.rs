@@ -9,7 +9,7 @@ use std::rc::Rc;
 use rustc_interface::mir_dataflow::JoinSemiLattice;
 
 use crate::{
-    combined_pcs::PCGInternalError,
+    combined_pcs::{EvalStmtPhase, PCGInternalError},
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary,
         FreePlaceCapabilitySummary,
@@ -23,7 +23,7 @@ impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
     fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
         let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
-        match entry_state.join(&other.data.states.post_main, self.repacker) {
+        match entry_state.join(&other.data.states[EvalStmtPhase::PostMain], self.repacker) {
             Ok(changed) => changed,
             Err(e) => {
                 self.error = Some(e.into());

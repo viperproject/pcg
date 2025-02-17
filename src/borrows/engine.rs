@@ -1,18 +1,14 @@
 use std::rc::Rc;
 
 use crate::{
-    rustc_interface::{
+    combined_pcs::EvalStmtPhase, rustc_interface::{
         borrowck::PoloniusOutput,
         dataflow::Analysis,
         middle::{
-            mir::{
-                visit::Visitor, Body, Location, Statement,
-                Terminator, TerminatorEdges,
-            },
+            mir::{visit::Visitor, Body, Location, Statement, Terminator, TerminatorEdges},
             ty::TyCtxt,
         },
-    },
-    utils::display::DisplayDiff,
+    }, utils::display::DisplayDiff
 };
 
 use super::{
@@ -65,20 +61,20 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         state.data.enter_location(location);
 
-        state.data.states.pre_operands = state.data.states.post_main.clone();
+        state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
 
         if !state.actions.pre_operands.is_empty() {
-            state.data.states.pre_operands = state.data.states.post_main.clone();
+            state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         } else {
             if !state.has_error() {
-                if state.data.states.pre_operands != state.data.states.post_main {
-                    eprintln!(
+                if state.data.states.0.pre_operands != state.data.states.0.post_main {
+                    panic!(
                         "{:?}: No actions were emitted, but the state has changed:\n{}",
                         location,
                         state.data.entry_state.fmt_diff(
-                            &state.data.states.pre_operands,
+                            state.data.states[EvalStmtPhase::PreOperands].as_ref(),
                             PlaceRepacker::new(self.body, self.tcx)
                         )
                     );
@@ -87,7 +83,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
-        state.data.states.post_operands = state.data.states.post_main.clone();
+        state.data.states.0.post_operands = state.data.states.0.post_main.clone();
     }
 
     fn apply_statement_effect(
@@ -101,7 +97,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         }
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
             .visit_statement(statement, location);
-        state.data.states.pre_main = state.data.states.post_main.clone();
+        state.data.states.0.pre_main = state.data.states.0.post_main.clone();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
             .visit_statement(statement, location);
     }

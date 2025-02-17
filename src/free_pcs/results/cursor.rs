@@ -7,10 +7,11 @@
 use std::rc::Rc;
 
 use crate::{
-    borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGError, PCGNode},
+    borrows::{borrow_pcg_action::BorrowPCGActionKind, engine::DataflowPhase, latest::Latest},
+    combined_pcs::{EvalStmtPhase, PCGEngine, PCGError, PCGNode},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
+        dataflow::PCGAnalysis,
         middle::{
             mir::{self, BasicBlock, Body, Location},
             ty::TyCtxt,
@@ -50,16 +51,14 @@ impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx, D, E: mir_dataflow::Analysis<'tcx, Domain = D>> {
-    pub cursor: Cursor<'mir, 'tcx, E>,
+pub struct FreePcsAnalysis<'mir, 'tcx> {
+    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain = D>>
-    FreePcsAnalysis<'mir, 'tcx, D, E>
-{
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, E>) -> Self {
+impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
+    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -78,8 +77,10 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         // Get aliases from all locations in each basic block
         for block in self.body().basic_blocks.indices() {
             let stmts = self.get_all_for_bb(block)?;
-            for stmt in stmts.statements.iter() {
-                result.merge(stmt.all_place_aliases(repacker));
+            if let Some(stmts) = stmts {
+                for stmt in stmts.statements.iter() {
+                    result.merge(stmt.all_place_aliases(repacker));
+                }
             }
         }
         Ok(result)
@@ -105,7 +106,13 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
     /// to the *end* of that location.
-    pub(crate) fn next(&mut self, exp_loc: Location) -> Result<FreePcsLocation<'tcx>, PCGError> {
+    ///
+    /// This function may return `None` if the PCG did not analyze this block.
+    /// This could happen, for example, if the block would only be reached when unwinding from a panic.
+    pub(crate) fn next(
+        &mut self,
+        exp_loc: Location,
+    ) -> Result<Option<FreePcsLocation<'tcx>>, PCGError> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
@@ -113,27 +120,31 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         self.cursor.seek_after_primary_effect(location);
 
         let state = self.cursor.get();
+
         let prev_post_main = state.get_curr_fpcg().data.entry_state.clone();
-        let curr_fpcs = state.get_curr_fpcg();
+        let curr_fpcg = state.get_curr_fpcg();
         let curr_borrows = state.get_curr_borrow_pcg();
-        let repack_ops = curr_fpcs.repack_ops(&prev_post_main)?;
+        let repack_ops = curr_fpcg.repack_ops(&prev_post_main).map_err(|mut e| {
+            e.add_context(format!("At {:?}", location));
+            e
+        })?;
 
         let (extra_start, extra_middle) = curr_borrows.get_bridge();
 
         let result = FreePcsLocation {
             location,
             actions: curr_borrows.actions.clone(),
-            states: curr_fpcs.data.states.clone(),
+            states: curr_fpcg.data.states.0.clone(),
             repacks_start: repack_ops.start,
             repacks_middle: repack_ops.middle,
             extra_start,
             extra_middle,
-            borrows: curr_borrows.data.states.clone(),
+            borrows: curr_borrows.data.states.0.clone(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
 
-        Ok(result)
+        Ok(Some(result))
     }
     pub(crate) fn terminator(&mut self) -> FreePcsTerminator<'tcx> {
         let location = self.curr_stmt.unwrap();
@@ -146,9 +157,18 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
         let from_fpcg_state = self.cursor.get().get_curr_fpcg().clone();
         let from_borrows_state = self.cursor.get().get_curr_borrow_pcg().clone();
         let block = &self.body()[location.block];
-        let succs = block
-            .terminator()
-            .successors()
+
+        // Currently we ignore blocks that are only reached via panics
+        let succs = PCGEngine::successor_blocks(&block.terminator())
+            .into_iter()
+            .filter(|succ| {
+                self.cursor
+                    .results()
+                    .analysis
+                    .0
+                    .reachable_blocks
+                    .contains(*succ)
+            })
             .map(|succ| {
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
@@ -160,22 +180,17 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
                         statement_index: 0,
                     },
                     actions: to_borrows_state.actions.clone(),
-                    states: to.data.states.clone(),
-                    repacks_start: from_fpcg_state
-                        .data
-                        .states
-                        .post_main
+                    states: to.data.states.0.clone(),
+                    repacks_start: from_fpcg_state.data.states[EvalStmtPhase::PostMain]
                         .bridge(&to.data.entry_state, rp)
                         .unwrap(),
                     repacks_middle: Vec::new(),
-                    borrows: to_borrows_state.data.states.clone(),
+                    borrows: to_borrows_state.data.states.0.clone(),
                     // TODO: It seems like extra_start should be similar to repacks_start
                     extra_start: {
                         let mut actions = BorrowPCGActions::new();
-                        let self_abstraction_edges = from_borrows_state
-                            .data
-                            .states
-                            .post_main
+                        let self_abstraction_edges = from_borrows_state.data.states
+                            [EvalStmtPhase::PostMain]
                             .graph()
                             .abstraction_edges()
                             .collect::<FxHashSet<_>>();
@@ -206,21 +221,37 @@ impl<'mir, 'tcx, D: HasPcg<'mir, 'tcx>, E: mir_dataflow::Analysis<'tcx, Domain =
 
     /// Recommended interface.
     /// Does *not* require that one calls `analysis_for_bb` first
+    /// This function may return `None` if the PCG did not analyze this block.
+    /// This could happen, for example, if the block would only be reached when unwinding from a panic.
     pub fn get_all_for_bb(
         &mut self,
         block: BasicBlock,
-    ) -> Result<FreePcsBasicBlock<'tcx>, PCGError> {
+    ) -> Result<Option<FreePcsBasicBlock<'tcx>>, PCGError> {
+        if !self
+            .cursor
+            .results()
+            .analysis
+            .0
+            .reachable_blocks
+            .contains(block)
+        {
+            return Ok(None);
+        }
         self.analysis_for_bb(block);
         let mut statements = Vec::new();
         while self.curr_stmt.unwrap() != self.end_stmt.unwrap() {
             let stmt = self.next(self.curr_stmt.unwrap())?;
-            statements.push(stmt);
+            if let Some(stmt) = stmt {
+                statements.push(stmt);
+            } else {
+                return Ok(None);
+            }
         }
         let terminator = self.terminator();
-        Ok(FreePcsBasicBlock {
+        Ok(Some(FreePcsBasicBlock {
             statements,
             terminator,
-        })
+        }))
     }
 }
 
