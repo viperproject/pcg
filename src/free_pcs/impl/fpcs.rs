@@ -4,7 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::fmt::{Debug, Formatter, Result};
+use std::{
+    fmt::{Debug, Formatter, Result},
+    rc::Rc,
+};
 
 use derive_more::{Deref, DerefMut};
 use rustc_interface::{
@@ -40,13 +43,16 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
             .map_or(false, |e| matches!(e, PCGError::Internal(_)))
     }
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
-        &mut self.data.states.post_operands
+        Rc::<_>::make_mut(&mut self.data.states.post_operands)
     }
 
-    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+    pub(crate) fn new(
+        repacker: PlaceRepacker<'a, 'tcx>,
+        capability_summary: Rc<CapabilitySummary<'tcx>>,
+    ) -> Self {
         Self {
             repacker,
-            data: DomainData::new(CapabilitySummary::default(repacker.local_count())),
+            data: DomainData::new(capability_summary),
             error: None,
         }
     }
@@ -55,7 +61,8 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(self.repacker.body().arg_count);
-        for (local, cap) in self.data.entry_state.iter_enumerated_mut() {
+        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
+        for (local, cap) in entry_state.iter_enumerated_mut() {
             let new_cap = if local == return_local {
                 // Return local is allocated but uninitialized
                 CapabilityLocal::new(local, CapabilityKind::Write)

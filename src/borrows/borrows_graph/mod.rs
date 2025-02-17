@@ -473,6 +473,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.len()
     }
 
+    pub(crate) fn is_leaf(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.edges_blocked_by(node, repacker).next().is_none()
+    }
+
     pub(crate) fn edges_blocked_by<'graph, 'mir: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
