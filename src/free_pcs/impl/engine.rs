@@ -8,10 +8,10 @@ use std::rc::Rc;
 
 use rustc_interface::{
     dataflow::Analysis,
-    middle::mir::{visit::Visitor, Body, Location, Statement, Terminator, TerminatorEdges},
+    middle::mir::{self, visit::Visitor, Body, Location, Statement, Terminator, TerminatorEdges},
 };
 
-use crate::{rustc_interface, utils::PlaceRepacker};
+use crate::{combined_pcs::EvalStmtPhase, rustc_interface, utils::PlaceRepacker};
 
 use super::{triple::TripleWalker, CapabilitySummary, FreePlaceCapabilitySummary};
 
@@ -73,6 +73,9 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
+        if terminator.kind == mir::TerminatorKind::UnwindResume {
+            return terminator.edges();
+        }
         let mut tw = TripleWalker::default();
         tw.visit_terminator(terminator, location);
         self.apply_main(state, tw, location);
@@ -93,10 +96,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         }
         state.data.enter_location(location);
         // Repack for operands
-        state.data.states.pre_operands = state.data.states.post_main.clone();
+        state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.repacker);
-            let pre_operands = Rc::<_>::make_mut(&mut state.data.states.pre_operands);
+            let pre_operands = state.data.states.get_mut(EvalStmtPhase::PreOperands);
             if let Err(e) = pre_operands.requires(triple.pre(), self.repacker) {
                 state.error = Some(e);
                 return;
@@ -104,9 +107,9 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         }
 
         // Apply operands effects
-        state.data.states.post_operands = state.data.states.pre_operands.clone();
+        state.data.states.0.post_operands = state.data.states.0.pre_operands.clone();
         for triple in tw.operand_triples {
-            let post_operands = Rc::<_>::make_mut(&mut state.data.states.post_operands);
+            let post_operands = state.data.states.get_mut(EvalStmtPhase::PostOperands);
             let triple = triple.replace_place(self.repacker);
             post_operands.ensures(triple, self.repacker);
         }
@@ -123,10 +126,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             return;
         }
         // Repack for main
-        state.data.states.pre_main = state.data.states.post_operands.clone();
+        state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
         for &triple in &tw.main_triples {
             let triple = triple.replace_place(self.repacker);
-            let pre_main = Rc::<_>::make_mut(&mut state.data.states.pre_main);
+            let pre_main = state.data.states.get_mut(EvalStmtPhase::PreMain);
             if let Err(e) = pre_main.requires(triple.pre(), self.repacker) {
                 state.error = Some(e);
                 return;
@@ -134,10 +137,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         }
 
         // Apply main effects
-        state.data.states.post_main = state.data.states.pre_main.clone();
+        state.data.states.0.post_main = state.data.states.0.pre_main.clone();
         for triple in tw.main_triples {
             let triple = triple.replace_place(self.repacker);
-            let post_main = Rc::<_>::make_mut(&mut state.data.states.post_main);
+            let post_main = state.data.states.get_mut(EvalStmtPhase::PostMain);
             post_main.ensures(triple, self.repacker);
         }
     }

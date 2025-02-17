@@ -18,10 +18,10 @@ use crate::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
         },
         dataflow::Analysis,
-        index::{Idx, IndexVec},
+        index::{bit_set::BitSet, Idx, IndexVec},
         middle::{
             mir::{
-                BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
+                self, BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
                 START_BLOCK,
             },
             ty::{self, GenericArgsRef, TyCtxt},
@@ -160,8 +160,52 @@ pub struct PCGEngine<'a, 'tcx> {
     borrow_checker: BorrowCheckerImpl<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
+    pub(crate) reachable_blocks: BitSet<BasicBlock>,
 }
 impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
+    pub(crate) fn edges_to_analyze<'mir>(
+        terminator: &'mir Terminator<'tcx>,
+    ) -> TerminatorEdges<'mir, 'tcx> {
+        match &terminator.kind {
+            mir::TerminatorKind::FalseUnwind { real_target, .. } => {
+                TerminatorEdges::Single(*real_target)
+            }
+            mir::TerminatorKind::Call { target, .. } => {
+                if let Some(target) = target {
+                    TerminatorEdges::Single(*target)
+                } else {
+                    TerminatorEdges::None
+                }
+            }
+            mir::TerminatorKind::Assert { target, .. } => TerminatorEdges::Single(*target),
+            mir::TerminatorKind::Drop { target, .. } => TerminatorEdges::Single(*target),
+            _ => terminator.edges(),
+        }
+    }
+
+    pub(crate) fn successor_blocks<'mir>(terminator: &'mir Terminator<'tcx>) -> Vec<BasicBlock> {
+        match Self::edges_to_analyze(terminator) {
+            TerminatorEdges::None => vec![],
+            TerminatorEdges::Single(basic_block) => vec![basic_block],
+            TerminatorEdges::Double(basic_block, basic_block1) => vec![basic_block, basic_block1],
+            TerminatorEdges::AssignOnReturn {
+                return_, cleanup, ..
+            } => {
+                let mut result = vec![];
+                for block in return_ {
+                    result.push(*block);
+                }
+                if let Some(cleanup) = cleanup {
+                    result.push(cleanup);
+                }
+                result
+            }
+            TerminatorEdges::SwitchInt { targets, .. } => {
+                targets.all_targets().iter().copied().collect()
+            }
+        }
+    }
+
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -213,7 +257,10 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                   // cgx.output_facts.as_ref().map(|o| o.as_ref()),
         );
         let cgx = Rc::new(cgx);
+        let mut reachable_blocks = BitSet::new_empty(cgx.rp.body().basic_blocks.len());
+        reachable_blocks.insert(START_BLOCK);
         Self {
+            reachable_blocks,
             cgx: cgx.clone(),
             fpcs,
             borrows,
@@ -272,7 +319,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        if state.has_error() {
+        if state.has_error() || !self.reachable_blocks.contains(location.block) {
             return;
         }
         self.initialize(state, location.block);
@@ -283,7 +330,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
 
         let pcg = state.pcg_mut();
 
-        let borrows = pcg.borrow.data.states.post_main.frozen_graph();
+        let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
 
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
@@ -311,7 +358,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        if state.has_error() {
+        if state.has_error() || !self.reachable_blocks.contains(location.block) {
             return;
         }
         self.fpcs
@@ -345,8 +392,13 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
-        if state.has_error() {
-            return terminator.edges();
+        let edges = Self::edges_to_analyze(terminator);
+        if state.has_error() || !self.reachable_blocks.contains(location.block) {
+            return edges;
+        } else {
+            for block in Self::successor_blocks(terminator) {
+                self.reachable_blocks.insert(block);
+            }
         }
         self.borrows
             .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location);
@@ -354,6 +406,6 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             .apply_terminator_effect(state.owned_pcg_mut(), terminator, location);
         self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
-        terminator.edges()
+        edges
     }
 }

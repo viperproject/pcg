@@ -243,7 +243,12 @@ fn test_aliases() {
         f: impl Fn(mir::Location, &FreePcsLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {
-            let stmts = pcg.get_all_for_bb(block).unwrap();
+            let stmts_option = pcg.get_all_for_bb(block).unwrap();
+            let stmts = if let Some(stmts) = stmts_option {
+                stmts
+            } else {
+                continue;
+            };
             for (i, stmt) in stmts.statements.iter().enumerate() {
                 let location = mir::Location {
                     block,
@@ -320,7 +325,7 @@ fn main() {
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
-        let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap();
+        let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = bb0.statements.last().unwrap();
         let e_deref = placer.local("e").deref().mk();
         let repacker = PlaceRepacker::new(&body.body, tcx);
@@ -344,7 +349,7 @@ fn main() {
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
-        let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap();
+        let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[11];
         let star_yyy = placer.local("y").deref().deref().deref().mk();
         let repacker = PlaceRepacker::new(&body.body, tcx);
@@ -367,7 +372,7 @@ fn main() {
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
-        let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap();
+        let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[13];
         let temp: mir::Place<'_> = mir::Local::from(5 as usize).into();
         let star_5 = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);

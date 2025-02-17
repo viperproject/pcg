@@ -376,7 +376,7 @@ impl<'tcx> Place<'tcx> {
                 );
             }
             TyKind::Alias(..) => {
-                return Err(PCGError::Unsupported(
+                return Err(PCGError::unsupported(
                     PCGUnsupportedError::ExpansionOfAliasType,
                 ));
             }
@@ -391,10 +391,7 @@ impl<'tcx> Place<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }
 
-    pub(crate) fn get_ref_region(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<PCGRegion> {
+    pub(crate) fn get_ref_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, ..) => Some((*region).into()),
             _ => None,

@@ -7,7 +7,8 @@ use crate::borrows::path_condition::{PathCondition, PathConditions};
 use crate::borrows::region_projection_member::{
     RegionProjectionMember, RegionProjectionMemberKind,
 };
-use crate::combined_pcs::{PCGError, PCGNodeLike};
+use crate::combined_pcs::EvalStmtPhase::*;
+use crate::combined_pcs::{PCGError, PCGErrorKind, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
@@ -116,11 +117,11 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         )
     }
     pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
-        &self.data.states.post_main
+        self.data.states[PostMain].as_ref()
     }
 
     pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
-        Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.states.post_main)
+        self.data.states.get_mut(PostMain)
     }
 
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
@@ -140,7 +141,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
             .as_ref()
-            .map_or(false, |e| matches!(e, PCGError::Internal(_)))
+            .map_or(false, |e| matches!(e.kind, PCGErrorKind::Internal(_)))
     }
 
     pub(crate) fn has_error(&self) -> bool {
