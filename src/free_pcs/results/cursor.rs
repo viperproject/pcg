@@ -4,6 +4,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::rc::Rc;
+
 use crate::{
     borrows::{borrow_pcg_action::BorrowPCGActionKind, latest::Latest},
     combined_pcs::{EvalStmtPhase, PCGError, PCGNode},
@@ -249,7 +251,7 @@ impl<'tcx> FreePcsBasicBlock<'tcx> {
     }
 }
 
-pub type CapabilitySummaries<'tcx> = EvalStmtData<CapabilitySummary<'tcx>>;
+pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilitySummary<'tcx>>>;
 
 #[derive(Debug)]
 pub struct FreePcsLocation<'tcx> {

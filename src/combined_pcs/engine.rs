@@ -12,6 +12,7 @@ use std::{
 
 use crate::{
     borrows::borrows_visitor::BorrowCheckerImpl,
+    free_pcs::CapabilitySummary,
     rustc_interface::{
         borrowck::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -118,6 +119,7 @@ pub(crate) struct PCGContext<'mir, 'tcx> {
     pub(crate) rp: PlaceRepacker<'mir, 'tcx>,
     pub(crate) borrow_set: &'mir BorrowSet<'tcx>,
     pub(crate) region_inference_context: &'mir RegionInferenceContext<'tcx>,
+    pub(crate) init_capability_summary: Rc<CapabilitySummary<'tcx>>,
     #[allow(dead_code)]
     pub(crate) output_facts: Option<OutputFacts>,
 }
@@ -131,10 +133,12 @@ impl<'mir, 'tcx> PCGContext<'mir, 'tcx> {
         output_facts: Option<OutputFacts>,
     ) -> Self {
         let rp = PlaceRepacker::new(mir, tcx);
+        let init_capability_summary = Rc::new(CapabilitySummary::default(rp.local_count()));
         Self {
             rp,
             borrow_set,
             region_inference_context,
+            init_capability_summary,
             output_facts,
         }
     }
@@ -194,7 +198,10 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                 dot_graphs,
             }
         });
-        let fpcs = FpcsEngine(cgx.rp);
+        let fpcs = FpcsEngine {
+            repacker: cgx.rp,
+            init_capability_summary: cgx.init_capability_summary.clone(),
+        };
         let borrows = BorrowsEngine::new(
             cgx.rp.tcx(),
             cgx.rp.body(),

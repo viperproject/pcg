@@ -11,7 +11,7 @@ use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 
 use crate::utils::json::ToJsonWithRepacker;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Latest<'tcx> {
@@ -129,6 +129,14 @@ impl<'tcx> Latest<'tcx> {
         block: BasicBlock,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
+        if self.0.is_empty() {
+            if other.0.is_empty() {
+                return false;
+            } else {
+                self.0 = other.0.clone();
+                return true;
+            }
+        }
         let mut changed = false;
         for (place, other_loc) in other.0.iter() {
             if let Some(self_loc) = self.get_opt(*place) {
@@ -144,22 +152,3 @@ impl<'tcx> Latest<'tcx> {
         changed
     }
 }
-
-impl<'tcx> PartialEq for Latest<'tcx> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-        // for (p, _) in self.0.iter() {
-        //     if other.get(*p) != self.get(*p) {
-        //         return false;
-        //     }
-        // }
-        // for (p, _) in other.0.iter() {
-        //     if other.get(*p) != self.get(*p) {
-        //         return false;
-        //     }
-        // }
-        // true
-    }
-}
-
-impl<'tcx> Eq for Latest<'tcx> {}
