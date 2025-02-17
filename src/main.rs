@@ -86,6 +86,13 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
 }
 
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
+    if std::env::var("CARGO_CRATE_NAME").is_ok() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err()
+    {
+        // We're running in cargo, but the Rust file is a dependency (not part of the primary package)
+        // For now we don't check dependencies, so we abort
+        return;
+    }
+
     let mut item_names = vec![];
 
     let user_specified_vis_dir = std::env::var("PCG_VISUALIZATION_DATA_DIR");
@@ -262,7 +269,8 @@ fn go(args: Vec<String>) {
 }
 
 #[cfg(feature = "memory_profiling")]
-async fn handle_get_heap() -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
+async fn handle_get_heap(
+) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
     let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
     if !prof_ctl.activated() {
         return Err((
@@ -270,16 +278,18 @@ async fn handle_get_heap() -> Result<impl axum::response::IntoResponse, (axum::h
             "heap profiling not activated".into(),
         ));
     }
-    let pprof = prof_ctl
-        .dump_pprof()
-        .map_err(|err| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let pprof = prof_ctl.dump_pprof().map_err(|err| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            err.to_string(),
+        )
+    })?;
     Ok(pprof)
 }
 
 #[cfg(feature = "memory_profiling")]
 async fn start_profiling_server() {
-    let app = axum::Router::new()
-        .route("/debug/pprof/heap", axum::routing::get(handle_get_heap));
+    let app = axum::Router::new().route("/debug/pprof/heap", axum::routing::get(handle_get_heap));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:4444").await.unwrap();
     info!("Started profiling server on port 4444");
