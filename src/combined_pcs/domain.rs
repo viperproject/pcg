@@ -13,19 +13,18 @@ use std::{
 };
 
 use crate::{
-    borrows::borrows_visitor::BorrowCheckerImpl, free_pcs::CapabilitySummary, rustc_interface::{
+    borrows::{borrows_visitor::BorrowCheckerImpl, engine::DataflowPhase},
+    rustc_interface::{
         data_structures::fx::FxHashSet,
-        middle::mir::BasicBlock,
+        middle::mir::{BasicBlock, START_BLOCK},
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
-    }, PCGAnalysis, RECORD_PCG
+    },
+    PCGAnalysis, RECORD_PCG,
 };
 
 use super::{PCGContext, PCGEngine};
 use crate::borrows::domain::BorrowsDomain;
-use crate::{
-    free_pcs::FreePlaceCapabilitySummary,
-    visualization::generate_dot_graph,
-};
+use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -174,14 +173,40 @@ impl DotGraphs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PCGError {
+pub struct PCGError {
+    pub(crate) kind: PCGErrorKind,
+    pub(crate) context: Vec<String>,
+}
+
+impl PCGError {
+    pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
+        Self { kind, context }
+    }
+
+    pub(crate) fn add_context(&mut self, context: String) {
+        self.context.push(context);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PCGErrorKind {
     Unsupported(PCGUnsupportedError),
     Internal(PCGInternalError),
 }
 
 impl PCGError {
-    pub(crate) fn unsupported(msg: String) -> Self {
-        Self::Unsupported(PCGUnsupportedError::Other(msg))
+    pub(crate) fn internal(msg: String) -> Self {
+        Self {
+            kind: PCGErrorKind::Internal(PCGInternalError::new(msg)),
+            context: vec![],
+        }
+    }
+
+    pub(crate) fn unsupported(err: PCGUnsupportedError) -> Self {
+        Self {
+            kind: PCGErrorKind::Unsupported(err),
+            context: vec![],
+        }
     }
 }
 
@@ -196,7 +221,7 @@ impl PCGInternalError {
 
 impl From<PCGInternalError> for PCGError {
     fn from(e: PCGInternalError) -> Self {
-        PCGError::Internal(e)
+        PCGError::new(PCGErrorKind::Internal(e), vec![])
     }
 }
 

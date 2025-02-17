@@ -28,7 +28,7 @@ use borrows::{
     region_projection_member::RegionProjectionMember,
     unblock_graph::BorrowPCGUnblockAction,
 };
-use combined_pcs::{PCGContext, PCGEngine, PlaceCapabilitySummary};
+use combined_pcs::{PCGContext, PCGEngine};
 use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
 use rustc_interface::{
     borrowck::{self, BorrowSet, RegionInferenceContext},
@@ -47,12 +47,7 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithRepacker;
 
-pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
-    'mir,
-    'tcx,
-    PlaceCapabilitySummary<'mir, 'tcx>,
-    PCGAnalysis<PCGEngine<'mir, 'tcx>>,
->;
+pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -352,7 +347,12 @@ pub fn run_combined_pcs<'mir, 'tcx>(
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
-            let pcs_block = fpcs_analysis.get_all_for_bb(block).unwrap();
+            let pcs_block_option = fpcs_analysis.get_all_for_bb(block).unwrap();
+            let pcs_block = if let Some(pcs_block) = pcs_block_option {
+                pcs_block
+            } else {
+                continue;
+            };
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
                     statement.assert_validity(rp);

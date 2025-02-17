@@ -25,6 +25,13 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilitySummary<'tcx> {
         other: &Self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
+        if self.len() != other.len() {
+            return Err(PCGError::internal(format!(
+                "Capability summaries have different lengths: {} (previous) != {} (next)",
+                self.len(),
+                other.len()
+            )));
+        }
         let mut repacks = Vec::new();
         for (l, from) in self.iter_enumerated() {
             let local_repacks = from.bridge(&other[l], repacker)?;

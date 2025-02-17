@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    borrows::borrows_state::BorrowsState, rustc_interface::dataflow::compute_fixpoint,
+    combined_pcs::EvalStmtPhase::*, rustc_interface::dataflow::compute_fixpoint,
     validity_checks_enabled,
 };
 use smallvec::smallvec;
@@ -442,11 +442,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             .region_projections(self.repacker)
                             .iter_enumerated()
                         {
-                            for mut orig_edge in self
-                                .domain
-                                .data
-                                .states
-                                .post_main
+                            let post_main = &self.domain.data.states[PostMain];
+                            for mut orig_edge in post_main
                                 .edges_blocked_by((*rp).into(), self.repacker)
                                 .into_iter()
                                 .map(|e| e.to_owned_edge())
@@ -461,17 +458,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             target.region_projection(idx, self.repacker).into()
                                     }
                                 }
-                                Rc::<BorrowsState<'tcx>>::make_mut(
-                                    &mut self.domain.data.states.post_main,
-                                )
-                                .insert(orig_edge);
+                                self.domain.data.states.get_mut(PostMain).insert(orig_edge);
                             }
                         }
                     }
                     Rvalue::Ref(region, kind, blocked_place) => {
                         let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
                         if !target.ty(self.repacker).ty.is_ref() {
-                            self.domain.report_error(PCGError::Unsupported(
+                            self.domain.report_error(PCGError::unsupported(
                                 PCGUnsupportedError::AssignBorrowToNonReferenceType,
                             ));
                             return;
@@ -529,10 +523,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            self.domain.report_error(PCGError::unsupported(format!(
-                "This type of function call is not yet supported: {:?}",
-                func
-            )));
+            self.domain
+                .report_error(PCGError::unsupported(PCGUnsupportedError::Other(format!(
+                    "This type of function call is not yet supported: {:?}",
+                    func
+                ))));
             return;
         };
         let sig = self
@@ -576,7 +571,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         .unwrap_or_else(|e| {
                             if let Ok(dot_graph) = generate_borrows_dot_graph(
                                 self.repacker,
-                                self.domain.data.states.post_main.graph(),
+                                self.domain.data.states[PostMain].graph(),
                             ) {
                                 DotGraph::render_with_imgcat(
                                     &dot_graph,
@@ -611,7 +606,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
-                        self.domain.report_error(PCGError::Unsupported(
+                        self.domain.report_error(PCGError::unsupported(
                             PCGUnsupportedError::ClosuresCapturingBorrows,
                         ));
                         return;
@@ -736,8 +731,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     #[tracing::instrument(skip(self, terminator), fields(join_iteration = ?self.domain.debug_join_iteration))]
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if self.preparing && self.stage == StatementStage::Operands {
-            let post_state =
-                Rc::<BorrowsState<'tcx>>::make_mut(&mut self.domain.data.states.post_main);
+            let post_state = self.domain.data.states.get_mut(PostMain);
             let actions =
                 post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
@@ -775,9 +769,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         if self.preparing && self.stage == StatementStage::Operands {
             // Remove places that are non longer live based on borrow checker information
-            let actions =
-                Rc::<BorrowsState<'tcx>>::make_mut(&mut self.domain.data.states.post_main)
-                    .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
+            let actions = self
+                .domain
+                .data
+                .states
+                .get_mut(PostMain)
+                .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
         }
 
@@ -790,12 +787,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::Assign(box (_, rvalue)) => {
                     if let Rvalue::Cast(_, _, ty) = rvalue {
                         if ty.ref_mutability().is_some() {
-                            self.domain.report_error(PCGError::Unsupported(
+                            self.domain.report_error(PCGError::unsupported(
                                 PCGUnsupportedError::CastToRef,
                             ));
                             return;
                         } else if ty.is_unsafe_ptr() {
-                            self.domain.report_error(PCGError::Unsupported(
+                            self.domain.report_error(PCGError::unsupported(
                                 PCGUnsupportedError::UnsafePtrCast,
                             ));
                             return;
@@ -831,9 +828,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     self.apply_action(BorrowPCGAction::make_place_old(place));
-                    let actions =
-                        Rc::<BorrowsState<'tcx>>::make_mut(&mut self.domain.data.states.post_main)
-                            .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
+                    let actions = self.domain.data.get_mut(PostMain).pack_old_and_dead_leaves(
+                        self.repacker,
+                        location,
+                        &self.domain.bc,
+                    );
                     self.record_actions(actions);
                 }
                 StatementKind::Assign(box (target, _)) => {
@@ -885,7 +884,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             let place: utils::Place<'tcx> = (*place).into();
             if place.contains_unsafe_deref(self.repacker) {
                 self.domain
-                    .report_error(PCGError::Unsupported(PCGUnsupportedError::DerefUnsafePtr));
+                    .report_error(PCGError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
                 return;
             }
         }

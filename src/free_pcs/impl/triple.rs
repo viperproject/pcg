@@ -251,11 +251,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 post: Some(Condition::exclusive(resume_arg)),
             },
             InlineAsm { .. } => {
-                self.error = Some(PCGError::Unsupported(PCGUnsupportedError::InlineAssembly));
+                self.error = Some(PCGError::unsupported(PCGUnsupportedError::InlineAssembly));
                 return;
             }
             CoroutineDrop => {
-                self.error = Some(PCGError::Unsupported(PCGUnsupportedError::Coroutines));
+                self.error = Some(PCGError::unsupported(PCGUnsupportedError::Coroutines));
                 return;
             }
             _ => todo!("{terminator:?}"),

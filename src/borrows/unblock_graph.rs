@@ -194,13 +194,6 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         typ: UnblockType,
     ) {
-        // DotGraph::render_with_imgcat(
-        //     &generate_borrows_dot_graph(repacker, borrows.graph()).unwrap(),
-        //     &format!("Borrows state before unblocking: {:?}", node),
-        // )
-        // .unwrap_or_else(|e| {
-        //     eprintln!("Error rendering borrows state: {}", e);
-        // });
         for edge in borrows.edges_blocking(node, repacker) {
             self.kill_edge(edge, borrows, repacker, typ);
         }
