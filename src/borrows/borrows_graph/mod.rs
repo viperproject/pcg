@@ -317,6 +317,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.frozen_graph().is_acyclic(repacker)
     }
 
+    pub(crate) fn abstraction_edge_kinds<'slf>(
+        &'slf self,
+    ) -> impl Iterator<Item = &'slf AbstractionType<'tcx>> + 'slf {
+        self.edges().filter_map(|edge| match edge.kind {
+            BorrowPCGEdgeKind::Abstraction(abstraction) => Some(abstraction),
+            _ => None,
+        })
+    }
+
     pub(crate) fn abstraction_edges<'slf>(
         &'slf self,
     ) -> impl Iterator<Item = Conditioned<&'slf AbstractionType<'tcx>>> + 'slf {
@@ -652,14 +661,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         edge: &impl BorrowPCGEdgeLike<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        'outer: for abstraction in self.abstraction_edges() {
+        'outer: for abstraction in self.abstraction_edge_kinds() {
             for blocked in edge.blocked_nodes(repacker) {
-                if !abstraction.value.blocks_node(blocked, repacker) {
+                if !abstraction.blocks_node(blocked, repacker) {
                     continue 'outer;
                 }
             }
             for blocked_by in edge.blocked_by_nodes(repacker) {
-                if !abstraction.value.is_blocked_by(blocked_by, repacker) {
+                if !abstraction.is_blocked_by(blocked_by, repacker) {
                     continue 'outer;
                 }
             }
