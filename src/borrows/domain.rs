@@ -14,6 +14,7 @@ use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::{utils, BorrowsBridge};
+use smallvec::smallvec;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
@@ -179,11 +180,13 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let _ = entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        vec![MaybeRemotePlace::place_assigned_to_local(local).into()],
-                        vec![
-                            RegionProjection::new((*region).into(), arg_place, self.repacker)
-                                .into(),
-                        ],
+                        smallvec![MaybeRemotePlace::place_assigned_to_local(local).into()],
+                        smallvec![RegionProjection::new(
+                            (*region).into(),
+                            arg_place,
+                            self.repacker
+                        )
+                        .into(),],
                         RegionProjectionMemberKind::FunctionInput,
                     ),
                     PathConditions::AtBlock((Location::START).block),
@@ -198,13 +201,13 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             assert!(entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        vec![RegionProjection::new(
+                        smallvec![RegionProjection::new(
                             region_projection.region(self.repacker),
                             RemotePlace::new(local),
                             self.repacker,
                         )
                         .to_pcg_node(),],
-                        vec![region_projection.into()],
+                        smallvec![region_projection.into()],
                         RegionProjectionMemberKind::Todo,
                     ),
                     PathConditions::AtBlock((Location::START).block),

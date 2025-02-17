@@ -4,6 +4,7 @@ use crate::{
     borrows::borrows_state::BorrowsState, rustc_interface::dataflow::compute_fixpoint,
     validity_checks_enabled,
 };
+use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
@@ -333,8 +334,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        vec![source_proj.into()],
-                        vec![target_proj.into()],
+                        smallvec![source_proj.into()],
+                        smallvec![target_proj.into()],
                         kind(idx),
                     ),
                     PathConditions::AtBlock(location.block),
@@ -395,13 +396,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             {
                                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        vec![RegionProjection::new(
+                                        smallvec![RegionProjection::new(
                                             (*const_region).into(),
                                             MaybeRemoteRegionProjectionBase::Const(c.const_),
                                             self.repacker,
                                         )
                                         .to_pcg_node()],
-                                        vec![RegionProjection::new(
+                                        smallvec![RegionProjection::new(
                                             (*target_region).into(),
                                             target,
                                             self.repacker,
@@ -830,15 +831,10 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     self.apply_action(BorrowPCGAction::make_place_old(place));
-                        let actions = Rc::<BorrowsState<'tcx>>::make_mut(
-                            &mut self.domain.data.states.post_main,
-                        )
-                        .pack_old_and_dead_leaves(
-                            self.repacker,
-                            location,
-                            &self.domain.bc,
-                        );
-                        self.record_actions(actions);
+                    let actions =
+                        Rc::<BorrowsState<'tcx>>::make_mut(&mut self.domain.data.states.post_main)
+                            .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
+                    self.record_actions(actions);
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();

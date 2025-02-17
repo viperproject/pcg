@@ -1,4 +1,5 @@
 use serde_json::json;
+use smallvec::SmallVec;
 
 use crate::combined_pcs::PCGNode;
 use crate::pcg_validity_assert;
@@ -13,12 +14,15 @@ use super::edge_data::EdgeData;
 use super::{has_pcs_elem::HasPcsElems, region_projection::RegionProjection};
 use crate::utils::json::ToJsonWithRepacker;
 
+pub(crate) type RegionProjectionMemberInputs<'tcx> = SmallVec<[PCGNode<'tcx>; 8]>;
+pub(crate) type RegionProjectionMemberOutputs<'tcx> = SmallVec<[LocalNode<'tcx>; 8]>;
+
 /// A PCG hyperedge where at the nodes of at least one of the edge endpoints are
 /// all region projections.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegionProjectionMember<'tcx> {
-    pub(crate) inputs: Vec<PCGNode<'tcx>>,
-    pub(crate) outputs: Vec<LocalNode<'tcx>>,
+    pub(crate) inputs: RegionProjectionMemberInputs<'tcx>,
+    pub(crate) outputs: RegionProjectionMemberOutputs<'tcx>,
     pub(crate) kind: RegionProjectionMemberKind,
 }
 
@@ -140,8 +144,8 @@ impl<'tcx> RegionProjectionMember<'tcx> {
     }
 
     pub(crate) fn new(
-        inputs: Vec<PCGNode<'tcx>>,
-        outputs: Vec<LocalNode<'tcx>>,
+        inputs: RegionProjectionMemberInputs<'tcx>,
+        outputs: RegionProjectionMemberOutputs<'tcx>,
         kind: RegionProjectionMemberKind,
     ) -> Self {
         Self {

@@ -1,5 +1,5 @@
 use std::rc::Rc;
-
+use smallvec::smallvec;
 use crate::{
     borrows::{
         borrows_graph::borrows_imgcat_debug, edge_data::EdgeData,
@@ -515,8 +515,8 @@ impl<'tcx> BorrowsState<'tcx> {
                             self.record_and_apply_action(
                                 BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        vec![borrow.blocked_place.into()],
-                                        vec![ra.into()],
+                                        smallvec![borrow.blocked_place.into()],
+                                        smallvec![ra.into()],
                                         RegionProjectionMemberKind::Ref,
                                     ),
                                     PathConditions::new(location.block),
@@ -636,8 +636,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 // -> *t if it doesn't already exist.
 
                 let region_projection_member = RegionProjectionMember::new(
-                    vec![RegionProjection::new((*region).into(), base, repacker).to_pcg_node()],
-                    vec![target.into()],
+                    smallvec![RegionProjection::new((*region).into(), base, repacker).to_pcg_node()],
+                    smallvec![target.into()],
                     RegionProjectionMemberKind::DerefRegionProjection,
                 );
 
