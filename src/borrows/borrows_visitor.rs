@@ -1,6 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{rustc_interface::dataflow::compute_fixpoint, validity_checks_enabled};
+use crate::{
+    borrows::borrows_state::BorrowsState, rustc_interface::dataflow::compute_fixpoint,
+    validity_checks_enabled,
+};
 use tracing::instrument;
 
 use crate::{
@@ -457,7 +460,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             target.region_projection(idx, self.repacker).into()
                                     }
                                 }
-                                self.domain.data.states.post_main.insert(orig_edge);
+                                Rc::<BorrowsState<'tcx>>::make_mut(
+                                    &mut self.domain.data.states.post_main,
+                                )
+                                .insert(orig_edge);
                             }
                         }
                     }
@@ -729,7 +735,8 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     #[tracing::instrument(skip(self, terminator), fields(join_iteration = ?self.domain.debug_join_iteration))]
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if self.preparing && self.stage == StatementStage::Operands {
-            let post_state = &mut self.domain.data.states.post_main;
+            let post_state =
+                Rc::<BorrowsState<'tcx>>::make_mut(&mut self.domain.data.states.post_main);
             let actions =
                 post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
@@ -767,11 +774,9 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         if self.preparing && self.stage == StatementStage::Operands {
             // Remove places that are non longer live based on borrow checker information
-            let actions = self.domain.data.states.post_main.pack_old_and_dead_leaves(
-                self.repacker,
-                location,
-                &self.domain.bc,
-            );
+            let actions =
+                Rc::<BorrowsState<'tcx>>::make_mut(&mut self.domain.data.states.post_main)
+                    .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
         }
 
@@ -825,12 +830,15 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     self.apply_action(BorrowPCGAction::make_place_old(place));
-                    let actions = self.domain.data.states.post_main.pack_old_and_dead_leaves(
-                        self.repacker,
-                        location,
-                        &self.domain.bc,
-                    );
-                    self.record_actions(actions);
+                        let actions = Rc::<BorrowsState<'tcx>>::make_mut(
+                            &mut self.domain.data.states.post_main,
+                        )
+                        .pack_old_and_dead_leaves(
+                            self.repacker,
+                            location,
+                            &self.domain.bc,
+                        );
+                        self.record_actions(actions);
                 }
                 StatementKind::Assign(box (target, _)) => {
                     let target: utils::Place<'tcx> = (*target).into();

@@ -4,6 +4,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::rc::Rc;
+
 use rustc_interface::mir_dataflow::JoinSemiLattice;
 
 use crate::{
@@ -20,11 +22,8 @@ impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
     #[must_use]
     fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
-        match self
-            .data
-            .entry_state
-            .join(&other.data.states.post_main, self.repacker)
-        {
+        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
+        match entry_state.join(&other.data.states.post_main, self.repacker) {
             Ok(changed) => changed,
             Err(e) => {
                 self.error = Some(e.into());

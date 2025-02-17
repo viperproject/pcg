@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     rustc_interface::{
         borrowck::PoloniusOutput,
@@ -140,7 +142,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
     }
 }
 
-pub(crate) type BorrowsStates<'tcx> = EvalStmtData<BorrowsState<'tcx>>;
+pub(crate) type BorrowsStates<'tcx> = EvalStmtData<Rc<BorrowsState<'tcx>>>;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DataflowPhase {

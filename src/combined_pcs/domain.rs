@@ -13,13 +13,11 @@ use std::{
 };
 
 use crate::{
-    borrows::borrows_visitor::BorrowCheckerImpl,
-    rustc_interface::{
+    borrows::borrows_visitor::BorrowCheckerImpl, free_pcs::CapabilitySummary, rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
-    },
-    PCGAnalysis, RECORD_PCG,
+    }, PCGAnalysis, RECORD_PCG
 };
 
 use super::{PCGContext, PCGEngine};
@@ -347,7 +345,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
-        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
+        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp, cgx.init_capability_summary.clone());
         let borrows = BorrowsDomain::new(cgx.rp, bc, block);
         let pcg = PCG {
             owned: fpcs,

@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::borrows::engine::DataflowPhase;
 use crate::rustc_interface::middle::mir::Location;
 
@@ -5,15 +7,15 @@ use super::eval_stmt_data::EvalStmtData;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DomainData<T> {
-    pub(crate) entry_state: T,
-    pub(crate) states: EvalStmtData<T>,
+    pub(crate) entry_state: Rc<T>,
+    pub(crate) states: EvalStmtData<Rc<T>>,
     phase: DataflowPhase,
 }
 
 impl<T: Default> Default for DomainData<T> {
     fn default() -> Self {
         Self {
-            entry_state: T::default(),
+            entry_state: Rc::default(),
             states: EvalStmtData::default(),
             phase: DataflowPhase::Init,
         }
@@ -21,7 +23,7 @@ impl<T: Default> Default for DomainData<T> {
 }
 
 impl<T: Clone + Default> DomainData<T> {
-    pub(crate) fn new(entry_state: T) -> Self {
+    pub(crate) fn new(entry_state: Rc<T>) -> Self {
         Self {
             entry_state,
             states: EvalStmtData::default(),
