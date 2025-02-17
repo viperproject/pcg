@@ -119,6 +119,10 @@ pub(crate) struct PCGContext<'mir, 'tcx> {
     pub(crate) rp: PlaceRepacker<'mir, 'tcx>,
     pub(crate) borrow_set: &'mir BorrowSet<'tcx>,
     pub(crate) region_inference_context: &'mir RegionInferenceContext<'tcx>,
+
+    /// The initial capability summary for all blocks. We use an RC'd pointer to
+    /// avoid copying the capability summary for each block (which can be large
+    /// if the function has many locals)
     pub(crate) init_capability_summary: Rc<CapabilitySummary<'tcx>>,
     #[allow(dead_code)]
     pub(crate) output_facts: Option<OutputFacts>,
