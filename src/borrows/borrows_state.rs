@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     borrows::{
         borrows_graph::borrows_imgcat_debug, edge_data::EdgeData,
@@ -84,7 +86,7 @@ struct JoinTransitionElem<'tcx> {
     block: BasicBlock,
     latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    capabilities: BorrowPCGCapabilities<'tcx>,
+    capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
 }
 
 #[cfg(debug_assertions)]
@@ -116,7 +118,7 @@ impl<'mir, 'tcx> DebugLines<PlaceRepacker<'mir, 'tcx>> for JoinTransitionElem<'t
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    pub(crate) capabilities: BorrowPCGCapabilities<'tcx>,
+    pub(crate) capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
     join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
@@ -152,7 +154,7 @@ impl<'tcx> Default for BorrowsState<'tcx> {
         Self {
             latest: Latest::new(),
             graph: BorrowsGraph::new(),
-            capabilities: BorrowPCGCapabilities::new(),
+            capabilities: Rc::new(BorrowPCGCapabilities::new()),
             #[cfg(debug_assertions)]
             join_transitions: JoinLatticeVerifier::new(),
         }
@@ -255,12 +257,23 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         assert!(!node.is_owned(repacker));
-        self.capabilities.insert(node, capability)
+        if self.get_capability(node) != Some(capability) {
+            Rc::<_>::make_mut(&mut self.capabilities).insert(node, capability);
+            true
+        } else {
+            false
+        }
     }
 
     #[must_use]
     pub(crate) fn remove_capability<T: PCGNodeLike<'tcx>>(&mut self, node: T) -> bool {
-        self.capabilities.remove(node)
+        let node = node.to_pcg_node();
+        if self.get_capability(node) != None {
+            Rc::<_>::make_mut(&mut self.capabilities).remove(node);
+            true
+        } else {
+            false
+        }
     }
 
     #[cfg(debug_assertions)]
@@ -295,8 +308,10 @@ impl<'tcx> BorrowsState<'tcx> {
 
             // changed = true;
         }
-        if self.capabilities.join(&other.capabilities) {
-            changed = true;
+        if other.capabilities != self.capabilities {
+            if Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities) {
+                changed = true;
+            }
         }
         // // These checks are disabled even for debugging currently because they are very expensive
         // if changed && cfg!(debug_assertions) {
@@ -380,12 +395,13 @@ impl<'tcx> BorrowsState<'tcx> {
         &self,
         place: Place<'tcx>,
     ) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
-        self.borrows().filter(move |rb| match rb.value.blocked_place {
-            MaybeRemotePlace::Local(MaybeOldPlace::Current {
-                place: blocked_place,
-            }) => blocked_place.is_prefix(place),
-            _ => false,
-        })
+        self.borrows()
+            .filter(move |rb| match rb.value.blocked_place {
+                MaybeRemotePlace::Local(MaybeOldPlace::Current {
+                    place: blocked_place,
+                }) => blocked_place.is_prefix(place),
+                _ => false,
+            })
     }
 
     #[must_use]
