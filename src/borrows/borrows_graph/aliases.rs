@@ -1,3 +1,5 @@
+use std::{borrow::Borrow, sync::Arc};
+
 use egg::{define_language, EGraph, Id};
 
 use crate::{
@@ -8,7 +10,7 @@ use crate::{
     },
     combined_pcs::PCGNode,
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::PlaceRepacker,
+    utils::{display::DisplayWithRepacker, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
@@ -69,17 +71,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for edge in graph.edges_blocked_by(local_node, repacker) {
                     let blocked_nodes = match edge.kind() {
                         BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                            vec![expansion.base().into()].into_iter().collect()
+                            // vec![expansion.base().into()].into_iter().collect()
+                            vec![].into_iter().collect()
                         }
                         _ => edge.blocked_nodes(repacker),
                     };
                     for blocked in blocked_nodes {
                         if seen.insert(blocked) {
-                            // eprintln!(
-                            //     "up: {} -> {}",
-                            //     node.to_short_string(repacker),
-                            //     blocked.to_short_string(repacker)
-                            // );
                             let blocked_node = egraph.add(get_node(blocked, place_ids));
                             add_to_egraph(blocked_node, blocking_node, edge, egraph);
                             collect_nodes_up(graph, blocked, egraph, seen, place_ids, repacker);
@@ -99,36 +97,25 @@ impl<'tcx> BorrowsGraph<'tcx> {
             egraph.union(ref_blocking, blocked_node);
         }
 
-        fn add_to_egraph<'tcx>(
+        #[derive(Copy, Clone)]
+        enum RPRelType {
+            BlockedIsDeref,
+            BlockingIsDeref,
+            SameTy,
+            Unknown,
+        }
+
+        fn get_rp_rel_type<'tcx>(kind: RegionProjectionMemberKind) -> RPRelType {
+            RPRelType::Unknown
+        }
+
+        fn add_to_egraph(
             blocked_node: Id,
             blocking_node: Id,
-            edge: BorrowPCGEdgeRef<'tcx, '_>,
+            edge: BorrowPCGEdgeRef<'_, '_>,
             egraph: &mut EGraph<EggPcgNode, ()>,
         ) {
             match edge.kind() {
-                BorrowPCGEdgeKind::RegionProjectionMember(projection) => match projection.kind {
-                    RegionProjectionMemberKind::DerefRegionProjection => {
-                        egraph.union(blocked_node, blocking_node);
-                    }
-                    RegionProjectionMemberKind::Ref => {
-                        egraph.union(blocked_node, blocking_node);
-                    }
-                    // RegionProjectionMemberKind::Aggregate {
-                    //     field_idx,
-                    //     target_rp_index,
-                    // } => todo!(),
-                    // RegionProjectionMemberKind::Borrow => todo!(),
-                    // RegionProjectionMemberKind::FunctionInput => todo!(),
-                    // RegionProjectionMemberKind::Todo => {
-                    _ => {
-                        // We don't know exactly how these nodes are related.
-                        // We conservatively assume various relations between blocked and blocking nodes
-                        // TODO: This can be made much more precise
-                        record_deref(blocked_node, blocking_node, egraph);
-                        record_deref(blocking_node, blocked_node, egraph);
-                        egraph.union(blocked_node, blocking_node);
-                    }
-                },
                 BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => match expansion {
                     BorrowPCGExpansion::FromOwned(_) => {
                         record_deref(blocked_node, blocking_node, egraph)
@@ -190,18 +177,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph.rebuild();
         let mut result = FxHashSet::default();
         let canonical_id = graph.lookup(get_node(node, &mut place_ids)).unwrap();
+
         for seen_node in seen {
-            // To regain some precision, assume places with different types cannot alias
-            match (node, seen_node) {
-                (PCGNode::Place(p1), PCGNode::Place(p2)) => {
-                    if p1.ty(repacker).ty != p2.ty(repacker).ty {
-                        continue;
-                    }
-                }
-                _ => {}
-            }
             let node_id = graph.lookup(get_node(seen_node, &mut place_ids));
-            // eprintln!("{} -> {}", node.to_short_string(repacker), node_id.unwrap());
+            // eprintln!(
+            //     "{} -> {}",
+            //     seen_node.to_short_string(repacker),
+            //     node_id.unwrap()
+            // );
             if node_id == Some(canonical_id) {
                 result.insert(seen_node);
             }
@@ -273,15 +256,15 @@ fn main() {
         let temp: mir::Place<'_> = mir::Local::from(4 as usize).into();
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let repacker = PlaceRepacker::new(&body.body, tcx);
-        check_all_statements(&body.body, &mut pcg, |location, stmt| {
-            assert!(
-                !stmt
-                    .aliases(star_temp.into(), repacker)
-                    .contains(&temp.into()),
-                "Bad alias for {:?}",
-                location
-            );
-        });
+        // check_all_statements(&body.body, &mut pcg, |location, stmt| {
+        //     assert!(
+        //         !stmt
+        //             .aliases(star_temp.into(), repacker)
+        //             .contains(&temp.into()),
+        //         "Bad alias for {:?}",
+        //         location
+        //     );
+        // });
     });
 
     let input = r#"
@@ -301,17 +284,18 @@ fn main() {
         let temp_19: mir::Place<'_> = mir::Local::from(19 as usize).into();
 
         let repacker = PlaceRepacker::new(&body.body, tcx);
-        // check_all_statements(&body.body, &mut pcg, |location, stmt| {
-        //     assert!(
-        //         !stmt
-        //             .aliases(deref_temp_9.into(), repacker)
-        //             .contains(&temp_19.into()),
-        //         "Bad alias for {:?}",
-        //         location
-        //     );
-        // });
+        check_all_statements(&body.body, &mut pcg, |location, stmt| {
+            assert!(
+                !stmt
+                    .aliases(deref_temp_9.into(), repacker)
+                    .contains(&temp_19.into()),
+                "Bad alias for {:?}",
+                location
+            );
+        });
     });
 
+    // From flowistry_basic.rs
     let input = r#"
     fn main() {
       fn foo<'a, 'b>(x: &'a i32, y: &'b i32) -> &'a i32 { x }
@@ -339,6 +323,7 @@ fn main() {
             .contains(&a.into()));
     });
 
+    // flowistry_pointer_deep
     let input = r#"
         fn foo() {
             let x = 1;

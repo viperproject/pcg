@@ -408,7 +408,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             self.repacker,
                                         )
                                         .into()],
-                                        RegionProjectionMemberKind::Ref,
+                                        RegionProjectionMemberKind::ConstRef,
                                     ),
                                     PathConditions::AtBlock(location.block),
                                     "Assign constant",
@@ -481,12 +481,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             *region,
                             self.repacker,
                         );
-                        for source_proj in blocked_place.region_projections(self.repacker) {
+                        for source_proj in
+                            blocked_place.region_projections(self.repacker).into_iter()
+                        {
                             self.connect_outliving_projections(
                                 source_proj.into(),
                                 target,
                                 location,
-                                |_| RegionProjectionMemberKind::Todo,
+                                |_| RegionProjectionMemberKind::BorrowOutlives,
                             );
                         }
                     }

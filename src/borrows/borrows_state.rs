@@ -1,5 +1,3 @@
-use std::rc::Rc;
-use smallvec::smallvec;
 use crate::{
     borrows::{
         borrows_graph::borrows_imgcat_debug, edge_data::EdgeData,
@@ -23,6 +21,8 @@ use crate::{
     validity_checks_enabled,
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
+use smallvec::smallvec;
+use std::rc::Rc;
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
@@ -503,7 +503,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
         // If we are going to contract a place, borrows may need to be converted
         // to region projection member edges. For example, if the type of `x.t` is
-        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to expand to `x`, then we need
+        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to contract to `x`, then we need
         // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
         for p in graph_edges {
             match p.kind() {
@@ -517,7 +517,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                     RegionProjectionMember::new(
                                         smallvec![borrow.blocked_place.into()],
                                         smallvec![ra.into()],
-                                        RegionProjectionMemberKind::Ref,
+                                        RegionProjectionMemberKind::ContractRef,
                                     ),
                                     PathConditions::new(location.block),
                                     "Ensure Expansion To",
@@ -635,8 +635,11 @@ impl<'tcx> BorrowsState<'tcx> {
                 // has type &'a T. We insert a region projection member for t↓'a
                 // -> *t if it doesn't already exist.
 
+                // e.g t|'a
+                let base_rp = RegionProjection::new((*region).into(), base, repacker);
+
                 let region_projection_member = RegionProjectionMember::new(
-                    smallvec![RegionProjection::new((*region).into(), base, repacker).to_pcg_node()],
+                    smallvec![base_rp.to_pcg_node()],
                     smallvec![target.into()],
                     RegionProjectionMemberKind::DerefRegionProjection,
                 );
@@ -650,12 +653,36 @@ impl<'tcx> BorrowsState<'tcx> {
                     self.record_and_apply_action(
                         BorrowPCGAction::add_region_projection_member(
                             region_projection_member,
-                            PathConditions::new(location.block),
+                            path_conditions.clone(),
                             "Ensure Deref Expansion To At Least",
                         ),
                         &mut actions,
                         repacker,
                     );
+                }
+                // We also do this for all target region projections
+
+                for target_rp in target.region_projections(repacker) {
+                    let region_projection_member = RegionProjectionMember::new(
+                        smallvec![base_rp.to_pcg_node()],
+                        smallvec![target_rp.into()],
+                        RegionProjectionMemberKind::DerefBorrowOutlives,
+                    );
+
+                    if !self.contains_edge(&BorrowPCGEdge::new(
+                        region_projection_member.clone().into(),
+                        path_conditions.clone(),
+                    )) {
+                        self.record_and_apply_action(
+                            BorrowPCGAction::add_region_projection_member(
+                                region_projection_member,
+                                path_conditions.clone(),
+                                "Ensure Deref Expansion To At Least",
+                            ),
+                            &mut actions,
+                            repacker,
+                        );
+                    }
                 }
             }
 
