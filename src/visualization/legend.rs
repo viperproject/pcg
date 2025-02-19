@@ -69,27 +69,28 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
     // Create nodes
     let fpcs_node = GraphNode {
         id: NodeId('f', 0),
-        node_type: NodeType::FPCSNode {
+        node_type: NodeType::OwnedPCGNode {
             label: "x".to_string(),
             capability: Some(CapabilityKind::Write),
             location: None,
-            region: None,
+            ty: "&'a mut i32".to_string(),
         },
     };
 
     let region_node = GraphNode {
         id: NodeId('r', 0),
-        node_type: NodeType::RegionProjectionNode {
+        node_type: NodeType::BorrowPCGRegionProjectionNode {
             label: "rx↓'rx".to_string(),
         },
     };
 
     let reborrow_node = GraphNode {
         id: NodeId('b', 0),
-        node_type: NodeType::ReborrowingDagNode {
+        node_type: NodeType::BorrowPCGPlaceNode {
             label: "*rx".to_string(),
             location: None,
             capability: None,
+            ty: "i32".to_string(),
         },
     };
 
@@ -120,6 +121,7 @@ fn write_edge<T: Write>(
         shape: DotStringAttr("rect".to_string()),
         style: None,
         penwidth: None,
+        tooltip: None
     };
 
     let node_b = DotNode {
@@ -130,6 +132,7 @@ fn write_edge<T: Write>(
         shape: DotStringAttr("rect".to_string()),
         style: None,
         penwidth: None,
+        tooltip: None
     };
 
     let edge = DotEdge {

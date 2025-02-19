@@ -16,17 +16,17 @@ use crate::{
     visualization::dot_graph::RankAnnotation,
 };
 
-use std::{
-    collections::{BTreeSet, HashSet},
-    ops::Deref,
-};
+use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 use crate::borrows::edge::abstraction::AbstractionType;
 use crate::borrows::edge::kind::BorrowPCGEdgeKind;
 use crate::rustc_interface::middle::ty::{self, TyCtxt};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
-use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
+use std::{
+    collections::{BTreeSet, HashSet},
+    ops::Deref,
+};
 
 #[derive(Eq, PartialEq, Hash)]
 pub struct GraphCluster {
@@ -139,7 +139,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let id = self.region_projection_nodes.node_id(&projection);
         let node = GraphNode {
             id,
-            node_type: NodeType::RegionProjectionNode {
+            node_type: NodeType::BorrowPCGRegionProjectionNode {
                 label: format!(
                     "{}↓{}{}",
                     projection.place().to_short_string(self.repacker),
@@ -224,10 +224,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let id = self.remote_nodes.node_id(&remote_place);
         let node = GraphNode {
             id,
-            node_type: NodeType::ReborrowingDagNode {
+            node_type: NodeType::BorrowPCGPlaceNode {
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
                 capability: None,
+                ty: format!("{:?}", remote_place.ty(self.repacker)),
             },
         };
         self.insert_node(node);
@@ -246,22 +247,20 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let capability = capability_getter.get(place);
         let id = self.place_node_id(place, location);
         let label = format!("{:?}", place.to_string(self.repacker));
-        let region = match place.ty(self.repacker).ty.kind() {
-            ty::TyKind::Ref(region, _, _) => Some(format!("{:?}", region)),
-            _ => None,
-        };
+        let place_ty = place.ty(self.repacker);
         let node_type = if place.is_owned(self.repacker) {
-            NodeType::FPCSNode {
+            NodeType::OwnedPCGNode {
                 label,
                 capability,
                 location,
-                region,
+                ty: format!("{:?}", place_ty.ty),
             }
         } else {
-            NodeType::ReborrowingDagNode {
+            NodeType::BorrowPCGPlaceNode {
                 label,
                 location,
                 capability,
+                ty: format!("{:?}", place_ty.ty),
             }
         };
         let node = GraphNode { id, node_type };
@@ -371,7 +370,6 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
             }
             BorrowPCGEdgeKind::Borrow(reborrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(reborrow.blocked_place);
-                // TODO: Region could be erased and we can't handle that yet
                 let assigned_region_projection =
                     reborrow.assigned_region_projection(self.repacker());
                 let assigned_place = self.constructor().insert_region_projection_node(
@@ -399,6 +397,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                             .insert(GraphEdge::RegionProjectionMemberEdge {
                                 source: input_node,
                                 target: output_node,
+                                kind: format!("{:?}", member.kind),
                             });
                     }
                 }
