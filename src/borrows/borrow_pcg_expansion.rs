@@ -140,10 +140,11 @@ impl<'tcx> BorrowExpansion<'tcx> {
             BorrowExpansion::Fields(fields) => {
                 assert!(fields.len() <= 1024, "Too many fields: {:?}", fields);
                 fields
-                .iter()
-                .sorted_by_key(|(idx, _)| *idx)
-                .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
-                .collect()},
+                    .iter()
+                    .sorted_by_key(|(idx, _)| *idx)
+                    .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
+                    .collect()
+            }
             BorrowExpansion::Deref => vec![PlaceElem::Deref],
             BorrowExpansion::Downcast(symbol, variant_idx) => {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]

@@ -19,7 +19,7 @@ use crate::{
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 use crate::borrows::edge::abstraction::AbstractionType;
 use crate::borrows::edge::kind::BorrowPCGEdgeKind;
-use crate::rustc_interface::middle::ty::{self, TyCtxt};
+use crate::rustc_interface::middle::ty::TyCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;

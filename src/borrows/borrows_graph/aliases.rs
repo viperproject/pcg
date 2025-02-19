@@ -79,7 +79,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     for blocked in blocked_nodes {
                         if seen.insert(blocked) {
                             let blocked_node = egraph.add(get_node(blocked, place_ids));
-                            add_to_egraph(blocked_node, blocking_node, edge, egraph);
+                            add_to_egraph(blocked_node, blocking_node, edge, egraph, repacker);
                             collect_nodes_up(graph, blocked, egraph, seen, place_ids, repacker);
                         }
                     }
@@ -109,22 +109,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
             RPRelType::Unknown
         }
 
-        fn add_to_egraph(
+        fn add_to_egraph<'mir, 'tcx>(
             blocked_node: Id,
             blocking_node: Id,
-            edge: BorrowPCGEdgeRef<'_, '_>,
+            edge: BorrowPCGEdgeRef<'tcx, '_>,
             egraph: &mut EGraph<EggPcgNode, ()>,
+            repacker: PlaceRepacker<'mir, 'tcx>,
         ) {
             match edge.kind() {
+                BorrowPCGEdgeKind::RegionProjectionMember(member)
+                    if member.is_toplevel(repacker) =>
+                {
+                    match member.kind {
+                        RegionProjectionMemberKind::BorrowOutlives => {
+                            record_deref(blocked_node, blocking_node, egraph);
+                        }
+                        RegionProjectionMemberKind::DerefBorrowOutlives => {
+                            record_deref(blocking_node, blocked_node, egraph);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => match expansion {
                     BorrowPCGExpansion::FromOwned(_) => {
-                        record_deref(blocked_node, blocking_node, egraph)
+                        // record_deref(blocked_node, blocking_node, egraph)
                     }
                     BorrowPCGExpansion::FromBorrow(e) => {
                         if e.expansion.is_deref() {
-                            record_deref(blocked_node, blocking_node, egraph);
+                            // record_deref(blocked_node, blocking_node, egraph);
                         } else {
-                            egraph.union(blocked_node, blocking_node);
+                            // egraph.union(blocked_node, blocking_node);
                         }
                     }
                 },
@@ -149,7 +163,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     let node: PCGNode<'tcx> = blocking.into();
                     if seen.insert(node) {
                         let blocking_id = egraph.add(get_node(node, place_ids));
-                        add_to_egraph(blocking_id, blocked_id, edge, egraph);
+                        add_to_egraph(blocking_id, blocked_id, edge, egraph, repacker);
                         collect_nodes_down(graph, node, egraph, seen, place_ids, repacker);
                     }
                 }
@@ -256,15 +270,15 @@ fn main() {
         let temp: mir::Place<'_> = mir::Local::from(4 as usize).into();
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let repacker = PlaceRepacker::new(&body.body, tcx);
-        // check_all_statements(&body.body, &mut pcg, |location, stmt| {
-        //     assert!(
-        //         !stmt
-        //             .aliases(star_temp.into(), repacker)
-        //             .contains(&temp.into()),
-        //         "Bad alias for {:?}",
-        //         location
-        //     );
-        // });
+        check_all_statements(&body.body, &mut pcg, |location, stmt| {
+            assert!(
+                !stmt
+                    .aliases(star_temp.into(), repacker)
+                    .contains(&temp.into()),
+                "Bad alias for {:?}",
+                location
+            );
+        });
     });
 
     let input = r#"
