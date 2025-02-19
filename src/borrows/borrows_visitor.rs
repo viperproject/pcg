@@ -323,6 +323,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         location: Location,
         kind: impl Fn(usize) -> RegionProjectionMemberKind,
     ) {
+        tracing::info!(
+            "Connect outliving projections {:?} -> {:?}",
+            source_proj,
+            target
+        );
         for (idx, target_proj) in target
             .region_projections(self.repacker)
             .into_iter()
@@ -332,6 +337,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 source_proj.region(self.repacker),
                 target_proj.region(self.repacker),
             ) {
+                tracing::info!(
+                    "Adding region projection member {:?} -> {:?}",
+                    source_proj,
+                    target_proj
+                );
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         smallvec![source_proj.into()],
@@ -362,11 +372,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 match rvalue {
                     Rvalue::Aggregate(
-                        box (AggregateKind::Adt(..) | AggregateKind::Tuple),
+                        box (AggregateKind::Adt(..) | AggregateKind::Tuple | AggregateKind::Array(..)),
                         fields,
                     ) => {
                         let target: utils::Place<'tcx> = (*target).into();
                         for field in fields.iter() {
+                            tracing::info!("Field {:?}", field);
                             let operand_place: utils::Place<'tcx> =
                                 if let Some(place) = field.place() {
                                     place.into()
