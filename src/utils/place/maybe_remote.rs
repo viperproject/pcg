@@ -5,7 +5,7 @@ use crate::borrows::region_projection::{
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::index::IndexVec;
-use crate::rustc_interface::middle::mir;
+use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -89,10 +89,10 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     pub(crate) fn ty(&self, repacker: PlaceRepacker<'_, 'tcx>) -> mir::tcx::PlaceTy<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.ty(repacker),
-            MaybeRemotePlace::Remote(rp) => {
-                let place: Place<'_> = rp.local.into();
-                place.project_deref(repacker).ty(repacker)
-            }
+            MaybeRemotePlace::Remote(rp) => mir::tcx::PlaceTy {
+                ty: rp.ty(repacker).into(),
+                variant_index: None,
+            },
         }
     }
 
@@ -186,6 +186,14 @@ impl RemotePlace {
 
     pub(crate) fn assigned_local(self) -> mir::Local {
         self.local
+    }
+
+    pub(crate) fn ty<'mir, 'tcx>(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> ty::Ty<'tcx> {
+        let place: Place<'_> = self.local.into();
+        match place.ty(repacker).ty.kind() {
+            ty::TyKind::Ref(_, ty, _) => *ty,
+            _ => todo!(),
+        }
     }
 
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, '_>) -> Mutability {

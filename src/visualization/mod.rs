@@ -61,10 +61,11 @@ pub struct GraphNode {
 impl GraphNode {
     fn to_dot_node(&self) -> DotNode {
         match &self.node_type {
-            NodeType::ReborrowingDagNode {
+            NodeType::BorrowPCGPlaceNode {
                 label,
                 location,
                 capability,
+                ty,
             } => {
                 let location_text = match location {
                     Some(l) => escape_html(&format!(" at {:?}", l)),
@@ -88,13 +89,14 @@ impl GraphNode {
                     shape: DotStringAttr("rect".to_string()),
                     style: Some(DotStringAttr("rounded".to_string())),
                     penwidth: Some(DotFloatAttr(1.5)),
+                    tooltip: Some(DotStringAttr(ty.clone())),
                 }
             }
-            NodeType::FPCSNode {
+            NodeType::OwnedPCGNode {
                 capability,
                 location,
                 label,
-                region,
+                ty,
             } => {
                 let capability_text = match capability {
                     Some(k) => format!("{:?}", k),
@@ -110,16 +112,11 @@ impl GraphNode {
                     } else {
                         "black"
                     };
-                let region_html = match region {
-                    Some(r) => format!("<br/>{}", r),
-                    None => "".to_string(),
-                };
                 let label = format!(
-                    "<FONT FACE=\"courier\">{}</FONT>&nbsp;{}{}{}",
+                    "<FONT FACE=\"courier\">{}&nbsp;{}{}</FONT>",
                     escape_html(&label),
                     escape_html(&capability_text),
                     escape_html(&location_text),
-                    region_html
                 );
                 DotNode {
                     id: self.id.to_string(),
@@ -129,9 +126,10 @@ impl GraphNode {
                     shape: DotStringAttr("rect".to_string()),
                     style: None,
                     penwidth: None,
+                    tooltip: Some(DotStringAttr(ty.clone())),
                 }
             }
-            NodeType::RegionProjectionNode { label } => DotNode {
+            NodeType::BorrowPCGRegionProjectionNode { label } => DotNode {
                 id: self.id.to_string(),
                 label: DotLabel::Text(label.clone()),
                 color: DotStringAttr("blue".to_string()),
@@ -139,6 +137,7 @@ impl GraphNode {
                 shape: DotStringAttr("octagon".to_string()),
                 style: None,
                 penwidth: None,
+                tooltip: None,
             },
         }
     }
@@ -146,19 +145,20 @@ impl GraphNode {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum NodeType {
-    FPCSNode {
+    OwnedPCGNode {
         label: String,
         capability: Option<CapabilityKind>,
         location: Option<SnapshotLocation>,
-        region: Option<String>,
+        ty: String,
     },
-    RegionProjectionNode {
+    BorrowPCGRegionProjectionNode {
         label: String,
     },
-    ReborrowingDagNode {
+    BorrowPCGPlaceNode {
         label: String,
         location: Option<SnapshotLocation>,
         capability: Option<CapabilityKind>,
+        ty: String,
     },
 }
 
@@ -187,6 +187,7 @@ enum GraphEdge {
     RegionProjectionMemberEdge {
         source: NodeId,
         target: NodeId,
+        kind: String,
     },
     CoupledEdge {
         source: NodeId,
@@ -231,10 +232,15 @@ impl GraphEdge {
                 to: blocking.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
-            GraphEdge::RegionProjectionMemberEdge { source, target } => DotEdge {
+            GraphEdge::RegionProjectionMemberEdge {
+                source,
+                target,
+                kind,
+            } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_label(kind.clone())
                     .with_color("purple".to_string()),
             },
             GraphEdge::CoupledEdge { source, target } => DotEdge {

@@ -67,10 +67,25 @@ pub enum RegionProjectionMemberKind {
     /// The input to the top-level function, in this case the inputs
     /// should only contain remote places
     FunctionInput,
-    /// e.g. t|'a -> *t
+    /// e.g. `t|'a -> *t`.
     DerefRegionProjection,
     /// e.g. x -> r|'a
     Ref,
+    /// Region projection edge resulting due to contracting a place. For
+    /// example, if the type of `x.t` is `&'a mut T` and there is a borrow `x.t
+    /// = &mut y`, and we need to contract to `x`, then we need to replace the
+    /// borrow edge with an edge `{y} -> {x↓'a}` of this kind.
+    ContractRef,
+    /// Connects a region projection from a constant to some PCG node. For
+    /// example `let x: &'x C = c;` where `c` is a constant of type `&'c C`, then
+    /// an edge `{c↓'c} -> {x↓'x}` of this kind is created.
+    ConstRef,
+    /// For a borrow `let x: &T<'b> = &y`, where y is of typ T<'a>, an edge generated
+    /// for `{y|'a} -> {x|'b}` of this kind is created if 'a outlives 'b.
+    BorrowOutlives,
+    /// If e.g {x|'a} -> {y|'b} is a BorrowsOutlives, then {*x|'a} -> {*y|'b} is a DerefBorrowsOutlives
+    /// (it's introduced if e.g. *y is expanded in the PCG)
+    DerefBorrowOutlives,
     /// TODO: Provide more useful kinds, this enum variant should be removed
     Todo,
 }
