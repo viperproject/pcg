@@ -34,7 +34,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_action::BorrowPCGAction,
+    borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
     borrows_state::{ExecutedActions, ExpansionReason},
     coupling_graph_constructor::BorrowCheckerInterface,
     has_pcs_elem::HasPcsElems,
@@ -372,7 +372,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 match rvalue {
                     Rvalue::Aggregate(
-                        box (AggregateKind::Adt(..) | AggregateKind::Tuple | AggregateKind::Array(..)),
+                        box (AggregateKind::Adt(..)
+                        | AggregateKind::Tuple
+                        | AggregateKind::Array(..)),
                         fields,
                     ) => {
                         let target: utils::Place<'tcx> = (*target).into();
@@ -645,15 +647,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // No edges may be added e.g. if the inputs do not contain any borrows
         if !edges.is_empty() {
-            self.domain.post_state_mut().insert_abstraction_edge(
-                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                    location,
-                    *func_def_id,
-                    substs,
-                    edges.clone(),
-                )),
-                location.block,
-                self.repacker,
+            self.apply_action(
+                BorrowPCGActionKind::AddAbstractionEdge(
+                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                        location,
+                        *func_def_id,
+                        substs,
+                        edges.clone(),
+                    )),
+                    PathConditions::AtBlock(location.block),
+                )
+                .into(),
             );
         }
     }

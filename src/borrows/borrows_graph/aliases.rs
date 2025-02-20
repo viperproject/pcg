@@ -1,5 +1,3 @@
-use std::{borrow::Borrow, sync::Arc};
-
 use egg::{define_language, EGraph, Id};
 
 use crate::{
@@ -10,7 +8,7 @@ use crate::{
     },
     combined_pcs::PCGNode,
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{display::DisplayWithRepacker, PlaceRepacker},
+    utils::PlaceRepacker,
 };
 
 use super::BorrowsGraph;
@@ -70,7 +68,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if let Some(local_node) = node.as_local_node() {
                 for edge in graph.edges_blocked_by(local_node, repacker) {
                     let blocked_nodes = match edge.kind() {
-                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                        BorrowPCGEdgeKind::BorrowPCGExpansion(_expansion) => {
                             // vec![expansion.base().into()].into_iter().collect()
                             vec![].into_iter().collect()
                         }
