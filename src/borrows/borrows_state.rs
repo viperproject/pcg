@@ -937,35 +937,6 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             };
         }
-
-        // self.set_capability(assigned_place, assigned_cap, repacker);
-    }
-
-    /// Inserts the abstraction edge and sets capabilities for
-    /// inputs and outputs: input capabilities are set to [`CapabilityKind::Lent`]
-    /// outputs are set to [`CapabilityKind::Exclusive`]
-    pub(crate) fn insert_abstraction_edge(
-        &mut self,
-        abstraction: AbstractionType<'tcx>,
-        block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        match &abstraction {
-            AbstractionType::FunctionCall(function_call_abstraction) => {
-                for edge in function_call_abstraction.edges() {
-                    for input in edge.inputs() {
-                        self.set_capability(input.into(), CapabilityKind::Lent, repacker);
-                    }
-                    for output in edge.outputs() {
-                        self.set_capability(output.into(), CapabilityKind::Exclusive, repacker);
-                    }
-                }
-            }
-            _ => todo!(),
-        }
-        assert!(self
-            .graph
-            .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block))));
     }
 
     #[must_use]

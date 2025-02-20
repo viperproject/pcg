@@ -193,7 +193,19 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let result = match action.kind {
             BorrowPCGActionKind::AddAbstractionEdge(abstraction, pc) => {
-                self.insert(abstraction.to_borrow_pcg_edge(pc))
+                let mut changed = false;
+                for edge in abstraction.edges() {
+                    for input in edge.inputs() {
+                        changed |=
+                            self.set_capability(input.into(), CapabilityKind::Lent, repacker);
+                    }
+                    for output in edge.outputs() {
+                        changed |=
+                            self.set_capability(output.into(), CapabilityKind::Exclusive, repacker);
+                    }
+                }
+                changed |= self.insert(abstraction.to_borrow_pcg_edge(pc));
+                changed
             }
             BorrowPCGActionKind::Restore(restore) => {
                 let restore_node: PCGNode<'tcx> = restore.node().into();
