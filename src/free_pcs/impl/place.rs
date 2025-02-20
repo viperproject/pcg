@@ -81,10 +81,27 @@ impl PartialOrd for CapabilityKind {
             return Some(Ordering::Equal);
         }
         match (self, other) {
-            (CapabilityKind::Write, _) | (_, CapabilityKind::Exclusive) => Some(Ordering::Less),
-            (CapabilityKind::Exclusive, _) | (_, CapabilityKind::Write) => Some(Ordering::Greater),
-            (CapabilityKind::Read, _) | (_, CapabilityKind::Lent) => Some(Ordering::Less),
-            (CapabilityKind::Lent, _) | (_, CapabilityKind::Read) => Some(Ordering::Greater),
+            // Exclusive is greater than everything except itself
+            (CapabilityKind::Exclusive, _) => Some(Ordering::Greater),
+            (_, CapabilityKind::Exclusive) => Some(Ordering::Less),
+
+            // ShallowExclusive is greater than Write
+            (CapabilityKind::ShallowExclusive, CapabilityKind::Write) => Some(Ordering::Greater),
+            (CapabilityKind::Write, CapabilityKind::ShallowExclusive) => Some(Ordering::Less),
+
+            // Read is greater than LentShared and Lent
+            (CapabilityKind::Read, CapabilityKind::LentShared | CapabilityKind::Lent) => {
+                Some(Ordering::Greater)
+            }
+            (CapabilityKind::LentShared | CapabilityKind::Lent, CapabilityKind::Read) => {
+                Some(Ordering::Less)
+            }
+
+            // LentShared is greater than Lent
+            (CapabilityKind::LentShared, CapabilityKind::Lent) => Some(Ordering::Greater),
+            (CapabilityKind::Lent, CapabilityKind::LentShared) => Some(Ordering::Less),
+
+            // All other pairs are incomparable
             _ => None,
         }
     }
@@ -117,74 +134,56 @@ impl CapabilityKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn test_capability_kind_partial_order() {
-        // Get all variants of CapabilityKind
-        let variants = [
-            CapabilityKind::Read,
-            CapabilityKind::Write,
+    fn test_capability_kind_dag_reachability() {
+        use petgraph::algo::has_path_connecting;
+        use petgraph::graph::{DiGraph, NodeIndex};
+
+        // Create directed graph
+        let mut graph = DiGraph::new();
+        let mut node_indices = HashMap::new();
+
+        let caps = [
             CapabilityKind::Exclusive,
-            CapabilityKind::Lent,
-            CapabilityKind::LentShared,
             CapabilityKind::ShallowExclusive,
+            CapabilityKind::Write,
+            CapabilityKind::Read,
+            CapabilityKind::LentShared,
+            CapabilityKind::Lent,
+        ];
+        // Add nodes
+        for cap in caps {
+            node_indices.insert(cap, graph.add_node(cap));
+        }
+
+        // Add edges (a -> b means a is greater than b)
+        let edges = [
+            (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive),
+            (CapabilityKind::Exclusive, CapabilityKind::Read),
+            (CapabilityKind::ShallowExclusive, CapabilityKind::Write),
+            (CapabilityKind::Read, CapabilityKind::LentShared),
+            (CapabilityKind::LentShared, CapabilityKind::Lent),
         ];
 
-        // Test reflexivity: a ≤ a for all a
-        for &a in &variants {
-            assert_eq!(
-                Some(Ordering::Equal),
-                a.partial_cmp(&a),
-                "Reflexivity failed for {:?}",
-                a
-            );
+        for (from, to) in edges {
+            graph.add_edge(node_indices[&from], node_indices[&to], ());
         }
 
-        // Test antisymmetry: if a ≤ b and b ≤ a then a = b
-        for &a in &variants {
-            for &b in &variants {
-                if let (Some(ord1), Some(ord2)) = (a.partial_cmp(&b), b.partial_cmp(&a)) {
-                    if ord1 != Ordering::Greater && ord2 != Ordering::Greater {
-                        assert_eq!(
-                            a, b,
-                            "Antisymmetry failed: {:?} and {:?} form a cycle but are not equal",
-                            a, b
-                        );
-                    }
+        // Test that partial_cmp matches graph reachability
+        for a in caps {
+            for b in caps {
+                if a == b {
+                    assert!(a.partial_cmp(&b) == Some(Ordering::Equal));
+                } else if has_path_connecting(&graph, node_indices[&a], node_indices[&b], None) {
+                    assert!(a.partial_cmp(&b) == Some(Ordering::Greater));
+                } else if has_path_connecting(&graph, node_indices[&b], node_indices[&a], None) {
+                    assert!(a.partial_cmp(&b) == Some(Ordering::Less));
+                } else {
+                    assert!(a.partial_cmp(&b) == None);
                 }
             }
         }
-
-        // Test transitivity: if a ≤ b and b ≤ c then a ≤ c
-        for &a in &variants {
-            for &b in &variants {
-                for &c in &variants {
-                    if let (Some(ord1), Some(ord2)) = (a.partial_cmp(&b), b.partial_cmp(&c)) {
-                        if ord1 != Ordering::Greater && ord2 != Ordering::Greater {
-                            assert!(
-                                matches!(a.partial_cmp(&c), Some(ord) if ord != Ordering::Greater),
-                                "Transitivity failed: {:?} ≤ {:?} and {:?} ≤ {:?}, but {:?} ≰ {:?}",
-                                a,
-                                b,
-                                b,
-                                c,
-                                a,
-                                c
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        // Verify specific known relationships from the implementation
-        assert!(matches!(
-            CapabilityKind::Write.partial_cmp(&CapabilityKind::Exclusive),
-            Some(Ordering::Less)
-        ));
-        assert!(matches!(
-            CapabilityKind::Read.partial_cmp(&CapabilityKind::Lent),
-            Some(Ordering::Less)
-        ));
     }
 }
