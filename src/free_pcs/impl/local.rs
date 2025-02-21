@@ -179,13 +179,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         }
         self.extend(others.into_iter().map(|p| (p, perm)));
         // assert!(self.contains_key(&to), "{self:?}\n{to:?}");
-        eprintln!(
-            "Expand {:?}: {:?} to {:?} {:?}",
-            from,
-            from.ty(repacker),
-            *to,
-            to.ty(repacker)
-        );
         Ok(ops)
     }
 

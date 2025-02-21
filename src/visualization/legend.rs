@@ -67,9 +67,10 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
     writeln!(out, "  labelloc=\"t\";")?;
 
     // Create nodes
-    let fpcs_node = GraphNode {
+    let owned_node = GraphNode {
         id: NodeId('f', 0),
-        node_type: NodeType::OwnedPCGNode {
+        node_type: NodeType::PlaceNode {
+            owned: true,
             label: "x".to_string(),
             capability: Some(CapabilityKind::Write),
             location: None,
@@ -79,14 +80,15 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
 
     let region_node = GraphNode {
         id: NodeId('r', 0),
-        node_type: NodeType::BorrowPCGRegionProjectionNode {
+        node_type: NodeType::RegionProjectionNode {
             label: "rx↓'rx".to_string(),
         },
     };
 
-    let reborrow_node = GraphNode {
+    let borrowed_node = GraphNode {
         id: NodeId('b', 0),
-        node_type: NodeType::BorrowPCGPlaceNode {
+        node_type: NodeType::PlaceNode {
+            owned: false,
             label: "*rx".to_string(),
             location: None,
             capability: None,
@@ -95,13 +97,13 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
     };
 
     // Write nodes using to_dot_node()
-    writeln!(out, "  {}", fpcs_node.to_dot_node())?;
+    writeln!(out, "  {}", owned_node.to_dot_node())?;
     writeln!(out, "  {}", region_node.to_dot_node())?;
-    writeln!(out, "  {}", reborrow_node.to_dot_node())?;
+    writeln!(out, "  {}", borrowed_node.to_dot_node())?;
 
     // Arrange nodes horizontally
     writeln!(out, "  {{ rank=same; {}; {}; {}; }}",
-        fpcs_node.id, region_node.id, reborrow_node.id)?;
+        owned_node.id, region_node.id, borrowed_node.id)?;
 
     writeln!(out, "}}")
 }

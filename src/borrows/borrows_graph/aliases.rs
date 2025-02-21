@@ -9,7 +9,7 @@ use crate::{
         region_projection_member::RegionProjectionMemberKind,
     },
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
-    rustc_interface::{data_structures::fx::FxHashSet, middle::mir::PlaceElem},
+    rustc_interface::{data_structures::fx::FxHashSet, middle::mir::PlaceElem, span::Symbol},
     utils::{display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker},
 };
 
@@ -41,33 +41,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut result = FxHashSet::default();
-
-        for (place, proj) in node.iter_projections(repacker) {
-            let mut curr_aliases: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
-            curr_aliases.insert(place.into());
-            curr_aliases.extend(result.drain());
-            for alias in curr_aliases {
-                if matches!(proj, PlaceElem::Deref)
-                    && let PCGNode::Place(p) = place
-                    && let Some(rp) = p.base_region_projection(repacker)
-                {
-                    result.extend(self.direct_aliases(
-                        rp.to_local_node(),
-                        repacker,
-                        &mut FxHashSet::default(),
-                    ));
-                }
-                let projected = alias
-                    .as_local_node()
-                    .unwrap()
-                    .project_deeper(repacker, proj);
-                result.insert(projected.into());
-                if projected != node {
-                    let aliases = self.aliases(projected, repacker);
-                    result.extend(aliases);
-                }
-            }
+        if let Some((place, proj)) = node.iter_projections(repacker).last()
+            && matches!(proj, PlaceElem::Deref)
+            && let PCGNode::Place(p) = place
+            && let Some(rp) = p.base_region_projection(repacker)
+        {
+            result.extend(self.direct_aliases(
+                rp.to_local_node(),
+                repacker,
+                &mut FxHashSet::default(),
+            ));
         }
+
+        result.extend(self.direct_aliases(node, repacker, &mut FxHashSet::default()));
+
         result
     }
 
@@ -97,8 +84,30 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     extend(blocked.into(), seen, &mut result);
                 }
                 BorrowPCGEdgeKind::BorrowPCGExpansion(e) => {
-                    if !e.is_owned_expansion() {
+                    if matches!(e.base(), PCGNode::RegionProjection(_)) {
                         extend(e.base().into(), seen, &mut result);
+                    } else {
+                        match e.base() {
+                            PCGNode::Place(p) if let Some(rp) = p.deref_to_rp(repacker) => {
+                                for edge in self.edges_blocked_by(rp.to_local_node(), repacker) {
+                                    match edge.kind {
+                                        BorrowPCGEdgeKind::Borrow(borrow_edge) => {
+                                            eprintln!("borrow edge: {:?}", borrow_edge);
+                                            let blocked_place =
+                                                borrow_edge.blocked_place.as_local_place().unwrap();
+                                            if let Some(blocked_rp) =
+                                                blocked_place.base_region_projection(repacker)
+                                            {
+                                                eprintln!("extend: {:?}", blocked_rp);
+                                                extend(blocked_rp.into(), seen, &mut result);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
@@ -110,7 +119,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
                 BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) => {
                     match &region_projection_member.kind {
-                        RegionProjectionMemberKind::DerefRegionProjection => {
+                        RegionProjectionMemberKind::DerefRegionProjection
+                        | RegionProjectionMemberKind::Todo => {
                             for input in region_projection_member.inputs() {
                                 extend(input.to_pcg_node(), seen, &mut result);
                             }
@@ -129,7 +139,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 fn test_aliases() {
     use rustc_utils::test_utils::Placer;
 
-    use crate::free_pcs::FreePcsLocation;
+    use crate::free_pcs::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
 
     tracing_subscriber::fmt()
@@ -142,7 +152,7 @@ fn test_aliases() {
     fn check_all_statements<'mir, 'tcx>(
         body: &'mir mir::Body<'tcx>,
         pcg: &mut FpcsOutput<'mir, 'tcx>,
-        f: impl Fn(mir::Location, &FreePcsLocation<'tcx>),
+        f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {
             let stmts_option = pcg.get_all_for_bb(block).unwrap();
@@ -160,6 +170,46 @@ fn test_aliases() {
             }
         }
     }
+
+    // enum_write_branch_read_whole
+    let input = r#"
+    fn main() {
+    enum Foo {
+        X(i32),
+        Y(i32),
+    }
+    let mut x = Foo::X(1);
+    if let Foo::X(z) = &mut x {
+        *z += 1;
+    }
+    if let Foo::Y(z) = &mut x {
+        *z += 1;
+    }
+    x;
+    }
+    "#;
+    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+        let mut pcg = run_combined_pcs(body, tcx, None);
+        let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
+        let stmt = &bb.statements[0];
+        let init_z: mir::Place<'_> = mir::Local::from(5 as usize).into();
+        let z_deref = init_z.project_deeper(&[mir::ProjectionElem::Deref], tcx);
+        let repacker = PlaceRepacker::new(&body.body, tcx);
+        let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
+        let deref3 = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
+        let deref_target = deref3.project_deeper(
+            &[
+                mir::ProjectionElem::Downcast(Some(Symbol::intern(&"X")), 0usize.into()),
+                mir::ProjectionElem::Field(0usize.into(), tcx.types.i32),
+            ],
+            tcx,
+        );
+        let aliases = stmt.aliases(z_deref, &body.body, tcx);
+        eprintln!("aliases: {:?}", aliases);
+        eprintln!("deref_target: {:?}", deref_target);
+        assert!(aliases.contains(&deref_target.into()));
+        assert!(!aliases.contains(&deref3.into()));
+    });
 
     // 59_struct_ptrs_deep.rs
     let input = r#"
@@ -208,7 +258,7 @@ fn test_aliases() {
         let x = placer.local("x").mk();
         let repacker = PlaceRepacker::new(&body.body, tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
-            let _ = stmt.aliases(x.into(), repacker);
+            let _ = stmt.aliases(x, &body.body, tcx);
             // assert!(
             //     !stmt
             //         .aliases(star_temp.into(), repacker)
@@ -236,7 +286,7 @@ fn main() {
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
                 !stmt
-                    .aliases(star_temp.into(), repacker)
+                    .aliases(star_temp, &body.body, tcx)
                     .contains(&temp.into()),
                 "Bad alias for {:?}",
                 location
@@ -264,7 +314,7 @@ fn main() {
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
                 !stmt
-                    .aliases(deref_temp_9.into(), repacker)
+                    .aliases(deref_temp_9, &body.body, tcx)
                     .contains(&temp_19.into()),
                 "Bad alias for {:?}",
                 location
@@ -292,11 +342,7 @@ fn main() {
         let repacker = PlaceRepacker::new(&body.body, tcx);
         let a = placer.local("a").mk();
         assert!(last_bg
-            .aliases(e_deref.into(), repacker)
-            .contains(&a.into()));
-        assert!(last_bg
-            .all_place_aliases(repacker)
-            .get(e_deref.into(), tcx)
+            .aliases(e_deref, &body.body, tcx)
             .contains(&a.into()));
     });
 
@@ -318,7 +364,7 @@ fn main() {
         let repacker = PlaceRepacker::new(&body.body, tcx);
         let a = placer.local("a").mk();
         assert!(last_bg
-            .aliases(starstarc.into(), repacker)
+            .aliases(starstarc, &body.body, tcx)
             .contains(&a.into()));
     });
 
@@ -339,7 +385,7 @@ fn main() {
         let repacker = PlaceRepacker::new(&body.body, tcx);
         let x = placer.local("x").mk();
         assert!(last_bg
-            .aliases(star_yyy.into(), repacker)
+            .aliases(star_yyy, &body.body, tcx)
             .contains(&x.into()));
     });
 
@@ -362,6 +408,6 @@ fn main() {
         let star_5 = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let repacker = PlaceRepacker::new(&body.body, tcx);
         let x = placer.local("x").mk();
-        assert!(last_bg.aliases(star_5.into(), repacker).contains(&x.into()));
+        assert!(last_bg.aliases(star_5, &body.body, tcx).contains(&x.into()));
     });
 }

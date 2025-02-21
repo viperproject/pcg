@@ -139,7 +139,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let id = self.region_projection_nodes.node_id(&projection);
         let node = GraphNode {
             id,
-            node_type: NodeType::BorrowPCGRegionProjectionNode {
+            node_type: NodeType::RegionProjectionNode {
                 label: format!(
                     "{}↓{}{}",
                     projection.place().to_short_string(self.repacker),
@@ -224,7 +224,8 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let id = self.remote_nodes.node_id(&remote_place);
         let node = GraphNode {
             id,
-            node_type: NodeType::BorrowPCGPlaceNode {
+            node_type: NodeType::PlaceNode {
+                owned: false,
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
                 capability: None,
@@ -248,21 +249,14 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let id = self.place_node_id(place, location);
         let label = format!("{:?}", place.to_string(self.repacker));
         let place_ty = place.ty(self.repacker);
-        let node_type = if place.is_owned(self.repacker) {
-            NodeType::OwnedPCGNode {
+        let node_type =
+            NodeType::PlaceNode {
+                owned: place.is_owned(self.repacker),
                 label,
                 capability,
                 location,
                 ty: format!("{:?}", place_ty.ty),
-            }
-        } else {
-            NodeType::BorrowPCGPlaceNode {
-                label,
-                location,
-                capability,
-                ty: format!("{:?}", place_ty.ty),
-            }
-        };
+            };
         let node = GraphNode { id, node_type };
         self.insert_node(node);
         id
@@ -372,16 +366,22 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 let borrowed_place = self.insert_maybe_remote_place(reborrow.blocked_place);
                 let assigned_region_projection =
                     reborrow.assigned_region_projection(self.repacker());
-                let assigned_place = self.constructor().insert_region_projection_node(
+                let assigned_rp_node = self.constructor().insert_region_projection_node(
                     assigned_region_projection,
                     capabilities.get(assigned_region_projection),
                 );
-                self.constructor().edges.insert(GraphEdge::ReborrowEdge {
+                let deref_place = reborrow.deref_place(self.repacker());
+                let deref_place_node = self.insert_maybe_old_place(deref_place);
+                self.constructor().edges.insert(GraphEdge::BorrowEdge {
                     borrowed_place,
-                    assigned_place,
+                    assigned_region_projection: assigned_rp_node,
                     location: reborrow.reserve_location(),
                     region: format!("{:?}", reborrow.region),
                     path_conditions: format!("{}", edge.conditions()),
+                });
+                self.constructor().edges.insert(GraphEdge::AliasEdge {
+                    blocked_place: borrowed_place,
+                    blocking_place: deref_place_node,
                 });
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {

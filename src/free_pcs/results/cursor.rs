@@ -12,6 +12,7 @@ use crate::{
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         dataflow::PCGAnalysis,
+        index::IndexVec,
         middle::{
             mir::{self, BasicBlock, Body, Location},
             ty::TyCtxt,
@@ -69,26 +70,6 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
             end_stmt: None,
         }
     }
-    pub fn all_place_aliases(
-        &mut self,
-        mir: &'mir Body<'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) -> Result<PlaceAliases<'tcx>, PCGError> {
-        let mut result = PlaceAliases::default();
-
-        let repacker = PlaceRepacker::new(mir, tcx);
-
-        // Get aliases from all locations in each basic block
-        for block in self.body().basic_blocks.indices() {
-            let stmts = self.get_all_for_bb(block)?;
-            if let Some(stmts) = stmts {
-                for stmt in stmts.statements.iter() {
-                    result.merge(stmt.all_place_aliases(repacker));
-                }
-            }
-        }
-        Ok(result)
-    }
 
     pub(crate) fn analysis_for_bb(&mut self, block: BasicBlock) {
         self.cursor.seek_to_block_start(block);
@@ -116,7 +97,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     pub(crate) fn next(
         &mut self,
         exp_loc: Location,
-    ) -> Result<Option<FreePcsLocation<'tcx>>, PCGError> {
+    ) -> Result<Option<PcgLocation<'tcx>>, PCGError> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
@@ -135,7 +116,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         let (extra_start, extra_middle) = curr_borrows.get_bridge();
 
-        let result = FreePcsLocation {
+        let result = PcgLocation {
             location,
             actions: curr_borrows.actions.clone(),
             states: curr_fpcg.data.states.0.clone(),
@@ -178,7 +159,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
                 let to = entry_set.get_curr_fpcg();
                 let to_borrows_state = entry_set.get_curr_borrow_pcg();
-                FreePcsLocation {
+                PcgLocation {
                     location: Location {
                         block: succ,
                         statement_index: 0,
@@ -223,6 +204,18 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         FreePcsTerminator { succs }
     }
 
+    /// Obtains the results of the dataflow analysis for all blocks.
+    ///
+    /// This is rather expensive to compute and may take a lot of memory. You
+    /// may want to consider using `get_all_for_bb` instead.
+    pub fn results_for_all_blocks(&mut self) -> Result<PcgBasicBlocks<'tcx>, PCGError> {
+        let mut result = IndexVec::new();
+        for block in self.body().basic_blocks.indices() {
+            result.push(self.get_all_for_bb(block)?);
+        }
+        Ok(PcgBasicBlocks(result))
+    }
+
     /// Recommended interface.
     /// Does *not* require that one calls `analysis_for_bb` first
     /// This function may return `None` if the PCG did not analyze this block.
@@ -230,7 +223,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     pub fn get_all_for_bb(
         &mut self,
         block: BasicBlock,
-    ) -> Result<Option<FreePcsBasicBlock<'tcx>>, PCGError> {
+    ) -> Result<Option<PcgBasicBlock<'tcx>>, PCGError> {
         if !self
             .cursor
             .results()
@@ -252,19 +245,48 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
             }
         }
         let terminator = self.terminator();
-        Ok(Some(FreePcsBasicBlock {
+        Ok(Some(PcgBasicBlock {
             statements,
             terminator,
         }))
     }
 }
 
-pub struct FreePcsBasicBlock<'tcx> {
-    pub statements: Vec<FreePcsLocation<'tcx>>,
+pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
+
+impl<'tcx> PcgBasicBlocks<'tcx> {
+    pub fn get_statement(&self, location: Location) -> Option<&PcgLocation<'tcx>> {
+        if let Some(pcg_block) = &self.0[location.block] {
+            pcg_block.statements.get(location.statement_index)
+        } else {
+            None
+        }
+    }
+
+    pub fn all_place_aliases<'mir>(
+        &self,
+        place: mir::Place<'tcx>,
+        body: &'mir Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+    ) -> FxHashSet<mir::Place<'tcx>> {
+        let mut result = FxHashSet::default();
+        for block in self.0.iter() {
+            if let Some(pcg_block) = &block {
+                for stmt in pcg_block.statements.iter() {
+                    result.extend(stmt.aliases(place, body, tcx));
+                }
+            }
+        }
+        result
+    }
+}
+
+pub struct PcgBasicBlock<'tcx> {
+    pub statements: Vec<PcgLocation<'tcx>>,
     pub terminator: FreePcsTerminator<'tcx>,
 }
 
-impl<'tcx> FreePcsBasicBlock<'tcx> {
+impl<'tcx> PcgBasicBlock<'tcx> {
     pub fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         let mut result = Vec::new();
         for stmt in self.statements.iter() {
@@ -289,7 +311,7 @@ impl<'tcx> FreePcsBasicBlock<'tcx> {
 pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilitySummary<'tcx>>>;
 
 #[derive(Debug)]
-pub struct FreePcsLocation<'tcx> {
+pub struct PcgLocation<'tcx> {
     pub location: Location,
     /// Repacks before the statement
     pub repacks_start: Vec<RepackOp<'tcx>>,
@@ -302,58 +324,29 @@ pub struct FreePcsLocation<'tcx> {
     pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for FreePcsLocation<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         self.borrows.check_validity(repacker)
     }
 }
 
-#[derive(Debug, Default)]
-pub struct PlaceAliases<'tcx>(FxHashMap<Place<'tcx>, FxHashSet<Place<'tcx>>>);
-
-impl<'tcx> PlaceAliases<'tcx> {
-    pub(crate) fn merge(&mut self, other: Self) {
-        for (place, aliases) in other.0 {
-            self.0
-                .entry(place)
-                .or_insert_with(|| FxHashSet::default())
-                .extend(aliases);
-        }
-    }
-    pub fn get(&self, place: mir::Place<'tcx>, tcx: TyCtxt<'tcx>) -> FxHashSet<mir::Place<'tcx>> {
-        let mut result: FxHashSet<mir::Place<'tcx>> = FxHashSet::default();
-        result.extend(
-            self.0
-                .get(&(place.into()))
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|p| p.to_place(tcx)),
-        );
-        if let Some((prefix, elem)) = place.iter_projections().last() {
-            let parent_aliases = self.get(prefix.to_place(tcx), tcx);
-            for alias in parent_aliases.iter() {
-                result.insert(alias.project_deeper(&[elem], tcx));
-            }
-        }
-        result
-    }
-}
-
-impl<'tcx> FreePcsLocation<'tcx> {
-    pub fn all_place_aliases(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceAliases<'tcx> {
-        PlaceAliases(self.borrows.post_main.graph().all_place_aliases(repacker))
-    }
-
-    pub fn aliases(
+impl<'tcx> PcgLocation<'tcx> {
+    pub fn aliases<'mir>(
         &self,
-        place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+        place: impl Into<Place<'tcx>>,
+        body: &'mir Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+    ) -> FxHashSet<mir::Place<'tcx>> {
+        let place: Place<'tcx> = place.into();
+        let repacker = PlaceRepacker::new(body, tcx);
         self.borrows
             .post_main
             .graph()
             .aliases(place.with_inherent_region(repacker).into(), repacker)
+            .into_iter()
+            .flat_map(|p| p.as_current_place())
+            .map(|p| p.to_rust_place(repacker))
+            .collect()
     }
 
     pub fn latest(&self) -> &Latest<'tcx> {
@@ -382,5 +375,5 @@ impl<'tcx> FreePcsLocation<'tcx> {
 
 #[derive(Debug)]
 pub struct FreePcsTerminator<'tcx> {
-    pub succs: Vec<FreePcsLocation<'tcx>>,
+    pub succs: Vec<PcgLocation<'tcx>>,
 }

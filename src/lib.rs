@@ -29,7 +29,7 @@ use borrows::{
     unblock_graph::BorrowPCGUnblockAction,
 };
 use combined_pcs::{PCGContext, PCGEngine};
-use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
+use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
     borrowck::{self, BorrowSet, RegionInferenceContext},
     data_structures::fx::FxHashSet,
@@ -254,8 +254,8 @@ impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> From<&'a FreePcsLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
-    fn from(location: &'a FreePcsLocation<'tcx>) -> Self {
+impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
+    fn from(location: &'a PcgLocation<'tcx>) -> Self {
         Self {
             latest: &location.borrows.post_main.latest,
             free_pcg_repacks_start: &location.repacks_start,
