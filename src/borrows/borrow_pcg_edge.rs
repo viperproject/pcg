@@ -1,7 +1,7 @@
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock},
+    middle::mir::{self, BasicBlock, PlaceElem},
 };
 
 use super::{
@@ -201,17 +201,32 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         }
     }
 
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        match self {
+            LocalNode::Place(p) => p
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (p.into(), e))
+                .collect(),
+            LocalNode::RegionProjection(rp) => rp
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (LocalNode::RegionProjection(p), e))
+                .collect(),
+        }
+    }
+
     fn project_deeper(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
         elem: mir::PlaceElem<'tcx>,
-    ) -> Self {
-        match self {
-            LocalNode::Place(p) => LocalNode::Place(p.project_deeper(repacker, elem)),
+    ) -> Option<Self> {
+        Some(match self {
+            LocalNode::Place(p) => LocalNode::Place(p.project_deeper(repacker, elem)?),
             LocalNode::RegionProjection(rp) => {
-                LocalNode::RegionProjection(rp.project_deeper(repacker, elem))
+                LocalNode::RegionProjection(rp.project_deeper(repacker, elem)?)
             }
-        }
+        })
     }
 }
 
@@ -321,8 +336,11 @@ impl<'tcx> PCGNode<'tcx> {
             BlockedNode::RegionProjection(_) => None,
         }
     }
-}
 
+    pub(crate) fn as_maybe_old_place(&self) -> Option<MaybeOldPlace<'tcx>> {
+        self.as_place()?.try_into().ok()
+    }
+}
 impl<'tcx> From<mir::Place<'tcx>> for BlockedNode<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
         BlockedNode::Place(place.into())
@@ -390,6 +408,14 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
 
     fn is_owned_expansion(&self) -> bool {
         self.kind().is_owned_expansion()
+    }
+
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.kind().blocks_node(node, repacker)
+    }
+
+    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.kind().is_blocked_by(node, repacker)
     }
 }
 

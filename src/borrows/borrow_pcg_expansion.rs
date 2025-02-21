@@ -3,6 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use serde_json::json;
 
+use super::{
+    borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
+    edge_data::EdgeData,
+    has_pcs_elem::HasPcsElems,
+    region_projection::RegionProjection,
+};
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::corrected::CorrectedPlace;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     edgedata_enum,
@@ -16,18 +25,9 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex,
-        HasPlace, Place, PlaceRepacker,
+        display::DisplayWithRepacker, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck,
+        ConstantIndex, HasPlace, Place, PlaceRepacker,
     },
-};
-use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::corrected::CorrectedPlace;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use super::{
-    borrow_pcg_edge::{BlockingNode, LocalNode},
-    edge_data::EdgeData,
-    has_pcs_elem::HasPcsElems,
-    region_projection::RegionProjection,
 };
 
 /// An expansion of a place in the Borrow PCG, e.g {*x.f} -> {*x.f.a,
@@ -35,7 +35,7 @@ use super::{
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
-    expansion: BorrowExpansion<'tcx>,
+    pub(crate) expansion: BorrowExpansion<'tcx>,
 }
 
 impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for ExpansionOfBorrowed<'tcx, P> {
@@ -82,6 +82,10 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowExpansion<'tcx> {
 }
 
 impl<'tcx> BorrowExpansion<'tcx> {
+    pub(crate) fn is_deref(&self) -> bool {
+        matches!(self, BorrowExpansion::Deref)
+    }
+
     pub(super) fn from_places(places: Vec<Place<'tcx>>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
         let mut constant_indices = BTreeSet::new();
@@ -133,11 +137,14 @@ impl<'tcx> BorrowExpansion<'tcx> {
 
     pub(super) fn elems(&self) -> Vec<PlaceElem<'tcx>> {
         match self {
-            BorrowExpansion::Fields(fields) => fields
-                .iter()
-                .sorted_by_key(|(idx, _)| *idx)
-                .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
-                .collect(),
+            BorrowExpansion::Fields(fields) => {
+                assert!(fields.len() <= 1024, "Too many fields: {:?}", fields);
+                fields
+                    .iter()
+                    .sorted_by_key(|(idx, _)| *idx)
+                    .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
+                    .collect()
+            }
             BorrowExpansion::Deref => vec![PlaceElem::Deref],
             BorrowExpansion::Downcast(symbol, variant_idx) => {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]
@@ -164,11 +171,11 @@ impl<'tcx> BorrowExpansion<'tcx> {
 }
 
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
-    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
+    pub fn expansion<'slf>(&'slf self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
         self.expansion
             .elems()
             .into_iter()
-            .map(|p| self.base.project_deeper(repacker, p))
+            .map(move |p| self.base.project_deeper(repacker, p).unwrap())
             .collect()
     }
 }
@@ -209,7 +216,40 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfBorrowed<'tcx> {
     }
 
     fn is_owned_expansion(&self) -> bool {
-        todo!()
+        false
+    }
+
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        if let Some(local) = node.as_local_node() {
+            self.base == local
+        } else {
+            false
+        }
+    }
+
+    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match (self.base, node) {
+            (PCGNode::Place(p1), PCGNode::Place(p2)) => {
+                if let Some((node_prefix, last_proj)) = p2.last_projection()
+                    && node_prefix == p1
+                {
+                    self.expansion.elems().contains(&last_proj)
+                } else {
+                    false
+                }
+            }
+            (PCGNode::RegionProjection(rp1), PCGNode::RegionProjection(rp2)) => {
+                if let Some((node_prefix, last_proj)) = rp2.base().last_projection()
+                    && node_prefix == rp1.base()
+                {
+                    self.expansion.elems().contains(&last_proj)
+                        && rp1.region(repacker) == rp2.region(repacker)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 }
 
@@ -227,6 +267,15 @@ impl<'tcx> HasValidityCheck<'tcx> for ExpansionOfOwned<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for ExpansionOfOwned<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match node {
+            PCGNode::Place(MaybeRemotePlace::Local(p)) => self.base == p,
+            // We block all the region projections of this place, so it's only necessary to compare the base
+            PCGNode::RegionProjection(p) => p.base() == self.base.into(),
+            _ => false,
+        }
+    }
+
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut blocked_nodes = vec![self.base.into()];
         for rp in self.base.region_projections(repacker) {

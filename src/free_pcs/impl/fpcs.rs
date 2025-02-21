@@ -4,19 +4,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::fmt::{Debug, Formatter, Result};
+use std::{
+    fmt::{Debug, Formatter, Result},
+    rc::Rc,
+};
 
 use derive_more::{Deref, DerefMut};
 use rustc_interface::{
-    dataflow::fmt::DebugWithContext,
     index::Idx,
     index::IndexVec,
     middle::mir::{Local, RETURN_PLACE},
+    mir_dataflow::fmt::DebugWithContext,
 };
 
 use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 use crate::{
-    combined_pcs::PCGError,
+    borrows::engine::DataflowPhase,
+    combined_pcs::{EvalStmtPhase, PCGError, PCGErrorKind},
     free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
     rustc_interface,
     utils::{domain_data::DomainData, PlaceRepacker},
@@ -37,16 +41,19 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
             .as_ref()
-            .map_or(false, |e| matches!(e, PCGError::Internal(_)))
+            .map_or(false, |e| matches!(e.kind, PCGErrorKind::Internal(_)))
     }
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
-        &mut self.data.states.post_operands
+        self.data.states.get_mut(EvalStmtPhase::PostOperands)
     }
 
-    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+    pub(crate) fn new(
+        repacker: PlaceRepacker<'a, 'tcx>,
+        capability_summary: Rc<CapabilitySummary<'tcx>>,
+    ) -> Self {
         Self {
             repacker,
-            data: DomainData::new(CapabilitySummary::default(repacker.local_count())),
+            data: DomainData::new(capability_summary),
             error: None,
         }
     }
@@ -55,7 +62,8 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(self.repacker.body().arg_count);
-        for (local, cap) in self.data.entry_state.iter_enumerated_mut() {
+        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
+        for (local, cap) in entry_state.iter_enumerated_mut() {
             let new_cap = if local == return_local {
                 // Return local is allocated but uninitialized
                 CapabilityLocal::new(local, CapabilityKind::Write)
@@ -77,26 +85,27 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         &self,
         previous: &CapabilitySummary<'tcx>,
     ) -> std::result::Result<RepackOps<'tcx>, PCGError> {
-        let start = previous.bridge(&self.data.states.pre_operands, self.repacker)?;
-        let middle = self
-            .data
-            .states
-            .post_operands
-            .bridge(&self.data.states.pre_main, self.repacker)?;
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
+        let start =
+            previous.bridge(&self.data.states[EvalStmtPhase::PreOperands], self.repacker)?;
+        let middle = self.data.states[EvalStmtPhase::PostOperands]
+            .bridge(&self.data.states[EvalStmtPhase::PreMain], self.repacker)?;
         Ok(RepackOps { start, middle })
     }
 }
 
 impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.data.states.post_main == other.data.states.post_main
+        self.data.states[EvalStmtPhase::PostMain] == other.data.states[EvalStmtPhase::PostMain]
     }
 }
 impl Eq for FreePlaceCapabilitySummary<'_, '_> {}
 
 impl Debug for FreePlaceCapabilitySummary<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.data.states.post_main.fmt(f)
+        self.data.states[EvalStmtPhase::PostMain].fmt(f)
     }
 }
 impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -106,19 +115,21 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
         _ctxt: &FpcsEngine<'a, 'tcx>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        let RepackOps { start, middle } = self.repack_ops(&old.data.states.post_main).unwrap();
+        let RepackOps { start, middle } = self
+            .repack_ops(&old.data.states[EvalStmtPhase::PostMain])
+            .unwrap();
         if !start.is_empty() {
             writeln!(f, "{start:?}")?;
         }
         CapabilitySummaryCompare(
-            &self.data.states.pre_operands,
-            &old.data.states.post_main,
+            &self.data.states[EvalStmtPhase::PreOperands],
+            &old.data.states[EvalStmtPhase::PostMain],
             "",
         )
         .fmt(f)?;
         CapabilitySummaryCompare(
-            &self.data.states.post_operands,
-            &self.data.states.pre_operands,
+            &self.data.states[EvalStmtPhase::PostOperands],
+            &self.data.states[EvalStmtPhase::PreOperands],
             "ARGUMENTS:\n",
         )
         .fmt(f)?;
@@ -126,14 +137,14 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
             writeln!(f, "{middle:?}")?;
         }
         CapabilitySummaryCompare(
-            &self.data.states.pre_main,
-            &self.data.states.post_operands,
+            &self.data.states[EvalStmtPhase::PreMain],
+            &self.data.states[EvalStmtPhase::PostOperands],
             "",
         )
         .fmt(f)?;
         CapabilitySummaryCompare(
-            &self.data.states.post_main,
-            &self.data.states.pre_main,
+            &self.data.states[EvalStmtPhase::PostMain],
+            &self.data.states[EvalStmtPhase::PreMain],
             "STATEMENT:\n",
         )
         .fmt(f)?;

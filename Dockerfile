@@ -1,5 +1,4 @@
-# Build stage for Rust projects
-FROM rust:1.75 as rust-builder
+FROM rust:1.75 as rust-deps
 
 # Install required dependencies
 RUN apt-get update && apt-get install -y \
@@ -11,7 +10,27 @@ WORKDIR /usr/src/app
 # Copy Rust project files
 COPY . .
 
-# Build PCS
+FROM rust-deps as dev-profile
+
+# Install extra useful stuff
+RUN apt-get update && apt-get install -y \
+    golang-go tmux vim graphviz \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install latest pprof
+RUN go install github.com/google/pprof@latest
+
+# Build a debug version
+RUN cargo build
+
+# Set up Rust environment variables
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+ENV RUSTUP_HOME="/usr/local/rustup"
+ENV CARGO_HOME="/usr/local/cargo"
+
+FROM rust-deps as rust-builder
+
+# Build PCG binary
 RUN cargo build --release
 
 # Build pcg-server
@@ -65,5 +84,8 @@ ENV RUST_BACKTRACE=1
 
 # Expose port for pcg-server
 EXPOSE 4000
+
+# Expose port for memory profiling
+EXPOSE 4444
 
 CMD ["./pcg-server"]

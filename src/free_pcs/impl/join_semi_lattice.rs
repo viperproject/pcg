@@ -4,27 +4,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::dataflow::JoinSemiLattice;
+use std::rc::Rc;
+
+use rustc_interface::mir_dataflow::JoinSemiLattice;
 
 use crate::{
-    combined_pcs::PCGInternalError,
+    combined_pcs::{EvalStmtPhase, PCGInternalError},
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary,
         FreePlaceCapabilitySummary,
     },
     rustc_interface,
-    utils::{PlaceOrdering, PlaceRepacker},
+    utils::{corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker},
 };
 
 impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
     #[must_use]
     fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
-        match self
-            .data
-            .entry_state
-            .join(&other.data.states.post_main, self.repacker)
-        {
+        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
+        match entry_state.join(&other.data.states[EvalStmtPhase::PostMain], self.repacker) {
             Ok(changed) => changed,
             Err(e) => {
                 self.error = Some(e.into());
@@ -106,7 +105,12 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         assert!(from.is_prefix(joinable_place));
                         if joinable_place != from {
                             changed = true;
-                            self.expand(from, joinable_place, repacker).unwrap();
+                            self.expand(
+                                from,
+                                CorrectedPlace::new(joinable_place, repacker),
+                                repacker,
+                            )
+                            .unwrap();
                         }
                         Some(joinable_place)
                     }

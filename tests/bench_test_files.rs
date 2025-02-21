@@ -74,6 +74,7 @@ fn format_results(results: &[(String, u64)]) -> String {
     output
 }
 
+#[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn benchmark_test_files() {
     // First build in release mode

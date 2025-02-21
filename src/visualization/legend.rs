@@ -67,13 +67,14 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
     writeln!(out, "  labelloc=\"t\";")?;
 
     // Create nodes
-    let fpcs_node = GraphNode {
+    let owned_node = GraphNode {
         id: NodeId('f', 0),
-        node_type: NodeType::FPCSNode {
+        node_type: NodeType::PlaceNode {
+            owned: true,
             label: "x".to_string(),
             capability: Some(CapabilityKind::Write),
             location: None,
-            region: None,
+            ty: "&'a mut i32".to_string(),
         },
     };
 
@@ -84,23 +85,25 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
         },
     };
 
-    let reborrow_node = GraphNode {
+    let borrowed_node = GraphNode {
         id: NodeId('b', 0),
-        node_type: NodeType::ReborrowingDagNode {
+        node_type: NodeType::PlaceNode {
+            owned: false,
             label: "*rx".to_string(),
             location: None,
             capability: None,
+            ty: "i32".to_string(),
         },
     };
 
     // Write nodes using to_dot_node()
-    writeln!(out, "  {}", fpcs_node.to_dot_node())?;
+    writeln!(out, "  {}", owned_node.to_dot_node())?;
     writeln!(out, "  {}", region_node.to_dot_node())?;
-    writeln!(out, "  {}", reborrow_node.to_dot_node())?;
+    writeln!(out, "  {}", borrowed_node.to_dot_node())?;
 
     // Arrange nodes horizontally
     writeln!(out, "  {{ rank=same; {}; {}; {}; }}",
-        fpcs_node.id, region_node.id, reborrow_node.id)?;
+        owned_node.id, region_node.id, borrowed_node.id)?;
 
     writeln!(out, "}}")
 }
@@ -120,6 +123,7 @@ fn write_edge<T: Write>(
         shape: DotStringAttr("rect".to_string()),
         style: None,
         penwidth: None,
+        tooltip: None
     };
 
     let node_b = DotNode {
@@ -130,6 +134,7 @@ fn write_edge<T: Write>(
         shape: DotStringAttr("rect".to_string()),
         style: None,
         penwidth: None,
+        tooltip: None
     };
 
     let edge = DotEdge {

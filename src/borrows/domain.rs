@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::borrows::borrow_pcg_action::BorrowPCGAction;
 use crate::borrows::borrows_state::BorrowsState;
 use crate::borrows::borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions};
@@ -5,14 +7,15 @@ use crate::borrows::path_condition::{PathCondition, PathConditions};
 use crate::borrows::region_projection_member::{
     RegionProjectionMember, RegionProjectionMemberKind,
 };
-use crate::combined_pcs::{PCGError, PCGNodeLike};
+use crate::combined_pcs::EvalStmtPhase::*;
+use crate::combined_pcs::{PCGError, PCGErrorKind, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::{utils, BorrowsBridge};
-use std::rc::Rc;
+use smallvec::smallvec;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
@@ -22,15 +25,14 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::remote::RemotePlace;
 
 use crate::rustc_interface::{
-    borrowck::{borrow_set::BorrowSet, consumers::RegionInferenceContext},
-    dataflow::JoinSemiLattice,
     middle::{
         mir::{BasicBlock, Local, Location},
         ty::{self},
     },
+    mir_dataflow::JoinSemiLattice,
 };
 
-const DEBUG_JOIN_ITERATION_LIMIT: usize = 1000;
+const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
 impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
@@ -52,7 +54,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
         }
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
-        //     debug_assert!(other.is_valid(), "Other graph is invalid");
+        //     pcg_validity_assert!(other.is_valid(), "Other graph is invalid");
         // }
         let mut other_after = other.post_main_state().clone();
 
@@ -63,7 +65,7 @@ impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
 
         let self_block = self.block();
 
-        self.data.entry_state.join(
+        Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state).join(
             &other_after,
             self_block,
             other.block(),
@@ -115,11 +117,11 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         )
     }
     pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
-        &self.data.states.post_main
+        self.data.states[PostMain].as_ref()
     }
 
     pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
-        &mut self.data.states.post_main
+        self.data.states.get_mut(PostMain)
     }
 
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
@@ -139,7 +141,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
             .as_ref()
-            .map_or(false, |e| matches!(e, PCGError::Internal(_)))
+            .map_or(false, |e| matches!(e.kind, PCGErrorKind::Internal(_)))
     }
 
     pub(crate) fn has_error(&self) -> bool {
@@ -148,8 +150,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        region_inference_context: Rc<RegionInferenceContext<'tcx>>,
-        borrow_set: Rc<BorrowSet<'tcx>>,
+        bc: BorrowCheckerImpl<'mir, 'tcx>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
@@ -159,7 +160,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             repacker,
             debug_join_iteration: 0,
             error: None,
-            bc: BorrowCheckerImpl::new(repacker, region_inference_context, borrow_set),
+            bc,
         }
     }
 
@@ -167,7 +168,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
-            assert!(self.data.entry_state.set_capability(
+            let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
+            assert!(entry_state.set_capability(
                 MaybeRemotePlace::place_assigned_to_local(local).into(),
                 if mutability.is_mut() {
                     CapabilityKind::Exclusive
@@ -176,14 +178,17 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 },
                 self.repacker,
             ));
-            let _ = self.data.entry_state.apply_action(
+            let _ = entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        vec![MaybeRemotePlace::place_assigned_to_local(local).into()],
-                        vec![
-                            RegionProjection::new((*region).into(), arg_place, self.repacker)
-                                .into(),
-                        ],
+                        smallvec![MaybeRemotePlace::place_assigned_to_local(local).into()],
+                        smallvec![RegionProjection::new(
+                            (*region).into(),
+                            arg_place,
+                            self.repacker
+                        )
+                        .unwrap()
+                        .into(),],
                         RegionProjectionMemberKind::FunctionInput,
                     ),
                     PathConditions::AtBlock((Location::START).block),
@@ -194,16 +199,18 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         }
         let local_place: utils::Place<'tcx> = arg_place.into();
         for region_projection in local_place.region_projections(self.repacker) {
-            assert!(self.data.entry_state.apply_action(
+            let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
+            assert!(entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        vec![RegionProjection::new(
+                        smallvec![RegionProjection::new(
                             region_projection.region(self.repacker),
                             RemotePlace::new(local),
                             self.repacker,
                         )
+                        .unwrap()
                         .to_pcg_node(),],
-                        vec![region_projection.into()],
+                        smallvec![region_projection.into()],
                         RegionProjectionMemberKind::Todo,
                     ),
                     PathConditions::AtBlock((Location::START).block),
@@ -218,7 +225,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         for arg in self.repacker.body().args_iter() {
             let arg_place: utils::Place<'tcx> = arg.into();
             for rp in arg_place.region_projections(self.repacker) {
-                assert!(self.data.entry_state.set_capability(
+                let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
+                assert!(entry_state.set_capability(
                     rp.into(),
                     CapabilityKind::Exclusive,
                     self.repacker

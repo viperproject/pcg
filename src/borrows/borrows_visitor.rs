@@ -1,5 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
+use crate::{
+    combined_pcs::EvalStmtPhase::*, rustc_interface::dataflow::compute_fixpoint,
+    validity_checks_enabled,
+};
+use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
@@ -10,10 +15,8 @@ use crate::{
     combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::{
-            borrow_set::BorrowSet,
-            consumers::{PoloniusOutput, RegionInferenceContext},
+            BorrowSet, {PoloniusOutput, RegionInferenceContext},
         },
-        dataflow::{impls::MaybeLiveLocals, Analysis, ResultsCursor},
         index::IndexVec,
         middle::{
             mir::{
@@ -24,13 +27,14 @@ use crate::{
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
+        mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor},
     },
     utils::Place,
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use super::{
-    borrow_pcg_action::BorrowPCGAction,
+    borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
     borrows_state::{ExecutedActions, ExpansionReason},
     coupling_graph_constructor::BorrowCheckerInterface,
     has_pcs_elem::HasPcsElems,
@@ -117,7 +121,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
     pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             match (self.last(), actions.first()) {
             (Some(a), Some(b)) => assert_ne!(
                 a, b,
@@ -131,9 +135,9 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
     pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>) {
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             if let Some(last) = self.last() {
-                debug_assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
+                assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
             }
         }
         self.0.push(action);
@@ -153,23 +157,21 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
 #[derive(Clone)]
 pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
-    region_cx: Rc<RegionInferenceContext<'tcx>>,
+    region_cx: &'mir RegionInferenceContext<'tcx>,
 
     // TODO: Use this to determine when two-phase borrows are activated and
     // update the PCG accordingly
     #[allow(unused)]
-    borrows: Rc<BorrowSet<'tcx>>,
+    borrows: &'mir BorrowSet<'tcx>,
 }
 
 impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        region_cx: Rc<RegionInferenceContext<'tcx>>,
-        borrows: Rc<BorrowSet<'tcx>>,
+        region_cx: &'mir RegionInferenceContext<'tcx>,
+        borrows: &'mir BorrowSet<'tcx>,
     ) -> Self {
-        let cursor = MaybeLiveLocals
-            .into_engine(repacker.tcx(), repacker.body())
-            .iterate_to_fixpoint()
+        let cursor = compute_fixpoint(MaybeLiveLocals, repacker.tcx(), repacker.body())
             .into_results_cursor(repacker.body());
         Self {
             cursor: Rc::new(RefCell::new(cursor)),
@@ -190,6 +192,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         }
     }
 
+    #[rustversion::before(2024-12-14)]
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let local = match node {
             PCGNode::RegionProjection(rp) => {
@@ -209,6 +212,38 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         cursor.contains(local)
     }
 
+    #[rustversion::since(2024-12-14)]
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        let local = match node {
+            PCGNode::RegionProjection(rp) => {
+                if let Some(local) = rp.local() {
+                    local
+                } else {
+                    todo!()
+                }
+            }
+            PCGNode::Place(MaybeRemotePlace::Local(p)) => p.local(),
+            _ => {
+                return true;
+            }
+        };
+        let mut cursor = self.cursor.as_ref().borrow_mut();
+        cursor.seek_before_primary_effect(location);
+        cursor.get().contains(local)
+    }
+
+    #[rustversion::since(2024-12-14)]
+    fn twophase_borrow_activations(
+        &self,
+        location: Location,
+    ) -> std::collections::BTreeSet<Location> {
+        self.borrows.activation_map()[&location]
+            .iter()
+            .map(|idx| self.borrows[*idx].reserve_location())
+            .collect()
+    }
+
+    #[rustversion::before(2024-12-14)]
     fn twophase_borrow_activations(
         &self,
         location: Location,
@@ -299,8 +334,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        vec![source_proj.into()],
-                        vec![target_proj.into()],
+                        smallvec![source_proj.into()],
+                        smallvec![target_proj.into()],
                         kind(idx),
                     ),
                     PathConditions::AtBlock(location.block),
@@ -327,11 +362,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 match rvalue {
                     Rvalue::Aggregate(
-                        box (AggregateKind::Adt(..) | AggregateKind::Tuple),
+                        box (AggregateKind::Adt(..)
+                        | AggregateKind::Tuple
+                        | AggregateKind::Array(..)),
                         fields,
                     ) => {
                         let target: utils::Place<'tcx> = (*target).into();
                         for field in fields.iter() {
+                            tracing::info!("Field {:?}", field);
                             let operand_place: utils::Place<'tcx> =
                                 if let Some(place) = field.place() {
                                     place.into()
@@ -356,28 +394,29 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     Rvalue::Use(Operand::Constant(box c)) => match c.ty().kind() {
                         ty::TyKind::Ref(const_region, _, _) => {
-                            assert!(target.projection.len() == 0);
                             if let ty::TyKind::Ref(target_region, _, _) =
                                 target.ty(self.repacker).ty.kind()
                             {
                                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        vec![RegionProjection::new(
+                                        smallvec![RegionProjection::new(
                                             (*const_region).into(),
                                             MaybeRemoteRegionProjectionBase::Const(c.const_),
                                             self.repacker,
                                         )
+                                        .unwrap()
                                         .to_pcg_node()],
-                                        vec![RegionProjection::new(
+                                        smallvec![RegionProjection::new(
                                             (*target_region).into(),
                                             target,
                                             self.repacker,
                                         )
+                                        .unwrap()
                                         .into()],
-                                        RegionProjectionMemberKind::Todo,
+                                        RegionProjectionMemberKind::ConstRef,
                                     ),
                                     PathConditions::AtBlock(location.block),
-                                    "Assign constant to local",
+                                    "Assign constant",
                                 ));
                             }
                         }
@@ -404,37 +443,20 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     Rvalue::Use(Operand::Copy(from)) => {
                         let from_place: utils::Place<'tcx> = (*from).into();
-                        for (idx, rp) in from_place
-                            .region_projections(self.repacker)
-                            .iter_enumerated()
+                        for source_proj in from_place.region_projections(self.repacker).into_iter()
                         {
-                            for mut orig_edge in self
-                                .domain
-                                .data
-                                .states
-                                .post_main
-                                .edges_blocked_by((*rp).into(), self.repacker)
-                                .into_iter()
-                                .map(|e| e.to_owned_edge())
-                                .collect::<Vec<_>>()
-                            {
-                                let edge_region_projections: Vec<
-                                    &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-                                > = orig_edge.pcs_elems();
-                                for output in edge_region_projections {
-                                    if *output == (*rp).into() {
-                                        *output =
-                                            target.region_projection(idx, self.repacker).into()
-                                    }
-                                }
-                                self.domain.data.states.post_main.insert(orig_edge);
-                            }
+                            self.connect_outliving_projections(
+                                source_proj.into(),
+                                target,
+                                location,
+                                |_| RegionProjectionMemberKind::Todo,
+                            );
                         }
                     }
                     Rvalue::Ref(region, kind, blocked_place) => {
                         let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
                         if !target.ty(self.repacker).ty.is_ref() {
-                            self.domain.report_error(PCGError::Unsupported(
+                            self.domain.report_error(PCGError::unsupported(
                                 PCGUnsupportedError::AssignBorrowToNonReferenceType,
                             ));
                             return;
@@ -450,12 +472,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             *region,
                             self.repacker,
                         );
-                        for source_proj in blocked_place.region_projections(self.repacker) {
+                        for source_proj in
+                            blocked_place.region_projections(self.repacker).into_iter()
+                        {
                             self.connect_outliving_projections(
                                 source_proj.into(),
                                 target,
                                 location,
-                                |_| RegionProjectionMemberKind::Todo,
+                                |_| RegionProjectionMemberKind::BorrowOutlives,
                             );
                         }
                     }
@@ -492,10 +516,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            self.domain.report_error(PCGError::unsupported(format!(
-                "This type of function call is not yet supported: {:?}",
-                func
-            )));
+            self.domain
+                .report_error(PCGError::unsupported(PCGUnsupportedError::Other(format!(
+                    "This type of function call is not yet supported: {:?}",
+                    func
+                ))));
             return;
         };
         let sig = self
@@ -539,7 +564,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         .unwrap_or_else(|e| {
                             if let Ok(dot_graph) = generate_borrows_dot_graph(
                                 self.repacker,
-                                self.domain.data.states.post_main.graph(),
+                                self.domain.data.states[PostMain].graph(),
                             ) {
                                 DotGraph::render_with_imgcat(
                                     &dot_graph,
@@ -574,7 +599,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
-                        self.domain.report_error(PCGError::Unsupported(
+                        self.domain.report_error(PCGError::unsupported(
                             PCGUnsupportedError::ClosuresCapturingBorrows,
                         ));
                         return;
@@ -600,15 +625,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // No edges may be added e.g. if the inputs do not contain any borrows
         if !edges.is_empty() {
-            self.domain.post_state_mut().insert_abstraction_edge(
-                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                    location,
-                    *func_def_id,
-                    substs,
-                    edges.clone(),
-                )),
-                location.block,
-                self.repacker,
+            self.apply_action(
+                BorrowPCGActionKind::AddAbstractionEdge(
+                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                        location,
+                        *func_def_id,
+                        substs,
+                        edges.clone(),
+                    )),
+                    PathConditions::AtBlock(location.block),
+                )
+                .into(),
             );
         }
     }
@@ -699,7 +726,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
     #[tracing::instrument(skip(self, terminator), fields(join_iteration = ?self.domain.debug_join_iteration))]
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if self.preparing && self.stage == StatementStage::Operands {
-            let post_state = &mut self.domain.data.states.post_main;
+            let post_state = self.domain.data.states.get_mut(PostMain);
             let actions =
                 post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
@@ -737,11 +764,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         if self.preparing && self.stage == StatementStage::Operands {
             // Remove places that are non longer live based on borrow checker information
-            let actions = self.domain.data.states.post_main.pack_old_and_dead_leaves(
-                self.repacker,
-                location,
-                &self.domain.bc,
-            );
+            let actions = self
+                .domain
+                .data
+                .states
+                .get_mut(PostMain)
+                .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
             self.record_actions(actions);
         }
 
@@ -754,12 +782,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::Assign(box (_, rvalue)) => {
                     if let Rvalue::Cast(_, _, ty) = rvalue {
                         if ty.ref_mutability().is_some() {
-                            self.domain.report_error(PCGError::Unsupported(
+                            self.domain.report_error(PCGError::unsupported(
                                 PCGUnsupportedError::CastToRef,
                             ));
                             return;
                         } else if ty.is_unsafe_ptr() {
-                            self.domain.report_error(PCGError::Unsupported(
+                            self.domain.report_error(PCGError::unsupported(
                                 PCGUnsupportedError::UnsafePtrCast,
                             ));
                             return;
@@ -795,7 +823,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::StorageDead(local) => {
                     let place: utils::Place<'tcx> = (*local).into();
                     self.apply_action(BorrowPCGAction::make_place_old(place));
-                    let actions = self.domain.data.states.post_main.pack_old_and_dead_leaves(
+                    let actions = self.domain.data.get_mut(PostMain).pack_old_and_dead_leaves(
                         self.repacker,
                         location,
                         &self.domain.bc,
@@ -825,8 +853,11 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
 
                     if !target.is_owned(self.repacker) {
-                        let target_cap =
-                            self.domain.post_state_mut().get_capability(target.into()).unwrap();
+                        let target_cap = self
+                            .domain
+                            .post_state_mut()
+                            .get_capability(target.into())
+                            .unwrap();
                         if target_cap != CapabilityKind::Write {
                             self.apply_action(BorrowPCGAction::weaken(
                                 target,
@@ -848,7 +879,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             let place: utils::Place<'tcx> = (*place).into();
             if place.contains_unsafe_deref(self.repacker) {
                 self.domain
-                    .report_error(PCGError::Unsupported(PCGUnsupportedError::DerefUnsafePtr));
+                    .report_error(PCGError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
                 return;
             }
         }

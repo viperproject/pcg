@@ -3,8 +3,7 @@ use std::collections::{BTreeSet, HashSet};
 use serde_json::json;
 
 use crate::{
-    rustc_interface::middle::mir::{BasicBlock, START_BLOCK},
-    utils::PlaceRepacker,
+    pcg_validity_assert, rustc_interface::middle::mir::{BasicBlock, START_BLOCK}, utils::PlaceRepacker
 };
 
 use crate::utils::json::ToJsonWithRepacker;
@@ -56,7 +55,7 @@ impl std::fmt::Display for PCGraph {
 
 impl PCGraph {
     pub(crate) fn remove(&mut self, other: &Self) -> bool {
-        debug_assert_ne!(self, other);
+        pcg_validity_assert!(self != other);
         let mut changed = false;
         for pc in other.0.iter() {
             if self.0.remove(pc) {
@@ -187,9 +186,7 @@ impl PathConditions {
     pub(crate) fn remove(&mut self, other: &Self) -> bool {
         debug_assert_ne!(self, other);
         match (self, other) {
-            (PathConditions::Paths(ref mut p), PathConditions::Paths(other)) => {
-                p.remove(other)
-            }
+            (PathConditions::Paths(ref mut p), PathConditions::Paths(other)) => p.remove(other),
             _ => todo!(),
         }
     }

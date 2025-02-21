@@ -4,38 +4,41 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::rc::Rc;
+
 use rustc_interface::{
-    dataflow::{Analysis, AnalysisDomain},
-    middle::mir::{
-        visit::Visitor, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
-        TerminatorEdges,
-    },
+    dataflow::Analysis,
+    middle::mir::{self, visit::Visitor, Body, Location, Statement, Terminator, TerminatorEdges},
 };
 
-use crate::{rustc_interface, utils::PlaceRepacker};
+use crate::{combined_pcs::EvalStmtPhase, rustc_interface, utils::PlaceRepacker};
 
-use super::{triple::TripleWalker, FreePlaceCapabilitySummary};
+use super::{triple::TripleWalker, CapabilitySummary, FreePlaceCapabilitySummary};
 
-#[derive(Clone, Copy)]
-pub struct FpcsEngine<'a, 'tcx>(pub PlaceRepacker<'a, 'tcx>);
-
-impl<'a, 'tcx> AnalysisDomain<'tcx> for FpcsEngine<'a, 'tcx> {
-    type Domain = FreePlaceCapabilitySummary<'a, 'tcx>;
-    const NAME: &'static str = "free_pcs";
-
-    fn bottom_value(&self, _body: &Body<'tcx>) -> Self::Domain {
-        FreePlaceCapabilitySummary::new(self.0)
-    }
-
-    fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
-        state.initialize_as_start_block();
-    }
+#[derive(Clone)]
+pub struct FpcsEngine<'a, 'tcx> {
+    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
+    pub(crate) init_capability_summary: Rc<CapabilitySummary<'tcx>>,
 }
 
 impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
+    type Domain = FreePlaceCapabilitySummary<'a, 'tcx>;
+    const NAME: &'static str = "free_pcs";
+
+    fn bottom_value(&self, _body: &Body<'tcx>) -> FreePlaceCapabilitySummary<'a, 'tcx> {
+        FreePlaceCapabilitySummary::new(self.repacker, self.init_capability_summary.clone())
+    }
+
+    fn initialize_start_block(
+        &self,
+        _body: &Body<'tcx>,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
+    ) {
+        state.initialize_as_start_block();
+    }
     fn apply_before_statement_effect(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
     ) {
@@ -45,7 +48,7 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
     }
     fn apply_statement_effect(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
     ) {
@@ -56,7 +59,7 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
 
     fn apply_before_terminator_effect(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
@@ -66,29 +69,23 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
     }
     fn apply_terminator_effect<'mir>(
         &mut self,
-        state: &mut Self::Domain,
+        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
+        if terminator.kind == mir::TerminatorKind::UnwindResume {
+            return terminator.edges();
+        }
         let mut tw = TripleWalker::default();
         tw.visit_terminator(terminator, location);
         self.apply_main(state, tw, location);
         terminator.edges()
     }
-
-    fn apply_call_return_effect(
-        &mut self,
-        _state: &mut Self::Domain,
-        _block: BasicBlock,
-        _return_places: CallReturnPlaces<'_, 'tcx>,
-    ) {
-        // Nothing to do here
-    }
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
     fn apply_before(
-        self,
+        &self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'tcx>,
         location: Location,
@@ -99,30 +96,27 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         }
         state.data.enter_location(location);
         // Repack for operands
-        state.data.states.pre_operands = state.data.states.post_main.clone();
+        state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         for &triple in &tw.operand_triples {
-            let triple = triple.replace_place(self.0);
-            if let Err(e) = state
-                .data
-                .states
-                .pre_operands
-                .requires(triple.pre(), self.0)
-            {
+            let triple = triple.replace_place(self.repacker);
+            let pre_operands = state.data.states.get_mut(EvalStmtPhase::PreOperands);
+            if let Err(e) = pre_operands.requires(triple.pre(), self.repacker) {
                 state.error = Some(e);
                 return;
             }
         }
 
         // Apply operands effects
-        state.data.states.post_operands = state.data.states.pre_operands.clone();
+        state.data.states.0.post_operands = state.data.states.0.pre_operands.clone();
         for triple in tw.operand_triples {
-            let triple = triple.replace_place(self.0);
-            state.data.states.post_operands.ensures(triple, self.0);
+            let post_operands = state.data.states.get_mut(EvalStmtPhase::PostOperands);
+            let triple = triple.replace_place(self.repacker);
+            post_operands.ensures(triple, self.repacker);
         }
     }
 
     fn apply_main(
-        self,
+        &self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'tcx>,
         _location: Location,
@@ -132,22 +126,22 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             return;
         }
         // Repack for main
-        state.data.states.pre_main = state.data.states.post_operands.clone();
+        state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
         for &triple in &tw.main_triples {
-            let triple = triple.replace_place(self.0);
-            state
-                .data
-                .states
-                .pre_main
-                .requires(triple.pre(), self.0)
-                .unwrap();
+            let triple = triple.replace_place(self.repacker);
+            let pre_main = state.data.states.get_mut(EvalStmtPhase::PreMain);
+            if let Err(e) = pre_main.requires(triple.pre(), self.repacker) {
+                state.error = Some(e);
+                return;
+            }
         }
 
         // Apply main effects
-        state.data.states.post_main = state.data.states.pre_main.clone();
+        state.data.states.0.post_main = state.data.states.0.pre_main.clone();
         for triple in tw.main_triples {
-            let triple = triple.replace_place(self.0);
-            state.data.states.post_main.ensures(triple, self.0);
+            let triple = triple.replace_place(self.repacker);
+            let post_main = state.data.states.get_mut(EvalStmtPhase::PostMain);
+            post_main.ensures(triple, self.repacker);
         }
     }
 }

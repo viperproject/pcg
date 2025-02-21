@@ -1,8 +1,20 @@
+use std::hash::Hash;
 use std::{fmt, marker::PhantomData};
 
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
+use super::has_pcs_elem::HasPcsElems;
+use super::{
+    borrow_pcg_edge::LocalNode, borrows_visitor::extract_regions,
+    coupling_graph_constructor::CGNode,
+};
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::remote::RemotePlace;
+use crate::utils::PlaceRepacker;
+use crate::validity_checks_enabled;
 use crate::{
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -16,17 +28,6 @@ use crate::{
     },
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
 };
-use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::utils::PlaceRepacker;
-use crate::utils::remote::RemotePlace;
-use super::{
-    borrow_pcg_edge::LocalNode,
-    borrows_visitor::extract_regions,
-    coupling_graph_constructor::CGNode,
-};
-use super::has_pcs_elem::HasPcsElems;
 
 /// A region occuring in region projections
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
@@ -167,8 +168,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
-    base: P,
-    region_idx: RegionIdx,
+    pub(crate) base: P,
+    pub(crate) region_idx: RegionIdx,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -313,15 +314,32 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
         self.base.place_mut()
     }
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self
+    fn project_deeper(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> Option<Self>
     where
         Self: Clone + HasValidityCheck<'tcx>,
     {
         RegionProjection::new(
             self.region(repacker),
-            self.base.project_deeper(repacker, elem),
+            self.base.project_deeper(repacker, elem)?,
             repacker,
         )
+    }
+
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        self.base
+            .iter_projections(repacker)
+            .into_iter()
+            .map(move |(base, elem)| {
+                (
+                    RegionProjection::new(self.region(repacker), base, repacker).unwrap(),
+                    elem,
+                )
+            })
+            .collect()
     }
 }
 
@@ -341,28 +359,31 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionP
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn new(region: PCGRegion, base: T, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub(crate) fn new(
+        region: PCGRegion,
+        base: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<Self> {
         let region_idx = base
             .regions(repacker)
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
-            .map(|(idx, _)| idx)
-            .unwrap_or_else(|| panic!("Region {} not found in place {:?}", region, base));
+            .map(|(idx, _)| idx)?;
         let result = Self {
             base,
             region_idx,
             phantom: PhantomData,
         };
-        if cfg!(debug_assertions) {
+        if validity_checks_enabled() {
             result.assert_validity(repacker);
         }
-        result
+        Some(result)
     }
 
     pub(crate) fn region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGRegion {
         let regions = self.base.regions(repacker);
         if self.region_idx.index() >= regions.len() {
-            PCGRegion::PCGInternalErr
+            unreachable!()
         } else {
             regions[self.region_idx]
         }

@@ -21,28 +21,33 @@ use borrows::{
     borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
     borrow_pcg_edge::LocalNode,
     borrow_pcg_expansion::BorrowPCGExpansion,
-    borrows_graph::{validity_checks_enabled, Conditioned},
+    borrows_graph::Conditioned,
     borrows_visitor::BorrowPCGActions,
     latest::Latest,
     path_condition::PathConditions,
     region_projection_member::RegionProjectionMember,
     unblock_graph::BorrowPCGUnblockAction,
 };
-use combined_pcs::{BodyWithBorrowckFacts, PCGContext, PCGEngine, PlaceCapabilitySummary};
-use free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
-use rustc_interface::{data_structures::fx::FxHashSet, dataflow::Analysis, middle::ty::TyCtxt};
+use combined_pcs::{PCGContext, PCGEngine};
+use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
+use rustc_interface::{
+    borrowck::{self, BorrowSet, RegionInferenceContext},
+    data_structures::fx::FxHashSet,
+    dataflow::{compute_fixpoint, PCGAnalysis},
+    middle::{mir::Body, ty::TyCtxt},
+};
 use serde_json::json;
-use utils::{display::{DebugLines, DisplayWithRepacker}, validity::HasValidityCheck, Place, PlaceRepacker};
+use utils::{
+    display::{DebugLines, DisplayWithRepacker},
+    env_feature_enabled,
+    validity::HasValidityCheck,
+    Place, PlaceRepacker,
+};
 use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithRepacker;
 
-pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<
-    'mir,
-    'tcx,
-    PlaceCapabilitySummary<'mir, 'tcx>,
-    PCGEngine<'mir, 'tcx>,
->;
+pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -249,8 +254,8 @@ impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> From<&'a FreePcsLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
-    fn from(location: &'a FreePcsLocation<'tcx>) -> Self {
+impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
+    fn from(location: &'a PcgLocation<'tcx>) -> Self {
         Self {
             latest: &location.borrows.post_main.latest,
             free_pcg_repacks_start: &location.repacks_start,
@@ -262,38 +267,61 @@ impl<'a, 'tcx> From<&'a FreePcsLocation<'tcx>> for PCGStmtVisualizationData<'a, 
     }
 }
 
+pub trait BodyAndBorrows<'tcx> {
+    fn body(&self) -> &Body<'tcx>;
+    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+    fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
+}
+
+impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
+    fn body(&self) -> &Body<'tcx> {
+        &self.body
+    }
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        &self.borrow_set
+    }
+    fn region_inference_context(&self) -> &RegionInferenceContext<'tcx> {
+        &self.region_inference_context
+    }
+}
+
 pub fn run_combined_pcs<'mir, 'tcx>(
-    mir: &'mir BodyWithBorrowckFacts<'tcx>,
+    mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
-    let cgx = PCGContext::new(tcx, mir);
+    let cgx = PCGContext::new(
+        tcx,
+        mir.body(),
+        mir.borrow_set(),
+        mir.region_inference_context(),
+        None,
+    );
     let fpcg = PCGEngine::new(cgx, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
     }
-    let analysis = fpcg
-        .into_engine(tcx, &mir.body)
-        .pass_name("free_pcg")
-        .iterate_to_fixpoint();
+    let analysis = compute_fixpoint(PCGAnalysis(fpcg), tcx, mir.body());
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = false;
     }
     if let Some(dir_path) = &visualization_output_path {
-        for block in mir.body.basic_blocks.indices() {
+        for block in mir.body().basic_blocks.indices() {
             let state = analysis.entry_set_for_block(block);
             assert!(state.block() == block);
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
             state
                 .dot_graphs()
+                .unwrap()
                 .borrow()
                 .write_json_file(&block_iterations_json_file);
         }
     }
-    let mut fpcs_analysis = free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(&mir.body));
+    let mut fpcs_analysis =
+        free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(mir.body()));
 
     if let Some(dir_path) = visualization_output_path {
         let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
@@ -305,14 +333,26 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
         std::fs::write(&node_legend_file_path, node_legend_graph)
             .expect("Failed to write node legend");
-        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, &mir.body)
+        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir.body())
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PCGContext::new(tcx, mir).rp;
+        let rp = PCGContext::new(
+            tcx,
+            mir.body(),
+            mir.borrow_set(),
+            mir.region_inference_context(),
+            None,
+        )
+        .rp;
 
         // Iterate over each statement in the MIR
-        for (block, _data) in mir.body.basic_blocks.iter_enumerated() {
-            let pcs_block = fpcs_analysis.get_all_for_bb(block);
+        for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
+            let pcs_block_option = fpcs_analysis.get_all_for_bb(block).unwrap();
+            let pcs_block = if let Some(pcs_block) = pcs_block_option {
+                pcs_block
+            } else {
+                continue;
+            };
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
                     statement.assert_validity(rp);
@@ -345,4 +385,17 @@ pub fn run_combined_pcs<'mir, 'tcx>(
     }
 
     fpcs_analysis
+}
+
+#[macro_export]
+macro_rules! pcg_validity_assert {
+    ($($arg:tt)*) => {
+        if crate::validity_checks_enabled() {
+            assert!($($arg)*);
+        }
+    };
+}
+
+pub(crate) fn validity_checks_enabled() -> bool {
+    env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
 }

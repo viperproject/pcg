@@ -6,19 +6,20 @@
 
 use rustc_interface::{
     data_structures::fx::FxHashSet,
-    dataflow::storage,
     index::{bit_set::BitSet, Idx},
     middle::{
         mir::{
-            tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
-            Place as MirPlace, PlaceElem, ProjectionElem,
+            tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace,
+            PlaceElem, ProjectionElem,
         },
-        ty::{Region, Ty, TyCtxt, TyKind},
+        ty::{TyCtxt, TyKind},
     },
+    mir_dataflow,
     target::abi::FieldIdx,
 };
 
 use crate::{
+    borrows::region_projection::PCGRegion,
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface,
 };
@@ -91,9 +92,16 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         self.mir.local_decls().len()
     }
 
+    #[rustversion::before(2024-12-14)]
     pub fn always_live_locals(self) -> BitSet<Local> {
-        storage::always_storage_live_locals(self.mir)
+        mir_dataflow::storage::always_storage_live_locals(self.mir)
     }
+
+    #[rustversion::since(2024-12-14)]
+    pub fn always_live_locals(self) -> BitSet<Local> {
+        mir_dataflow::impls::always_storage_live_locals(self.mir)
+    }
+
     pub fn always_live_locals_non_args(self) -> BitSet<Local> {
         let mut all = self.always_live_locals();
         for arg in 0..self.mir.arg_count + 1 {
@@ -120,7 +128,7 @@ pub struct ConstantIndex {
 }
 
 impl<'tcx> Place<'tcx> {
-    fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
+    pub(crate) fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),
@@ -368,7 +376,7 @@ impl<'tcx> Place<'tcx> {
                 );
             }
             TyKind::Alias(..) => {
-                return Err(PCGError::Unsupported(
+                return Err(PCGError::unsupported(
                     PCGUnsupportedError::ExpansionOfAliasType,
                 ));
             }
@@ -383,33 +391,11 @@ impl<'tcx> Place<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }
 
-    /// Should only be called on a `Place` obtained from `RootPlace::get_parent`.
-    pub fn get_ref_mutability(self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        let typ = self.ty(repacker);
-        if let TyKind::Ref(_, _, mutability) = typ.ty.kind() {
-            *mutability
-        } else {
-            unreachable!("get_ref_mutability called on non-ref type: {:?}", typ.ty);
+    pub(crate) fn get_ref_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
+        match self.ty(repacker).ty.kind() {
+            TyKind::Ref(region, ..) => Some((*region).into()),
+            _ => None,
         }
-    }
-
-    /// Returns all `TyKind::Ref` and `TyKind::RawPtr` that `self` projects through.
-    /// The `Option` acts as an either where `TyKind::RawPtr` corresponds to a `None`.
-    pub fn projection_refs(
-        self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> impl Iterator<
-        Item = (
-            Option<(Region<'tcx>, Ty<'tcx>, Mutability)>,
-            &'tcx [PlaceElem<'tcx>],
-        ),
-    > {
-        self.projection_tys(repacker)
-            .filter_map(|(ty, projs)| match ty.ty.kind() {
-                &TyKind::Ref(r, ty, m) => Some((Some((r, ty, m)), projs)),
-                &TyKind::RawPtr(..) => Some((None, projs)),
-                _ => None,
-            })
     }
 
     pub(crate) fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

@@ -1,7 +1,6 @@
 use crate::{
     borrows::{
-        borrows_graph::{borrows_imgcat_debug, validity_checks_enabled},
-        edge_data::EdgeData,
+        borrows_graph::borrows_imgcat_debug, edge_data::EdgeData,
         region_projection_member::RegionProjectionMemberKind,
     },
     combined_pcs::{PCGError, PCGNode, PCGNodeLike},
@@ -19,8 +18,11 @@ use crate::{
         validity::HasValidityCheck,
         HasPlace,
     },
+    validity_checks_enabled,
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
+use smallvec::smallvec;
+use std::rc::Rc;
 
 use super::{
     borrow_pcg_action::BorrowPCGAction,
@@ -84,7 +86,7 @@ struct JoinTransitionElem<'tcx> {
     block: BasicBlock,
     latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    capabilities: BorrowPCGCapabilities<'tcx>,
+    capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
 }
 
 #[cfg(debug_assertions)]
@@ -116,7 +118,7 @@ impl<'mir, 'tcx> DebugLines<PlaceRepacker<'mir, 'tcx>> for JoinTransitionElem<'t
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    pub(crate) capabilities: BorrowPCGCapabilities<'tcx>,
+    pub(crate) capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
     join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
@@ -152,7 +154,7 @@ impl<'tcx> Default for BorrowsState<'tcx> {
         Self {
             latest: Latest::new(),
             graph: BorrowsGraph::new(),
-            capabilities: BorrowPCGCapabilities::new(),
+            capabilities: Rc::new(BorrowPCGCapabilities::new()),
             #[cfg(debug_assertions)]
             join_transitions: JoinLatticeVerifier::new(),
         }
@@ -255,12 +257,23 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         assert!(!node.is_owned(repacker));
-        self.capabilities.insert(node, capability)
+        if self.get_capability(node) != Some(capability) {
+            Rc::<_>::make_mut(&mut self.capabilities).insert(node, capability);
+            true
+        } else {
+            false
+        }
     }
 
     #[must_use]
     pub(crate) fn remove_capability<T: PCGNodeLike<'tcx>>(&mut self, node: T) -> bool {
-        self.capabilities.remove(node)
+        let node = node.to_pcg_node();
+        if self.get_capability(node) != None {
+            Rc::<_>::make_mut(&mut self.capabilities).remove(node);
+            true
+        } else {
+            false
+        }
     }
 
     #[cfg(debug_assertions)]
@@ -282,12 +295,6 @@ impl<'tcx> BorrowsState<'tcx> {
         bc: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        // For performance reasons we don't check validity here.
-        // if validity_checks_enabled() {
-        //     debug_assert!(other.graph.is_valid(repacker), "Other graph is invalid");
-        // }
-        #[allow(unused)]
-        let old = self.clone();
         let mut changed = false;
         if self
             .graph
@@ -301,8 +308,10 @@ impl<'tcx> BorrowsState<'tcx> {
 
             // changed = true;
         }
-        if self.capabilities.join(&other.capabilities) {
-            changed = true;
+        if other.capabilities != self.capabilities {
+            if Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities) {
+                changed = true;
+            }
         }
         // // These checks are disabled even for debugging currently because they are very expensive
         // if changed && cfg!(debug_assertions) {
@@ -385,16 +394,14 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn borrows_blocking_prefix_of(
         &self,
         place: Place<'tcx>,
-    ) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
+    ) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
         self.borrows()
-            .into_iter()
-            .filter(|rb| match rb.value.blocked_place {
+            .filter(move |rb| match rb.value.blocked_place {
                 MaybeRemotePlace::Local(MaybeOldPlace::Current {
                     place: blocked_place,
                 }) => blocked_place.is_prefix(place),
                 _ => false,
             })
-            .collect()
     }
 
     #[must_use]
@@ -470,7 +477,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocked_by(node, repacker).collect()
     }
 
-    pub(crate) fn borrows(&self) -> FxHashSet<Conditioned<BorrowEdge<'tcx>>> {
+    pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
         self.graph.borrows()
     }
 
@@ -496,11 +503,11 @@ impl<'tcx> BorrowsState<'tcx> {
 
         // If we are going to contract a place, borrows may need to be converted
         // to region projection member edges. For example, if the type of `x.t` is
-        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to expand to `x`, then we need
+        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to contract to `x`, then we need
         // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
         for p in graph_edges {
             match p.kind() {
-                BorrowPCGEdgeKind::Borrow(reborrow) => match reborrow.assigned_ref {
+                BorrowPCGEdgeKind::Borrow(borrow) => match borrow.assigned_ref {
                     MaybeOldPlace::Current {
                         place: assigned_place,
                     } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
@@ -508,9 +515,9 @@ impl<'tcx> BorrowsState<'tcx> {
                             self.record_and_apply_action(
                                 BorrowPCGAction::add_region_projection_member(
                                     RegionProjectionMember::new(
-                                        vec![reborrow.blocked_place.into()],
-                                        vec![ra.into()],
-                                        RegionProjectionMemberKind::Todo,
+                                        smallvec![borrow.blocked_place.into()],
+                                        smallvec![ra.into()],
+                                        RegionProjectionMemberKind::ContractRef,
                                     ),
                                     PathConditions::new(location.block),
                                     "Ensure Expansion To",
@@ -617,8 +624,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
-        for (base, _) in to_place.iter_projections() {
-            let base: Place<'tcx> = base.into();
+        for (base, _) in to_place.iter_projections(repacker) {
             let base = base.with_inherent_region(repacker);
             let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
             kind.insert_target_into_expansion(target, &mut expansion);
@@ -628,10 +634,13 @@ impl<'tcx> BorrowsState<'tcx> {
                 // has type &'a T. We insert a region projection member for t↓'a
                 // -> *t if it doesn't already exist.
 
+                // e.g t|'a
+                let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
+
                 let region_projection_member = RegionProjectionMember::new(
-                    vec![RegionProjection::new((*region).into(), base, repacker).to_pcg_node()],
-                    vec![target.into()],
-                    RegionProjectionMemberKind::Todo,
+                    smallvec![base_rp.to_pcg_node()],
+                    smallvec![target.into()],
+                    RegionProjectionMemberKind::DerefRegionProjection,
                 );
 
                 let path_conditions = PathConditions::new(location.block);
@@ -643,12 +652,36 @@ impl<'tcx> BorrowsState<'tcx> {
                     self.record_and_apply_action(
                         BorrowPCGAction::add_region_projection_member(
                             region_projection_member,
-                            PathConditions::new(location.block),
+                            path_conditions.clone(),
                             "Ensure Deref Expansion To At Least",
                         ),
                         &mut actions,
                         repacker,
                     );
+                }
+                // We also do this for all target region projections
+
+                for target_rp in target.region_projections(repacker) {
+                    let region_projection_member = RegionProjectionMember::new(
+                        smallvec![base_rp.to_pcg_node()],
+                        smallvec![target_rp.into()],
+                        RegionProjectionMemberKind::DerefBorrowOutlives,
+                    );
+
+                    if !self.contains_edge(&BorrowPCGEdge::new(
+                        region_projection_member.clone().into(),
+                        path_conditions.clone(),
+                    )) {
+                        self.record_and_apply_action(
+                            BorrowPCGAction::add_region_projection_member(
+                                region_projection_member,
+                                path_conditions.clone(),
+                                "Ensure Deref Expansion To At Least",
+                            ),
+                            &mut actions,
+                            repacker,
+                        );
+                    }
                 }
             }
 
@@ -762,13 +795,13 @@ impl<'tcx> BorrowsState<'tcx> {
             })
         };
         let mut num_edges_prev = self.graph.num_edges();
-        'outer: loop {
+        loop {
             fn go<'slf, 'mir, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
                 repacker: PlaceRepacker<'mir, 'tcx>,
                 prev_location: Option<Location>,
                 bc: &impl BorrowCheckerInterface<'tcx>,
-            ) -> Option<BorrowPCGEdge<'tcx>> {
+            ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
                 let should_trim = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
                     if p.is_old() {
@@ -791,6 +824,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
                 };
 
+                let mut edges_to_trim = Vec::new();
                 for edge in fg
                     .leaf_edges(repacker)
                     .into_iter()
@@ -798,25 +832,27 @@ impl<'tcx> BorrowsState<'tcx> {
                 {
                     let blocked_by_nodes = edge.blocked_by_nodes(repacker);
                     if blocked_by_nodes.iter().all(|p| should_trim(*p, &fg)) {
-                        return Some(edge);
+                        edges_to_trim.push(edge);
                     }
                 }
-                None
+                edges_to_trim
             }
-            if let Some(edge) = go(self, repacker, prev_location, bc) {
+            let edges_to_trim = go(self, repacker, prev_location, bc);
+            if edges_to_trim.is_empty() {
+                break actions;
+            }
+            for edge in edges_to_trim {
                 actions.extend(self.remove_edge_and_set_latest(
                     edge,
                     location,
                     repacker,
                     "Trim Old Leaves",
                 ));
-                assert!(self.graph.num_edges() < num_edges_prev);
-                num_edges_prev = self.graph.num_edges();
-                continue 'outer;
             }
-            break;
+            let new_num_edges = self.graph.num_edges();
+            assert!(new_num_edges < num_edges_prev);
+            num_edges_prev = new_num_edges;
         }
-        actions
     }
 
     pub(crate) fn add_borrow(
@@ -900,35 +936,6 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             };
         }
-
-        // self.set_capability(assigned_place, assigned_cap, repacker);
-    }
-
-    /// Inserts the abstraction edge and sets capabilities for
-    /// inputs and outputs: input capabilities are set to [`CapabilityKind::Lent`]
-    /// outputs are set to [`CapabilityKind::Exclusive`]
-    pub(crate) fn insert_abstraction_edge(
-        &mut self,
-        abstraction: AbstractionType<'tcx>,
-        block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        match &abstraction {
-            AbstractionType::FunctionCall(function_call_abstraction) => {
-                for edge in function_call_abstraction.edges() {
-                    for input in edge.inputs() {
-                        self.set_capability(input.into(), CapabilityKind::Lent, repacker);
-                    }
-                    for output in edge.outputs() {
-                        self.set_capability(output.into(), CapabilityKind::Exclusive, repacker);
-                    }
-                }
-            }
-            _ => todo!(),
-        }
-        assert!(self
-            .graph
-            .insert(abstraction.to_borrow_pcg_edge(PathConditions::new(block))));
     }
 
     #[must_use]

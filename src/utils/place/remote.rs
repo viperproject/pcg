@@ -7,7 +7,7 @@ use crate::utils::display::DisplayWithRepacker;
 use crate::utils::{Place, PlaceRepacker};
 use crate::utils::validity::HasValidityCheck;
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub struct RemotePlace {
     pub(crate) local: mir::Local,
 }

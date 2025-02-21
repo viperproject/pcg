@@ -1,21 +1,24 @@
-use derive_more::From;
-use crate::rustc_interface::index::IndexVec;
-use crate::rustc_interface::middle::mir;
-use crate::rustc_interface::middle::mir::PlaceElem;
-use crate::rustc_interface::ast::Mutability;
-use crate::rustc_interface::middle::mir::tcx::PlaceTy;
-use serde_json::json;
 use crate::borrows::borrow_pcg_edge::LocalNode;
 use crate::borrows::borrows_visitor::extract_regions;
-use crate::utils::json::ToJsonWithRepacker;
 use crate::borrows::has_pcs_elem::HasPcsElems;
 use crate::borrows::latest::Latest;
-use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection, RegionProjectionBaseLike};
+use crate::borrows::region_projection::{
+    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
+    RegionProjectionBaseLike,
+};
 use crate::combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike};
-use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use crate::rustc_interface::ast::Mutability;
+use crate::rustc_interface::index::IndexVec;
+use crate::rustc_interface::middle::mir;
+use crate::rustc_interface::middle::mir::tcx::PlaceTy;
+use crate::rustc_interface::middle::mir::PlaceElem;
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
+use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use derive_more::From;
+use serde_json::json;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd)]
 pub enum MaybeOldPlace<'tcx> {
@@ -149,10 +152,26 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self {
+    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Option<Self> {
         let mut cloned = self.clone();
-        *cloned.place_mut() = self.place().project_deeper(repacker, elem);
-        cloned
+        *cloned.place_mut() = self.place().project_deeper(repacker, elem)?;
+        Some(cloned)
+    }
+
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        match self {
+            MaybeOldPlace::Current { place } => place
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (p.into(), e))
+                .collect(),
+            MaybeOldPlace::OldPlace(old_place) => old_place
+                .place
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (p.into(), e))
+                .collect(),
+        }
     }
 }
 
@@ -180,6 +199,26 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().projection
     }
 
+    pub(crate) fn deref_to_rp(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx, Self>> {
+        if let Some((place, PlaceElem::Deref)) = self.last_projection() {
+            place.base_region_projection(repacker)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn base_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx, Self>> {
+        self.place()
+            .base_region_projection(repacker)
+            .map(|rp| rp.map_base(|base| base.into()))
+    }
+
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         let place: Place<'_> = self.place();
         place.ref_mutability(repacker).unwrap_or_else(|| {
@@ -205,10 +244,13 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().ty_region(repacker)
     }
 
-    pub fn last_projection(&self) -> Option<(Place<'tcx>, PlaceElem<'tcx>)> {
+    pub fn last_projection(&self) -> Option<(MaybeOldPlace<'tcx>, PlaceElem<'tcx>)> {
         match self {
-            MaybeOldPlace::Current { place } => place.last_projection(),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.place.last_projection(),
+            MaybeOldPlace::Current { place } => place.last_projection().map(|(p, e)| (p.into(), e)),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot
+                .place
+                .last_projection()
+                .map(|(p, e)| (PlaceSnapshot::new(p, snapshot.at).into(), e)),
         }
     }
 
@@ -247,7 +289,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker))
+            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker).unwrap())
             .collect()
     }
 

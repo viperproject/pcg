@@ -12,20 +12,19 @@ use std::{
     rc::Rc,
 };
 
-use crate::{rustc_interface::{
-    dataflow::{fmt::DebugWithContext, JoinSemiLattice}, middle::mir::BasicBlock,
-}, RECORD_PCG};
+use crate::{
+    borrows::{borrows_visitor::BorrowCheckerImpl, engine::DataflowPhase},
+    rustc_interface::{
+        data_structures::fx::FxHashSet,
+        middle::mir::{BasicBlock, START_BLOCK},
+        mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
+    },
+    PCGAnalysis, RECORD_PCG,
+};
 
 use super::{PCGContext, PCGEngine};
 use crate::borrows::domain::BorrowsDomain;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::{
-    borrows::unblock_graph::{UnblockGraph, UnblockType},
-    combined_pcs::PCGNode,
-    free_pcs::{CapabilityLocal, FreePlaceCapabilitySummary},
-    visualization::generate_dot_graph,
-};
+use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -85,14 +84,20 @@ impl DataflowStmtPhase {
 }
 
 #[derive(Clone)]
+pub(crate) struct PCGDebugData {
+    pub(crate) dot_output_dir: String,
+    pub(crate) dot_graphs: Rc<RefCell<DotGraphs>>,
+}
+
+#[derive(Clone)]
 pub struct PlaceCapabilitySummary<'a, 'tcx> {
     cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) block: Option<BasicBlock>,
 
     pub(crate) pcg: PCG<'a, 'tcx>,
-    dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
+    debug_data: Option<PCGDebugData>,
 
-    dot_output_dir: Option<String>,
+    join_history: FxHashSet<BasicBlock>,
 }
 
 /// Outermost Vec can be considered a map StatementIndex -> Vec<BTreeMap<DataflowStmtPhase, String>>
@@ -168,14 +173,40 @@ impl DotGraphs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PCGError {
+pub struct PCGError {
+    pub(crate) kind: PCGErrorKind,
+    pub(crate) context: Vec<String>,
+}
+
+impl PCGError {
+    pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
+        Self { kind, context }
+    }
+
+    pub(crate) fn add_context(&mut self, context: String) {
+        self.context.push(context);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PCGErrorKind {
     Unsupported(PCGUnsupportedError),
     Internal(PCGInternalError),
 }
 
 impl PCGError {
-    pub(crate) fn unsupported(msg: String) -> Self {
-        Self::Unsupported(PCGUnsupportedError::Other(msg))
+    pub(crate) fn internal(msg: String) -> Self {
+        Self {
+            kind: PCGErrorKind::Internal(PCGInternalError::new(msg)),
+            context: vec![],
+        }
+    }
+
+    pub(crate) fn unsupported(err: PCGUnsupportedError) -> Self {
+        Self {
+            kind: PCGErrorKind::Unsupported(err),
+            context: vec![],
+        }
     }
 }
 
@@ -190,7 +221,7 @@ impl PCGInternalError {
 
 impl From<PCGInternalError> for PCGError {
     fn from(e: PCGInternalError) -> Self {
-        PCGError::Internal(e)
+        PCGError::new(PCGErrorKind::Internal(e), vec![])
     }
 }
 
@@ -202,6 +233,7 @@ pub enum PCGUnsupportedError {
     UnsafePtrCast,
     DerefUnsafePtr,
     InlineAssembly,
+    Coroutines,
     TwoPhaseBorrow,
     ExpansionOfAliasType,
     Other(String),
@@ -254,16 +286,19 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         self.pcg.borrow.set_block(block);
     }
 
-    pub fn set_dot_graphs(&mut self, dot_graphs: Rc<RefCell<DotGraphs>>) {
-        self.dot_graphs = Some(dot_graphs);
+    pub fn set_debug_data(&mut self, output_dir: String, dot_graphs: Rc<RefCell<DotGraphs>>) {
+        self.debug_data = Some(PCGDebugData {
+            dot_output_dir: output_dir,
+            dot_graphs,
+        });
     }
 
     pub(crate) fn block(&self) -> BasicBlock {
         self.block.unwrap()
     }
 
-    pub fn dot_graphs(&self) -> Rc<RefCell<DotGraphs>> {
-        self.dot_graphs.clone().unwrap()
+    pub fn dot_graphs(&self) -> Option<Rc<RefCell<DotGraphs>>> {
+        self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
     }
 
     fn dot_filename_for(
@@ -275,9 +310,11 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         format!(
             "{}/{}",
             output_dir,
-            self.dot_graphs()
-                .borrow()
-                .relative_filename(phase, self.block(), statement_index)
+            self.dot_graphs().unwrap().borrow().relative_filename(
+                phase,
+                self.block(),
+                statement_index
+            )
         )
     }
 
@@ -288,19 +325,22 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         if self.block().as_usize() == 0 {
             assert!(!matches!(phase, DataflowStmtPhase::Join(_)));
         }
-        if let Some(output_dir) = &self.dot_output_dir {
+        if let Some(debug_data) = &self.debug_data {
             if phase == DataflowStmtPhase::Initial {
-                self.dot_graphs()
+                debug_data
+                    .dot_graphs
                     .borrow_mut()
                     .register_new_iteration(statement_index);
             }
-            let relative_filename =
-                self.dot_graphs()
-                    .borrow()
-                    .relative_filename(phase, self.block(), statement_index);
-            let filename = self.dot_filename_for(&output_dir, phase, statement_index);
-            if !self
-                .dot_graphs()
+            let relative_filename = debug_data.dot_graphs.borrow().relative_filename(
+                phase,
+                self.block(),
+                statement_index,
+            );
+            let filename =
+                self.dot_filename_for(&debug_data.dot_output_dir, phase, statement_index);
+            if !debug_data
+                .dot_graphs
                 .borrow_mut()
                 .insert(statement_index, phase, relative_filename)
             {
@@ -326,17 +366,12 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
     pub(crate) fn new(
         cgx: Rc<PCGContext<'a, 'tcx>>,
+        bc: BorrowCheckerImpl<'a, 'tcx>,
         block: Option<BasicBlock>,
-        dot_output_dir: Option<String>,
-        dot_graphs: Option<Rc<RefCell<DotGraphs>>>,
+        debug_data: Option<PCGDebugData>,
     ) -> Self {
-        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(
-            cgx.rp,
-            cgx.mir.region_inference_context.clone(),
-            cgx.mir.borrow_set.clone(),
-            block,
-        );
+        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp, cgx.init_capability_summary.clone());
+        let borrows = BorrowsDomain::new(cgx.rp, bc, block);
         let pcg = PCG {
             owned: fpcs,
             borrow: borrows,
@@ -345,8 +380,8 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             cgx,
             block,
             pcg,
-            dot_graphs,
-            dot_output_dir,
+            debug_data,
+            join_history: FxHashSet::default(),
         }
     }
 }
@@ -371,6 +406,15 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         } else if self.has_error() {
             return false;
         }
+
+        // We've already joined this block, so in principle we can exit early
+        if self.cgx.rp.is_back_edge(other.block(), self.block())
+            && self.join_history.contains(&other.block())
+        {
+            return false;
+        } else {
+            self.join_history.insert(other.block());
+        }
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     if !other.is_valid() {
@@ -381,7 +425,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         //             self.cgx.mir.body.span
         //         );
         //     }
-        //     debug_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
+        //     pcg_validity_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
         // }
         assert!(self.is_initialized() && other.is_initialized());
         if self.block().as_usize() == 0 {
@@ -397,46 +441,25 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             );
         }
         let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
-        let mut g = UnblockGraph::new();
-        for root in self.borrow_pcg().data.entry_state.roots(self.cgx.rp) {
-            if let PCGNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place: root })) =
-                root
-            {
-                match &self.owned_pcg().data.entry_state[root.local] {
-                    CapabilityLocal::Unallocated => {
-                        g.unblock_node(
-                            root.into(),
-                            &self.borrow_pcg().data.entry_state,
-                            self.cgx.rp,
-                            UnblockType::ForRead,
-                        );
-                    }
-                    CapabilityLocal::Allocated(projs) => {
-                        if !(*projs).contains_key(&root) {
-                            g.unblock_node(
-                                root.into(),
-                                &self.borrow_pcg().data.entry_state,
-                                self.cgx.rp,
-                                UnblockType::ForExclusive,
-                            );
-                        }
-                    }
-                }
-            }
+        if let Some(debug_data) = &self.debug_data {
+            debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
+            self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         }
-        self.dot_graphs().borrow_mut().register_new_iteration(0);
-        self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         fpcs || borrows
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGEngine<'a, 'tcx>> for PlaceCapabilitySummary<'a, 'tcx> {
+impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>>
+    for PlaceCapabilitySummary<'a, 'tcx>
+{
     fn fmt_diff_with(
         &self,
         old: &Self,
-        ctxt: &PCGEngine<'a, 'tcx>,
+        ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        self.pcg.owned.fmt_diff_with(&old.pcg.owned, &ctxt.fpcs, f)
+        self.pcg
+            .owned
+            .fmt_diff_with(&old.pcg.owned, &ctxt.0.fpcs, f)
     }
 }
