@@ -5,7 +5,13 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    combined_pcs::PCGError, free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections}, pcg_validity_assert, rustc_interface::middle::mir::{Local, RETURN_PLACE}, utils::{LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker}
+    combined_pcs::PCGError,
+    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
+    pcg_validity_assert,
+    rustc_interface::middle::mir::{Local, RETURN_PLACE},
+    utils::{
+        corrected::CorrectedPlace, LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker,
+    },
 };
 
 use super::{
@@ -156,7 +162,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for (from_place, _) in (*related).iter().copied() {
             match from_place.partial_cmp(to).unwrap() {
                 PlaceOrdering::Prefix => {
-                    self.expand(related.get_only_place(), to, repacker)?;
+                    self.expand(
+                        related.get_only_place(),
+                        CorrectedPlace::new(to, repacker),
+                        repacker,
+                    )?;
                     return Ok(());
                 }
                 PlaceOrdering::Equal => (),
@@ -169,7 +179,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     // Collapse
                     self.collapse(related.get_places(), cp, repacker)?;
                     // Expand
-                    self.expand(cp, to, repacker)?;
+                    self.expand(cp, CorrectedPlace::new(to, repacker), repacker)?;
                     return Ok(());
                 }
             }

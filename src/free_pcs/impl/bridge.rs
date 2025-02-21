@@ -9,7 +9,7 @@ use crate::{
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
-    utils::{PlaceOrdering, PlaceRepacker},
+    utils::{corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker},
 };
 
 pub trait RepackingBridgeSemiLattice<'tcx> {
@@ -94,9 +94,10 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
 
         let mut repacks = Vec::new();
         for (&place, &kind) in &**other {
-            let related = from.find_all_related(place, None);
+            let place = CorrectedPlace::new(place, repacker);
+            let related = from.find_all_related(*place, None);
             for (from_place, _) in (*related).iter().copied() {
-                match from_place.partial_cmp(place).unwrap() {
+                match from_place.partial_cmp(*place).unwrap() {
                     PlaceOrdering::Prefix => {
                         let unpacks = from.expand(from_place, place, repacker)?;
                         repacks.extend(unpacks);
@@ -104,13 +105,13 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                     }
                     PlaceOrdering::Suffix => {
                         let packs = from
-                            .collapse(related.get_places(), place, repacker)
+                            .collapse(related.get_places(), *place, repacker)
                             .unwrap();
                         repacks.extend(packs);
                         break;
                     }
                     PlaceOrdering::Both => {
-                        let common_prefix = related.common_prefix(place);
+                        let common_prefix = related.common_prefix(*place);
                         let collapse_repacks =
                             from.collapse(related.get_places(), common_prefix, repacker)?;
                         let expand_repacks = from.expand(common_prefix, place, repacker)?;
@@ -124,10 +125,10 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
             // Downgrade the permission if needed
             let curr = from[&place];
             if curr > kind {
-                from.insert(place, kind);
-                repacks.push(RepackOp::Weaken(place, curr, kind));
+                from.insert(*place, kind);
+                repacks.push(RepackOp::Weaken(*place, curr, kind));
             } else if curr < kind {
-                repacks.push(RepackOp::RegainLoanedCapability(place, kind));
+                repacks.push(RepackOp::RegainLoanedCapability(*place, kind));
             }
         }
         Ok(repacks)

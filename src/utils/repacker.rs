@@ -345,6 +345,13 @@ impl<'tcx> Place<'tcx> {
                             repacker
                                 .tcx
                                 .mk_place_field(self.to_rust_place(repacker), field, arg);
+                        eprintln!(
+                            "Expand {:?}: {:?} to {:?}: {:?}",
+                            self,
+                            self.ty(repacker),
+                            field_place,
+                            field_place.ty(repacker.body(), repacker.tcx)
+                        );
                         places.push(field_place.into());
                     }
                 }

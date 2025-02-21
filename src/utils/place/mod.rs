@@ -227,13 +227,20 @@ impl<'tcx> Place<'tcx> {
 
         if let Some(elem) = self.projection.last()
             && let ProjectionElem::Field(field_idx, _) = elem
-            && let ty::TyKind::Adt(def, substs) = base_place_ty.ty.kind()
         {
-            let variant = match base_place_ty.variant_index {
-                Some(v) => def.variant(v),
-                None => def.non_enum_variant(),
+            let expected_ty = match base_place_ty.ty.kind() {
+                ty::TyKind::Adt(def, substs) => {
+                    let variant = match base_place_ty.variant_index {
+                        Some(v) => def.variant(v),
+                        None => def.non_enum_variant(),
+                    };
+                    variant.fields[*field_idx].ty(repacker.tcx(), substs)
+                }
+                ty::TyKind::Tuple(tys) => tys[field_idx.as_usize()],
+                _ => {
+                    return self;
+                }
             };
-            let expected_ty = variant.fields[*field_idx].ty(repacker.tcx(), substs);
             base_place.mk_place_elem(ProjectionElem::Field(*field_idx, expected_ty), repacker)
         } else {
             self
@@ -503,7 +510,7 @@ impl<'tcx> Place<'tcx> {
     }
 }
 
-impl <'tcx> Debug for Place<'tcx> {
+impl<'tcx> Debug for Place<'tcx> {
     fn fmt(&self, fmt: &mut Formatter) -> Result {
         for elem in self.projection.iter().rev() {
             match elem {
@@ -602,7 +609,7 @@ fn elem_eq<'tcx>(to_cmp: (PlaceElem<'tcx>, PlaceElem<'tcx>)) -> bool {
     }
 }
 
-impl <'tcx> PartialEq for Place<'tcx> {
+impl<'tcx> PartialEq for Place<'tcx> {
     fn eq(&self, other: &Self) -> bool {
         self.local == other.local
             && self.projection.len() == other.projection.len()

@@ -15,7 +15,7 @@ use crate::{
         FreePlaceCapabilitySummary,
     },
     rustc_interface,
-    utils::{PlaceOrdering, PlaceRepacker},
+    utils::{corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker},
 };
 
 impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
@@ -105,7 +105,12 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         assert!(from.is_prefix(joinable_place));
                         if joinable_place != from {
                             changed = true;
-                            self.expand(from, joinable_place, repacker).unwrap();
+                            self.expand(
+                                from,
+                                CorrectedPlace::new(joinable_place, repacker),
+                                repacker,
+                            )
+                            .unwrap();
                         }
                         Some(joinable_place)
                     }

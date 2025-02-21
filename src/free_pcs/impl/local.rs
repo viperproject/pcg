@@ -13,7 +13,13 @@ use rustc_interface::{
 };
 
 use crate::{
-    combined_pcs::{PCGError, PCGInternalError}, free_pcs::{CapabilityKind, RelatedSet, RepackOp}, pcg_validity_assert, rustc_interface, utils::{display::DisplayWithRepacker, Place, PlaceOrdering, PlaceRepacker}
+    combined_pcs::{PCGError, PCGInternalError},
+    free_pcs::{CapabilityKind, RelatedSet, RepackOp},
+    pcg_validity_assert, rustc_interface,
+    utils::{
+        corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceOrdering,
+        PlaceRepacker,
+    },
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -148,7 +154,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     pub(crate) fn expand(
         &mut self,
         from: Place<'tcx>,
-        to: Place<'tcx>,
+        to: CorrectedPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         assert!(
@@ -157,9 +163,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
             from
         );
         pcg_validity_assert!(!self.contains_key(&to));
-        let (expanded, mut others) = from.expand(to, repacker)?;
+        let (expanded, mut others) = from.expand(*to, repacker)?;
         let mut perm = self.remove(&from).unwrap();
-        others.push(to);
+        others.push(*to);
         let mut ops = Vec::new();
         for (from, to, kind) in expanded {
             let others = others.extract_if(|other| !to.is_prefix(*other));
@@ -173,6 +179,13 @@ impl<'tcx> CapabilityProjections<'tcx> {
         }
         self.extend(others.into_iter().map(|p| (p, perm)));
         // assert!(self.contains_key(&to), "{self:?}\n{to:?}");
+        eprintln!(
+            "Expand {:?}: {:?} to {:?} {:?}",
+            from,
+            from.ty(repacker),
+            *to,
+            to.ty(repacker)
+        );
         Ok(ops)
     }
 
