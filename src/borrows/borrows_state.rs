@@ -624,8 +624,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
-        for (base, _) in to_place.iter_projections() {
-            let base: Place<'tcx> = base.into();
+        for (base, _) in to_place.iter_projections(repacker) {
             let base = base.with_inherent_region(repacker);
             let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
             kind.insert_target_into_expansion(target, &mut expansion);

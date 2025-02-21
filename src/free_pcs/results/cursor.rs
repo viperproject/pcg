@@ -18,7 +18,7 @@ use crate::{
         },
         mir_dataflow::{self, ResultsCursor},
     },
-    utils::{display::DebugLines, validity::HasValidityCheck, Place},
+    utils::{display::{DebugLines, DisplayWithRepacker}, validity::HasValidityCheck, Place},
     BorrowPCGActions,
 };
 
@@ -346,10 +346,14 @@ impl<'tcx> FreePcsLocation<'tcx> {
         place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<PCGNode<'tcx>> {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(std::io::stderr)
+            .init();
         self.borrows
             .post_main
             .graph()
-            .aliases(place.into(), repacker)
+            .aliases(place.with_inherent_region(repacker).into(), repacker)
     }
 
     pub fn latest(&self) -> &Latest<'tcx> {

@@ -20,6 +20,7 @@ use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocati
 use derive_more::From;
 use serde_json::json;
 
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd)]
 pub enum MaybeOldPlace<'tcx> {
     Current { place: Place<'tcx> },
@@ -157,6 +158,25 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         *cloned.place_mut() = self.place().project_deeper(repacker, elem);
         cloned
     }
+
+    fn iter_projections(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<(Self, PlaceElem<'tcx>)> {
+        match self {
+            MaybeOldPlace::Current { place } => place
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (p.into(), e))
+                .collect(),
+            MaybeOldPlace::OldPlace(old_place) => old_place
+                .place
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (p.into(), e))
+                .collect(),
+        }
+    }
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
@@ -181,6 +201,15 @@ impl<'tcx> MaybeOldPlace<'tcx> {
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
         self.place().projection
+    }
+
+    pub(crate) fn base_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx, Self>> {
+        self.place()
+            .base_region_projection(repacker)
+            .map(|rp| rp.map_base(|base| base.into()))
     }
 
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {

@@ -324,6 +324,19 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
             repacker,
         )
     }
+
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        self.base
+            .iter_projections(repacker)
+            .into_iter()
+            .map(move |(base, elem)| {
+                (
+                    RegionProjection::new(self.region(repacker), base, repacker),
+                    elem,
+                )
+            })
+            .collect()
+    }
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionProjection<'tcx, T> {
@@ -348,7 +361,17 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
             .map(|(idx, _)| idx)
-            .unwrap_or_else(|| panic!("Region {} not found in place {:?}", region, base));
+            .unwrap_or_else(|| {
+                tracing::error!(
+                    "Region {} not found in place {:?}",
+                    region,
+                    base.to_short_string(repacker)
+                );
+                panic!(
+                    "Region {} not found in place {:?}",
+                    region, base
+                )
+            });
         let result = Self {
             base,
             region_idx,

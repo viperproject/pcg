@@ -1,7 +1,7 @@
 use rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock},
+    middle::mir::{self, BasicBlock, PlaceElem},
 };
 
 use super::{
@@ -198,6 +198,21 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         match self {
             LocalNode::Place(p) => p.place_mut(),
             LocalNode::RegionProjection(rp) => rp.place_mut().place_mut(),
+        }
+    }
+
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        match self {
+            LocalNode::Place(p) => p
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (p.into(), e))
+                .collect(),
+            LocalNode::RegionProjection(rp) => rp
+                .iter_projections(repacker)
+                .into_iter()
+                .map(|(p, e)| (LocalNode::RegionProjection(p), e))
+                .collect(),
         }
     }
 
