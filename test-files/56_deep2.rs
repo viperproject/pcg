@@ -1,7 +1,8 @@
 fn foo() {
-    let mut x = 1;
-    let y = &mut &mut &mut x;
-    let a = ***y;
+    let mut a = 1;
+    let mut b  = &mut a;
+    let mut c = &mut b;
+    let d = **c;
 }
 
 fn main(){

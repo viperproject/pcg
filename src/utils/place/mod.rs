@@ -8,6 +8,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Formatter, Result},
     hash::{Hash, Hasher},
+    marker::PhantomData,
     mem::discriminant,
 };
 
@@ -24,7 +25,9 @@ use crate::rustc_interface::{
     target::abi::VariantIdx,
 };
 
-use super::{debug_info::DebugInfo, validity::HasValidityCheck, PlaceRepacker};
+use super::{
+    debug_info::DebugInfo, display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker,
+};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrows::{
@@ -84,7 +87,7 @@ impl<'tcx> Ord for Place<'tcx> {
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Place<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        self.to_json(repacker)
+        serde_json::Value::String(self.to_short_string(repacker))
     }
 }
 
@@ -126,12 +129,14 @@ impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
 }
 
 /// A trait for PCG nodes that contain a single place.
-pub trait HasPlace<'tcx> {
+pub trait HasPlace<'tcx>: Sized {
     fn place(&self) -> Place<'tcx>;
 
     fn place_mut(&mut self) -> &mut Place<'tcx>;
 
     fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self;
+
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)>;
 }
 
 impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
@@ -145,6 +150,24 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
     fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self {
         self.0.project_deeper(&[elem], repacker.tcx()).into()
     }
+
+    fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        self.0
+            .iter_projections()
+            .map(|(place, elem)| (place.into(), elem))
+            .collect()
+    }
+}
+
+impl<'tcx> Place<'tcx> {
+    pub(crate) fn compare_projections(
+        self,
+        other: Self,
+    ) -> impl Iterator<Item = (bool, PlaceElem<'tcx>, PlaceElem<'tcx>)> {
+        let left = self.projection.iter().copied();
+        let right = other.projection.iter().copied();
+        left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
+    }
 }
 
 impl<'tcx> Place<'tcx> {
@@ -152,15 +175,23 @@ impl<'tcx> Place<'tcx> {
         Self(PlaceRef { local, projection }, DebugInfo::new_static())
     }
 
+    pub(crate) fn base_region_projection(
+        self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx, Self>> {
+        match self.ty_region(repacker) {
+            Some(region) => Some(RegionProjection::new(region, self.into(), repacker)),
+            None => None,
+        }
+    }
+
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
         self.0.projection
     }
 
     pub(crate) fn contains_unsafe_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        for (p, proj) in self.iter_projections() {
-            if p.ty(repacker.body(), repacker.tcx()).ty.is_unsafe_ptr()
-                && matches!(proj, PlaceElem::Deref)
-            {
+        for (p, proj) in self.iter_projections(repacker) {
+            if p.ty(repacker).ty.is_unsafe_ptr() && matches!(proj, PlaceElem::Deref) {
                 return true;
             }
         }
@@ -217,6 +248,7 @@ impl<'tcx> Place<'tcx> {
         self.region_projections(repacker)[idx]
     }
 
+    #[tracing::instrument(skip(repacker))]
     pub(crate) fn regions(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -247,9 +279,10 @@ impl<'tcx> Place<'tcx> {
     }
 
     pub fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        !self.iter_projections().any(|(place, elem)| {
-            elem == ProjectionElem::Deref && !place.ty(repacker.mir, repacker.tcx).ty.is_box()
-        })
+        !self
+            .iter_projections(repacker)
+            .into_iter()
+            .any(|(place, elem)| elem == ProjectionElem::Deref && !place.ty(repacker).ty.is_box())
     }
 
     pub fn is_mut_ref(&self, body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
@@ -279,15 +312,6 @@ impl<'tcx> Place<'tcx> {
                 .project_deeper(&[PlaceElem::Deref], repacker.tcx())
                 .projection,
         )
-    }
-
-    pub(crate) fn compare_projections(
-        self,
-        other: Self,
-    ) -> impl Iterator<Item = (bool, PlaceElem<'tcx>, PlaceElem<'tcx>)> {
-        let left = self.projection.iter().copied();
-        let right = other.projection.iter().copied();
-        left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
     }
 
     /// Check if the place `left` is a prefix of `right` or vice versa. For example:
@@ -466,8 +490,7 @@ impl<'tcx> Place<'tcx> {
         if self.is_owned(repacker) {
             return self;
         }
-        for (place, _) in self.iter_projections().rev() {
-            let place: Self = place.into();
+        for (place, _) in self.iter_projections(repacker).into_iter().rev() {
             if place.is_owned(repacker) {
                 return place;
             }
@@ -480,7 +503,7 @@ impl<'tcx> Place<'tcx> {
     }
 }
 
-impl Debug for Place<'_> {
+impl <'tcx> Debug for Place<'tcx> {
     fn fmt(&self, fmt: &mut Formatter) -> Result {
         for elem in self.projection.iter().rev() {
             match elem {
@@ -579,7 +602,7 @@ fn elem_eq<'tcx>(to_cmp: (PlaceElem<'tcx>, PlaceElem<'tcx>)) -> bool {
     }
 }
 
-impl PartialEq for Place<'_> {
+impl <'tcx> PartialEq for Place<'tcx> {
     fn eq(&self, other: &Self) -> bool {
         self.local == other.local
             && self.projection.len() == other.projection.len()
