@@ -61,38 +61,8 @@ pub struct GraphNode {
 impl GraphNode {
     fn to_dot_node(&self) -> DotNode {
         match &self.node_type {
-            NodeType::BorrowPCGPlaceNode {
-                label,
-                location,
-                capability,
-                ty,
-            } => {
-                let location_text = match location {
-                    Some(l) => escape_html(&format!(" at {:?}", l)),
-                    None => "".to_string(),
-                };
-                let capability_text = match capability {
-                    Some(k) => format!("{:?}", k),
-                    None => "".to_string(),
-                };
-                let label = format!(
-                    "<FONT FACE=\"courier\">{}</FONT>&nbsp;{}&nbsp;{}",
-                    escape_html(&label),
-                    escape_html(&location_text),
-                    escape_html(&capability_text),
-                );
-                DotNode {
-                    id: self.id.to_string(),
-                    label: DotLabel::Html(label.clone()),
-                    color: DotStringAttr("darkgreen".to_string()),
-                    font_color: DotStringAttr("darkgreen".to_string()),
-                    shape: DotStringAttr("rect".to_string()),
-                    style: Some(DotStringAttr("rounded".to_string())),
-                    penwidth: Some(DotFloatAttr(1.5)),
-                    tooltip: Some(DotStringAttr(ty.clone())),
-                }
-            }
-            NodeType::OwnedPCGNode {
+            NodeType::PlaceNode {
+                owned,
                 capability,
                 location,
                 label,
@@ -106,12 +76,24 @@ impl GraphNode {
                     Some(l) => escape_html(&format!(" at {:?}", l)),
                     None => "".to_string(),
                 };
-                let color =
-                    if location.is_some() || matches!(capability, Some(CapabilityKind::Write)) {
-                        "gray"
-                    } else {
-                        "black"
-                    };
+                let color = if location.is_some()
+                    || capability.is_none()
+                    || matches!(capability, Some(CapabilityKind::Write))
+                {
+                    "gray"
+                } else if *owned {
+                    "black"
+                } else {
+                    "darkgreen"
+                };
+                let (style, penwidth) = if *owned {
+                    (None, None)
+                } else {
+                    (
+                        Some(DotStringAttr("rounded".to_string())),
+                        Some(DotFloatAttr(1.5)),
+                    )
+                };
                 let label = format!(
                     "<FONT FACE=\"courier\">{}&nbsp;{}{}</FONT>",
                     escape_html(&label),
@@ -124,12 +106,12 @@ impl GraphNode {
                     color: DotStringAttr(color.to_string()),
                     font_color: DotStringAttr(color.to_string()),
                     shape: DotStringAttr("rect".to_string()),
-                    style: None,
-                    penwidth: None,
+                    style,
+                    penwidth,
                     tooltip: Some(DotStringAttr(ty.clone())),
                 }
             }
-            NodeType::BorrowPCGRegionProjectionNode { label } => DotNode {
+            NodeType::RegionProjectionNode { label } => DotNode {
                 id: self.id.to_string(),
                 label: DotLabel::Text(label.clone()),
                 color: DotStringAttr("blue".to_string()),
@@ -145,20 +127,15 @@ impl GraphNode {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum NodeType {
-    OwnedPCGNode {
+    PlaceNode {
+        owned: bool,
         label: String,
         capability: Option<CapabilityKind>,
         location: Option<SnapshotLocation>,
         ty: String,
     },
-    BorrowPCGRegionProjectionNode {
+    RegionProjectionNode {
         label: String,
-    },
-    BorrowPCGPlaceNode {
-        label: String,
-        location: Option<SnapshotLocation>,
-        capability: Option<CapabilityKind>,
-        ty: String,
     },
 }
 
@@ -168,9 +145,14 @@ enum GraphEdge {
         blocked: NodeId,
         blocking: NodeId,
     },
-    ReborrowEdge {
+    // For literal borrows
+    AliasEdge {
+        blocked_place: NodeId,
+        blocking_place: NodeId,
+    },
+    BorrowEdge {
         borrowed_place: NodeId,
-        assigned_place: NodeId,
+        assigned_region_projection: NodeId,
         location: Location,
         region: String,
         path_conditions: String,
@@ -203,9 +185,19 @@ impl GraphEdge {
                 to: target.to_string(),
                 options: EdgeOptions::undirected(),
             },
-            GraphEdge::ReborrowEdge {
+            GraphEdge::AliasEdge {
+                blocked_place,
+                blocking_place,
+            } => DotEdge {
+                from: blocked_place.to_string(),
+                to: blocking_place.to_string(),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_color("grey".to_string())
+                    .with_style("dashed".to_string()),
+            },
+            GraphEdge::BorrowEdge {
                 borrowed_place,
-                assigned_place,
+                assigned_region_projection: assigned_place,
                 location: _,
                 region,
                 path_conditions,

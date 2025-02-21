@@ -128,7 +128,7 @@ pub struct ConstantIndex {
 }
 
 impl<'tcx> Place<'tcx> {
-    fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
+    pub(crate) fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),
@@ -345,13 +345,6 @@ impl<'tcx> Place<'tcx> {
                             repacker
                                 .tcx
                                 .mk_place_field(self.to_rust_place(repacker), field, arg);
-                        eprintln!(
-                            "Expand {:?}: {:?} to {:?}: {:?}",
-                            self,
-                            self.ty(repacker),
-                            field_place,
-                            field_place.ty(repacker.body(), repacker.tcx)
-                        );
                         places.push(field_place.into());
                     }
                 }

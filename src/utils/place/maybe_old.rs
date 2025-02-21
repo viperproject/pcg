@@ -203,6 +203,14 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().projection
     }
 
+    pub(crate) fn deref_to_rp(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionProjection<'tcx, Self>> {
+        if let Some((place, PlaceElem::Deref)) = self.last_projection() {
+            place.base_region_projection(repacker)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn base_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
