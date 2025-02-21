@@ -154,6 +154,9 @@ async function main() {
     const [showPCGSelector, setShowPCGSelector] = useState(
       localStorage.getItem("showPCGSelector") !== "false"
     );
+    const [showPCGOps, setShowPCGOps] = useState(
+      localStorage.getItem("showPCGOps") !== "false"
+    );
 
     const { filteredNodes, filteredEdges } = filterNodesAndEdges(nodes, edges, {
       showUnwindEdges,
@@ -452,6 +455,7 @@ async function main() {
     addLocalStorageCallback("showPCG", showPCG);
     addLocalStorageCallback("showStorageStmts", showStorageStmts);
     addLocalStorageCallback("showPCGSelector", showPCGSelector);
+    addLocalStorageCallback("showPCGOps", showPCGOps);
 
     const isBlockOnSelectedPath = useCallback(
       (block: number) => {
@@ -578,6 +582,15 @@ async function main() {
             />
             Show PCG selector
           </label>
+          <br />
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCGOps}
+              onChange={(e) => setShowPCGOps(e.target.checked)}
+            />
+            Show PCG operations
+          </label>
           <button
             onClick={openLegendWindow}
             className="control-button"
@@ -642,7 +655,7 @@ async function main() {
             ))}
           </svg>
         </div>
-        {pcgStmtVisualizationData && (
+        {pcgStmtVisualizationData && showPCGOps && (
           <>
             <PCGOps data={pcgStmtVisualizationData} />
             <LatestDisplay latest={pcgStmtVisualizationData.latest} />
