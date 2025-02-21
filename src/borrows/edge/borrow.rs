@@ -140,7 +140,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self.assigned_ref.ty(repacker).ty.kind() {
             ty::TyKind::Ref(region, _, _) => {
-                RegionProjection::new((*region).into(), self.assigned_ref.into(), repacker)
+                RegionProjection::new((*region).into(), self.assigned_ref.into(), repacker).unwrap()
             }
             other => unreachable!("{:?}", other),
         }

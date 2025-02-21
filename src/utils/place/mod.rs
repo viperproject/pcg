@@ -134,7 +134,11 @@ pub trait HasPlace<'tcx>: Sized {
 
     fn place_mut(&mut self) -> &mut Place<'tcx>;
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self;
+    fn project_deeper(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> Option<Self>;
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)>;
 }
@@ -147,8 +151,12 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
         self
     }
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self {
-        self.0.project_deeper(&[elem], repacker.tcx()).into()
+    fn project_deeper(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> Option<Self> {
+        Some(self.0.project_deeper(&[elem], repacker.tcx()).into())
     }
 
     fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
@@ -180,7 +188,7 @@ impl<'tcx> Place<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx, Self>> {
         match self.ty_region(repacker) {
-            Some(region) => Some(RegionProjection::new(region, self.into(), repacker)),
+            Some(region) => Some(RegionProjection::new(region, self.into(), repacker).unwrap()),
             None => None,
         }
     }
@@ -270,7 +278,7 @@ impl<'tcx> Place<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker))
+            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker).unwrap())
             .collect()
     }
 

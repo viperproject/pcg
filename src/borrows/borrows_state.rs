@@ -635,7 +635,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 // -> *t if it doesn't already exist.
 
                 // e.g t|'a
-                let base_rp = RegionProjection::new((*region).into(), base, repacker);
+                let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
 
                 let region_projection_member = RegionProjectionMember::new(
                     smallvec![base_rp.to_pcg_node()],

@@ -314,13 +314,17 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
         self.base.place_mut()
     }
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self
+    fn project_deeper(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+        elem: PlaceElem<'tcx>,
+    ) -> Option<Self>
     where
         Self: Clone + HasValidityCheck<'tcx>,
     {
         RegionProjection::new(
             self.region(repacker),
-            self.base.project_deeper(repacker, elem),
+            self.base.project_deeper(repacker, elem)?,
             repacker,
         )
     }
@@ -331,7 +335,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
             .into_iter()
             .map(move |(base, elem)| {
                 (
-                    RegionProjection::new(self.region(repacker), base, repacker),
+                    RegionProjection::new(self.region(repacker), base, repacker).unwrap(),
                     elem,
                 )
             })
@@ -355,23 +359,16 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionP
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn new(region: PCGRegion, base: T, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub(crate) fn new(
+        region: PCGRegion,
+        base: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<Self> {
         let region_idx = base
             .regions(repacker)
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
-            .map(|(idx, _)| idx)
-            .unwrap_or_else(|| {
-                tracing::error!(
-                    "Region {} not found in place {:?}",
-                    region,
-                    base.to_short_string(repacker)
-                );
-                panic!(
-                    "Region {} not found in place {:?}",
-                    region, base
-                )
-            });
+            .map(|(idx, _)| idx)?;
         let result = Self {
             base,
             region_idx,
@@ -380,13 +377,13 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         if validity_checks_enabled() {
             result.assert_validity(repacker);
         }
-        result
+        Some(result)
     }
 
     pub(crate) fn region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGRegion {
         let regions = self.base.regions(repacker);
         if self.region_idx.index() >= regions.len() {
-            PCGRegion::PCGInternalErr
+            unreachable!()
         } else {
             regions[self.region_idx]
         }

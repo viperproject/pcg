@@ -404,12 +404,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             MaybeRemoteRegionProjectionBase::Const(c.const_),
                                             self.repacker,
                                         )
+                                        .unwrap()
                                         .to_pcg_node()],
                                         smallvec![RegionProjection::new(
                                             (*target_region).into(),
                                             target,
                                             self.repacker,
                                         )
+                                        .unwrap()
                                         .into()],
                                         RegionProjectionMemberKind::ConstRef,
                                     ),
@@ -441,28 +443,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     Rvalue::Use(Operand::Copy(from)) => {
                         let from_place: utils::Place<'tcx> = (*from).into();
-                        for (idx, rp) in from_place
-                            .region_projections(self.repacker)
-                            .iter_enumerated()
+                        for source_proj in from_place.region_projections(self.repacker).into_iter()
                         {
-                            let post_main = &self.domain.data.states[PostMain];
-                            for mut orig_edge in post_main
-                                .edges_blocked_by((*rp).into(), self.repacker)
-                                .into_iter()
-                                .map(|e| e.to_owned_edge())
-                                .collect::<Vec<_>>()
-                            {
-                                let edge_region_projections: Vec<
-                                    &mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-                                > = orig_edge.pcs_elems();
-                                for output in edge_region_projections {
-                                    if *output == (*rp).into() {
-                                        *output =
-                                            target.region_projection(idx, self.repacker).into()
-                                    }
-                                }
-                                self.domain.data.states.get_mut(PostMain).insert(orig_edge);
-                            }
+                            self.connect_outliving_projections(
+                                source_proj.into(),
+                                target,
+                                location,
+                                |_| RegionProjectionMemberKind::Todo,
+                            );
                         }
                     }
                     Rvalue::Ref(region, kind, blocked_place) => {

@@ -220,13 +220,13 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
         elem: mir::PlaceElem<'tcx>,
-    ) -> Self {
-        match self {
-            LocalNode::Place(p) => LocalNode::Place(p.project_deeper(repacker, elem)),
+    ) -> Option<Self> {
+        Some(match self {
+            LocalNode::Place(p) => LocalNode::Place(p.project_deeper(repacker, elem)?),
             LocalNode::RegionProjection(rp) => {
-                LocalNode::RegionProjection(rp.project_deeper(repacker, elem))
+                LocalNode::RegionProjection(rp.project_deeper(repacker, elem)?)
             }
-        }
+        })
     }
 }
 

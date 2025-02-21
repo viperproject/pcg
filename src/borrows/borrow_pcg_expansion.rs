@@ -175,7 +175,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
         self.expansion
             .elems()
             .into_iter()
-            .map(move |p| self.base.project_deeper(repacker, p))
+            .map(move |p| self.base.project_deeper(repacker, p).unwrap())
             .collect()
     }
 }
