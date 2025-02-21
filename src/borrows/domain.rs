@@ -187,6 +187,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                             arg_place,
                             self.repacker
                         )
+                        .unwrap()
                         .into(),],
                         RegionProjectionMemberKind::FunctionInput,
                     ),
@@ -207,6 +208,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                             RemotePlace::new(local),
                             self.repacker,
                         )
+                        .unwrap()
                         .to_pcg_node(),],
                         smallvec![region_projection.into()],
                         RegionProjectionMemberKind::Todo,

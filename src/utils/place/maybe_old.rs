@@ -20,7 +20,6 @@ use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocati
 use derive_more::From;
 use serde_json::json;
 
-
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd)]
 pub enum MaybeOldPlace<'tcx> {
     Current { place: Place<'tcx> },
@@ -153,16 +152,13 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Self {
+    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Option<Self> {
         let mut cloned = self.clone();
-        *cloned.place_mut() = self.place().project_deeper(repacker, elem);
-        cloned
+        *cloned.place_mut() = self.place().project_deeper(repacker, elem)?;
+        Some(cloned)
     }
 
-    fn iter_projections(
-        &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<(Self, PlaceElem<'tcx>)> {
+    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
         match self {
             MaybeOldPlace::Current { place } => place
                 .iter_projections(repacker)
@@ -203,7 +199,10 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().projection
     }
 
-    pub(crate) fn deref_to_rp(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<RegionProjection<'tcx, Self>> {
+    pub(crate) fn deref_to_rp(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx, Self>> {
         if let Some((place, PlaceElem::Deref)) = self.last_projection() {
             place.base_region_projection(repacker)
         } else {
@@ -290,7 +289,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker))
+            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker).unwrap())
             .collect()
     }
 
