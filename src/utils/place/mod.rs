@@ -30,7 +30,7 @@ use super::{
 };
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
-    borrows::{
+    borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         borrows_visitor::extract_regions,
         region_projection::{

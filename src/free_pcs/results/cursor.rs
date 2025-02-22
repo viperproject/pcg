@@ -7,7 +7,7 @@
 use std::rc::Rc;
 
 use crate::{
-    borrows::{borrow_pcg_action::BorrowPCGActionKind, engine::DataflowPhase, latest::Latest},
+    borrow_pcg::{action::BorrowPCGActionKind, engine::DataflowPhase, latest::Latest},
     combined_pcs::{EvalStmtPhase, PCGEngine, PCGError, PCGNode},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
@@ -27,10 +27,10 @@ use crate::{
     BorrowPCGActions,
 };
 
-use crate::borrows::domain::BorrowsDomain;
+use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
-    borrows::engine::BorrowsStates,
+    borrow_pcg::engine::BorrowsStates,
     combined_pcs::PlaceCapabilitySummary,
     free_pcs::{
         CapabilitySummary, FreePlaceCapabilitySummary, RepackOp, RepackingBridgeSemiLattice,

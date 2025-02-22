@@ -8,7 +8,7 @@ use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
-    borrows::{
+    borrow_pcg::{
         borrow_pcg_edge::BorrowPCGEdgeLike, region_projection::MaybeRemoteRegionProjectionBase,
         region_projection_member::RegionProjectionMemberKind,
     },
@@ -34,8 +34,7 @@ use crate::{
 };
 
 use super::{
-    borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
-    borrows_state::{ExecutedActions, ExpansionReason},
+    action::{BorrowPCGAction, BorrowPCGActionKind},
     coupling_graph_constructor::BorrowCheckerInterface,
     has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
@@ -44,8 +43,8 @@ use super::{
     unblock_graph::UnblockGraph,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
-use crate::borrows::domain::BorrowsDomain;
-use crate::borrows::edge::abstraction::{
+use crate::borrow_pcg::domain::BorrowsDomain;
+use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
 };
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -54,6 +53,8 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
+use crate::borrow_pcg::action::executed_actions::ExecutedActions;
+use crate::borrow_pcg::state::obtain::ObtainReason;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DebugCtx {
@@ -672,12 +673,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
             match operand {
                 Operand::Copy(place) | Operand::Move(place) => {
                     let expansion_reason = if matches!(operand, Operand::Copy(..)) {
-                        ExpansionReason::CopyOperand
+                        ObtainReason::CopyOperand
                     } else {
-                        ExpansionReason::MoveOperand
+                        ObtainReason::MoveOperand
                     };
                     let place: utils::Place<'tcx> = (*place).into();
-                    let expansion_actions = self.domain.post_state_mut().ensure_expansion_to(
+                    let expansion_actions = self.domain.post_state_mut().obtain(
                         self.repacker,
                         place,
                         location,
@@ -798,13 +799,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 StatementKind::FakeRead(box (_, place)) => {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.repacker) {
-                        let actions = state.ensure_expansion_to(
+                        let expansion_reason = ObtainReason::FakeRead;
+                        let expansion_actions = self.domain.post_state_mut().obtain(
                             self.repacker,
                             place,
                             location,
-                            ExpansionReason::FakeRead,
+                            expansion_reason,
                         );
-                        match actions {
+                        match expansion_actions {
                             Ok(actions) => {
                                 self.record_actions(actions);
                             }
@@ -837,11 +839,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     if target.is_ref(self.repacker) {
                         self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
                     }
-                    let expansion_actions = self.domain.post_state_mut().ensure_expansion_to(
+                    let expansion_reason = ObtainReason::AssignTarget;
+                    let expansion_actions = self.domain.post_state_mut().obtain(
                         self.repacker,
                         target,
                         location,
-                        ExpansionReason::AssignTarget,
+                        expansion_reason,
                     );
                     match expansion_actions {
                         Ok(actions) => {
@@ -918,17 +921,18 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 | &Discriminant(place)
                 | &CopyForDeref(place) => {
                     let expansion_reason = match rvalue {
-                        Rvalue::Ref(_, kind, _) => ExpansionReason::CreateReference(*kind),
-                        Rvalue::RawPtr(mutbl, _) => ExpansionReason::CreatePtr(*mutbl),
-                        _ => ExpansionReason::RValueSimpleRead,
+                        Rvalue::Ref(_, kind, _) => ObtainReason::CreateReference(*kind),
+                        Rvalue::RawPtr(mutbl, _) => ObtainReason::CreatePtr(*mutbl),
+                        _ => ObtainReason::RValueSimpleRead,
                     };
                     if this.stage == StatementStage::Operands && this.preparing {
-                        match this.domain.post_state_mut().ensure_expansion_to(
+                        let expansion_actions = this.domain.post_state_mut().obtain(
                             this.repacker,
                             place.into(),
                             location,
                             expansion_reason,
-                        ) {
+                        );
+                        match expansion_actions {
                             Ok(actions) => {
                                 this.record_actions(actions);
                             }

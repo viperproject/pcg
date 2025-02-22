@@ -1,5 +1,5 @@
-use crate::borrows::has_pcs_elem::HasPcsElems;
-use crate::borrows::region_projection::{
+use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::combined_pcs::{PCGNode, PCGNodeLike};

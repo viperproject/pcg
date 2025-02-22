@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
-use crate::borrows::borrow_pcg_action::BorrowPCGAction;
-use crate::borrows::borrows_state::BorrowsState;
-use crate::borrows::borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions};
-use crate::borrows::path_condition::{PathCondition, PathConditions};
-use crate::borrows::region_projection_member::{
+use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::borrow_pcg::state::BorrowsState;
+use crate::borrow_pcg::borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions};
+use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
+use crate::borrow_pcg::region_projection_member::{
     RegionProjectionMember, RegionProjectionMemberKind,
 };
 use crate::combined_pcs::EvalStmtPhase::*;

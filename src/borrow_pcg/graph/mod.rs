@@ -37,9 +37,9 @@ use super::{
         RegionProjectionMember, RegionProjectionMemberKind, RegionProjectionMemberOutputs,
     },
 };
-use crate::borrows::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
-use crate::borrows::edge::borrow::BorrowEdge;
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType, LoopAbstraction};
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     coupling,

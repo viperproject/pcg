@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::{
-    borrows::{borrows_visitor::BorrowCheckerImpl, engine::DataflowPhase},
+    borrow_pcg::{borrows_visitor::BorrowCheckerImpl, engine::DataflowPhase},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::{BasicBlock, START_BLOCK},
@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{PCGContext, PCGEngine};
-use crate::borrows::domain::BorrowsDomain;
+use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
 #[derive(Copy, Clone)]

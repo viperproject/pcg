@@ -80,26 +80,32 @@ impl PartialOrd for CapabilityKind {
         if *self == *other {
             return Some(Ordering::Equal);
         }
-        match (self, other) {
-            // Exclusive is greater than everything except itself
-            (CapabilityKind::Exclusive, _) => Some(Ordering::Greater),
-            (_, CapabilityKind::Exclusive) => Some(Ordering::Less),
+        match (*self, *other) {
+            // Exclusive is greater than everything below it
+            (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive) => Some(Ordering::Greater),
+            (CapabilityKind::Exclusive, CapabilityKind::LentShared) => Some(Ordering::Greater),
+            (CapabilityKind::ShallowExclusive, CapabilityKind::Exclusive) => Some(Ordering::Less),
+            (CapabilityKind::LentShared, CapabilityKind::Exclusive) => Some(Ordering::Less),
 
-            // ShallowExclusive is greater than Write
+            // ShallowExclusive > Write
             (CapabilityKind::ShallowExclusive, CapabilityKind::Write) => Some(Ordering::Greater),
             (CapabilityKind::Write, CapabilityKind::ShallowExclusive) => Some(Ordering::Less),
 
-            // Read is greater than LentShared and Lent
-            (CapabilityKind::Read, CapabilityKind::LentShared | CapabilityKind::Lent) => {
-                Some(Ordering::Greater)
-            }
-            (CapabilityKind::LentShared | CapabilityKind::Lent, CapabilityKind::Read) => {
-                Some(Ordering::Less)
-            }
-
-            // LentShared is greater than Lent
+            // LentShared > {Lent, Read}
             (CapabilityKind::LentShared, CapabilityKind::Lent) => Some(Ordering::Greater),
+            (CapabilityKind::LentShared, CapabilityKind::Read) => Some(Ordering::Greater),
             (CapabilityKind::Lent, CapabilityKind::LentShared) => Some(Ordering::Less),
+            (CapabilityKind::Read, CapabilityKind::LentShared) => Some(Ordering::Less),
+
+            // Transitive relationships through ShallowExclusive
+            (CapabilityKind::Exclusive, CapabilityKind::Write) => Some(Ordering::Greater),
+            (CapabilityKind::Write, CapabilityKind::Exclusive) => Some(Ordering::Less),
+
+            // Transitive relationships through LentShared
+            (CapabilityKind::Exclusive, CapabilityKind::Lent) => Some(Ordering::Greater),
+            (CapabilityKind::Exclusive, CapabilityKind::Read) => Some(Ordering::Greater),
+            (CapabilityKind::Lent, CapabilityKind::Exclusive) => Some(Ordering::Less),
+            (CapabilityKind::Read, CapabilityKind::Exclusive) => Some(Ordering::Less),
 
             // All other pairs are incomparable
             _ => None,
@@ -161,10 +167,10 @@ mod tests {
         // Add edges (a -> b means a is greater than b)
         let edges = [
             (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive),
-            (CapabilityKind::Exclusive, CapabilityKind::Read),
+            (CapabilityKind::Exclusive, CapabilityKind::LentShared),
             (CapabilityKind::ShallowExclusive, CapabilityKind::Write),
-            (CapabilityKind::Read, CapabilityKind::LentShared),
             (CapabilityKind::LentShared, CapabilityKind::Lent),
+            (CapabilityKind::LentShared, CapabilityKind::Read),
         ];
 
         for (from, to) in edges {

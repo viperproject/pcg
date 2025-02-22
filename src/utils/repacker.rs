@@ -19,7 +19,7 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrows::region_projection::PCGRegion,
+    borrow_pcg::region_projection::PCGRegion,
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface,
 };

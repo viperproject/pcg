@@ -8,7 +8,7 @@
 #![feature(box_patterns, hash_extract_if, extract_if)]
 #![feature(if_let_guard, let_chains)]
 #![feature(never_type)]
-pub mod borrows;
+pub mod borrow_pcg;
 pub mod combined_pcs;
 pub mod coupling;
 pub mod free_pcs;
@@ -17,11 +17,11 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-use borrows::{
-    borrow_pcg_action::{BorrowPCGAction, BorrowPCGActionKind},
+use borrow_pcg::{
+    action::{BorrowPCGAction, BorrowPCGActionKind},
     borrow_pcg_edge::LocalNode,
     borrow_pcg_expansion::BorrowPCGExpansion,
-    borrows_graph::Conditioned,
+    graph::Conditioned,
     borrows_visitor::BorrowPCGActions,
     latest::Latest,
     path_condition::PathConditions,

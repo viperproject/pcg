@@ -1,11 +1,7 @@
 use crate::{
-    borrows::{
-        borrows_graph::borrows_imgcat_debug, edge_data::EdgeData,
-        region_projection_member::RegionProjectionMemberKind,
-    },
-    combined_pcs::{PCGError, PCGNode, PCGNodeLike},
+    borrow_pcg::edge_data::EdgeData,
+    combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::{
-        ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
@@ -19,66 +15,32 @@ use crate::{
         HasPlace,
     },
     validity_checks_enabled,
-    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
-use smallvec::smallvec;
 use std::rc::Rc;
-
 use super::{
-    borrow_pcg_action::BorrowPCGAction,
+    action::BorrowPCGAction,
     borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
-    borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion},
-    borrows_graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
-    borrows_visitor::BorrowPCGActions,
-    coupling_graph_constructor::BorrowCheckerInterface,
+    coupling_graph_constructor::BorrowCheckerInterface
+    ,
+    graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_projection::RegionProjection,
-    region_projection_member::RegionProjectionMember,
-    unblock_graph::{BorrowPCGUnblockAction, UnblockGraph, UnblockType},
+    unblock_graph::BorrowPCGUnblockAction,
 };
-use crate::borrows::edge::abstraction::AbstractionType;
-use crate::borrows::edge::borrow::BorrowEdge;
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
+use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 
-#[derive(Debug)]
-pub(crate) struct ExecutedActions<'tcx> {
-    actions: BorrowPCGActions<'tcx>,
-    changed: bool,
-}
-
-impl<'tcx> ExecutedActions<'tcx> {
-    fn new() -> Self {
-        Self {
-            actions: BorrowPCGActions::new(),
-            changed: false,
-        }
-    }
-
-    fn record(&mut self, action: BorrowPCGAction<'tcx>, changed: bool) {
-        self.actions.push(action);
-        self.changed |= changed;
-    }
-
-    fn extend(&mut self, actions: ExecutedActions<'tcx>) {
-        self.actions.extend(actions.actions);
-        self.changed |= actions.changed;
-    }
-
-    pub(super) fn actions(self) -> BorrowPCGActions<'tcx> {
-        self.actions
-    }
-}
+pub(crate) mod obtain;
 
 #[cfg(debug_assertions)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,46 +119,6 @@ impl<'tcx> Default for BorrowsState<'tcx> {
             capabilities: Rc::new(BorrowPCGCapabilities::new()),
             #[cfg(debug_assertions)]
             join_transitions: JoinLatticeVerifier::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum ExpansionReason {
-    MoveOperand,
-    CopyOperand,
-    FakeRead,
-    AssignTarget,
-    CreateReference(BorrowKind),
-    CreatePtr(Mutability),
-    /// Just to read the place, but not refer to it
-    RValueSimpleRead,
-}
-
-impl ExpansionReason {
-    pub(crate) fn min_post_expansion_capability(&self) -> CapabilityKind {
-        match self {
-            ExpansionReason::MoveOperand => CapabilityKind::Exclusive,
-            ExpansionReason::CopyOperand => CapabilityKind::Read,
-            ExpansionReason::FakeRead => CapabilityKind::Read,
-            ExpansionReason::AssignTarget => CapabilityKind::Write,
-            ExpansionReason::CreateReference(borrow_kind) => match borrow_kind {
-                BorrowKind::Shared => CapabilityKind::LentShared,
-                BorrowKind::Fake(_) => unreachable!(),
-                BorrowKind::Mut { kind } => match kind {
-                    MutBorrowKind::Default => CapabilityKind::Exclusive,
-                    MutBorrowKind::TwoPhaseBorrow => CapabilityKind::LentShared,
-                    MutBorrowKind::ClosureCapture => CapabilityKind::Exclusive,
-                },
-            },
-            ExpansionReason::CreatePtr(mutability) => {
-                if mutability.is_mut() {
-                    CapabilityKind::Exclusive
-                } else {
-                    CapabilityKind::LentShared
-                }
-            }
-            ExpansionReason::RValueSimpleRead => CapabilityKind::Read,
         }
     }
 }
@@ -469,276 +391,8 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker).collect()
     }
 
-    pub(crate) fn edges_blocked_by<'slf, 'mir: 'slf>(
-        &'slf self,
-        node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
-        self.graph.edges_blocked_by(node, repacker).collect()
-    }
-
     pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
         self.graph.borrows()
-    }
-
-    /// Ensures that the place is expanded to the given place, with a certain
-    /// capability.
-    ///
-    /// This also handles corresponding region projections of the place.
-    #[must_use]
-    pub(crate) fn ensure_expansion_to(
-        &mut self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        place: Place<'tcx>,
-        location: Location,
-        expansion_reason: ExpansionReason,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
-        let mut actions = ExecutedActions::new();
-
-        let graph_edges = self
-            .graph
-            .edges()
-            .map(|e| e.to_owned_edge())
-            .collect::<Vec<_>>();
-
-        // If we are going to contract a place, borrows may need to be converted
-        // to region projection member edges. For example, if the type of `x.t` is
-        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to contract to `x`, then we need
-        // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
-        for p in graph_edges {
-            match p.kind() {
-                BorrowPCGEdgeKind::Borrow(borrow) => match borrow.assigned_ref {
-                    MaybeOldPlace::Current {
-                        place: assigned_place,
-                    } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
-                        for ra in place.region_projections(repacker) {
-                            self.record_and_apply_action(
-                                BorrowPCGAction::add_region_projection_member(
-                                    RegionProjectionMember::new(
-                                        smallvec![borrow.blocked_place.into()],
-                                        smallvec![ra.into()],
-                                        RegionProjectionMemberKind::ContractRef,
-                                    ),
-                                    PathConditions::new(location.block),
-                                    "Ensure Expansion To",
-                                ),
-                                &mut actions,
-                                repacker,
-                            );
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
-
-        let unblock_type = match expansion_reason {
-            ExpansionReason::MoveOperand => UnblockType::ForRead,
-            ExpansionReason::CopyOperand => UnblockType::ForExclusive,
-            ExpansionReason::FakeRead => UnblockType::ForRead,
-            ExpansionReason::AssignTarget => UnblockType::ForExclusive,
-            ExpansionReason::CreateReference(borrow_kind) => match borrow_kind {
-                BorrowKind::Shared => UnblockType::ForRead,
-                BorrowKind::Fake(_) => unreachable!(),
-                BorrowKind::Mut { kind } => match kind {
-                    MutBorrowKind::Default => UnblockType::ForExclusive,
-                    MutBorrowKind::TwoPhaseBorrow => UnblockType::ForRead,
-                    MutBorrowKind::ClosureCapture => UnblockType::ForExclusive,
-                },
-            },
-            ExpansionReason::CreatePtr(mutability) => {
-                if mutability == Mutability::Mut {
-                    UnblockType::ForExclusive
-                } else {
-                    UnblockType::ForRead
-                }
-            }
-            ExpansionReason::RValueSimpleRead => UnblockType::ForRead,
-        };
-
-        let mut ug = UnblockGraph::new();
-        ug.unblock_node(place.to_pcg_node(), self, repacker, unblock_type);
-        for rp in place.region_projections(repacker) {
-            ug.unblock_node(rp.to_pcg_node(), self, repacker, unblock_type);
-        }
-
-        // The place itself could be in the owned PCG, but we want to unblock
-        // the borrowed parts. For example if the place is a struct S, with
-        // owned fields S.f and S.g, we will want to unblock S.f and S.g.
-        for root_node in self.roots(repacker) {
-            if let Some(root_node_place) = root_node.as_current_place() {
-                if place.is_prefix(root_node_place) {
-                    ug.unblock_node(root_node.into(), self, repacker, unblock_type);
-                }
-            }
-        }
-        let unblock_actions = ug.actions(repacker).unwrap_or_else(|e| {
-            if borrows_imgcat_debug() {
-                let dot_graph = generate_borrows_dot_graph(repacker, self.graph()).unwrap();
-                DotGraph::render_with_imgcat(&dot_graph, "Borrows graph for unblock actions")
-                    .unwrap_or_else(|e| {
-                        eprintln!("Error rendering borrows graph: {}", e);
-                    });
-            }
-            panic!(
-                "Error when ensuring expansion to {:?} for {:?}: {:?}",
-                place, expansion_reason, e
-            );
-        });
-        for action in unblock_actions {
-            actions.extend(self.apply_unblock_action(
-                action,
-                repacker,
-                location,
-                &format!("Ensure Expansion To {:?}", place),
-            ));
-        }
-
-        if self.contains(place, repacker) {
-            if self.get_capability(place.into()) == None {
-                let expected_capability = expansion_reason.min_post_expansion_capability();
-                self.record_and_apply_action(
-                    BorrowPCGAction::restore_capability(place.into(), expected_capability),
-                    &mut actions,
-                    repacker,
-                );
-            }
-        } else {
-            let extra_acts = self.ensure_expansion_to_at_least(place.into(), repacker, location)?;
-            actions.extend(extra_acts);
-        }
-
-        Ok(actions)
-    }
-
-    /// Inserts edges to ensure that the borrow PCG is expanded to at least
-    /// `to_place`. We assume that any unblock operations have already been
-    /// performed.
-    #[must_use]
-    fn ensure_expansion_to_at_least(
-        &mut self,
-        to_place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        location: Location,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
-        let mut actions = ExecutedActions::new();
-
-        for (base, _) in to_place.iter_projections(repacker) {
-            let base = base.with_inherent_region(repacker);
-            let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
-            kind.insert_target_into_expansion(target, &mut expansion);
-
-            if let ty::TyKind::Ref(region, _, _) = base.ty(repacker).ty.kind() {
-                // This is a dereference, taking the the form t -> *t where t
-                // has type &'a T. We insert a region projection member for t↓'a
-                // -> *t if it doesn't already exist.
-
-                // e.g t|'a
-                let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
-
-                let region_projection_member = RegionProjectionMember::new(
-                    smallvec![base_rp.to_pcg_node()],
-                    smallvec![target.into()],
-                    RegionProjectionMemberKind::DerefRegionProjection,
-                );
-
-                let path_conditions = PathConditions::new(location.block);
-
-                if !self.contains_edge(&BorrowPCGEdge::new(
-                    region_projection_member.clone().into(),
-                    path_conditions.clone(),
-                )) {
-                    self.record_and_apply_action(
-                        BorrowPCGAction::add_region_projection_member(
-                            region_projection_member,
-                            path_conditions.clone(),
-                            "Ensure Deref Expansion To At Least",
-                        ),
-                        &mut actions,
-                        repacker,
-                    );
-                }
-                // We also do this for all target region projections
-
-                for target_rp in target.region_projections(repacker) {
-                    let region_projection_member = RegionProjectionMember::new(
-                        smallvec![base_rp.to_pcg_node()],
-                        smallvec![target_rp.into()],
-                        RegionProjectionMemberKind::DerefBorrowOutlives,
-                    );
-
-                    if !self.contains_edge(&BorrowPCGEdge::new(
-                        region_projection_member.clone().into(),
-                        path_conditions.clone(),
-                    )) {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::add_region_projection_member(
-                                region_projection_member,
-                                path_conditions.clone(),
-                                "Ensure Deref Expansion To At Least",
-                            ),
-                            &mut actions,
-                            repacker,
-                        );
-                    }
-                }
-            }
-
-            if !target.is_owned(repacker) {
-                let expansion = BorrowPCGExpansion::new(
-                    base.into(),
-                    BorrowExpansion::from_places(expansion.clone(), repacker),
-                    repacker,
-                );
-
-                if !self.contains_edge(
-                    &expansion
-                        .clone()
-                        .to_borrow_pcg_edge(PathConditions::AtBlock(location.block)),
-                ) {
-                    let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                        expansion,
-                        location,
-                        "Ensure Deref Expansion (Place)",
-                    );
-                    self.record_and_apply_action(action, &mut actions, repacker);
-                }
-            }
-
-            for rp in base.region_projections(repacker) {
-                let dest_places = expansion
-                    .iter()
-                    .filter(|e| {
-                        e.region_projections(repacker)
-                            .into_iter()
-                            .any(|child_rp| rp.region(repacker) == child_rp.region(repacker))
-                    })
-                    .copied()
-                    .collect::<Vec<_>>();
-                if dest_places.len() > 0 {
-                    let expansion = BorrowPCGExpansion::from_borrowed_base(
-                        rp.into(),
-                        BorrowExpansion::from_places(dest_places, repacker),
-                        repacker,
-                    );
-                    let path_conditions = PathConditions::new(location.block);
-                    if !self.contains_edge(&expansion.clone().to_borrow_pcg_edge(path_conditions)) {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::insert_borrow_pcg_expansion(
-                                expansion,
-                                location,
-                                "Ensure Deref Expansion (Region Projection)",
-                            ),
-                            &mut actions,
-                            repacker,
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(actions)
     }
 
     pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {

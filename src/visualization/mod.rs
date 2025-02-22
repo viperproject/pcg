@@ -11,8 +11,8 @@ pub mod legend;
 pub mod mir_graph;
 
 use crate::{
-    borrows::{
-        borrows_graph::BorrowsGraph, borrows_state::BorrowsState, unblock_graph::UnblockGraph,
+    borrow_pcg::{
+        graph::BorrowsGraph, state::BorrowsState, unblock_graph::UnblockGraph,
     },
     free_pcs::{CapabilityKind, CapabilitySummary},
     rustc_interface,

@@ -1,5 +1,5 @@
 use crate::{
-    borrows::borrow_pcg_edge::BlockedNode,
+    borrow_pcg::borrow_pcg_edge::BlockedNode,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         hir::def_id::DefId,
@@ -10,13 +10,13 @@ use crate::{
     },
 };
 
-use crate::borrows::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
-use crate::borrows::domain::{AbstractionInputTarget, AbstractionOutputTarget};
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
-use crate::borrows::edge_data::EdgeData;
-use crate::borrows::has_pcs_elem::HasPcsElems;
-use crate::borrows::path_condition::PathConditions;
-use crate::borrows::region_projection::RegionProjection;
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
+use crate::borrow_pcg::domain::{AbstractionInputTarget, AbstractionOutputTarget};
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge_data::EdgeData;
+use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::path_condition::PathConditions;
+use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::combined_pcs::{LocalNodeLike, PCGNode};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;

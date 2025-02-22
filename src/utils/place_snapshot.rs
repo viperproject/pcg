@@ -3,7 +3,7 @@ use serde_json::json;
 use super::{validity::HasValidityCheck, Place, PlaceRepacker};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
-    borrows::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcsElems},
+    borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcsElems},
     combined_pcs::LocalNodeLike,
     rustc_interface::middle::mir::{BasicBlock, Location},
 };

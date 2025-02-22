@@ -1,9 +1,9 @@
-use crate::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
-use crate::borrows::edge::abstraction::AbstractionType;
-use crate::borrows::edge::borrow::BorrowEdge;
-use crate::borrows::has_pcs_elem::HasPcsElems;
-use crate::borrows::region_projection::RegionProjection;
-use crate::borrows::region_projection_member::RegionProjectionMember;
+use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
+use crate::borrow_pcg::edge::abstraction::AbstractionType;
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
+use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::region_projection::RegionProjection;
+use crate::borrow_pcg::region_projection_member::RegionProjectionMember;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::utils::validity::HasValidityCheck;
