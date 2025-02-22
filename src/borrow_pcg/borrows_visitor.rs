@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     combined_pcs::EvalStmtPhase::*, rustc_interface::dataflow::compute_fixpoint,
-    validity_checks_enabled,
+    utils::display::DisplayWithRepacker, validity_checks_enabled,
 };
 use smallvec::smallvec;
 use tracing::instrument;
@@ -42,18 +42,18 @@ use super::{
     unblock_graph::UnblockGraph,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
+use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
 };
+use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
-use crate::borrow_pcg::action::executed_actions::ExecutedActions;
-use crate::borrow_pcg::state::obtain::ObtainReason;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DebugCtx {
@@ -369,7 +369,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     ) => {
                         let target: utils::Place<'tcx> = (*target).into();
                         for field in fields.iter() {
-                            tracing::info!("Field {:?}", field);
                             let operand_place: utils::Place<'tcx> =
                                 if let Some(place) = field.place() {
                                     place.into()
@@ -777,7 +776,6 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
-            let state = self.domain.post_state_mut();
             match &statement.kind {
                 StatementKind::Assign(box (_, rvalue)) => {
                     if let Rvalue::Cast(_, _, ty) = rvalue {
@@ -837,15 +835,22 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     // will be overwritten in the assignment.
                     if target.is_ref(self.repacker) {
                         self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
+                        if !target.is_owned(self.repacker) {
+                            self.domain.post_state_mut().set_capability(
+                                target.into(),
+                                CapabilityKind::Write,
+                                self.repacker,
+                            );
+                        }
                     }
-                    let expansion_reason = ObtainReason::AssignTarget;
-                    let expansion_actions = self.domain.post_state_mut().obtain(
+                    let obtain_reason = ObtainReason::AssignTarget;
+                    let obtain_actions = self.domain.post_state_mut().obtain(
                         self.repacker,
                         target,
                         location,
-                        expansion_reason,
+                        obtain_reason,
                     );
-                    match expansion_actions {
+                    match obtain_actions {
                         Ok(actions) => {
                             self.record_actions(actions);
                         }
@@ -861,6 +866,14 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                             .get_capability(target.into())
                             .unwrap();
                         if target_cap != CapabilityKind::Write {
+                            debug_assert!(
+                                target_cap >= CapabilityKind::Write,
+                                "{:?}: {} cap {:?} is not greater than {:?}",
+                                location,
+                                target.to_short_string(self.repacker),
+                                target_cap,
+                                CapabilityKind::Write
+                            );
                             self.apply_action(BorrowPCGAction::weaken(
                                 target,
                                 target_cap,

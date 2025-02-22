@@ -296,7 +296,9 @@ fn setup_rustc_args() -> Vec<String> {
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());
     }
-    rustc_args.push("-Zpolonius".to_string());
+    if env_feature_enabled("PCG_POLONIUS").unwrap_or(false) {
+        rustc_args.push("-Zpolonius".to_string());
+    }
     rustc_args.extend(std::env::args().skip(1));
 
     let args_str = rustc_args
