@@ -313,19 +313,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.filter_for_path(path);
     }
 
-    pub(crate) fn borrows_blocking_prefix_of(
-        &self,
-        place: Place<'tcx>,
-    ) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
-        self.borrows()
-            .filter(move |rb| match rb.value.blocked_place {
-                MaybeRemotePlace::Local(MaybeOldPlace::Current {
-                    place: blocked_place,
-                }) => blocked_place.is_prefix(place),
-                _ => false,
-            })
-    }
-
     #[must_use]
     pub(crate) fn delete_descendants_of(
         &mut self,

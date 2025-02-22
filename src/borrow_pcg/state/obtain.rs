@@ -81,16 +81,7 @@ impl<'tcx> BorrowsState<'tcx> {
             actions.extend(self.contract_to(repacker, place, location)?);
         }
 
-        if self.contains(place, repacker) {
-            if self.get_capability(place.into()) == None {
-                let expected_capability = obtain_reason.min_post_obtain_capability();
-                self.record_and_apply_action(
-                    BorrowPCGAction::restore_capability(place.into(), expected_capability),
-                    &mut actions,
-                    repacker,
-                );
-            }
-        } else {
+        if !self.contains(place, repacker) {
             let extra_acts = self.expand_to(place.into(), repacker, location)?;
             actions.extend(extra_acts);
         }
@@ -109,41 +100,45 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
-        let graph_edges = self
-            .graph
-            .edges()
-            .map(|e| e.to_owned_edge())
-            .collect::<Vec<_>>();
-
-        // If we are going to contract a place, borrows may need to be converted
-        // to region projection member edges. For example, if the type of `x.t` is
-        // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to contract to `x`, then we need
-        // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
-        for p in graph_edges {
-            match p.kind() {
-                BorrowPCGEdgeKind::Borrow(borrow) => match borrow.assigned_ref {
+        {
+            let encapsulated_borrow_edges = self
+                .graph()
+                .borrows()
+                .filter(|borrow| match borrow.value.assigned_ref {
                     MaybeOldPlace::Current {
                         place: assigned_place,
-                    } if place.is_strict_prefix(assigned_place) => {
-                        for ra in place.region_projections(repacker) {
-                            self.record_and_apply_action(
-                                BorrowPCGAction::add_region_projection_member(
-                                    RegionProjectionMember::new(
-                                        smallvec![borrow.blocked_place.into()],
-                                        smallvec![ra.into()],
-                                        RegionProjectionMemberKind::ContractRef,
-                                    ),
-                                    PathConditions::new(location.block),
-                                    "Contract To",
-                                ),
-                                &mut actions,
-                                repacker,
-                            );
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
+                    } => place.is_strict_prefix(assigned_place),
+                    _ => false,
+                })
+                .collect::<Vec<_>>();
+
+            // If we are going to contract a place, borrows may need to be converted
+            // to region projection member edges. For example, if the type of `x.t` is
+            // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to contract to `x`, then we need
+            // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
+            for borrow in encapsulated_borrow_edges {
+                let to_remove: BorrowPCGEdge<'tcx> = borrow.clone().into();
+                actions.extend(self.remove_edge_and_set_latest(
+                    to_remove,
+                    location,
+                    repacker,
+                    &format!("Contract To {:?}", place),
+                ));
+                for ra in place.region_projections(repacker) {
+                    self.record_and_apply_action(
+                        BorrowPCGAction::add_region_projection_member(
+                            RegionProjectionMember::new(
+                                smallvec![borrow.value.blocked_place.into()],
+                                smallvec![ra.into()],
+                                RegionProjectionMemberKind::ContractRef,
+                            ),
+                            PathConditions::new(location.block),
+                            "Contract To",
+                        ),
+                        &mut actions,
+                        repacker,
+                    );
+                }
             }
         }
 
