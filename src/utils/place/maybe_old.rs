@@ -1,8 +1,8 @@
-use crate::borrows::borrow_pcg_edge::LocalNode;
-use crate::borrows::borrows_visitor::extract_regions;
-use crate::borrows::has_pcs_elem::HasPcsElems;
-use crate::borrows::latest::Latest;
-use crate::borrows::region_projection::{
+use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use crate::borrow_pcg::borrows_visitor::extract_regions;
+use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::latest::Latest;
+use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
 };

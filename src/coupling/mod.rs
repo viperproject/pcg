@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
-use crate::borrows::borrows_graph::coupling_imgcat_debug;
-use crate::borrows::coupling_graph_constructor::Coupled;
+use crate::borrow_pcg::graph::coupling_imgcat_debug;
+use crate::borrow_pcg::coupling_graph_constructor::Coupled;
 use crate::visualization::dot_graph::DotGraph;
 use crate::{pcg_validity_assert, validity_checks_enabled};
 

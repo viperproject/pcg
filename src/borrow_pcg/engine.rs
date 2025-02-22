@@ -12,10 +12,10 @@ use crate::{
 };
 
 use super::{
-    borrows_state::BorrowsState,
+    state::BorrowsState,
     borrows_visitor::{BorrowsVisitor, StatementStage},
 };
-use crate::borrows::domain::BorrowsDomain;
+use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::PlaceRepacker;
 

@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-    borrows::borrows_visitor::BorrowCheckerImpl,
+    borrow_pcg::borrows_visitor::BorrowCheckerImpl,
     free_pcs::CapabilitySummary,
     rustc_interface::{
         borrowck::{
@@ -31,7 +31,7 @@ use crate::{
 };
 
 use crate::{
-    borrows::engine::BorrowsEngine,
+    borrow_pcg::engine::BorrowsEngine,
     free_pcs::{engine::FpcsEngine, CapabilityKind},
     utils::PlaceRepacker,
 };

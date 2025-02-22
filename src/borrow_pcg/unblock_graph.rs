@@ -4,12 +4,12 @@ use crate::combined_pcs::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
 use crate::{
-    borrows::{borrows_state::BorrowsState, edge_data::EdgeData},
+    borrow_pcg::{state::BorrowsState, edge_data::EdgeData},
     combined_pcs::PCGNode,
     utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
 };
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;

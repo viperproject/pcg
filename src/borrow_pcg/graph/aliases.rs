@@ -1,7 +1,7 @@
 use egg::{define_language, EGraph, Id};
 
 use crate::{
-    borrows::{
+    borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
         borrow_pcg_expansion::BorrowPCGExpansion,
         edge::kind::BorrowPCGEdgeKind,
@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::BorrowsGraph;
-use crate::borrows::{
+use crate::borrow_pcg::{
     borrow_pcg_edge::BorrowPCGEdgeLike, edge_data::EdgeData, region_projection::RegionProjection,
 };
 

@@ -12,7 +12,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
 use super::{
     borrow_pcg_edge::LocalNode,
-    borrows_graph::{coupling_imgcat_debug, BorrowsGraph},
+    graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcsElems,
     region_projection::{PCGRegion, RegionProjection},
 };

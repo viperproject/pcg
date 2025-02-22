@@ -1,9 +1,9 @@
-pub mod borrow_pcg_action;
+pub mod action;
 pub mod borrow_pcg_capabilities;
 pub mod borrow_pcg_edge;
 pub mod borrow_pcg_expansion;
-pub mod borrows_graph;
-pub mod borrows_state;
+pub mod graph;
+pub mod state;
 pub mod borrows_visitor;
 pub mod coupling_graph_constructor;
 pub mod domain;

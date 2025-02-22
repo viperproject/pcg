@@ -4,7 +4,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::Place;
 use crate::{
-    borrows::{
+    borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         region_projection::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,

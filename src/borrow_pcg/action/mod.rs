@@ -2,10 +2,10 @@ use tracing::instrument;
 
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
-use super::borrows_state::BorrowsState;
+use super::state::BorrowsState;
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
-use crate::borrows::edge::abstraction::AbstractionType;
+use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::combined_pcs::PCGNode;
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
@@ -14,6 +14,8 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
+
+pub(crate) mod executed_actions;
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform

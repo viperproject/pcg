@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::borrows::engine::DataflowPhase;
+use crate::borrow_pcg::engine::DataflowPhase;
 use crate::combined_pcs::EvalStmtPhase;
 use crate::rustc_interface::middle::mir::Location;
 

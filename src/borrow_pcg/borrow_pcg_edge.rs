@@ -6,7 +6,7 @@ use rustc_interface::{
 
 use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
-    borrows_graph::Conditioned,
+    graph::Conditioned,
     coupling_graph_constructor::CGNode,
     edge_data::EdgeData,
     has_pcs_elem::HasPcsElems,
@@ -14,9 +14,9 @@ use super::{
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
     region_projection_member::RegionProjectionMember,
 };
-use crate::borrows::edge::abstraction::AbstractionType;
-use crate::borrows::edge::borrow::BorrowEdge;
-use crate::borrows::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::abstraction::AbstractionType;
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{

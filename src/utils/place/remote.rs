@@ -1,7 +1,7 @@
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::utils::json::ToJsonWithRepacker;
-use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike};
+use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike};
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::{Place, PlaceRepacker};

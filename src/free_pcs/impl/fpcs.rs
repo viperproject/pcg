@@ -19,7 +19,7 @@ use rustc_interface::{
 
 use super::{engine::FpcsEngine, CapabilityKind, RepackingBridgeSemiLattice};
 use crate::{
-    borrows::engine::DataflowPhase,
+    borrow_pcg::engine::DataflowPhase,
     combined_pcs::{EvalStmtPhase, PCGError, PCGErrorKind},
     free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
     rustc_interface,
