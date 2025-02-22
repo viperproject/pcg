@@ -1,7 +1,7 @@
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrows_visitor::BorrowPCGActions;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ExecutedActions<'tcx> {
     actions: BorrowPCGActions<'tcx>,
 }

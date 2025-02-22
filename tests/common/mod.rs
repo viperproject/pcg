@@ -74,15 +74,27 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool) {
     );
 }
 
+pub fn is_polonius_test_file(file: &Path) -> bool {
+    file.to_str().unwrap().contains("polonius")
+}
+
 #[allow(dead_code)]
 pub fn run_pcg_on_file(file: &Path) {
     let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let pcs_exe = workspace_dir.join("target/debug/pcs_bin");
-    println!("Running PCS on file: {}", file.display());
+    println!("Running PCG on file: {}", file.display());
 
     let status = Command::new(&pcs_exe)
         .arg(file)
         .env("PCG_CHECK_ANNOTATIONS", "true")
+        .env(
+            "PCG_POLONIUS",
+            if is_polonius_test_file(file) {
+                "true"
+            } else {
+                "false"
+            },
+        )
         .status()
         .unwrap_or_else(|e| panic!("Failed to execute test {}: {}", file.display(), e));
 

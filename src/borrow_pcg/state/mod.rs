@@ -9,12 +9,13 @@ use super::{
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    unblock_graph::BorrowPCGUnblockAction,
 };
-use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{
+    borrow_pcg::action::executed_actions::ExecutedActions, utils::display::DisplayWithRepacker,
+};
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -37,7 +38,7 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
-use std::rc::Rc;
+use std::{io::SeekFrom, rc::Rc};
 
 pub(crate) mod obtain;
 
@@ -287,21 +288,34 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-        let remove_edge_action = BorrowPCGAction::remove_edge(edge.to_owned_edge(), context);
+        let remove_edge_action =
+            BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
         self.record_and_apply_action(remove_edge_action, &mut actions, repacker);
+
         // If removing the edge results in a leaf node with a Lent or LentShared capability,
         // it should be set to Exclusive
-        for node in self.graph.leaf_nodes(repacker, None) {
-            if matches!(
-                self.get_capability(node.into()),
-                Some(CapabilityKind::Lent | CapabilityKind::LentShared)
-            ) {
-                self.record_and_apply_action(
-                    BorrowPCGAction::restore_capability(node.into(), CapabilityKind::Exclusive),
-                    &mut actions,
-                    repacker,
-                );
-            }
+        let fg = self.graph().frozen_graph();
+        let to_restore = edge
+            .blocked_nodes(repacker)
+            .into_iter()
+            .filter_map(|node| {
+                let cap = self.get_capability(node.into());
+                if let Some(local_node) = node.as_local_node()
+                    && matches!(cap, Some(CapabilityKind::Lent | CapabilityKind::LentShared))
+                    && !fg.has_edge_blocking(node, repacker)
+                {
+                    Some(local_node)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for node in to_restore {
+            self.record_and_apply_action(
+                BorrowPCGAction::restore_capability(node, CapabilityKind::Exclusive),
+                &mut actions,
+                repacker,
+            );
         }
         actions
     }
@@ -385,17 +399,6 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.graph.roots(repacker)
-    }
-
-    #[must_use]
-    pub(crate) fn apply_unblock_action(
-        &mut self,
-        action: BorrowPCGUnblockAction<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-        location: Location,
-        context: &str,
-    ) -> ExecutedActions<'tcx> {
-        self.remove_edge_and_set_latest(action.edge, location, repacker, context)
     }
 
     pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
@@ -586,6 +589,8 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.graph.make_place_old(place, &self.latest, repacker)
+        let mut changed = self.graph.make_place_old(place, &self.latest, repacker);
+        changed |= self.remove_capability(place);
+        changed
     }
 }

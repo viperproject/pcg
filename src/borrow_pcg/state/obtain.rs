@@ -10,14 +10,16 @@ use crate::borrow_pcg::region_projection_member::{
 };
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
-use crate::combined_pcs::{PCGError, PCGNodeLike};
+use crate::combined_pcs::{LocalNodeLike, PCGError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::{self, Mutability};
+use crate::utils::display::DisplayWithRepacker;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
+use crate::{pcg_validity_assert, validity_checks_enabled};
 use smallvec::smallvec;
 
 impl ObtainReason {
@@ -168,10 +170,10 @@ impl<'tcx> BorrowsState<'tcx> {
             panic!("Error when contracting to {:?}: {:?}", place, e);
         });
         for action in unblock_actions {
-            actions.extend(self.apply_unblock_action(
-                action,
-                repacker,
+            actions.extend(self.remove_edge_and_set_latest(
+                action.edge,
                 location,
+                repacker,
                 &format!("Contract To {:?}", place),
             ));
         }
