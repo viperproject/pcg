@@ -55,10 +55,10 @@ pub(crate) enum BorrowExpansion<'tcx> {
     /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
     /// Note that for region projections, not every field of the base type may
     /// be included. For example consider the following:
-    /// ```
+    /// ```ignore
     /// struct S<'a, 'b> { x: &'a mut i32, y: &'b mut i32 }
     ///
-    /// let s: S<'a, 'b> = S { ??? };
+    /// let s: S<'a, 'b> = S { x: &mut 1, y: &mut 2 };
     /// ```
     /// The projection of `s↓'a` contains only `{s.x↓'a}` because nothing under
     /// `'a` is accessible via `s.y`.

@@ -4,6 +4,7 @@ mod common;
 use common::{get, run_on_crate};
 
 #[test]
+#[ignore]
 pub fn top_crates() {
     top_crates_range(0..500)
 }

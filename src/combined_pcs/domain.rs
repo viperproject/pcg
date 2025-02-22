@@ -13,10 +13,10 @@ use std::{
 };
 
 use crate::{
-    borrow_pcg::{borrows_visitor::BorrowCheckerImpl, engine::DataflowPhase},
+    borrow_pcg::borrows_visitor::BorrowCheckerImpl,
     rustc_interface::{
         data_structures::fx::FxHashSet,
-        middle::mir::{BasicBlock, START_BLOCK},
+        middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
     PCGAnalysis, RECORD_PCG,

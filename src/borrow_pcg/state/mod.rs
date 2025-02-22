@@ -289,16 +289,19 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         let remove_edge_action = BorrowPCGAction::remove_edge(edge.to_owned_edge(), context);
         self.record_and_apply_action(remove_edge_action, &mut actions, repacker);
-        // If removing the edge results in a leaf node with a Lent capability, this
-        // it should be set to Exclusive, as it is no longer being lent.
-            for node in self.graph.leaf_nodes(repacker, None) {
-                if self.get_capability(node.into()) == Some(CapabilityKind::Lent) {
-                    self.record_and_apply_action(
-                        BorrowPCGAction::restore_capability(node.into(), CapabilityKind::Exclusive),
-                        &mut actions,
-                        repacker,
-                    );
-                }
+        // If removing the edge results in a leaf node with a Lent or LentShared capability,
+        // it should be set to Exclusive
+        for node in self.graph.leaf_nodes(repacker, None) {
+            if matches!(
+                self.get_capability(node.into()),
+                Some(CapabilityKind::Lent | CapabilityKind::LentShared)
+            ) {
+                self.record_and_apply_action(
+                    BorrowPCGAction::restore_capability(node.into(), CapabilityKind::Exclusive),
+                    &mut actions,
+                    repacker,
+                );
+            }
         }
         actions
     }
