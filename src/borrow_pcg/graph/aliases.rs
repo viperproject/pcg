@@ -1,22 +1,19 @@
-use egg::{define_language, EGraph, Id};
+use egg::{define_language, Id};
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
-        borrow_pcg_expansion::BorrowPCGExpansion,
+        borrow_pcg_edge::LocalNode,
         edge::kind::BorrowPCGEdgeKind,
         region_projection::RegionIdx,
         region_projection_member::RegionProjectionMemberKind,
     },
-    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
-    rustc_interface::{data_structures::fx::FxHashSet, middle::mir::PlaceElem, span::Symbol},
-    utils::{display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker},
+    combined_pcs::{PCGNode, PCGNodeLike},
+    rustc_interface::data_structures::fx::FxHashSet,
+    utils::{HasPlace, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
-use crate::borrow_pcg::{
-    borrow_pcg_edge::BorrowPCGEdgeLike, edge_data::EdgeData, region_projection::RegionProjection,
-};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 
 define_language! {
     enum EggPcgNode {
@@ -171,6 +168,7 @@ fn test_aliases() {
 
     use crate::free_pcs::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
+    use crate::rustc_interface::span::Symbol;
 
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)

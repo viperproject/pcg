@@ -14,4 +14,4 @@ Once the server is running, you can keep it running and analyze other files
 
 To run on the top crates use:
 
-`cargo test --package pcs --test top_crates -- top_crates --exact --show-output`
+`cargo test --test top_crates -- --ignored`

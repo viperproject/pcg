@@ -8,7 +8,6 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Formatter, Result},
     hash::{Hash, Hasher},
-    marker::PhantomData,
     mem::discriminant,
 };
 

@@ -36,7 +36,6 @@ use crate::{
 use super::{
     action::{BorrowPCGAction, BorrowPCGActionKind},
     coupling_graph_constructor::BorrowCheckerInterface,
-    has_pcs_elem::HasPcsElems,
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
     region_projection_member::RegionProjectionMember,

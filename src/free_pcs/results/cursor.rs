@@ -7,20 +7,20 @@
 use std::rc::Rc;
 
 use crate::{
-    borrow_pcg::{action::BorrowPCGActionKind, engine::DataflowPhase, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGEngine, PCGError, PCGNode},
+    borrow_pcg::{action::BorrowPCGActionKind, latest::Latest},
+    combined_pcs::{EvalStmtPhase, PCGEngine, PCGError},
     rustc_interface::{
-        data_structures::fx::{FxHashMap, FxHashSet},
+        data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
         index::IndexVec,
         middle::{
             mir::{self, BasicBlock, Body, Location},
             ty::TyCtxt,
         },
-        mir_dataflow::{self, ResultsCursor},
+        mir_dataflow::{ResultsCursor},
     },
     utils::{
-        display::{DebugLines, DisplayWithRepacker},
+        display::DebugLines,
         validity::HasValidityCheck,
         Place,
     },
