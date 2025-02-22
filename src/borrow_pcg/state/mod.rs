@@ -1,3 +1,20 @@
+use super::{
+    action::BorrowPCGAction,
+    borrow_pcg_capabilities::BorrowPCGCapabilities,
+    borrow_pcg_edge::{
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
+    },
+    coupling_graph_constructor::BorrowCheckerInterface,
+    graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
+    has_pcs_elem::HasPcsElems,
+    latest::Latest,
+    path_condition::{PathCondition, PathConditions},
+    unblock_graph::BorrowPCGUnblockAction,
+};
+use crate::borrow_pcg::action::executed_actions::ExecutedActions;
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -16,29 +33,11 @@ use crate::{
     },
     validity_checks_enabled,
 };
-use std::rc::Rc;
-use super::{
-    action::BorrowPCGAction,
-    borrow_pcg_capabilities::BorrowPCGCapabilities,
-    borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
-    },
-    coupling_graph_constructor::BorrowCheckerInterface
-    ,
-    graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
-    has_pcs_elem::HasPcsElems,
-    latest::Latest,
-    path_condition::{PathCondition, PathConditions},
-    unblock_graph::BorrowPCGUnblockAction,
-};
-use crate::borrow_pcg::edge::borrow::BorrowEdge;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
-use crate::borrow_pcg::action::executed_actions::ExecutedActions;
+use std::rc::Rc;
 
 pub(crate) mod obtain;
 
@@ -138,7 +137,9 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
         let changed = self.apply_action(action.clone(), repacker);
-        actions.record(action, changed);
+        if changed {
+            actions.record(action);
+        }
     }
 
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
@@ -287,11 +288,9 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
         let remove_edge_action = BorrowPCGAction::remove_edge(edge.to_owned_edge(), context);
-        let result = self.apply_action(remove_edge_action.clone(), repacker);
-        actions.record(remove_edge_action, result);
+        self.record_and_apply_action(remove_edge_action, &mut actions, repacker);
         // If removing the edge results in a leaf node with a Lent capability, this
         // it should be set to Exclusive, as it is no longer being lent.
-        if result {
             for node in self.graph.leaf_nodes(repacker, None) {
                 if self.get_capability(node.into()) == Some(CapabilityKind::Lent) {
                     self.record_and_apply_action(
@@ -300,7 +299,6 @@ impl<'tcx> BorrowsState<'tcx> {
                         repacker,
                     );
                 }
-            }
         }
         actions
     }
