@@ -3,18 +3,18 @@ use std::collections::HashSet;
 use crate::combined_pcs::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
-use crate::{
-    borrow_pcg::{state::BorrowsState, edge_data::EdgeData},
-    combined_pcs::PCGNode,
-    utils::PlaceRepacker,
-    visualization::generate_unblock_dot_graph,
-};
+use super::borrow_pcg_edge::BorrowPCGEdgeLike;
+use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use super::borrow_pcg_edge::BorrowPCGEdgeLike;
-use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge};
+use crate::{
+    borrow_pcg::{edge_data::EdgeData, state::BorrowsState},
+    combined_pcs::PCGNode,
+    utils::PlaceRepacker,
+    visualization::generate_unblock_dot_graph,
+};
 
 type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
 type UnblockEdgeType<'tcx> = BorrowPCGEdgeKind<'tcx>;
@@ -48,12 +48,6 @@ impl<'tcx> From<BorrowPCGEdge<'tcx>> for BorrowPCGUnblockAction<'tcx> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum UnblockType {
-    ForRead,
-    ForExclusive,
-}
-
 impl<'tcx> UnblockGraph<'tcx> {
     pub(crate) fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
         self.edges.iter()
@@ -80,7 +74,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<Vec<BorrowPCGUnblockAction<'tcx>>, PCGInternalError> {
         let mut ug = UnblockGraph::new();
-        ug.unblock_node(node, state, repacker, UnblockType::ForExclusive);
+        ug.unblock_node(node, state, repacker);
         ug.actions(repacker)
     }
 
@@ -90,7 +84,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
         let mut ug = Self::new();
-        ug.unblock_node(node.into(), state, repacker, UnblockType::ForExclusive);
+        ug.unblock_node(node.into(), state, repacker);
         ug
     }
 
@@ -157,31 +151,11 @@ impl<'tcx> UnblockGraph<'tcx> {
         edge: impl BorrowPCGEdgeLike<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-        typ: UnblockType,
     ) {
-        if let UnblockType::ForRead = typ {
-            match edge.kind() {
-                UnblockEdgeType::Borrow(reborrow) => {
-                    if !reborrow.is_mut() {
-                        return;
-                    }
-                    // Borrow is mutable, needs to be killed
-                }
-                _ => {
-                    return;
-                }
-            }
-        }
         if self.add_dependency(edge.clone().to_owned_edge()) {
             for blocking_node in edge.blocked_by_nodes(repacker) {
                 if !edge.is_owned_expansion() {
-                    // We always unblock for exclusive since the input edge is dead
-                    self.unblock_node(
-                        blocking_node.into(),
-                        borrows,
-                        repacker,
-                        UnblockType::ForExclusive,
-                    );
+                    self.unblock_node(blocking_node.into(), borrows, repacker);
                 }
             }
         }
@@ -192,16 +166,15 @@ impl<'tcx> UnblockGraph<'tcx> {
         node: BlockedNode<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-        typ: UnblockType,
     ) {
         for edge in borrows.edges_blocking(node, repacker) {
-            self.kill_edge(edge, borrows, repacker, typ);
+            self.kill_edge(edge, borrows, repacker);
         }
         if let BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) = node
         {
             for reborrow in borrows.borrows_blocking_prefix_of(place) {
                 let edge: BorrowPCGEdge<'tcx> = reborrow.into();
-                self.kill_edge(edge, borrows, repacker, typ);
+                self.kill_edge(edge, borrows, repacker);
             }
         }
     }
