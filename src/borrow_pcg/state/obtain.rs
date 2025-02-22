@@ -1,26 +1,27 @@
-use smallvec::smallvec;
-use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
+use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, ToBorrowsEdge};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::borrow_pcg::region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind};
+use crate::borrow_pcg::region_projection_member::{
+    RegionProjectionMember, RegionProjectionMemberKind,
+};
 use crate::borrow_pcg::state::BorrowsState;
-use crate::borrow_pcg::unblock_graph::{UnblockGraph, UnblockType};
+use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::combined_pcs::{PCGError, PCGNodeLike};
-use crate::rustc_interface::middle::mir::{BorrowKind, MutBorrowKind, Location};
-use crate::rustc_interface::middle::ty::{Mutability, self};
 use crate::free_pcs::CapabilityKind;
-use crate::utils::{Place, PlaceRepacker};
+use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
+use crate::rustc_interface::middle::ty::{self, Mutability};
 use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
+use smallvec::smallvec;
 
 impl ObtainReason {
-
     /// After calling `obtain` for a place, the minimum capability that we
     /// expect the place to have.
     pub(crate) fn min_post_obtain_capability(&self) -> CapabilityKind {
@@ -30,7 +31,7 @@ impl ObtainReason {
             ObtainReason::FakeRead => CapabilityKind::Read,
             ObtainReason::AssignTarget => CapabilityKind::Write,
             ObtainReason::CreateReference(borrow_kind) => match borrow_kind {
-                BorrowKind::Shared => CapabilityKind::LentShared,
+                BorrowKind::Shared => CapabilityKind::Read,
                 BorrowKind::Fake(_) => unreachable!(),
                 BorrowKind::Mut { kind } => match kind {
                     MutBorrowKind::Default => CapabilityKind::Exclusive,
@@ -42,7 +43,7 @@ impl ObtainReason {
                 if mutability.is_mut() {
                     CapabilityKind::Exclusive
                 } else {
-                    CapabilityKind::LentShared
+                    CapabilityKind::Read
                 }
             }
             ObtainReason::RValueSimpleRead => CapabilityKind::Read,
@@ -73,14 +74,16 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         place: Place<'tcx>,
         location: Location,
-        expansion_reason: ObtainReason,
+        obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
-        actions.extend(self.contract_to(repacker, place, location, expansion_reason.clone())?);
+        if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
+            actions.extend(self.contract_to(repacker, place, location)?);
+        }
 
         if self.contains(place, repacker) {
             if self.get_capability(place.into()) == None {
-                let expected_capability = expansion_reason.min_post_obtain_capability();
+                let expected_capability = obtain_reason.min_post_obtain_capability();
                 self.record_and_apply_action(
                     BorrowPCGAction::restore_capability(place.into(), expected_capability),
                     &mut actions,
@@ -103,7 +106,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         place: Place<'tcx>,
         location: Location,
-        expansion_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
@@ -122,7 +124,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowPCGEdgeKind::Borrow(borrow) => match borrow.assigned_ref {
                     MaybeOldPlace::Current {
                         place: assigned_place,
-                    } if place.is_prefix(assigned_place) && !place.is_ref(repacker) => {
+                    } if place.is_strict_prefix(assigned_place) => {
                         for ra in place.region_projections(repacker) {
                             self.record_and_apply_action(
                                 BorrowPCGAction::add_region_projection_member(
@@ -145,34 +147,10 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
 
-        let unblock_type = match expansion_reason {
-            ObtainReason::MoveOperand => UnblockType::ForRead,
-            ObtainReason::CopyOperand => UnblockType::ForExclusive,
-            ObtainReason::FakeRead => UnblockType::ForRead,
-            ObtainReason::AssignTarget => UnblockType::ForExclusive,
-            ObtainReason::CreateReference(borrow_kind) => match borrow_kind {
-                BorrowKind::Shared => UnblockType::ForRead,
-                BorrowKind::Fake(_) => unreachable!(),
-                BorrowKind::Mut { kind } => match kind {
-                    MutBorrowKind::Default => UnblockType::ForExclusive,
-                    MutBorrowKind::TwoPhaseBorrow => UnblockType::ForRead,
-                    MutBorrowKind::ClosureCapture => UnblockType::ForExclusive,
-                },
-            },
-            ObtainReason::CreatePtr(mutability) => {
-                if mutability == Mutability::Mut {
-                    UnblockType::ForExclusive
-                } else {
-                    UnblockType::ForRead
-                }
-            }
-            ObtainReason::RValueSimpleRead => UnblockType::ForRead,
-        };
-
         let mut ug = UnblockGraph::new();
-        ug.unblock_node(place.to_pcg_node(), self, repacker, unblock_type);
+        ug.unblock_node(place.to_pcg_node(), self, repacker);
         for rp in place.region_projections(repacker) {
-            ug.unblock_node(rp.to_pcg_node(), self, repacker, unblock_type);
+            ug.unblock_node(rp.to_pcg_node(), self, repacker);
         }
 
         // The place itself could be in the owned PCG, but we want to unblock
@@ -181,7 +159,7 @@ impl<'tcx> BorrowsState<'tcx> {
         for root_node in self.roots(repacker) {
             if let Some(root_node_place) = root_node.as_current_place() {
                 if place.is_prefix(root_node_place) {
-                    ug.unblock_node(root_node.into(), self, repacker, unblock_type);
+                    ug.unblock_node(root_node.into(), self, repacker);
                 }
             }
         }
@@ -193,10 +171,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         eprintln!("Error rendering borrows graph: {}", e);
                     });
             }
-            panic!(
-                "Error when contracting to {:?}: {:?}",
-                place, e
-            );
+            panic!("Error when contracting to {:?}: {:?}", place, e);
         });
         for action in unblock_actions {
             actions.extend(self.apply_unblock_action(
@@ -339,5 +314,4 @@ impl<'tcx> BorrowsState<'tcx> {
 
         Ok(actions)
     }
-
 }
