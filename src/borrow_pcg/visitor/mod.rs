@@ -1,13 +1,12 @@
-use crate::{combined_pcs::EvalStmtPhase::*, utils::display::DisplayWithRepacker};
+use crate::{combined_pcs::EvalStmtPhase::*};
 use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
-    borrow_pcg::{
-        borrow_pcg_edge::BorrowPCGEdgeLike, region_projection::MaybeRemoteRegionProjectionBase,
-        region_projection_member::RegionProjectionMemberKind,
-    },
-    combined_pcs::{PCGError, PCGNodeLike, PCGUnsupportedError},
+    borrow_pcg::
+        region_projection_member::RegionProjectionMemberKind
+    ,
+    combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
         index::IndexVec,
@@ -15,14 +14,13 @@ use crate::{
             mir::{
                 self,
                 visit::{PlaceContext, Visitor},
-                AggregateKind, BorrowKind, Const, Location, Operand, Rvalue, Statement,
+                BorrowKind, Const, Location, Operand, Rvalue, Statement,
                 StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
     },
     utils::Place,
-    visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
 };
 
 use super::{
@@ -248,19 +246,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
 
-                    // Only add the edge if the input projection already exists, i.e.
-                    // is blocking something else. Otherwise, there is no point in tracking
-                    // when it becomes accessible.
-                    // if self
-                    //     .domain
-                    //     .post_main_state()
-                    //     .contains(input_rp, self.repacker)
-                    {
-                        edges.push(AbstractionBlockEdge::new(
-                            vec![input_rp.into()].into_iter().collect(),
-                            vec![output].into_iter().collect(),
-                        ));
-                    }
+                    edges.push(AbstractionBlockEdge::new(
+                        vec![input_rp.into()].into_iter().collect(),
+                        vec![output].into_iter().collect(),
+                    ));
                 }
             }
         }
