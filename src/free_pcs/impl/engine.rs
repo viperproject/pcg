@@ -115,11 +115,12 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         }
     }
 
+    #[tracing::instrument(skip(self, state, tw))]
     fn apply_main(
         &self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'tcx>,
-        _location: Location,
+        location: Location,
     ) {
         if let Some(error) = tw.error {
             state.error = Some(error);

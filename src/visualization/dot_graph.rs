@@ -279,7 +279,7 @@ impl Display for DotEdge {
             None => "".to_string(),
         };
         let tooltip_part = match &self.options.tooltip {
-            Some(tooltip) => format!(", tooltip=\"{}\"", tooltip),
+            Some(tooltip) => format!(", edgetooltip=\"{}\"", tooltip),
             None => "".to_string(),
         };
         write!(

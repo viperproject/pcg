@@ -237,7 +237,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 });
             for (from, from_perm) in removed_perms {
                 if perm != from_perm {
-                    assert!(from_perm > perm);
+                    if !(from_perm > perm) {
+                        panic!("Weaken {:?} {:?} {:?}", from, from_perm, perm);
+                    }
                     ops.push(RepackOp::Weaken(from, from_perm, perm));
                 }
             }
