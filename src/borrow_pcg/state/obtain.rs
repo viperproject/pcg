@@ -213,12 +213,10 @@ impl<'tcx> BorrowsState<'tcx> {
                     RegionProjectionMemberKind::DerefRegionProjection,
                 );
 
-                let path_conditions = PathConditions::new(location.block);
-
                 self.record_and_apply_action(
                     BorrowPCGAction::add_region_projection_member(
                         region_projection_member,
-                        path_conditions.clone(),
+                        PathConditions::new(location.block),
                         "Expand",
                     ),
                     &mut actions,
@@ -259,18 +257,15 @@ impl<'tcx> BorrowsState<'tcx> {
                         BorrowExpansion::from_places(dest_places, repacker),
                         repacker,
                     );
-                    let path_conditions = PathConditions::new(location.block);
-                    if !self.contains_edge(&expansion.clone().to_borrow_pcg_edge(path_conditions)) {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::insert_borrow_pcg_expansion(
-                                expansion,
-                                location,
-                                "Ensure Deref Expansion (Region Projection)",
-                            ),
-                            &mut actions,
-                            repacker,
-                        );
-                    }
+                    self.record_and_apply_action(
+                        BorrowPCGAction::insert_borrow_pcg_expansion(
+                            expansion,
+                            location,
+                            "Ensure Deref Expansion (Region Projection)",
+                        ),
+                        &mut actions,
+                        repacker,
+                    );
                 }
             }
         }
