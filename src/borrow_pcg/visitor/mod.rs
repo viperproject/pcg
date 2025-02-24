@@ -1,8 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
-
 use crate::{
-    combined_pcs::EvalStmtPhase::*, rustc_interface::dataflow::compute_fixpoint,
-    utils::display::DisplayWithRepacker, validity_checks_enabled,
+    combined_pcs::EvalStmtPhase::*,
+    utils::display::DisplayWithRepacker,
 };
 use smallvec::smallvec;
 use tracing::instrument;
@@ -12,11 +10,9 @@ use crate::{
         borrow_pcg_edge::BorrowPCGEdgeLike, region_projection::MaybeRemoteRegionProjectionBase,
         region_projection_member::RegionProjectionMemberKind,
     },
-    combined_pcs::{PCGError, PCGNode, PCGNodeLike, PCGUnsupportedError},
+    combined_pcs::{PCGError, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
-        borrowck::{
-            BorrowSet, {PoloniusOutput, RegionInferenceContext},
-        },
+        borrowck::PoloniusOutput,
         index::IndexVec,
         middle::{
             mir::{
@@ -26,8 +22,8 @@ use crate::{
                 StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
-        },
-        mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor},
+        }
+        ,
     },
     utils::Place,
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
@@ -49,11 +45,13 @@ use crate::borrow_pcg::edge::abstraction::{
 };
 use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
+
+mod stmt;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DebugCtx {
@@ -83,67 +81,6 @@ pub(crate) enum StatementStage {
     Main,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct BorrowPCGActions<'tcx>(Vec<BorrowPCGAction<'tcx>>);
-
-impl<'tcx> Default for BorrowPCGActions<'tcx> {
-    fn default() -> Self {
-        Self(vec![])
-    }
-}
-
-impl<'tcx> BorrowPCGActions<'tcx> {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &BorrowPCGAction<'tcx>> {
-        self.0.iter()
-    }
-
-    pub(crate) fn to_vec(self) -> Vec<BorrowPCGAction<'tcx>> {
-        self.0
-    }
-
-    pub(crate) fn new() -> Self {
-        Self(vec![])
-    }
-
-    pub(crate) fn first(&self) -> Option<&BorrowPCGAction<'tcx>> {
-        self.0.first()
-    }
-
-    pub(crate) fn last(&self) -> Option<&BorrowPCGAction<'tcx>> {
-        self.0.last()
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.0.clear();
-    }
-
-    pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
-        if validity_checks_enabled() {
-            match (self.last(), actions.first()) {
-            (Some(a), Some(b)) => assert_ne!(
-                a, b,
-                "The last action ({:#?}) is the same as the first action in the list to extend with.",
-                a,
-            ),
-            _ => (),
-        }
-        }
-        self.0.extend(actions.0);
-    }
-
-    pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>) {
-        if validity_checks_enabled() {
-            if let Some(last) = self.last() {
-                assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this probably a bug.", action);
-            }
-        }
-        self.0.push(action);
-    }
-}
-
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
     pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
@@ -152,107 +89,6 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     debug_ctx: Option<DebugCtx>,
     #[allow(dead_code)]
     output_facts: Option<&'mir PoloniusOutput>,
-}
-
-#[derive(Clone)]
-pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
-    cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
-    region_cx: &'mir RegionInferenceContext<'tcx>,
-
-    // TODO: Use this to determine when two-phase borrows are activated and
-    // update the PCG accordingly
-    #[allow(unused)]
-    borrows: &'mir BorrowSet<'tcx>,
-}
-
-impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
-    pub(crate) fn new(
-        repacker: PlaceRepacker<'mir, 'tcx>,
-        region_cx: &'mir RegionInferenceContext<'tcx>,
-        borrows: &'mir BorrowSet<'tcx>,
-    ) -> Self {
-        let cursor = compute_fixpoint(MaybeLiveLocals, repacker.tcx(), repacker.body())
-            .into_results_cursor(repacker.body());
-        Self {
-            cursor: Rc::new(RefCell::new(cursor)),
-            region_cx,
-            borrows,
-        }
-    }
-}
-
-impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
-        match (sup, sub) {
-            (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => {
-                self.region_cx.eval_outlives(sup, sub)
-            }
-            (PCGRegion::ReStatic, _) => true,
-            _ => false,
-        }
-    }
-
-    #[rustversion::before(2024-12-14)]
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
-        let local = match node {
-            PCGNode::RegionProjection(rp) => {
-                if let Some(local) = rp.local() {
-                    local
-                } else {
-                    todo!()
-                }
-            }
-            PCGNode::Place(MaybeRemotePlace::Local(p)) => p.local(),
-            _ => {
-                return true;
-            }
-        };
-        let mut cursor = self.cursor.as_ref().borrow_mut();
-        cursor.seek_before_primary_effect(location);
-        cursor.contains(local)
-    }
-
-    #[rustversion::since(2024-12-14)]
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
-        let local = match node {
-            PCGNode::RegionProjection(rp) => {
-                if let Some(local) = rp.local() {
-                    local
-                } else {
-                    todo!()
-                }
-            }
-            PCGNode::Place(MaybeRemotePlace::Local(p)) => p.local(),
-            _ => {
-                return true;
-            }
-        };
-        let mut cursor = self.cursor.as_ref().borrow_mut();
-        cursor.seek_before_primary_effect(location);
-        cursor.get().contains(local)
-    }
-
-    #[rustversion::since(2024-12-14)]
-    fn twophase_borrow_activations(
-        &self,
-        location: Location,
-    ) -> std::collections::BTreeSet<Location> {
-        self.borrows.activation_map()[&location]
-            .iter()
-            .map(|idx| self.borrows[*idx].reserve_location())
-            .collect()
-    }
-
-    #[rustversion::before(2024-12-14)]
-    fn twophase_borrow_activations(
-        &self,
-        location: Location,
-    ) -> std::collections::BTreeSet<Location> {
-        self.borrows.activation_map[&location]
-            .iter()
-            .map(|idx| self.borrows[*idx].reserve_location)
-            .collect()
-    }
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
@@ -342,150 +178,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     "Outliving Projection",
                 ));
             }
-        }
-    }
-
-    fn stmt_post_main(&mut self, statement: &Statement<'tcx>, location: Location) {
-        assert!(!self.preparing);
-        assert!(self.stage == StatementStage::Main);
-        match &statement.kind {
-            StatementKind::Assign(box (target, rvalue)) => {
-                let target: utils::Place<'tcx> = (*target).into();
-                self.apply_action(BorrowPCGAction::set_latest(
-                    target,
-                    location,
-                    "Target of Assignment",
-                ));
-                let state = self.domain.post_state_mut();
-                if !target.is_owned(self.repacker) {
-                    state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
-                }
-                match rvalue {
-                    Rvalue::Aggregate(
-                        box (AggregateKind::Adt(..)
-                        | AggregateKind::Tuple
-                        | AggregateKind::Array(..)),
-                        fields,
-                    ) => {
-                        let target: utils::Place<'tcx> = (*target).into();
-                        for field in fields.iter() {
-                            let operand_place: utils::Place<'tcx> =
-                                if let Some(place) = field.place() {
-                                    place.into()
-                                } else {
-                                    continue;
-                                };
-                            for source_proj in operand_place.region_projections(self.repacker) {
-                                let source_proj = source_proj.map_base(|p| {
-                                    MaybeOldPlace::new(
-                                        p,
-                                        Some(self.domain.post_main_state().get_latest(p)),
-                                    )
-                                });
-                                self.connect_outliving_projections(
-                                    source_proj,
-                                    target,
-                                    location,
-                                    |_| RegionProjectionMemberKind::Todo,
-                                );
-                            }
-                        }
-                    }
-                    Rvalue::Use(Operand::Constant(box c)) => match c.ty().kind() {
-                        ty::TyKind::Ref(const_region, _, _) => {
-                            if let ty::TyKind::Ref(target_region, _, _) =
-                                target.ty(self.repacker).ty.kind()
-                            {
-                                self.apply_action(BorrowPCGAction::add_region_projection_member(
-                                    RegionProjectionMember::new(
-                                        smallvec![RegionProjection::new(
-                                            (*const_region).into(),
-                                            MaybeRemoteRegionProjectionBase::Const(c.const_),
-                                            self.repacker,
-                                        )
-                                        .unwrap()
-                                        .to_pcg_node()],
-                                        smallvec![RegionProjection::new(
-                                            (*target_region).into(),
-                                            target,
-                                            self.repacker,
-                                        )
-                                        .unwrap()
-                                        .into()],
-                                        RegionProjectionMemberKind::ConstRef,
-                                    ),
-                                    PathConditions::AtBlock(location.block),
-                                    "Assign constant",
-                                ));
-                            }
-                        }
-                        _ => {}
-                    },
-                    Rvalue::Use(Operand::Move(from)) => {
-                        let from: utils::Place<'tcx> = (*from).into();
-                        let target: utils::Place<'tcx> = (*target).into();
-                        if from.is_ref(self.repacker) {
-                            let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
-                            let new_place = target;
-                            self.apply_action(BorrowPCGAction::rename_place(
-                                old_place,
-                                new_place.into(),
-                            ));
-                        }
-
-                        let actions = self.domain.post_state_mut().delete_descendants_of(
-                            MaybeOldPlace::Current { place: from },
-                            location,
-                            self.repacker,
-                        );
-                        self.record_actions(actions);
-                    }
-                    Rvalue::Use(Operand::Copy(from)) => {
-                        let from_place: utils::Place<'tcx> = (*from).into();
-                        for source_proj in from_place.region_projections(self.repacker).into_iter()
-                        {
-                            self.connect_outliving_projections(
-                                source_proj.into(),
-                                target,
-                                location,
-                                |_| RegionProjectionMemberKind::Todo,
-                            );
-                        }
-                    }
-                    Rvalue::Ref(region, kind, blocked_place) => {
-                        let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
-                        if !target.ty(self.repacker).ty.is_ref() {
-                            self.domain.report_error(PCGError::unsupported(
-                                PCGUnsupportedError::AssignBorrowToNonReferenceType,
-                            ));
-                            return;
-                        }
-                        if matches!(kind, BorrowKind::Fake(_)) {
-                            return;
-                        }
-                        state.add_borrow(
-                            blocked_place.into(),
-                            target,
-                            kind.clone(),
-                            location,
-                            *region,
-                            self.repacker,
-                        );
-                        for source_proj in
-                            blocked_place.region_projections(self.repacker).into_iter()
-                        {
-                            self.connect_outliving_projections(
-                                source_proj.into(),
-                                target,
-                                location,
-                                |_| RegionProjectionMemberKind::BorrowOutlives,
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
         }
     }
 
@@ -816,74 +508,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 _ => {}
             }
         } else if self.preparing && self.stage == StatementStage::Main {
-            // Stuff in this block will be included as the middle "bridge" ops that
-            // are visible to Prusti
-            match &statement.kind {
-                StatementKind::StorageDead(local) => {
-                    let place: utils::Place<'tcx> = (*local).into();
-                    self.apply_action(BorrowPCGAction::make_place_old(place));
-                    let actions = self.domain.data.get_mut(PostMain).pack_old_and_dead_leaves(
-                        self.repacker,
-                        location,
-                        &self.domain.bc,
-                    );
-                    self.record_actions(actions);
-                }
-                StatementKind::Assign(box (target, _)) => {
-                    let target: utils::Place<'tcx> = (*target).into();
-                    // Any references to target should be made old because it
-                    // will be overwritten in the assignment.
-                    if target.is_ref(self.repacker) {
-                        self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
-                        if !target.is_owned(self.repacker) {
-                            self.domain.post_state_mut().set_capability(
-                                target.into(),
-                                CapabilityKind::Write,
-                                self.repacker,
-                            );
-                        }
-                    }
-                    let obtain_reason = ObtainReason::AssignTarget;
-                    let obtain_actions = self.domain.post_state_mut().obtain(
-                        self.repacker,
-                        target,
-                        location,
-                        obtain_reason,
-                    );
-                    match obtain_actions {
-                        Ok(actions) => {
-                            self.record_actions(actions);
-                        }
-                        Err(e) => {
-                            self.domain.report_error(e);
-                        }
-                    }
-
-                    if !target.is_owned(self.repacker) {
-                        let target_cap = self
-                            .domain
-                            .post_state_mut()
-                            .get_capability(target.into())
-                            .unwrap();
-                        if target_cap != CapabilityKind::Write {
-                            debug_assert!(
-                                target_cap >= CapabilityKind::Write,
-                                "{:?}: {} cap {:?} is not greater than {:?}",
-                                location,
-                                target.to_short_string(self.repacker),
-                                target_cap,
-                                CapabilityKind::Write
-                            );
-                            self.apply_action(BorrowPCGAction::weaken(
-                                target,
-                                target_cap,
-                                CapabilityKind::Write,
-                            ));
-                        }
-                    }
-                }
-                _ => {}
-            }
+            self.stmt_pre_main(statement, location);
         } else if !self.preparing && self.stage == StatementStage::Main {
             self.stmt_post_main(statement, location);
         }

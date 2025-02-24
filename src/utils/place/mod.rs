@@ -31,7 +31,7 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
-        borrows_visitor::extract_regions,
+        visitor::extract_regions,
         region_projection::{
             MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
             RegionProjectionBaseLike,

@@ -6,15 +6,15 @@ use rustc_interface::{
 
 use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
-    graph::Conditioned,
     coupling_graph_constructor::CGNode,
     edge_data::EdgeData,
+    graph::Conditioned,
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
     region_projection_member::RegionProjectionMember,
 };
-use crate::borrow_pcg::edge::abstraction::AbstractionType;
+use crate::{borrow_pcg::edge::abstraction::AbstractionType, free_pcs::CapabilityKind};
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;

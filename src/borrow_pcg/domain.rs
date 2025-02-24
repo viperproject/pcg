@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::state::BorrowsState;
-use crate::borrow_pcg::borrows_visitor::{BorrowCheckerImpl, BorrowPCGActions};
+use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::region_projection_member::{
     RegionProjectionMember, RegionProjectionMemberKind,
@@ -16,6 +16,7 @@ use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::{utils, BorrowsBridge};
 use smallvec::smallvec;
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;

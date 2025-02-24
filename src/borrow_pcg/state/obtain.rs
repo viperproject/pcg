@@ -229,8 +229,8 @@ impl<'tcx> BorrowsState<'tcx> {
                         repacker,
                     );
                 }
-                // We also do this for all target region projections
-
+                // We also do this for all target region projections, e.g.
+                // t|'b -> *t|'b
                 for target_rp in target.region_projections(repacker) {
                     let region_projection_member = RegionProjectionMember::new(
                         smallvec![base_rp.to_pcg_node()],

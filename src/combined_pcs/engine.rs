@@ -11,7 +11,6 @@ use std::{
 };
 
 use crate::{
-    borrow_pcg::borrows_visitor::BorrowCheckerImpl,
     free_pcs::CapabilitySummary,
     rustc_interface::{
         borrowck::{
@@ -35,7 +34,7 @@ use crate::{
     free_pcs::{engine::FpcsEngine, CapabilityKind},
     utils::PlaceRepacker,
 };
-
+use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use super::{
     domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
 };

@@ -206,7 +206,8 @@ impl GraphEdge {
                 from: borrowed_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string())
-                    .with_label(format!("{} - {}", region, path_conditions)),
+                    .with_label(format!("{}", region))
+                    .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::DerefExpansionEdge {
                 source,
@@ -217,7 +218,7 @@ impl GraphEdge {
                 to: target.to_string(),
                 options: EdgeOptions::undirected()
                     .with_color("green".to_string())
-                    .with_label(path_conditions.clone()),
+                    .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::AbstractEdge { blocked, blocking } => DotEdge {
                 from: blocked.to_string(),
