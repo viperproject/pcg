@@ -22,7 +22,6 @@ use borrow_pcg::{
     borrow_pcg_edge::LocalNode,
     borrow_pcg_expansion::BorrowPCGExpansion,
     graph::Conditioned,
-    borrows_visitor::BorrowPCGActions,
     latest::Latest,
     path_condition::PathConditions,
     region_projection_member::RegionProjectionMember,
@@ -218,6 +217,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
 }
 
 use std::sync::Mutex;
+use borrow_pcg::action::actions::BorrowPCGActions;
 use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {

@@ -1,0 +1,239 @@
+use super::BorrowsVisitor;
+use crate::{
+    borrow_pcg::{
+        action::BorrowPCGAction,
+        path_condition::PathConditions,
+        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
+        region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
+        state::obtain::ObtainReason,
+        visitor::StatementStage,
+    },
+    combined_pcs::{EvalStmtPhase, PCGError, PCGNodeLike, PCGUnsupportedError},
+    free_pcs::CapabilityKind,
+    rustc_interface::middle::{
+        mir::{AggregateKind, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind},
+        ty::{self},
+    },
+    utils::{self, display::DisplayWithRepacker, maybe_old::MaybeOldPlace},
+};
+use smallvec::smallvec;
+
+impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
+    pub(crate) fn stmt_pre_main(&mut self, statement: &Statement<'tcx>, location: Location) {
+        match &statement.kind {
+            StatementKind::StorageDead(local) => {
+                let place: utils::Place<'tcx> = (*local).into();
+                self.apply_action(BorrowPCGAction::make_place_old(place));
+                let actions = self
+                    .domain
+                    .data
+                    .get_mut(EvalStmtPhase::PostMain)
+                    .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
+                self.record_actions(actions);
+            }
+            StatementKind::Assign(box (target, _)) => {
+                let target: utils::Place<'tcx> = (*target).into();
+                // Any references to target should be made old because it
+                // will be overwritten in the assignment.
+                if target.is_ref(self.repacker) {
+                    self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
+                    // The `make_place_old` action also removes capability to `target`, we re-add the
+                    // capability to `target` to ensure that we can still write to it.
+                    if !target.is_owned(self.repacker) {
+                        self.domain.post_state_mut().set_capability(
+                            target.into(),
+                            CapabilityKind::Write,
+                            self.repacker,
+                        );
+                    }
+                }
+                let obtain_reason = ObtainReason::AssignTarget;
+                let obtain_actions = self.domain.post_state_mut().obtain(
+                    self.repacker,
+                    target,
+                    location,
+                    obtain_reason,
+                );
+                match obtain_actions {
+                    Ok(actions) => {
+                        self.record_actions(actions);
+                    }
+                    Err(e) => {
+                        self.domain.report_error(e);
+                    }
+                }
+
+                if !target.is_owned(self.repacker) {
+                    if let Some(target_cap) =
+                        self.domain.post_state_mut().get_capability(target.into())
+                    {
+                        if target_cap != CapabilityKind::Write {
+                            debug_assert!(
+                                target_cap >= CapabilityKind::Write,
+                                "{:?}: {} cap {:?} is not greater than {:?}",
+                                location,
+                                target.to_short_string(self.repacker),
+                                target_cap,
+                                CapabilityKind::Write
+                            );
+                            self.apply_action(BorrowPCGAction::weaken(
+                                target,
+                                target_cap,
+                                CapabilityKind::Write,
+                            ));
+                        }
+                    } else {
+                        tracing::error!(
+                            "No capability found for {}",
+                            target.to_short_string(self.repacker)
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    pub(crate) fn stmt_post_main(&mut self, statement: &Statement<'tcx>, location: Location) {
+        assert!(!self.preparing);
+        assert!(self.stage == StatementStage::Main);
+        match &statement.kind {
+            StatementKind::Assign(box (target, rvalue)) => {
+                let target: utils::Place<'tcx> = (*target).into();
+                self.apply_action(BorrowPCGAction::set_latest(
+                    target,
+                    location,
+                    "Target of Assignment",
+                ));
+                let state = self.domain.post_state_mut();
+                if !target.is_owned(self.repacker) {
+                    state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
+                }
+                match rvalue {
+                    Rvalue::Aggregate(
+                        box (AggregateKind::Adt(..)
+                        | AggregateKind::Tuple
+                        | AggregateKind::Array(..)),
+                        fields,
+                    ) => {
+                        let target: utils::Place<'tcx> = (*target).into();
+                        for field in fields.iter() {
+                            let operand_place: utils::Place<'tcx> =
+                                if let Some(place) = field.place() {
+                                    place.into()
+                                } else {
+                                    continue;
+                                };
+                            for source_proj in operand_place.region_projections(self.repacker) {
+                                let source_proj = source_proj.map_base(|p| {
+                                    MaybeOldPlace::new(
+                                        p,
+                                        Some(self.domain.post_main_state().get_latest(p)),
+                                    )
+                                });
+                                self.connect_outliving_projections(
+                                    source_proj,
+                                    target,
+                                    location,
+                                    |_| RegionProjectionMemberKind::Todo,
+                                );
+                            }
+                        }
+                    }
+                    Rvalue::Use(Operand::Constant(box c)) => match c.ty().kind() {
+                        ty::TyKind::Ref(const_region, _, _) => {
+                            if let ty::TyKind::Ref(target_region, _, _) =
+                                target.ty(self.repacker).ty.kind()
+                            {
+                                self.apply_action(BorrowPCGAction::add_region_projection_member(
+                                    RegionProjectionMember::new(
+                                        smallvec![RegionProjection::new(
+                                            (*const_region).into(),
+                                            MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                            self.repacker,
+                                        )
+                                        .unwrap()
+                                        .to_pcg_node()],
+                                        smallvec![RegionProjection::new(
+                                            (*target_region).into(),
+                                            target,
+                                            self.repacker,
+                                        )
+                                        .unwrap()
+                                        .into()],
+                                        RegionProjectionMemberKind::ConstRef,
+                                    ),
+                                    PathConditions::AtBlock(location.block),
+                                    "Assign constant",
+                                ));
+                            }
+                        }
+                        _ => {}
+                    },
+                    Rvalue::Use(Operand::Move(from)) => {
+                        let from: utils::Place<'tcx> = (*from).into();
+                        let target: utils::Place<'tcx> = (*target).into();
+                        if from.is_ref(self.repacker) {
+                            let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
+                            let new_place = target;
+                            self.apply_action(BorrowPCGAction::rename_place(
+                                old_place,
+                                new_place.into(),
+                            ));
+                        }
+
+                        let actions = self.domain.post_state_mut().delete_descendants_of(
+                            MaybeOldPlace::Current { place: from },
+                            location,
+                            self.repacker,
+                        );
+                        self.record_actions(actions);
+                    }
+                    Rvalue::Use(Operand::Copy(from)) => {
+                        let from_place: utils::Place<'tcx> = (*from).into();
+                        for source_proj in from_place.region_projections(self.repacker).into_iter()
+                        {
+                            self.connect_outliving_projections(
+                                source_proj.into(),
+                                target,
+                                location,
+                                |_| RegionProjectionMemberKind::Todo,
+                            );
+                        }
+                    }
+                    Rvalue::Ref(region, kind, blocked_place) => {
+                        let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
+                        if !target.ty(self.repacker).ty.is_ref() {
+                            self.domain.report_error(PCGError::unsupported(
+                                PCGUnsupportedError::AssignBorrowToNonReferenceType,
+                            ));
+                            return;
+                        }
+                        if matches!(kind, BorrowKind::Fake(_)) {
+                            return;
+                        }
+                        state.add_borrow(
+                            blocked_place.into(),
+                            target,
+                            kind.clone(),
+                            location,
+                            *region,
+                            self.repacker,
+                        );
+                        for source_proj in
+                            blocked_place.region_projections(self.repacker).into_iter()
+                        {
+                            self.connect_outliving_projections(
+                                source_proj.into(),
+                                target,
+                                location,
+                                |_| RegionProjectionMemberKind::BorrowOutlives,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+}

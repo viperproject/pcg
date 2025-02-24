@@ -17,14 +17,13 @@ use crate::{
             mir::{self, BasicBlock, Body, Location},
             ty::TyCtxt,
         },
-        mir_dataflow::{ResultsCursor},
+        mir_dataflow::ResultsCursor,
     },
     utils::{
         display::DebugLines,
         validity::HasValidityCheck,
         Place,
     },
-    BorrowPCGActions,
 };
 
 use crate::borrow_pcg::domain::BorrowsDomain;
@@ -38,6 +37,7 @@ use crate::{
     utils::PlaceRepacker,
     BorrowsBridge,
 };
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
 
 pub trait HasPcg<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;

@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     state::BorrowsState,
-    borrows_visitor::{BorrowsVisitor, StatementStage},
+    visitor::{BorrowsVisitor, StatementStage},
 };
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::utils::eval_stmt_data::EvalStmtData;

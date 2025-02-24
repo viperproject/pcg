@@ -5,6 +5,7 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
+    edge::kind::BorrowPCGEdgeKind,
     graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
@@ -266,6 +267,21 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.change_pcs_elem(old, new, repacker)
     }
 
+    fn min_blocked_by_capability(
+        &self,
+        edge: &BorrowPCGEdgeKind<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<CapabilityKind> {
+        let mut iter = edge.blocked_by_nodes(repacker).into_iter();
+        let first_node = iter.next()?;
+        let mut cap = self.get_capability(first_node.into())?;
+        for node in iter {
+            let other_cap = self.get_capability(node.into())?;
+            cap = cap.minimum(other_cap)?;
+        }
+        Some(cap)
+    }
+
     #[must_use]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
@@ -292,30 +308,39 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
         self.record_and_apply_action(remove_edge_action, &mut actions, repacker);
 
-        // If removing the edge results in a leaf node with a Lent or LentShared capability,
-        // it should be set to Exclusive
         let fg = self.graph().frozen_graph();
         let to_restore = edge
             .blocked_nodes(repacker)
             .into_iter()
-            .filter_map(|node| {
-                let cap = self.get_capability(node.into());
-                if let Some(local_node) = node.as_local_node()
-                    && matches!(cap, Some(CapabilityKind::Lent | CapabilityKind::LentShared))
-                    && !fg.has_edge_blocking(node, repacker)
-                {
-                    Some(local_node)
-                } else {
-                    None
-                }
-            })
+            .filter(|node| !fg.has_edge_blocking(*node, repacker))
             .collect::<Vec<_>>();
         for node in to_restore {
-            self.record_and_apply_action(
-                BorrowPCGAction::restore_capability(node, CapabilityKind::Exclusive),
-                &mut actions,
-                repacker,
-            );
+            if let Some(local_node) = node.as_local_node() {
+                // TODO: We are restoring too much capability sometimes
+                // We should restore such that:
+                // 1. If removing the edge results in a leaf node with a Lent or
+                //    LentShared capability, it should be set to Exclusive
+                // 2. Otherwise, the capability should be the minimum of the original blocking caps
+
+                let blocked_cap = self.get_capability(node);
+
+                let restore_cap = match self.get_capability(node) {
+                    Some(CapabilityKind::Lent | CapabilityKind::LentShared) => {
+                        Some(CapabilityKind::Exclusive)
+                    }
+                    _ => self.min_blocked_by_capability(edge.kind(), repacker),
+                };
+
+                if let Some(restore_cap) = restore_cap {
+                    if blocked_cap.is_none_or(|bc| bc < restore_cap) {
+                        self.record_and_apply_action(
+                            BorrowPCGAction::restore_capability(local_node, restore_cap),
+                            &mut actions,
+                            repacker,
+                        );
+                    }
+                }
+            }
         }
         actions
     }

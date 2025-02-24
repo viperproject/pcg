@@ -13,7 +13,6 @@ use std::{
 };
 
 use crate::{
-    borrow_pcg::borrows_visitor::BorrowCheckerImpl,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
@@ -25,6 +24,7 @@ use crate::{
 use super::{PCGContext, PCGEngine};
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
+use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {

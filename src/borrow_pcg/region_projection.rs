@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::has_pcs_elem::HasPcsElems;
 use super::{
-    borrow_pcg_edge::LocalNode, borrows_visitor::extract_regions,
+    borrow_pcg_edge::LocalNode, visitor::extract_regions,
     coupling_graph_constructor::CGNode,
 };
 use crate::utils::json::ToJsonWithRepacker;

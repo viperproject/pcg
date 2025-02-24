@@ -1,10 +1,11 @@
 pub mod action;
+pub mod borrow_checker;
 pub mod borrow_pcg_capabilities;
 pub mod borrow_pcg_edge;
 pub mod borrow_pcg_expansion;
 pub mod graph;
 pub mod state;
-pub mod borrows_visitor;
+pub mod visitor;
 pub mod coupling_graph_constructor;
 pub mod domain;
 pub mod edge;

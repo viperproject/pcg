@@ -2,9 +2,9 @@ use tracing::instrument;
 
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
-use super::state::BorrowsState;
 use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
+use super::state::BorrowsState;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::combined_pcs::PCGNode;
 use crate::free_pcs::CapabilityKind;
@@ -15,6 +15,7 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
+pub(crate) mod actions;
 pub(crate) mod executed_actions;
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
@@ -212,7 +213,7 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::Restore(restore) => {
                 let restore_node: PCGNode<'tcx> = restore.node().into();
                 if let Some(cap) = self.get_capability(restore_node) {
-                    assert!(cap < restore.capability());
+                    assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
                 if !restore_node.is_owned(repacker) {
                     if !self.set_capability(restore_node, restore.capability(), repacker) {
@@ -266,7 +267,6 @@ impl<'tcx> BorrowsState<'tcx> {
                                 capability
                             } else {
                                 // Presumably already expanded in another branch
-                                // TODO: Check expansion capability exists
                                 return true;
                             }
                         }

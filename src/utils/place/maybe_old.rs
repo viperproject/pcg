@@ -1,5 +1,5 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::borrows_visitor::extract_regions;
+use crate::borrow_pcg::visitor::extract_regions;
 use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{

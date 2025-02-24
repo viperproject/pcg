@@ -443,7 +443,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// Complexity: O(E)
     ///
     /// If you need to call this function multiple times, you can get better
-    /// performance using [`EdgesBlockingMap`], (c.f.
+    /// performance using [`FrozenGraphRef`], (c.f.
     /// [`BorrowsGraph::edges_blocking_map`]).
     pub(crate) fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
         &self,

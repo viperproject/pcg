@@ -100,7 +100,7 @@ function layoutUnsizedNodes(
 }
 
 async function main() {
-  const viz = await Viz.instance();
+  const _viz = await Viz.instance();
   const functions = await getFunctions();
   let initialFunction = localStorage.getItem("selectedFunction");
   if (!initialFunction || !Object.keys(functions).includes(initialFunction)) {
@@ -486,11 +486,13 @@ async function main() {
               setSelectedFunction(fn);
             }}
           >
-            {Object.keys(functions).map((func) => (
-              <option key={func} value={func}>
-                {functions[func]}
-              </option>
-            ))}
+            {Object.keys(functions)
+              .sort((a, b) => functions[a].localeCompare(functions[b]))
+              .map((func) => (
+                <option key={func} value={func}>
+                  {functions[func]}
+                </option>
+              ))}
           </select>
           <br />
           {paths.length > 0 && (
