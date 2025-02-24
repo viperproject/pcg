@@ -42,7 +42,7 @@ jobs:
       with:
         toolchain: nightly-2024-09-15
     - name: Run tests on selected crates
-      run: cargo test --test test_selected_crates
+      run: cargo test --test selected_crates
 
   unit_tests:
     runs-on: ubuntu-latest
