@@ -1,7 +1,4 @@
-use crate::{
-    combined_pcs::EvalStmtPhase::*,
-    utils::display::DisplayWithRepacker,
-};
+use crate::{combined_pcs::EvalStmtPhase::*, utils::display::DisplayWithRepacker};
 use smallvec::smallvec;
 use tracing::instrument;
 
@@ -22,8 +19,7 @@ use crate::{
                 StatementKind, Terminator, TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
-        }
-        ,
+        },
     },
     utils::Place,
     visualization::{dot_graph::DotGraph, generate_borrows_dot_graph},
@@ -38,6 +34,7 @@ use super::{
     unblock_graph::UnblockGraph,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::borrow_pcg::edge::abstraction::{
@@ -49,7 +46,6 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{self, PlaceRepacker, PlaceSnapshot},
 };
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
 
 mod stmt;
 
@@ -239,52 +235,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 self.domain.post_main_state().get_latest(input_place),
             ));
             let ty = input_place.ty(self.repacker).ty;
-            let ty = match ty.kind() {
-                ty::TyKind::Ref(region, ty, _) => {
-                    let output_borrow_projections = self.projections_borrowing_from_input_lifetime(
-                        (*region).into(),
-                        destination.into(),
-                    );
-                    for output in output_borrow_projections {
-                        let input_rp = input_place.region_projection(0, self.repacker);
-                        let actions = UnblockGraph::actions_to_unblock(
-                            input_rp.into(),
-                            &self.domain.post_main_state(),
-                            self.repacker,
-                        )
-                        .unwrap_or_else(|e| {
-                            if let Ok(dot_graph) = generate_borrows_dot_graph(
-                                self.repacker,
-                                self.domain.data.states[PostMain].graph(),
-                            ) {
-                                DotGraph::render_with_imgcat(
-                                    &dot_graph,
-                                    "Borrows graph for unblock actions",
-                                )
-                                .unwrap_or_else(|e| {
-                                    eprintln!("Error rendering borrows graph: {}", e);
-                                });
-                            }
-                            panic!(
-                                "Error getting unblock actions to unblock {:?} for function call at {:?}: {:?}",
-                                input_rp, location, e
-                            );
-                        });
-                        for action in actions {
-                            self.apply_action(BorrowPCGAction::remove_edge(
-                                action.edge,
-                                "For Function Call Abstraction",
-                            ));
-                        }
-                        edges.push(AbstractionBlockEdge::new(
-                            vec![input_rp.into()].into_iter().collect(),
-                            vec![output.into()].into_iter().collect(),
-                        ));
-                    }
-                    *ty
-                }
-                _ => ty,
-            };
             for (lifetime_idx, input_lifetime) in extract_regions(ty).into_iter().enumerate() {
                 for output in self
                     .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())

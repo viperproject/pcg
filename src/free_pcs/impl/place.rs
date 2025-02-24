@@ -37,7 +37,8 @@ impl<'tcx> RelatedSet<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
-    /// An immutable owned place, or a shared borrow
+    /// For borrowed places only: permits reads from the location, but not writes or
+    /// drops.
     Read,
 
     /// For owned places, this capability is used when the place is moved out
@@ -129,6 +130,8 @@ impl CapabilityKind {
     pub fn is_shallow_exclusive(self) -> bool {
         matches!(self, CapabilityKind::ShallowExclusive)
     }
+
+    // TODO: This logic is wrong!!!
     pub fn minimum(self, other: Self) -> Option<Self> {
         match self.partial_cmp(&other)? {
             Ordering::Greater => Some(other),
