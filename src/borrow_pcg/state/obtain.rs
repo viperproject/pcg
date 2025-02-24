@@ -215,46 +215,19 @@ impl<'tcx> BorrowsState<'tcx> {
 
                 let path_conditions = PathConditions::new(location.block);
 
-                if !self.contains_edge(&BorrowPCGEdge::new(
-                    region_projection_member.clone().into(),
-                    path_conditions.clone(),
-                )) {
-                    self.record_and_apply_action(
-                        BorrowPCGAction::add_region_projection_member(
-                            region_projection_member,
-                            path_conditions.clone(),
-                            "Ensure Deref Expansion To At Least",
-                        ),
-                        &mut actions,
-                        repacker,
-                    );
-                }
-                // We also do this for all target region projections, e.g.
-                // t|'b -> *t|'b
-                for target_rp in target.region_projections(repacker) {
-                    let region_projection_member = RegionProjectionMember::new(
-                        smallvec![base_rp.to_pcg_node()],
-                        smallvec![target_rp.into()],
-                        RegionProjectionMemberKind::DerefBorrowOutlives,
-                    );
-
-                    if !self.contains_edge(&BorrowPCGEdge::new(
-                        region_projection_member.clone().into(),
+                self.record_and_apply_action(
+                    BorrowPCGAction::add_region_projection_member(
+                        region_projection_member,
                         path_conditions.clone(),
-                    )) {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::add_region_projection_member(
-                                region_projection_member,
-                                path_conditions.clone(),
-                                "Ensure Deref Expansion To At Least",
-                            ),
-                            &mut actions,
-                            repacker,
-                        );
-                    }
-                }
+                        "Expand",
+                    ),
+                    &mut actions,
+                    repacker,
+                );
             }
 
+            // We don't introduce an expansion if the place is owned, because
+            // that is handled by the owned PCG.
             if !target.is_owned(repacker) {
                 let expansion = BorrowPCGExpansion::new(
                     base.into(),
@@ -262,18 +235,12 @@ impl<'tcx> BorrowsState<'tcx> {
                     repacker,
                 );
 
-                if !self.contains_edge(
-                    &expansion
-                        .clone()
-                        .to_borrow_pcg_edge(PathConditions::AtBlock(location.block)),
-                ) {
-                    let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                        expansion,
-                        location,
-                        "Ensure Deref Expansion (Place)",
-                    );
-                    self.record_and_apply_action(action, &mut actions, repacker);
-                }
+                let action = BorrowPCGAction::insert_borrow_pcg_expansion(
+                    expansion,
+                    location,
+                    "Ensure Deref Expansion (Place)",
+                );
+                self.record_and_apply_action(action, &mut actions, repacker);
             }
 
             for rp in base.region_projections(repacker) {

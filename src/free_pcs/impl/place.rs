@@ -83,7 +83,9 @@ impl PartialOrd for CapabilityKind {
         }
         match (*self, *other) {
             // Exclusive is greater than everything below it
-            (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive) => Some(Ordering::Greater),
+            (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive) => {
+                Some(Ordering::Greater)
+            }
             (CapabilityKind::Exclusive, CapabilityKind::LentShared) => Some(Ordering::Greater),
             (CapabilityKind::ShallowExclusive, CapabilityKind::Exclusive) => Some(Ordering::Less),
             (CapabilityKind::LentShared, CapabilityKind::Exclusive) => Some(Ordering::Less),
@@ -131,11 +133,12 @@ impl CapabilityKind {
         matches!(self, CapabilityKind::ShallowExclusive)
     }
 
-    // TODO: This logic is wrong!!!
     pub fn minimum(self, other: Self) -> Option<Self> {
-        match self.partial_cmp(&other)? {
-            Ordering::Greater => Some(other),
-            _ => Some(self),
+        match self.partial_cmp(&other) {
+            Some(Ordering::Greater) => Some(other),
+            Some(Ordering::Less) => Some(self),
+            Some(Ordering::Equal) => Some(self),
+            None => None,
         }
     }
 }
