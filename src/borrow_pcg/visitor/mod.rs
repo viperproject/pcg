@@ -189,6 +189,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) {
+        // This is just a performance optimization
         if self
             .domain
             .post_main_state()
@@ -250,10 +251,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     // Only add the edge if the input projection already exists, i.e.
                     // is blocking something else. Otherwise, there is no point in tracking
                     // when it becomes accessible.
-                    if self
-                        .domain
-                        .post_main_state()
-                        .contains(input_rp, self.repacker)
+                    // if self
+                    //     .domain
+                    //     .post_main_state()
+                    //     .contains(input_rp, self.repacker)
                     {
                         edges.push(AbstractionBlockEdge::new(
                             vec![input_rp.into()].into_iter().collect(),
