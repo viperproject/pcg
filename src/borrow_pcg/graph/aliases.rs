@@ -2,14 +2,12 @@ use egg::{define_language, Id};
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode,
-        edge::kind::BorrowPCGEdgeKind,
-        region_projection::RegionIdx,
+        borrow_pcg_edge::LocalNode, edge::kind::BorrowPCGEdgeKind, region_projection::RegionIdx,
         region_projection_member::RegionProjectionMemberKind,
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{HasPlace, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
@@ -29,14 +27,13 @@ pub enum PCGNodeDiscriminant {
     Const,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 struct Alias<'tcx> {
     node: PCGNode<'tcx>,
     exact_alias: bool,
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    #[tracing::instrument(skip(repacker))]
     pub(crate) fn aliases(
         &self,
         node: LocalNode<'tcx>,
@@ -44,6 +41,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(repacker) {
+            tracing::info!("Iteration Start: {}", place.to_short_string(repacker));
+            for c in results.iter() {
+                tracing::info!("{} {}", c.node.to_short_string(repacker), c.exact_alias);
+            }
             results.insert(Alias {
                 node: place.into(),
                 exact_alias: true,
@@ -146,7 +147,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 extend(input.to_pcg_node(), seen, &mut result, direct);
                             }
                         }
-                        RegionProjectionMemberKind::DerefBorrowOutlives => {}
+                        RegionProjectionMemberKind::DerefBorrowOutlives
+                        | RegionProjectionMemberKind::BorrowOutlives => {}
                         _ => {
                             for input in region_projection_member.inputs() {
                                 extend(input.to_pcg_node(), seen, &mut result, false);
@@ -381,6 +383,9 @@ fn main() {
         assert!(!last_bg
             .aliases(star_yyy, &body.body, tcx)
             .contains(&mir::Local::from(3usize).into()));
+        assert!(!last_bg
+            .aliases(star_yyy, &body.body, tcx)
+            .contains(&mir::Local::from(4usize).into()));
     });
 
     let input = r#"
