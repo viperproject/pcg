@@ -37,15 +37,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 // will be overwritten in the assignment.
                 if target.is_ref(self.repacker) {
                     self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
-                    // The `make_place_old` action also removes capability to `target`, we re-add the
-                    // capability to `target` to ensure that we can still write to it.
-                    if !target.is_owned(self.repacker) {
-                        self.domain.post_state_mut().set_capability(
-                            target.into(),
-                            CapabilityKind::Write,
-                            self.repacker,
-                        );
-                    }
                 }
                 let obtain_reason = ObtainReason::AssignTarget;
                 let obtain_actions = self.domain.post_state_mut().obtain(
@@ -83,7 +74,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             ));
                         }
                     } else {
-                        tracing::error!(
+                        panic!(
                             "No capability found for {}",
                             target.to_short_string(self.repacker)
                         );

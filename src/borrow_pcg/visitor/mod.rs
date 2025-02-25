@@ -218,10 +218,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .repacker
             .tcx()
             .liberate_late_bound_regions(*func_def_id, sig);
+
+        // This is also a performance optimization
         let output_lifetimes = extract_regions(sig.output());
         if output_lifetimes.is_empty() {
             return;
         }
+
         let mut edges = vec![];
 
         for arg in args.iter() {
