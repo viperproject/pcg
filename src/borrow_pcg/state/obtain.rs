@@ -1,6 +1,6 @@
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, ToBorrowsEdge};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion};
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
@@ -10,16 +10,14 @@ use crate::borrow_pcg::region_projection_member::{
 };
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
-use crate::combined_pcs::{LocalNodeLike, PCGError, PCGNodeLike};
+use crate::combined_pcs::{PCGError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::{self, Mutability};
-use crate::utils::display::DisplayWithRepacker;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
-use crate::{pcg_validity_assert, validity_checks_enabled};
 use smallvec::smallvec;
 
 impl ObtainReason {
@@ -79,7 +77,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
         if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
-            actions.extend(self.contract_to(repacker, place, location)?);
+            actions.extend(self.contract_to(place, location, repacker)?);
         }
 
         if !self.contains(place, repacker) {
@@ -93,11 +91,11 @@ impl<'tcx> BorrowsState<'tcx> {
     /// Contracts the PCG to the given place by converting borrows to region projection members
     /// and performing unblock operations.
     #[must_use]
-    fn contract_to(
+    pub(crate) fn contract_to(
         &mut self,
-        repacker: PlaceRepacker<'_, 'tcx>,
         place: Place<'tcx>,
         location: Location,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 

@@ -82,6 +82,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowExpansion<'tcx> {
 }
 
 impl<'tcx> BorrowExpansion<'tcx> {
+    #[allow(unused)]
     pub(crate) fn is_deref(&self) -> bool {
         matches!(self, BorrowExpansion::Deref)
     }

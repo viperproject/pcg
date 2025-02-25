@@ -172,11 +172,11 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             ));
                         }
 
-                        let actions = self.domain.post_state_mut().delete_descendants_of(
-                            MaybeOldPlace::Current { place: from },
+                        let actions = self.domain.post_state_mut().contract_to(
+                            from,
                             location,
                             self.repacker,
-                        );
+                        ).unwrap();
                         self.record_actions(actions);
                     }
                     Rvalue::Use(Operand::Copy(from)) => {

@@ -221,7 +221,6 @@ fn test_aliases() {
         let stmt = &bb.statements[0];
         let init_z: mir::Place<'_> = mir::Local::from(5 as usize).into();
         let z_deref = init_z.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
         let deref3 = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let deref_target = deref3.project_deeper(
@@ -254,8 +253,7 @@ fn test_aliases() {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let x = placer.local("x").mk();
-        let repacker = PlaceRepacker::new(&body.body, tcx);
-        check_all_statements(&body.body, &mut pcg, |location, stmt| {
+        check_all_statements(&body.body, &mut pcg, |_location, stmt| {
             let _ = stmt.aliases(x, &body.body, tcx);
             // assert!(
             //     !stmt
@@ -280,7 +278,6 @@ fn main() {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let temp: mir::Place<'_> = mir::Local::from(4 as usize).into();
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
                 !stmt
@@ -308,7 +305,6 @@ fn main() {
 
         let temp_19: mir::Place<'_> = mir::Local::from(19 as usize).into();
 
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
                 !stmt
@@ -337,7 +333,6 @@ fn main() {
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = bb0.statements.last().unwrap();
         let e_deref = placer.local("e").deref().mk();
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         let a = placer.local("a").mk();
         assert!(last_bg
             .aliases(e_deref, &body.body, tcx)
@@ -359,7 +354,6 @@ fn main() {
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[10];
         let starstarc = placer.local("c").deref().deref().mk();
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         let a = placer.local("a").mk();
         assert!(last_bg
             .aliases(starstarc, &body.body, tcx)
@@ -380,7 +374,6 @@ fn main() {
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[11];
         let star_yyy = placer.local("y").deref().deref().deref().mk();
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         let x = placer.local("x").mk();
         assert!(last_bg
             .aliases(star_yyy, &body.body, tcx)
@@ -407,7 +400,6 @@ fn main() {
         let last_bg = &bb0.statements[13];
         let temp: mir::Place<'_> = mir::Local::from(5 as usize).into();
         let star_5 = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let repacker = PlaceRepacker::new(&body.body, tcx);
         let x = placer.local("x").mk();
         assert!(last_bg.aliases(star_5, &body.body, tcx).contains(&x.into()));
     });

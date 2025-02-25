@@ -86,6 +86,7 @@ impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
+    #[allow(unused)]
     pub(crate) fn ty(&self, repacker: PlaceRepacker<'_, 'tcx>) -> mir::tcx::PlaceTy<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.ty(repacker),

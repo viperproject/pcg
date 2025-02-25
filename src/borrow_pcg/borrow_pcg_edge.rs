@@ -337,6 +337,7 @@ impl<'tcx> PCGNode<'tcx> {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn as_maybe_old_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         self.as_place()?.try_into().ok()
     }

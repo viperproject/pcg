@@ -1,4 +1,4 @@
-use crate::{combined_pcs::EvalStmtPhase::*};
+use crate::combined_pcs::EvalStmtPhase::*;
 use smallvec::smallvec;
 use tracing::instrument;
 
@@ -29,7 +29,6 @@ use super::{
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
     region_projection_member::RegionProjectionMember,
-    unblock_graph::UnblockGraph,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
