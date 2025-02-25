@@ -11,12 +11,10 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
+use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::
-    borrow_pcg::action::executed_actions::ExecutedActions
-;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -217,35 +215,13 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if self
+        changed |= self
             .graph
-            .join(&other.graph, self_block, other_block, repacker, bc)
-        {
-            changed = true;
-        }
-        if self.latest.join(&other.latest, self_block, repacker) {
-            // TODO: Setting changed to true causes analysis to diverge
-            // think about how latest should work in loops
-
-            // changed = true;
-        }
+            .join(&other.graph, self_block, other_block, repacker, bc);
+        changed |= self.latest.join(&other.latest, self_block, repacker);
         if other.capabilities != self.capabilities {
-            if Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities) {
-                changed = true;
-            }
+            changed |= Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities);
         }
-        // // These checks are disabled even for debugging currently because they are very expensive
-        // if changed && cfg!(debug_assertions) {
-        //     debug_assert_ne!(*self, old);
-        //     self.join_transitions.record_join_result(
-        //         JoinComputation {
-        //             lhs: old.join_transition_elem(self_block),
-        //             rhs: other.clone().join_transition_elem(other_block),
-        //             result: self.clone().join_transition_elem(self_block),
-        //         },
-        //         repacker,
-        //     );
-        // }
         changed
     }
 
@@ -312,12 +288,6 @@ impl<'tcx> BorrowsState<'tcx> {
             .collect::<Vec<_>>();
         for node in to_restore {
             if let Some(local_node) = node.as_local_node() {
-                // TODO: We are restoring too much capability sometimes
-                // We should restore such that:
-                // 1. If removing the edge results in a leaf node with a Lent or
-                //    LentShared capability, it should be set to Exclusive
-                // 2. Otherwise, the capability should be the minimum of the original blocking caps
-
                 let blocked_cap = self.get_capability(node);
 
                 let restore_cap = match self.get_capability(node) {
