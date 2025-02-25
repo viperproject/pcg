@@ -55,12 +55,22 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
         self.0.get(&node.into()).copied()
     }
 
-    /// TODO: The logic here isn't quite right yet.
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
-        for (place, capability) in other.iter() {
-            if self.0.insert(place, capability).is_none() {
-                changed = true;
+        for (place, other_capability) in other.iter() {
+            match self.0.get(&place) {
+                Some(self_capability) => {
+                    if let Some(c) = self_capability.minimum(other_capability) {
+                        changed |= self.0.insert(place, c) != Some(c);
+                    } else {
+                        self.0.remove(&place);
+                        changed = true;
+                    }
+                }
+                None => {
+                    self.0.insert(place, other_capability);
+                    changed = true;
+                }
             }
         }
         changed
