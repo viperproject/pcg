@@ -171,13 +171,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                 new_place.into(),
                             ));
                         }
-
-                        let actions = self.domain.post_state_mut().contract_to(
-                            from,
-                            location,
-                            self.repacker,
-                        ).unwrap();
-                        self.record_actions(actions);
                     }
                     Rvalue::Use(Operand::Copy(from)) => {
                         let from_place: utils::Place<'tcx> = (*from).into();
