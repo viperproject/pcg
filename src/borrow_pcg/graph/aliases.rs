@@ -13,7 +13,6 @@ use crate::{
 };
 
 use super::BorrowsGraph;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 
 define_language! {
     enum EggPcgNode {
