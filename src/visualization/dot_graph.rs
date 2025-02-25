@@ -146,6 +146,7 @@ pub struct DotNode {
     pub shape: DotStringAttr,
     pub style: Option<DotStringAttr>,
     pub penwidth: Option<DotFloatAttr>,
+    pub tooltip: Option<DotStringAttr>,
 }
 
 trait DotAttr: Display {}
@@ -189,6 +190,7 @@ impl Display for DotNode {
             format_attr("shape", &self.shape),
             format_optional("style", &self.style),
             format_optional("penwidth", &self.penwidth),
+            format_optional("tooltip", &self.tooltip),
         ]
         .into_iter()
         .filter(|s| !s.is_empty())
@@ -209,6 +211,7 @@ pub struct EdgeOptions {
     color: Option<String>,
     style: Option<String>,
     direction: Option<EdgeDirection>,
+    tooltip: Option<String>,
 }
 
 impl EdgeOptions {
@@ -218,6 +221,7 @@ impl EdgeOptions {
             color: None,
             style: None,
             direction: Some(direction),
+            tooltip: None,
         }
     }
 
@@ -227,6 +231,7 @@ impl EdgeOptions {
             color: None,
             style: None,
             direction: None,
+            tooltip: None,
         }
     }
 
@@ -242,6 +247,11 @@ impl EdgeOptions {
 
     pub fn with_style(mut self, style: String) -> Self {
         self.style = Some(style);
+        self
+    }
+
+    pub fn with_tooltip(mut self, tooltip: String) -> Self {
+        self.tooltip = Some(tooltip);
         self
     }
 }
@@ -268,11 +278,20 @@ impl Display for DotEdge {
             Some(color) => format!(", color=\"{}\"", color),
             None => "".to_string(),
         };
-
+        let tooltip_part = match &self.options.tooltip {
+            Some(tooltip) => format!(", edgetooltip=\"{}\"", tooltip),
+            None => "".to_string(),
+        };
         write!(
             f,
-            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}]",
-            self.from, self.to, self.options.label, style_part, direction_part, color_part
+            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}]",
+            self.from,
+            self.to,
+            self.options.label,
+            style_part,
+            direction_part,
+            color_part,
+            tooltip_part
         )
     }
 }

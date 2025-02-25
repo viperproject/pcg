@@ -11,9 +11,7 @@ pub mod legend;
 pub mod mir_graph;
 
 use crate::{
-    borrows::{
-        borrows_graph::BorrowsGraph, borrows_state::BorrowsState, unblock_graph::UnblockGraph,
-    },
+    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState, unblock_graph::UnblockGraph},
     free_pcs::{CapabilityKind, CapabilitySummary},
     rustc_interface,
     utils::{Place, PlaceRepacker, SnapshotLocation},
@@ -61,40 +59,12 @@ pub struct GraphNode {
 impl GraphNode {
     fn to_dot_node(&self) -> DotNode {
         match &self.node_type {
-            NodeType::ReborrowingDagNode {
-                label,
-                location,
-                capability,
-            } => {
-                let location_text = match location {
-                    Some(l) => escape_html(&format!(" at {:?}", l)),
-                    None => "".to_string(),
-                };
-                let capability_text = match capability {
-                    Some(k) => format!("{:?}", k),
-                    None => "".to_string(),
-                };
-                let label = format!(
-                    "<FONT FACE=\"courier\">{}</FONT>&nbsp;{}&nbsp;{}",
-                    escape_html(&label),
-                    escape_html(&location_text),
-                    escape_html(&capability_text),
-                );
-                DotNode {
-                    id: self.id.to_string(),
-                    label: DotLabel::Html(label.clone()),
-                    color: DotStringAttr("darkgreen".to_string()),
-                    font_color: DotStringAttr("darkgreen".to_string()),
-                    shape: DotStringAttr("rect".to_string()),
-                    style: Some(DotStringAttr("rounded".to_string())),
-                    penwidth: Some(DotFloatAttr(1.5)),
-                }
-            }
-            NodeType::FPCSNode {
+            NodeType::PlaceNode {
+                owned,
                 capability,
                 location,
                 label,
-                region,
+                ty,
             } => {
                 let capability_text = match capability {
                     Some(k) => format!("{:?}", k),
@@ -104,22 +74,29 @@ impl GraphNode {
                     Some(l) => escape_html(&format!(" at {:?}", l)),
                     None => "".to_string(),
                 };
-                let color =
-                    if location.is_some() || matches!(capability, Some(CapabilityKind::Write)) {
-                        "gray"
-                    } else {
-                        "black"
-                    };
-                let region_html = match region {
-                    Some(r) => format!("<br/>{}", r),
-                    None => "".to_string(),
+                let color = if location.is_some()
+                    || capability.is_none()
+                    || matches!(capability, Some(CapabilityKind::Write))
+                {
+                    "gray"
+                } else if *owned {
+                    "black"
+                } else {
+                    "darkgreen"
+                };
+                let (style, penwidth) = if *owned {
+                    (None, None)
+                } else {
+                    (
+                        Some(DotStringAttr("rounded".to_string())),
+                        Some(DotFloatAttr(1.5)),
+                    )
                 };
                 let label = format!(
-                    "<FONT FACE=\"courier\">{}</FONT>&nbsp;{}{}{}",
+                    "<FONT FACE=\"courier\">{}&nbsp;{}{}</FONT>",
                     escape_html(&label),
                     escape_html(&capability_text),
                     escape_html(&location_text),
-                    region_html
                 );
                 DotNode {
                     id: self.id.to_string(),
@@ -127,8 +104,9 @@ impl GraphNode {
                     color: DotStringAttr(color.to_string()),
                     font_color: DotStringAttr(color.to_string()),
                     shape: DotStringAttr("rect".to_string()),
-                    style: None,
-                    penwidth: None,
+                    style,
+                    penwidth,
+                    tooltip: Some(DotStringAttr(ty.clone())),
                 }
             }
             NodeType::RegionProjectionNode { label } => DotNode {
@@ -139,6 +117,7 @@ impl GraphNode {
                 shape: DotStringAttr("octagon".to_string()),
                 style: None,
                 penwidth: None,
+                tooltip: None,
             },
         }
     }
@@ -146,19 +125,15 @@ impl GraphNode {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum NodeType {
-    FPCSNode {
+    PlaceNode {
+        owned: bool,
         label: String,
         capability: Option<CapabilityKind>,
         location: Option<SnapshotLocation>,
-        region: Option<String>,
+        ty: String,
     },
     RegionProjectionNode {
         label: String,
-    },
-    ReborrowingDagNode {
-        label: String,
-        location: Option<SnapshotLocation>,
-        capability: Option<CapabilityKind>,
     },
 }
 
@@ -168,9 +143,14 @@ enum GraphEdge {
         blocked: NodeId,
         blocking: NodeId,
     },
-    ReborrowEdge {
+    // For literal borrows
+    AliasEdge {
+        blocked_place: NodeId,
+        blocking_place: NodeId,
+    },
+    BorrowEdge {
         borrowed_place: NodeId,
-        assigned_place: NodeId,
+        assigned_region_projection: NodeId,
         location: Location,
         region: String,
         path_conditions: String,
@@ -187,6 +167,7 @@ enum GraphEdge {
     RegionProjectionMemberEdge {
         source: NodeId,
         target: NodeId,
+        kind: String,
     },
     CoupledEdge {
         source: NodeId,
@@ -202,9 +183,19 @@ impl GraphEdge {
                 to: target.to_string(),
                 options: EdgeOptions::undirected(),
             },
-            GraphEdge::ReborrowEdge {
+            GraphEdge::AliasEdge {
+                blocked_place,
+                blocking_place,
+            } => DotEdge {
+                from: blocked_place.to_string(),
+                to: blocking_place.to_string(),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_color("grey".to_string())
+                    .with_style("dashed".to_string()),
+            },
+            GraphEdge::BorrowEdge {
                 borrowed_place,
-                assigned_place,
+                assigned_region_projection: assigned_place,
                 location: _,
                 region,
                 path_conditions,
@@ -213,7 +204,8 @@ impl GraphEdge {
                 from: borrowed_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string())
-                    .with_label(format!("{} - {}", region, path_conditions)),
+                    .with_label(format!("{}", region))
+                    .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::DerefExpansionEdge {
                 source,
@@ -224,17 +216,22 @@ impl GraphEdge {
                 to: target.to_string(),
                 options: EdgeOptions::undirected()
                     .with_color("green".to_string())
-                    .with_label(path_conditions.clone()),
+                    .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::AbstractEdge { blocked, blocking } => DotEdge {
                 from: blocked.to_string(),
                 to: blocking.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
-            GraphEdge::RegionProjectionMemberEdge { source, target } => DotEdge {
+            GraphEdge::RegionProjectionMemberEdge {
+                source,
+                target,
+                kind,
+            } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_label(kind.clone())
                     .with_color("purple".to_string()),
             },
             GraphEdge::CoupledEdge { source, target } => DotEdge {

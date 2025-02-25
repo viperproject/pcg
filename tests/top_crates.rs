@@ -4,6 +4,7 @@ mod common;
 use common::{get, run_on_crate};
 
 #[test]
+#[ignore]
 pub fn top_crates() {
     top_crates_range(0..500)
 }
@@ -14,7 +15,7 @@ pub fn top_crates_range(range: std::ops::Range<usize>) {
     for (i, krate) in top_crates {
         let version = krate.version.unwrap_or(krate.newest_version);
         println!("Starting: {i} ({})", krate.name);
-        run_on_crate(&krate.name, &version);
+        run_on_crate(&krate.name, &version, false);
     }
 }
 

@@ -40,6 +40,14 @@ fn run_cachegrind(file_path: &PathBuf) -> u64 {
             "target/release/pcs_bin",
             file_path.to_str().unwrap(),
         ])
+        .env(
+            "PCG_POLONIUS",
+            if common::is_polonius_test_file(file_path) {
+                "true"
+            } else {
+                "false"
+            },
+        )
         .output()
         .expect("Failed to run valgrind");
 
@@ -74,6 +82,7 @@ fn format_results(results: &[(String, u64)]) -> String {
     output
 }
 
+#[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn benchmark_test_files() {
     // First build in release mode

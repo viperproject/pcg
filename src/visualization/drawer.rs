@@ -1,8 +1,6 @@
-use std::{
-    io::{self},
-};
+use std::io::{self};
 
-use crate::{visualization::dot_graph::DotGraph};
+use crate::visualization::dot_graph::DotGraph;
 
 use super::{
     Graph, GraphDrawer,

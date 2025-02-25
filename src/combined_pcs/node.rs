@@ -4,7 +4,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::Place;
 use crate::{
-    borrows::{
+    borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         region_projection::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
@@ -13,7 +13,7 @@ use crate::{
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
 };
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjectionBase<'tcx>> {
     Place(T),
     RegionProjection(RegionProjection<'tcx, U>),

@@ -1,16 +1,18 @@
-use crate::rustc_interface::ast::Mutability;
-use crate::rustc_interface::middle::mir;
-use crate::rustc_interface::index::IndexVec;
-use crate::utils::json::ToJsonWithRepacker;
-use crate::borrows::has_pcs_elem::HasPcsElems;
-use crate::borrows::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike};
+use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::region_projection::{
+    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
+};
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
-use crate::utils::{HasPlace, Place, PlaceRepacker};
+use crate::rustc_interface::ast::Mutability;
+use crate::rustc_interface::index::IndexVec;
+use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithRepacker;
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
+use crate::utils::{HasPlace, Place, PlaceRepacker};
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {
     /// A place that has a name in the program
     Local(MaybeOldPlace<'tcx>),
@@ -84,6 +86,17 @@ impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
+    #[allow(unused)]
+    pub(crate) fn ty(&self, repacker: PlaceRepacker<'_, 'tcx>) -> mir::tcx::PlaceTy<'tcx> {
+        match self {
+            MaybeRemotePlace::Local(p) => p.ty(repacker),
+            MaybeRemotePlace::Remote(rp) => mir::tcx::PlaceTy {
+                ty: rp.ty(repacker).into(),
+                variant_index: None,
+            },
+        }
+    }
+
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         match self {
             MaybeRemotePlace::Local(p) => p.mutability(repacker),
@@ -174,6 +187,14 @@ impl RemotePlace {
 
     pub(crate) fn assigned_local(self) -> mir::Local {
         self.local
+    }
+
+    pub(crate) fn ty<'mir, 'tcx>(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> ty::Ty<'tcx> {
+        let place: Place<'_> = self.local.into();
+        match place.ty(repacker).ty.kind() {
+            ty::TyKind::Ref(_, ty, _) => *ty,
+            _ => todo!(),
+        }
     }
 
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, '_>) -> Mutability {

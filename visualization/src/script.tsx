@@ -36,7 +36,7 @@ import {
   PCSIterations,
 } from "./api";
 import { filterNodesAndEdges } from "./mir_graph";
-import { Selection, PCSGraphSelector } from "./components/PCSGraphSelector";
+import { Selection, PCGGraphSelector } from "./components/PCSGraphSelector";
 
 const layoutSizedNodes = (
   nodes: DagreInputNode<BasicBlockData>[],
@@ -100,7 +100,7 @@ function layoutUnsizedNodes(
 }
 
 async function main() {
-  const viz = await Viz.instance();
+  const _viz = await Viz.instance();
   const functions = await getFunctions();
   let initialFunction = localStorage.getItem("selectedFunction");
   if (!initialFunction || !Object.keys(functions).includes(initialFunction)) {
@@ -150,6 +150,12 @@ async function main() {
     );
     const [showStorageStmts, setShowStorageStmts] = useState(
       localStorage.getItem("showStorageStmts") !== "false"
+    );
+    const [showPCGSelector, setShowPCGSelector] = useState(
+      localStorage.getItem("showPCGSelector") !== "false"
+    );
+    const [showPCGOps, setShowPCGOps] = useState(
+      localStorage.getItem("showPCGOps") !== "false"
     );
 
     const { filteredNodes, filteredEdges } = filterNodesAndEdges(nodes, edges, {
@@ -448,6 +454,8 @@ async function main() {
     addLocalStorageCallback("showPathBlocksOnly", showPathBlocksOnly);
     addLocalStorageCallback("showPCG", showPCG);
     addLocalStorageCallback("showStorageStmts", showStorageStmts);
+    addLocalStorageCallback("showPCGSelector", showPCGSelector);
+    addLocalStorageCallback("showPCGOps", showPCGOps);
 
     const isBlockOnSelectedPath = useCallback(
       (block: number) => {
@@ -459,7 +467,7 @@ async function main() {
 
     const pcsGraphSelector =
       currentPoint.type === "stmt" && iterations.length > currentPoint.stmt ? (
-        <PCSGraphSelector
+        <PCGGraphSelector
           iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
           selected={selected}
           onSelect={setSelected}
@@ -478,35 +486,41 @@ async function main() {
               setSelectedFunction(fn);
             }}
           >
-            {Object.keys(functions).map((func) => (
-              <option key={func} value={func}>
-                {functions[func]}
-              </option>
-            ))}
+            {Object.keys(functions)
+              .sort((a, b) => functions[a].localeCompare(functions[b]))
+              .map((func) => (
+                <option key={func} value={func}>
+                  {functions[func]}
+                </option>
+              ))}
           </select>
           <br />
-          <label htmlFor="path-select">Select Path:</label>
-          <select
-            id="path-select"
-            value={selectedPath}
-            onChange={(e) => setSelectedPath(parseInt(e.target.value))}
-          >
-            {paths.map((path, index) => (
-              <option key={index} value={index}>
-                {path.map((p) => `bb${p}`).join(" -> ")}
-              </option>
-            ))}
-          </select>
-          <br />
-          <label>
-            <input
-              type="checkbox"
-              checked={showPathBlocksOnly}
-              onChange={(e) => setShowPathBlocksOnly(e.target.checked)}
-            />
-            Show path blocks only
-          </label>
-          <br />
+          {paths.length > 0 && (
+            <>
+              <label htmlFor="path-select">Select Path:</label>
+              <select
+                id="path-select"
+                value={selectedPath}
+                onChange={(e) => setSelectedPath(parseInt(e.target.value))}
+              >
+                {paths.map((path, index) => (
+                  <option key={index} value={index}>
+                    {path.map((p) => `bb${p}`).join(" -> ")}
+                  </option>
+                ))}
+              </select>
+              <br />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showPathBlocksOnly}
+                  onChange={(e) => setShowPathBlocksOnly(e.target.checked)}
+                />
+                Show path blocks only
+              </label>
+              <br />
+            </>
+          )}
           <label>
             <input
               type="checkbox"
@@ -564,6 +578,24 @@ async function main() {
               onChange={(e) => setShowStorageStmts(e.target.checked)}
             />
             Show storage statements
+          </label>
+          <br />
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCGSelector}
+              onChange={(e) => setShowPCGSelector(e.target.checked)}
+            />
+            Show PCG selector
+          </label>
+          <br />
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCGOps}
+              onChange={(e) => setShowPCGOps(e.target.checked)}
+            />
+            Show PCG operations
           </label>
           <button
             onClick={openLegendWindow}
@@ -629,7 +661,7 @@ async function main() {
             ))}
           </svg>
         </div>
-        {pcgStmtVisualizationData && (
+        {pcgStmtVisualizationData && showPCGOps && (
           <>
             <PCGOps data={pcgStmtVisualizationData} />
             <LatestDisplay latest={pcgStmtVisualizationData.latest} />
@@ -644,7 +676,13 @@ async function main() {
             </div>
           </>
         )}
-        {pcsGraphSelector}
+        {pcsGraphSelector && showPCGSelector && currentPoint.type === "stmt" && (
+          <PCGGraphSelector
+            iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        )}
       </div>
     );
   };

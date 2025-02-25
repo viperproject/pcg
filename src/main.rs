@@ -1,5 +1,17 @@
 #![feature(rustc_private)]
 
+#[cfg(feature = "memory_profiling")]
+#[cfg(not(target_env = "msvc"))]
+#[cfg(not(target_os = "macos"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(feature = "memory_profiling")]
+#[cfg(not(target_os = "macos"))]
+#[allow(non_upper_case_globals)]
+#[export_name = "malloc_conf"]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 use std::fs::File;
 use std::io::Write;
 
@@ -9,11 +21,11 @@ use tracing::{debug, info, trace, warn};
 use tracing_subscriber;
 
 use pcs::rustc_interface::{
-    borrowck::consumers,
+    borrowck,
     data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
     hir::{self, def_id::LocalDefId},
-    interface::{interface::Compiler, Config, Queries},
+    interface::{interface::Compiler, Config},
     middle::{
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt, util::Providers,
     },
@@ -30,12 +42,12 @@ thread_local! {
 }
 
 fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
-    let consumer_opts = consumers::ConsumerOptions::PoloniusInputFacts;
+    let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
     debug!(
         "Start mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
-    let body_with_facts = consumers::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
+    let body_with_facts = borrowck::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
     debug!(
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
@@ -53,27 +65,24 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
         });
     }
     let mut providers = Providers::default();
-    pcs::rustc_interface::borrowck::provide(&mut providers);
+    borrowck::provide(&mut providers);
     let original_mir_borrowck = providers.mir_borrowck;
     original_mir_borrowck(tcx, def_id)
 }
 
 #[allow(unused)]
 fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
-    // body.body.basic_blocks.len() < 10
-    // DEBUG
-    // if format!("{:?}", body.body.span).contains("make_varule.rs:342") {
-    //     eprintln!("Hit: {:?}", body.body.span);
-    //     return true;
-    // } else {
-    //     eprintln!("Miss: {:?}", body.body.span);
-    //     return false;
-    // }
-
     true
 }
 
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
+    if std::env::var("CARGO_CRATE_NAME").is_ok() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err()
+    {
+        // We're running in cargo, but the Rust file is a dependency (not part of the primary package)
+        // For now we don't check dependencies, so we abort
+        return;
+    }
+
     let mut item_names = vec![];
 
     let user_specified_vis_dir = std::env::var("PCG_VISUALIZATION_DATA_DIR");
@@ -119,6 +128,8 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                 }
                 info!("Running PCG on function: {}", item_name);
                 info!("Path: {:?}", body.body.span);
+                info!("Number of basic blocks: {}", body.body.basic_blocks.len());
+                info!("Number of locals: {}", body.body.local_decls.len());
                 if should_check_body(&body) {
                     let mut output = run_combined_pcs(
                         &body,
@@ -128,9 +139,10 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
                     if emit_pcg_annotations || check_pcg_annotations {
                         let mut debug_lines = Vec::new();
                         for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                            let block = output.get_all_for_bb(idx);
-                            debug_lines
-                                .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                            if let Some(block) = output.get_all_for_bb(idx).unwrap() {
+                                debug_lines
+                                    .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                            }
                         }
                         if emit_pcg_annotations {
                             for line in debug_lines.iter() {
@@ -209,6 +221,8 @@ impl driver::Callbacks for PcsCallbacks {
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }
+
+    #[rustversion::before(2024-12-14)]
     fn after_analysis<'tcx>(
         &mut self,
         _compiler: &Compiler,
@@ -221,23 +235,70 @@ impl driver::Callbacks for PcsCallbacks {
             Compilation::Stop
         }
     }
+
+    #[rustversion::since(2024-12-14)]
+    fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        run_pcg_on_all_fns(tcx);
+        if std::env::var("CARGO").is_ok() {
+            Compilation::Continue
+        } else {
+            Compilation::Stop
+        }
+    }
 }
 
-fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_writer(std::io::stderr)
-        .init();
+#[rustversion::before(2024-12-14)]
+fn go(args: Vec<String>) {
+    driver::RunCompiler::new(&args, &mut PcsCallbacks)
+        .run()
+        .unwrap()
+}
 
-    // This first argument will be removed!
-    // See `driver::RunCompiler::run` for more details
+#[rustversion::since(2024-12-14)]
+fn go(args: Vec<String>) {
+    driver::RunCompiler::new(&args, &mut PcsCallbacks).run()
+}
+
+#[cfg(feature = "memory_profiling")]
+async fn handle_get_heap(
+) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
+    let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
+    if !prof_ctl.activated() {
+        return Err((
+            axum::http::StatusCode::FORBIDDEN,
+            "heap profiling not activated".into(),
+        ));
+    }
+    let pprof = prof_ctl.dump_pprof().map_err(|err| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            err.to_string(),
+        )
+    })?;
+    Ok(pprof)
+}
+
+#[cfg(feature = "memory_profiling")]
+async fn start_profiling_server() {
+    let app = axum::Router::new().route("/debug/pprof/heap", axum::routing::get(handle_get_heap));
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:4444").await.unwrap();
+    info!("Started profiling server on port 4444");
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+}
+
+fn setup_rustc_args() -> Vec<String> {
+    // This first argument is ultimately removed, actually
     let mut rustc_args = vec!["rustc".to_string()];
 
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());
     }
-    // rustc_args.push("-Zpolonius=next".to_string());
+    if env_feature_enabled("PCG_POLONIUS").unwrap_or(false) {
+        rustc_args.push("-Zpolonius".to_string());
+    }
     rustc_args.extend(std::env::args().skip(1));
 
     let args_str = rustc_args
@@ -247,8 +308,27 @@ fn main() {
         .join(" ");
     trace!("Running rustc with args: {}", args_str);
 
-    let mut callbacks = PcsCallbacks;
-    driver::RunCompiler::new(&rustc_args, &mut callbacks)
-        .run()
-        .unwrap();
+    rustc_args
+}
+
+fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+#[cfg(feature = "memory_profiling")]
+#[cfg(not(target_os = "macos"))]
+#[tokio::main]
+async fn main() {
+    init_tracing();
+    start_profiling_server().await;
+    go(setup_rustc_args());
+}
+
+#[cfg(any(not(feature = "memory_profiling"), target_os = "macos"))]
+fn main() {
+    init_tracing();
+    go(setup_rustc_args());
 }

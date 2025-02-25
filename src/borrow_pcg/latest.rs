@@ -1,0 +1,154 @@
+use std::collections::BTreeMap;
+
+use serde_json::json;
+
+use crate::rustc_interface::{
+    data_structures::fx::FxHashMap,
+    middle::{mir::BasicBlock, ty},
+};
+use crate::utils::display::{DebugLines, DisplayWithRepacker};
+use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
+
+use crate::utils::json::ToJsonWithRepacker;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
+
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Latest<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        self.0
+            .iter()
+            .map(|(p, l)| format!("{} -> {:?}", p.to_short_string(repacker), l))
+            .collect()
+    }
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!(self
+            .0
+            .iter()
+            .map(|(p, l)| {
+                let ty = p.ty(repacker).ty;
+                let ty_str = if let ty::TyKind::Ref(region, ty, mutbl) = ty.kind() {
+                    format!(
+                        "&{}{} {}",
+                        region,
+                        if mutbl.is_mut() { " mut" } else { "" },
+                        ty
+                    )
+                } else {
+                    format!("{}", ty)
+                };
+                (
+                    format!("{}: {}", p.to_short_string(repacker), ty_str),
+                    format!("{:?}", l),
+                )
+            })
+            .collect::<BTreeMap<_, _>>())
+    }
+}
+
+impl<'tcx> Latest<'tcx> {
+    pub fn new() -> Self {
+        Self(FxHashMap::default())
+    }
+
+    fn get_exact(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
+        self.0.get(&place).copied()
+    }
+
+    fn get_opt(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
+        if let Some(location) = self.get_exact(place) {
+            Some(location)
+        } else {
+            for (place, _) in place.iter_projections().rev() {
+                if let Some(location) = self.get_exact(place.into()) {
+                    return Some(location);
+                }
+            }
+            None
+        }
+    }
+
+    pub fn get(&self, place: Place<'tcx>) -> SnapshotLocation {
+        self.get_opt(place).unwrap_or(SnapshotLocation::start())
+    }
+
+    pub fn insert(
+        &mut self,
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        // TODO: Should this assertion pass?
+        // if let Some(existing) = self.get_opt(place) {
+        //     if existing != location && !place.has_location_dependent_value(repacker) {
+        //         panic!(
+        //             "location changed for place with location-independent value: {:?} -> {:?}",
+        //             existing, location
+        //         );
+        //     }
+        // }
+        self.insert_unchecked(place, location)
+    }
+
+    fn insert_unchecked(&mut self, place: Place<'tcx>, location: SnapshotLocation) -> bool {
+        if self.get_exact(place) == Some(location) {
+            return false;
+        }
+
+        self.0.retain(|existing, loc| {
+
+            // After insertion of this place, if we were to lookup `existing`,
+            // we'd get this location for `place`. For example if existing is `x.f.g`
+            // and place is `x.f`, then `Latest::get_opt(x.f.g)` would not find `x.f.g` and
+            // return the location for `x.f`.
+            if place.is_prefix(*existing) {
+                return false;
+            }
+
+            // Places that we're a prefix of should be updated to this new location.
+            // For example if existing is `x` and place is `x.f`, then we should
+            // snapshot `x` to this location. However, the snapshot for e.g. `x.g` would
+            // keep its old label.
+            if existing.is_prefix(place) {
+                if *loc != location {
+                    *loc = location;
+                }
+            }
+            true
+        });
+        self.0.insert(place, location);
+        true
+    }
+
+    pub fn join(
+        &mut self,
+        other: &Self,
+        block: BasicBlock,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        if self.0.is_empty() {
+            if other.0.is_empty() {
+                return false;
+            } else {
+                self.0 = other.0.clone();
+                return true;
+            }
+        }
+        let mut changed = false;
+        for (place, other_loc) in other.0.iter() {
+            if let Some(self_loc) = self.get_opt(*place) {
+                if self_loc != *other_loc {
+                    self.insert_unchecked(*place, SnapshotLocation::Start(block));
+                    changed = true;
+                }
+            } else {
+                self.insert(*place, *other_loc, repacker);
+                changed = true;
+            }
+        }
+        changed
+    }
+}
