@@ -6,7 +6,7 @@ use super::{
     },
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::kind::BorrowPCGEdgeKind,
-    graph::{BorrowsGraph, Conditioned, FrozenGraphRef},
+    graph::{BorrowsGraph, FrozenGraphRef},
     has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
@@ -14,9 +14,9 @@ use super::{
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::{
-    borrow_pcg::action::executed_actions::ExecutedActions, utils::display::DisplayWithRepacker,
-};
+use crate::
+    borrow_pcg::action::executed_actions::ExecutedActions
+;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -39,7 +39,7 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
-use std::{io::SeekFrom, rc::Rc};
+use std::rc::Rc;
 
 pub(crate) mod obtain;
 
@@ -150,10 +150,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         self.graph.contains(node.into(), repacker)
-    }
-
-    pub(crate) fn contains_edge(&self, edge: &BorrowPCGEdge<'tcx>) -> bool {
-        self.graph.contains_edge(edge)
     }
 
     pub(crate) fn graph_edges<'slf>(
@@ -353,33 +349,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.filter_for_path(path);
     }
 
-    #[must_use]
-    pub(crate) fn delete_descendants_of(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> ExecutedActions<'tcx> {
-        let mut actions = ExecutedActions::new();
-        let edges = self
-            .edges_blocking(place.into(), repacker)
-            .into_iter()
-            .map(|e| e.to_owned_edge())
-            .collect::<Vec<_>>();
-        if edges.is_empty() {
-            return actions;
-        }
-        for edge in edges {
-            actions.extend(self.remove_edge_and_set_latest(
-                edge,
-                location,
-                repacker,
-                "Delete Descendants",
-            ));
-        }
-        actions
-    }
-
     /// Returns the place that blocks `place` if:
     /// 1. there is exactly one hyperedge blocking `place`
     /// 2. that edge is blocked by exactly one node
@@ -416,10 +385,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.graph.edges_blocking(node, repacker).collect()
-    }
-
-    pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
-        self.graph.borrows()
     }
 
     pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {

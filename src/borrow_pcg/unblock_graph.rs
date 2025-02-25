@@ -5,17 +5,14 @@ use crate::rustc_interface::middle::mir::BasicBlock;
 
 use super::borrow_pcg_edge::BorrowPCGEdgeLike;
 use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge};
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{edge_data::EdgeData, state::BorrowsState},
-    combined_pcs::PCGNode,
     utils::PlaceRepacker,
     visualization::generate_unblock_dot_graph,
 };
 
 type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
-type UnblockEdgeType<'tcx> = BorrowPCGEdgeKind<'tcx>;
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
@@ -64,16 +61,6 @@ impl<'tcx> UnblockGraph<'tcx> {
         Self {
             edges: HashSet::new(),
         }
-    }
-
-    pub(crate) fn actions_to_unblock(
-        node: PCGNode<'tcx>,
-        state: &BorrowsState<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Vec<BorrowPCGUnblockAction<'tcx>>, PCGInternalError> {
-        let mut ug = UnblockGraph::new();
-        ug.unblock_node(node, state, repacker);
-        ug.actions(repacker)
     }
 
     pub fn for_node(

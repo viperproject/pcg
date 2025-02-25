@@ -146,12 +146,12 @@ impl CapabilityKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     #[test]
     fn test_capability_kind_dag_reachability() {
         use petgraph::algo::has_path_connecting;
-        use petgraph::graph::{DiGraph, NodeIndex};
+        use petgraph::graph::DiGraph;
 
         // Create directed graph
         let mut graph = DiGraph::new();

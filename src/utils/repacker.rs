@@ -391,6 +391,7 @@ impl<'tcx> Place<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }
 
+    #[allow(unused)]
     pub(crate) fn get_ref_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, ..) => Some((*region).into()),

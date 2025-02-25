@@ -11,9 +11,7 @@ use crate::utils::PlaceRepacker;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 use super::edge_data::EdgeData;
-use super::region_projection::MaybeRemoteRegionProjectionBase;
 use super::{has_pcs_elem::HasPcsElems, region_projection::RegionProjection};
-use crate::rustc_interface::middle::ty;
 use crate::utils::json::ToJsonWithRepacker;
 
 pub(crate) type RegionProjectionMemberInputs<'tcx> = SmallVec<[PCGNode<'tcx>; 8]>;
@@ -146,33 +144,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
 }
 
 impl<'tcx> RegionProjectionMember<'tcx> {
-    pub(crate) fn is_toplevel(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        match self.kind {
-            RegionProjectionMemberKind::BorrowOutlives
-            | RegionProjectionMemberKind::DerefBorrowOutlives => {
-                match (self.inputs[0], self.outputs[0]) {
-                    (PCGNode::RegionProjection(rp1), PCGNode::RegionProjection(rp2)) => {
-                        match (rp1.place(), rp2.place()) {
-                            (
-                                MaybeRemoteRegionProjectionBase::Place(p1),
-                                MaybeOldPlace::Current { place: p2 },
-                            ) => match (p1.ty(repacker).ty.kind(), p2.ty(repacker).ty.kind()) {
-                                (ty::TyKind::Ref(r1, ..), ty::TyKind::Ref(r2, ..)) => {
-                                    rp1.region(repacker) == (*r1).into()
-                                        && rp2.region(repacker) == (*r2).into()
-                                }
-                                _ => false,
-                            },
-                            _ => false,
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            _ => false,
-        }
-    }
-
     /// Returns `true` iff the lifetime projections are mutable
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         let mut_values = self
