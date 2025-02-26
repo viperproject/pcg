@@ -156,7 +156,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges()
     }
 
-    pub(crate) fn graph(&self) -> &BorrowsGraph<'tcx> {
+    pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }
 
