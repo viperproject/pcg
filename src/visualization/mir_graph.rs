@@ -113,7 +113,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
                 format_operand(rhs, repacker)
             )
         }
-        Rvalue::NullaryOp(_, _) => todo!(),
+        Rvalue::NullaryOp(op, _) => format!("{:?}", op),
         Rvalue::UnaryOp(op, val) => {
             format!("{:?} {}", op, format_operand(val, repacker))
         }
@@ -128,8 +128,8 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
                     .join(", ")
             )
         }
-        Rvalue::ShallowInitBox(_, _) => todo!(),
-        Rvalue::CopyForDeref(_) => todo!(),
+        Rvalue::ShallowInitBox(operand, _) => format!("Box({})", format_operand(operand, repacker)),
+        Rvalue::CopyForDeref(place) => format!("CopyForDeref({})", format_place(place, repacker)),
     }
 }
 fn format_terminator<'tcx>(

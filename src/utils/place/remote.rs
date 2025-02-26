@@ -1,15 +1,23 @@
+use crate::borrow_pcg::region_projection::{
+    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
+};
+use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
-use crate::utils::json::ToJsonWithRepacker;
-use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike};
-use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::utils::display::DisplayWithRepacker;
-use crate::utils::{Place, PlaceRepacker};
+use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::validity::HasValidityCheck;
+use crate::utils::{Place, PlaceRepacker};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub struct RemotePlace {
     pub(crate) local: mir::Local,
+}
+
+impl RemotePlace {
+    pub(crate) fn deref_place<'tcx>(&self) -> Place<'tcx> {
+        self.local.into()
+    }
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for RemotePlace {
