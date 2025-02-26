@@ -405,7 +405,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.len()
     }
 
-    pub(crate) fn edges_blocked_by<'graph, 'mir: 'graph>(
+    pub fn edges_blocked_by<'graph, 'mir: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
