@@ -7,7 +7,9 @@ use crate::{
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
+    utils::{
+        display::DisplayWithRepacker, maybe_remote::MaybeRemotePlace, HasPlace, PlaceRepacker,
+    },
 };
 
 use super::BorrowsGraph;
@@ -147,6 +149,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 extend(input.to_pcg_node(), seen, &mut result, direct);
                             }
                         }
+                        RegionProjectionMemberKind::FunctionInput => {
+                            for input in region_projection_member.inputs() {
+                                match input {
+                                    PCGNode::Place(MaybeRemotePlace::Remote(rp)) => {
+                                        extend(rp.deref_place().into(), seen, &mut result, direct);
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                        }
                         RegionProjectionMemberKind::DerefBorrowOutlives
                         | RegionProjectionMemberKind::BorrowOutlives => {}
                         _ => {
@@ -199,6 +211,52 @@ fn test_aliases() {
             }
         }
     }
+
+    // enum_write_branch_read_branch
+    let input = r#"
+fn main() {
+    enum Foo {
+        X(i32),
+        Y(i32),
+    }
+    let mut x = Foo::X(1);
+    if let Foo::X(z) = &mut x {
+        *z += 1;
+    }
+    if let Foo::Y(z) = &mut x {
+        *z += 1;
+    }
+    if let Foo::X(z) = x {
+        z;
+    }
+}
+        "#;
+    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+        let mut pcg = run_combined_pcs(body, tcx, None);
+        let bb = pcg.get_all_for_bb(2usize.into()).unwrap().unwrap();
+        let stmt = &bb.statements[1];
+        let init_z: mir::Place<'_> = mir::Local::from(5 as usize).into();
+        let z_deref = init_z.project_deeper(&[mir::ProjectionElem::Deref], tcx);
+        let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
+        let deref3 = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
+        let deref_target = deref3.project_deeper(
+            &[
+                mir::ProjectionElem::Downcast(Some(Symbol::intern(&"X")), 0usize.into()),
+                mir::ProjectionElem::Field(0usize.into(), tcx.types.i32),
+            ],
+            tcx,
+        );
+        let aliases = stmt.aliases(z_deref, &body.body, tcx);
+        eprintln!("aliases: {:?}", aliases);
+        eprintln!("deref_target: {:?}", deref_target);
+        assert!(aliases.contains(&deref_target.into()));
+        assert!(pcg
+            .results_for_all_blocks()
+            .unwrap()
+            .all_place_aliases(z_deref, &body.body, tcx)
+            .contains(&deref_target.into()));
+        assert!(!aliases.contains(&deref3.into()));
+    });
 
     // enum_write_branch_read_whole
     let input = r#"
