@@ -263,7 +263,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
-    pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
+    pub fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
         FrozenGraphRef::new(self)
     }
 
@@ -879,7 +879,7 @@ impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Conditioned
     }
 }
 
-pub(crate) struct FrozenGraphRef<'graph, 'tcx> {
+pub struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
     nodes_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
     edges_blocking_cache:
@@ -902,11 +902,11 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
     }
 
-    pub(crate) fn contains(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub fn contains(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.nodes(repacker).contains(&node)
     }
 
-    pub(crate) fn nodes<'slf>(
+    pub fn nodes<'slf>(
         &'slf self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
@@ -921,7 +921,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.nodes_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub(crate) fn roots<'slf>(
+    pub fn roots<'slf>(
         &'slf self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
@@ -936,7 +936,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub(crate) fn leaf_edges<'slf, 'mir>(
+    pub fn leaf_edges<'slf, 'mir>(
         &'slf self,
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
@@ -960,8 +960,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .flat_map(move |edge| edge.blocked_by_nodes(repacker))
     }
 
-    #[allow(unused)]
-    pub(crate) fn get_edges_blocked_by<'mir: 'graph>(
+    pub fn get_edges_blocked_by<'mir: 'graph>(
         &mut self,
         node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
@@ -972,7 +971,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .or_insert_with(|| self.graph.edges_blocked_by(node, repacker).collect())
     }
 
-    pub(crate) fn get_edges_blocking<'slf, 'mir>(
+    pub fn get_edges_blocking<'slf, 'mir>(
         &'slf self,
         node: PCGNode<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
@@ -991,7 +990,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         edges
     }
 
-    pub(crate) fn has_edge_blocking(
+    pub fn has_edge_blocking(
         &self,
         node: PCGNode<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
