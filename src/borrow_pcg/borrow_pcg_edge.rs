@@ -39,7 +39,7 @@ pub struct BorrowPCGEdge<'tcx> {
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
-pub(crate) trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
+pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPCGEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
     fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
