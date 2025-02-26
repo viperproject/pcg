@@ -39,10 +39,10 @@ use super::{
     domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
 };
 
-#[rustversion::since(2024-10-14)]
+#[rustversion::since(2024-10-03)]
 type OutputFacts = Box<PoloniusOutput>;
 
-#[rustversion::nightly(2024-09-14)]
+#[rustversion::before(2024-10-03)]
 type OutputFacts = Rc<PoloniusOutput>;
 
 #[derive(Clone)]

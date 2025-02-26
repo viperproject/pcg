@@ -20,6 +20,9 @@ use std::cell::RefCell;
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber;
 
+#[rustversion::before(2024-11-09)]
+use pcs::rustc_interface::interface::Queries;
+
 use pcs::rustc_interface::{
     borrowck,
     data_structures::fx::{FxHashMap, FxHashSet},
@@ -222,7 +225,7 @@ impl driver::Callbacks for PcsCallbacks {
         config.override_queries = Some(set_mir_borrowck);
     }
 
-    #[rustversion::before(2024-12-14)]
+    #[rustversion::before(2024-11-09)]
     fn after_analysis<'tcx>(
         &mut self,
         _compiler: &Compiler,
@@ -236,7 +239,7 @@ impl driver::Callbacks for PcsCallbacks {
         }
     }
 
-    #[rustversion::since(2024-12-14)]
+    #[rustversion::since(2024-11-09)]
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         run_pcg_on_all_fns(tcx);
         if std::env::var("CARGO").is_ok() {
