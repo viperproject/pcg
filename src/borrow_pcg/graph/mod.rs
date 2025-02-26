@@ -51,7 +51,6 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashMap<BorrowPCGEdgeKind<'tcx>, PathConditions>,
-    cached_leaf_nodes: RefCell<Option<FxHashSet<LocalNode<'tcx>>>>,
 }
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsGraph<'tcx> {
@@ -125,7 +124,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn new() -> Self {
         Self {
             edges: FxHashMap::default(),
-            cached_leaf_nodes: RefCell::new(None),
         }
     }
 
@@ -760,7 +758,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             return conditions.join(&edge.conditions);
         } else {
             self.edges.insert(edge.kind, edge.conditions);
-            self.cached_leaf_nodes.borrow_mut().take();
             true
         }
     }
@@ -788,7 +785,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
             if conditions == edge.conditions() {
                 self.edges.remove(edge.kind());
-                self.cached_leaf_nodes.borrow_mut().take();
             } else {
                 assert!(conditions.remove(edge.conditions()));
             }
@@ -836,9 +832,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 (edge.kind, edge.conditions)
             })
             .collect();
-        if changed {
-            self.cached_leaf_nodes.borrow_mut().take();
-        }
         changed
     }
 
@@ -858,7 +851,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn filter_for_path(&mut self, path: &[BasicBlock]) {
         self.edges
             .retain(|_, conditions| conditions.valid_for_path(path));
-        self.cached_leaf_nodes.borrow_mut().take();
     }
 
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
@@ -957,6 +949,15 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         let edges: FxHashSet<_> = self.graph.leaf_edges_set(repacker, Some(self));
         self.leaf_edges_cache.replace(Some(edges.clone()));
         edges
+    }
+
+    pub fn leaf_nodes<'slf, 'mir: 'slf>(
+        &'slf self,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> impl Iterator<Item = LocalNode<'tcx>> + 'slf {
+        self.leaf_edges(repacker)
+            .into_iter()
+            .flat_map(move |edge| edge.blocked_by_nodes(repacker))
     }
 
     #[allow(unused)]
