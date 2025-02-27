@@ -59,7 +59,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub(crate) fn to_json(self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         serde_json::Value::String(self.to_short_string(repacker))
     }
 

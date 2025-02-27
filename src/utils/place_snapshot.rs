@@ -27,7 +27,7 @@ impl SnapshotLocation {
         SnapshotLocation::After(Location::START)
     }
 
-    pub(crate) fn to_json(&self) -> serde_json::Value {
+    pub(crate) fn to_json(self) -> serde_json::Value {
         match self {
             SnapshotLocation::After(loc) => format!("after {:?}", loc).into(),
             SnapshotLocation::Start(bb) => format!("start {:?}", bb).into(),

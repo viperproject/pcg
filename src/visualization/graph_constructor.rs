@@ -113,7 +113,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn to_graph(self) -> Graph {
+    fn into_graph(self) -> Graph {
         Graph::new(self.nodes, self.edges, self.region_clusters)
     }
 
@@ -181,7 +181,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             for input in &input_nodes {
                 for output in &output_nodes {
                     // TODO: Color or Label edges
-                    self.edges.insert(GraphEdge::AbstractEdge {
+                    self.edges.insert(GraphEdge::Abstract {
                         blocked: *input,
                         blocking: *output,
                     });
@@ -193,7 +193,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         for output1 in output_nodes.iter() {
             for output2 in output_nodes.iter() {
                 if output1 < output2 {
-                    self.edges.insert(GraphEdge::CoupledEdge {
+                    self.edges.insert(GraphEdge::Coupled {
                         source: *output1,
                         target: *output2,
                     });
@@ -281,7 +281,7 @@ impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
         for edge in self.unblock_graph.edges().cloned().collect::<Vec<_>>() {
             self.draw_borrow_pcg_edge(edge, &NullCapabilityGetter);
         }
-        self.constructor.to_graph()
+        self.constructor.into_graph()
     }
 }
 
@@ -357,7 +357,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     let place = self.insert_local_node(place);
                     self.constructor()
                         .edges
-                        .insert(GraphEdge::DerefExpansionEdge {
+                        .insert(GraphEdge::DerefExpansion {
                             source: base_node,
                             target: place,
                             path_conditions: format!("{}", edge.conditions()),
@@ -376,14 +376,14 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 );
                 let deref_place = reborrow.deref_place(self.repacker());
                 let deref_place_node = self.insert_maybe_old_place(deref_place);
-                self.constructor().edges.insert(GraphEdge::BorrowEdge {
+                self.constructor().edges.insert(GraphEdge::Borrow {
                     borrowed_place,
                     assigned_region_projection: assigned_rp_node,
                     location: reborrow.reserve_location(),
                     region: format!("{:?}", reborrow.region),
                     path_conditions: format!("{}", edge.conditions()),
                 });
-                self.constructor().edges.insert(GraphEdge::AliasEdge {
+                self.constructor().edges.insert(GraphEdge::Alias {
                     blocked_place: borrowed_place,
                     blocking_place: deref_place_node,
                 });
@@ -398,7 +398,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                         let output_node = self.insert_local_node(*output);
                         self.constructor()
                             .edges
-                            .insert(GraphEdge::RegionProjectionMemberEdge {
+                            .insert(GraphEdge::RegionProjectionMember {
                                 source: input_node,
                                 target: output_node,
                                 kind: format!("{:?}", member.kind),
@@ -411,7 +411,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                         let target = self.insert_pcg_node(input2);
                         self.constructor()
                             .edges
-                            .insert(GraphEdge::CoupledEdge { source, target });
+                            .insert(GraphEdge::Coupled { source, target });
                     }
                 }
                 for (i, &output1) in member.outputs.iter().enumerate() {
@@ -420,7 +420,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                         let target = self.insert_local_node(output2);
                         self.constructor()
                             .edges
-                            .insert(GraphEdge::CoupledEdge { source, target });
+                            .insert(GraphEdge::Coupled { source, target });
                     }
                 }
             }
@@ -447,7 +447,7 @@ impl<'a, 'tcx> BorrowsGraphConstructor<'a, 'tcx> {
         for edge in self.borrows_graph.edges() {
             self.draw_borrow_pcg_edge(edge, &NullCapabilityGetter);
         }
-        self.constructor.to_graph()
+        self.constructor.into_graph()
     }
 }
 
@@ -484,7 +484,7 @@ impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
 
 struct NullCapabilityGetter;
 
-impl<'a, 'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
+impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
     fn get(&self, _: PCGNode<'tcx>) -> Option<CapabilityKind> {
         None
     }
@@ -579,13 +579,13 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 );
                 self.constructor
                     .edges
-                    .insert(GraphEdge::ProjectionEdge { source, target });
+                    .insert(GraphEdge::Projection { source, target });
             }
             last_place = place.into();
             let node = self
                 .constructor
                 .insert_place_node(place, None, capabilities);
-            self.constructor.edges.insert(GraphEdge::ProjectionEdge {
+            self.constructor.edges.insert(GraphEdge::Projection {
                 source: node,
                 target: last_node,
             });
@@ -625,6 +625,6 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             self.draw_borrow_pcg_edge(edge, &self.capability_getter());
         }
 
-        self.constructor.to_graph()
+        self.constructor.into_graph()
     }
 }

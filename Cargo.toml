@@ -12,6 +12,7 @@ memory_profiling = [
     "tokio",
     "jemalloc_pprof",
 ]
+debug_info = []
 
 [dependencies]
 # For RustRover
