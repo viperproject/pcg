@@ -31,11 +31,11 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
-        visitor::extract_regions,
         region_projection::{
             MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
             RegionProjectionBaseLike,
         },
+        visitor::extract_regions,
     },
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
 };
@@ -91,24 +91,24 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for Place<'tcx> {
-    fn to_local_node(self) -> LocalNode<'tcx> {
+    fn to_local_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
         LocalNode::Place(self.into())
     }
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for Place<'tcx> {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
         self.into()
     }
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for Place<'tcx> {
-    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
-        self.regions(repacker)
-    }
-
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         (*self).into()
+    }
+
+    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+        extract_regions(self.ty(repacker).ty)
     }
 }
 
@@ -135,8 +135,8 @@ pub trait HasPlace<'tcx>: Sized {
 
     fn project_deeper(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
         elem: PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self>;
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)>;
@@ -152,10 +152,10 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
 
     fn project_deeper(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
         elem: PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self> {
-        Some(self.0.project_deeper(&[elem], repacker.tcx()).into())
+        Some(self.project_deeper(elem, repacker))
     }
 
     fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
@@ -167,6 +167,47 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
+    /// Projects the place deeper by one element.
+    ///
+    /// __IMPORTANT__: This method also attempts to "normalize" the type of the resulting
+    /// place by inheriting from the type of the current place when possible. For example,
+    /// in the following code:
+    /// ```ignore
+    /// struct F<'a>(&'a mut i32);
+    /// let x: F<'x> = F(&mut 1);
+    /// let y: 'y mut i32 = x.0
+    /// ```
+    /// we want the type of `x.0` to be 'x mut i32 and NOT 'y mut i32. However, in the
+    /// MIR the `ProjectionElem::Field` for `.0` may have the type `'y mut i32`.
+    ///
+    /// To correct this, when projecting, we detect when the LHS is an ADT, and
+    /// extract from the ADT type the expected type of the projection and
+    /// replace the type.
+    ///
+    /// ```
+    fn project_deeper(&self, elem: PlaceElem<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+        let base_ty = self.ty(repacker);
+        let corrected_elem = if let ProjectionElem::Field(field_idx, proj_ty) = elem {
+            let expected_ty = match base_ty.ty.kind() {
+                ty::TyKind::Adt(def, substs) => {
+                    let variant = match base_ty.variant_index {
+                        Some(v) => def.variant(v),
+                        None => def.non_enum_variant(),
+                    };
+                    variant.fields[field_idx].ty(repacker.tcx(), substs)
+                }
+                ty::TyKind::Tuple(tys) => tys[field_idx.as_usize()],
+                _ => proj_ty,
+            };
+            ProjectionElem::Field(field_idx, expected_ty)
+        } else {
+            elem
+        };
+        self.0
+            .project_deeper(&[corrected_elem], repacker.tcx())
+            .into()
+    }
+
     pub(crate) fn compare_projections(
         self,
         other: Self,
@@ -220,35 +261,23 @@ impl<'tcx> Place<'tcx> {
     /// In MIR, if a place is a field projection, then the type of the place
     /// will be the determined by the last projection. If the type of that place
     /// contains borrows, it appears that the associated regions are not necessarily
-    /// the same as the one given by the parent struct.
+    /// the same as the one given by the parent struct. See [`Place::project_deeper`]
+    /// for more information
     ///
     /// In the case that this place is a reference-typed field projection, this function
     /// returns a new place with the same data, but with the region of the reference determined
     /// by the parent struct. Otherwise, the place is returned unchanged.
+    ///
+    /// Note: This only considers the last projection, so the place isn't entirely "normalized"
+    /// w.r.t the property the [`Place::project_deeper`] is intended to achieve
     pub fn with_inherent_region(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
         if self.projection.is_empty() {
             return self;
         }
         let base_place = Place::new(self.local, &self.projection[..self.projection.len() - 1]);
-        let base_place_ty = base_place.ty(repacker);
 
-        if let Some(elem) = self.projection.last()
-            && let ProjectionElem::Field(field_idx, _) = elem
-        {
-            let expected_ty = match base_place_ty.ty.kind() {
-                ty::TyKind::Adt(def, substs) => {
-                    let variant = match base_place_ty.variant_index {
-                        Some(v) => def.variant(v),
-                        None => def.non_enum_variant(),
-                    };
-                    variant.fields[*field_idx].ty(repacker.tcx(), substs)
-                }
-                ty::TyKind::Tuple(tys) => tys[field_idx.as_usize()],
-                _ => {
-                    return self;
-                }
-            };
-            base_place.mk_place_elem(ProjectionElem::Field(*field_idx, expected_ty), repacker)
+        if let Some(elem) = self.projection.last() {
+            base_place.project_deeper(*elem, repacker)
         } else {
             self
         }

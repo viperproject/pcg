@@ -1,12 +1,13 @@
 use std::rc::Rc;
 
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::region_projection_member::{
     RegionProjectionMember, RegionProjectionMemberKind,
 };
+use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
 use crate::combined_pcs::{PCGError, PCGErrorKind, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
@@ -16,11 +17,11 @@ use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::{utils, BorrowsBridge};
 use smallvec::smallvec;
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
+use super::visitor::extract_regions;
 use super::{coupling_graph_constructor::CGNode, region_projection::RegionProjection};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::remote::RemotePlace;
@@ -198,19 +199,22 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 self.repacker,
             );
         }
-        let local_place: utils::Place<'tcx> = arg_place.into();
-        for region_projection in local_place.region_projections(self.repacker) {
+        for region in extract_regions(local_decl.ty) {
+            let region_projection =
+                RegionProjection::new(region, arg_place, self.repacker).unwrap();
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
             assert!(entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
                         smallvec![RegionProjection::new(
-                            region_projection.region(self.repacker),
+                            region,
                             RemotePlace::new(local),
                             self.repacker,
                         )
-                        .unwrap()
-                        .to_pcg_node(),],
+                        .unwrap_or_else(|e| {
+                            panic!("Failed to create region for remote place (for {local:?}). Local ty: {:?}. Error: {:?}", local_decl.ty, e);
+                        })
+                        .to_pcg_node(self.repacker)],
                         smallvec![region_projection.into()],
                         RegionProjectionMemberKind::Todo,
                     ),
@@ -228,7 +232,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             for rp in arg_place.region_projections(self.repacker) {
                 let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
                 assert!(entry_state.set_capability(
-                    rp.into(),
+                    rp.to_pcg_node(self.repacker),
                     CapabilityKind::Exclusive,
                     self.repacker
                 ));

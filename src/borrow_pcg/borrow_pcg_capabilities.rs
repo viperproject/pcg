@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::PCGNode,
     free_pcs::CapabilityKind,
     rustc_interface::data_structures::fx::FxHashMap,
     utils::{
@@ -34,16 +34,11 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    pub(super) fn insert<T: PCGNodeLike<'tcx>>(
-        &mut self,
-        node: T,
-        capability: CapabilityKind,
-    ) -> bool {
-        self.0.insert(node.to_pcg_node(), capability) != Some(capability)
+    pub(super) fn insert(&mut self, node: PCGNode<'tcx>, capability: CapabilityKind) -> bool {
+        self.0.insert(node, capability) != Some(capability)
     }
 
-    pub(crate) fn remove<T: PCGNodeLike<'tcx>>(&mut self, node: T) -> bool {
-        let node = node.to_pcg_node();
+    pub(crate) fn remove(&mut self, node: PCGNode<'tcx>) -> bool {
         self.0.remove(&node).is_some()
     }
 

@@ -115,7 +115,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges().any(|edge| {
             edge.blocks_node(node, repacker)
                 || node
-                    .as_blocking_node()
+                    .as_blocking_node(repacker)
                     .map(|blocking| edge.blocked_by_nodes(repacker).contains(&blocking))
                     .unwrap_or(false)
         })
@@ -384,7 +384,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        match node.into().as_local_node() {
+        match node.into().as_local_node(repacker) {
             Some(node) => match node {
                 PCGNode::Place(place) if place.is_owned(repacker) => true,
                 _ => !self.has_edge_blocked_by(node, repacker),
@@ -486,7 +486,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
             let local_rps: Vec<LocalNode<'tcx>> = rps
                 .iter()
-                .flat_map(|rp| rp.try_to_local_node())
+                .flat_map(|rp| rp.try_to_local_node(repacker))
                 .collect::<Vec<_>>();
 
             let edges_to_move = local_rps
@@ -500,7 +500,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 .unique()
                 .collect::<Vec<_>>();
 
-            let in_rps = |p: PCGNode<'tcx>| rps.iter().any(|rp| (*rp).to_pcg_node() == p);
+            let in_rps = |p: PCGNode<'tcx>| rps.iter().any(|rp| (*rp).to_pcg_node(repacker) == p);
             for edge in edges_to_move {
                 if is_loop_abstraction_for_this_block(edge.as_ref()) {
                     continue;
@@ -520,7 +520,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             smallvec![node],
                             rps.clone()
                                 .into_iter()
-                                .map(|rp| rp.try_into().unwrap())
+                                .map(|rp| rp.try_to_local_node(repacker).unwrap())
                                 .collect::<RegionProjectionMemberOutputs<'tcx>>(),
                             RegionProjectionMemberKind::Todo,
                         ));

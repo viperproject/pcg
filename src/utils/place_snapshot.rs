@@ -1,11 +1,19 @@
 use serde_json::json;
 
+use super::display::DisplayWithRepacker;
 use super::{validity::HasValidityCheck, Place, PlaceRepacker};
+use crate::borrow_pcg::region_projection::{
+    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
+};
+use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcsElems},
     combined_pcs::LocalNodeLike,
-    rustc_interface::middle::mir::{BasicBlock, Location},
+    rustc_interface::{
+        index::IndexVec,
+        middle::mir::{BasicBlock, Location},
+    },
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
@@ -39,8 +47,24 @@ pub struct PlaceSnapshot<'tcx> {
     pub at: SnapshotLocation,
 }
 
+impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
+    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+        self.place.regions(repacker)
+    }
+
+    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
+        MaybeRemoteRegionProjectionBase::Place((*self).into())
+    }
+}
+
+impl<'tcx> PCGNodeLike<'tcx> for PlaceSnapshot<'tcx> {
+    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
+        self.to_local_node(repacker).into()
+    }
+}
+
 impl<'tcx> LocalNodeLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_local_node(self) -> LocalNode<'tcx> {
+    fn to_local_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
         LocalNode::Place(self.into())
     }
 }
@@ -54,6 +78,12 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
 impl<'tcx> std::fmt::Display for PlaceSnapshot<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} at {:?}", self.place, self.at)
+    }
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for PlaceSnapshot<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!("{} at {:?}", self.place.to_short_string(repacker), self.at)
     }
 }
 

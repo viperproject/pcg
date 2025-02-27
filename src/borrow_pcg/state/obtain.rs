@@ -142,9 +142,9 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         let mut ug = UnblockGraph::new();
-        ug.unblock_node(place.to_pcg_node(), self, repacker);
+        ug.unblock_node(place.to_pcg_node(repacker), self, repacker);
         for rp in place.region_projections(repacker) {
-            ug.unblock_node(rp.to_pcg_node(), self, repacker);
+            ug.unblock_node(rp.to_pcg_node(repacker), self, repacker);
         }
 
         // The place itself could be in the owned PCG, but we want to unblock
@@ -206,7 +206,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
 
                 let region_projection_member = RegionProjectionMember::new(
-                    smallvec![base_rp.to_pcg_node()],
+                    smallvec![base_rp.to_pcg_node(repacker)],
                     smallvec![target.into()],
                     RegionProjectionMemberKind::DerefRegionProjection,
                 );

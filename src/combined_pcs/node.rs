@@ -1,8 +1,6 @@
 use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
-use crate::utils::Place;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -46,20 +44,13 @@ impl<'tcx, U> From<RegionProjection<'tcx, U>> for PCGNode<'tcx, MaybeRemotePlace
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for PCGNode<'tcx> {
-    fn from(value: RegionProjection<'tcx, Place<'tcx>>) -> Self {
-        let rp: RegionProjection<'tcx> = value.map_base(|base| base.into());
-        rp.into()
-    }
-}
-
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
         match self {
-            PCGNode::Place(p) => p.to_pcg_node(),
-            PCGNode::RegionProjection(rp) => rp.to_pcg_node(),
+            PCGNode::Place(p) => p.to_pcg_node(repacker),
+            PCGNode::RegionProjection(rp) => rp.to_pcg_node(repacker),
         }
     }
 }
@@ -94,12 +85,6 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithRe
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
-    fn from(rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        PCGNode::RegionProjection(rp.map_base(|base| base.into()))
-    }
-}
-
 pub trait PCGNodeLike<'tcx>:
     Clone
     + Copy
@@ -111,20 +96,23 @@ pub trait PCGNodeLike<'tcx>:
     + DisplayWithRepacker<'tcx>
     + ToJsonWithRepacker<'tcx>
 {
-    fn to_pcg_node(self) -> PCGNode<'tcx>;
+    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx>;
 
-    fn try_to_local_node(self) -> Option<LocalNode<'tcx>> {
-        match self.to_pcg_node() {
+    fn try_to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
+        match self.to_pcg_node(repacker) {
             PCGNode::Place(p) => match p {
-                MaybeRemotePlace::Local(maybe_old_place) => Some(maybe_old_place.to_local_node()),
+                MaybeRemotePlace::Local(maybe_old_place) => {
+                    Some(maybe_old_place.to_local_node(repacker))
+                }
                 MaybeRemotePlace::Remote(_) => None,
             },
             PCGNode::RegionProjection(rp) => match rp.base() {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
-                        MaybeRemotePlace::Local(maybe_old_place) => {
-                            Some(rp.map_base(|_| maybe_old_place).to_local_node())
-                        }
+                        MaybeRemotePlace::Local(maybe_old_place) => Some(
+                            rp.set_base(maybe_old_place, repacker)
+                                .to_local_node(repacker),
+                        ),
                         MaybeRemotePlace::Remote(_) => None,
                     }
                 }
@@ -135,7 +123,7 @@ pub trait PCGNodeLike<'tcx>:
 }
 
 pub(crate) trait LocalNodeLike<'tcx> {
-    fn to_local_node(self) -> LocalNode<'tcx>;
+    fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx>;
 }
 
 impl<'tcx> From<RemotePlace> for PCGNode<'tcx> {

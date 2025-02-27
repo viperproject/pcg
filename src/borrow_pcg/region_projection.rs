@@ -6,9 +6,9 @@ use serde_json::json;
 
 use super::has_pcs_elem::HasPcsElems;
 use super::{
-    borrow_pcg_edge::LocalNode, visitor::extract_regions,
-    coupling_graph_constructor::CGNode,
+    borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
 };
+use crate::combined_pcs::PCGInternalError;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -144,24 +144,21 @@ impl<'tcx> DisplayWithRepacker<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
+    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
+        *self
+    }
+
     fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.regions(repacker),
-            MaybeRemoteRegionProjectionBase::Const(c) => {
-                let ty = c.ty();
-                extract_regions(ty)
-            }
+            MaybeRemoteRegionProjectionBase::Const(c) => extract_regions(c.ty()),
         }
-    }
-
-    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
-        *self
     }
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjection<'tcx, T> {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
-        self.map_base(|base| base.to_maybe_remote_region_projection_base())
+    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
+        self.set_base(self.base.to_maybe_remote_region_projection_base(), repacker)
             .into()
     }
 }
@@ -173,6 +170,20 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    type Error = ();
+    fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
+        match rp.base {
+            MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
+                base: p.try_into()?,
+                region_idx: rp.region_idx,
+                phantom: PhantomData,
+            }),
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+        }
+    }
+}
+
 impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
     pub(crate) fn base(&self) -> P {
         self.base
@@ -180,13 +191,15 @@ impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, Place<'tcx>> {
-    fn to_local_node(self) -> LocalNode<'tcx> {
-        LocalNode::RegionProjection(self.map_base(|base| MaybeOldPlace::Current { place: base }))
+    fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
+        LocalNode::RegionProjection(
+            self.set_base(MaybeOldPlace::Current { place: self.base }, repacker),
+        )
     }
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    fn to_local_node(self) -> LocalNode<'tcx> {
+    fn to_local_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
         LocalNode::RegionProjection(self)
     }
 }
@@ -316,26 +329,37 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
 
     fn project_deeper(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
         elem: PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self>
     where
         Self: Clone + HasValidityCheck<'tcx>,
     {
         RegionProjection::new(
             self.region(repacker),
-            self.base.project_deeper(repacker, elem)?,
+            self.base.project_deeper(elem, repacker)?,
             repacker,
         )
+        .ok()
     }
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+        self.assert_validity(repacker); // DEBUG: Something's wrong if this fails here
         self.base
             .iter_projections(repacker)
             .into_iter()
             .map(move |(base, elem)| {
                 (
-                    RegionProjection::new(self.region(repacker), base, repacker).unwrap(),
+                    RegionProjection::new(self.region(repacker), base, repacker).unwrap_or_else(
+                        |e| {
+                            panic!(
+                                "Error iter projections for {}: {:?}. Place ty: {:?}",
+                                self.to_short_string(repacker),
+                                e,
+                                base.place().ty(repacker),
+                            );
+                        },
+                    ),
                     elem,
                 )
             })
@@ -363,12 +387,21 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         region: PCGRegion,
         base: T,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<Self> {
+    ) -> Result<Self, PCGInternalError> {
         let region_idx = base
             .regions(repacker)
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
-            .map(|(idx, _)| idx)?;
+            .map(|(idx, _)| idx);
+        let region_idx = match region_idx {
+            Some(region_idx) => region_idx,
+            None => {
+                return Err(PCGInternalError::new(format!(
+                    "Region {} not found in place {:?}",
+                    region, base
+                )));
+            }
+        };
         let result = Self {
             base,
             region_idx,
@@ -377,7 +410,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         if validity_checks_enabled() {
             result.assert_validity(repacker);
         }
-        Some(result)
+        Ok(result)
     }
 
     pub(crate) fn region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGRegion {
@@ -401,12 +434,18 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         &mut self.base
     }
 
-    pub(crate) fn map_base<U>(self, f: impl FnOnce(T) -> U) -> RegionProjection<'tcx, U> {
-        RegionProjection {
-            base: f(self.base),
+    pub(crate) fn set_base<U: RegionProjectionBaseLike<'tcx>>(
+        self,
+        base: U,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> RegionProjection<'tcx, U> {
+        let result = RegionProjection {
+            base,
             region_idx: self.region_idx,
             phantom: PhantomData,
-        }
+        };
+        result.assert_validity(repacker);
+        result
     }
 }
 
@@ -419,6 +458,17 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         } else {
             None
         }
+    }
+}
+
+type LocalRegionProjection<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
+
+impl<'tcx> LocalRegionProjection<'tcx> {
+    pub fn to_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> RegionProjection<'tcx> {
+        self.set_base(self.base.into(), repacker)
     }
 }
 
@@ -449,11 +499,14 @@ impl<'tcx> RegionProjection<'tcx> {
         })
     }
 
-    fn as_local_region_projection(&self) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+    fn as_local_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         match self.base {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 match maybe_remote_place {
-                    MaybeRemotePlace::Local(local) => Some(self.map_base(|_| local)),
+                    MaybeRemotePlace::Local(local) => Some(self.set_base(local.into(), repacker)),
                     _ => None,
                 }
             }
@@ -464,7 +517,7 @@ impl<'tcx> RegionProjection<'tcx> {
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
     /// this returns `*x`. Otherwise, it returns `None`.
     pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        self.as_local_region_projection()
+        self.as_local_region_projection(repacker)
             .and_then(|rp| rp.deref(repacker))
     }
 
