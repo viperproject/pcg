@@ -322,7 +322,6 @@ fn init_tracing() {
 }
 
 #[cfg(feature = "memory_profiling")]
-#[cfg(not(target_os = "macos"))]
 #[tokio::main]
 async fn main() {
     init_tracing();
@@ -330,7 +329,7 @@ async fn main() {
     go(setup_rustc_args());
 }
 
-#[cfg(any(not(feature = "memory_profiling"), target_os = "macos"))]
+#[cfg(not(feature = "memory_profiling"))]
 fn main() {
     init_tracing();
     go(setup_rustc_args());
