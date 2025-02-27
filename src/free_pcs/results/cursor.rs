@@ -19,13 +19,10 @@ use crate::{
         },
         mir_dataflow::ResultsCursor,
     },
-    utils::{
-        display::DebugLines,
-        validity::HasValidityCheck,
-        Place,
-    },
+    utils::{display::DebugLines, validity::HasValidityCheck, Place},
 };
 
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
@@ -37,7 +34,6 @@ use crate::{
     utils::PlaceRepacker,
     BorrowsBridge,
 };
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
 
 pub trait HasPcg<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
@@ -324,6 +320,12 @@ pub struct PcgLocation<'tcx> {
     pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
 }
 
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
+    fn debug_lines(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        self.iter().map(|r| format!("{:?}", r)).collect()
+    }
+}
+
 impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         self.borrows.check_validity(repacker)
@@ -368,6 +370,12 @@ impl<'tcx> PcgLocation<'tcx> {
         }
         for line in self.extra_middle.debug_lines(repacker) {
             result.push(format!("Extra Middle: {}", line));
+        }
+        for line in self.repacks_start.debug_lines(repacker) {
+            result.push(format!("Repacks Start: {}", line));
+        }
+        for line in self.repacks_middle.debug_lines(repacker) {
+            result.push(format!("Repacks Middle: {}", line));
         }
         result
     }
