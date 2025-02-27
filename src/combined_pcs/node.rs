@@ -32,7 +32,7 @@ impl<'tcx> PCGNode<'tcx> {
     }
 }
 
-impl<'tcx, T, U> From<T> for PCGNode<'tcx, T, U> {
+impl<T, U> From<T> for PCGNode<'_, T, U> {
     fn from(value: T) -> Self {
         PCGNode::Place(value)
     }
@@ -126,7 +126,7 @@ pub(crate) trait LocalNodeLike<'tcx> {
     fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx>;
 }
 
-impl<'tcx> From<RemotePlace> for PCGNode<'tcx> {
+impl From<RemotePlace> for PCGNode<'_> {
     fn from(remote_place: RemotePlace) -> Self {
         PCGNode::Place(remote_place.into())
     }

@@ -108,7 +108,7 @@ fn get_place_to_expand_to<'b, 'tcx>(
             .mk_place_elem(*elem, repacker)
             .with_inherent_region(repacker);
     }
-    return curr_place;
+    curr_place
 }
 
 #[derive(Debug, Default)]
@@ -172,34 +172,34 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
         self.super_statement(statement, location);
         use StatementKind::*;
-        let t = match &statement.kind {
-            &Assign(box (place, ref rvalue)) => Triple {
+        let t = match statement.kind {
+            Assign(box (place, ref rvalue)) => Triple {
                 pre: Condition::write(place),
                 post: rvalue.capability().map(|cap| Condition::new(place, cap)),
             },
-            &FakeRead(box (_, place)) => Triple {
+            FakeRead(box (_, place)) => Triple {
                 pre: Condition::exclusive(place),
                 post: None,
             },
             // Looking into `rustc` it seems that `PlaceMention` is effectively ignored.
-            &PlaceMention(_) => return,
-            &SetDiscriminant { box place, .. } => Triple {
+            PlaceMention(_) => return,
+            SetDiscriminant { box place, .. } => Triple {
                 pre: Condition::exclusive(place),
                 post: None,
             },
-            &Deinit(box place) => Triple {
+            Deinit(box place) => Triple {
                 pre: Condition::exclusive(place),
                 post: Some(Condition::write(place)),
             },
-            &StorageLive(local) => Triple {
+            StorageLive(local) => Triple {
                 pre: Condition::Unalloc(local),
                 post: Some(Condition::AllocateOrDeallocate(local)),
             },
-            &StorageDead(local) => Triple {
+            StorageDead(local) => Triple {
                 pre: Condition::AllocateOrDeallocate(local),
                 post: Some(Condition::Unalloc(local)),
             },
-            &Retag(_, box place) => Triple {
+            Retag(_, box place) => Triple {
                 pre: Condition::exclusive(place),
                 post: None,
             },

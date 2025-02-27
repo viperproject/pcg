@@ -46,11 +46,11 @@ pub trait HasPcg<'mir, 'tcx> {
 
 impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
     fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
-        &self.owned_pcg()
+        self.owned_pcg()
     }
 
     fn get_curr_borrow_pcg(&self) -> &BorrowsDomain<'mir, 'tcx> {
-        &self.borrow_pcg()
+        self.borrow_pcg()
     }
 }
 
@@ -144,7 +144,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         let block = &self.body()[location.block];
 
         // Currently we ignore blocks that are only reached via panics
-        let succs = PCGEngine::successor_blocks(&block.terminator())
+        let succs = PCGEngine::successor_blocks(block.terminator())
             .into_iter()
             .filter(|succ| {
                 self.cursor

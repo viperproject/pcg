@@ -61,10 +61,8 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool) {
         .env("RUSTC", &pcs_exe)
         .current_dir(dir)
         .status()
-        .expect(&format!(
-            "Failed to execute cargo check on {}",
-            dir.display()
-        ));
+        .unwrap_or_else(|_| panic!("Failed to execute cargo check on {}",
+            dir.display()));
 
     assert!(
         exit.success(),

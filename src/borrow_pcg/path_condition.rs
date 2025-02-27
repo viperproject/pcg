@@ -68,8 +68,7 @@ impl PCGraph {
     pub(crate) fn edges_to(&self, block: BasicBlock) -> BTreeSet<PathCondition> {
         self.0
             .iter()
-            .filter(|pc| pc.to == block)
-            .map(|pc| *pc)
+            .filter(|pc| pc.to == block).copied()
             .collect()
     }
 

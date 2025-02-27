@@ -81,7 +81,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(place.into(), repacker, location)?;
+            let extra_acts = self.expand_to(place, repacker, location)?;
             actions.extend(extra_acts);
         }
 
@@ -153,7 +153,7 @@ impl<'tcx> BorrowsState<'tcx> {
         for root_node in self.roots(repacker) {
             if let Some(root_node_place) = root_node.as_current_place() {
                 if place.is_prefix(root_node_place) {
-                    ug.unblock_node(root_node.into(), self, repacker);
+                    ug.unblock_node(root_node, self, repacker);
                 }
             }
         }
@@ -249,7 +249,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     })
                     .copied()
                     .collect::<Vec<_>>();
-                if dest_places.len() > 0 {
+                if !dest_places.is_empty() {
                     let expansion = BorrowPCGExpansion::from_borrowed_base(
                         rp.into(),
                         BorrowExpansion::from_places(dest_places, repacker),

@@ -88,9 +88,9 @@ impl<'tcx> EdgeData<'tcx> for BorrowEdge<'tcx> {
 
     fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         let rp = self.assigned_region_projection(repacker);
-        return vec![LocalNode::RegionProjection(rp.into())]
+        vec![LocalNode::RegionProjection(rp)]
             .into_iter()
-            .collect();
+            .collect()
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -140,7 +140,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self.assigned_ref.ty(repacker).ty.kind() {
             ty::TyKind::Ref(region, _, _) => {
-                RegionProjection::new((*region).into(), self.assigned_ref.into(), repacker).unwrap()
+                RegionProjection::new((*region).into(), self.assigned_ref, repacker).unwrap()
             }
             other => unreachable!("{:?}", other),
         }
@@ -157,7 +157,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowEdge<'tcx> {
     }
 }
 
-impl<'tcx> std::fmt::Display for BorrowEdge<'tcx> {
+impl std::fmt::Display for BorrowEdge<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

@@ -106,6 +106,12 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
 #[derive(Clone)]
 pub struct DotGraphs(Vec<Vec<BTreeMap<DataflowStmtPhase, String>>>);
 
+impl Default for DotGraphs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DotGraphs {
     pub fn new() -> Self {
         Self(vec![])
@@ -154,9 +160,9 @@ impl DotGraphs {
             .iter()
             .map(|iterations| {
                 iterations
-                    .into_iter()
+                    .iter()
                     .map(|map| {
-                        map.into_iter()
+                        map.iter()
                             .sorted_by_key(|x| x.0)
                             .map(|(phase, filename)| (format!("{:?}", phase), filename))
                             .collect::<Vec<_>>()
@@ -245,7 +251,7 @@ pub(crate) struct PCG<'a, 'tcx> {
     pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
 }
 
-impl<'a, 'tcx> PCG<'a, 'tcx> {
+impl PCG<'_, '_> {
     pub(crate) fn initialize_as_start_block(&mut self) {
         self.owned.initialize_as_start_block();
         self.borrow.initialize_as_start_block();
@@ -431,7 +437,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         if self.block().as_usize() == 0 {
             panic!("{:?}", other.block());
         }
-        let fpcs = self.owned_pcg_mut().join(&other.owned_pcg());
+        let fpcs = self.owned_pcg_mut().join(other.owned_pcg());
         if self.owned_pcg().has_internal_error() {
             panic!(
                 "Error joining (self:{:?}, other:{:?}): {:?}",
@@ -440,7 +446,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
                 self.owned_pcg().error.as_ref().unwrap()
             );
         }
-        let borrows = self.borrow_pcg_mut().join(&other.borrow_pcg());
+        let borrows = self.borrow_pcg_mut().join(other.borrow_pcg());
         if let Some(debug_data) = &self.debug_data {
             debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
             self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);

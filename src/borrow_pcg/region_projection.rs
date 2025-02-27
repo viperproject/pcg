@@ -241,7 +241,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> ToJsonWithRepacker<'tcx>
     }
 }
 
-impl<'tcx, T: std::fmt::Display> fmt::Display for RegionProjection<'tcx, T> {
+impl<T: std::fmt::Display> fmt::Display for RegionProjection<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}↓{:?}", self.base, self.region_idx)
     }
@@ -423,7 +423,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     }
 }
 
-impl<'tcx, T: Copy> RegionProjection<'tcx, T> {
+impl<T: Copy> RegionProjection<'_, T> {
     pub(crate) fn place(&self) -> T {
         self.base
     }
@@ -506,7 +506,7 @@ impl<'tcx> RegionProjection<'tcx> {
         match self.base {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 match maybe_remote_place {
-                    MaybeRemotePlace::Local(local) => Some(self.set_base(local.into(), repacker)),
+                    MaybeRemotePlace::Local(local) => Some(self.set_base(local, repacker)),
                     _ => None,
                 }
             }
@@ -559,7 +559,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemoteRegionProjectionBase<
     }
 }
 
-impl<'tcx> From<RemotePlace> for MaybeRemoteRegionProjectionBase<'tcx> {
+impl From<RemotePlace> for MaybeRemoteRegionProjectionBase<'_> {
     fn from(remote_place: RemotePlace) -> Self {
         MaybeRemoteRegionProjectionBase::Place(remote_place.into())
     }

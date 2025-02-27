@@ -51,7 +51,7 @@ struct JoinTransitionElem<'tcx> {
 }
 
 #[cfg(debug_assertions)]
-impl<'tcx> HasBlock for JoinTransitionElem<'tcx> {
+impl HasBlock for JoinTransitionElem<'_> {
     fn block(&self) -> BasicBlock {
         self.block
     }
@@ -94,9 +94,9 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
     }
 }
 
-impl<'tcx> Eq for BorrowsState<'tcx> {}
+impl Eq for BorrowsState<'_> {}
 
-impl<'tcx> PartialEq for BorrowsState<'tcx> {
+impl PartialEq for BorrowsState<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.latest == other.latest
             && self.graph == other.graph
@@ -110,7 +110,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
     }
 }
 
-impl<'tcx> Default for BorrowsState<'tcx> {
+impl Default for BorrowsState<'_> {
     fn default() -> Self {
         Self {
             latest: Latest::new(),
@@ -186,7 +186,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
     #[must_use]
     pub(crate) fn remove_capability(&mut self, node: PCGNode<'tcx>) -> bool {
-        if self.get_capability(node) != None {
+        if self.get_capability(node).is_some() {
             Rc::<_>::make_mut(&mut self.capabilities).remove(node);
             true
         } else {
@@ -483,7 +483,7 @@ impl<'tcx> BorrowsState<'tcx> {
             _ => CapabilityKind::Read,
         };
         let borrow_edge = BorrowEdge::new(
-            blocked_place.into(),
+            blocked_place,
             assigned_place.into(),
             kind.mutability(),
             location,

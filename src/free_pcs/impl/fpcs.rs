@@ -39,8 +39,7 @@ pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
-            .as_ref()
-            .map_or(false, |e| matches!(e.kind, PCGErrorKind::Internal(_)))
+            .as_ref().is_some_and(|e| matches!(e.kind, PCGErrorKind::Internal(_)))
     }
     pub(crate) fn post_operands_mut(&mut self) -> &mut CapabilitySummary<'tcx> {
         self.data.states.get_mut(EvalStmtPhase::PostOperands)
@@ -155,13 +154,13 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
 /// The free pcs of all locals
 pub struct CapabilitySummary<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 
-impl<'tcx> Default for CapabilitySummary<'tcx> {
+impl Default for CapabilitySummary<'_> {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<'tcx> Debug for CapabilitySummary<'tcx> {
+impl Debug for CapabilitySummary<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let v: Vec<_> = self.0.iter().filter(|c| !c.is_unallocated()).collect();
         v.fmt(f)

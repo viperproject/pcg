@@ -74,13 +74,13 @@ impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
     }
 }
 
-impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
+impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, '_> {
     fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
-        &self.kind
+        self.kind
     }
 
     fn conditions(&self) -> &PathConditions {
-        &self.conditions
+        self.conditions
     }
 
     fn to_owned_edge(self) -> BorrowPCGEdge<'tcx> {
@@ -107,7 +107,7 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithRepacker<'tcx> for T {
     }
 }
 
-impl<'tcx> LocalNode<'tcx> {
+impl LocalNode<'_> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
             PCGNode::Place(p) => p.is_old(),
@@ -215,7 +215,7 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx, T: std::fmt::Display> std::fmt::Display for PCGNode<'tcx, T> {
+impl<T: std::fmt::Display> std::fmt::Display for PCGNode<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PCGNode::Place(p) => write!(f, "{}", p),
@@ -456,8 +456,8 @@ impl<'tcx> ToBorrowsEdge<'tcx> for RegionProjectionMember<'tcx> {
     }
 }
 
-impl<'tcx, T: ToBorrowsEdge<'tcx>> Into<BorrowPCGEdge<'tcx>> for Conditioned<T> {
-    fn into(self) -> BorrowPCGEdge<'tcx> {
-        self.value.to_borrow_pcg_edge(self.conditions)
+impl<'tcx, T: ToBorrowsEdge<'tcx>> From<Conditioned<T>> for BorrowPCGEdge<'tcx> {
+    fn from(val: Conditioned<T>) -> Self {
+        val.value.to_borrow_pcg_edge(val.conditions)
     }
 }

@@ -242,7 +242,7 @@ struct PCGStmtVisualizationData<'a, 'tcx> {
     actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
 }
 
-impl<'a, 'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'a, 'tcx> {
+impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
@@ -391,7 +391,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
 #[macro_export]
 macro_rules! pcg_validity_assert {
     ($($arg:tt)*) => {
-        if crate::validity_checks_enabled() {
+        if $crate::validity_checks_enabled() {
             assert!($($arg)*);
         }
     };

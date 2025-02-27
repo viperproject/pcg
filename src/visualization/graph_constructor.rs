@@ -389,7 +389,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 });
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
-                let _r = self.constructor().insert_abstraction(abstraction);
+                self.constructor().insert_abstraction(abstraction);
             }
             BorrowPCGEdgeKind::RegionProjectionMember(member) => {
                 for input in member.inputs.iter() {
@@ -467,7 +467,7 @@ struct PCGCapabilityGetter<'a, 'tcx> {
     borrows_domain: &'a BorrowsState<'tcx>,
 }
 
-impl<'a, 'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'a, 'tcx> {
+impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
     fn get(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind> {
         if let Some(cap) = self.borrows_domain.get_capability(node) {
             return Some(cap);
@@ -562,7 +562,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
         let mut last_place = place.into();
         while !projection.is_empty() {
             projection = &projection[..projection.len() - 1];
-            let place = Place::new(place.local, &projection);
+            let place = Place::new(place.local, projection);
             let connections = RegionProjection::connections_between_places(
                 place.into(),
                 last_place,
@@ -589,7 +589,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 source: node,
                 target: last_node,
             });
-            last_node = node.clone();
+            last_node = node;
         }
         node
     }
@@ -607,7 +607,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
     }
 
     pub fn construct_graph(mut self) -> Graph {
-        for (_local, capability) in self.summary.iter().enumerate() {
+        for capability in self.summary.iter() {
             match capability {
                 CapabilityLocal::Unallocated => {}
                 CapabilityLocal::Allocated(projections) => {

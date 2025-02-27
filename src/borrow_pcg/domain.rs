@@ -36,7 +36,7 @@ use crate::rustc_interface::{
 
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
-impl<'mir, 'tcx> JoinSemiLattice for BorrowsDomain<'mir, 'tcx> {
+impl<'tcx> JoinSemiLattice for BorrowsDomain<'_, 'tcx> {
     fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
         self.debug_join_iteration += 1;
@@ -94,15 +94,15 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     error: Option<PCGError>,
 }
 
-impl<'mir, 'tcx> PartialEq for BorrowsDomain<'mir, 'tcx> {
+impl PartialEq for BorrowsDomain<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.block == other.block
     }
 }
 
-impl<'mir, 'tcx> Eq for BorrowsDomain<'mir, 'tcx> {}
+impl Eq for BorrowsDomain<'_, '_> {}
 
-impl<'mir, 'tcx> std::fmt::Debug for BorrowsDomain<'mir, 'tcx> {
+impl std::fmt::Debug for BorrowsDomain<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BorrowsDomain")
             .field("states", &self.data.states)
@@ -142,8 +142,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     #[allow(unused)]
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
-            .as_ref()
-            .map_or(false, |e| matches!(e.kind, PCGErrorKind::Internal(_)))
+            .as_ref().is_some_and(|e| matches!(e.kind, PCGErrorKind::Internal(_)))
     }
 
     pub(crate) fn has_error(&self) -> bool {

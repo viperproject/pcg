@@ -33,7 +33,7 @@ use self::{
     graph_constructor::{GraphCluster, PCSGraphConstructor, UnblockGraphConstructor},
 };
 
-pub fn place_id<'tcx>(place: &Place<'tcx>) -> String {
+pub fn place_id(place: &Place<'_>) -> String {
     format!("{:?}", place)
 }
 
@@ -94,7 +94,7 @@ impl GraphNode {
                 };
                 let label = format!(
                     "<FONT FACE=\"courier\">{}&nbsp;{}{}</FONT>",
-                    escape_html(&label),
+                    escape_html(label),
                     escape_html(&capability_text),
                     escape_html(&location_text),
                 );
@@ -204,7 +204,7 @@ impl GraphEdge {
                 from: borrowed_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string())
-                    .with_label(format!("{}", region))
+                    .with_label(region.to_string())
                     .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::DerefExpansionEdge {

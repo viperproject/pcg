@@ -30,7 +30,7 @@ pub enum PlaceDisplay<'tcx> {
     User(Place<'tcx>, String),
 }
 
-impl<'tcx> Debug for PlaceDisplay<'tcx> {
+impl Debug for PlaceDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             PlaceDisplay::Temporary(place) => write!(f, "{place:?}"),
@@ -39,7 +39,7 @@ impl<'tcx> Debug for PlaceDisplay<'tcx> {
     }
 }
 
-impl<'tcx> PlaceDisplay<'tcx> {
+impl PlaceDisplay<'_> {
     pub fn is_user(&self) -> bool {
         matches!(self, PlaceDisplay::User(..))
     }

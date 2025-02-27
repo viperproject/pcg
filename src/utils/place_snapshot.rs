@@ -75,7 +75,7 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
     }
 }
 
-impl<'tcx> std::fmt::Display for PlaceSnapshot<'tcx> {
+impl std::fmt::Display for PlaceSnapshot<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} at {:?}", self.place, self.at)
     }

@@ -37,7 +37,7 @@ impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
         match (sup, sub) {
             (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => {

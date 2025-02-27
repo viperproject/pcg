@@ -264,13 +264,13 @@ impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for Abstract
     }
 }
 
-impl<'tcx> PartialEq for AbstractionBlockEdge<'tcx> {
+impl PartialEq for AbstractionBlockEdge<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.inputs() == other.inputs() && self.outputs() == other.outputs()
     }
 }
 
-impl<'tcx> Eq for AbstractionBlockEdge<'tcx> {}
+impl Eq for AbstractionBlockEdge<'_> {}
 
 impl<'tcx> AbstractionBlockEdge<'tcx> {
     pub(crate) fn new(

@@ -87,142 +87,136 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(crate) fn stmt_post_main(&mut self, statement: &Statement<'tcx>, location: Location) {
         assert!(!self.preparing);
         assert!(self.stage == StatementStage::Main);
-        match &statement.kind {
-            StatementKind::Assign(box (target, rvalue)) => {
-                let target: utils::Place<'tcx> = (*target).into();
-                self.apply_action(BorrowPCGAction::set_latest(
-                    target,
-                    location,
-                    "Target of Assignment",
-                ));
-                let state = self.domain.post_state_mut();
-                if !target.is_owned(self.repacker) {
-                    state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
-                }
-                match rvalue {
-                    Rvalue::Aggregate(
-                        box (AggregateKind::Adt(..)
-                        | AggregateKind::Tuple
-                        | AggregateKind::Array(..)),
-                        fields,
-                    ) => {
-                        let target: utils::Place<'tcx> = (*target).into();
-                        for field in fields.iter() {
-                            let operand_place: utils::Place<'tcx> =
-                                if let Some(place) = field.place() {
-                                    place.into()
-                                } else {
-                                    continue;
-                                };
-                            for source_proj in operand_place.region_projections(self.repacker) {
-                                let source_proj = source_proj.set_base(
-                                    MaybeOldPlace::new(
-                                        source_proj.base,
-                                        Some(
-                                            self.domain
-                                                .post_main_state()
-                                                .get_latest(source_proj.base),
-                                        ),
+        if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
+            let target: utils::Place<'tcx> = (*target).into();
+            self.apply_action(BorrowPCGAction::set_latest(
+                target,
+                location,
+                "Target of Assignment",
+            ));
+            let state = self.domain.post_state_mut();
+            if !target.is_owned(self.repacker) {
+                state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
+            }
+            match rvalue {
+                Rvalue::Aggregate(
+                    box (AggregateKind::Adt(..)
+                    | AggregateKind::Tuple
+                    | AggregateKind::Array(..)),
+                    fields,
+                ) => {
+                    let target: utils::Place<'tcx> = (*target).into();
+                    for field in fields.iter() {
+                        let operand_place: utils::Place<'tcx> =
+                            if let Some(place) = field.place() {
+                                place.into()
+                            } else {
+                                continue;
+                            };
+                        for source_proj in operand_place.region_projections(self.repacker) {
+                            let source_proj = source_proj.set_base(
+                                MaybeOldPlace::new(
+                                    source_proj.base,
+                                    Some(
+                                        self.domain
+                                            .post_main_state()
+                                            .get_latest(source_proj.base),
                                     ),
-                                    self.repacker,
-                                );
-                                self.connect_outliving_projections(
-                                    source_proj,
-                                    target,
-                                    location,
-                                    |_| RegionProjectionMemberKind::Todo,
-                                );
-                            }
-                        }
-                    }
-                    Rvalue::Use(Operand::Constant(box c)) => match c.ty().kind() {
-                        ty::TyKind::Ref(const_region, _, _) => {
-                            if let ty::TyKind::Ref(target_region, _, _) =
-                                target.ty(self.repacker).ty.kind()
-                            {
-                                self.apply_action(BorrowPCGAction::add_region_projection_member(
-                                    RegionProjectionMember::new(
-                                        smallvec![RegionProjection::new(
-                                            (*const_region).into(),
-                                            MaybeRemoteRegionProjectionBase::Const(c.const_),
-                                            self.repacker,
-                                        )
-                                        .unwrap()
-                                        .to_pcg_node(self.repacker)],
-                                        smallvec![RegionProjection::new(
-                                            (*target_region).into(),
-                                            target,
-                                            self.repacker,
-                                        )
-                                        .unwrap()
-                                        .into()],
-                                        RegionProjectionMemberKind::ConstRef,
-                                    ),
-                                    PathConditions::AtBlock(location.block),
-                                    "Assign constant",
-                                ));
-                            }
-                        }
-                        _ => {}
-                    },
-                    Rvalue::Use(Operand::Move(from)) => {
-                        let from: utils::Place<'tcx> = (*from).into();
-                        let target: utils::Place<'tcx> = (*target).into();
-                        if from.is_ref(self.repacker) {
-                            let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
-                            let new_place = target;
-                            self.apply_action(BorrowPCGAction::rename_place(
-                                old_place,
-                                new_place.into(),
-                            ));
-                        }
-                    }
-                    Rvalue::Use(Operand::Copy(from)) => {
-                        let from_place: utils::Place<'tcx> = (*from).into();
-                        for source_proj in from_place.region_projections(self.repacker).into_iter()
-                        {
+                                ),
+                                self.repacker,
+                            );
                             self.connect_outliving_projections(
-                                source_proj.into(),
+                                source_proj,
                                 target,
                                 location,
                                 |_| RegionProjectionMemberKind::Todo,
                             );
                         }
                     }
-                    Rvalue::Ref(region, kind, blocked_place) => {
-                        let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
-                        if !target.ty(self.repacker).ty.is_ref() {
-                            self.domain.report_error(PCGError::unsupported(
-                                PCGUnsupportedError::AssignBorrowToNonReferenceType,
-                            ));
-                            return;
-                        }
-                        if matches!(kind, BorrowKind::Fake(_)) {
-                            return;
-                        }
-                        state.add_borrow(
-                            blocked_place.into(),
-                            target,
-                            kind.clone(),
-                            location,
-                            *region,
-                            self.repacker,
-                        );
-                        for source_proj in
-                            blocked_place.region_projections(self.repacker).into_iter()
-                        {
-                            self.connect_outliving_projections(
-                                source_proj.into(),
-                                target,
-                                location,
-                                |_| RegionProjectionMemberKind::BorrowOutlives,
-                            );
-                        }
-                    }
-                    _ => {}
                 }
+                Rvalue::Use(Operand::Constant(box c)) => if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind() {
+                    if let ty::TyKind::Ref(target_region, _, _) =
+                        target.ty(self.repacker).ty.kind()
+                    {
+                        self.apply_action(BorrowPCGAction::add_region_projection_member(
+                            RegionProjectionMember::new(
+                                smallvec![RegionProjection::new(
+                                    (*const_region).into(),
+                                    MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                    self.repacker,
+                                )
+                                .unwrap()
+                                .to_pcg_node(self.repacker)],
+                                smallvec![RegionProjection::new(
+                                    (*target_region).into(),
+                                    target,
+                                    self.repacker,
+                                )
+                                .unwrap()
+                                .into()],
+                                RegionProjectionMemberKind::ConstRef,
+                            ),
+                            PathConditions::AtBlock(location.block),
+                            "Assign constant",
+                        ));
+                    }
+                },
+                Rvalue::Use(Operand::Move(from)) => {
+                    let from: utils::Place<'tcx> = (*from).into();
+                    let target: utils::Place<'tcx> = (*target).into();
+                    if from.is_ref(self.repacker) {
+                        let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
+                        let new_place = target;
+                        self.apply_action(BorrowPCGAction::rename_place(
+                            old_place,
+                            new_place.into(),
+                        ));
+                    }
+                }
+                Rvalue::Use(Operand::Copy(from)) => {
+                    let from_place: utils::Place<'tcx> = (*from).into();
+                    for source_proj in from_place.region_projections(self.repacker).into_iter()
+                    {
+                        self.connect_outliving_projections(
+                            source_proj.into(),
+                            target,
+                            location,
+                            |_| RegionProjectionMemberKind::Todo,
+                        );
+                    }
+                }
+                Rvalue::Ref(region, kind, blocked_place) => {
+                    let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
+                    if !target.ty(self.repacker).ty.is_ref() {
+                        self.domain.report_error(PCGError::unsupported(
+                            PCGUnsupportedError::AssignBorrowToNonReferenceType,
+                        ));
+                        return;
+                    }
+                    if matches!(kind, BorrowKind::Fake(_)) {
+                        return;
+                    }
+                    state.add_borrow(
+                        blocked_place.into(),
+                        target,
+                        *kind,
+                        location,
+                        *region,
+                        self.repacker,
+                    );
+                    for source_proj in
+                        blocked_place.region_projections(self.repacker).into_iter()
+                    {
+                        self.connect_outliving_projections(
+                            source_proj.into(),
+                            target,
+                            location,
+                            |_| RegionProjectionMemberKind::BorrowOutlives,
+                        );
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }

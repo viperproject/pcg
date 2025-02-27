@@ -78,7 +78,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
 // We only need the projection part of the place
 pub struct CapabilityProjections<'tcx>(FxHashMap<Place<'tcx>, CapabilityKind>);
 
-impl<'tcx> Debug for CapabilityProjections<'tcx> {
+impl Debug for CapabilityProjections<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         self.0.fmt(f)
     }

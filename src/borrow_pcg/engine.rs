@@ -67,19 +67,15 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
 
         if !state.actions.pre_operands.is_empty() {
             state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
-        } else {
-            if !state.has_error() {
-                if state.data.states.0.pre_operands != state.data.states.0.post_main {
-                    panic!(
-                        "{:?}: No actions were emitted, but the state has changed:\n{}",
-                        location,
-                        state.data.entry_state.fmt_diff(
-                            state.data.states[EvalStmtPhase::PreOperands].as_ref(),
-                            PlaceRepacker::new(self.body, self.tcx)
-                        )
-                    );
-                }
-            }
+        } else if !state.has_error() && state.data.states.0.pre_operands != state.data.states.0.post_main {
+            panic!(
+                "{:?}: No actions were emitted, but the state has changed:\n{}",
+                location,
+                state.data.entry_state.fmt_diff(
+                    state.data.states[EvalStmtPhase::PreOperands].as_ref(),
+                    PlaceRepacker::new(self.body, self.tcx)
+                )
+            );
         }
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_statement(statement, location);

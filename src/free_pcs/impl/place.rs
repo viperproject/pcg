@@ -193,7 +193,7 @@ mod tests {
                 } else if has_path_connecting(&graph, node_indices[&b], node_indices[&a], None) {
                     assert!(a.partial_cmp(&b) == Some(Ordering::Less));
                 } else {
-                    assert!(a.partial_cmp(&b) == None);
+                    assert!(a.partial_cmp(&b).is_none());
                 }
             }
         }

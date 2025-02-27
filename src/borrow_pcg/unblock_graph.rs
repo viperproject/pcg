@@ -102,7 +102,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             }
         };
 
-        while edges.len() > 0 {
+        while !edges.is_empty() {
             let mut to_keep = edges.clone();
 
             let should_kill_edge = |edge: &BorrowPCGEdge<'tcx>| {
