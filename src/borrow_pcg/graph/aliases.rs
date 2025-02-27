@@ -1,5 +1,3 @@
-use egg::{define_language, Id};
-
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode, edge::kind::BorrowPCGEdgeKind, region_projection::RegionIdx,
@@ -13,14 +11,6 @@ use crate::{
 };
 
 use super::BorrowsGraph;
-
-define_language! {
-    enum EggPcgNode {
-        Node(usize),
-        "*" = Deref(Id),
-        "&" = Ref(Id),
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PCGNodeDiscriminant {
@@ -130,12 +120,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     exact_alias,
                 });
                 if let Some(local_node) = blocked.try_to_local_node(repacker) {
-                    result.extend(self.direct_aliases(
-                        local_node,
-                        repacker,
-                        seen,
-                        exact_alias,
-                    ));
+                    result.extend(self.direct_aliases(local_node, repacker, seen, exact_alias));
                 }
             }
         };
@@ -149,7 +134,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 BorrowPCGEdgeKind::BorrowPCGExpansion(e) => match e.base() {
                     PCGNode::Place(_) => {}
                     PCGNode::RegionProjection(region_projection) => {
-                        extend(region_projection.to_pcg_node(repacker), seen, &mut result, false);
+                        extend(
+                            region_projection.to_pcg_node(repacker),
+                            seen,
+                            &mut result,
+                            false,
+                        );
                     }
                 },
                 BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
@@ -181,8 +171,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 }
                             }
                         }
-                        RegionProjectionMemberKind::DerefBorrowOutlives
-                        | RegionProjectionMemberKind::BorrowOutlives => {}
+                        RegionProjectionMemberKind::DerefBorrowOutlives => {}
+                        RegionProjectionMemberKind::BorrowOutlives { toplevel }
+                            if !toplevel || direct => {}
                         _ => {
                             for input in region_projection_member.inputs() {
                                 extend(input.to_pcg_node(repacker), seen, &mut result, false);
@@ -233,6 +224,31 @@ fn test_aliases() {
             }
         }
     }
+    // interior_mutability_observable
+    let input = r#"
+        use std::cell::RefCell;
+        fn main() {
+            let x = RefCell::new(0);
+            *x.borrow_mut() = 1;
+            x;
+        }
+    "#;
+    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+        let mut pcg = run_combined_pcs(body, tcx, None);
+        let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
+        let stmt = &bb.statements[1];
+        let placer = Placer::new(tcx, &body.body);
+        let x = placer.local("x").mk();
+        let temp4 = mir::Local::from(4_usize).into();
+        let temp: mir::Place<'_> = mir::Local::from(2_usize).into();
+        let aliases = stmt.aliases(
+            temp.project_deeper(&[mir::ProjectionElem::Deref], tcx),
+            &body.body,
+            tcx,
+        );
+        assert!(aliases.contains(&temp4));
+        assert!(aliases.contains(&x));
+    });
 
     // pointer_reborrow_nested
     let input = r#"
@@ -434,9 +450,7 @@ fn main() {
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
-                !stmt
-                    .aliases(star_temp, &body.body, tcx)
-                    .contains(&temp),
+                !stmt.aliases(star_temp, &body.body, tcx).contains(&temp),
                 "Bad alias for {:?}",
                 location
             );
@@ -488,9 +502,7 @@ fn main() {
         let last_bg = bb0.statements.last().unwrap();
         let e_deref = placer.local("e").deref().mk();
         let a = placer.local("a").mk();
-        assert!(last_bg
-            .aliases(e_deref, &body.body, tcx)
-            .contains(&a));
+        assert!(last_bg.aliases(e_deref, &body.body, tcx).contains(&a));
     });
 
     // deep2
@@ -509,9 +521,7 @@ fn main() {
         let last_bg = &bb0.statements[10];
         let starstarc = placer.local("c").deref().deref().mk();
         let a = placer.local("a").mk();
-        assert!(last_bg
-            .aliases(starstarc, &body.body, tcx)
-            .contains(&a));
+        assert!(last_bg.aliases(starstarc, &body.body, tcx).contains(&a));
     });
 
     // flowistry_pointer_deep
@@ -526,17 +536,21 @@ fn main() {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
-        let last_bg = &bb0.statements[11];
-        let star_yyy = placer.local("y").deref().deref().deref().mk();
+        let stmt = &bb0.statements[11];
+        let deref = placer.local("y").deref().mk();
+        let deref_3 = placer.local("y").deref().deref().deref().mk();
         let x = placer.local("x").mk();
-        assert!(last_bg
-            .aliases(star_yyy, &body.body, tcx)
-            .contains(&x));
-        assert!(!last_bg
-            .aliases(star_yyy, &body.body, tcx)
+        assert!(stmt.aliases(deref_3, &body.body, tcx).contains(&x));
+        assert!(!stmt
+            .aliases(deref_3, &body.body, tcx)
             .contains(&mir::Local::from(3usize).into()));
-        assert!(!last_bg
-            .aliases(star_yyy, &body.body, tcx)
+        assert!(!stmt
+            .aliases(deref_3, &body.body, tcx)
+            .contains(&mir::Local::from(4usize).into()));
+        assert!(!pcg
+            .results_for_all_blocks()
+            .unwrap()
+            .all_place_aliases(deref, &body.body, tcx)
             .contains(&mir::Local::from(4usize).into()));
     });
 

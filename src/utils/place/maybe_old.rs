@@ -39,9 +39,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.to_maybe_remote_region_projection_base(),
-            MaybeOldPlace::OldPlace(snapshot) => {
-                snapshot.to_maybe_remote_region_projection_base()
-            }
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_maybe_remote_region_projection_base(),
         }
     }
 
@@ -158,7 +156,7 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self> {
         let mut cloned = *self;
-        *cloned.place_mut() = self.place().project_deeper(elem, repacker);
+        *cloned.place_mut() = self.place().project_deeper(elem, repacker).ok()?;
         Some(cloned)
     }
 

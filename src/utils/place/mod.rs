@@ -156,7 +156,7 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self> {
-        Some(self.project_deeper(elem, repacker))
+        self.project_deeper(elem, repacker).ok()
     }
 
     fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
@@ -166,6 +166,10 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
             .collect()
     }
 }
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct PlaceProjectionError(String);
 
 impl<'tcx> Place<'tcx> {
     /// Projects the place deeper by one element.
@@ -185,9 +189,25 @@ impl<'tcx> Place<'tcx> {
     /// extract from the ADT type the expected type of the projection and
     /// replace the type.
     ///
+    /// Returns `None` if the projection would be illegal
+    ///
     /// ```
-    fn project_deeper(&self, elem: PlaceElem<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    fn project_deeper(
+        &self,
+        elem: PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<Self, PlaceProjectionError> {
         let base_ty = self.ty(repacker);
+        if matches!(
+            elem,
+            ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. }
+        ) && base_ty.ty.builtin_index().is_none()
+        {
+            return Err(PlaceProjectionError(format!(
+                "Type is not indexable: {:?}",
+                base_ty
+            )));
+        }
         let corrected_elem = if let ProjectionElem::Field(field_idx, proj_ty) = elem {
             let expected_ty = match base_ty.ty.kind() {
                 ty::TyKind::Adt(def, substs) => {
@@ -204,9 +224,10 @@ impl<'tcx> Place<'tcx> {
         } else {
             elem
         };
-        self.0
+        Ok(self
+            .0
             .project_deeper(&[corrected_elem], repacker.tcx())
-            .into()
+            .into())
     }
 
     pub(crate) fn compare_projections(
@@ -263,29 +284,25 @@ impl<'tcx> Place<'tcx> {
         Some(Place::new(prefix.local, prefix.projection))
     }
 
-    /// In MIR, if a place is a field projection, then the type of the place
-    /// will be the determined by the last projection. If the type of that place
-    /// contains borrows, it appears that the associated regions are not necessarily
-    /// the same as the one given by the parent struct. See [`Place::project_deeper`]
-    /// for more information
+    /// The type of a MIR place is not necessarily determined by the syntactic projection
+    /// elems from the root place: the projection elements may contain additional type information
+    /// depending on how the place is used. Therefore, the same (syntactic) place may in fact
+    /// be different due to the different types in its projection.
     ///
-    /// In the case that this place is a reference-typed field projection, this function
-    /// returns a new place with the same data, but with the region of the reference determined
-    /// by the parent struct. Otherwise, the place is returned unchanged.
-    ///
-    /// Note: This only considers the last projection, so the place isn't entirely "normalized"
-    /// w.r.t the property the [`Place::project_deeper`] is intended to achieve
+    /// This function converts the Place into a canonical form by re-projecting the place
+    /// from its local, and using types derived from the root place as the types associated
+    /// with Field region projections. For more details see [`Place::project_deeper`].
     pub fn with_inherent_region(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
-        if self.projection.is_empty() {
-            return self;
-        }
-        let base_place = Place::new(self.local, &self.projection[..self.projection.len() - 1]);
-
-        if let Some(elem) = self.projection.last() {
-            base_place.project_deeper(*elem, repacker)
+        let mut proj_iter = self.iter_projections(repacker).into_iter();
+        let mut place = if let Some((place, elem)) = proj_iter.next() {
+            place.project_deeper(elem, repacker).unwrap()
         } else {
-            self
+            return self;
+        };
+        for (_, elem) in proj_iter {
+            place = place.project_deeper(elem, repacker).unwrap();
         }
+        place
     }
 
     pub fn region_projection(

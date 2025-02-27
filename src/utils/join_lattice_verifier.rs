@@ -68,6 +68,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
             let mut on_stack = HashSet::new();
             let mut edge_stack = vec![];
 
+            #[allow(clippy::type_complexity)]
             fn dfs<T: Clone + PartialEq + std::fmt::Debug>(
                 graph: &petgraph::Graph<T, T>,
                 node: petgraph::graph::NodeIndex,
