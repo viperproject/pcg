@@ -174,9 +174,7 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
                                     panic!("Missing annotations: {:?}", missing_annotations);
                                 }
                                 for not_expected_annotation in not_expected_annotations {
-                                    if debug_lines_set
-                                        .contains(&not_expected_annotation.to_string())
-                                    {
+                                    if debug_lines_set.contains(&not_expected_annotation.to_string()) {
                                         panic!(
                                             "Unexpected annotation: {}",
                                             not_expected_annotation

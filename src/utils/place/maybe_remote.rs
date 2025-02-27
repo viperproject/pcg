@@ -101,13 +101,6 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
-    pub(crate) fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        match self {
-            MaybeRemotePlace::Local(p) => p.to_short_string(repacker),
-            MaybeRemotePlace::Remote(rp) => format!("{}", rp),
-        }
-    }
-
     pub(crate) fn related_local_place(&self) -> Place<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.place(),

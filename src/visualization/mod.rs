@@ -139,37 +139,37 @@ enum NodeType {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum GraphEdge {
-    AbstractEdge {
+    Abstract {
         blocked: NodeId,
         blocking: NodeId,
     },
     // For literal borrows
-    AliasEdge {
+    Alias {
         blocked_place: NodeId,
         blocking_place: NodeId,
     },
-    BorrowEdge {
+    Borrow {
         borrowed_place: NodeId,
         assigned_region_projection: NodeId,
         location: Location,
         region: String,
         path_conditions: String,
     },
-    ProjectionEdge {
+    Projection {
         source: NodeId,
         target: NodeId,
     },
-    DerefExpansionEdge {
+    DerefExpansion {
         source: NodeId,
         target: NodeId,
         path_conditions: String,
     },
-    RegionProjectionMemberEdge {
+    RegionProjectionMember {
         source: NodeId,
         target: NodeId,
         kind: String,
     },
-    CoupledEdge {
+    Coupled {
         source: NodeId,
         target: NodeId,
     },
@@ -178,12 +178,12 @@ enum GraphEdge {
 impl GraphEdge {
     fn to_dot_edge(&self) -> DotEdge {
         match self {
-            GraphEdge::ProjectionEdge { source, target } => DotEdge {
+            GraphEdge::Projection { source, target } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
                 options: EdgeOptions::undirected(),
             },
-            GraphEdge::AliasEdge {
+            GraphEdge::Alias {
                 blocked_place,
                 blocking_place,
             } => DotEdge {
@@ -193,7 +193,7 @@ impl GraphEdge {
                     .with_color("grey".to_string())
                     .with_style("dashed".to_string()),
             },
-            GraphEdge::BorrowEdge {
+            GraphEdge::Borrow {
                 borrowed_place,
                 assigned_region_projection: assigned_place,
                 location: _,
@@ -207,7 +207,7 @@ impl GraphEdge {
                     .with_label(region.to_string())
                     .with_tooltip(path_conditions.clone()),
             },
-            GraphEdge::DerefExpansionEdge {
+            GraphEdge::DerefExpansion {
                 source,
                 target,
                 path_conditions,
@@ -218,12 +218,12 @@ impl GraphEdge {
                     .with_color("green".to_string())
                     .with_tooltip(path_conditions.clone()),
             },
-            GraphEdge::AbstractEdge { blocked, blocking } => DotEdge {
+            GraphEdge::Abstract { blocked, blocking } => DotEdge {
                 from: blocked.to_string(),
                 to: blocking.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
-            GraphEdge::RegionProjectionMemberEdge {
+            GraphEdge::RegionProjectionMember {
                 source,
                 target,
                 kind,
@@ -234,7 +234,7 @@ impl GraphEdge {
                     .with_label(kind.clone())
                     .with_color("purple".to_string()),
             },
-            GraphEdge::CoupledEdge { source, target } => DotEdge {
+            GraphEdge::Coupled { source, target } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
                 options: EdgeOptions::undirected()

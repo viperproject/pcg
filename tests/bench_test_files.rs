@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -33,7 +34,7 @@ fn extract_i_refs(output: &str) -> u64 {
     panic!("Could not find I refs in valgrind output {}", output);
 }
 
-fn run_cachegrind(file_path: &PathBuf) -> u64 {
+fn run_cachegrind(file_path: &Path) -> u64 {
     let output = Command::new("valgrind")
         .args([
             "--tool=cachegrind",
@@ -55,7 +56,7 @@ fn run_cachegrind(file_path: &PathBuf) -> u64 {
     extract_i_refs(&stderr)
 }
 
-fn read_previous_results(results_path: &PathBuf) -> io::Result<HashMap<String, u64>> {
+fn read_previous_results(results_path: &Path) -> io::Result<HashMap<String, u64>> {
     if !results_path.exists() {
         return Ok(HashMap::new());
     }

@@ -24,9 +24,10 @@ use crate::rustc_interface::{
     target::abi::VariantIdx,
 };
 
-use super::{
-    debug_info::DebugInfo, display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker,
-};
+#[cfg(feature = "debug_info")]
+use super::debug_info::DebugInfo;
+
+use super::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{
@@ -50,7 +51,7 @@ pub struct Place<'tcx>(
     #[deref]
     #[deref_mut]
     PlaceRef<'tcx>,
-    DebugInfo<'static>,
+    #[cfg(feature = "debug_info")] DebugInfo<'static>,
 );
 
 impl<'tcx> From<Place<'tcx>> for PlaceRef<'tcx> {
@@ -219,15 +220,22 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
+    #[cfg(feature = "debug_info")]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
         Self(PlaceRef { local, projection }, DebugInfo::new_static())
+    }
+
+    #[cfg(not(feature = "debug_info"))]
+    pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
+        Self(PlaceRef { local, projection })
     }
 
     pub(crate) fn base_region_projection(
         self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx, Self>> {
-        self.ty_region(repacker).map(|region| RegionProjection::new(region, self, repacker).unwrap())
+        self.ty_region(repacker)
+            .map(|region| RegionProjection::new(region, self, repacker).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -370,6 +378,7 @@ impl<'tcx> Place<'tcx> {
     ///  - `(x as Ok).0` and `(x as Err).0`
     ///  - `x[_1]` and `x[_2]`
     ///  - `x[2 of 11]` and `x[5 of 14]`
+    ///
     /// But the following are not:
     ///  - `x` and `y`
     ///  - `x.f` and `x.g.h`
@@ -544,6 +553,7 @@ impl<'tcx> Place<'tcx> {
         unreachable!()
     }
 
+    #[cfg(feature = "debug_info")]
     pub fn debug_info(&self) -> DebugInfo<'static> {
         self.1
     }
@@ -678,13 +688,23 @@ impl Hash for Place<'_> {
 }
 
 impl<'tcx> From<PlaceRef<'tcx>> for Place<'tcx> {
+    #[cfg(feature = "debug_info")]
     fn from(value: PlaceRef<'tcx>) -> Self {
         Self(value, DebugInfo::new_static())
     }
+    #[cfg(not(feature = "debug_info"))]
+    fn from(value: PlaceRef<'tcx>) -> Self {
+        Self(value)
+    }
 }
 impl<'tcx> From<MirPlace<'tcx>> for Place<'tcx> {
+    #[cfg(feature = "debug_info")]
     fn from(value: MirPlace<'tcx>) -> Self {
         Self(value.as_ref(), DebugInfo::new_static())
+    }
+    #[cfg(not(feature = "debug_info"))]
+    fn from(value: MirPlace<'tcx>) -> Self {
+        Self(value.as_ref())
     }
 }
 impl From<Local> for Place<'_> {
