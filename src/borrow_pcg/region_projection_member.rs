@@ -80,9 +80,13 @@ pub enum RegionProjectionMemberKind {
     /// example `let x: &'x C = c;` where `c` is a constant of type `&'c C`, then
     /// an edge `{c↓'c} -> {x↓'x}` of this kind is created.
     ConstRef,
-    /// For a borrow `let x: &T<'b> = &y`, where y is of typ T<'a>, an edge generated
+    /// For a borrow `let x: &'x T<'b> = &y`, where y is of typ T<'a>, an edge generated
     /// for `{y|'a} -> {x|'b}` of this kind is created if 'a outlives 'b.
-    BorrowOutlives,
+    ///
+    /// `toplevel` is true for edges to x↓'x, false otherwise.
+    BorrowOutlives {
+        toplevel: bool
+    },
     /// If e.g {x|'a} -> {y|'b} is a BorrowsOutlives, then {*x|'a} -> {*y|'b} is a DerefBorrowsOutlives
     /// (it's introduced if e.g. *y is expanded in the PCG)
     DerefBorrowOutlives,

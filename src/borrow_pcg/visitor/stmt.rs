@@ -100,27 +100,22 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             }
             match rvalue {
                 Rvalue::Aggregate(
-                    box (AggregateKind::Adt(..)
-                    | AggregateKind::Tuple
-                    | AggregateKind::Array(..)),
+                    box (AggregateKind::Adt(..) | AggregateKind::Tuple | AggregateKind::Array(..)),
                     fields,
                 ) => {
                     let target: utils::Place<'tcx> = (*target).into();
                     for field in fields.iter() {
-                        let operand_place: utils::Place<'tcx> =
-                            if let Some(place) = field.place() {
-                                place.into()
-                            } else {
-                                continue;
-                            };
+                        let operand_place: utils::Place<'tcx> = if let Some(place) = field.place() {
+                            place.into()
+                        } else {
+                            continue;
+                        };
                         for source_proj in operand_place.region_projections(self.repacker) {
                             let source_proj = source_proj.set_base(
                                 MaybeOldPlace::new(
                                     source_proj.base,
                                     Some(
-                                        self.domain
-                                            .post_main_state()
-                                            .get_latest(source_proj.base),
+                                        self.domain.post_main_state().get_latest(source_proj.base),
                                     ),
                                 ),
                                 self.repacker,
@@ -134,33 +129,35 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         }
                     }
                 }
-                Rvalue::Use(Operand::Constant(box c)) => if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind() {
-                    if let ty::TyKind::Ref(target_region, _, _) =
-                        target.ty(self.repacker).ty.kind()
-                    {
-                        self.apply_action(BorrowPCGAction::add_region_projection_member(
-                            RegionProjectionMember::new(
-                                smallvec![RegionProjection::new(
-                                    (*const_region).into(),
-                                    MaybeRemoteRegionProjectionBase::Const(c.const_),
-                                    self.repacker,
-                                )
-                                .unwrap()
-                                .to_pcg_node(self.repacker)],
-                                smallvec![RegionProjection::new(
-                                    (*target_region).into(),
-                                    target,
-                                    self.repacker,
-                                )
-                                .unwrap()
-                                .into()],
-                                RegionProjectionMemberKind::ConstRef,
-                            ),
-                            PathConditions::AtBlock(location.block),
-                            "Assign constant",
-                        ));
+                Rvalue::Use(Operand::Constant(box c)) => {
+                    if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind() {
+                        if let ty::TyKind::Ref(target_region, _, _) =
+                            target.ty(self.repacker).ty.kind()
+                        {
+                            self.apply_action(BorrowPCGAction::add_region_projection_member(
+                                RegionProjectionMember::new(
+                                    smallvec![RegionProjection::new(
+                                        (*const_region).into(),
+                                        MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                        self.repacker,
+                                    )
+                                    .unwrap()
+                                    .to_pcg_node(self.repacker)],
+                                    smallvec![RegionProjection::new(
+                                        (*target_region).into(),
+                                        target,
+                                        self.repacker,
+                                    )
+                                    .unwrap()
+                                    .into()],
+                                    RegionProjectionMemberKind::ConstRef,
+                                ),
+                                PathConditions::AtBlock(location.block),
+                                "Assign constant",
+                            ));
+                        }
                     }
-                },
+                }
                 Rvalue::Use(Operand::Move(from)) => {
                     let from: utils::Place<'tcx> = (*from).into();
                     let target: utils::Place<'tcx> = (*target).into();
@@ -175,8 +172,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
                 Rvalue::Use(Operand::Copy(from)) => {
                     let from_place: utils::Place<'tcx> = (*from).into();
-                    for source_proj in from_place.region_projections(self.repacker).into_iter()
-                    {
+                    for source_proj in from_place.region_projections(self.repacker).into_iter() {
                         self.connect_outliving_projections(
                             source_proj.into(),
                             target,
@@ -204,14 +200,15 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         *region,
                         self.repacker,
                     );
-                    for source_proj in
-                        blocked_place.region_projections(self.repacker).into_iter()
-                    {
+                    let target_region = target.ty_region(self.repacker).unwrap();
+                    for source_proj in blocked_place.region_projections(self.repacker).into_iter() {
                         self.connect_outliving_projections(
                             source_proj.into(),
                             target,
                             location,
-                            |_| RegionProjectionMemberKind::BorrowOutlives,
+                            |region| RegionProjectionMemberKind::BorrowOutlives {
+                                toplevel: region == target_region,
+                            },
                         );
                     }
                 }

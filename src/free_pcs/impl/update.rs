@@ -20,7 +20,6 @@ use super::{
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
-    #[must_use]
     pub(crate) fn requires(
         &mut self,
         cond: Condition<'tcx>,
@@ -152,7 +151,6 @@ impl<'tcx> CapabilitySummary<'tcx> {
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
-    #[must_use]
     pub(super) fn repack(
         &mut self,
         to: Place<'tcx>,

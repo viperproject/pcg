@@ -236,11 +236,12 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     })
                 });
             for (from, from_perm) in removed_perms {
-                if perm != from_perm {
-                    if !(from_perm > perm) {
-                        panic!("Weaken {:?} {:?} {:?}", from, from_perm, perm);
-                    }
-                    ops.push(RepackOp::Weaken(from, from_perm, perm));
+                match from_perm.partial_cmp(&perm) {
+                    Some(std::cmp::Ordering::Equal) => {},  // Equal, do nothing
+                    Some(std::cmp::Ordering::Greater) => {
+                        ops.push(RepackOp::Weaken(from, from_perm, perm));
+                    },
+                    _ => panic!("Weaken {:?} {:?} {:?}", from, from_perm, perm),
                 }
             }
             old_caps.insert(to, perm);

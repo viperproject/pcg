@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::{
     borrow_pcg::region_projection_member::RegionProjectionMemberKind,
-    combined_pcs::{PCGError, PCGNodeLike, LocalNodeLike, PCGUnsupportedError},
+    combined_pcs::{LocalNodeLike, PCGError, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
         index::IndexVec,
@@ -148,13 +148,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
         location: Location,
-        kind: impl Fn(usize) -> RegionProjectionMemberKind,
+        kind: impl Fn(PCGRegion) -> RegionProjectionMemberKind,
     ) {
-        for (idx, target_proj) in target
-            .region_projections(self.repacker)
-            .into_iter()
-            .enumerate()
-        {
+        for target_proj in target.region_projections(self.repacker).into_iter() {
             if self.outlives(
                 source_proj.region(self.repacker),
                 target_proj.region(self.repacker),
@@ -163,7 +159,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     RegionProjectionMember::new(
                         smallvec![source_proj.to_pcg_node(self.repacker)],
                         smallvec![target_proj.to_local_node(self.repacker)],
-                        kind(idx),
+                        kind(target_proj.region(self.repacker)),
                     ),
                     PathConditions::AtBlock(location.block),
                     "Outliving Projection",
@@ -235,8 +231,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ));
             let ty = input_place.ty(self.repacker).ty;
             for (lifetime_idx, input_lifetime) in extract_regions(ty).into_iter().enumerate() {
-                for output in self
-                    .projections_borrowing_from_input_lifetime(input_lifetime, destination)
+                for output in
+                    self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
                         self.domain.report_error(PCGError::unsupported(
@@ -362,11 +358,12 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         self.super_terminator(terminator, location);
         if self.stage == StatementStage::Main && !self.preparing {
             if let TerminatorKind::Call {
-                    func,
-                    args,
-                    destination,
-                    ..
-                } = &terminator.kind {
+                func,
+                args,
+                destination,
+                ..
+            } = &terminator.kind
+            {
                 let destination: utils::Place<'tcx> = (*destination).into();
                 self.apply_action(BorrowPCGAction::set_latest(
                     destination,
