@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    # Run on all pull requests, regardless of target branch
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,7 +20,9 @@ jobs:
       with:
         toolchain: nightly-2024-09-15
     - name: Check for warnings
-      run: cargo check --all-targets --all-features --lib --bins --tests --examples --benches --message-format=json -- -D warnings
+      env:
+        RUSTFLAGS: "-D warnings"
+      run: cargo check --all-targets --all-features --lib --bins --tests --examples --benches --message-format=json
 
   test_files:
     runs-on: ubuntu-latest
