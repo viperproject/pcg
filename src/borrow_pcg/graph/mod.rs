@@ -56,7 +56,7 @@ pub struct BorrowsGraph<'tcx> {
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsGraph<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.edges()
-            .map(|edge| format!("{}", edge.to_short_string(repacker)))
+            .map(|edge| edge.to_short_string(repacker).to_string())
             .collect()
     }
 }
@@ -75,9 +75,9 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
     }
 }
 
-impl<'tcx> Eq for BorrowsGraph<'tcx> {}
+impl Eq for BorrowsGraph<'_> {}
 
-impl<'tcx> PartialEq for BorrowsGraph<'tcx> {
+impl PartialEq for BorrowsGraph<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.edges == other.edges
     }
@@ -94,13 +94,10 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {
         for edge in self.edges() {
-            match edge.kind() {
-                BorrowPCGEdgeKind::Abstraction(abstraction) => {
-                    if abstraction.is_function_call() && abstraction.location() == location {
-                        return true;
-                    }
+            if let BorrowPCGEdgeKind::Abstraction(abstraction) = edge.kind() {
+                if abstraction.is_function_call() && abstraction.location() == location {
+                    return true;
                 }
-                _ => {}
             }
         }
         false
@@ -168,7 +165,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        impl<'tcx> std::fmt::Display for ExploreFrom<'tcx> {
+        impl std::fmt::Display for ExploreFrom<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(
                     f,
@@ -186,7 +183,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let mut queue = vec![];
         for node in self.roots(repacker) {
-            queue.push(ExploreFrom::new(node.into()));
+            queue.push(ExploreFrom::new(node));
         }
 
         let blocking_map = FrozenGraphRef::new(self);
@@ -204,7 +201,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let inputs = abstraction_edge
                             .inputs()
                             .into_iter()
-                            .map(|node| node.into())
                             .collect::<Vec<_>>()
                             .into();
                         let outputs = abstraction_edge
@@ -492,9 +488,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             let edges_to_move = local_rps
                 .iter()
                 .flat_map(|p| {
-                    self.edges_blocked_by((*p).into(), repacker)
-                        .into_iter()
-                        .chain(other.edges_blocked_by((*p).into(), repacker))
+                    self.edges_blocked_by(*p, repacker)
+                        .chain(other.edges_blocked_by(*p, repacker))
                         .map(|edge| edge.to_owned_edge())
                 })
                 .unique()
@@ -755,7 +750,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            return conditions.join(&edge.conditions);
+            conditions.join(&edge.conditions)
         } else {
             self.edges.insert(edge.kind, edge.conditions);
             true
@@ -835,8 +830,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    fn mut_edge_conditions<'slf>(
-        &'slf mut self,
+    fn mut_edge_conditions(
+        &mut self,
         mut f: impl FnMut(&mut PathConditions) -> bool,
     ) -> bool {
         let mut changed = false;
@@ -854,7 +849,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
-        self.mut_edge_conditions(|conditions| conditions.insert(pc.clone()))
+        self.mut_edge_conditions(|conditions| conditions.insert(pc))
     }
 }
 
@@ -1060,7 +1055,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                         PathConditions::AtBlock(_) => {}
                     }
                 }
-                return true;
+                true
             }
 
             fn try_push(
@@ -1068,7 +1063,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 edge: BorrowPCGEdgeRef<'tcx, 'graph>,
                 repacker: PlaceRepacker<'_, 'tcx>,
             ) -> PushResult<'tcx, 'graph> {
-                if let Some(_) = self.0.iter().position(|e| *e == edge) {
+                if self.0.iter().any(|e| *e == edge) {
                     PushResult::Cycle
                 } else {
                     self.0.push(edge);
@@ -1131,7 +1126,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
 
         for root in self.roots(repacker).iter() {
-            for edge in self.get_edges_blocking((*root).into(), repacker).iter() {
+            for edge in self.get_edges_blocking(*root, repacker).iter() {
                 if Path::new(*edge).leads_to_feasible_cycle(
                     self,
                     repacker,
@@ -1142,6 +1137,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             }
         }
 
-        return true;
+        true
     }
 }

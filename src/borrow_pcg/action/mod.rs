@@ -215,18 +215,16 @@ impl<'tcx> BorrowsState<'tcx> {
                 if let Some(cap) = self.get_capability(restore_node) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
-                if !restore_node.is_owned(repacker) {
-                    if !self.set_capability(restore_node, restore.capability(), repacker) {
-                        tracing::error!(
-                            "Capability was already {:?} for {}",
-                            restore.capability(),
-                            restore_node.to_short_string(repacker)
-                        );
-                        for line in self.capabilities.debug_lines(repacker) {
-                            tracing::error!("{}", line);
-                        }
-                        panic!("Capability should have been updated")
+                if !restore_node.is_owned(repacker) && !self.set_capability(restore_node, restore.capability(), repacker) {
+                    tracing::error!(
+                        "Capability was already {:?} for {}",
+                        restore.capability(),
+                        restore_node.to_short_string(repacker)
+                    );
+                    for line in self.capabilities.debug_lines(repacker) {
+                        tracing::error!("{}", line);
                     }
+                    panic!("Capability should have been updated")
                 }
                 true
             }
@@ -335,6 +333,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         let location = location.into();
-        self.latest.insert(place, location.into(), repacker)
+        self.latest.insert(place, location, repacker)
     }
 }

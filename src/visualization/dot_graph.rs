@@ -20,7 +20,7 @@ impl DotGraph {
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
         tracing::info!("{}", comment);
         let mut dot_process = Command::new("dot")
-            .args(&["-Tpng"])
+            .args(["-Tpng"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
@@ -84,7 +84,7 @@ impl Display for RankAnnotation {
             self.rank_type,
             self.nodes
                 .iter()
-                .map(|n| format!("{}", n))
+                .map(|n| n.to_string())
                 .collect::<Vec<_>>()
                 .join("; ")
         )

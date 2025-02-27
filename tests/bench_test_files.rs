@@ -106,7 +106,7 @@ fn benchmark_test_files() {
         let file_name = test_file.file_name().unwrap().to_str().unwrap().to_string();
         println!("Benchmarking {}", file_name);
 
-        let i_refs = run_cachegrind(&test_file);
+        let i_refs = run_cachegrind(test_file);
         results.push((file_name.clone(), i_refs));
 
         if let Some(&prev_refs) = previous_results.get(&file_name) {

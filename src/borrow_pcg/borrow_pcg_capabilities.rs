@@ -43,7 +43,7 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
-        self.0.iter().map(|(k, v)| (k.clone(), v.clone()))
+        self.0.iter().map(|(k, v)| (*k, *v))
     }
 
     pub(crate) fn get<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {

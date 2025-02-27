@@ -61,7 +61,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> From<RemotePlace> for MaybeRemotePlace<'tcx> {
+impl From<RemotePlace> for MaybeRemotePlace<'_> {
     fn from(remote_place: RemotePlace) -> Self {
         MaybeRemotePlace::Remote(remote_place)
     }
@@ -76,7 +76,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
+impl std::fmt::Display for MaybeRemotePlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MaybeRemotePlace::Local(p) => write!(f, "{}", p),
@@ -184,7 +184,7 @@ impl RemotePlace {
         self.local
     }
 
-    pub(crate) fn ty<'mir, 'tcx>(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> ty::Ty<'tcx> {
+    pub(crate) fn ty<'tcx>(&self, repacker: PlaceRepacker<'_, 'tcx>) -> ty::Ty<'tcx> {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
             ty::TyKind::Ref(_, ty, _) => *ty,

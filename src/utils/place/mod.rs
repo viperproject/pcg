@@ -59,13 +59,13 @@ impl<'tcx> From<Place<'tcx>> for PlaceRef<'tcx> {
     }
 }
 
-impl<'tcx> PartialOrd for Place<'tcx> {
+impl PartialOrd for Place<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'tcx> Ord for Place<'tcx> {
+impl Ord for Place<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         if self == other {
             Ordering::Equal
@@ -227,10 +227,7 @@ impl<'tcx> Place<'tcx> {
         self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx, Self>> {
-        match self.ty_region(repacker) {
-            Some(region) => Some(RegionProjection::new(region, self.into(), repacker).unwrap()),
-            None => None,
-        }
+        self.ty_region(repacker).map(|region| RegionProjection::new(region, self, repacker).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -255,7 +252,7 @@ impl<'tcx> Place<'tcx> {
 
     pub fn prefix_place(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Option<Place<'tcx>> {
         let (prefix, _) = self.last_projection()?;
-        Some(Place::new(prefix.local, &prefix.projection))
+        Some(Place::new(prefix.local, prefix.projection))
     }
 
     /// In MIR, if a place is a field projection, then the type of the place
@@ -306,7 +303,7 @@ impl<'tcx> Place<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker).unwrap())
+            .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
             .collect()
     }
 
@@ -552,7 +549,7 @@ impl<'tcx> Place<'tcx> {
     }
 }
 
-impl<'tcx> Debug for Place<'tcx> {
+impl Debug for Place<'_> {
     fn fmt(&self, fmt: &mut Formatter) -> Result {
         for elem in self.projection.iter().rev() {
             match elem {
@@ -651,7 +648,7 @@ fn elem_eq<'tcx>(to_cmp: (PlaceElem<'tcx>, PlaceElem<'tcx>)) -> bool {
     }
 }
 
-impl<'tcx> PartialEq for Place<'tcx> {
+impl PartialEq for Place<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.local == other.local
             && self.projection.len() == other.projection.len()
@@ -690,7 +687,7 @@ impl<'tcx> From<MirPlace<'tcx>> for Place<'tcx> {
         Self(value.as_ref(), DebugInfo::new_static())
     }
 }
-impl<'tcx> From<Local> for Place<'tcx> {
+impl From<Local> for Place<'_> {
     fn from(value: Local) -> Self {
         MirPlace::from(value).into()
     }

@@ -103,7 +103,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
             format!("*{} {}", kind, format_place(place, repacker))
         }
         Rvalue::ThreadLocalRef(_) => todo!(),
-        Rvalue::Len(x) => format!("len({})", format_place(&x, repacker)),
+        Rvalue::Len(x) => format!("len({})", format_place(x, repacker)),
         Rvalue::Cast(_, operand, ty) => format!("{} as {}", format_operand(operand, repacker), ty),
         Rvalue::BinaryOp(op, box (lhs, rhs)) => {
             format!(
@@ -188,13 +188,13 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) 
             format!("PlaceMention({})", format_place(place, repacker))
         }
         mir::StatementKind::AscribeUserType(_, _) => {
-            format!("AscribeUserType(...)")
+            "AscribeUserType(...)".to_string()
         }
         _ => todo!(),
     }
 }
 
-fn mk_mir_graph<'mir, 'tcx>(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> MirGraph {
+fn mk_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> MirGraph {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
@@ -297,14 +297,14 @@ fn mk_mir_graph<'mir, 'tcx>(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> MirGra
                         edges.push(MirEdge {
                             source: format!("{:?}", bb),
                             target: format!("{:?}", cleanup),
-                            label: format!("unwind"),
+                            label: "unwind".to_string(),
                         });
                     }
                 }
                 edges.push(MirEdge {
                     source: format!("{:?}", bb),
                     target: format!("{:?}", target),
-                    label: format!("success"),
+                    label: "success".to_string(),
                 });
             }
             TerminatorKind::Yield {
@@ -341,10 +341,10 @@ fn mk_mir_graph<'mir, 'tcx>(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> MirGra
 
     MirGraph { nodes, edges }
 }
-pub fn generate_json_from_mir<'mir, 'tcx>(
+pub fn generate_json_from_mir<'tcx>(
     path: &str,
     tcx: TyCtxt<'tcx>,
-    body: &'mir Body<'tcx>,
+    body: &Body<'tcx>,
 ) -> io::Result<()> {
     let mir_graph = mk_mir_graph(tcx, body);
     let mut file = File::create(path)?;

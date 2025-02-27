@@ -212,7 +212,6 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfBorrowed<'tcx> {
     ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
         self.expansion(repacker)
             .into_iter()
-            .map(|p| p.into())
             .collect()
     }
 

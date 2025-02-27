@@ -168,7 +168,7 @@ impl<'tcx> TryFrom<PCGNode<'tcx>> for CGNode<'tcx> {
     fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
         match node {
             PCGNode::Place(p) => Ok(p.try_into()?),
-            PCGNode::RegionProjection(rp) => Ok(CGNode::RegionProjection(rp.into())),
+            PCGNode::RegionProjection(rp) => Ok(CGNode::RegionProjection(rp)),
         }
     }
 }
@@ -204,7 +204,7 @@ impl<'tcx> From<RegionProjection<'tcx>> for CGNode<'tcx> {
     }
 }
 
-impl<'tcx> From<RemotePlace> for CGNode<'tcx> {
+impl From<RemotePlace> for CGNode<'_> {
     fn from(rp: RemotePlace) -> Self {
         CGNode::RemotePlace(rp)
     }
@@ -220,7 +220,7 @@ impl<'tcx> TryFrom<CGNode<'tcx>> for RegionProjection<'tcx> {
     }
 }
 
-impl<'tcx> CGNode<'tcx> {
+impl CGNode<'_> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
             CGNode::RegionProjection(rp) => rp.place().is_old(),
@@ -323,7 +323,7 @@ struct AddEdgeHistory<'a, 'tcx> {
     upper_candidate: &'a BTreeSet<CGNode<'tcx>>,
 }
 
-impl<'a, 'tcx> std::fmt::Display for AddEdgeHistory<'a, 'tcx> {
+impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -387,7 +387,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
                 .any(|n| /* self.liveness.is_live(*n, self.block) && */ !n.is_old());
             let coupled_set: BTreeSet<_> = coupled.clone().into_iter().collect();
             if !should_include {
-                self.add_edges_from(bg, &bottom_connect, &coupled_set, history.clone());
+                self.add_edges_from(bg, bottom_connect, &coupled_set, history.clone());
             } else {
                 self.coupling_graph
                     .add_edge(&coupled, &bottom_connect.clone().into());

@@ -91,18 +91,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     &mut FxHashSet::default(),
                     true,
                 ));
-                match local_node {
-                    PCGNode::Place(p) => {
-                        if let Some(rp) = p.deref_to_rp(repacker) {
-                            results.extend(self.direct_aliases(
-                                rp.try_to_local_node(repacker).unwrap().into(),
-                                repacker,
-                                &mut FxHashSet::default(),
-                                true,
-                            ));
-                        }
+                if let PCGNode::Place(p) = local_node {
+                    if let Some(rp) = p.deref_to_rp(repacker) {
+                        results.extend(self.direct_aliases(
+                            rp.try_to_local_node(repacker).unwrap(),
+                            repacker,
+                            &mut FxHashSet::default(),
+                            true,
+                        ));
                     }
-                    _ => {}
                 }
             }
         }
@@ -127,14 +124,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                       seen: &mut FxHashSet<PCGNode<'tcx>>,
                       result: &mut FxHashSet<Alias<'tcx>>,
                       exact_alias: bool| {
-            if seen.insert(blocked.into()) {
+            if seen.insert(blocked) {
                 result.insert(Alias {
                     node: blocked,
                     exact_alias,
                 });
                 if let Some(local_node) = blocked.try_to_local_node(repacker) {
                     result.extend(self.direct_aliases(
-                        local_node.into(),
+                        local_node,
                         repacker,
                         seen,
                         exact_alias,
@@ -257,7 +254,7 @@ fn test_aliases() {
         let w_deref = w.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let x = placer.local("x").mk();
         let aliases = stmt.aliases(w_deref, &body.body, tcx);
-        assert!(aliases.contains(&x.into()));
+        assert!(aliases.contains(&x));
     });
 
     // slice_write
@@ -276,15 +273,15 @@ fn test_aliases() {
         let placer = Placer::new(tcx, &body.body);
         let y = placer.local("y").mk();
         let y_deref = y.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
+        let local3: mir::Place<'_> = mir::Local::from(3_usize).into();
         let local3_deref = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let aliases = stmt.aliases(y_deref, &body.body, tcx);
-        assert!(aliases.contains(&local3_deref.into()));
+        assert!(aliases.contains(&local3_deref));
         assert!(pcg
             .results_for_all_blocks()
             .unwrap()
             .all_place_aliases(y_deref, &body.body, tcx)
-            .contains(&local3_deref.into()));
+            .contains(&local3_deref));
     });
 
     // recurse_parent_privacy
@@ -302,11 +299,11 @@ fn test_aliases() {
         let placer = Placer::new(tcx, &body.body);
         let f = placer.local("f").mk();
         let f_deref = f.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
+        let local3: mir::Place<'_> = mir::Local::from(3_usize).into();
         let local3_deref = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let aliases = stmt.aliases(local3_deref, &body.body, tcx);
-        assert!(aliases.contains(&f_deref.into()));
-        assert!(!aliases.contains(&f.into()));
+        assert!(aliases.contains(&f_deref));
+        assert!(!aliases.contains(&f));
     });
 
     // enum_write_branch_read_branch
@@ -332,13 +329,13 @@ fn main() {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let bb = pcg.get_all_for_bb(2usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[1];
-        let init_z: mir::Place<'_> = mir::Local::from(5 as usize).into();
+        let init_z: mir::Place<'_> = mir::Local::from(5_usize).into();
         let z_deref = init_z.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
+        let local3: mir::Place<'_> = mir::Local::from(3_usize).into();
         let deref3 = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let deref_target = deref3.project_deeper(
             &[
-                mir::ProjectionElem::Downcast(Some(Symbol::intern(&"X")), 0usize.into()),
+                mir::ProjectionElem::Downcast(Some(Symbol::intern("X")), 0usize.into()),
                 mir::ProjectionElem::Field(0usize.into(), tcx.types.i32),
             ],
             tcx,
@@ -346,13 +343,13 @@ fn main() {
         let aliases = stmt.aliases(z_deref, &body.body, tcx);
         eprintln!("aliases: {:?}", aliases);
         eprintln!("deref_target: {:?}", deref_target);
-        assert!(aliases.contains(&deref_target.into()));
+        assert!(aliases.contains(&deref_target));
         assert!(pcg
             .results_for_all_blocks()
             .unwrap()
             .all_place_aliases(z_deref, &body.body, tcx)
-            .contains(&deref_target.into()));
-        assert!(!aliases.contains(&deref3.into()));
+            .contains(&deref_target));
+        assert!(!aliases.contains(&deref3));
     });
 
     // enum_write_branch_read_whole
@@ -376,13 +373,13 @@ fn main() {
         let mut pcg = run_combined_pcs(body, tcx, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[0];
-        let init_z: mir::Place<'_> = mir::Local::from(5 as usize).into();
+        let init_z: mir::Place<'_> = mir::Local::from(5_usize).into();
         let z_deref = init_z.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let local3: mir::Place<'_> = mir::Local::from(3 as usize).into();
+        let local3: mir::Place<'_> = mir::Local::from(3_usize).into();
         let deref3 = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let deref_target = deref3.project_deeper(
             &[
-                mir::ProjectionElem::Downcast(Some(Symbol::intern(&"X")), 0usize.into()),
+                mir::ProjectionElem::Downcast(Some(Symbol::intern("X")), 0usize.into()),
                 mir::ProjectionElem::Field(0usize.into(), tcx.types.i32),
             ],
             tcx,
@@ -390,8 +387,8 @@ fn main() {
         let aliases = stmt.aliases(z_deref, &body.body, tcx);
         eprintln!("aliases: {:?}", aliases);
         eprintln!("deref_target: {:?}", deref_target);
-        assert!(aliases.contains(&deref_target.into()));
-        assert!(!aliases.contains(&deref3.into()));
+        assert!(aliases.contains(&deref_target));
+        assert!(!aliases.contains(&deref3));
     });
 
     // 59_struct_ptrs_deep.rs
@@ -433,13 +430,13 @@ fn main() {
 "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
         let mut pcg = run_combined_pcs(body, tcx, None);
-        let temp: mir::Place<'_> = mir::Local::from(4 as usize).into();
+        let temp: mir::Place<'_> = mir::Local::from(4_usize).into();
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
                 !stmt
                     .aliases(star_temp, &body.body, tcx)
-                    .contains(&temp.into()),
+                    .contains(&temp),
                 "Bad alias for {:?}",
                 location
             );
@@ -457,16 +454,16 @@ fn main() {
             }"#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
         let mut pcg = run_combined_pcs(body, tcx, None);
-        let temp_9: mir::Place<'_> = mir::Local::from(9 as usize).into();
+        let temp_9: mir::Place<'_> = mir::Local::from(9_usize).into();
         let deref_temp_9 = temp_9.project_deeper(&[mir::ProjectionElem::Deref], tcx);
 
-        let temp_19: mir::Place<'_> = mir::Local::from(19 as usize).into();
+        let temp_19: mir::Place<'_> = mir::Local::from(19_usize).into();
 
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
                 !stmt
                     .aliases(deref_temp_9, &body.body, tcx)
-                    .contains(&temp_19.into()),
+                    .contains(&temp_19),
                 "Bad alias for {:?}",
                 location
             );
@@ -493,7 +490,7 @@ fn main() {
         let a = placer.local("a").mk();
         assert!(last_bg
             .aliases(e_deref, &body.body, tcx)
-            .contains(&a.into()));
+            .contains(&a));
     });
 
     // deep2
@@ -514,7 +511,7 @@ fn main() {
         let a = placer.local("a").mk();
         assert!(last_bg
             .aliases(starstarc, &body.body, tcx)
-            .contains(&a.into()));
+            .contains(&a));
     });
 
     // flowistry_pointer_deep
@@ -534,7 +531,7 @@ fn main() {
         let x = placer.local("x").mk();
         assert!(last_bg
             .aliases(star_yyy, &body.body, tcx)
-            .contains(&x.into()));
+            .contains(&x));
         assert!(!last_bg
             .aliases(star_yyy, &body.body, tcx)
             .contains(&mir::Local::from(3usize).into()));
@@ -558,9 +555,9 @@ fn main() {
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[13];
-        let temp: mir::Place<'_> = mir::Local::from(5 as usize).into();
+        let temp: mir::Place<'_> = mir::Local::from(5_usize).into();
         let star_5 = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let x = placer.local("x").mk();
-        assert!(last_bg.aliases(star_5, &body.body, tcx).contains(&x.into()));
+        assert!(last_bg.aliases(star_5, &body.body, tcx).contains(&x));
     });
 }

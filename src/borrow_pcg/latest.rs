@@ -49,6 +49,12 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
     }
 }
 
+impl Default for Latest<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'tcx> Latest<'tcx> {
     pub fn new() -> Self {
         Self(FxHashMap::default())
@@ -112,10 +118,8 @@ impl<'tcx> Latest<'tcx> {
             // For example if existing is `x` and place is `x.f`, then we should
             // snapshot `x` to this location. However, the snapshot for e.g. `x.g` would
             // keep its old label.
-            if existing.is_prefix(place) {
-                if *loc != location {
-                    *loc = location;
-                }
+            if existing.is_prefix(place) && *loc != location {
+                *loc = location;
             }
             true
         });

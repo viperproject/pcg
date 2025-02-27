@@ -236,7 +236,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             let ty = input_place.ty(self.repacker).ty;
             for (lifetime_idx, input_lifetime) in extract_regions(ty).into_iter().enumerate() {
                 for output in self
-                    .projections_borrowing_from_input_lifetime(input_lifetime, destination.into())
+                    .projections_borrowing_from_input_lifetime(input_lifetime, destination)
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
                         self.domain.report_error(PCGError::unsupported(
@@ -281,7 +281,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         for (output_lifetime_idx, output_lifetime) in
             extract_regions(output_ty).into_iter_enumerated()
         {
-            if self.outlives(input_lifetime.into(), output_lifetime.into()) {
+            if self.outlives(input_lifetime, output_lifetime) {
                 result.push(
                     output_place
                         .region_projection(output_lifetime_idx, self.repacker)
@@ -326,25 +326,22 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                 _ => {}
             }
         } else if self.stage == StatementStage::Operands && !self.preparing {
-            match operand {
-                Operand::Move(place) => {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    for rp in place.region_projections(self.repacker) {
-                        self.domain.post_state_mut().set_capability(
-                            rp.to_pcg_node(self.repacker),
-                            CapabilityKind::Write,
-                            self.repacker,
-                        );
-                    }
-                    if !place.is_owned(self.repacker) {
-                        self.domain.post_state_mut().set_capability(
-                            place.into(),
-                            CapabilityKind::Write,
-                            self.repacker,
-                        );
-                    }
+            if let Operand::Move(place) = operand {
+                let place: utils::Place<'tcx> = (*place).into();
+                for rp in place.region_projections(self.repacker) {
+                    self.domain.post_state_mut().set_capability(
+                        rp.to_pcg_node(self.repacker),
+                        CapabilityKind::Write,
+                        self.repacker,
+                    );
                 }
-                _ => {}
+                if !place.is_owned(self.repacker) {
+                    self.domain.post_state_mut().set_capability(
+                        place.into(),
+                        CapabilityKind::Write,
+                        self.repacker,
+                    );
+                }
             }
         } else if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
@@ -364,27 +361,24 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         }
         self.super_terminator(terminator, location);
         if self.stage == StatementStage::Main && !self.preparing {
-            match &terminator.kind {
-                TerminatorKind::Call {
+            if let TerminatorKind::Call {
                     func,
                     args,
                     destination,
                     ..
-                } => {
-                    let destination: utils::Place<'tcx> = (*destination).into();
-                    self.apply_action(BorrowPCGAction::set_latest(
-                        destination,
-                        location,
-                        "Destination of Function Call",
-                    ));
-                    self.construct_function_call_abstraction(
-                        func,
-                        &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
-                        destination,
-                        location,
-                    );
-                }
-                _ => {}
+                } = &terminator.kind {
+                let destination: utils::Place<'tcx> = (*destination).into();
+                self.apply_action(BorrowPCGAction::set_latest(
+                    destination,
+                    location,
+                    "Destination of Function Call",
+                ));
+                self.construct_function_call_abstraction(
+                    func,
+                    &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
+                    destination,
+                    location,
+                );
             }
         }
     }
@@ -548,7 +542,7 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
 /// `['c, 'd]` respectively. This enables substitution of regions to handle
 /// moves in the PCG e.g for the statement `let x: T<'a, 'b> = move c: T<'c,
 /// 'd>`.
-pub(crate) fn extract_regions<'tcx>(ty: ty::Ty<'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+pub(crate) fn extract_regions(ty: ty::Ty<'_>) -> IndexVec<RegionIdx, PCGRegion> {
     let mut visitor = LifetimeExtractor { lifetimes: vec![] };
     ty.visit_with(&mut visitor);
     IndexVec::from_iter(visitor.lifetimes.iter().map(|r| (*r).into()))

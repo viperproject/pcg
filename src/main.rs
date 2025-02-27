@@ -18,7 +18,6 @@ use std::io::Write;
 use pcs::utils::PlaceRepacker;
 use std::cell::RefCell;
 use tracing::{debug, info, trace, warn};
-use tracing_subscriber;
 
 #[rustversion::before(2024-11-09)]
 use pcs::rustc_interface::interface::Queries;
@@ -78,7 +77,7 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     true
 }
 
-fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
+fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
     if std::env::var("CARGO_CRATE_NAME").is_ok() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err()
     {
         // We're running in cargo, but the Rust file is a dependency (not part of the primary package)
@@ -113,7 +112,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>) {
         let kind = tcx.def_kind(def_id);
         match kind {
             hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
-                let item_name = format!("{}", tcx.def_path_str(def_id.to_def_id()));
+                let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
                 let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
                     let mut map = state.borrow_mut();
                     unsafe {
@@ -240,7 +239,7 @@ impl driver::Callbacks for PcsCallbacks {
     }
 
     #[rustversion::since(2024-11-09)]
-    fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+    fn after_analysis(&mut self, _compiler: &Compiler, tcx: TyCtxt<'_>) -> Compilation {
         run_pcg_on_all_fns(tcx);
         if std::env::var("CARGO").is_ok() {
             Compilation::Continue

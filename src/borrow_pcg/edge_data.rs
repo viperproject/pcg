@@ -32,7 +32,7 @@ macro_rules! edgedata_enum {
         $enum_name:ident < $tcx:lifetime >,
         $( $variant_name:ident($inner_type:ty) ),+ $(,)?
     ) => {
-        impl<$tcx> crate::borrow_pcg::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
+        impl<$tcx> $crate::borrow_pcg::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
             fn blocked_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<PCGNode<'tcx>> {
                 match self {
                     $(
@@ -41,7 +41,7 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> {
+            fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<$crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_by_nodes(repacker),

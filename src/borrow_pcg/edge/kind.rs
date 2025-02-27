@@ -64,7 +64,7 @@ where
     }
 }
 
-impl<'tcx> BorrowPCGEdgeKind<'tcx> {
+impl BorrowPCGEdgeKind<'_> {
     pub(crate) fn is_shared_borrow(&self) -> bool {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(),

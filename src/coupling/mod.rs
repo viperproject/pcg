@@ -135,7 +135,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         let mut iter = nodes.iter().cloned();
         let first_elem = iter.next().unwrap();
         let mut idx = self.insert(first_elem);
-        while let Some(node) = iter.next() {
+        for node in iter {
             let idx2 = self.insert(node);
             if idx2 != idx {
                 self.merge_idxs(idx, idx2);
@@ -155,8 +155,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
     fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
         self.inner.node_indices().find(|idx| {
             self.inner
-                .node_weight(*idx)
-                .map_or(false, |w| w.contains(&node))
+                .node_weight(*idx).is_some_and(|w| w.contains(&node))
         })
     }
 
@@ -176,10 +175,8 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
                     self.merge_idxs(scc[0], scc[1]);
                     // We need to recompute sccs because node indices may have changed
                     continue 'outer;
-                } else {
-                    if let Some(edge_idx) = self.inner.find_edge(scc[0], scc[0]) {
-                        self.inner.remove_edge(edge_idx);
-                    }
+                } else if let Some(edge_idx) = self.inner.find_edge(scc[0], scc[0]) {
+                    self.inner.remove_edge(edge_idx);
                 }
             }
             break;

@@ -2,13 +2,9 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::validity_checks_enabled;
 
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub(crate) struct BorrowPCGActions<'tcx>(Vec<BorrowPCGAction<'tcx>>);
 
-impl<'tcx> Default for BorrowPCGActions<'tcx> {
-    fn default() -> Self {
-        Self(vec![])
-    }
-}
 
 impl<'tcx> BorrowPCGActions<'tcx> {
     pub(crate) fn is_empty(&self) -> bool {
@@ -40,14 +36,11 @@ impl<'tcx> BorrowPCGActions<'tcx> {
 
     pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
         if validity_checks_enabled() {
-            match (self.last(), actions.first()) {
-            (Some(a), Some(b)) => assert_ne!(
+            if let (Some(a), Some(b)) = (self.last(), actions.first()) { assert_ne!(
                 a, b,
                 "The last action ({:#?}) is the same as the first action in the list to extend with.",
                 a,
-            ),
-            _ => (),
-        }
+            ) }
         }
         self.0.extend(actions.0);
     }

@@ -113,7 +113,7 @@ impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> From<mir::Local> for MaybeOldPlace<'tcx> {
+impl From<mir::Local> for MaybeOldPlace<'_> {
     fn from(local: mir::Local) -> Self {
         Self::Current {
             place: local.into(),
@@ -129,7 +129,7 @@ impl<'tcx> From<mir::Place<'tcx>> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> std::fmt::Display for MaybeOldPlace<'tcx> {
+impl std::fmt::Display for MaybeOldPlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MaybeOldPlace::Current { place } => write!(f, "{:?}", place),
@@ -157,7 +157,7 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self> {
-        let mut cloned = self.clone();
+        let mut cloned = *self;
         *cloned.place_mut() = self.place().project_deeper(elem, repacker);
         Some(cloned)
     }
@@ -293,7 +293,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty)
             .iter()
-            .map(|region| RegionProjection::new((*region).into(), place.into(), repacker).unwrap())
+            .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
             .collect()
     }
 
@@ -310,7 +310,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     }
 
     pub(crate) fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
-        MaybeOldPlace::new(self.place().project_deref(repacker).into(), self.location())
+        MaybeOldPlace::new(self.place().project_deref(repacker), self.location())
     }
 
     pub fn is_current(&self) -> bool {
