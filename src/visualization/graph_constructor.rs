@@ -3,7 +3,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, LocalNode},
         coupling_graph_constructor::CGNode,
         graph::BorrowsGraph,
-        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
+        region_projection::RegionProjection,
         state::BorrowsState,
         unblock_graph::UnblockGraph,
     },
