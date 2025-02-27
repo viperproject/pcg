@@ -77,12 +77,12 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     true
 }
 
-fn is_cargo() -> bool {
-    std::env::var("CARGO").is_ok()
+fn in_cargo_crate() -> bool {
+    std::env::var("CARGO_CRATE_NAME").is_ok()
 }
 
 fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
-    if is_cargo() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
+    if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
         return;
@@ -233,7 +233,7 @@ impl driver::Callbacks for PcsCallbacks {
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
         queries.global_ctxt().unwrap().enter(run_pcg_on_all_fns);
-        if is_cargo() {
+        if in_cargo_crate() {
             Compilation::Continue
         } else {
             Compilation::Stop
@@ -243,7 +243,7 @@ impl driver::Callbacks for PcsCallbacks {
     #[rustversion::since(2024-11-09)]
     fn after_analysis(&mut self, _compiler: &Compiler, tcx: TyCtxt<'_>) -> Compilation {
         run_pcg_on_all_fns(tcx);
-        if is_cargo() {
+        if in_cargo_crate() {
             Compilation::Continue
         } else {
             Compilation::Stop
@@ -303,7 +303,7 @@ fn setup_rustc_args() -> Vec<String> {
     if env_feature_enabled("PCG_POLONIUS").unwrap_or(false) {
         rustc_args.push("-Zpolonius".to_string());
     }
-    if !is_cargo() {
+    if !in_cargo_crate() {
         rustc_args.push("-Zno-codegen".to_string());
     }
     rustc_args.extend(std::env::args().skip(1));
