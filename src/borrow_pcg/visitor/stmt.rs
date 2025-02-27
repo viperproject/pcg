@@ -18,7 +18,7 @@ use crate::{
 };
 use smallvec::smallvec;
 
-impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
     pub(crate) fn stmt_pre_main(&mut self, statement: &Statement<'tcx>, location: Location) {
         match &statement.kind {
             StatementKind::StorageDead(local) => {

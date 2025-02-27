@@ -14,7 +14,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         self.0.iter()
     }
 
-    pub(crate) fn to_vec(self) -> Vec<BorrowPCGAction<'tcx>> {
+    pub(crate) fn into_vec(self) -> Vec<BorrowPCGAction<'tcx>> {
         self.0
     }
 

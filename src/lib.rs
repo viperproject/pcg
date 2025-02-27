@@ -200,7 +200,7 @@ impl<'tcx> BorrowsBridge<'tcx> {
 impl<'tcx> From<BorrowPCGActions<'tcx>> for BorrowsBridge<'tcx> {
     fn from(actions: BorrowPCGActions<'tcx>) -> Self {
         Self {
-            actions: actions.to_vec(),
+            actions: actions.into_vec(),
         }
     }
 }
@@ -263,7 +263,7 @@ impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx
             free_pcg_repacks_middle: &location.repacks_middle,
             borrows_bridge_start: &location.extra_start,
             borrows_bridge_middle: &location.extra_middle,
-            actions: location.actions.clone().map(|actions| actions.to_vec()),
+            actions: location.actions.clone().map(|actions| actions.into_vec()),
         }
     }
 }

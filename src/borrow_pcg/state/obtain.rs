@@ -67,7 +67,6 @@ impl<'tcx> BorrowsState<'tcx> {
     /// capability.
     ///
     /// This also handles corresponding region projections of the place.
-    #[must_use]
     pub(crate) fn obtain(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -90,7 +89,6 @@ impl<'tcx> BorrowsState<'tcx> {
 
     /// Contracts the PCG to the given place by converting borrows to region projection members
     /// and performing unblock operations.
-    #[must_use]
     pub(crate) fn contract_to(
         &mut self,
         place: Place<'tcx>,
@@ -182,7 +180,6 @@ impl<'tcx> BorrowsState<'tcx> {
     /// Inserts edges to ensure that the borrow PCG is expanded to at least
     /// `to_place`. We assume that any unblock operations have already been
     /// performed.
-    #[must_use]
     fn expand_to(
         &mut self,
         to_place: Place<'tcx>,
