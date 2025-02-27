@@ -121,27 +121,6 @@ impl<'tcx> LocalNode<'tcx> {
 /// node other than a [`RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
-impl<'tcx> TryFrom<RegionProjection<'tcx>> for LocalNode<'tcx> {
-    type Error = ();
-    fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
-        Ok(LocalNode::RegionProjection(rp.try_into()?))
-    }
-}
-
-impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    type Error = ();
-
-    fn try_from(value: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
-        match value.place() {
-            MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
-                let maybe_old_place = maybe_remote_place.try_into()?;
-                Ok(value.map_base(|_| maybe_old_place))
-            }
-            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
-        }
-    }
-}
-
 impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeOldPlace<'tcx> {
     type Error = ();
     fn try_from(node: LocalNode<'tcx>) -> Result<Self, Self::Error> {
@@ -218,13 +197,13 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 
     fn project_deeper(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
         elem: mir::PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<Self> {
         Some(match self {
-            LocalNode::Place(p) => LocalNode::Place(p.project_deeper(repacker, elem)?),
+            LocalNode::Place(p) => LocalNode::Place(p.project_deeper(elem, repacker)?),
             LocalNode::RegionProjection(rp) => {
-                LocalNode::RegionProjection(rp.project_deeper(repacker, elem)?)
+                LocalNode::RegionProjection(rp.project_deeper(elem, repacker)?)
             }
         })
     }
@@ -305,11 +284,11 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Local(_)) => None,
         }
     }
-    pub(crate) fn as_blocking_node(&self) -> Option<BlockingNode<'tcx>> {
-        self.as_local_node()
+    pub(crate) fn as_blocking_node(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<BlockingNode<'tcx>> {
+        self.as_local_node(repacker)
     }
 
-    pub(crate) fn as_local_node(&self) -> Option<LocalNode<'tcx>> {
+    pub(crate) fn as_local_node(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
@@ -317,7 +296,7 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
             PCGNode::RegionProjection(rp) => {
                 let place = rp.place().as_local_place()?;
-                Some(LocalNode::RegionProjection(rp.map_base(|_| place)))
+                Some(LocalNode::RegionProjection(rp.set_base(place, repacker)))
             }
         }
     }

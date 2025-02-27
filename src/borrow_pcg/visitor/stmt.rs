@@ -115,12 +115,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                     continue;
                                 };
                             for source_proj in operand_place.region_projections(self.repacker) {
-                                let source_proj = source_proj.map_base(|p| {
+                                let source_proj = source_proj.set_base(
                                     MaybeOldPlace::new(
-                                        p,
-                                        Some(self.domain.post_main_state().get_latest(p)),
-                                    )
-                                });
+                                        source_proj.base,
+                                        Some(
+                                            self.domain
+                                                .post_main_state()
+                                                .get_latest(source_proj.base),
+                                        ),
+                                    ),
+                                    self.repacker,
+                                );
                                 self.connect_outliving_projections(
                                     source_proj,
                                     target,
@@ -143,7 +148,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                                             self.repacker,
                                         )
                                         .unwrap()
-                                        .to_pcg_node()],
+                                        .to_pcg_node(self.repacker)],
                                         smallvec![RegionProjection::new(
                                             (*target_region).into(),
                                             target,

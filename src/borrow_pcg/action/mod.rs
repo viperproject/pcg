@@ -6,7 +6,7 @@ use super::path_condition::PathConditions;
 use super::region_projection_member::RegionProjectionMember;
 use super::state::BorrowsState;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
-use crate::combined_pcs::PCGNode;
+use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
@@ -204,7 +204,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     }
                     for output in edge.outputs() {
                         changed |=
-                            self.set_capability(output.into(), CapabilityKind::Exclusive, repacker);
+                            self.set_capability(output.to_pcg_node(repacker), CapabilityKind::Exclusive, repacker);
                     }
                 }
                 changed |= self.insert(abstraction.to_borrow_pcg_edge(pc));
@@ -286,7 +286,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 );
                             }
                             _ => {
-                                _ = self.remove_capability(base);
+                                _ = self.remove_capability(base.into());
                             }
                         }
                     }

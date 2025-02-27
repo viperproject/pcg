@@ -185,8 +185,7 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn remove_capability<T: PCGNodeLike<'tcx>>(&mut self, node: T) -> bool {
-        let node = node.to_pcg_node();
+    pub(crate) fn remove_capability(&mut self, node: PCGNode<'tcx>) -> bool {
         if self.get_capability(node) != None {
             Rc::<_>::make_mut(&mut self.capabilities).remove(node);
             true
@@ -287,7 +286,7 @@ impl<'tcx> BorrowsState<'tcx> {
             .filter(|node| !fg.has_edge_blocking(*node, repacker))
             .collect::<Vec<_>>();
         for node in to_restore {
-            if let Some(local_node) = node.as_local_node() {
+            if let Some(local_node) = node.as_local_node(repacker) {
                 let blocked_cap = self.get_capability(node);
 
                 let restore_cap = match self.get_capability(node) {
@@ -492,7 +491,7 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        self.set_capability(rp.into(), assigned_cap, repacker);
+        self.set_capability(rp.to_pcg_node(repacker), assigned_cap, repacker);
         assert!(self
             .graph
             .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block))));

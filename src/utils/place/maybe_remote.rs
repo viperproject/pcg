@@ -10,7 +10,7 @@ use crate::utils::display::DisplayWithRepacker;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
-use crate::utils::{HasPlace, Place, PlaceRepacker};
+use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {
@@ -22,24 +22,24 @@ pub enum MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
         match self {
-            MaybeRemotePlace::Local(p) => p.to_pcg_node(),
-            MaybeRemotePlace::Remote(rp) => rp.into(),
+            MaybeRemotePlace::Local(p) => p.to_pcg_node(repacker),
+            MaybeRemotePlace::Remote(rp) => rp.to_pcg_node(repacker),
         }
     }
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemotePlace<'tcx> {
-    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
-        self.related_local_place().regions(repacker)
-    }
-
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.to_maybe_remote_region_projection_base(),
             MaybeRemotePlace::Remote(rp) => (*rp).into(),
         }
+    }
+
+    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+        self.related_local_place().regions(repacker)
     }
 }
 
@@ -86,17 +86,6 @@ impl<'tcx> std::fmt::Display for MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
-    #[allow(unused)]
-    pub(crate) fn ty(&self, repacker: PlaceRepacker<'_, 'tcx>) -> mir::tcx::PlaceTy<'tcx> {
-        match self {
-            MaybeRemotePlace::Local(p) => p.ty(repacker),
-            MaybeRemotePlace::Remote(rp) => mir::tcx::PlaceTy {
-                ty: rp.ty(repacker).into(),
-                variant_index: None,
-            },
-        }
-    }
-
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         match self {
             MaybeRemotePlace::Local(p) => p.mutability(repacker),
@@ -159,6 +148,12 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         self.as_local_place()
             .map(|p| p.is_owned(repacker))
             .unwrap_or(false)
+    }
+}
+
+impl<'tcx> From<PlaceSnapshot<'tcx>> for MaybeRemotePlace<'tcx> {
+    fn from(place: PlaceSnapshot<'tcx>) -> Self {
+        MaybeRemotePlace::Local(place.into())
     }
 }
 

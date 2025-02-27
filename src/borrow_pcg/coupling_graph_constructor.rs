@@ -122,7 +122,7 @@ pub enum CGNode<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for CGNode<'tcx> {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
         match self {
             CGNode::RegionProjection(rp) => rp.into(),
             CGNode::RemotePlace(rp) => rp.into(),

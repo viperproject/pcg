@@ -1,11 +1,11 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::visitor::extract_regions;
 use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
 };
+use crate::borrow_pcg::visitor::extract_regions;
 use crate::combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike};
 use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::index::IndexVec;
@@ -27,37 +27,37 @@ pub enum MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_local_node(self) -> LocalNode<'tcx> {
+    fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place.to_local_node(),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_local_node(),
+            MaybeOldPlace::Current { place } => place.to_local_node(repacker),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_local_node(repacker),
         }
     }
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
+    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
+        match self {
+            MaybeOldPlace::Current { place } => place.to_maybe_remote_region_projection_base(),
+            MaybeOldPlace::OldPlace(snapshot) => {
+                snapshot.to_maybe_remote_region_projection_base()
+            }
+        }
+    }
+
     fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
         match self {
             MaybeOldPlace::Current { place } => place.regions(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.place.regions(repacker),
         }
     }
-
-    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
-        match self {
-            MaybeOldPlace::Current { place } => place.to_maybe_remote_region_projection_base(),
-            MaybeOldPlace::OldPlace(snapshot) => {
-                snapshot.place.to_maybe_remote_region_projection_base()
-            }
-        }
-    }
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_pcg_node(self) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place.to_pcg_node(),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.place.to_pcg_node(),
+            MaybeOldPlace::Current { place } => place.to_pcg_node(repacker),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_pcg_node(repacker),
         }
     }
 }
@@ -152,9 +152,13 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn project_deeper(&self, repacker: PlaceRepacker<'_, 'tcx>, elem: PlaceElem<'tcx>) -> Option<Self> {
+    fn project_deeper(
+        &self,
+        elem: PlaceElem<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<Self> {
         let mut cloned = self.clone();
-        *cloned.place_mut() = self.place().project_deeper(repacker, elem)?;
+        *cloned.place_mut() = self.place().project_deeper(elem, repacker);
         Some(cloned)
     }
 
@@ -216,7 +220,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.place()
             .base_region_projection(repacker)
-            .map(|rp| rp.map_base(|base| base.into()))
+            .map(|rp| rp.set_base(rp.base.into(), repacker))
     }
 
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {

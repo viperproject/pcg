@@ -176,7 +176,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
         self.expansion
             .elems()
             .into_iter()
-            .map(move |p| self.base.project_deeper(repacker, p).unwrap())
+            .map(move |p| self.base.project_deeper(p, repacker).unwrap())
             .collect()
     }
 }
@@ -220,8 +220,8 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfBorrowed<'tcx> {
         false
     }
 
-    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        if let Some(local) = node.as_local_node() {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        if let Some(local) = node.as_local_node(repacker) {
             self.base == local
         } else {
             false
@@ -280,7 +280,7 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfOwned<'tcx> {
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut blocked_nodes = vec![self.base.into()];
         for rp in self.base.region_projections(repacker) {
-            blocked_nodes.push(rp.into());
+            blocked_nodes.push(rp.to_pcg_node(repacker));
         }
         blocked_nodes.into_iter().collect()
     }

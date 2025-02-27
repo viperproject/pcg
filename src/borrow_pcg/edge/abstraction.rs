@@ -150,10 +150,10 @@ impl<'tcx> EdgeData<'tcx> for AbstractionType<'tcx> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs()
             .into_iter()
-            .map(|o| o.to_local_node())
+            .map(|o| o.to_local_node(repacker))
             .collect()
     }
 
@@ -218,10 +218,10 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs()
             .into_iter()
-            .map(|o| o.to_local_node())
+            .map(|o| o.to_local_node(repacker))
             .collect()
     }
 

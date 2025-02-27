@@ -3,10 +3,8 @@ use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
-    borrow_pcg::
-        region_projection_member::RegionProjectionMemberKind
-    ,
-    combined_pcs::{PCGError, PCGUnsupportedError},
+    borrow_pcg::region_projection_member::RegionProjectionMemberKind,
+    combined_pcs::{PCGError, PCGNodeLike, LocalNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
         index::IndexVec,
@@ -14,8 +12,8 @@ use crate::{
             mir::{
                 self,
                 visit::{PlaceContext, Visitor},
-                BorrowKind, Const, Location, Operand, Rvalue, Statement,
-                StatementKind, Terminator, TerminatorKind,
+                BorrowKind, Const, Location, Operand, Rvalue, Statement, StatementKind, Terminator,
+                TerminatorKind,
             },
             ty::{self, TypeVisitable, TypeVisitor},
         },
@@ -163,8 +161,8 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ) {
                 self.apply_action(BorrowPCGAction::add_region_projection_member(
                     RegionProjectionMember::new(
-                        smallvec![source_proj.into()],
-                        smallvec![target_proj.into()],
+                        smallvec![source_proj.to_pcg_node(self.repacker)],
+                        smallvec![target_proj.to_local_node(self.repacker)],
                         kind(idx),
                     ),
                     PathConditions::AtBlock(location.block),
@@ -333,7 +331,7 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
                     let place: utils::Place<'tcx> = (*place).into();
                     for rp in place.region_projections(self.repacker) {
                         self.domain.post_state_mut().set_capability(
-                            rp.into(),
+                            rp.to_pcg_node(self.repacker),
                             CapabilityKind::Write,
                             self.repacker,
                         );
