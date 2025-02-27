@@ -43,7 +43,7 @@ pub enum PCGRegion {
     PCGInternalErr,
 }
 
-impl<'tcx> std::fmt::Display for PCGRegion {
+impl std::fmt::Display for PCGRegion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PCGRegion::RegionVid(vid) => write!(f, "{:?}", vid),

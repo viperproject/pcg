@@ -225,14 +225,13 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn change_pcs_elem<T: 'tcx>(
+    pub(crate) fn change_pcs_elem<T: PartialEq + Clone + 'tcx>(
         &mut self,
         old: T,
         new: T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool
     where
-        T: PartialEq + Clone,
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
         self.graph.change_pcs_elem(old, new, repacker)

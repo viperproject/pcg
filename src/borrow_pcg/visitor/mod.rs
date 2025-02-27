@@ -289,7 +289,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
+impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
         if self.domain.has_error() {
@@ -400,19 +400,16 @@ impl<'tcx, 'mir, 'state> Visitor<'tcx> for BorrowsVisitor<'tcx, 'mir, 'state> {
         // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
             match &statement.kind {
-                StatementKind::Assign(box (_, rvalue)) => {
-                    if let Rvalue::Cast(_, _, ty) = rvalue {
-                        if ty.ref_mutability().is_some() {
-                            self.domain.report_error(PCGError::unsupported(
-                                PCGUnsupportedError::CastToRef,
-                            ));
-                            return;
-                        } else if ty.is_unsafe_ptr() {
-                            self.domain.report_error(PCGError::unsupported(
-                                PCGUnsupportedError::UnsafePtrCast,
-                            ));
-                            return;
-                        }
+                StatementKind::Assign(box (_, Rvalue::Cast(_, _, ty))) => {
+                    if ty.ref_mutability().is_some() {
+                        self.domain
+                            .report_error(PCGError::unsupported(PCGUnsupportedError::CastToRef));
+                        return;
+                    } else if ty.is_unsafe_ptr() {
+                        self.domain.report_error(PCGError::unsupported(
+                            PCGUnsupportedError::UnsafePtrCast,
+                        ));
+                        return;
                     }
                 }
 

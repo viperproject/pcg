@@ -438,10 +438,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         borrow_checker: &T,
     ) {
         let is_loop_abstraction_for_this_block = |edge: BorrowPCGEdgeRef<'_, '_>| {
-            if let BorrowPCGEdgeKind::Abstraction(abstraction_edge) = &edge.kind() {
-                if let AbstractionType::Loop(loop_abstraction) = &abstraction_edge {
-                    return loop_abstraction.location().block == self_block;
-                }
+            if let BorrowPCGEdgeKind::Abstraction(AbstractionType::Loop(loop_abstraction)) =
+                &edge.kind()
+            {
+                return loop_abstraction.location().block == self_block;
             }
             false
         };
@@ -725,14 +725,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub(crate) fn change_pcs_elem<T: 'tcx>(
+    pub(crate) fn change_pcs_elem<T: PartialEq + Clone + 'tcx>(
         &mut self,
         old: T,
         new: T,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool
     where
-        T: PartialEq + Clone,
         BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
         self.mut_pcs_elems(
@@ -830,10 +829,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    fn mut_edge_conditions(
-        &mut self,
-        mut f: impl FnMut(&mut PathConditions) -> bool,
-    ) -> bool {
+    fn mut_edge_conditions(&mut self, mut f: impl FnMut(&mut PathConditions) -> bool) -> bool {
         let mut changed = false;
         for (_, conditions) in self.edges.iter_mut() {
             if f(conditions) {

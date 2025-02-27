@@ -155,7 +155,7 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
                             if let Ok(source) =
                                 tcx.sess.source_map().span_to_snippet(body.body.span)
                             {
-                                let debug_lines_set: FxHashSet<_> = debug_lines.iter().collect();
+                                let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
                                 let expected_annotations = source
                                     .lines()
                                     .flat_map(|l| l.split("// PCG: ").nth(1))
@@ -168,13 +168,13 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
                                     .collect::<Vec<_>>();
                                 let missing_annotations = expected_annotations
                                     .iter()
-                                    .filter(|a| !debug_lines_set.contains(&a.to_string()))
+                                    .filter(|a| !debug_lines_set.contains(**a))
                                     .collect::<Vec<_>>();
                                 if !missing_annotations.is_empty() {
                                     panic!("Missing annotations: {:?}", missing_annotations);
                                 }
                                 for not_expected_annotation in not_expected_annotations {
-                                    if debug_lines_set.contains(&not_expected_annotation.to_string()) {
+                                    if debug_lines_set.contains(not_expected_annotation) {
                                         panic!(
                                             "Unexpected annotation: {}",
                                             not_expected_annotation

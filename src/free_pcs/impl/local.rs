@@ -150,7 +150,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         RelatedSet::new(related.into_iter().collect())
     }
 
-    #[must_use]
     pub(crate) fn expand(
         &mut self,
         from: Place<'tcx>,
@@ -184,7 +183,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
 
     // TODO: this could be implemented more efficiently, by assuming that a valid
     // state can always be packed up to the root
-    #[must_use]
     pub(crate) fn collapse(
         &mut self,
         mut from: FxHashSet<Place<'tcx>>,

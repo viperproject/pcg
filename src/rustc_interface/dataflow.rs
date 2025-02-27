@@ -62,13 +62,12 @@ where
 }
 
 #[rustversion::since(2024-11-14)]
-pub(crate) fn compute_fixpoint<'tcx, T: mir_dataflow::Analysis<'tcx>>(
+pub(crate) fn compute_fixpoint<'tcx, T: Sized + mir_dataflow::Analysis<'tcx>>(
     analysis: T,
     tcx: ty::TyCtxt<'tcx>,
     body: &Body<'tcx>,
 ) -> mir_dataflow::Results<'tcx, T>
 where
-    T: Sized,
     <T as mir_dataflow::Analysis<'tcx>>::Domain: mir_dataflow::fmt::DebugWithContext<T>,
 {
     MirAnalysis::iterate_to_fixpoint(analysis, tcx, body, None)

@@ -1,20 +1,20 @@
-use std::{
-    cmp::Ordering,
-    collections::BTreeSet,
-};
+use std::{cmp::Ordering, collections::BTreeSet};
 
-use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike}, coupling, pcg_validity_assert, rustc_interface::middle::mir::{BasicBlock, Location}, utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker}
-};
-use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::utils::place::remote::RemotePlace;
 use super::{
     borrow_pcg_edge::LocalNode,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcsElems,
     region_projection::{PCGRegion, RegionProjection},
+};
+use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::place::remote::RemotePlace;
+use crate::{
+    combined_pcs::{PCGNode, PCGNodeLike},
+    coupling, pcg_validity_assert,
+    rustc_interface::middle::mir::{BasicBlock, Location},
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
 };
 
 /// A collection of coupled PCG nodes. They will expire at the same time, and only one
@@ -327,23 +327,17 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "bottom: {}, upper: {}",
-            format!(
-                "{{{}}}",
-                self.bottom_connect
-                    .iter()
-                    .map(|x| format!("{}", x))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            format!(
-                "{{{}}}",
-                self.upper_candidate
-                    .iter()
-                    .map(|x| format!("{}", x))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+            "bottom: {{{}}}, upper: {{{}}}",
+            self.bottom_connect
+                .iter()
+                .map(|x| format!("{}", x))
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.upper_candidate
+                .iter()
+                .map(|x| format!("{}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     }
 }

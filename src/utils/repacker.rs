@@ -144,6 +144,7 @@ impl<'tcx> Place<'tcx> {
     /// subtracting `{x.f.g.h}` from it, which results into (`{x.f, x.f.g}`, `{x.g, x.h,
     /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The first vector contains the chain of
     /// places that were expanded along with the target to of each expansion.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn expand(
         mut self,
         to: Self,

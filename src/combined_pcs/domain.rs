@@ -75,7 +75,7 @@ impl From<EvalStmtPhase> for DataflowStmtPhase {
 }
 
 impl DataflowStmtPhase {
-    pub(crate) fn to_filename_str_part(&self) -> String {
+    pub(crate) fn to_filename_str_part(self) -> String {
         match self {
             DataflowStmtPhase::Join(block) => format!("join_{:?}", block),
             _ => format!("{:?}", self),
@@ -94,7 +94,7 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
     cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) block: Option<BasicBlock>,
 
-    pub(crate) pcg: PCG<'a, 'tcx>,
+    pub(crate) pcg: Pcg<'a, 'tcx>,
     debug_data: Option<PCGDebugData>,
 
     join_history: FxHashSet<BasicBlock>,
@@ -246,12 +246,12 @@ pub enum PCGUnsupportedError {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct PCG<'a, 'tcx> {
+pub(crate) struct Pcg<'a, 'tcx> {
     pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
     pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
 }
 
-impl PCG<'_, '_> {
+impl Pcg<'_, '_> {
     pub(crate) fn initialize_as_start_block(&mut self) {
         self.owned.initialize_as_start_block();
         self.borrow.initialize_as_start_block();
@@ -263,7 +263,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         self.borrow_pcg().has_error() || self.owned_pcg().error.is_some()
     }
 
-    pub(crate) fn pcg_mut(&mut self) -> &mut PCG<'a, 'tcx> {
+    pub(crate) fn pcg_mut(&mut self) -> &mut Pcg<'a, 'tcx> {
         &mut self.pcg
     }
 
@@ -378,7 +378,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     ) -> Self {
         let fpcs = FreePlaceCapabilitySummary::new(cgx.rp, cgx.init_capability_summary.clone());
         let borrows = BorrowsDomain::new(cgx.rp, bc, block);
-        let pcg = PCG {
+        let pcg = Pcg {
             owned: fpcs,
             borrow: borrows,
         };
