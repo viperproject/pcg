@@ -302,6 +302,7 @@ fn setup_rustc_args() -> Vec<String> {
     if env_feature_enabled("PCG_POLONIUS").unwrap_or(false) {
         rustc_args.push("-Zpolonius".to_string());
     }
+    rustc_args.push("-Zno-codegen".to_string());
     rustc_args.extend(std::env::args().skip(1));
 
     let args_str = rustc_args
