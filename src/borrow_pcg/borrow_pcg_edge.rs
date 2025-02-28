@@ -12,7 +12,7 @@ use super::{
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-    region_projection_member::RegionProjectionMember,
+    region_projection_member::BlockEdge,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
@@ -413,7 +413,7 @@ edgedata_enum!(
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
-    RegionProjectionMember(RegionProjectionMember<'tcx>)
+    Block(BlockEdge<'tcx>)
 );
 
 pub(crate) trait ToBorrowsEdge<'tcx> {
@@ -447,11 +447,11 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
     }
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for RegionProjectionMember<'tcx> {
+impl<'tcx> ToBorrowsEdge<'tcx> for BlockEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::RegionProjectionMember(self),
+            kind: BorrowPCGEdgeKind::Block(self),
         }
     }
 }

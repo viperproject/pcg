@@ -7,7 +7,9 @@
 mod engine;
 mod domain;
 mod node;
+mod successor;
 
 pub use engine::*;
 pub use domain::*;
 pub use node::*;
+pub use successor::*;

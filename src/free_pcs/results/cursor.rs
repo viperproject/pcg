@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::{
     borrow_pcg::{action::BorrowPCGActionKind, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGEngine, PCGError},
+    combined_pcs::{EvalStmtPhase, PCGEngine, PCGError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -19,7 +19,7 @@ use crate::{
         },
         mir_dataflow::ResultsCursor,
     },
-    utils::{display::DebugLines, validity::HasValidityCheck, Place},
+    utils::{display::DebugLines, validity::HasValidityCheck, Place}
 };
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
@@ -32,7 +32,6 @@ use crate::{
         CapabilitySummary, FreePlaceCapabilitySummary, RepackOp, RepackingBridgeSemiLattice,
     },
     utils::PlaceRepacker,
-    BorrowsBridge,
 };
 
 pub trait HasPcg<'mir, 'tcx> {
@@ -110,16 +109,12 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
             e
         })?;
 
-        let (extra_start, extra_middle) = curr_borrows.get_bridge();
-
         let result = PcgLocation {
             location,
             actions: curr_borrows.actions.clone(),
             states: curr_fpcg.data.states.0.clone(),
             repacks_start: repack_ops.start,
             repacks_middle: repack_ops.middle,
-            extra_start,
-            extra_middle,
             borrows: curr_borrows.data.states.0.clone(),
         };
 
@@ -127,7 +122,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         Ok(Some(result))
     }
-    pub(crate) fn terminator(&mut self) -> FreePcsTerminator<'tcx> {
+    pub(crate) fn terminator(&mut self) -> PcgTerminator<'tcx> {
         let location = self.curr_stmt.unwrap();
         assert!(location == self.end_stmt.unwrap());
         self.curr_stmt = None;
@@ -155,20 +150,12 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
                 let to = entry_set.get_curr_fpcg();
                 let to_borrows_state = entry_set.get_curr_borrow_pcg();
-                PcgLocation {
-                    location: Location {
-                        block: succ,
-                        statement_index: 0,
-                    },
-                    actions: to_borrows_state.actions.clone(),
-                    states: to.data.states.0.clone(),
-                    repacks_start: from_fpcg_state.data.states[EvalStmtPhase::PostMain]
+                PcgSuccessor::new(
+                    succ,
+                    from_fpcg_state.data.states[EvalStmtPhase::PostMain]
                         .bridge(&to.data.entry_state, rp)
                         .unwrap(),
-                    repacks_middle: Vec::new(),
-                    borrows: to_borrows_state.data.states.0.clone(),
-                    // TODO: It seems like extra_start should be similar to repacks_start
-                    extra_start: {
+                    {
                         let mut actions = BorrowPCGActions::new();
                         let self_abstraction_edges = from_borrows_state.data.states
                             [EvalStmtPhase::PostMain]
@@ -191,13 +178,12 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                                 );
                             }
                         }
-                        actions.into()
+                        actions.into_vec()
                     },
-                    extra_middle: BorrowsBridge::new(),
-                }
+                )
             })
             .collect();
-        FreePcsTerminator { succs }
+        PcgTerminator { succs }
     }
 
     /// Obtains the results of the dataflow analysis for all blocks.
@@ -279,7 +265,7 @@ impl<'tcx> PcgBasicBlocks<'tcx> {
 
 pub struct PcgBasicBlock<'tcx> {
     pub statements: Vec<PcgLocation<'tcx>>,
-    pub terminator: FreePcsTerminator<'tcx>,
+    pub terminator: PcgTerminator<'tcx>,
 }
 
 impl<'tcx> PcgBasicBlock<'tcx> {
@@ -293,11 +279,8 @@ impl<'tcx> PcgBasicBlock<'tcx> {
             }
         }
         for term_succ in self.terminator.succs.iter() {
-            for line in term_succ.debug_lines(EvalStmtPhase::PostMain, repacker) {
-                result.push(format!(
-                    "Terminator({:?}): {}",
-                    term_succ.location.block, line
-                ));
+            for line in term_succ.debug_lines(repacker) {
+                result.push(format!("Terminator({:?}): {}", term_succ.block(), line));
             }
         }
         result
@@ -314,8 +297,6 @@ pub struct PcgLocation<'tcx> {
     /// Repacks in the middle of the statement
     pub repacks_middle: Vec<RepackOp<'tcx>>,
     pub states: CapabilitySummaries<'tcx>,
-    pub extra_start: BorrowsBridge<'tcx>,
-    pub extra_middle: BorrowsBridge<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
     pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
 }
@@ -365,12 +346,6 @@ impl<'tcx> PcgLocation<'tcx> {
             result.push(action.debug_line(repacker));
         }
         result.extend(self.borrows[phase].debug_lines(repacker));
-        for line in self.extra_start.debug_lines(repacker) {
-            result.push(format!("Extra Start: {}", line));
-        }
-        for line in self.extra_middle.debug_lines(repacker) {
-            result.push(format!("Extra Middle: {}", line));
-        }
         for line in self.repacks_start.debug_lines(repacker) {
             result.push(format!("Repacks Start: {}", line));
         }
@@ -382,6 +357,6 @@ impl<'tcx> PcgLocation<'tcx> {
 }
 
 #[derive(Debug)]
-pub struct FreePcsTerminator<'tcx> {
-    pub succs: Vec<PcgLocation<'tcx>>,
+pub struct PcgTerminator<'tcx> {
+    pub succs: Vec<PcgSuccessor<'tcx>>,
 }

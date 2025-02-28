@@ -109,9 +109,7 @@ export type BorrowPCGUnblockAction = {
   edge: BorrowPCGEdge;
 };
 
-export type BorrowsBridge = {
-  actions: string[];
-};
+export type BorrowPCGActions = string[];
 
 export type PathData = {
   heap: Record<string, { value: string; ty: string; old: boolean }>;
@@ -122,6 +120,12 @@ export type PCGStmtVisualizationData = {
   latest: Record<string, string>;
   free_pcg_repacks_start: string[];
   free_pcg_repacks_middle: string[];
-  borrows_bridge_start: BorrowsBridge;
-  borrows_bridge_middle: BorrowsBridge;
+  borrow_actions: EvalStmtData<BorrowPCGActions>;
+};
+
+type EvalStmtData<T> = {
+  pre_operands: T;
+  post_operands: T;
+  pre_main: T;
+  post_main: T;
 };

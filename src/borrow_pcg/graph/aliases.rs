@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode, edge::kind::BorrowPCGEdgeKind, region_projection::RegionIdx,
-        region_projection_member::RegionProjectionMemberKind,
+        region_projection_member::BlockEdgeKind,
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
@@ -149,14 +149,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         }
                     }
                 }
-                BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) => {
+                BorrowPCGEdgeKind::Block(region_projection_member) => {
                     match &region_projection_member.kind {
-                        RegionProjectionMemberKind::DerefRegionProjection => {
+                        BlockEdgeKind::DerefRegionProjection => {
                             for input in region_projection_member.inputs() {
                                 extend(input.to_pcg_node(repacker), seen, &mut result, direct);
                             }
                         }
-                        RegionProjectionMemberKind::FunctionInput => {
+                        BlockEdgeKind::FunctionInput => {
                             for input in region_projection_member.inputs() {
                                 match input {
                                     PCGNode::Place(MaybeRemotePlace::Remote(rp)) => {
@@ -171,8 +171,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 }
                             }
                         }
-                        RegionProjectionMemberKind::DerefBorrowOutlives => {}
-                        RegionProjectionMemberKind::BorrowOutlives { toplevel }
+                        BlockEdgeKind::DerefBorrowOutlives => {}
+                        BlockEdgeKind::BorrowOutlives { toplevel }
                             if !toplevel || direct => {}
                         _ => {
                             for input in region_projection_member.inputs() {

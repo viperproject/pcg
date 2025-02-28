@@ -14,19 +14,19 @@ use super::edge_data::EdgeData;
 use super::{has_pcs_elem::HasPcsElems, region_projection::RegionProjection};
 use crate::utils::json::ToJsonWithRepacker;
 
-pub(crate) type RegionProjectionMemberInputs<'tcx> = SmallVec<[PCGNode<'tcx>; 8]>;
-pub(crate) type RegionProjectionMemberOutputs<'tcx> = SmallVec<[LocalNode<'tcx>; 8]>;
+pub(crate) type BlockEdgeInputs<'tcx> = SmallVec<[PCGNode<'tcx>; 8]>;
+pub(crate) type BlockEdgeOutputs<'tcx> = SmallVec<[LocalNode<'tcx>; 8]>;
 
-/// A PCG hyperedge where at the nodes of at least one of the edge endpoints are
-/// all region projections.
+/// A generic PCG hyperedge. `outputs` blocks `inputs`
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct RegionProjectionMember<'tcx> {
-    pub(crate) inputs: RegionProjectionMemberInputs<'tcx>,
-    pub(crate) outputs: RegionProjectionMemberOutputs<'tcx>,
-    pub(crate) kind: RegionProjectionMemberKind,
+pub struct BlockEdge<'tcx> {
+    pub(crate) inputs: BlockEdgeInputs<'tcx>,
+    pub(crate) outputs: BlockEdgeOutputs<'tcx>,
+    /// Why this edge exists
+    pub(crate) kind: BlockEdgeKind,
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for RegionProjectionMember<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for BlockEdge<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         for input in self.inputs.iter() {
             input.check_validity(repacker)?;
@@ -38,7 +38,7 @@ impl<'tcx> HasValidityCheck<'tcx> for RegionProjectionMember<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for RegionProjectionMember<'tcx> {
+impl<'tcx> DisplayWithRepacker<'tcx> for BlockEdge<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",
@@ -57,7 +57,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for RegionProjectionMember<'tcx> {
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub enum RegionProjectionMemberKind {
+pub enum BlockEdgeKind {
     Aggregate {
         field_idx: usize,
         target_rp_index: usize,
@@ -84,9 +84,7 @@ pub enum RegionProjectionMemberKind {
     /// for `{y|'a} -> {x|'b}` of this kind is created if 'a outlives 'b.
     ///
     /// `toplevel` is true for edges to x↓'x, false otherwise.
-    BorrowOutlives {
-        toplevel: bool
-    },
+    BorrowOutlives { toplevel: bool },
     /// If e.g {x|'a} -> {y|'b} is a BorrowsOutlives, then {*x|'a} -> {*y|'b} is a DerefBorrowsOutlives
     /// (it's introduced if e.g. *y is expanded in the PCG)
     DerefBorrowOutlives,
@@ -94,7 +92,27 @@ pub enum RegionProjectionMemberKind {
     Todo,
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for RegionProjectionMember<'tcx> {
+impl<'tcx> std::fmt::Display for BlockEdgeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BlockEdgeKind::Aggregate {
+                field_idx,
+                target_rp_index,
+            } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
+            BlockEdgeKind::Borrow => write!(f, "Borrow"),
+            BlockEdgeKind::FunctionInput => write!(f, "FunctionInput"),
+            BlockEdgeKind::DerefRegionProjection => write!(f, "DerefRegionProjection"),
+            BlockEdgeKind::Ref => write!(f, "Ref"),
+            BlockEdgeKind::ContractRef => write!(f, "ContractRef"),
+            BlockEdgeKind::ConstRef => write!(f, "ConstRef"),
+            BlockEdgeKind::BorrowOutlives { toplevel } => write!(f, "BorrowOutlives({toplevel})"),
+            BlockEdgeKind::Todo => write!(f, "Todo"),
+            BlockEdgeKind::DerefBorrowOutlives => write!(f, "DerefBorrowOutlives"),
+        }
+    }
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for BlockEdge<'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "inputs": self.inputs.iter().map(|p| p.to_json(repacker)).collect::<Vec<_>>(),
@@ -103,7 +121,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for RegionProjectionMember<'tcx> {
     }
 }
 
-impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
+impl<'tcx> EdgeData<'tcx> for BlockEdge<'tcx> {
     fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs.iter().cloned().collect()
     }
@@ -121,14 +139,12 @@ impl<'tcx> EdgeData<'tcx> for RegionProjectionMember<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for RegionProjectionMember<'tcx> {
+impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BlockEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         self.inputs.iter_mut().flat_map(|p| p.pcs_elems()).collect()
     }
 }
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
-    for RegionProjectionMember<'tcx>
-{
+impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for BlockEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         self.outputs
             .iter_mut()
@@ -137,7 +153,7 @@ impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
+impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BlockEdge<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         self.inputs
             .iter_mut()
@@ -147,7 +163,7 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {
     }
 }
 
-impl<'tcx> RegionProjectionMember<'tcx> {
+impl<'tcx> BlockEdge<'tcx> {
     /// Returns `true` iff the lifetime projections are mutable
     pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
         let mut_values = self
@@ -163,9 +179,9 @@ impl<'tcx> RegionProjectionMember<'tcx> {
     }
 
     pub(crate) fn new(
-        inputs: RegionProjectionMemberInputs<'tcx>,
-        outputs: RegionProjectionMemberOutputs<'tcx>,
-        kind: RegionProjectionMemberKind,
+        inputs: BlockEdgeInputs<'tcx>,
+        outputs: BlockEdgeOutputs<'tcx>,
+        kind: BlockEdgeKind,
     ) -> Self {
         Self {
             inputs,

@@ -3,7 +3,7 @@ use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::borrow_pcg::region_projection_member::RegionProjectionMember;
+use crate::borrow_pcg::region_projection_member::BlockEdge;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::utils::validity::HasValidityCheck;
@@ -13,7 +13,7 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
-    RegionProjectionMember(RegionProjectionMember<'tcx>),
+    Block(BlockEdge<'tcx>),
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGEdgeKind<'tcx> {
@@ -22,7 +22,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGEdgeKind<'tcx> {
             BorrowPCGEdgeKind::Borrow(borrow) => borrow.check_validity(repacker),
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => expansion.check_validity(repacker),
             BorrowPCGEdgeKind::Abstraction(abstraction) => abstraction.check_validity(repacker),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.check_validity(repacker),
+            BorrowPCGEdgeKind::Block(member) => member.check_validity(repacker),
         }
     }
 }
@@ -33,7 +33,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdgeKind<'tcx> {
             BorrowPCGEdgeKind::Borrow(borrow) => borrow.to_short_string(repacker),
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => expansion.to_short_string(repacker),
             BorrowPCGEdgeKind::Abstraction(abstraction) => abstraction.to_short_string(repacker),
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.to_short_string(repacker),
+            BorrowPCGEdgeKind::Block(member) => member.to_short_string(repacker),
         }
     }
 }
@@ -41,7 +41,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGEdgeKind<'tcx> {
 impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
     fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx>> {
         match self {
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
+            BorrowPCGEdgeKind::Block(member) => member.pcs_elems(),
             _ => vec![],
         }
     }
@@ -50,13 +50,13 @@ impl<'tcx> HasPcsElems<RegionProjection<'tcx>> for BorrowPCGEdgeKind<'tcx> {
 impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdgeKind<'tcx>
 where
     BorrowEdge<'tcx>: HasPcsElems<T>,
-    RegionProjectionMember<'tcx>: HasPcsElems<T>,
+    BlockEdge<'tcx>: HasPcsElems<T>,
     BorrowPCGExpansion<'tcx>: HasPcsElems<T>,
     AbstractionType<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
         match self {
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => member.pcs_elems(),
+            BorrowPCGEdgeKind::Block(member) => member.pcs_elems(),
             BorrowPCGEdgeKind::Borrow(reborrow) => reborrow.pcs_elems(),
             BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => deref_expansion.pcs_elems(),
             BorrowPCGEdgeKind::Abstraction(abstraction_edge) => abstraction_edge.pcs_elems(),
