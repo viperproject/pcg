@@ -176,7 +176,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 self.repacker,
             ));
             let _ = entry_state.apply_action(
-                BorrowPCGAction::add_region_projection_member(
+                BorrowPCGAction::add_block_edge(
                     BlockEdge::new(
                         smallvec![MaybeRemotePlace::place_assigned_to_local(local).into()],
                         smallvec![RegionProjection::new(
@@ -199,7 +199,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 RegionProjection::new(region, arg_place, self.repacker).unwrap();
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
             assert!(entry_state.apply_action(
-                BorrowPCGAction::add_region_projection_member(
+                BorrowPCGAction::add_block_edge(
                     BlockEdge::new(
                         smallvec![RegionProjection::new(
                             region,

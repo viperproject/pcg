@@ -5,7 +5,6 @@ use crate::{
         graph::BorrowsGraph,
         region_projection::RegionProjection,
         state::BorrowsState,
-        unblock_graph::UnblockGraph,
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
@@ -155,20 +154,24 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
-    fn insert_cg_node(&mut self, node: CGNode<'tcx>) -> NodeId {
+    fn insert_cg_node(&mut self, node: CGNode<'tcx>, capability: Option<CapabilityKind>) -> NodeId {
         match node {
-            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp, None),
-            CGNode::RemotePlace(rp) => self.insert_remote_node(rp),
+            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp, capability),
+            CGNode::RemotePlace(rp) => self.insert_remote_node(rp, capability),
         }
     }
 
-    fn insert_abstraction(&mut self, region_abstraction: &AbstractionType<'tcx>) {
+    fn insert_abstraction(
+        &mut self,
+        region_abstraction: &AbstractionType<'tcx>,
+        capabilities: &impl CapabilityGetter<'tcx>,
+    ) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 
         for edge in region_abstraction.edges() {
             for input in edge.inputs() {
-                let input = self.insert_cg_node(input);
+                let input = self.insert_cg_node(input, capabilities.get(input.into()));
                 input_nodes.insert(input);
             }
             for output in edge.outputs() {
@@ -219,7 +222,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         self.region_clusters.insert(cluster);
     }
 
-    fn insert_remote_node(&mut self, remote_place: RemotePlace) -> NodeId {
+    fn insert_remote_node(
+        &mut self,
+        remote_place: RemotePlace,
+        capability: Option<CapabilityKind>,
+    ) -> NodeId {
         if let Some(id) = self.remote_nodes.existing_id(&remote_place) {
             return id;
         }
@@ -230,7 +237,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 owned: false,
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
-                capability: None,
+                capability,
                 ty: format!("{:?}", remote_place.ty(self.repacker)),
             },
         };
@@ -264,53 +271,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 }
 
-pub struct UnblockGraphConstructor<'a, 'tcx> {
-    unblock_graph: UnblockGraph<'tcx>,
-    constructor: GraphConstructor<'a, 'tcx>,
-}
-
-impl<'a, 'tcx> UnblockGraphConstructor<'a, 'tcx> {
-    pub fn new(unblock_graph: UnblockGraph<'tcx>, repacker: PlaceRepacker<'a, 'tcx>) -> Self {
-        Self {
-            unblock_graph,
-            constructor: GraphConstructor::new(repacker),
-        }
-    }
-
-    pub fn construct_graph(mut self) -> Graph {
-        for edge in self.unblock_graph.edges().cloned().collect::<Vec<_>>() {
-            self.draw_borrow_pcg_edge(edge, &NullCapabilityGetter);
-        }
-        self.constructor.into_graph()
-    }
-}
-
-impl<'mir, 'tcx> PlaceGrapher<'mir, 'tcx> for UnblockGraphConstructor<'mir, 'tcx> {
-    fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
-        self.constructor
-            .insert_place_node(place.place(), place.location(), &NullCapabilityGetter)
-    }
-
-    fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
-        match place {
-            MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
-            MaybeRemotePlace::Remote(local) => self.constructor.insert_remote_node(local),
-        }
-    }
-
-    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx> {
-        &mut self.constructor
-    }
-
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.constructor.repacker
-    }
-
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir {
-        NullCapabilityGetter
-    }
-}
-
 trait PlaceGrapher<'mir, 'tcx: 'mir> {
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir;
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
@@ -319,10 +279,12 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
         constructor.insert_place_node(place.place(), place.location(), &capability_getter)
     }
     fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
+        let capability_getter = self.capability_getter();
+        let capability = capability_getter.get(place.to_pcg_node(self.repacker()));
         let constructor = self.constructor();
         match place {
             MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
-            MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local),
+            MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local, capability),
         }
     }
     fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
@@ -381,7 +343,8 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 });
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
-                self.constructor().insert_abstraction(abstraction);
+                self.constructor()
+                    .insert_abstraction(abstraction, capabilities);
             }
             BorrowPCGEdgeKind::Block(member) => {
                 for input in member.inputs.iter() {

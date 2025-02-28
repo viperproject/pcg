@@ -113,7 +113,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn add_region_projection_member(
+    pub(super) fn add_block_edge(
         member: BlockEdge<'tcx>,
         pc: PathConditions,
         context: impl Into<String>,

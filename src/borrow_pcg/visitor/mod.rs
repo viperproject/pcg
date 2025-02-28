@@ -156,7 +156,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 source_proj.region(self.repacker),
                 target_proj.region(self.repacker),
             ) {
-                self.apply_action(BorrowPCGAction::add_region_projection_member(
+                self.apply_action(BorrowPCGAction::add_block_edge(
                     BlockEdge::new(
                         smallvec![source_proj.to_pcg_node(self.repacker)],
                         smallvec![target_proj.to_local_node(self.repacker)],

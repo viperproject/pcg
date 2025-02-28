@@ -11,9 +11,9 @@ pub mod legend;
 pub mod mir_graph;
 
 use crate::{
-    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState, unblock_graph::UnblockGraph},
+    rustc_interface::middle::mir::Location,
+    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
     free_pcs::{CapabilityKind, CapabilitySummary},
-    rustc_interface,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
 use std::{
@@ -24,13 +24,12 @@ use std::{
 
 use dot::escape_html;
 use graph_constructor::BorrowsGraphConstructor;
-use rustc_interface::middle::mir::Location;
 
 use self::{
     dot_graph::{
         DotEdge, DotFloatAttr, DotLabel, DotNode, DotStringAttr, EdgeDirection, EdgeOptions,
     },
-    graph_constructor::{GraphCluster, PCSGraphConstructor, UnblockGraphConstructor},
+    graph_constructor::{GraphCluster, PCSGraphConstructor},
 };
 
 pub fn place_id(place: &Place<'_>) -> String {
@@ -264,18 +263,6 @@ impl Graph {
             clusters,
         }
     }
-}
-
-pub fn generate_unblock_dot_graph<'a, 'tcx: 'a>(
-    repacker: &PlaceRepacker<'a, 'tcx>,
-    unblock_graph: &UnblockGraph<'tcx>,
-) -> io::Result<String> {
-    let constructor = UnblockGraphConstructor::new(unblock_graph.clone(), *repacker);
-    let graph = constructor.construct_graph();
-    let mut buf = vec![];
-    let drawer = GraphDrawer::new(&mut buf);
-    drawer.draw(graph)?;
-    Ok(String::from_utf8(buf).unwrap())
 }
 
 pub fn generate_dot_graph_str<'a, 'tcx: 'a>(

@@ -9,7 +9,6 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{edge_data::EdgeData, state::BorrowsState},
     utils::PlaceRepacker,
-    visualization::generate_unblock_dot_graph,
 };
 
 type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
@@ -44,19 +43,6 @@ impl<'tcx> From<BorrowPCGEdge<'tcx>> for BorrowPCGUnblockAction<'tcx> {
 }
 
 impl<'tcx> UnblockGraph<'tcx> {
-    pub(crate) fn edges(&self) -> impl Iterator<Item = &UnblockEdge<'tcx>> {
-        self.edges.iter()
-    }
-
-    #[allow(unused)]
-    pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        let dot_graph = generate_unblock_dot_graph(&repacker, self).unwrap();
-        serde_json::json!({
-            "empty": self.is_empty(),
-            "dot_graph": dot_graph
-        })
-    }
-
     pub(crate) fn new() -> Self {
         Self {
             edges: HashSet::new(),
