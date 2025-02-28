@@ -5,7 +5,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansio
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::borrow_pcg::edge::region_projection_member::{
+use crate::borrow_pcg::edge::block::{
     BlockEdge, BlockEdgeKind,
 };
 use crate::borrow_pcg::state::BorrowsState;

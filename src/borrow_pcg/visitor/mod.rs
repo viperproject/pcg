@@ -3,7 +3,7 @@ use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
-    borrow_pcg::edge::region_projection_member::BlockEdgeKind,
+    borrow_pcg::edge::block::BlockEdgeKind,
     combined_pcs::{LocalNodeLike, PCGError, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
@@ -26,7 +26,7 @@ use super::{
     coupling_graph_constructor::BorrowCheckerInterface,
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
-    edge::region_projection_member::BlockEdge,
+    edge::block::BlockEdge,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
 use crate::borrow_pcg::action::actions::BorrowPCGActions;

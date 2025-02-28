@@ -4,7 +4,7 @@ use crate::{
         action::BorrowPCGAction,
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-        edge::region_projection_member::{BlockEdge, BlockEdgeKind},
+        edge::block::{BlockEdge, BlockEdgeKind},
         state::obtain::ObtainReason,
         visitor::StatementStage,
     },

@@ -3,7 +3,7 @@ use tracing::instrument;
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::path_condition::PathConditions;
-use super::edge::region_projection_member::BlockEdge;
+use super::edge::block::BlockEdge;
 use super::state::BorrowsState;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
