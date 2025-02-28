@@ -3,7 +3,7 @@ use tracing::instrument;
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::path_condition::PathConditions;
-use super::region_projection_member::RegionProjectionMember;
+use super::region_projection_member::BlockEdge;
 use super::state::BorrowsState;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
@@ -15,7 +15,7 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
-pub(crate) mod actions;
+pub mod actions;
 pub(crate) mod executed_actions;
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
@@ -28,13 +28,6 @@ pub struct BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowPCGAction<'tcx> {
-    pub(crate) fn debug_line_with_context(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        if let Some(context) = &self.debug_context {
-            format!("{}: {}", context, self.debug_line(repacker))
-        } else {
-            self.debug_line(repacker)
-        }
-    }
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match &self.kind {
             BorrowPCGActionKind::AddAbstractionEdge(abstraction, path_conditions) => {
@@ -59,14 +52,13 @@ impl<'tcx> BorrowPCGAction<'tcx> {
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
             }
-            BorrowPCGActionKind::AddRegionProjectionMember(
-                region_projection_member,
-                path_conditions,
-            ) => format!(
-                "Add Region Projection Member: {}; path conditions: {}",
-                region_projection_member.to_short_string(repacker),
-                path_conditions
-            ),
+            BorrowPCGActionKind::AddBlockEdge(region_projection_member, path_conditions) => {
+                format!(
+                    "Add Region Projection Member: {}; path conditions: {}",
+                    region_projection_member.to_short_string(repacker),
+                    path_conditions
+                )
+            }
             BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => format!(
                 "Insert Expansion {} at {:?}",
                 expansion.to_short_string(repacker),
@@ -122,12 +114,12 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     }
 
     pub(super) fn add_region_projection_member(
-        member: RegionProjectionMember<'tcx>,
+        member: BlockEdge<'tcx>,
         pc: PathConditions,
         context: impl Into<String>,
     ) -> Self {
         BorrowPCGAction {
-            kind: BorrowPCGActionKind::AddRegionProjectionMember(member, pc),
+            kind: BorrowPCGActionKind::AddBlockEdge(member, pc),
             debug_context: Some(context.into()),
         }
     }
@@ -167,7 +159,7 @@ pub enum BorrowPCGActionKind<'tcx> {
     MakePlaceOld(Place<'tcx>),
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
-    AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
+    AddBlockEdge(BlockEdge<'tcx>, PathConditions),
     InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx>, Location),
     AddAbstractionEdge(AbstractionType<'tcx>, PathConditions),
     RenamePlace {
@@ -176,13 +168,48 @@ pub enum BorrowPCGActionKind<'tcx> {
     },
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
-    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        if let Some(context) = &self.debug_context {
-            format!("{}: {:?}", context, self.kind).into()
-        } else {
-            format!("{:?}", self).into()
+impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        match self {
+            BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
+            BorrowPCGActionKind::Restore(restore_capability) => {
+                restore_capability.debug_line(repacker)
+            }
+            BorrowPCGActionKind::MakePlaceOld(place) => {
+                format!("Make {} an old place", place.to_short_string(repacker))
+            }
+            BorrowPCGActionKind::SetLatest(place, location) => format!(
+                "Set Latest of {} to {:?}",
+                place.to_short_string(repacker),
+                location
+            ),
+            BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
+                format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
+            }
+            BorrowPCGActionKind::AddBlockEdge(block_edge, _) => {
+                format!("Add Block Edge: {}", block_edge.to_short_string(repacker),)
+            }
+            BorrowPCGActionKind::InsertBorrowPCGExpansion(borrow_pcgexpansion, location) => {
+                format!(
+                    "Insert Expansion {} at {:?}",
+                    borrow_pcgexpansion.to_short_string(repacker),
+                    location
+                )
+            }
+            BorrowPCGActionKind::AddAbstractionEdge(abstraction_type, _) => format!(
+                "Add Abstraction Edge: {}",
+                abstraction_type.to_short_string(repacker),
+            ),
+            BorrowPCGActionKind::RenamePlace { old, new } => {
+                format!("Rename {:?} to {:?}", old, new)
+            }
         }
+    }
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        self.kind.to_short_string(repacker).into()
     }
 }
 
@@ -203,8 +230,11 @@ impl<'tcx> BorrowsState<'tcx> {
                             self.set_capability(input.into(), CapabilityKind::Lent, repacker);
                     }
                     for output in edge.outputs() {
-                        changed |=
-                            self.set_capability(output.to_pcg_node(repacker), CapabilityKind::Exclusive, repacker);
+                        changed |= self.set_capability(
+                            output.to_pcg_node(repacker),
+                            CapabilityKind::Exclusive,
+                            repacker,
+                        );
                     }
                 }
                 changed |= self.insert(abstraction.to_borrow_pcg_edge(pc));
@@ -215,7 +245,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 if let Some(cap) = self.get_capability(restore_node) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
-                if !restore_node.is_owned(repacker) && !self.set_capability(restore_node, restore.capability(), repacker) {
+                if !restore_node.is_owned(repacker)
+                    && !self.set_capability(restore_node, restore.capability(), repacker)
+                {
                     tracing::error!(
                         "Capability was already {:?} for {}",
                         restore.capability(),
@@ -239,7 +271,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.set_latest(place, location, repacker)
             }
             BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge),
-            BorrowPCGActionKind::AddRegionProjectionMember(member, pc) => {
+            BorrowPCGActionKind::AddBlockEdge(member, pc) => {
                 self.add_region_projection_member(member, pc, repacker)
             }
             BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => {
@@ -306,7 +338,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// capabilities for the place and projection
     fn add_region_projection_member(
         &mut self,
-        member: RegionProjectionMember<'tcx>,
+        member: BlockEdge<'tcx>,
         pc: PathConditions,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {

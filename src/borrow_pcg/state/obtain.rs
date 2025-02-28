@@ -6,7 +6,7 @@ use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::region_projection_member::{
-    RegionProjectionMember, RegionProjectionMemberKind,
+    BlockEdge, BlockEdgeKind,
 };
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
@@ -124,10 +124,10 @@ impl<'tcx> BorrowsState<'tcx> {
                 for ra in place.region_projections(repacker) {
                     self.record_and_apply_action(
                         BorrowPCGAction::add_region_projection_member(
-                            RegionProjectionMember::new(
+                            BlockEdge::new(
                                 smallvec![borrow.value.blocked_place.into()],
                                 smallvec![ra.into()],
-                                RegionProjectionMemberKind::ContractRef,
+                                BlockEdgeKind::ContractRef,
                             ),
                             PathConditions::new(location.block),
                             "Contract To",
@@ -202,10 +202,10 @@ impl<'tcx> BorrowsState<'tcx> {
                 // e.g t|'a
                 let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
 
-                let region_projection_member = RegionProjectionMember::new(
+                let region_projection_member = BlockEdge::new(
                     smallvec![base_rp.to_pcg_node(repacker)],
                     smallvec![target.into()],
-                    RegionProjectionMemberKind::DerefRegionProjection,
+                    BlockEdgeKind::DerefRegionProjection,
                 );
 
                 self.record_and_apply_action(

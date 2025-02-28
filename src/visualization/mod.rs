@@ -137,6 +137,7 @@ enum NodeType {
     },
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum GraphEdge {
     Abstract {
@@ -164,7 +165,7 @@ enum GraphEdge {
         target: NodeId,
         path_conditions: String,
     },
-    RegionProjectionMember {
+    Block {
         source: NodeId,
         target: NodeId,
         kind: String,
@@ -223,7 +224,7 @@ impl GraphEdge {
                 to: blocking.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward),
             },
-            GraphEdge::RegionProjectionMember {
+            GraphEdge::Block {
                 source,
                 target,
                 kind,

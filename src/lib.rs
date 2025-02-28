@@ -18,20 +18,14 @@ pub mod utils;
 pub mod visualization;
 
 use borrow_pcg::{
-    action::{BorrowPCGAction, BorrowPCGActionKind},
+    action::BorrowPCGAction,
     borrow_pcg_edge::LocalNode,
-    borrow_pcg_expansion::BorrowPCGExpansion,
-    graph::Conditioned,
     latest::Latest,
-    path_condition::PathConditions,
-    region_projection_member::RegionProjectionMember,
-    unblock_graph::BorrowPCGUnblockAction,
 };
-use combined_pcs::{PCGContext, PCGEngine};
+use combined_pcs::{PCGContext, PCGEngine, PcgSuccessor};
 use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
     borrowck::{self, BorrowSet, RegionInferenceContext},
-    data_structures::fx::FxHashSet,
     dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
 };
@@ -130,92 +124,16 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct BorrowsBridge<'tcx> {
-    pub(crate) actions: Vec<BorrowPCGAction<'tcx>>,
-}
-
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsBridge<'tcx> {
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGActions<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.actions
+        self.0
             .iter()
             .map(|action| action.debug_line(repacker))
             .collect()
     }
 }
 
-impl<'tcx> BorrowsBridge<'tcx> {
-    /// Actions applied to the PCG, in the order they occurred.
-    pub fn actions(&self) -> &[BorrowPCGAction<'tcx>] {
-        &self.actions
-    }
 
-    pub fn added_region_projection_members(
-        &self,
-    ) -> FxHashSet<Conditioned<RegionProjectionMember<'tcx>>> {
-        self.actions
-            .iter()
-            .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::AddRegionProjectionMember(member, path_conditions) => {
-                    Some(Conditioned::new(member.clone(), path_conditions.clone()))
-                }
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub fn weakens(&self) -> FxHashSet<Weaken<'tcx>> {
-        self.actions
-            .iter()
-            .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::Weaken(weaken) => Some(*weaken),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub fn unblock_actions(&self) -> Vec<BorrowPCGUnblockAction<'tcx>> {
-        self.actions
-            .iter()
-            .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::RemoveEdge(edge) => Some(edge.clone().into()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub fn expands(&self) -> FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>> {
-        self.actions
-            .iter()
-            .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => Some(
-                    Conditioned::new(expansion.clone(), PathConditions::AtBlock(location.block)),
-                ),
-                _ => None,
-            })
-            .collect()
-    }
-}
-
-impl<'tcx> From<BorrowPCGActions<'tcx>> for BorrowsBridge<'tcx> {
-    fn from(actions: BorrowPCGActions<'tcx>) -> Self {
-        Self {
-            actions: actions.into_vec(),
-        }
-    }
-}
-
-impl<'tcx> BorrowsBridge<'tcx> {
-    pub(crate) fn new() -> Self {
-        Self { actions: vec![] }
-    }
-
-    pub(crate) fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        json!({
-            "actions": self.actions.iter().map(|a| a.debug_line_with_context(repacker)).collect::<Vec<_>>(),
-        })
-    }
-}
 
 use borrow_pcg::action::actions::BorrowPCGActions;
 use std::sync::Mutex;
@@ -237,9 +155,30 @@ struct PCGStmtVisualizationData<'a, 'tcx> {
     latest: &'a Latest<'tcx>,
     free_pcg_repacks_start: &'a Vec<RepackOp<'tcx>>,
     free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
-    borrows_bridge_start: &'a BorrowsBridge<'tcx>,
-    borrows_bridge_middle: &'a BorrowsBridge<'tcx>,
-    actions: EvalStmtData<Vec<BorrowPCGAction<'tcx>>>,
+    borrow_actions: &'a EvalStmtData<BorrowPCGActions<'tcx>>,
+}
+
+struct PcgSuccessorVisualizationData<'a, 'tcx> {
+    owned_ops: &'a [RepackOp<'tcx>],
+    borrow_ops: &'a [BorrowPCGAction<'tcx>],
+}
+
+impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
+    fn from(successor: &'a PcgSuccessor<'tcx>) -> Self {
+        Self {
+            owned_ops: successor.owned_ops(),
+            borrow_ops: successor.borrow_ops(),
+        }
+    }
+}
+
+impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
+    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "owned_ops": self.owned_ops.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
+            "borrow_ops": self.borrow_ops.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
+        })
+    }
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
@@ -248,9 +187,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
             "latest": self.latest.to_json(repacker),
             "free_pcg_repacks_start": self.free_pcg_repacks_start.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
             "free_pcg_repacks_middle": self.free_pcg_repacks_middle.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "borrows_bridge_start": self.borrows_bridge_start.to_json(repacker),
-            "borrows_bridge_middle": self.borrows_bridge_middle.to_json(repacker),
-            "actions": self.actions.to_json(repacker),
+            "borrow_actions": self.borrow_actions.to_json(repacker),
         })
     }
 }
@@ -261,9 +198,7 @@ impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx
             latest: &location.borrows.post_main.latest,
             free_pcg_repacks_start: &location.repacks_start,
             free_pcg_repacks_middle: &location.repacks_middle,
-            borrows_bridge_start: &location.extra_start,
-            borrows_bridge_middle: &location.extra_middle,
-            actions: location.actions.clone().map(|actions| actions.into_vec()),
+            borrow_actions: &location.actions,
         }
     }
 }
@@ -349,11 +284,10 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
             let pcs_block_option = fpcs_analysis.get_all_for_bb(block).unwrap();
-            let pcs_block = if let Some(pcs_block) = pcs_block_option {
-                pcs_block
-            } else {
+            if pcs_block_option.is_none() {
                 continue;
-            };
+            }
+            let pcs_block = pcs_block_option.unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
                     statement.assert_validity(rp);
@@ -368,19 +302,18 @@ pub fn run_combined_pcs<'mir, 'tcx>(
                 let pcg_data_json = data.to_json(rp);
                 std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
                     .expect("Failed to write pcg data to JSON file");
-
-                for succ in pcs_block.terminator.succs.iter() {
-                    let data = PCGStmtVisualizationData::from(succ);
-                    let pcg_data_file_path = format!(
-                        "{}/block_{}_term_block_{}_pcg_data.json",
-                        &dir_path,
-                        block.index(),
-                        succ.location.block.index()
-                    );
-                    let pcg_data_json = data.to_json(rp);
-                    std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
-                        .expect("Failed to write pcg data to JSON file");
-                }
+            }
+            for succ in pcs_block.terminator.succs {
+                let data = PcgSuccessorVisualizationData::from(&succ);
+                let pcg_data_file_path = format!(
+                    "{}/block_{}_term_block_{}_pcg_data.json",
+                    &dir_path,
+                    block.index(),
+                    succ.block().index()
+                );
+                let pcg_data_json = data.to_json(rp);
+                std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
+                    .expect("Failed to write pcg data to JSON file");
             }
         }
     }

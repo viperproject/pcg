@@ -355,13 +355,11 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 let base_node = self.insert_local_node(deref_expansion.base());
                 for place in deref_expansion.expansion(self.repacker()) {
                     let place = self.insert_local_node(place);
-                    self.constructor()
-                        .edges
-                        .insert(GraphEdge::DerefExpansion {
-                            source: base_node,
-                            target: place,
-                            path_conditions: format!("{}", edge.conditions()),
-                        });
+                    self.constructor().edges.insert(GraphEdge::DerefExpansion {
+                        source: base_node,
+                        target: place,
+                        path_conditions: format!("{}", edge.conditions()),
+                    });
                 }
             }
             BorrowPCGEdgeKind::Borrow(reborrow) => {
@@ -374,8 +372,6 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     assigned_region_projection,
                     capabilities.get(assigned_rp_pcg_node),
                 );
-                let deref_place = reborrow.deref_place(self.repacker());
-                let deref_place_node = self.insert_maybe_old_place(deref_place);
                 self.constructor().edges.insert(GraphEdge::Borrow {
                     borrowed_place,
                     assigned_region_projection: assigned_rp_node,
@@ -383,25 +379,21 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     region: format!("{:?}", reborrow.region),
                     path_conditions: format!("{}", edge.conditions()),
                 });
-                self.constructor().edges.insert(GraphEdge::Alias {
-                    blocked_place: borrowed_place,
-                    blocking_place: deref_place_node,
-                });
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
                 self.constructor().insert_abstraction(abstraction);
             }
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
+            BorrowPCGEdgeKind::Block(member) => {
                 for input in member.inputs.iter() {
                     let input_node = self.insert_pcg_node(*input);
                     for output in member.outputs.iter() {
                         let output_node = self.insert_local_node(*output);
                         self.constructor()
                             .edges
-                            .insert(GraphEdge::RegionProjectionMember {
+                            .insert(GraphEdge::Block {
                                 source: input_node,
                                 target: output_node,
-                                kind: format!("{:?}", member.kind),
+                                kind: format!("{}", member.kind),
                             });
                     }
                 }

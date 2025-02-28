@@ -5,7 +5,7 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::region_projection_member::{
-    RegionProjectionMember, RegionProjectionMemberKind,
+    BlockEdge, BlockEdgeKind,
 };
 use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
@@ -15,7 +15,7 @@ use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
-use crate::{utils, BorrowsBridge};
+use crate::utils;
 use smallvec::smallvec;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
@@ -112,12 +112,6 @@ impl std::fmt::Debug for BorrowsDomain<'_, '_> {
 }
 
 impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
-    pub(crate) fn get_bridge(&self) -> (BorrowsBridge<'tcx>, BorrowsBridge<'tcx>) {
-        (
-            self.actions.pre_operands.clone().into(),
-            self.actions.pre_main.clone().into(),
-        )
-    }
     pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
         self.data.states[PostMain].as_ref()
     }
@@ -181,7 +175,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             ));
             let _ = entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
-                    RegionProjectionMember::new(
+                    BlockEdge::new(
                         smallvec![MaybeRemotePlace::place_assigned_to_local(local).into()],
                         smallvec![RegionProjection::new(
                             (*region).into(),
@@ -190,7 +184,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                         )
                         .unwrap()
                         .into(),],
-                        RegionProjectionMemberKind::FunctionInput,
+                        BlockEdgeKind::FunctionInput,
                     ),
                     PathConditions::AtBlock((Location::START).block),
                     "Introduce initial borrow",
@@ -204,7 +198,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
             assert!(entry_state.apply_action(
                 BorrowPCGAction::add_region_projection_member(
-                    RegionProjectionMember::new(
+                    BlockEdge::new(
                         smallvec![RegionProjection::new(
                             region,
                             RemotePlace::new(local),
@@ -215,7 +209,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                         })
                         .to_pcg_node(self.repacker)],
                         smallvec![region_projection.into()],
-                        RegionProjectionMemberKind::Todo,
+                        BlockEdgeKind::Todo,
                     ),
                     PathConditions::AtBlock((Location::START).block),
                     "Initialize Local",

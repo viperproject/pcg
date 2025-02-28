@@ -4,7 +4,7 @@ use crate::{
         action::BorrowPCGAction,
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-        region_projection_member::{RegionProjectionMember, RegionProjectionMemberKind},
+        region_projection_member::{BlockEdge, BlockEdgeKind},
         state::obtain::ObtainReason,
         visitor::StatementStage,
     },
@@ -124,7 +124,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                 source_proj,
                                 target,
                                 location,
-                                |_| RegionProjectionMemberKind::Todo,
+                                |_| BlockEdgeKind::Todo,
                             );
                         }
                     }
@@ -135,7 +135,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             target.ty(self.repacker).ty.kind()
                         {
                             self.apply_action(BorrowPCGAction::add_region_projection_member(
-                                RegionProjectionMember::new(
+                                BlockEdge::new(
                                     smallvec![RegionProjection::new(
                                         (*const_region).into(),
                                         MaybeRemoteRegionProjectionBase::Const(c.const_),
@@ -150,7 +150,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                     )
                                     .unwrap()
                                     .into()],
-                                    RegionProjectionMemberKind::ConstRef,
+                                    BlockEdgeKind::ConstRef,
                                 ),
                                 PathConditions::AtBlock(location.block),
                                 "Assign constant",
@@ -177,7 +177,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             source_proj.into(),
                             target,
                             location,
-                            |_| RegionProjectionMemberKind::Todo,
+                            |_| BlockEdgeKind::Todo,
                         );
                     }
                 }
@@ -206,7 +206,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             source_proj.into(),
                             target,
                             location,
-                            |region| RegionProjectionMemberKind::BorrowOutlives {
+                            |region| BlockEdgeKind::BorrowOutlives {
                                 toplevel: region == target_region,
                             },
                         );

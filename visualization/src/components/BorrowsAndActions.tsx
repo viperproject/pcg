@@ -5,7 +5,7 @@ import {
   BorrowAction,
   Reborrow,
   MaybeOldPlace,
-  BorrowsBridge,
+  BorrowPCGActions,
   PlaceExpand,
   PCGNode,
   MaybeRemotePlace,
@@ -117,10 +117,10 @@ function LocalPCGNodeDisplay({ node }: { node: LocalNode }) {
   return <MaybeOldPlaceDisplay maybeOldPlace={node} />;
 }
 
-function BorrowsBridgeDisplay({ bridge }: { bridge: BorrowsBridge }) {
+function BorrowsBridgeDisplay({  actions }: { actions: BorrowPCGActions }) {
   return (
     <ul>
-      {bridge.actions.map((action, index) => (
+      {actions.map((action, index) => (
         <li key={`action-${index}`}>{action}</li>
       ))}
     </ul>
@@ -143,13 +143,17 @@ export default function PCGOps({ data }: { data: PCGStmtVisualizationData }) {
       }}
     >
       <h4>Borrow PCG Bridge (Start)</h4>
-      <BorrowsBridgeDisplay bridge={data.borrows_bridge_start} />
-      {data.borrows_bridge_middle && (
-        <>
-          <h4>Borrow PCG Bridge (Mid)</h4>
-          <BorrowsBridgeDisplay bridge={data.borrows_bridge_middle} />
-        </>
-      )}
+      {[
+        "pre_operands" as const,
+        "post_operands" as const,
+        "pre_main" as const,
+        "post_main" as const,
+      ].map((key) => (
+        <div key={key}>
+          <h5>{key}</h5>
+          <BorrowsBridgeDisplay actions={data.borrow_actions[key]} />
+        </div>
+      ))}
       <h4>Repacks (Start)</h4>
       <ul>
         {data.free_pcg_repacks_start.map((repack, index) => (

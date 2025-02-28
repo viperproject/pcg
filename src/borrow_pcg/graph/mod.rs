@@ -33,7 +33,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
     region_projection_member::{
-        RegionProjectionMember, RegionProjectionMemberKind, RegionProjectionMemberOutputs,
+        BlockEdge, BlockEdgeKind, BlockEdgeOutputs,
     },
 };
 use crate::borrow_pcg::edge::abstraction::{
@@ -216,7 +216,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         // nodes (via `[RegionProjectionMember.projections]`)
                         // These nodes may not have any edges in the coupling
                         // graph but must be included anyway.
-                        if let BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) =
+                        if let BorrowPCGEdgeKind::Block(region_projection_member) =
                             edge.kind()
                         {
                             let coupled_input_projections: Vec<CGNode<'tcx>> =
@@ -511,13 +511,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     // This node is not in the endpoint, so we create a corresponding
                     // region projection member edge.
                     let new_edge_kind =
-                        BorrowPCGEdgeKind::RegionProjectionMember(RegionProjectionMember::new(
+                        BorrowPCGEdgeKind::Block(BlockEdge::new(
                             smallvec![node],
                             rps.clone()
                                 .into_iter()
                                 .map(|rp| rp.try_to_local_node(repacker).unwrap())
-                                .collect::<RegionProjectionMemberOutputs<'tcx>>(),
-                            RegionProjectionMemberKind::Todo,
+                                .collect::<BlockEdgeOutputs<'tcx>>(),
+                            BlockEdgeKind::Todo,
                         ));
                     self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions().clone()));
                 }
