@@ -282,7 +282,11 @@ pub fn run_combined_pcs<'mir, 'tcx>(
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
-            let pcs_block_option = fpcs_analysis.get_all_for_bb(block).unwrap();
+            let pcs_block_option = if let Ok(opt) = fpcs_analysis.get_all_for_bb(block) {
+                opt
+            } else {
+                continue
+            };
             if pcs_block_option.is_none() {
                 continue;
             }

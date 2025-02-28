@@ -14,7 +14,7 @@ use super::{
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
     edge::block::BlockEdge,
 };
-use crate::borrow_pcg::edge::abstraction::AbstractionType;
+use crate::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::PCGError};
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -199,8 +199,8 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         &self,
         elem: mir::PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<Self> {
-        Some(match self {
+    ) -> Result<Self, PCGError> {
+        Ok(match self {
             LocalNode::Place(p) => LocalNode::Place(p.project_deeper(elem, repacker)?),
             LocalNode::RegionProjection(rp) => {
                 LocalNode::RegionProjection(rp.project_deeper(elem, repacker)?)

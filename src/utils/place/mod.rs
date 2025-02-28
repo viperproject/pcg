@@ -11,6 +11,7 @@ use std::{
     mem::discriminant,
 };
 
+use crate::combined_pcs::{PCGError, PCGUnsupportedError};
 use derive_more::{Deref, DerefMut};
 
 use crate::rustc_interface::{
@@ -27,7 +28,11 @@ use crate::rustc_interface::{
 #[cfg(feature = "debug_info")]
 use super::debug_info::DebugInfo;
 
-use super::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker};
+use super::{
+    display::DisplayWithRepacker,
+    validity::{validity_checks_enabled, HasValidityCheck},
+    PlaceRepacker,
+};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{
@@ -138,7 +143,7 @@ pub trait HasPlace<'tcx>: Sized {
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<Self>;
+    ) -> std::result::Result<Self, PCGError>;
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)>;
 }
@@ -155,8 +160,8 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<Self> {
-        self.project_deeper(elem, repacker).ok()
+    ) -> std::result::Result<Self, PCGError> {
+        self.project_deeper(elem, repacker).map_err(|e| e.into())
     }
 
     fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
@@ -196,19 +201,9 @@ impl<'tcx> Place<'tcx> {
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Self, PlaceProjectionError> {
+    ) -> std::result::Result<Self, PCGUnsupportedError> {
         let base_ty = self.ty(repacker);
-        if matches!(
-            elem,
-            ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. }
-        ) && !matches!(base_ty.ty.kind(), TyKind::Alias(..))
-            && base_ty.ty.builtin_index().is_none()
-        {
-            return Err(PlaceProjectionError(format!(
-                "Type is not indexable: {:?}",
-                base_ty
-            )));
-        }
+
         let corrected_elem = if let ProjectionElem::Field(field_idx, proj_ty) = elem {
             let expected_ty = match base_ty.ty.kind() {
                 ty::TyKind::Adt(def, substs) => {
@@ -225,10 +220,20 @@ impl<'tcx> Place<'tcx> {
         } else {
             elem
         };
-        Ok(self
+        if matches!(corrected_elem, ProjectionElem::Index(..))
+            && matches!(base_ty.ty.kind(), ty::TyKind::Alias(..))
+        {
+            return Err(PCGUnsupportedError::ExpansionOfAliasType);
+        }
+        let place: Place<'tcx> = self
             .0
             .project_deeper(&[corrected_elem], repacker.tcx())
-            .into())
+            .into();
+        if validity_checks_enabled() {
+            // Sanity check: this function will panic if the type is invalid
+            let _ = place.ty(repacker);
+        }
+        Ok(place)
     }
 
     pub(crate) fn compare_projections(
@@ -294,15 +299,24 @@ impl<'tcx> Place<'tcx> {
     /// from its local, and using types derived from the root place as the types associated
     /// with Field region projections. For more details see [`Place::project_deeper`].
     pub fn with_inherent_region(self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
-        let mut proj_iter = self.iter_projections(repacker).into_iter();
-        let mut place = if let Some((place, elem)) = proj_iter.next() {
-            place.project_deeper(elem, repacker).unwrap()
-        } else {
-            return self;
-        };
-        for (_, elem) in proj_iter {
-            place = place.project_deeper(elem, repacker).unwrap();
+        let mut proj_iter = self.iter_projections(repacker).into_iter().peekable();
+        let mut place: Place<'tcx> = self.local.into();
+        while let Some((_, elem)) = proj_iter.next() {
+            if let Ok(next_place) = place.project_deeper(elem, repacker) {
+                place = next_place;
+            } else {
+                // It might be that we cannot re-project the place. In particular this could happen if
+                // there are further projections from an alias type (we may not normalize alias types because
+                // doing so would erase regions). In this case we try to get the original place projected at this point
+                if let Some((next_place, _)) = proj_iter.peek() {
+                    place = *next_place
+                } else {
+                    // This is the last projection, so we just return the original place
+                    return self;
+                }
+            }
         }
+
         place
     }
 

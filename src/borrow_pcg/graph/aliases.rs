@@ -70,7 +70,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 } else {
                     continue;
                 };
-                let local_node = if let Some(n) = local_node.project_deeper(proj, repacker) {
+                let local_node = if let Ok(n) = local_node.project_deeper(proj, repacker) {
                     n
                 } else {
                     continue;

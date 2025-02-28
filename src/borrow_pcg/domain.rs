@@ -3,19 +3,17 @@ use std::rc::Rc;
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
+use crate::borrow_pcg::edge::block::{BlockEdge, BlockEdgeKind};
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
-use crate::borrow_pcg::edge::block::{
-    BlockEdge, BlockEdgeKind,
-};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
 use crate::combined_pcs::{PCGError, PCGErrorKind, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
+use crate::utils;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
-use crate::utils;
 use smallvec::smallvec;
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
@@ -136,11 +134,15 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     #[allow(unused)]
     pub(crate) fn has_internal_error(&self) -> bool {
         self.error
-            .as_ref().is_some_and(|e| matches!(e.kind, PCGErrorKind::Internal(_)))
+            .as_ref()
+            .is_some_and(|e| matches!(e.kind, PCGErrorKind::Internal(_)))
     }
 
     pub(crate) fn has_error(&self) -> bool {
         self.error.is_some()
+    }
+    pub(crate) fn error(&self) -> Option<&PCGError> {
+        self.error.as_ref()
     }
 
     pub(crate) fn new(
@@ -215,7 +217,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                     "Initialize Local",
                 ),
                 self.repacker,
-            ));
+            ).unwrap());
         }
     }
 

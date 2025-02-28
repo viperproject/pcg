@@ -10,8 +10,8 @@ use super::{
     region_projection::RegionProjection,
 };
 use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::corrected::CorrectedPlace;
 use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{combined_pcs::PCGError, utils::place::corrected::CorrectedPlace};
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     edgedata_enum,
@@ -178,12 +178,15 @@ impl<P: Copy> ExpansionOfBorrowed<'_, P> {
 }
 
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
-    pub fn expansion<'slf>(&'slf self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
+    pub fn expansion<'slf>(
+        &'slf self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<Vec<P>, PCGError> {
         self.expansion
             .elems()
             .into_iter()
-            .map(move |p| self.base.project_deeper(p, repacker).unwrap())
-            .collect()
+            .map(move |p| self.base.project_deeper(p, repacker))
+            .collect::<Result<Vec<_>, _>>()
     }
 }
 
@@ -216,9 +219,7 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfBorrowed<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> FxHashSet<super::borrow_pcg_edge::LocalNode<'tcx>> {
-        self.expansion(repacker)
-            .into_iter()
-            .collect()
+        self.expansion(repacker).unwrap().into_iter().collect()
     }
 
     fn is_owned_expansion(&self) -> bool {
@@ -340,6 +341,7 @@ impl<'tcx, T: PCGNodeLike<'tcx> + From<MaybeOldPlace<'tcx>> + HasPlace<'tcx>>
             "{{{}}} -> {{{}}}",
             self.base().to_short_string(repacker),
             self.expansion(repacker)
+                .unwrap()
                 .iter()
                 .map(|p| p.to_short_string(repacker))
                 .collect::<Vec<_>>()
@@ -413,19 +415,19 @@ where
 impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PCGNodeLike<'tcx>>
     BorrowPCGExpansion<'tcx, P>
 {
-    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
+    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<Vec<P>, PCGError> {
         match self {
-            BorrowPCGExpansion::FromOwned(owned) => vec![owned.expansion(repacker).into()],
+            BorrowPCGExpansion::FromOwned(owned) => Ok(vec![owned.expansion(repacker).into()]),
             BorrowPCGExpansion::FromBorrow(e) => e.expansion(repacker),
         }
     }
 
     pub fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<P> {
-        self.expansion(repacker).into_iter().collect()
+        self.expansion(repacker).unwrap().into_iter().collect()
     }
 }
 
-impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>>
+impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     BorrowPCGExpansion<'tcx, P>
 {
     pub(crate) fn is_deref_of_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -446,7 +448,7 @@ impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>
         base: P,
         expansion: BorrowExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Self {
+    ) -> Result<Self, PCGError> {
         if let LocalNode::Place(p) = base.into()
             && p.is_owned(repacker)
         {
@@ -456,7 +458,7 @@ impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>
                 base,
                 expansion
             );
-            BorrowPCGExpansion::FromOwned(ExpansionOfOwned::new(p))
+            Ok(BorrowPCGExpansion::FromOwned(ExpansionOfOwned::new(p)))
         } else {
             BorrowPCGExpansion::from_borrowed_base(base, expansion, repacker)
         }
@@ -466,11 +468,16 @@ impl<'tcx, P: HasPlace<'tcx> + std::fmt::Debug + Copy + Into<BlockingNode<'tcx>>
         base: P,
         expansion: BorrowExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Self {
+    ) -> Result<Self, PCGError> {
         if let LocalNode::Place(p) = base.into() {
             assert!(!p.is_owned(repacker));
         }
-        BorrowPCGExpansion::FromBorrow(ExpansionOfBorrowed { base, expansion })
+        let borrow_expansion = ExpansionOfBorrowed { base, expansion };
+        if let Err(e) = borrow_expansion.expansion(repacker) {
+            Err(e)
+        } else {
+            Ok(BorrowPCGExpansion::FromBorrow(borrow_expansion))
+        }
     }
 }
 

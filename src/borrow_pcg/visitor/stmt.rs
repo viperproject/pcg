@@ -2,9 +2,9 @@ use super::BorrowsVisitor;
 use crate::{
     borrow_pcg::{
         action::BorrowPCGAction,
+        edge::block::{BlockEdge, BlockEdgeKind},
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-        edge::block::{BlockEdge, BlockEdgeKind},
         state::obtain::ObtainReason,
         visitor::StatementStage,
     },
@@ -29,7 +29,14 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     .data
                     .get_mut(EvalStmtPhase::PostMain)
                     .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-                self.record_actions(actions);
+                match actions {
+                    Ok(actions) => {
+                        self.record_actions(actions);
+                    }
+                    Err(e) => {
+                        self.domain.report_error(e);
+                    }
+                }
             }
             StatementKind::Assign(box (target, _)) => {
                 let target: utils::Place<'tcx> = (*target).into();
@@ -183,6 +190,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 }
                 Rvalue::Ref(region, kind, blocked_place) => {
                     let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
+                    let blocked_place = blocked_place.with_inherent_region(self.repacker);
                     if !target.ty(self.repacker).ty.is_ref() {
                         self.domain.report_error(PCGError::unsupported(
                             PCGUnsupportedError::AssignBorrowToNonReferenceType,

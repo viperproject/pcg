@@ -22,9 +22,9 @@ use crate::{
 };
 
 use super::{PCGContext, PCGEngine};
+use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
-use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -184,6 +184,12 @@ pub struct PCGError {
     pub(crate) context: Vec<String>,
 }
 
+impl From<PCGUnsupportedError> for PCGError {
+    fn from(e: PCGUnsupportedError) -> Self {
+        Self::new(PCGErrorKind::Unsupported(e), vec![])
+    }
+}
+
 impl PCGError {
     pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
         Self { kind, context }
@@ -234,15 +240,15 @@ impl From<PCGInternalError> for PCGError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGUnsupportedError {
     AssignBorrowToNonReferenceType,
-    ClosuresCapturingBorrows,
     CastToRef,
-    UnsafePtrCast,
-    DerefUnsafePtr,
-    InlineAssembly,
+    ClosuresCapturingBorrows,
     Coroutines,
-    TwoPhaseBorrow,
+    DerefUnsafePtr,
     ExpansionOfAliasType,
+    InlineAssembly,
     Other(String),
+    TwoPhaseBorrow,
+    UnsafePtrCast,
 }
 
 #[derive(Clone, PartialEq, Eq)]
