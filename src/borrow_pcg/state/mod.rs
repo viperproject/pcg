@@ -11,10 +11,10 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -135,11 +135,12 @@ impl<'tcx> BorrowsState<'tcx> {
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        let changed = self.apply_action(action.clone(), repacker);
+    ) -> Result<(), PCGError> {
+        let changed = self.apply_action(action.clone(), repacker)?;
         if changed {
             actions.record(action);
         }
+        Ok(())
     }
 
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
@@ -252,14 +253,13 @@ impl<'tcx> BorrowsState<'tcx> {
         Some(cap)
     }
 
-    #[must_use]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
         context: &str,
-    ) -> ExecutedActions<'tcx> {
+    ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
         if !edge.is_shared_borrow() {
             for place in edge.blocked_places(repacker) {
@@ -269,14 +269,14 @@ impl<'tcx> BorrowsState<'tcx> {
                             BorrowPCGAction::set_latest(place, location, context),
                             &mut actions,
                             repacker,
-                        );
+                        )?;
                     }
                 }
             }
         }
         let remove_edge_action =
             BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
-        self.record_and_apply_action(remove_edge_action, &mut actions, repacker);
+        self.record_and_apply_action(remove_edge_action, &mut actions, repacker)?;
 
         let fg = self.graph().frozen_graph();
         let to_restore = edge
@@ -301,12 +301,12 @@ impl<'tcx> BorrowsState<'tcx> {
                             BorrowPCGAction::restore_capability(local_node, restore_cap),
                             &mut actions,
                             repacker,
-                        );
+                        )?;
                     }
                 }
             }
         }
-        actions
+        Ok(actions)
     }
 
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
@@ -363,7 +363,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-    #[must_use]
     /// Removes leaves that are old or dead (based on the borrow checker). Note
     /// that the liveness calculation is performed based on what happened at the
     /// end of the *previous* statement.
@@ -387,7 +386,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         location: Location,
         bc: &impl BorrowCheckerInterface<'tcx>,
-    ) -> ExecutedActions<'tcx> {
+    ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
         let prev_location = if location.statement_index == 0 {
             None
@@ -442,7 +441,7 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             let edges_to_trim = go(self, repacker, prev_location, bc);
             if edges_to_trim.is_empty() {
-                break actions;
+                break Ok(actions);
             }
             for edge in edges_to_trim {
                 actions.extend(self.remove_edge_and_set_latest(
@@ -450,7 +449,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     location,
                     repacker,
                     "Trim Old Leaves",
-                ));
+                )?);
             }
             let new_num_edges = self.graph.num_edges();
             assert!(new_num_edges < num_edges_prev);

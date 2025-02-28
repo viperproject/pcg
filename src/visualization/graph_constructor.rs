@@ -353,7 +353,7 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
         match edge.kind() {
             BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => {
                 let base_node = self.insert_local_node(deref_expansion.base());
-                for place in deref_expansion.expansion(self.repacker()) {
+                for place in deref_expansion.expansion(self.repacker()).unwrap() {
                     let place = self.insert_local_node(place);
                     self.constructor().edges.insert(GraphEdge::DerefExpansion {
                         source: base_node,
@@ -388,13 +388,11 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     let input_node = self.insert_pcg_node(*input);
                     for output in member.outputs.iter() {
                         let output_node = self.insert_local_node(*output);
-                        self.constructor()
-                            .edges
-                            .insert(GraphEdge::Block {
-                                source: input_node,
-                                target: output_node,
-                                kind: format!("{}", member.kind),
-                            });
+                        self.constructor().edges.insert(GraphEdge::Block {
+                            source: input_node,
+                            target: output_node,
+                            kind: format!("{}", member.kind),
+                        });
                     }
                 }
                 for (i, &input1) in member.inputs.iter().enumerate() {

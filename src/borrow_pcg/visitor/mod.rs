@@ -24,9 +24,9 @@ use crate::{
 use super::{
     action::{BorrowPCGAction, BorrowPCGActionKind},
     coupling_graph_constructor::BorrowCheckerInterface,
+    edge::block::BlockEdge,
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
-    edge::block::BlockEdge,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
@@ -105,6 +105,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         self.domain
             .post_state_mut()
             .apply_action(action, self.repacker)
+            .unwrap()
     }
 
     pub(super) fn preparing(
@@ -353,7 +354,14 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
             let post_state = self.domain.data.states.get_mut(PostMain);
             let actions =
                 post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-            self.record_actions(actions);
+            match actions {
+                Ok(actions) => {
+                    self.record_actions(actions);
+                }
+                Err(e) => {
+                    self.domain.report_error(e);
+                }
+            }
         }
         self.super_terminator(terminator, location);
         if self.stage == StatementStage::Main && !self.preparing {
@@ -392,7 +400,14 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 .states
                 .get_mut(PostMain)
                 .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-            self.record_actions(actions);
+            match actions {
+                Ok(actions) => {
+                    self.record_actions(actions);
+                }
+                Err(e) => {
+                    self.domain.report_error(e);
+                }
+            }
         }
 
         self.super_statement(statement, location);

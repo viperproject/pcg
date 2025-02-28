@@ -6,7 +6,7 @@ use crate::borrow_pcg::region_projection::{
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike};
+use crate::combined_pcs::{LocalNodeLike, PCGError, PCGNode, PCGNodeLike};
 use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -154,10 +154,13 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<Self> {
+    ) -> Result<Self, PCGError> {
         let mut cloned = *self;
-        *cloned.place_mut() = self.place().project_deeper(elem, repacker).ok()?;
-        Some(cloned)
+        *cloned.place_mut() = self
+            .place()
+            .project_deeper(elem, repacker)
+            .map_err(PCGError::unsupported)?;
+        Ok(cloned)
     }
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {

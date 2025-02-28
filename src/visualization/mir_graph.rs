@@ -44,9 +44,9 @@ fn format_bin_op(op: &BinOp) -> String {
         BinOp::AddUnchecked => todo!(),
         BinOp::SubUnchecked => todo!(),
         BinOp::MulUnchecked => todo!(),
-        BinOp::BitXor => todo!(),
+        BinOp::BitXor => "^".to_string(),
         BinOp::BitAnd => "&".to_string(),
-        BinOp::BitOr => todo!(),
+        BinOp::BitOr => "|".to_string(),
         BinOp::Shl => "<<".to_string(),
         BinOp::ShlUnchecked => "<<".to_string(),
         BinOp::Shr => ">>".to_string(),
@@ -173,9 +173,13 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) 
             format!("FakeRead({})", format_place(place, repacker))
         }
         mir::StatementKind::SetDiscriminant {
-            place: _,
-            variant_index: _,
-        } => todo!(),
+            place,
+            variant_index,
+        } => format!(
+            "SetDiscriminant({} {:?})",
+            format_place(place, repacker),
+            variant_index
+        ),
         mir::StatementKind::Deinit(_) => todo!(),
         mir::StatementKind::StorageLive(local) => {
             format!("StorageLive({})", format_local(local, repacker))
@@ -187,9 +191,7 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) 
         mir::StatementKind::PlaceMention(place) => {
             format!("PlaceMention({})", format_place(place, repacker))
         }
-        mir::StatementKind::AscribeUserType(_, _) => {
-            "AscribeUserType(...)".to_string()
-        }
+        mir::StatementKind::AscribeUserType(_, _) => "AscribeUserType(...)".to_string(),
         _ => todo!(),
     }
 }

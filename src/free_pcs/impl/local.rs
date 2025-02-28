@@ -158,7 +158,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         assert!(
             !from.is_mut_ref(repacker.body(), repacker.tcx()),
-            "Mutable reference {:?} should be expanded in reborrowing dag, not PCS",
+            "Mutable reference {:?} should be expanded in borrow PCG, not owned PCG",
             from
         );
         pcg_validity_assert!(!self.contains_key(&to));

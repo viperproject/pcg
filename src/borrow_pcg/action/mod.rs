@@ -2,11 +2,11 @@ use tracing::instrument;
 
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
-use super::path_condition::PathConditions;
 use super::edge::block::BlockEdge;
+use super::path_condition::PathConditions;
 use super::state::BorrowsState;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
-use crate::combined_pcs::{PCGNode, PCGNodeLike};
+use crate::combined_pcs::{PCGError, PCGNode, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
@@ -215,12 +215,11 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
 
 impl<'tcx> BorrowsState<'tcx> {
     #[instrument(skip(self, repacker), fields(action))]
-    #[must_use]
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
+    ) -> Result<bool, PCGError> {
         let result = match action.kind {
             BorrowPCGActionKind::AddAbstractionEdge(abstraction, pc) => {
                 let mut changed = false;
@@ -297,7 +296,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 capability
                             } else {
                                 // Presumably already expanded in another branch
-                                return true;
+                                return Ok(true);
                             }
                         }
                     };
@@ -321,7 +320,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                     }
 
-                    for p in expansion.expansion(repacker).iter() {
+                    for p in expansion.expansion(repacker)?.iter() {
                         _ = self.set_capability((*p).into(), expanded_capability, repacker);
                     }
                 }
@@ -331,7 +330,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.change_pcs_elem(old, new, repacker)
             }
         };
-        result
+        Ok(result)
     }
 
     /// Adds a region projection member to the graph and sets appropriate
