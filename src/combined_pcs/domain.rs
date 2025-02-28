@@ -245,6 +245,7 @@ pub enum PCGUnsupportedError {
     Coroutines,
     DerefUnsafePtr,
     ExpansionOfAliasType,
+    IndexingNonIndexableType,
     InlineAssembly,
     Other(String),
     TwoPhaseBorrow,

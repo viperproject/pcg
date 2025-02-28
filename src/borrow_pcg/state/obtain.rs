@@ -121,7 +121,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 )?);
                 for ra in place.region_projections(repacker) {
                     self.record_and_apply_action(
-                        BorrowPCGAction::add_region_projection_member(
+                        BorrowPCGAction::add_block_edge(
                             BlockEdge::new(
                                 smallvec![borrow.value.blocked_place.into()],
                                 smallvec![ra.into()],
@@ -207,7 +207,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 );
 
                 self.record_and_apply_action(
-                    BorrowPCGAction::add_region_projection_member(
+                    BorrowPCGAction::add_block_edge(
                         region_projection_member,
                         PathConditions::new(location.block),
                         "Expand",

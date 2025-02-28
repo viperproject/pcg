@@ -141,7 +141,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         if let ty::TyKind::Ref(target_region, _, _) =
                             target.ty(self.repacker).ty.kind()
                         {
-                            self.apply_action(BorrowPCGAction::add_region_projection_member(
+                            self.apply_action(BorrowPCGAction::add_block_edge(
                                 BlockEdge::new(
                                     smallvec![RegionProjection::new(
                                         (*const_region).into(),
