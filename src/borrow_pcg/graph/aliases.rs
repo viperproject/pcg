@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode, edge::kind::BorrowPCGEdgeKind, region_projection::RegionIdx,
-        edge::region_projection_member::BlockEdgeKind,
+        edge::block::BlockEdgeKind,
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,

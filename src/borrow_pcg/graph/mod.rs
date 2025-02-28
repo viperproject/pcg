@@ -32,7 +32,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
-    edge::region_projection_member::{
+    edge::block::{
         BlockEdge, BlockEdgeKind, BlockEdgeOutputs,
     },
 };
