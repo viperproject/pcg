@@ -92,7 +92,7 @@ pub enum BlockEdgeKind {
     Todo,
 }
 
-impl<'tcx> std::fmt::Display for BlockEdgeKind {
+impl std::fmt::Display for BlockEdgeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BlockEdgeKind::Aggregate {
