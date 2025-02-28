@@ -189,7 +189,7 @@ impl<'tcx> Place<'tcx> {
     /// extract from the ADT type the expected type of the projection and
     /// replace the type.
     ///
-    /// Returns `None` if the projection would be illegal
+    /// Returns an error if the projection would be illegal
     ///
     /// ```
     fn project_deeper(
@@ -201,7 +201,8 @@ impl<'tcx> Place<'tcx> {
         if matches!(
             elem,
             ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. }
-        ) && base_ty.ty.builtin_index().is_none()
+        ) && !matches!(base_ty.ty.kind(), TyKind::Alias(..))
+            && base_ty.ty.builtin_index().is_none()
         {
             return Err(PlaceProjectionError(format!(
                 "Type is not indexable: {:?}",
