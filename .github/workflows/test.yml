@@ -87,9 +87,32 @@ jobs:
     - name: Run unit tests
       run: cargo test --doc
 
+  flowistry_tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout pcs repository
+      uses: actions/checkout@v4
+      with:
+        path: pcs
+
+    - name: Checkout flowistry repository
+      uses: actions/checkout@v4
+      with:
+        repository: zgrannan/flowistry
+        ref: zgrannan/pcg
+        path: flowistry
+
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2024-09-15
+
+    - name: Run flowistry tests
+      working-directory: flowistry/crates/flowistry
+      run: cargo test
+
   build-docker-image:
     runs-on: ubuntu-latest
-    needs: [check_warnings, clippy, test_files, bench_test_files, test_crates, unit_tests, doc_tests]
+    needs: [check_warnings, clippy, test_files, bench_test_files, test_crates, unit_tests, doc_tests, flowistry_tests]
     permissions:
       contents: read
       packages: write

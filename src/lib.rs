@@ -18,7 +18,6 @@ pub mod utils;
 pub mod visualization;
 
 use borrow_pcg::{
-    action::BorrowPCGAction,
     borrow_pcg_edge::LocalNode,
     latest::Latest,
 };
@@ -160,7 +159,7 @@ struct PCGStmtVisualizationData<'a, 'tcx> {
 
 struct PcgSuccessorVisualizationData<'a, 'tcx> {
     owned_ops: &'a [RepackOp<'tcx>],
-    borrow_ops: &'a [BorrowPCGAction<'tcx>],
+    borrow_ops: &'a BorrowPCGActions<'tcx>,
 }
 
 impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
@@ -198,7 +197,7 @@ impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx
             latest: &location.borrows.post_main.latest,
             free_pcg_repacks_start: &location.repacks_start,
             free_pcg_repacks_middle: &location.repacks_middle,
-            borrow_actions: &location.actions,
+            borrow_actions: &location.borrow_pcg_actions,
         }
     }
 }
