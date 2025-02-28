@@ -3,7 +3,7 @@ use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::borrow_pcg::region_projection_member::BlockEdge;
+use crate::borrow_pcg::edge::region_projection_member::BlockEdge;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::utils::validity::HasValidityCheck;

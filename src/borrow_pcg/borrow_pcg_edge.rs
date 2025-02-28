@@ -12,7 +12,7 @@ use super::{
     has_pcs_elem::HasPcsElems,
     path_condition::{PathCondition, PathConditions},
     region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-    region_projection_member::BlockEdge,
+    edge::region_projection_member::BlockEdge,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
