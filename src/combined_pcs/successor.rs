@@ -1,16 +1,19 @@
 use serde_json::json;
 
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
+use crate::borrow_pcg::latest::Latest;
+use crate::free_pcs::RepackOp;
 use crate::rustc_interface::middle::mir::BasicBlock;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::DebugLines;
-use crate::{borrow_pcg::action::BorrowPCGAction, free_pcs::RepackOp};
 
 #[derive(Debug)]
 pub struct PcgSuccessor<'tcx> {
     block: BasicBlock,
     owned_ops: Vec<RepackOp<'tcx>>,
-    borrow_ops: Vec<BorrowPCGAction<'tcx>>,
+    borrow_ops: BorrowPCGActions<'tcx>,
+    latest: Latest<'tcx>,
 }
 
 impl<'tcx> PcgSuccessor<'tcx> {
@@ -20,18 +23,23 @@ impl<'tcx> PcgSuccessor<'tcx> {
     pub fn owned_ops(&self) -> &[RepackOp<'tcx>] {
         &self.owned_ops
     }
-    pub fn borrow_ops(&self) -> &[BorrowPCGAction<'tcx>] {
+    pub fn borrow_ops(&self) -> &BorrowPCGActions<'tcx> {
         &self.borrow_ops
+    }
+    pub fn latest(&self) -> &Latest<'tcx> {
+        &self.latest
     }
     pub(crate) fn new(
         block: BasicBlock,
         owned_ops: Vec<RepackOp<'tcx>>,
-        borrow_ops: Vec<BorrowPCGAction<'tcx>>,
+        borrow_ops: BorrowPCGActions<'tcx>,
+        latest: Latest<'tcx>,
     ) -> Self {
         Self {
             block,
             owned_ops,
             borrow_ops,
+            latest,
         }
     }
 }

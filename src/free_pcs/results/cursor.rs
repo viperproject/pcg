@@ -19,7 +19,7 @@ use crate::{
         },
         mir_dataflow::ResultsCursor,
     },
-    utils::{display::DebugLines, validity::HasValidityCheck, Place}
+    utils::{display::DebugLines, validity::HasValidityCheck, Place},
 };
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
@@ -111,7 +111,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         let result = PcgLocation {
             location,
-            actions: curr_borrows.actions.clone(),
+            borrow_pcg_actions: curr_borrows.actions.clone(),
             states: curr_fpcg.data.states.0.clone(),
             repacks_start: repack_ops.start,
             repacks_middle: repack_ops.middle,
@@ -178,8 +178,9 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                                 );
                             }
                         }
-                        actions.into_vec()
+                        actions
                     },
+                    to_borrows_state.data.entry_state.latest.clone(),
                 )
             })
             .collect();
@@ -298,7 +299,7 @@ pub struct PcgLocation<'tcx> {
     pub repacks_middle: Vec<RepackOp<'tcx>>,
     pub states: CapabilitySummaries<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
-    pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
+    pub(crate) borrow_pcg_actions: EvalStmtData<BorrowPCGActions<'tcx>>,
 }
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
@@ -314,6 +315,10 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
 }
 
 impl<'tcx> PcgLocation<'tcx> {
+    pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> &BorrowPCGActions<'tcx> {
+        &self.borrow_pcg_actions[phase]
+    }
+
     pub fn aliases<'mir>(
         &self,
         place: impl Into<Place<'tcx>>,
@@ -342,7 +347,7 @@ impl<'tcx> PcgLocation<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<String> {
         let mut result = self.states[phase].debug_lines(repacker);
-        for action in self.actions[phase].iter() {
+        for action in self.borrow_pcg_actions[phase].iter() {
             result.push(action.debug_line(repacker));
         }
         result.extend(self.borrows[phase].debug_lines(repacker));
