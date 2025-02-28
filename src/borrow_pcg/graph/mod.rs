@@ -13,8 +13,7 @@ use crate::{
         middle::mir::{self, BasicBlock, TerminatorEdges},
     },
     utils::{
-        display::{DebugLines, DisplayDiff, DisplayWithRepacker},
-        validity::HasValidityCheck,
+        display::{DebugLines, DisplayDiff, DisplayWithRepacker}, maybe_old::MaybeOldPlace, validity::HasValidityCheck
     },
     validity_checks_enabled,
 };
@@ -725,19 +724,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub(crate) fn change_pcs_elem<T: PartialEq + Clone + 'tcx>(
+    pub(crate) fn rename_place(
         &mut self,
-        old: T,
-        new: T,
+        old: MaybeOldPlace<'tcx>,
+        new: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool
-    where
-        BorrowPCGEdge<'tcx>: HasPcsElems<T>,
     {
         self.mut_pcs_elems(
             |thing| {
                 if *thing == old {
-                    *thing = new.clone();
+                    *thing = new;
                     true
                 } else {
                     false

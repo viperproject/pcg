@@ -105,6 +105,13 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             if !target.is_owned(self.repacker) {
                 state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
             }
+            for rp in target.region_projections(self.repacker) {
+                state.set_capability(
+                    rp.to_pcg_node(self.repacker),
+                    CapabilityKind::Exclusive,
+                    self.repacker,
+                );
+            }
             match rvalue {
                 Rvalue::Aggregate(
                     box (AggregateKind::Adt(..) | AggregateKind::Tuple | AggregateKind::Array(..)),
