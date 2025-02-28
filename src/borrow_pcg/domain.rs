@@ -4,7 +4,7 @@ use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
-use crate::borrow_pcg::region_projection_member::{
+use crate::borrow_pcg::edge::region_projection_member::{
     BlockEdge, BlockEdgeKind,
 };
 use crate::borrow_pcg::state::BorrowsState;

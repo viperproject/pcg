@@ -9,9 +9,9 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 
-use super::borrow_pcg_edge::{BlockedNode, LocalNode};
-use super::edge_data::EdgeData;
-use super::{has_pcs_elem::HasPcsElems, region_projection::RegionProjection};
+use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
+use crate::borrow_pcg::edge_data::EdgeData;
+use crate::borrow_pcg::{has_pcs_elem::HasPcsElems, region_projection::RegionProjection};
 use crate::utils::json::ToJsonWithRepacker;
 
 pub(crate) type BlockEdgeInputs<'tcx> = SmallVec<[PCGNode<'tcx>; 8]>;

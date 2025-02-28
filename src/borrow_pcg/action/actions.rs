@@ -2,7 +2,7 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::region_projection_member::BlockEdge;
+use crate::borrow_pcg::edge::region_projection_member::BlockEdge;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::PlaceRepacker;

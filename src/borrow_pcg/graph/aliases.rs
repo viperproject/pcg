@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode, edge::kind::BorrowPCGEdgeKind, region_projection::RegionIdx,
-        region_projection_member::BlockEdgeKind,
+        edge::region_projection_member::BlockEdgeKind,
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
@@ -172,8 +172,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             }
                         }
                         BlockEdgeKind::DerefBorrowOutlives => {}
-                        BlockEdgeKind::BorrowOutlives { toplevel }
-                            if !toplevel || direct => {}
+                        BlockEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
                         _ => {
                             for input in region_projection_member.inputs() {
                                 extend(input.to_pcg_node(repacker), seen, &mut result, false);
