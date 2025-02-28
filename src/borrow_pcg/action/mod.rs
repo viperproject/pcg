@@ -327,7 +327,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 updated
             }
             BorrowPCGActionKind::RenamePlace { old, new } => {
-                self.change_pcs_elem(old, new, repacker)
+                self.rename_place(old, new, repacker)
             }
         };
         Ok(result)

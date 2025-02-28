@@ -7,14 +7,13 @@ use super::{
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::kind::BorrowPCGEdgeKind,
     graph::{BorrowsGraph, FrozenGraphRef},
-    has_pcs_elem::HasPcsElems,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
-use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -226,16 +225,13 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn change_pcs_elem<T: PartialEq + Clone + 'tcx>(
+    pub(crate) fn rename_place(
         &mut self,
-        old: T,
-        new: T,
+        old: MaybeOldPlace<'tcx>,
+        new: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool
-    where
-        BorrowPCGEdge<'tcx>: HasPcsElems<T>,
-    {
-        self.graph.change_pcs_elem(old, new, repacker)
+    ) -> bool {
+        self.graph.rename_place(old, new, repacker)
     }
 
     fn min_blocked_by_capability(

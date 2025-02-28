@@ -175,15 +175,13 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 input_nodes.insert(input);
             }
             for output in edge.outputs() {
-                let output = self.insert_region_projection_node(
-                    output.set_base(output.base.into(), self.repacker),
-                    None,
-                );
+                let output = output.set_base(output.base.into(), self.repacker);
+                let output =
+                    self.insert_region_projection_node(output, capabilities.get(output.into()));
                 output_nodes.insert(output);
             }
             for input in &input_nodes {
                 for output in &output_nodes {
-                    // TODO: Color or Label edges
                     self.edges.insert(GraphEdge::Abstract {
                         blocked: *input,
                         blocking: *output,
@@ -288,20 +286,25 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
         }
     }
     fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
+        let capabilities = self.capability_getter();
+        let node_capability = capabilities.get(node);
         match node {
             PCGNode::Place(place) => self.insert_maybe_remote_place(place),
-            PCGNode::RegionProjection(rp) => {
-                self.constructor().insert_region_projection_node(rp, None)
-            }
+            PCGNode::RegionProjection(rp) => self
+                .constructor()
+                .insert_region_projection_node(rp, node_capability),
         }
     }
 
     fn insert_local_node(&mut self, node: LocalNode<'tcx>) -> NodeId {
+        let capabilities = self.capability_getter();
+        let node_capability = capabilities.get(node.into());
         match node {
             LocalNode::Place(place) => self.insert_maybe_old_place(place),
             LocalNode::RegionProjection(rp) => {
                 let rp = rp.to_region_projection(self.repacker());
-                self.constructor().insert_region_projection_node(rp, None)
+                self.constructor()
+                    .insert_region_projection_node(rp, node_capability)
             }
         }
     }
