@@ -2,8 +2,7 @@ use serde_json::json;
 use smallvec::SmallVec;
 
 use crate::combined_pcs::PCGNode;
-use crate::pcg_validity_assert;
-use crate::rustc_interface::{ast::Mutability, data_structures::fx::FxHashSet};
+use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
@@ -164,19 +163,6 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BlockEdge<'tcx> {
 }
 
 impl<'tcx> BlockEdge<'tcx> {
-    /// Returns `true` iff the lifetime projections are mutable
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        let mut_values = self
-            .inputs
-            .iter()
-            .map(|p| p.mutability(repacker))
-            .collect::<Vec<_>>();
-        pcg_validity_assert!(
-            mut_values.windows(2).all(|w| w[0] == w[1]),
-            "All mutability values must be the same"
-        );
-        mut_values[0]
-    }
 
     pub(crate) fn new(
         inputs: BlockEdgeInputs<'tcx>,

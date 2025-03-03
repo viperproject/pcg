@@ -1,13 +1,11 @@
 use tracing::instrument;
 
-use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
+use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::edge::block::BlockEdge;
 use super::edge::kind::BorrowPCGEdgeKind;
-use super::path_condition::PathConditions;
 use super::state::BorrowsState;
-use crate::borrow_pcg::edge::abstraction::AbstractionType;
-use crate::combined_pcs::{PCGError, PCGNode, PCGNodeLike};
+use crate::combined_pcs::{PCGError, PCGNode};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
@@ -287,13 +285,7 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             BorrowPCGEdgeKind::Abstraction(_) => changed,
             BorrowPCGEdgeKind::Block(block_edge) => {
-                changed
-                    || self.set_capabilities_for_block_edge(
-                        block_edge,
-                        edge.conditions,
-                        for_exclusive,
-                        repacker,
-                    )
+                changed || self.set_capabilities_for_block_edge(block_edge, for_exclusive, repacker)
             }
         })
     }
@@ -304,7 +296,6 @@ impl<'tcx> BorrowsState<'tcx> {
     fn set_capabilities_for_block_edge(
         &mut self,
         member: BlockEdge<'tcx>,
-        pc: PathConditions,
         for_exclusive: bool,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {

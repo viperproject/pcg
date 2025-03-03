@@ -1,5 +1,4 @@
 use rustc_interface::{
-    ast::Mutability,
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock, PlaceElem},
 };
@@ -268,13 +267,6 @@ impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        match self {
-            PCGNode::Place(rp) => rp.mutability(repacker),
-            PCGNode::RegionProjection(rp) => rp.mutability(repacker),
-        }
-    }
-
     pub(crate) fn as_cg_node(self) -> Option<CGNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Remote(remote_place)) => {

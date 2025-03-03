@@ -79,10 +79,8 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(place, repacker, location, obtain_reason)?;
+            let extra_acts = self.expand_to(place, repacker, location)?;
             actions.extend(extra_acts);
-        } else {
-            eprintln!("Already contains {:?}", place);
         }
 
         Ok(actions)
@@ -189,7 +187,6 @@ impl<'tcx> BorrowsState<'tcx> {
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
-        obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
@@ -236,8 +233,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     BorrowPCGEdge::new(
                         BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
                         PathConditions::new(location.block),
-                    )
-                    .into(),
+                    ),
                     true,
                 );
                 self.record_and_apply_action(action, &mut actions, repacker)?;
@@ -264,8 +260,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             BorrowPCGEdge::new(
                                 BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
                                 PathConditions::new(location.block),
-                            )
-                            .into(),
+                            ),
                             true,
                         ),
                         &mut actions,
