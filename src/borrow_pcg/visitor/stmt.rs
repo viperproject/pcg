@@ -1,12 +1,7 @@
 use super::BorrowsVisitor;
 use crate::{
     borrow_pcg::{
-        action::BorrowPCGAction,
-        edge::block::{BlockEdge, BlockEdgeKind},
-        path_condition::PathConditions,
-        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-        state::obtain::ObtainReason,
-        visitor::StatementStage,
+        action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, edge::block::{BlockEdge, BlockEdgeKind}, path_condition::PathConditions, region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection}, state::obtain::ObtainReason, visitor::StatementStage
     },
     combined_pcs::{EvalStmtPhase, PCGError, PCGNodeLike, PCGUnsupportedError},
     free_pcs::CapabilityKind,
@@ -81,10 +76,11 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             ));
                         }
                     } else {
-                        panic!(
-                            "No capability found for {}",
-                            target.to_short_string(self.repacker)
-                        );
+                        // TODO
+                        // panic!(
+                        //     "No capability found for {}",
+                        //     target.to_short_string(self.repacker)
+                        // );
                     }
                 }
             }
@@ -104,13 +100,6 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             let state = self.domain.post_state_mut();
             if !target.is_owned(self.repacker) {
                 state.set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
-            }
-            for rp in target.region_projections(self.repacker) {
-                state.set_capability(
-                    rp.to_pcg_node(self.repacker),
-                    CapabilityKind::Exclusive,
-                    self.repacker,
-                );
             }
             match rvalue {
                 Rvalue::Aggregate(
@@ -148,26 +137,29 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         if let ty::TyKind::Ref(target_region, _, _) =
                             target.ty(self.repacker).ty.kind()
                         {
-                            self.apply_action(BorrowPCGAction::add_block_edge(
-                                BlockEdge::new(
-                                    smallvec![RegionProjection::new(
-                                        (*const_region).into(),
-                                        MaybeRemoteRegionProjectionBase::Const(c.const_),
-                                        self.repacker,
+                            self.apply_action(BorrowPCGAction::add_edge(
+                                BorrowPCGEdge::new(
+                                    BlockEdge::new(
+                                        smallvec![RegionProjection::new(
+                                            (*const_region).into(),
+                                            MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                            self.repacker,
+                                        )
+                                        .unwrap()
+                                        .to_pcg_node(self.repacker)],
+                                        smallvec![RegionProjection::new(
+                                            (*target_region).into(),
+                                            target,
+                                            self.repacker,
+                                        )
+                                        .unwrap()
+                                        .into()],
+                                        BlockEdgeKind::ConstRef,
                                     )
-                                    .unwrap()
-                                    .to_pcg_node(self.repacker)],
-                                    smallvec![RegionProjection::new(
-                                        (*target_region).into(),
-                                        target,
-                                        self.repacker,
-                                    )
-                                    .unwrap()
-                                    .into()],
-                                    BlockEdgeKind::ConstRef,
+                                    .into(),
+                                    PathConditions::AtBlock(location.block),
                                 ),
-                                PathConditions::AtBlock(location.block),
-                                "Assign constant",
+                                true,
                             ));
                         }
                     }

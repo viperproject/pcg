@@ -1,13 +1,15 @@
 use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
+use crate::borrow_pcg::edge::block::BlockEdge;
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::edge::block::BlockEdge;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
+use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::{validity_checks_enabled, Weaken};
-use crate::rustc_interface::data_structures::fx::FxHashSet;
 
 use super::BorrowPCGActionKind;
 
@@ -30,13 +32,19 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         &self.0
     }
 
-    pub fn added_region_projection_members(&self) -> FxHashSet<Conditioned<BlockEdge<'tcx>>> {
+    pub fn added_block_edges(&self) -> FxHashSet<Conditioned<BlockEdge<'tcx>>> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::AddBlockEdge(member, path_conditions) => {
-                    Some(Conditioned::new(member.clone(), path_conditions.clone()))
-                }
+                BorrowPCGActionKind::AddEdge {
+                    edge:
+                        BorrowPCGEdge {
+                            kind: BorrowPCGEdgeKind::Block(edge),
+                            conditions,
+                            ..
+                        },
+                    ..
+                } => Some(Conditioned::new(edge.clone(), conditions.clone())),
                 _ => None,
             })
             .collect()
@@ -66,9 +74,16 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => Some(
-                    Conditioned::new(expansion.clone(), PathConditions::AtBlock(location.block)),
-                ),
+                BorrowPCGActionKind::AddEdge {
+                    edge,
+                    ..
+                } => match edge.kind() {
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => Some(Conditioned::new(
+                        expansion.clone(),
+                        edge.conditions().clone(),
+                    )),
+                    _ => None,
+                },
                 _ => None,
             })
             .collect()

@@ -338,7 +338,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
                 crate::free_pcs::CapabilityLocal::Unallocated => {}
                 crate::free_pcs::CapabilityLocal::Allocated(capability_projections) => {
                     for (root, kind) in capability_projections.iter_mut() {
-                        if !borrows.contains((*root).into(), self.cgx.rp) && (kind.is_read() || kind.is_lent_exclusive()) {
+                        if !borrows.contains((*root).into(), self.cgx.rp) && kind.is_read()  {
                             *kind = CapabilityKind::Exclusive;
                         }
                     }

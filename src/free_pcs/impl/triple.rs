@@ -57,10 +57,6 @@ impl<'tcx> Condition<'tcx> {
         Self::new(place, CapabilityKind::Exclusive)
     }
 
-    fn lent<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
-        Self::new(place, CapabilityKind::Lent)
-    }
-
     fn write<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
         Self::new(place, CapabilityKind::Write)
     }
@@ -215,7 +211,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 BorrowKind::Fake(..) => return,
                 BorrowKind::Mut { .. } => Triple {
                     pre: Condition::exclusive(*place),
-                    post: Some(Condition::lent(*place)),
+                    post: None,
                 },
             };
             self.main_triples.push(triple);

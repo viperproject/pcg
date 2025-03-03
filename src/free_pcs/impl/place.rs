@@ -50,15 +50,6 @@ pub enum CapabilityKind {
     /// borrowed.
     Exclusive,
 
-    /// This place is mutably borrowed.
-    Lent,
-
-    /// There are outstanding shared borrows to this place or to projections of
-    /// this place. The capability to the place can be restored to
-    /// [`CapabilityKind::Exclusive`] in exchange for the capabilities of its
-    /// projections when the borrows expire.
-    LentShared,
-
     /// [`CapabilityKind::Exclusive`] for everything not through a dereference,
     /// [`CapabilityKind::Write`] for everything through a dereference.
     ShallowExclusive,
@@ -70,8 +61,6 @@ impl Debug for CapabilityKind {
             CapabilityKind::Write => write!(f, "W"),
             CapabilityKind::Exclusive => write!(f, "E"),
             CapabilityKind::ShallowExclusive => write!(f, "e"),
-            CapabilityKind::Lent => write!(f, "L"),
-            CapabilityKind::LentShared => write!(f, "Ls"),
         }
     }
 }
@@ -86,28 +75,18 @@ impl PartialOrd for CapabilityKind {
             (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive) => {
                 Some(Ordering::Greater)
             }
-            (CapabilityKind::Exclusive, CapabilityKind::LentShared) => Some(Ordering::Greater),
             (CapabilityKind::ShallowExclusive, CapabilityKind::Exclusive) => Some(Ordering::Less),
-            (CapabilityKind::LentShared, CapabilityKind::Exclusive) => Some(Ordering::Less),
 
             // ShallowExclusive > Write
             (CapabilityKind::ShallowExclusive, CapabilityKind::Write) => Some(Ordering::Greater),
             (CapabilityKind::Write, CapabilityKind::ShallowExclusive) => Some(Ordering::Less),
-
-            // LentShared > {Lent, Read}
-            (CapabilityKind::LentShared, CapabilityKind::Lent) => Some(Ordering::Greater),
-            (CapabilityKind::LentShared, CapabilityKind::Read) => Some(Ordering::Greater),
-            (CapabilityKind::Lent, CapabilityKind::LentShared) => Some(Ordering::Less),
-            (CapabilityKind::Read, CapabilityKind::LentShared) => Some(Ordering::Less),
 
             // Transitive relationships through ShallowExclusive
             (CapabilityKind::Exclusive, CapabilityKind::Write) => Some(Ordering::Greater),
             (CapabilityKind::Write, CapabilityKind::Exclusive) => Some(Ordering::Less),
 
             // Transitive relationships through LentShared
-            (CapabilityKind::Exclusive, CapabilityKind::Lent) => Some(Ordering::Greater),
             (CapabilityKind::Exclusive, CapabilityKind::Read) => Some(Ordering::Greater),
-            (CapabilityKind::Lent, CapabilityKind::Exclusive) => Some(Ordering::Less),
             (CapabilityKind::Read, CapabilityKind::Exclusive) => Some(Ordering::Less),
 
             // All other pairs are incomparable
@@ -119,9 +98,6 @@ impl PartialOrd for CapabilityKind {
 impl CapabilityKind {
     pub fn is_exclusive(self) -> bool {
         matches!(self, CapabilityKind::Exclusive)
-    }
-    pub fn is_lent_exclusive(self) -> bool {
-        matches!(self, CapabilityKind::Lent)
     }
     pub fn is_read(self) -> bool {
         matches!(self, CapabilityKind::Read)
@@ -162,8 +138,6 @@ mod tests {
             CapabilityKind::ShallowExclusive,
             CapabilityKind::Write,
             CapabilityKind::Read,
-            CapabilityKind::LentShared,
-            CapabilityKind::Lent,
         ];
         // Add nodes
         for cap in caps {
@@ -173,10 +147,8 @@ mod tests {
         // Add edges (a -> b means a is greater than b)
         let edges = [
             (CapabilityKind::Exclusive, CapabilityKind::ShallowExclusive),
-            (CapabilityKind::Exclusive, CapabilityKind::LentShared),
             (CapabilityKind::ShallowExclusive, CapabilityKind::Write),
-            (CapabilityKind::LentShared, CapabilityKind::Lent),
-            (CapabilityKind::LentShared, CapabilityKind::Read),
+            (CapabilityKind::Exclusive, CapabilityKind::Read),
         ];
 
         for (from, to) in edges {

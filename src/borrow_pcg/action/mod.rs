@@ -3,6 +3,7 @@ use tracing::instrument;
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::edge::block::BlockEdge;
+use super::edge::kind::BorrowPCGEdgeKind;
 use super::path_condition::PathConditions;
 use super::state::BorrowsState;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
@@ -30,13 +31,7 @@ pub struct BorrowPCGAction<'tcx> {
 impl<'tcx> BorrowPCGAction<'tcx> {
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match &self.kind {
-            BorrowPCGActionKind::AddAbstractionEdge(abstraction, path_conditions) => {
-                format!(
-                    "Add Abstraction Edge: {}; path conditions: {}",
-                    abstraction.to_short_string(repacker),
-                    path_conditions
-                )
-            }
+            BorrowPCGActionKind::AddEdge { edge, .. } => edge.to_short_string(repacker),
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPCGActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
@@ -52,18 +47,6 @@ impl<'tcx> BorrowPCGAction<'tcx> {
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
             }
-            BorrowPCGActionKind::AddBlockEdge(region_projection_member, path_conditions) => {
-                format!(
-                    "Add Region Projection Member: {}; path conditions: {}",
-                    region_projection_member.to_short_string(repacker),
-                    path_conditions
-                )
-            }
-            BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => format!(
-                "Insert Expansion {} at {:?}",
-                expansion.to_short_string(repacker),
-                location
-            ),
             BorrowPCGActionKind::RenamePlace { old, new } => {
                 format!("Rename {:?} to {:?}", old, new)
             }
@@ -113,25 +96,13 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn add_block_edge(
-        member: BlockEdge<'tcx>,
-        pc: PathConditions,
-        context: impl Into<String>,
-    ) -> Self {
+    pub(super) fn add_edge(edge: BorrowPCGEdge<'tcx>, for_exclusive: bool) -> Self {
         BorrowPCGAction {
-            kind: BorrowPCGActionKind::AddBlockEdge(member, pc),
-            debug_context: Some(context.into()),
-        }
-    }
-
-    pub(super) fn insert_borrow_pcg_expansion(
-        expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>,
-        location: Location,
-        context: impl Into<String>,
-    ) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location),
-            debug_context: Some(context.into()),
+            kind: BorrowPCGActionKind::AddEdge {
+                edge,
+                for_exclusive,
+            },
+            debug_context: None,
         }
     }
 
@@ -159,9 +130,10 @@ pub enum BorrowPCGActionKind<'tcx> {
     MakePlaceOld(Place<'tcx>),
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
-    AddBlockEdge(BlockEdge<'tcx>, PathConditions),
-    InsertBorrowPCGExpansion(BorrowPCGExpansion<'tcx>, Location),
-    AddAbstractionEdge(AbstractionType<'tcx>, PathConditions),
+    AddEdge {
+        edge: BorrowPCGEdge<'tcx>,
+        for_exclusive: bool,
+    },
     RenamePlace {
         old: MaybeOldPlace<'tcx>,
         new: MaybeOldPlace<'tcx>,
@@ -186,23 +158,17 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
             }
-            BorrowPCGActionKind::AddBlockEdge(block_edge, _) => {
-                format!("Add Block Edge: {}", block_edge.to_short_string(repacker),)
-            }
-            BorrowPCGActionKind::InsertBorrowPCGExpansion(borrow_pcgexpansion, location) => {
-                format!(
-                    "Insert Expansion {} at {:?}",
-                    borrow_pcgexpansion.to_short_string(repacker),
-                    location
-                )
-            }
-            BorrowPCGActionKind::AddAbstractionEdge(abstraction_type, _) => format!(
-                "Add Abstraction Edge: {}",
-                abstraction_type.to_short_string(repacker),
-            ),
             BorrowPCGActionKind::RenamePlace { old, new } => {
                 format!("Rename {:?} to {:?}", old, new)
             }
+            BorrowPCGActionKind::AddEdge {
+                edge,
+                for_exclusive,
+            } => format!(
+                "Add Edge: {}; for exclusive: {}",
+                edge.to_short_string(repacker),
+                for_exclusive
+            ),
         }
     }
 }
@@ -221,24 +187,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<bool, PCGError> {
         let result = match action.kind {
-            BorrowPCGActionKind::AddAbstractionEdge(abstraction, pc) => {
-                let mut changed = false;
-                for edge in abstraction.edges() {
-                    for input in edge.inputs() {
-                        changed |=
-                            self.set_capability(input.into(), CapabilityKind::Lent, repacker);
-                    }
-                    for output in edge.outputs() {
-                        changed |= self.set_capability(
-                            output.to_pcg_node(repacker),
-                            CapabilityKind::Exclusive,
-                            repacker,
-                        );
-                    }
-                }
-                changed |= self.insert(abstraction.to_borrow_pcg_edge(pc));
-                changed
-            }
             BorrowPCGActionKind::Restore(restore) => {
                 let restore_node: PCGNode<'tcx> = restore.node().into();
                 if let Some(cap) = self.get_capability(restore_node) {
@@ -270,87 +218,98 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.set_latest(place, location, repacker)
             }
             BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge),
-            BorrowPCGActionKind::AddBlockEdge(member, pc) => {
-                self.add_region_projection_member(member, pc, repacker)
-            }
-            BorrowPCGActionKind::InsertBorrowPCGExpansion(expansion, location) => {
-                let updated = self.insert(
-                    expansion
-                        .clone()
-                        .to_borrow_pcg_edge(PathConditions::new(location.block)),
-                );
-                if updated {
-                    let base = expansion.base();
-                    let expanded_capability = match &expansion {
-                        BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
-                            match expansion_of_owned.base().ty(repacker).ty.ref_mutability() {
-                                Some(Mutability::Mut) => CapabilityKind::Exclusive,
-                                Some(Mutability::Not) => CapabilityKind::Read,
-                                None => unreachable!(),
-                            }
-                        }
-                        BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
-                            if let Some(capability) =
-                                self.get_capability(expansion_of_borrowed.base.into())
-                            {
-                                capability
-                            } else {
-                                // Presumably already expanded in another branch
-                                return Ok(true);
-                            }
-                        }
-                    };
+            BorrowPCGActionKind::AddEdge {
+                edge,
+                for_exclusive,
+            } => {
+                let mut changed = self.insert(edge.clone());
+                match edge.kind {
+                    BorrowPCGEdgeKind::Borrow(borrow_edge) => todo!(),
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                        if changed {
+                            let base = expansion.base();
+                            let expanded_capability = match &expansion {
+                                BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
+                                    match expansion_of_owned.base().ty(repacker).ty.ref_mutability()
+                                    {
+                                        Some(Mutability::Mut) => CapabilityKind::Exclusive,
+                                        Some(Mutability::Not) => CapabilityKind::Read,
+                                        None => unreachable!(),
+                                    }
+                                }
+                                BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
+                                    if let Some(capability) =
+                                        self.get_capability(expansion_of_borrowed.base.into())
+                                    {
+                                        capability
+                                    } else {
+                                        // Presumably already expanded in another branch
+                                        return Ok(true);
+                                    }
+                                }
+                            };
 
-                    // If the expansion is a deref of a borrow, its expansion should not
-                    // change the capability to the base. We are allowed to have e.g. exclusive
-                    // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
-                    // gets its permission from `x↓'a`.
-                    if !expansion.is_deref_of_borrow(repacker) {
-                        match expanded_capability {
-                            CapabilityKind::Read => {
-                                _ = self.set_capability(
-                                    base.into(),
-                                    CapabilityKind::Read,
-                                    repacker,
-                                );
+                            // If the expansion is a deref of a borrow, its expansion should not
+                            // change the capability to the base. We are allowed to have e.g. exclusive
+                            // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
+                            // gets its permission from `x↓'a`.
+                            if !expansion.is_deref_of_borrow(repacker) {
+                                match expanded_capability {
+                                    CapabilityKind::Read => {
+                                        _ = self.set_capability(
+                                            base.into(),
+                                            CapabilityKind::Read,
+                                            repacker,
+                                        );
+                                    }
+                                    _ => {
+                                        _ = self.remove_capability(base.into());
+                                    }
+                                }
                             }
-                            _ => {
-                                _ = self.remove_capability(base.into());
+
+                            for p in expansion.expansion(repacker)?.iter() {
+                                _ = self.set_capability((*p).into(), expanded_capability, repacker);
                             }
                         }
+                        changed
                     }
-
-                    for p in expansion.expansion(repacker)?.iter() {
-                        _ = self.set_capability((*p).into(), expanded_capability, repacker);
+                    BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
+                        changed
+                    }
+                    BorrowPCGEdgeKind::Block(block_edge) => {
+                        self.add_block_edge(block_edge, edge.conditions, for_exclusive, repacker)
                     }
                 }
-                updated
             }
-            BorrowPCGActionKind::RenamePlace { old, new } => {
-                self.rename_place(old, new, repacker)
-            }
+            BorrowPCGActionKind::RenamePlace { old, new } => self.rename_place(old, new, repacker),
         };
         Ok(result)
     }
 
     /// Adds a region projection member to the graph and sets appropriate
     /// capabilities for the place and projection
-    fn add_region_projection_member(
+    fn add_block_edge(
         &mut self,
         member: BlockEdge<'tcx>,
         pc: PathConditions,
+        for_exclusive: bool,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.insert(member.clone().to_borrow_pcg_edge(pc));
-        let (input_cap, output_cap) = if member.mutability(repacker) == Mutability::Mut {
-            (CapabilityKind::Lent, CapabilityKind::Exclusive)
-        } else {
-            (CapabilityKind::Read, CapabilityKind::Read)
-        };
+        let mut changed = false;
         for i in member.inputs.iter() {
-            changed |= self.set_capability(*i, input_cap, repacker);
+            if for_exclusive {
+                changed |= self.remove_capability(*i);
+            } else {
+                changed |= self.set_capability(*i, CapabilityKind::Read, repacker);
+            }
         }
         for o in member.outputs.iter() {
+            let output_cap = if for_exclusive {
+                CapabilityKind::Exclusive
+            } else {
+                CapabilityKind::Read
+            };
             changed |= self.set_capability((*o).into(), output_cap, repacker);
         }
         changed
