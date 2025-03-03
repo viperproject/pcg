@@ -47,16 +47,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             Condition::Capability(place, cap) => {
                 let cp = self[place.local].get_allocated_mut();
                 cp.repack(place, repacker)?;
-                if cp[&place].is_exclusive() && cap.is_write() {
-                    // Requires write should deinit an exclusive
-                    cp.insert(place, cap);
-                } else if cp[&place].is_lent_exclusive() && (cap.is_read() || cap.is_exclusive()) {
-                    // This read will expire the loan, so we regain exclusive access
-                    // TODO: If we expire borrows eagerly, perhaps we don't need this logic
-                    cp.insert(place, CapabilityKind::Exclusive);
-                } else {
-                    // TODO
-                }
+                cp.insert(place, cap);
             }
             Condition::Return => {
                 let always_live = repacker.always_live_locals();
@@ -95,7 +86,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             }
             Condition::Capability(place, cap) => {
                 match cap {
-                    CapabilityKind::Read | CapabilityKind::Lent | CapabilityKind::LentShared => {
+                    CapabilityKind::Read => {
                         // TODO
                     }
                     CapabilityKind::Write => {

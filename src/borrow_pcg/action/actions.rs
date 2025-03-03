@@ -4,7 +4,6 @@ use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
 use crate::borrow_pcg::edge::block::BlockEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::graph::Conditioned;
-use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::json::ToJsonWithRepacker;
@@ -74,10 +73,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::AddEdge {
-                    edge,
-                    ..
-                } => match edge.kind() {
+                BorrowPCGActionKind::AddEdge { edge, .. } => match edge.kind() {
                     BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => Some(Conditioned::new(
                         expansion.clone(),
                         edge.conditions().clone(),

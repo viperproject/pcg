@@ -31,7 +31,9 @@ pub struct BorrowPCGAction<'tcx> {
 impl<'tcx> BorrowPCGAction<'tcx> {
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match &self.kind {
-            BorrowPCGActionKind::AddEdge { edge, .. } => edge.to_short_string(repacker),
+            BorrowPCGActionKind::AddEdge { edge, .. } => {
+                format!("Add Edge: {}", edge.to_short_string(repacker))
+            }
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPCGActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
@@ -221,75 +223,85 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::AddEdge {
                 edge,
                 for_exclusive,
-            } => {
-                let mut changed = self.insert(edge.clone());
-                match edge.kind {
-                    BorrowPCGEdgeKind::Borrow(borrow_edge) => todo!(),
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                        if changed {
-                            let base = expansion.base();
-                            let expanded_capability = match &expansion {
-                                BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
-                                    match expansion_of_owned.base().ty(repacker).ty.ref_mutability()
-                                    {
-                                        Some(Mutability::Mut) => CapabilityKind::Exclusive,
-                                        Some(Mutability::Not) => CapabilityKind::Read,
-                                        None => unreachable!(),
-                                    }
-                                }
-                                BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
-                                    if let Some(capability) =
-                                        self.get_capability(expansion_of_borrowed.base.into())
-                                    {
-                                        capability
-                                    } else {
-                                        // Presumably already expanded in another branch
-                                        return Ok(true);
-                                    }
-                                }
-                            };
-
-                            // If the expansion is a deref of a borrow, its expansion should not
-                            // change the capability to the base. We are allowed to have e.g. exclusive
-                            // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
-                            // gets its permission from `x↓'a`.
-                            if !expansion.is_deref_of_borrow(repacker) {
-                                match expanded_capability {
-                                    CapabilityKind::Read => {
-                                        _ = self.set_capability(
-                                            base.into(),
-                                            CapabilityKind::Read,
-                                            repacker,
-                                        );
-                                    }
-                                    _ => {
-                                        _ = self.remove_capability(base.into());
-                                    }
-                                }
-                            }
-
-                            for p in expansion.expansion(repacker)?.iter() {
-                                _ = self.set_capability((*p).into(), expanded_capability, repacker);
-                            }
-                        }
-                        changed
-                    }
-                    BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
-                        changed
-                    }
-                    BorrowPCGEdgeKind::Block(block_edge) => {
-                        self.add_block_edge(block_edge, edge.conditions, for_exclusive, repacker)
-                    }
-                }
-            }
+            } => self.handle_add_edge(edge, for_exclusive, repacker)?,
             BorrowPCGActionKind::RenamePlace { old, new } => self.rename_place(old, new, repacker),
         };
         Ok(result)
     }
 
+    fn handle_add_edge(
+        &mut self,
+        edge: BorrowPCGEdge<'tcx>,
+        for_exclusive: bool,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<bool, PCGError> {
+        let changed = self.insert(edge.clone());
+        Ok(match edge.kind {
+            BorrowPCGEdgeKind::Borrow(_) => todo!(),
+            BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                if changed {
+                    let base = expansion.base();
+                    let expanded_capability = match &expansion {
+                        BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
+                            match expansion_of_owned.base().ty(repacker).ty.ref_mutability() {
+                                Some(Mutability::Mut) => CapabilityKind::Exclusive,
+                                Some(Mutability::Not) => CapabilityKind::Read,
+                                None => unreachable!(),
+                            }
+                        }
+                        BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
+                            if let Some(capability) =
+                                self.get_capability(expansion_of_borrowed.base.into())
+                            {
+                                capability
+                            } else {
+                                return Ok(true);
+                            }
+                        }
+                    };
+
+                    // If the expansion is a deref of a borrow, its expansion should not
+                    // change the capability to the base. We are allowed to have e.g. exclusive
+                    // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
+                    // gets its permission from `x↓'a`.
+                    if !expansion.is_deref_of_borrow(repacker) {
+                        match expanded_capability {
+                            CapabilityKind::Read => {
+                                _ = self.set_capability(
+                                    base.into(),
+                                    CapabilityKind::Read,
+                                    repacker,
+                                );
+                            }
+                            _ => {
+                                _ = self.remove_capability(base.into());
+                            }
+                        }
+                    }
+
+                    for p in expansion.expansion(repacker)?.iter() {
+                        _ = self.set_capability((*p).into(), expanded_capability, repacker);
+                    }
+                }
+                changed
+            }
+            BorrowPCGEdgeKind::Abstraction(_) => changed,
+            BorrowPCGEdgeKind::Block(block_edge) => {
+                changed
+                    || self.set_capabilities_for_block_edge(
+                        block_edge,
+                        edge.conditions,
+                        for_exclusive,
+                        repacker,
+                    )
+            }
+        })
+    }
+
     /// Adds a region projection member to the graph and sets appropriate
     /// capabilities for the place and projection
-    fn add_block_edge(
+    #[must_use]
+    fn set_capabilities_for_block_edge(
         &mut self,
         member: BlockEdge<'tcx>,
         pc: PathConditions,

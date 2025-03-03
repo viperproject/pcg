@@ -7,7 +7,7 @@
 use std::rc::Rc;
 
 use crate::{
-    borrow_pcg::{action::BorrowPCGActionKind, latest::Latest},
+    borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge, latest::Latest},
     combined_pcs::{EvalStmtPhase, PCGEngine, PCGError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
@@ -173,10 +173,13 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                         {
                             if !self_abstraction_edges.contains(&abstraction) {
                                 actions.push(
-                                    BorrowPCGActionKind::AddAbstractionEdge(
-                                        abstraction.value.clone(),
-                                        abstraction.conditions,
-                                    )
+                                    BorrowPCGActionKind::AddEdge {
+                                        edge: BorrowPCGEdge::new(
+                                            abstraction.value.clone().into(),
+                                            abstraction.conditions,
+                                        ),
+                                        for_exclusive: true,
+                                    }
                                     .into(),
                                 );
                             }
