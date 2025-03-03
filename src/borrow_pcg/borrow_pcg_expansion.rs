@@ -171,7 +171,7 @@ impl<'tcx> BorrowExpansion<'tcx> {
     }
 }
 
-impl<'tcx, P: Copy> ExpansionOfBorrowed<'tcx, P> {
+impl<P: Copy> ExpansionOfBorrowed<'_, P> {
     pub fn base(&self) -> P {
         self.base
     }
