@@ -143,11 +143,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 },
                 BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
-                    for edge in abstraction_type.edges() {
-                        for input in edge.inputs() {
+                        for input in abstraction_type.inputs() {
                             extend(input.to_pcg_node(repacker), seen, &mut result, false);
                         }
-                    }
                 }
                 BorrowPCGEdgeKind::Block(region_projection_member) => {
                     match &region_projection_member.kind {

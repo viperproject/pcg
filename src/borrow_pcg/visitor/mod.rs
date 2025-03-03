@@ -223,8 +223,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             return;
         }
 
-        let mut edges = vec![];
-
         for arg in args.iter() {
             let input_place: utils::Place<'tcx> = match arg.place() {
                 Some(place) => place.into(),
@@ -247,26 +245,25 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     }
                     let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
 
-                    edges.push(AbstractionBlockEdge::new(
+                    let block_edge = AbstractionBlockEdge::new(
                         vec![input_rp.into()].into_iter().collect(),
                         vec![output].into_iter().collect(),
+                    );
+                    self.apply_action(BorrowPCGAction::add_edge(
+                        BorrowPCGEdge::new(
+                            AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                                location,
+                                *func_def_id,
+                                substs,
+                                block_edge,
+                            ))
+                            .into(),
+                            PathConditions::AtBlock(location.block),
+                        ),
+                        true,
                     ));
                 }
             }
-        }
-
-        // No edges may be added e.g. if the inputs do not contain any borrows
-        if !edges.is_empty() {
-            self.apply_action(BorrowPCGAction::add_edge(
-                BorrowPCGEdge::new(
-                    AbstractionType::FunctionCall(
-                        FunctionCallAbstraction::new(location, *func_def_id, substs, edges.clone())
-                    )
-                    .into(),
-                    PathConditions::AtBlock(location.block),
-                ),
-                true,
-            ));
         }
     }
 
