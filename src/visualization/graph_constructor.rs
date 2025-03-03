@@ -163,41 +163,42 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
     fn insert_abstraction(
         &mut self,
-        region_abstraction: &AbstractionType<'tcx>,
+        abstraction: &AbstractionType<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
     ) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
 
-        for edge in region_abstraction.edges() {
-            for input in edge.inputs() {
-                let input = self.insert_cg_node(input, capabilities.get(input.into()));
-                input_nodes.insert(input);
-            }
-            for output in edge.outputs() {
-                let output = output.set_base(output.base.into(), self.repacker);
-                let output =
-                    self.insert_region_projection_node(output, capabilities.get(output.into()));
-                output_nodes.insert(output);
-            }
-            for input in &input_nodes {
-                for output in &output_nodes {
-                    self.edges.insert(GraphEdge::Abstract {
-                        blocked: *input,
-                        blocking: *output,
-                    });
-                }
+        for input in abstraction.inputs() {
+            let input = self.insert_cg_node(input, capabilities.get(input.into()));
+            input_nodes.insert(input);
+        }
+
+        for output in abstraction.outputs() {
+            let output = output.set_base(output.base.into(), self.repacker);
+            let output =
+                self.insert_region_projection_node(output, capabilities.get(output.into()));
+            output_nodes.insert(output);
+        }
+
+        for input in &input_nodes {
+            for output in &output_nodes {
+                self.edges.insert(GraphEdge::Abstract {
+                    blocked: *input,
+                    blocking: *output,
+                });
             }
         }
 
-        // Add undirected edges between all outputs
-        for output1 in output_nodes.iter() {
-            for output2 in output_nodes.iter() {
-                if output1 < output2 {
-                    self.edges.insert(GraphEdge::Coupled {
-                        source: *output1,
-                        target: *output2,
-                    });
+        if abstraction.is_loop() {
+            for output1 in output_nodes.iter() {
+                for output2 in output_nodes.iter() {
+                    if output1 < output2 {
+                        self.edges.insert(GraphEdge::Coupled {
+                            source: *output1,
+                            target: *output2,
+                        });
+                    }
                 }
             }
         }
@@ -206,10 +207,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let cluster = GraphCluster {
             id: format!(
                 "c{:?}_{}",
-                region_abstraction.location().block,
-                region_abstraction.location().statement_index
+                abstraction.location().block,
+                abstraction.location().statement_index
             ),
-            label: format!("{:?}", region_abstraction.location()),
+            label: format!("{:?}", abstraction.location()),
             nodes: input_nodes
                 .iter()
                 .chain(output_nodes.iter())

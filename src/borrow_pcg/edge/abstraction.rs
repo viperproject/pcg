@@ -83,15 +83,12 @@ pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
     def_id: DefId,
     substs: GenericArgsRef<'tcx>,
-    edges: Vec<AbstractionBlockEdge<'tcx>>,
+    edge: AbstractionBlockEdge<'tcx>,
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        for edge in self.edges.iter() {
-            edge.check_validity(repacker)?;
-        }
-        Ok(())
+        self.edge.check_validity(repacker)
     }
 }
 
@@ -106,10 +103,7 @@ where
     AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
 {
     fn pcs_elems(&mut self) -> Vec<&mut T> {
-        self.edges
-            .iter_mut()
-            .flat_map(|edge| edge.pcs_elems())
-            .collect()
+        self.edge.pcs_elems()
     }
 }
 
@@ -125,22 +119,21 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
         self.location
     }
 
-    pub fn edges(&self) -> &Vec<AbstractionBlockEdge<'tcx>> {
-        &self.edges
+    pub fn edge(&self) -> &AbstractionBlockEdge<'tcx> {
+        &self.edge
     }
 
     pub fn new(
         location: Location,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
-        edges: Vec<AbstractionBlockEdge<'tcx>>,
+        edge: AbstractionBlockEdge<'tcx>,
     ) -> Self {
-        assert!(!edges.is_empty());
         Self {
             location,
             def_id,
             substs,
-            edges,
+            edge,
         }
     }
 }
@@ -309,6 +302,11 @@ impl<'tcx> AbstractionType<'tcx> {
     pub(crate) fn is_function_call(&self) -> bool {
         matches!(self, AbstractionType::FunctionCall(_))
     }
+
+    pub(crate) fn is_loop(&self) -> bool {
+        matches!(self, AbstractionType::Loop(_))
+    }
+
     pub fn location(&self) -> Location {
         match self {
             AbstractionType::FunctionCall(c) => c.location,
@@ -316,34 +314,22 @@ impl<'tcx> AbstractionType<'tcx> {
         }
     }
 
-    pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
-        self.edges()
-            .into_iter()
-            .flat_map(|edge| edge.inputs())
-            .collect()
+    pub fn inputs(&self) -> BTreeSet<AbstractionInputTarget<'tcx>> {
+        self.edge().inputs()
     }
 
-    pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
-        self.edges()
-            .into_iter()
-            .flat_map(|edge| edge.outputs())
-            .collect()
+    pub fn outputs(&self) -> BTreeSet<AbstractionOutputTarget<'tcx>> {
+        self.edge().outputs()
     }
 
-    pub fn edges(&self) -> Vec<AbstractionBlockEdge<'tcx>> {
+    pub fn edge(&self) -> &AbstractionBlockEdge<'tcx> {
         match self {
-            AbstractionType::FunctionCall(c) => c.edges.clone(),
-            AbstractionType::Loop(c) => vec![c.edge.clone()],
+            AbstractionType::FunctionCall(c) => &c.edge,
+            AbstractionType::Loop(c) => &c.edge,
         }
     }
 
     pub fn has_input(&self, node: AbstractionInputTarget<'tcx>) -> bool {
-        match self {
-            AbstractionType::FunctionCall(function_call_abstraction) => function_call_abstraction
-                .edges()
-                .iter()
-                .any(|edge| edge.inputs.contains(&node)),
-            AbstractionType::Loop(loop_abstraction) => loop_abstraction.edge.inputs.contains(&node),
-        }
+        self.inputs().contains(&node)
     }
 }

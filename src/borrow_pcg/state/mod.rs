@@ -9,10 +9,10 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
-use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -243,17 +243,16 @@ impl<'tcx> BorrowsState<'tcx> {
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
-        if !edge.is_shared_borrow() {
-            for place in edge.blocked_places(repacker) {
-                if let Some(place) = place.as_current_place() {
-                    if place.has_location_dependent_value(repacker) {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::set_latest(place, location, context),
-                            &mut actions,
-                            repacker,
-                        )?;
-                    }
-                }
+        for place in edge.blocked_places(repacker) {
+            if self.get_capability(place.into()) != Some(CapabilityKind::Read)
+                && let Some(place) = place.as_current_place()
+                && place.has_location_dependent_value(repacker)
+            {
+                self.record_and_apply_action(
+                    BorrowPCGAction::set_latest(place, location, context),
+                    &mut actions,
+                    repacker,
+                )?;
             }
         }
         let remove_edge_action =
