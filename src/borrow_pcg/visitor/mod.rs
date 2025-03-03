@@ -23,6 +23,7 @@ use crate::{
 
 use super::{
     action::{BorrowPCGAction, BorrowPCGActionKind},
+    borrow_pcg_edge::BorrowPCGEdge,
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::block::BlockEdge,
     path_condition::PathConditions,
@@ -156,14 +157,18 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 source_proj.region(self.repacker),
                 target_proj.region(self.repacker),
             ) {
-                self.apply_action(BorrowPCGAction::add_block_edge(
-                    BlockEdge::new(
-                        smallvec![source_proj.to_pcg_node(self.repacker)],
-                        smallvec![target_proj.to_local_node(self.repacker)],
-                        kind(target_proj.region(self.repacker)),
-                    ),
-                    PathConditions::AtBlock(location.block),
-                    "Outliving Projection",
+                self.apply_action(BorrowPCGAction::add_edge(
+                    BorrowPCGEdge::new(
+                        BlockEdge::new(
+                            smallvec![source_proj.to_pcg_node(self.repacker)],
+                            smallvec![target_proj.to_local_node(self.repacker)],
+                            kind(target_proj.region(self.repacker)),
+                        )
+                        .into(),
+                        PathConditions::AtBlock(location.block),
+                    )
+                    .into(),
+                    true,
                 ));
             }
         }
@@ -253,18 +258,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
         // No edges may be added e.g. if the inputs do not contain any borrows
         if !edges.is_empty() {
-            self.apply_action(
-                BorrowPCGActionKind::AddAbstractionEdge(
-                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                        location,
-                        *func_def_id,
-                        substs,
-                        edges.clone(),
-                    )),
+            self.apply_action(BorrowPCGAction::add_edge(
+                BorrowPCGEdge::new(
+                    AbstractionType::FunctionCall(
+                        FunctionCallAbstraction::new(location, *func_def_id, substs, edges.clone())
+                            .into(),
+                    )
+                    .into(),
                     PathConditions::AtBlock(location.block),
-                )
-                .into(),
-            );
+                ),
+                true,
+            ));
         }
     }
 
@@ -325,13 +329,6 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         } else if self.stage == StatementStage::Operands && !self.preparing {
             if let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
-                for rp in place.region_projections(self.repacker) {
-                    self.domain.post_state_mut().set_capability(
-                        rp.to_pcg_node(self.repacker),
-                        CapabilityKind::Write,
-                        self.repacker,
-                    );
-                }
                 if !place.is_owned(self.repacker) {
                     self.domain.post_state_mut().set_capability(
                         place.into(),

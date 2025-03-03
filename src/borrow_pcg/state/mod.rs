@@ -231,7 +231,9 @@ impl<'tcx> BorrowsState<'tcx> {
         new: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.graph.rename_place(old, new, repacker)
+        let mut changed = self.graph.rename_place(old, new, repacker);
+        changed |= Rc::<_>::make_mut(&mut self.capabilities).rename_place(old, new);
+        changed
     }
 
     fn min_blocked_by_capability(
@@ -284,12 +286,7 @@ impl<'tcx> BorrowsState<'tcx> {
             if let Some(local_node) = node.as_local_node(repacker) {
                 let blocked_cap = self.get_capability(node);
 
-                let restore_cap = match self.get_capability(node) {
-                    Some(CapabilityKind::Lent | CapabilityKind::LentShared) => {
-                        Some(CapabilityKind::Exclusive)
-                    }
-                    _ => self.min_blocked_by_capability(edge.kind(), repacker),
-                };
+                let restore_cap = self.min_blocked_by_capability(edge.kind(), repacker);
 
                 if let Some(restore_cap) = restore_cap {
                     if blocked_cap.is_none_or(|bc| bc < restore_cap) {
@@ -496,24 +493,18 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowKind::Mut {
                     kind: MutBorrowKind::Default,
                 } => {
-                    if self.get_capability(blocked_place.into()) != Some(CapabilityKind::Lent) {
-                        assert!(self.set_capability(
-                            blocked_place.into(),
-                            CapabilityKind::Lent,
-                            repacker
-                        ));
-                    }
+                    self.remove_capability(blocked_place.into());
                 }
                 _ => {
                     match self.get_capability(blocked_place.into()) {
-                        Some(CapabilityKind::Exclusive | CapabilityKind::Lent) => {
+                        Some(CapabilityKind::Exclusive) => {
                             assert!(self.set_capability(
                                 blocked_place.into(),
-                                CapabilityKind::LentShared,
+                                CapabilityKind::Read,
                                 repacker
                             ));
                         }
-                        Some(CapabilityKind::Read | CapabilityKind::LentShared) => {
+                        Some(CapabilityKind::Read) => {
                             // Do nothing, this just adds another shared borrow
                         }
                         None => {
@@ -542,6 +533,9 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        self.graph.make_place_old(place, &self.latest, repacker)
+        let mut changed = self.graph.make_place_old(place, &self.latest, repacker);
+        changed |=
+            Rc::<_>::make_mut(&mut self.capabilities).make_place_old(place, &self.latest, repacker);
+        changed
     }
 }

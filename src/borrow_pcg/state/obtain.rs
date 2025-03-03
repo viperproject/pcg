@@ -3,6 +3,7 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion};
 use crate::borrow_pcg::edge::block::{BlockEdge, BlockEdgeKind};
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
@@ -32,7 +33,7 @@ impl ObtainReason {
                 BorrowKind::Fake(_) => unreachable!(),
                 BorrowKind::Mut { kind } => match kind {
                     MutBorrowKind::Default => CapabilityKind::Exclusive,
-                    MutBorrowKind::TwoPhaseBorrow => CapabilityKind::LentShared,
+                    MutBorrowKind::TwoPhaseBorrow => CapabilityKind::Read,
                     MutBorrowKind::ClosureCapture => CapabilityKind::Exclusive,
                 },
             },
@@ -78,7 +79,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(place, repacker, location)?;
+            let extra_acts = self.expand_to(place, repacker, location, obtain_reason)?;
             actions.extend(extra_acts);
         }
 
@@ -121,14 +122,17 @@ impl<'tcx> BorrowsState<'tcx> {
                 )?);
                 for ra in place.region_projections(repacker) {
                     self.record_and_apply_action(
-                        BorrowPCGAction::add_block_edge(
-                            BlockEdge::new(
-                                smallvec![borrow.value.blocked_place.into()],
-                                smallvec![ra.into()],
-                                BlockEdgeKind::ContractRef,
+                        BorrowPCGAction::add_edge(
+                            BorrowPCGEdge::new(
+                                BlockEdge::new(
+                                    smallvec![borrow.value.blocked_place.into()],
+                                    smallvec![ra.into()],
+                                    BlockEdgeKind::ContractRef,
+                                )
+                                .into(),
+                                PathConditions::new(location.block),
                             ),
-                            PathConditions::new(location.block),
-                            "Contract To",
+                            true,
                         ),
                         &mut actions,
                         repacker,
@@ -183,6 +187,7 @@ impl<'tcx> BorrowsState<'tcx> {
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         location: Location,
+        obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
         let mut actions = ExecutedActions::new();
 
@@ -200,17 +205,16 @@ impl<'tcx> BorrowsState<'tcx> {
                 // e.g t|'a
                 let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
 
-                let region_projection_member = BlockEdge::new(
+                let block_edge = BlockEdge::new(
                     smallvec![base_rp.to_pcg_node(repacker)],
                     smallvec![target.into()],
                     BlockEdgeKind::DerefRegionProjection,
                 );
 
                 self.record_and_apply_action(
-                    BorrowPCGAction::add_block_edge(
-                        region_projection_member,
-                        PathConditions::new(location.block),
-                        "Expand",
+                    BorrowPCGAction::add_edge(
+                        BorrowPCGEdge::new(block_edge.into(), PathConditions::new(location.block)),
+                        true,
                     ),
                     &mut actions,
                     repacker,
@@ -226,10 +230,13 @@ impl<'tcx> BorrowsState<'tcx> {
                     repacker,
                 )?;
 
-                let action = BorrowPCGAction::insert_borrow_pcg_expansion(
-                    expansion,
-                    location,
-                    "Ensure Deref Expansion (Place)",
+                let action = BorrowPCGAction::add_edge(
+                    BorrowPCGEdge::new(
+                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                        PathConditions::new(location.block),
+                    )
+                    .into(),
+                    true,
                 );
                 self.record_and_apply_action(action, &mut actions, repacker)?;
             }
@@ -251,10 +258,13 @@ impl<'tcx> BorrowsState<'tcx> {
                         repacker,
                     )?;
                     self.record_and_apply_action(
-                        BorrowPCGAction::insert_borrow_pcg_expansion(
-                            expansion,
-                            location,
-                            "Ensure Deref Expansion (Region Projection)",
+                        BorrowPCGAction::add_edge(
+                            BorrowPCGEdge::new(
+                                BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                                PathConditions::new(location.block),
+                            )
+                            .into(),
+                            true,
                         ),
                         &mut actions,
                         repacker,
