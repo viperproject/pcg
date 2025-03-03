@@ -5,15 +5,14 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
-    edge::kind::BorrowPCGEdgeKind,
     graph::{BorrowsGraph, FrozenGraphRef},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
+use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -236,21 +235,6 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-    fn min_blocked_by_capability(
-        &self,
-        edge: &BorrowPCGEdgeKind<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Option<CapabilityKind> {
-        let mut iter = edge.blocked_by_nodes(repacker).into_iter();
-        let first_node = iter.next()?;
-        let mut cap = self.get_capability(first_node.into())?;
-        for node in iter {
-            let other_cap = self.get_capability(node.into())?;
-            cap = cap.minimum(other_cap)?;
-        }
-        Some(cap)
-    }
-
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
@@ -286,16 +270,18 @@ impl<'tcx> BorrowsState<'tcx> {
             if let Some(local_node) = node.as_local_node(repacker) {
                 let blocked_cap = self.get_capability(node);
 
-                let restore_cap = self.min_blocked_by_capability(edge.kind(), repacker);
+                let restore_cap = if local_node.place().projects_shared_ref(repacker) {
+                    CapabilityKind::Read
+                } else {
+                    CapabilityKind::Exclusive
+                };
 
-                if let Some(restore_cap) = restore_cap {
-                    if blocked_cap.is_none_or(|bc| bc < restore_cap) {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::restore_capability(local_node, restore_cap),
-                            &mut actions,
-                            repacker,
-                        )?;
-                    }
+                if blocked_cap.is_none_or(|bc| bc < restore_cap) {
+                    self.record_and_apply_action(
+                        BorrowPCGAction::restore_capability(local_node, restore_cap),
+                        &mut actions,
+                        repacker,
+                    )?;
                 }
             }
         }
@@ -493,7 +479,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowKind::Mut {
                     kind: MutBorrowKind::Default,
                 } => {
-                    self.remove_capability(blocked_place.into());
+                    let _ = self.remove_capability(blocked_place.into());
                 }
                 _ => {
                     match self.get_capability(blocked_place.into()) {

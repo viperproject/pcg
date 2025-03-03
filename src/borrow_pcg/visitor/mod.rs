@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::{
-    action::{BorrowPCGAction, BorrowPCGActionKind},
+    action::BorrowPCGAction,
     borrow_pcg_edge::BorrowPCGEdge,
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::block::BlockEdge,
@@ -166,8 +166,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                         )
                         .into(),
                         PathConditions::AtBlock(location.block),
-                    )
-                    .into(),
+                    ),
                     true,
                 ));
             }
@@ -262,7 +261,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 BorrowPCGEdge::new(
                     AbstractionType::FunctionCall(
                         FunctionCallAbstraction::new(location, *func_def_id, substs, edges.clone())
-                            .into(),
                     )
                     .into(),
                     PathConditions::AtBlock(location.block),

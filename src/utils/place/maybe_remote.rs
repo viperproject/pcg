@@ -3,7 +3,6 @@ use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
-use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithRepacker;
@@ -86,12 +85,6 @@ impl std::fmt::Display for MaybeRemotePlace<'_> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        match self {
-            MaybeRemotePlace::Local(p) => p.mutability(repacker),
-            MaybeRemotePlace::Remote(rp) => rp.mutability(repacker),
-        }
-    }
 
     pub fn place_assigned_to_local(local: mir::Local) -> Self {
         MaybeRemotePlace::Remote(RemotePlace { local })
@@ -183,19 +176,5 @@ impl RemotePlace {
             ty::TyKind::Ref(_, ty, _) => *ty,
             _ => todo!(),
         }
-    }
-
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, '_>) -> Mutability {
-        let place: Place<'_> = self.local.into();
-        place.ref_mutability(repacker).unwrap_or_else(|| {
-            if let Ok(root_place) =
-                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
-                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
-            {
-                Mutability::Mut
-            } else {
-                Mutability::Not
-            }
-        })
     }
 }

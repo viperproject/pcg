@@ -18,7 +18,6 @@ use crate::validity_checks_enabled;
 use crate::{
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
-        ast::Mutability,
         data_structures::fx::FxHashSet,
         index::{Idx, IndexVec},
         middle::{
@@ -475,28 +474,6 @@ impl<'tcx> LocalRegionProjection<'tcx> {
 impl<'tcx> RegionProjection<'tcx> {
     pub fn local(&self) -> Option<Local> {
         self.base.as_local_place().map(|p| p.local())
-    }
-
-    /// Returns `true` iff the place is a mutable reference, or if the place is
-    /// a mutable struct. If the place is a remote place, it is mutable iff the
-    /// corresponding input argument is a mutable reference.
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        let place = match self.base {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.related_local_place(),
-            MaybeRemoteRegionProjectionBase::Const(_) => {
-                return Mutability::Not;
-            }
-        };
-        place.ref_mutability(repacker).unwrap_or_else(|| {
-            if let Ok(root_place) =
-                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
-                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
-            {
-                Mutability::Mut
-            } else {
-                Mutability::Not
-            }
-        })
     }
 
     fn as_local_region_projection(

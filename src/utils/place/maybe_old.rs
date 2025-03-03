@@ -7,7 +7,6 @@ use crate::borrow_pcg::region_projection::{
 };
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::combined_pcs::{LocalNodeLike, PCGError, PCGNode, PCGNodeLike};
-use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
@@ -224,19 +223,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             .map(|rp| rp.set_base(rp.base.into(), repacker))
     }
 
-    pub(crate) fn mutability(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Mutability {
-        let place: Place<'_> = self.place();
-        place.ref_mutability(repacker).unwrap_or_else(|| {
-            if let Ok(root_place) =
-                place.is_mutable(crate::utils::LocalMutationIsAllowed::Yes, repacker)
-                && root_place.is_local_mutation_allowed == crate::utils::LocalMutationIsAllowed::Yes
-            {
-                Mutability::Mut
-            } else {
-                Mutability::Not
-            }
-        })
-    }
     pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.place().is_owned(repacker)
     }

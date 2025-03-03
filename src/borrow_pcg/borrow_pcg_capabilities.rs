@@ -5,11 +5,16 @@ use crate::{
     free_pcs::CapabilityKind,
     rustc_interface::data_structures::fx::FxHashMap,
     utils::{
-        display::{DebugLines, DisplayWithRepacker}, maybe_old::MaybeOldPlace, Place, PlaceRepacker
+        display::{DebugLines, DisplayWithRepacker},
+        maybe_old::MaybeOldPlace,
+        Place, PlaceRepacker,
     },
 };
 
-use super::{has_pcs_elem::{HasPcsElems, MakePlaceOld}, latest::Latest};
+use super::{
+    has_pcs_elem::{HasPcsElems, MakePlaceOld},
+    latest::Latest,
+};
 
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
 /// information in the borrows graph directly to facilitate simpler logic for
