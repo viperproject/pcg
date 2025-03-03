@@ -171,6 +171,12 @@ impl<'tcx> BorrowExpansion<'tcx> {
     }
 }
 
+impl<'tcx, P: Copy> ExpansionOfBorrowed<'tcx, P> {
+    pub fn base(&self) -> P {
+        self.base
+    }
+}
+
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
     pub fn expansion<'slf>(&'slf self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<P> {
         self.expansion
