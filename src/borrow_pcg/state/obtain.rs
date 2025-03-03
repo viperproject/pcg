@@ -81,6 +81,8 @@ impl<'tcx> BorrowsState<'tcx> {
         if !self.contains(place, repacker) {
             let extra_acts = self.expand_to(place, repacker, location, obtain_reason)?;
             actions.extend(extra_acts);
+        } else {
+            eprintln!("Already contains {:?}", place);
         }
 
         Ok(actions)
