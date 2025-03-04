@@ -11,9 +11,7 @@ use crate::{
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
-    utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, PlaceOrdering, PlaceRepacker,
-    },
+    utils::{corrected::CorrectedPlace, PlaceRepacker},
 };
 
 pub trait RepackingBridgeSemiLattice<'tcx> {
@@ -61,16 +59,14 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
-                for (p, mut k) in cps.iter_mut() {
+                for (p, k) in cps.place_capabilities_mut() {
                     if *k > CapabilityKind::Write {
-                        repacks.push(RepackOp::Weaken(p, *k, CapabilityKind::Write));
+                        repacks.push(RepackOp::Weaken(*p, *k, CapabilityKind::Write));
                         *k = CapabilityKind::Write;
                     }
                 }
-                if !cps.contains_key(&local.into()) {
-                    let packs = cps
-                        .collapse(cps.keys().copied().collect(), local.into(), repacker)
-                        .unwrap();
+                if cps.contains_expansion_from(local.into()) {
+                    let packs = cps.collapse(local.into(), repacker).unwrap();
                     repacks.extend(packs);
                 };
                 repacks.push(RepackOp::StorageDead(local));
@@ -93,70 +89,51 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
         other: &Self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
-        // TODO: remove need for clone
+        let mut repacks = vec![];
         let mut from = self.clone();
-
-        let mut repacks = Vec::new();
-        for (&place, &kind) in other.iter().sorted_by_key(|(p, _)| p.projection.len()) {
-            let place = CorrectedPlace::new(place, repacker);
-            let related = from.find_all_related(*place, None);
-            if !from.contains_key(&place) {
-                for (from_place, _) in (*related)
-                    .iter()
-                    .copied()
-                    .sorted_by_key(|(p, _)| p.projection.len())
-                    .rev()
-                {
-                    match from_place.partial_cmp(*place).unwrap() {
-                        PlaceOrdering::Prefix => {
-                            let unpacks = from.expand(
-                                from_place,
-                                place,
-                                CapabilityKind::Exclusive,
-                                repacker,
-                            )?;
-                            repacks.extend(unpacks);
-                            break;
-                        }
-                        PlaceOrdering::Suffix => {
-                            let packs = from
-                                .collapse(related.get_places(), *place, repacker)
-                                .unwrap();
-                            repacks.extend(packs);
-                            break;
-                        }
-                        PlaceOrdering::Both => {
-                            let common_prefix = related.common_prefix(*place);
-                            let collapse_repacks =
-                                from.collapse(related.get_places(), common_prefix, repacker)?;
-                            let expand_repacks = from.expand(
-                                common_prefix,
-                                place,
-                                CapabilityKind::Exclusive,
-                                repacker,
-                            )?;
-                            repacks.extend(collapse_repacks);
-                            repacks.extend(expand_repacks);
-                            break;
-                        }
-                        PlaceOrdering::Equal => {}
+        let other_expansions = other.expansions();
+        'outer: loop {
+            let from_expansions = from.expansions().clone();
+            for (place, expansion) in from_expansions
+                .into_iter()
+                .sorted_by_key(|(p, _)| p.projection.len())
+                .rev()
+            {
+                if let Some(other_expansion) = other_expansions.get(&place) {
+                    if other_expansion != &expansion {
+                        let collapse_repacks = from.collapse(place, repacker)?;
+                        repacks.extend(collapse_repacks);
+                        let expand_to = place.expansion_places(other_expansion, repacker)[0];
+                        repacks.extend(from.expand(
+                            place,
+                            CorrectedPlace::new(expand_to, repacker),
+                            from.get_capability(place).unwrap(),
+                            repacker,
+                        )?);
+                        continue;
                     }
+                } else {
+                    repacks.extend(from.collapse(place, repacker)?);
+                    continue 'outer;
                 }
             }
-            if !from.contains_key(&place) {
-                panic!(
-                    "from does not contain place: {}. From: {:?}",
-                    place.to_short_string(repacker),
-                    from
-                );
-            }
-            // Downgrade the permission if needed
-            let curr = from[&place];
-            if curr > kind {
-                from.insert(*place, kind);
-                repacks.push(RepackOp::Weaken(*place, curr, kind));
-            } else if curr < kind {
-                repacks.push(RepackOp::RegainLoanedCapability(*place, kind));
+            break;
+        }
+        for (place, expansion) in other
+            .expansions()
+            .iter()
+            .sorted_by_key(|(p, _)| p.projection.len())
+        {
+            if !from.expansions().contains_key(place) {
+                tracing::debug!("other expansion {:?} -> {:?}", place, expansion);
+                tracing::debug!("from: {:?}", from);
+                tracing::debug!("other: {:?}", other);
+                repacks.extend(from.expand(
+                    *place,
+                    CorrectedPlace::new(place.expansion_places(expansion, repacker)[0], repacker),
+                    from.get_capability(*place).unwrap(),
+                    repacker,
+                )?);
             }
         }
         Ok(repacks)

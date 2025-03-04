@@ -4,7 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use itertools::Itertools;
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     index::{bit_set::BitSet, Idx},
@@ -60,6 +59,10 @@ impl<'tcx> ShallowExpansion<'tcx> {
         }
     }
 
+    pub(crate) fn base_place(&self) -> Place<'tcx> {
+        self.target_place.last_projection().unwrap().0
+    }
+
     pub fn expansion(&self) -> Vec<Place<'tcx>> {
         let mut expansion = self.other_places.clone();
         self.kind
@@ -71,9 +74,6 @@ impl<'tcx> ShallowExpansion<'tcx> {
 impl ProjectionKind {
     pub(crate) fn is_box(self) -> bool {
         matches!(self, ProjectionKind::Box)
-    }
-    pub(crate) fn is_shared_ref(self) -> bool {
-        matches!(self, ProjectionKind::Ref(Mutability::Not))
     }
 
     pub(crate) fn insert_target_into_expansion<'tcx>(
@@ -159,20 +159,23 @@ pub struct ConstantIndex {
     pub(crate) from_end: bool,
 }
 
-#[derive(Debug)]
-pub struct ExpandStep<'tcx> {
-    pub(crate) base_place: Place<'tcx>,
-    pub(crate) projected_place: Place<'tcx>,
-    pub(crate) kind: ProjectionKind,
-}
+pub(crate) struct DeepExpansion<'tcx>(Vec<ShallowExpansion<'tcx>>);
 
-impl<'tcx> ExpandStep<'tcx> {
-    pub(crate) fn new(from: Place<'tcx>, to: Place<'tcx>, kind: ProjectionKind) -> Self {
-        Self {
-            base_place: from,
-            projected_place: to,
-            kind,
-        }
+impl<'tcx> DeepExpansion<'tcx> {
+    pub(crate) fn new(expansions: Vec<ShallowExpansion<'tcx>>) -> Self {
+        Self(expansions)
+    }
+
+    pub(crate) fn other_expansions(&self) -> FxHashSet<Place<'tcx>> {
+        self.0
+            .iter()
+            .flat_map(|e| e.other_places.iter())
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn expansions(&self) -> &[ShallowExpansion<'tcx>] {
+        &self.0
     }
 }
 
@@ -191,19 +194,18 @@ impl<'tcx> Place<'tcx> {
     /// `expand(x.f, x.f.g.h)` is performed by unrolling `x.f` into
     /// `{x.g, x.h, x.f.f, x.f.h, x.f.g.f, x.f.g.g, x.f.g.h}` and
     /// subtracting `{x.f.g.h}` from it, which results into (`{x.f, x.f.g}`, `{x.g, x.h,
-    /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The first vector contains the chain of
+    /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The result contains the chain of
     /// places that were expanded along with the target to of each expansion.
     #[allow(clippy::type_complexity)]
     pub(crate) fn expand(
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(Vec<ExpandStep<'tcx>>, Vec<Self>), PCGError> {
+    ) -> Result<DeepExpansion<'tcx>, PCGError> {
         assert!(
             self.is_prefix(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
         );
-        let mut place_set = Vec::new();
         let mut expanded = Vec::new();
         while self.projection.len() < to.projection.len() {
             let ShallowExpansion {
@@ -211,43 +213,10 @@ impl<'tcx> Place<'tcx> {
                 other_places,
                 kind,
             } = self.expand_one_level(to, repacker)?;
-            expanded.push(ExpandStep::new(self, target_place, kind));
-            place_set.extend(other_places);
+            expanded.push(ShallowExpansion::new(target_place, other_places, kind));
             self = target_place;
         }
-        Ok((expanded, place_set))
-    }
-
-    /// Try to collapse all places in `from` by following the
-    /// `guide_place`. This function is basically the reverse of
-    /// `expand`.
-    pub fn collapse(
-        self,
-        from: FxHashSet<Self>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<ExpandStep<'tcx>> {
-        let mut collapsed = Vec::new();
-        let mut guide_places = vec![self];
-        while let Some(place) = guide_places.pop() {
-            let mut next_projection_candidates: Vec<Place<'tcx>> = from
-                .iter()
-                .copied()
-                .filter(|p| place.is_strict_prefix(*p))
-                .sorted_by_key(|p| p.projection.len())
-                .collect();
-            while let Some(next_candidate) = next_projection_candidates.pop() {
-                let (expanded, new_places) = place.expand(next_candidate, repacker).unwrap();
-
-                // Don't consider unpacking with targets in `new_places` since they are going
-                // to be packed via the packing in `expanded`
-                next_projection_candidates.retain(|p| !new_places.contains(p));
-
-                collapsed.extend(expanded);
-                guide_places.extend(new_places);
-            }
-        }
-        collapsed.reverse();
-        collapsed
+        Ok(DeepExpansion::new(expanded))
     }
 
     /// Expand `self` one level down by following the `guide_place`.

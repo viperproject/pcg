@@ -412,6 +412,7 @@ impl Debug for PlaceCapabilitySummary<'_, '_> {
 }
 
 impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
+    #[tracing::instrument(skip(self, other), fields(self_block = self.block().index(), other_block = other.block().index()))]
     fn join(&mut self, other: &Self) -> bool {
         if other.has_error() && !self.has_error() {
             self.pcg = other.pcg.clone();

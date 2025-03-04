@@ -1,7 +1,7 @@
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowExpansion, BorrowPCGExpansion};
+use crate::borrow_pcg::borrow_pcg_expansion::{PlaceExpansion, BorrowPCGExpansion};
 use crate::borrow_pcg::edge::block::{BlockEdge, BlockEdgeKind};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
@@ -228,7 +228,7 @@ impl<'tcx> BorrowsState<'tcx> {
             if !target.is_owned(repacker) {
                 let expansion = BorrowPCGExpansion::new(
                     base.into(),
-                    BorrowExpansion::from_places(expansion.clone(), repacker),
+                    PlaceExpansion::from_places(expansion.clone(), repacker),
                     repacker,
                 )?;
 
@@ -255,7 +255,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 if !dest_places.is_empty() {
                     let expansion = BorrowPCGExpansion::from_borrowed_base(
                         rp.into(),
-                        BorrowExpansion::from_places(dest_places, repacker),
+                        PlaceExpansion::from_places(dest_places, repacker),
                         repacker,
                     )?;
                     self.record_and_apply_action(

@@ -13,7 +13,7 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 
-use crate::{combined_pcs::{PCGError, PCGUnsupportedError}, rustc_interface::{
+use crate::{borrow_pcg::borrow_pcg_expansion::PlaceExpansion, combined_pcs::{PCGError, PCGUnsupportedError}, rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHasher,
     index::IndexVec,
@@ -167,10 +167,6 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct PlaceProjectionError(String);
-
 impl<'tcx> Place<'tcx> {
     /// Projects the place deeper by one element.
     ///
@@ -246,6 +242,18 @@ impl<'tcx> Place<'tcx> {
     #[cfg(not(feature = "debug_info"))]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
         Self(PlaceRef { local, projection })
+    }
+
+    pub(crate) fn expansion_places(
+        self,
+        expansion: &PlaceExpansion<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Vec<Place<'tcx>> {
+        let mut places = Vec::new();
+        for elem in expansion.elems() {
+            places.push(self.project_deeper(elem, repacker).unwrap());
+        }
+        places
     }
 
     pub(crate) fn base_region_projection(
@@ -466,24 +474,6 @@ impl<'tcx> Place<'tcx> {
             && Self::partial_cmp(self, place)
                 .map(|o| o == PlaceOrdering::Prefix)
                 .unwrap_or(false)
-    }
-
-    /// Check if the place `self` is a prefix of `place` or vice versa. For example:
-    ///
-    /// +   `is_prefix(x.f, x.f) == None`
-    /// +   `is_prefix(x.f, x.f.g) == Some(true)`
-    /// +   `is_prefix(x.f.g, x.f) == Some(false)`
-    /// +   `is_prefix(x.g, x.f) == None`
-    pub(crate) fn either_prefix(self, place: Self) -> Option<bool> {
-        Self::partial_cmp(self, place).and_then(|o| {
-            if o == PlaceOrdering::Prefix {
-                Some(true)
-            } else if o == PlaceOrdering::Suffix {
-                Some(false)
-            } else {
-                None
-            }
-        })
     }
 
     /// Returns `true` if either of the places can reach the other

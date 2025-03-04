@@ -101,13 +101,12 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         let state = self.cursor.get();
 
-        let prev_post_main = state.get_curr_fpcg().data.entry_state.clone();
         let curr_fpcg = state.get_curr_fpcg();
         let curr_borrows = state.get_curr_borrow_pcg();
         if let Some(e) = curr_borrows.error() {
             return Err(e.clone());
         }
-        let repack_ops = curr_fpcg.repack_ops(&prev_post_main).map_err(|mut e| {
+        let repack_ops = curr_fpcg.repack_ops().map_err(|mut e| {
             e.add_context(format!("At {:?}", location));
             e
         })?;
