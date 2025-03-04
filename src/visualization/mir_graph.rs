@@ -44,7 +44,7 @@ fn format_bin_op(op: &BinOp) -> String {
         BinOp::AddUnchecked => todo!(),
         BinOp::SubUnchecked => todo!(),
         BinOp::MulUnchecked => todo!(),
-        BinOp::BitXor => todo!(),
+        BinOp::BitXor => "^".to_string(),
         BinOp::BitAnd => "&".to_string(),
         BinOp::BitOr => todo!(),
         BinOp::Shl => "<<".to_string(),

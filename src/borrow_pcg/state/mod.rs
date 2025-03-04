@@ -79,7 +79,7 @@ impl<'mir, 'tcx> DebugLines<PlaceRepacker<'mir, 'tcx>> for JoinTransitionElem<'t
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    pub(crate) capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
+    pub capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
     join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
@@ -164,7 +164,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph().frozen_graph()
     }
 
-    pub(crate) fn get_capability(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind> {
+    pub fn get_capability(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind> {
         self.capabilities.get(node)
     }
 
