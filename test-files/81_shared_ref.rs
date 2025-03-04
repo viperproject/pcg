@@ -3,6 +3,13 @@ struct S {
     b: i32,
 }
 
+fn f(x: Result<Option<usize>, ()>) {
+    if let Ok(s@Some(y)) = x {
+        let r = &s;
+        let d = *r;
+    }
+}
+
 fn main() {
     let x = S { a: 1, b: 2 };
     let y = &x.a;

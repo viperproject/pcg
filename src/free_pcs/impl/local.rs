@@ -83,7 +83,7 @@ pub struct DropGuard<'a, S: CheckValidityOnExpiry, T> {
     value: &'a mut T,
 }
 
-impl<'a, 'tcx, S: CheckValidityOnExpiry, T> std::ops::Deref for DropGuard<'a, S, T> {
+impl<S: CheckValidityOnExpiry, T> std::ops::Deref for DropGuard<'_, S, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -91,20 +91,20 @@ impl<'a, 'tcx, S: CheckValidityOnExpiry, T> std::ops::Deref for DropGuard<'a, S,
     }
 }
 
-impl<'a, 'tcx, S: CheckValidityOnExpiry, T> std::ops::DerefMut for DropGuard<'a, S, T> {
+impl<S: CheckValidityOnExpiry, T> std::ops::DerefMut for DropGuard<'_, S, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.value
     }
 }
 
-impl<'a, 'tcx, S: CheckValidityOnExpiry, T> DropGuard<'a, S, T> {
+impl<'a, S: CheckValidityOnExpiry, T> DropGuard<'a, S, T> {
     /// Caller must ensure that value borrows from `source`
     pub(crate) unsafe fn new(source: *const S, value: &'a mut T) -> Self {
         Self { source, value }
     }
 }
 
-impl<'a, 'tcx, S: CheckValidityOnExpiry, T> Drop for DropGuard<'a, S, T> {
+impl<S: CheckValidityOnExpiry, T> Drop for DropGuard<'_, S, T> {
     fn drop(&mut self) {
         // SAFETY: DropGuard::new ensures that `value` mutably borrows from `source`
         // once the DropGuard is dropped, `source` will no longer have any mutable references
@@ -124,7 +124,7 @@ impl Debug for CapabilityProjections<'_> {
     }
 }
 
-impl<'tcx> CheckValidityOnExpiry for CapabilityProjections<'tcx> {
+impl CheckValidityOnExpiry for CapabilityProjections<'_> {
     fn check_validity_on_expiry(&self) {
         self.check_validity();
     }
@@ -143,6 +143,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         self.0.insert(place, cap);
     }
 
+    #[allow(dead_code)]
     pub(crate) fn extend(
         &mut self,
         other: impl IntoIterator<Item = (Place<'tcx>, CapabilityKind)>,
@@ -240,7 +241,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     }
 
     pub(crate) fn update_cap(&mut self, place: Place<'tcx>, cap: CapabilityKind) {
-        let _old = self.insert(place, cap);
+        self.insert(place, cap);
         if validity_checks_enabled() {
             self.check_validity();
         }
@@ -358,21 +359,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
-        let f = from.clone();
         let mut old_caps: FxHashMap<_, _> = from
             .iter()
             .flat_map(|&p| self.remove(&p).map(|cap| (p, cap)))
             .collect();
         let collapsed = to.collapse(from, repacker);
-        eprintln!(
-            "Collapsing to {} from {} requires {:?}",
-            to.to_short_string(repacker),
-            f.iter()
-                .map(|p| p.to_short_string(repacker))
-                .collect::<Vec<_>>()
-                .join(", "),
-            collapsed
-        );
         let mut exclusive_at = Vec::new();
         if !to.projects_shared_ref(repacker) {
             for ExpandStep {

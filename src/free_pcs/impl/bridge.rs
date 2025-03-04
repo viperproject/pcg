@@ -95,44 +95,52 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         // TODO: remove need for clone
         let mut from = self.clone();
-        eprintln!("From initial: {:?}", from);
 
         let mut repacks = Vec::new();
         for (&place, &kind) in other.iter().sorted_by_key(|(p, _)| p.projection.len()) {
-            eprintln!("Place: {:?}, Kind: {:?}", place, kind);
             let place = CorrectedPlace::new(place, repacker);
             let related = from.find_all_related(*place, None);
-            if let Some(c) = from.get(&place)
-                && *c == kind
-            {
-                continue;
-            }
-            for (from_place, _) in (*related).iter().copied() {
-                match from_place.partial_cmp(*place).unwrap() {
-                    PlaceOrdering::Prefix => {
-                        let unpacks =
-                            from.expand(from_place, place, CapabilityKind::Exclusive, repacker)?;
-                        repacks.extend(unpacks);
-                        break;
+            if !from.contains_key(&place) {
+                for (from_place, _) in (*related)
+                    .iter()
+                    .copied()
+                    .sorted_by_key(|(p, _)| p.projection.len())
+                    .rev()
+                {
+                    match from_place.partial_cmp(*place).unwrap() {
+                        PlaceOrdering::Prefix => {
+                            let unpacks = from.expand(
+                                from_place,
+                                place,
+                                CapabilityKind::Exclusive,
+                                repacker,
+                            )?;
+                            repacks.extend(unpacks);
+                            break;
+                        }
+                        PlaceOrdering::Suffix => {
+                            let packs = from
+                                .collapse(related.get_places(), *place, repacker)
+                                .unwrap();
+                            repacks.extend(packs);
+                            break;
+                        }
+                        PlaceOrdering::Both => {
+                            let common_prefix = related.common_prefix(*place);
+                            let collapse_repacks =
+                                from.collapse(related.get_places(), common_prefix, repacker)?;
+                            let expand_repacks = from.expand(
+                                common_prefix,
+                                place,
+                                CapabilityKind::Exclusive,
+                                repacker,
+                            )?;
+                            repacks.extend(collapse_repacks);
+                            repacks.extend(expand_repacks);
+                            break;
+                        }
+                        PlaceOrdering::Equal => {}
                     }
-                    PlaceOrdering::Suffix => {
-                        let packs = from
-                            .collapse(related.get_places(), *place, repacker)
-                            .unwrap();
-                        repacks.extend(packs);
-                        break;
-                    }
-                    PlaceOrdering::Both => {
-                        let common_prefix = related.common_prefix(*place);
-                        let collapse_repacks =
-                            from.collapse(related.get_places(), common_prefix, repacker)?;
-                        let expand_repacks =
-                            from.expand(common_prefix, place, CapabilityKind::Exclusive, repacker)?;
-                        repacks.extend(collapse_repacks);
-                        repacks.extend(expand_repacks);
-                        break;
-                    }
-                    PlaceOrdering::Equal => {}
                 }
             }
             if !from.contains_key(&place) {
