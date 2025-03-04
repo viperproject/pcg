@@ -54,7 +54,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(repacker) {
             for c in results.iter() {
-                tracing::info!("{} {}", c.node.to_short_string(repacker), c.exact_alias);
+                tracing::debug!("{} {}", c.node.to_short_string(repacker), c.exact_alias);
             }
             results.insert(Alias {
                 node: place.into(),

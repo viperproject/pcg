@@ -43,6 +43,7 @@ impl<'tcx> Triple<'tcx> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Condition<'tcx> {
     Capability(Place<'tcx>, CapabilityKind),
+    RemoveCapability(Place<'tcx>),
     AllocateOrDeallocate(Local),
     Unalloc(Local),
     Return,
@@ -211,7 +212,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 BorrowKind::Fake(..) => return,
                 BorrowKind::Mut { .. } => Triple {
                     pre: Condition::exclusive(*place),
-                    post: None,
+                    post: Some(Condition::RemoveCapability((*place).into())),
                 },
             };
             self.main_triples.push(triple);

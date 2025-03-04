@@ -22,10 +22,7 @@ use crate::rustc_interface::middle::ty::TyCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
-use std::{
-    collections::{BTreeSet, HashSet},
-    ops::Deref,
-};
+use std::collections::{BTreeSet, HashSet};
 
 #[derive(Eq, PartialEq, Hash)]
 pub struct GraphCluster {
@@ -432,7 +429,7 @@ impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
         let place = node.as_current_place()?;
         let alloc = self.summary.get(place.local)?;
         if let CapabilityLocal::Allocated(projections) = alloc {
-            projections.deref().get(&place).cloned()
+            projections.get_capability(place)
         } else {
             None
         }
@@ -568,7 +565,7 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
             match capability {
                 CapabilityLocal::Unallocated => {}
                 CapabilityLocal::Allocated(projections) => {
-                    for (place, _) in projections.iter() {
+                    for place in projections.place_capabilities().keys() {
                         let capability_getter = &PCGCapabilityGetter {
                             summary: self.summary,
                             borrows_domain: self.borrows_domain,

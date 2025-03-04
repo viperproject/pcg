@@ -35,7 +35,7 @@ use crate::{
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
-    pub(crate) expansion: BorrowExpansion<'tcx>,
+    pub(crate) expansion: PlaceExpansion<'tcx>,
 }
 
 impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for ExpansionOfBorrowed<'tcx, P> {
@@ -44,14 +44,14 @@ impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for ExpansionOfBorr
         self.expansion.check_validity(repacker)
     }
 }
-/// The projections resulting from a node in the Borrow PCG.
+/// The projections resulting from an expansion of a place.
 ///
 /// This representation is preferred to a `Vec<PlaceElem>` because it ensures
 /// it enables a more reasonable notion of equality between expansions. Directly
 /// storing the place elements in a `Vec` could lead to different representations
 /// for the same expansion, e.g. `{*x.f.a, *x.f.b}` and `{*x.f.b, *x.f.a}`.
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub(crate) enum BorrowExpansion<'tcx> {
+pub(crate) enum PlaceExpansion<'tcx> {
     /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
     /// Note that for region projections, not every field of the base type may
     /// be included. For example consider the following:
@@ -75,19 +75,19 @@ pub(crate) enum BorrowExpansion<'tcx> {
     Subslice { from: u64, to: u64, from_end: bool },
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for BorrowExpansion<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
     fn check_validity(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }
 
-impl<'tcx> BorrowExpansion<'tcx> {
+impl<'tcx> PlaceExpansion<'tcx> {
     #[allow(unused)]
     pub(crate) fn is_deref(&self) -> bool {
-        matches!(self, BorrowExpansion::Deref)
+        matches!(self, PlaceExpansion::Deref)
     }
 
-    pub(super) fn from_places(places: Vec<Place<'tcx>>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub(crate) fn from_places(places: Vec<Place<'tcx>>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
         let mut constant_indices = BTreeSet::new();
 
@@ -110,15 +110,15 @@ impl<'tcx> BorrowExpansion<'tcx> {
                             from_end,
                         });
                     }
-                    PlaceElem::Deref => return BorrowExpansion::Deref,
+                    PlaceElem::Deref => return PlaceExpansion::Deref,
                     PlaceElem::Downcast(symbol, variant_idx) => {
-                        return BorrowExpansion::Downcast(symbol, variant_idx);
+                        return PlaceExpansion::Downcast(symbol, variant_idx);
                     }
                     PlaceElem::Index(idx) => {
-                        return BorrowExpansion::Index(idx);
+                        return PlaceExpansion::Index(idx);
                     }
                     PlaceElem::Subslice { from, to, from_end } => {
-                        return BorrowExpansion::Subslice { from, to, from_end };
+                        return PlaceExpansion::Subslice { from, to, from_end };
                     }
                     PlaceElem::OpaqueCast(_) => todo!(),
                     PlaceElem::Subtype(_) => todo!(),
@@ -128,17 +128,17 @@ impl<'tcx> BorrowExpansion<'tcx> {
 
         if !fields.is_empty() {
             assert!(constant_indices.is_empty());
-            BorrowExpansion::Fields(fields)
+            PlaceExpansion::Fields(fields)
         } else if !constant_indices.is_empty() {
-            BorrowExpansion::ConstantIndices(constant_indices)
+            PlaceExpansion::ConstantIndices(constant_indices)
         } else {
             unreachable!()
         }
     }
 
-    pub(super) fn elems(&self) -> Vec<PlaceElem<'tcx>> {
+    pub(crate) fn elems(&self) -> Vec<PlaceElem<'tcx>> {
         match self {
-            BorrowExpansion::Fields(fields) => {
+            PlaceExpansion::Fields(fields) => {
                 assert!(fields.len() <= 1024, "Too many fields: {:?}", fields);
                 fields
                     .iter()
@@ -146,12 +146,12 @@ impl<'tcx> BorrowExpansion<'tcx> {
                     .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
                     .collect()
             }
-            BorrowExpansion::Deref => vec![PlaceElem::Deref],
-            BorrowExpansion::Downcast(symbol, variant_idx) => {
+            PlaceExpansion::Deref => vec![PlaceElem::Deref],
+            PlaceExpansion::Downcast(symbol, variant_idx) => {
                 vec![PlaceElem::Downcast(*symbol, *variant_idx)]
             }
-            BorrowExpansion::Index(idx) => vec![PlaceElem::Index(*idx)],
-            BorrowExpansion::ConstantIndices(constant_indices) => constant_indices
+            PlaceExpansion::Index(idx) => vec![PlaceElem::Index(*idx)],
+            PlaceExpansion::ConstantIndices(constant_indices) => constant_indices
                 .iter()
                 .sorted_by_key(|a| a.offset)
                 .map(|c| PlaceElem::ConstantIndex {
@@ -160,7 +160,7 @@ impl<'tcx> BorrowExpansion<'tcx> {
                     from_end: c.from_end,
                 })
                 .collect(),
-            BorrowExpansion::Subslice { from, to, from_end } => {
+            PlaceExpansion::Subslice { from, to, from_end } => {
                 vec![PlaceElem::Subslice {
                     from: *from,
                     to: *to,
@@ -446,14 +446,14 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
 
     pub(super) fn new(
         base: P,
-        expansion: BorrowExpansion<'tcx>,
+        expansion: PlaceExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<Self, PCGError> {
         if let LocalNode::Place(p) = base.into()
             && p.is_owned(repacker)
         {
             assert!(
-                matches!(expansion, BorrowExpansion::Deref),
+                matches!(expansion, PlaceExpansion::Deref),
                 "Unexpected expansion for {:?}: {:?}",
                 base,
                 expansion
@@ -466,7 +466,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
 
     pub(super) fn from_borrowed_base(
         base: P,
-        expansion: BorrowExpansion<'tcx>,
+        expansion: PlaceExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<Self, PCGError> {
         if let LocalNode::Place(p) = base.into() {

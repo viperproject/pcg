@@ -12,51 +12,53 @@ use std::{
 
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 
-use crate::{utils::Place, validity_checks_enabled};
+use crate::utils::Place;
 
 #[derive(Debug, Deref)]
 pub(crate) struct RelatedSet<'tcx>(FxHashSet<(Place<'tcx>, CapabilityKind)>);
 
 impl<'tcx> RelatedSet<'tcx> {
     pub fn new(related: FxHashSet<(Place<'tcx>, CapabilityKind)>) -> Self {
-        if validity_checks_enabled() {
-            // Assert that for each place with Capability Exclusive, there is no prefix also with exclusive
-            for &(place, cap) in &related {
-                if cap == CapabilityKind::Exclusive {
-                    for &(other_place, other_cap) in &related {
-                        if other_place.is_strict_prefix(place)
-                            && other_cap == CapabilityKind::Exclusive
-                        {
-                            panic!(
-                                "Found place {:?} with Exclusive capability that has a prefix {:?} also with Exclusive capability",
-                                place,
-                                other_place
-                        );
-                        }
-                    }
-                }
-            }
-        }
+        // if validity_checks_enabled() {
+        //     // Assert that for each place with Capability Exclusive, there is no prefix also with exclusive
+        //     for &(place, cap) in &related {
+        //         if cap == CapabilityKind::Exclusive {
+        //             for &(other_place, other_cap) in &related {
+        //                 if other_place.is_strict_prefix(place)
+        //                     && other_cap == CapabilityKind::Exclusive
+        //                 {
+        //                     panic!(
+        //                         "Found place {:?} with Exclusive capability that has a prefix {:?} also with Exclusive capability",
+        //                         place,
+        //                         other_place
+        //                 );
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
         Self(related)
     }
 
-    pub fn get_places(&self) -> FxHashSet<Place<'tcx>> {
-        self.0.iter().map(|(p, _)| *p).collect()
+    pub(crate) fn place_to_collapse_to(
+        &self,
+        to: Place<'tcx>,
+        for_cap: CapabilityKind,
+    ) -> Place<'tcx> {
+        self.0.iter().fold(to.local.into(), |best, (p, cap)| {
+            if p.projection.len() >= best.projection.len()
+                && p.projection.len() <= to.projection.len()
+                && *cap >= for_cap
+            {
+                let result = to.common_prefix(*p);
+                if result.projection.len() > best.projection.len() {
+                    return result;
+                }
+            }
+            best
+        })
     }
 
-    pub fn get_only_place(&self) -> Place<'tcx> {
-        assert_eq!(self.0.len(), 1);
-        self.0.iter().next().unwrap().0
-    }
-
-    pub fn common_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
-        self.get_places()
-            .iter()
-            .fold(to, |acc, p| acc.common_prefix(*p))
-    }
-    pub(crate) fn len(&self) -> usize {
-        self.0.len()
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -109,7 +111,6 @@ impl PartialOrd for CapabilityKind {
             (CapabilityKind::Exclusive, CapabilityKind::Write) => Some(Ordering::Greater),
             (CapabilityKind::Write, CapabilityKind::Exclusive) => Some(Ordering::Less),
 
-            // Transitive relationships through LentShared
             (CapabilityKind::Exclusive, CapabilityKind::Read) => Some(Ordering::Greater),
             (CapabilityKind::Read, CapabilityKind::Exclusive) => Some(Ordering::Less),
 

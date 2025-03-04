@@ -9,7 +9,7 @@ mod local;
 mod place;
 pub(crate) mod engine;
 pub(crate) mod join_semi_lattice;
-mod triple;
+pub(crate) mod triple;
 mod update;
 mod bridge;
 

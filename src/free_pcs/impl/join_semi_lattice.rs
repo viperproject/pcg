@@ -6,18 +6,16 @@
 
 use std::rc::Rc;
 
-use itertools::Itertools;
+use crate::combined_pcs::PCGError;
 use crate::rustc_interface::mir_dataflow::JoinSemiLattice;
+use itertools::Itertools;
 
 use crate::{
-    combined_pcs::{EvalStmtPhase, PCGInternalError},
+    combined_pcs::EvalStmtPhase,
     free_pcs::{
-        CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary,
-        FreePlaceCapabilitySummary,
+        CapabilityLocal, CapabilityProjections, CapabilitySummary, FreePlaceCapabilitySummary,
     },
-    utils::{
-        corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker,
-    },
+    utils::PlaceRepacker,
 };
 
 impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
@@ -28,7 +26,7 @@ impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
         match entry_state.join(&other.data.states[EvalStmtPhase::PostMain], self.repacker) {
             Ok(changed) => changed,
             Err(e) => {
-                self.error = Some(e.into());
+                self.error = Some(e);
                 false
             }
         }
@@ -36,19 +34,11 @@ impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
 }
 
 pub(crate) trait RepackingJoinSemiLattice<'tcx> {
-    fn join(
-        &mut self,
-        other: &Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<bool, PCGInternalError>;
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError>;
 }
 
 impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilitySummary<'tcx> {
-    fn join(
-        &mut self,
-        other: &Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<bool, PCGInternalError> {
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError> {
         let mut changed = false;
         for (l, to) in self.iter_enumerated_mut() {
             let local_changed = to.join(&other[l], repacker)?;
@@ -59,11 +49,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilitySummary<'tcx> {
 }
 
 impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocal<'tcx> {
-    fn join(
-        &mut self,
-        other: &Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<bool, PCGInternalError> {
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError> {
         match (&mut *self, other) {
             (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(false),
             (CapabilityLocal::Allocated(to_places), CapabilityLocal::Allocated(from_places)) => {
@@ -80,90 +66,47 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocal<'tcx> {
 }
 
 impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
-    fn join(
-        &mut self,
-        other: &Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<bool, PCGInternalError> {
-        if self.is_empty() {
-            // Handle the bottom case
-            *self = other.clone();
-            return Ok(true);
-        }
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError> {
         let mut changed = false;
-        for (&place, &kind) in other.iter().sorted_by_key(|(p, _)| p.projection.len()) {
-            let related = self.find_all_related(place, None);
-            for (from_place, _) in (*related).iter().copied() {
-                let mut done_with_place = false;
-                let final_place = match from_place.partial_cmp(place).unwrap() {
-                    PlaceOrdering::Prefix => {
-                        let from = related.get_only_place();
-                        let joinable_place = if self[&from] != CapabilityKind::Exclusive {
-                            // One cannot expand a `Write` or a `ShallowInit` capability
-                            from
+        'outer: loop {
+            let expansions = self.expansions().clone();
+            for (place, other_expansion) in other
+                .expansions()
+                .iter()
+                .sorted_by_key(|(p, _)| p.projection.len())
+            {
+                if let Some(self_expansion) = expansions.get(place) {
+                    if other_expansion != self_expansion {
+                        tracing::debug!("collapse to {:?}", place);
+                        self.collapse(*place, repacker)?;
+                        tracing::debug!("self: {:?}", self);
+                        changed = true;
+                        continue 'outer;
+                    }
+                } else if self.contains_expansion_to(*place, repacker) {
+                    // Otherwise, this is an expansion from a place that won't survive the join
+                    tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
+                    tracing::debug!("other: {:?}", other);
+                    self.insert_expansion(*place, other_expansion.clone(), repacker);
+                    if let Some(cap) = other.get_capability(*place) {
+                        self.set_capability(*place, cap);
+                    } else {
+                        self.remove_capability(*place);
+                    }
+                    for place in place.expansion_places(other_expansion, repacker) {
+                        if let Some(cap) = other.get_capability(place) {
+                            self.set_capability(place, cap);
                         } else {
-                            from.joinable_to(place)
-                        };
-                        assert!(from.is_prefix(joinable_place));
-                        if joinable_place != from {
-                            changed = true;
-                            self.expand(
-                                from,
-                                CorrectedPlace::new(joinable_place, repacker),
-                                CapabilityKind::Exclusive,
-                                repacker,
-                            )
-                            .unwrap();
+                            self.remove_capability(place);
                         }
-                        Some(joinable_place)
                     }
-                    PlaceOrdering::Equal => Some(place),
-                    PlaceOrdering::Suffix => {
-                        // Downgrade the permission if needed
-                        for &(p, k) in &*related {
-                            // Might not contain key if `p.projects_ptr(repacker)`
-                            // returned `Some` in a previous iteration.
-                            if !self.contains_key(&p) {
-                                continue;
-                            }
-                            let collapse_to = if kind != CapabilityKind::Exclusive {
-                                place
-                            } else {
-                                place.joinable_to(p)
-                            };
-                            if collapse_to != p {
-                                changed = true;
-                                let mut from = related.get_places();
-                                from.retain(|&from| collapse_to.is_prefix(from));
-                                self.collapse(from, collapse_to, repacker).unwrap();
-                            }
-                            if k > kind {
-                                changed = true;
-                                self.update_cap(collapse_to, kind);
-                            }
-                        }
-                        None
-                    }
-                    PlaceOrdering::Both => {
-                        changed = true;
-                        let cp = related.common_prefix(place);
-                        self.collapse(related.get_places(), cp, repacker)?;
-                        done_with_place = true;
-                        Some(cp)
-                    }
-                };
-                if let Some(place) = final_place {
-                    // Downgrade the permission if needed
-                    if self[&place] > kind {
-                        changed = true;
-                        self.update_cap(place, kind);
-                    }
-                }
-                if done_with_place {
-                    break;
+                    changed = true;
+                    continue 'outer;
                 }
             }
+            break;
         }
+        tracing::debug!("self: {:?}", self);
         Ok(changed)
     }
 }

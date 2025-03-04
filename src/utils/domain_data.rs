@@ -11,7 +11,6 @@ pub(crate) struct DomainData<T> {
     pub(crate) entry_state: Rc<T>,
     pub(crate) states: DomainDataStates<T>,
     pub(crate) phase: DataflowPhase,
-    pub(crate) visited_stmts_in_block: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -26,6 +25,14 @@ impl<T> std::ops::Index<EvalStmtPhase> for DomainDataStates<T> {
 }
 
 impl<T: Clone> DomainDataStates<T> {
+    pub fn new(entry_state: Rc<T>) -> Self {
+        Self(EvalStmtData {
+            pre_operands: entry_state.clone(),
+            post_operands: entry_state.clone(),
+            pre_main: entry_state.clone(),
+            post_main: entry_state,
+        })
+    }
     pub(crate) fn get_mut(&mut self, phase: EvalStmtPhase) -> &mut T {
         Rc::<T>::make_mut(&mut self.0[phase])
     }
@@ -37,17 +44,15 @@ impl<T: Default> Default for DomainData<T> {
             entry_state: Rc::default(),
             states: Default::default(),
             phase: DataflowPhase::Init,
-            visited_stmts_in_block: false,
         }
     }
 }
-impl<T: Default> DomainData<T> {
+impl <T: Clone> DomainData<T> {
     pub(crate) fn new(entry_state: Rc<T>) -> Self {
         Self {
-            entry_state,
-            states: Default::default(),
+            entry_state: entry_state.clone(),
+            states: DomainDataStates::new(entry_state),
             phase: DataflowPhase::Init,
-            visited_stmts_in_block: false,
         }
     }
 }
@@ -74,7 +79,6 @@ impl<T: Clone> DomainData<T> {
             // The entry state may have taken into account previous joins
             self.states.0.post_main = self.entry_state.clone();
             self.phase = DataflowPhase::Transfer;
-            self.visited_stmts_in_block = true;
         } else {
             self.entry_state = self.states.0.post_main.clone();
         }

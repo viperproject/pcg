@@ -84,12 +84,14 @@ impl<'a, 'tcx> Analysis<'tcx> for FpcsEngine<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
+    #[tracing::instrument(skip(self, state, tw))]
     fn apply_before(
         &self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'tcx>,
         location: Location,
     ) {
+        state.actions[EvalStmtPhase::PreOperands].clear();
         if let Some(error) = tw.error {
             state.error = Some(error);
             return;
@@ -100,9 +102,15 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.repacker);
             let pre_operands = state.data.states.get_mut(EvalStmtPhase::PreOperands);
-            if let Err(e) = pre_operands.requires(triple.pre(), self.repacker) {
-                state.error = Some(e);
-                return;
+            match pre_operands.requires(triple.pre(), self.repacker) {
+                Ok(ops) => {
+                    tracing::debug!("Extend PreOperands with {:?}", ops);
+                    state.actions[EvalStmtPhase::PreOperands].extend(ops);
+                }
+                Err(e) => {
+                    state.error = Some(e);
+                    return;
+                }
             }
         }
 
@@ -122,6 +130,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         tw: TripleWalker<'tcx>,
         location: Location,
     ) {
+        state.actions[EvalStmtPhase::PreMain].clear();
         if let Some(error) = tw.error {
             state.error = Some(error);
             return;
@@ -131,9 +140,15 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         for &triple in &tw.main_triples {
             let triple = triple.replace_place(self.repacker);
             let pre_main = state.data.states.get_mut(EvalStmtPhase::PreMain);
-            if let Err(e) = pre_main.requires(triple.pre(), self.repacker) {
-                state.error = Some(e);
-                return;
+            match pre_main.requires(triple.pre(), self.repacker) {
+                Ok(ops) => {
+                    tracing::debug!("Extend PreMain with {:?}", ops);
+                    state.actions[EvalStmtPhase::PreMain].extend(ops);
+                }
+                Err(e) => {
+                    state.error = Some(e);
+                    return;
+                }
             }
         }
 

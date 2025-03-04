@@ -6,28 +6,36 @@
 
 use crate::{
     combined_pcs::PCGError,
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
+    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg_validity_assert,
     rustc_interface::middle::mir::{Local, RETURN_PLACE},
-    utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
-        PlaceOrdering, PlaceRepacker,
-    },
+    utils::{corrected::CorrectedPlace, LocalMutationIsAllowed, Place, PlaceRepacker},
 };
 
 use super::{
     triple::{Condition, Triple},
-    CapabilitySummary,
+    CapabilitySummary, RelatedSet,
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
+    pub(crate) fn set_capability(&mut self, place: Place<'tcx>, cap: CapabilityKind) {
+        self[place.local]
+            .get_allocated_mut()
+            .set_capability(place, cap)
+    }
+
     pub(crate) fn requires(
         &mut self,
         cond: Condition<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(), PCGError> {
+    ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
         match cond {
-            Condition::Unalloc(_) => {}
+            Condition::RemoveCapability(place) => {
+                let cp = self[place.local].get_allocated_mut();
+                cp.remove_capability(place);
+                Ok(vec![])
+            }
+            Condition::Unalloc(_) => Ok(vec![]),
             Condition::AllocateOrDeallocate(local) => {
                 match &mut self[local] {
                     cap @ CapabilityLocal::Unallocated => {
@@ -36,19 +44,19 @@ impl<'tcx> CapabilitySummary<'tcx> {
                         // precondition of SD can be met, but we'll catch this in
                         // `bridge` and emit a IgnoreSD op.
                         *cap = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
+                        Ok(vec![])
                     }
-                    CapabilityLocal::Allocated(_) => {
-                        self.requires(
-                            Condition::Capability(local.into(), CapabilityKind::Write),
-                            repacker,
-                        )?;
-                    }
+                    CapabilityLocal::Allocated(_) => self.requires(
+                        Condition::Capability(local.into(), CapabilityKind::Write),
+                        repacker,
+                    ),
                 }
             }
             Condition::Capability(place, cap) => {
                 let cp = self[place.local].get_allocated_mut();
-                cp.repack(place, repacker, cap)?;
-                cp.insert(place, cap);
+                let result = cp.repack(place, repacker, cap)?;
+                cp.set_capability(place, cap);
+                Ok(result)
             }
             Condition::Return => {
                 let always_live = repacker.always_live_locals();
@@ -63,13 +71,14 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     };
                     self.check_pre_satisfied(pre, repacker);
                 }
+                Ok(vec![])
             }
         }
-        Ok(())
     }
 
     fn check_pre_satisfied(&self, pre: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
         match pre {
+            Condition::RemoveCapability(_place) => {}
             Condition::Unalloc(local) => {
                 assert!(
                     self[local].is_unallocated(),
@@ -129,6 +138,10 @@ impl<'tcx> CapabilitySummary<'tcx> {
         };
         match post {
             Condition::Return => unreachable!(),
+            Condition::RemoveCapability(place) => {
+                let cp = self[place.local].get_allocated_mut();
+                cp.remove_capability(place);
+            }
             Condition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;
             }
@@ -136,72 +149,70 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 self[local] = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
             }
             Condition::Capability(place, cap) => {
-                self[place.local].get_allocated_mut().update_cap(place, cap);
+                self[place.local]
+                    .get_allocated_mut()
+                    .set_capability(place, cap);
             }
         }
     }
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
+    fn get_longest_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
+        self.place_capabilities()
+            .iter()
+            .filter(|(p, _)| p.is_prefix(to))
+            .max_by_key(|(p, _)| p.projection.len())
+            .map(|(p, _)| *p)
+            .unwrap_or(self.get_local().into())
+    }
+
+    pub(crate) fn place_to_collapse_to(
+        &self,
+        to: Place<'tcx>,
+        for_cap: CapabilityKind,
+    ) -> Place<'tcx> {
+        let related = self.find_all_related(to);
+        related.place_to_collapse_to(to, for_cap)
+    }
+
+    pub(crate) fn find_all_related(&self, to: Place<'tcx>) -> RelatedSet<'tcx> {
+        RelatedSet::new(
+            self.place_capabilities()
+                .iter()
+                .filter(|(p, _)| (*p).partial_cmp(&to).is_some())
+                .map(|(p, c)| (*p, *c))
+                .collect(),
+        )
+    }
+
+    #[tracing::instrument(skip(self, repacker))]
     pub(super) fn repack(
         &mut self,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         for_cap: CapabilityKind,
-    ) -> Result<(), PCGError> {
-        let related = self.find_all_related(to, None);
-        if for_cap.is_read() {
-            if self.contains_key(&to) {
-                return Ok(());
-            }
-            if let Some((projection_candidate, _)) = related
-                .iter()
-                .filter(|(p, _)| p.is_strict_prefix(to))
-                .max_by_key(|(p, _)| p.projection.len())
-            {
-                self.expand(
-                    *projection_candidate,
-                    CorrectedPlace::new(to, repacker),
-                    for_cap,
-                    repacker,
-                )?;
-                return Ok(());
-            }
+    ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
+        // TODO
+        // if !to.is_owned(repacker) {
+        // panic!("Cannot repack to borrowed place {:?}", to);
+        // }
+        let collapse_to = self.place_to_collapse_to(to, for_cap);
+        // eprintln!("Collapse to {collapse_to:?} for repack to {to:?} in {self:?}");
+        let mut result = self.collapse(collapse_to, repacker)?;
+        tracing::debug!("Post collapse result: {result:?}");
+        tracing::debug!("Post collapse self: {self:?}");
+        let prefix = self.get_longest_prefix(to);
+        if prefix != to && self.get_capability(to).is_none() {
+            result.extend(self.expand(
+                prefix,
+                CorrectedPlace::new(to, repacker),
+                for_cap,
+                repacker,
+            )?);
         }
-        for (from_place, cap) in (*related).iter().copied() {
-            match from_place.partial_cmp(to).unwrap() {
-                PlaceOrdering::Prefix => {
-                    if related.len() > 1 {
-                        panic!(
-                            "Cannot repack to {} for {:?}: more than 1 related place; {:?}",
-                            to.to_short_string(repacker),
-                            for_cap,
-                            related
-                        );
-                    }
-                    self.expand(
-                        related.get_only_place(),
-                        CorrectedPlace::new(to, repacker),
-                        for_cap,
-                        repacker,
-                    )?;
-                    return Ok(());
-                }
-                PlaceOrdering::Equal => (),
-                PlaceOrdering::Suffix => {
-                    self.collapse(related.get_places(), to, repacker)?;
-                    return Ok(());
-                }
-                PlaceOrdering::Both => {
-                    let cp = related.common_prefix(to);
-                    // Collapse
-                    self.collapse(related.get_places(), cp, repacker)?;
-                    // Expand
-                    self.expand(cp, CorrectedPlace::new(to, repacker), cap, repacker)?;
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
+        tracing::debug!("Result: {result:?}");
+        tracing::debug!("Self: {self:?}");
+        Ok(result)
     }
 }
