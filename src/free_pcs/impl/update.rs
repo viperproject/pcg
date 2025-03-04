@@ -10,7 +10,8 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::middle::mir::{Local, RETURN_PLACE},
     utils::{
-        corrected::CorrectedPlace, LocalMutationIsAllowed, Place, PlaceOrdering, PlaceRepacker,
+        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
+        PlaceOrdering, PlaceRepacker,
     },
 };
 
@@ -46,7 +47,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             }
             Condition::Capability(place, cap) => {
                 let cp = self[place.local].get_allocated_mut();
-                cp.repack(place, repacker)?;
+                cp.repack(place, repacker, cap)?;
                 cp.insert(place, cap);
             }
             Condition::Return => {
@@ -146,14 +147,27 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &mut self,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
+        for_cap: CapabilityKind,
     ) -> Result<(), PCGError> {
         let related = self.find_all_related(to, None);
-        for (from_place, _) in (*related).iter().copied() {
+        if for_cap.is_read() && self.contains_key(&to) {
+            return Ok(());
+        }
+        for (from_place, cap) in (*related).iter().copied() {
             match from_place.partial_cmp(to).unwrap() {
                 PlaceOrdering::Prefix => {
+                    if related.len() > 1 {
+                        panic!(
+                            "Cannot repack to {} for {:?}: more than 1 related place; {:?}",
+                            to.to_short_string(repacker),
+                            for_cap,
+                            related
+                        );
+                    }
                     self.expand(
                         related.get_only_place(),
                         CorrectedPlace::new(to, repacker),
+                        for_cap,
                         repacker,
                     )?;
                     return Ok(());
@@ -168,7 +182,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     // Collapse
                     self.collapse(related.get_places(), cp, repacker)?;
                     // Expand
-                    self.expand(cp, CorrectedPlace::new(to, repacker), repacker)?;
+                    self.expand(cp, CorrectedPlace::new(to, repacker), cap, repacker)?;
                     return Ok(());
                 }
             }

@@ -108,6 +108,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                             self.expand(
                                 from,
                                 CorrectedPlace::new(joinable_place, repacker),
+                                CapabilityKind::Exclusive,
                                 repacker,
                             )
                             .unwrap();

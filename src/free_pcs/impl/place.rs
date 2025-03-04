@@ -10,28 +10,52 @@ use std::{
     fmt::{Debug, Formatter, Result},
 };
 
-use rustc_interface::data_structures::fx::FxHashSet;
+use crate::rustc_interface::data_structures::fx::FxHashSet;
 
-use crate::{rustc_interface, utils::Place};
+use crate::{utils::Place, validity_checks_enabled};
 
 #[derive(Debug, Deref)]
 pub(crate) struct RelatedSet<'tcx>(FxHashSet<(Place<'tcx>, CapabilityKind)>);
 
 impl<'tcx> RelatedSet<'tcx> {
     pub fn new(related: FxHashSet<(Place<'tcx>, CapabilityKind)>) -> Self {
+        if validity_checks_enabled() {
+            // Assert that for each place with Capability Exclusive, there is no prefix also with exclusive
+            for &(place, cap) in &related {
+                if cap == CapabilityKind::Exclusive {
+                    for &(other_place, other_cap) in &related {
+                        if other_place.is_strict_prefix(place)
+                            && other_cap == CapabilityKind::Exclusive
+                        {
+                            panic!(
+                                "Found place {:?} with Exclusive capability that has a prefix {:?} also with Exclusive capability",
+                                place,
+                                other_place
+                        );
+                        }
+                    }
+                }
+            }
+        }
         Self(related)
     }
+
     pub fn get_places(&self) -> FxHashSet<Place<'tcx>> {
         self.0.iter().map(|(p, _)| *p).collect()
     }
+
     pub fn get_only_place(&self) -> Place<'tcx> {
         assert_eq!(self.0.len(), 1);
         self.0.iter().next().unwrap().0
     }
+
     pub fn common_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
         self.get_places()
             .iter()
             .fold(to, |acc, p| acc.common_prefix(*p))
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
     }
 }
 

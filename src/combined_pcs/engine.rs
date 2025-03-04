@@ -26,17 +26,18 @@ use crate::{
             ty::{self, GenericArgsRef, TyCtxt},
         },
     },
+    utils::Place,
     BodyAndBorrows,
 };
 
+use super::{
+    domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
+};
+use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::{
     borrow_pcg::engine::BorrowsEngine,
     free_pcs::{engine::FpcsEngine, CapabilityKind},
     utils::PlaceRepacker,
-};
-use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
-use super::{
-    domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
 };
 
 #[rustversion::since(2024-10-03)]
@@ -199,9 +200,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                 }
                 result
             }
-            TerminatorEdges::SwitchInt { targets, .. } => {
-                targets.all_targets().to_vec()
-            }
+            TerminatorEdges::SwitchInt { targets, .. } => targets.all_targets().to_vec(),
         }
     }
 
@@ -337,9 +336,14 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             match cap {
                 crate::free_pcs::CapabilityLocal::Unallocated => {}
                 crate::free_pcs::CapabilityLocal::Allocated(capability_projections) => {
-                    for (root, kind) in capability_projections.iter_mut() {
-                        if !borrows.contains((*root).into(), self.cgx.rp) && kind.is_read()  {
-                            *kind = CapabilityKind::Exclusive;
+                    let places: Vec<Place<'tcx>> =
+                        capability_projections.iter().map(|(p, _)| *p).collect();
+                    for p in places {
+                        if !borrows.contains(p.into(), self.cgx.rp)
+                            && capability_projections[&p].is_read()
+                            && capability_projections.is_leaf(p)
+                        {
+                            capability_projections.insert(p, CapabilityKind::Exclusive);
                         }
                     }
                 }

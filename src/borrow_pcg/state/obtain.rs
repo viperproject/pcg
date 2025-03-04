@@ -13,6 +13,7 @@ use crate::combined_pcs::{PCGError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::{self, Mutability};
+use crate::utils::display::DisplayWithRepacker;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
@@ -79,7 +80,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(place, repacker, location)?;
+            let extra_acts = self.expand_to(place, repacker, obtain_reason, location)?;
             actions.extend(extra_acts);
         }
 
@@ -186,15 +187,23 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         to_place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
+        obtain_reason: ObtainReason,
         location: Location,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
+        eprintln!(
+            "Expanding to {} because of {:?}",
+            to_place.to_short_string(repacker),
+            obtain_reason
+        );
+        let for_exclusive = obtain_reason.min_post_obtain_capability() != CapabilityKind::Read;
         let mut actions = ExecutedActions::new();
 
         for (base, _) in to_place.iter_projections() {
             let base: Place<'tcx> = base.into();
             let base = base.with_inherent_region(repacker);
-            let (target, mut expansion, kind) = base.expand_one_level(to_place, repacker)?;
-            kind.insert_target_into_expansion(target, &mut expansion);
+            let expand_result = base.expand_one_level(to_place, repacker)?;
+            let expansion = expand_result.expansion();
+            let target = expand_result.target_place;
 
             if let ty::TyKind::Ref(region, _, _) = base.ty(repacker).ty.kind() {
                 // This is a dereference, taking the the form t -> *t where t
@@ -213,7 +222,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.record_and_apply_action(
                     BorrowPCGAction::add_edge(
                         BorrowPCGEdge::new(block_edge.into(), PathConditions::new(location.block)),
-                        true,
+                        for_exclusive,
                     ),
                     &mut actions,
                     repacker,
@@ -234,7 +243,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
                         PathConditions::new(location.block),
                     ),
-                    true,
+                    for_exclusive,
                 );
                 self.record_and_apply_action(action, &mut actions, repacker)?;
             }
@@ -261,7 +270,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
                                 PathConditions::new(location.block),
                             ),
-                            true,
+                            for_exclusive,
                         ),
                         &mut actions,
                         repacker,

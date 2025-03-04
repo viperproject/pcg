@@ -22,6 +22,7 @@ use crate::{
     borrow_pcg::region_projection::PCGRegion,
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface,
+    utils::display::DisplayWithRepacker,
 };
 
 use super::Place;
@@ -34,6 +35,37 @@ pub enum ProjectionKind {
     Field(FieldIdx),
     ConstantIndex(ConstantIndex),
     Other,
+}
+
+pub struct ShallowExpansion<'tcx> {
+    pub(crate) target_place: Place<'tcx>,
+
+    /// Other places that could have resulted from this expansion. Note: this
+    /// vector is always incomplete when projecting with `Index` or `Subslice`
+    /// and also when projecting a slice type with `ConstantIndex`!
+    pub(crate) other_places: Vec<Place<'tcx>>,
+    pub(crate) kind: ProjectionKind,
+}
+
+impl<'tcx> ShallowExpansion<'tcx> {
+    pub(crate) fn new(
+        target_place: Place<'tcx>,
+        other_places: Vec<Place<'tcx>>,
+        kind: ProjectionKind,
+    ) -> Self {
+        Self {
+            target_place,
+            other_places,
+            kind,
+        }
+    }
+
+    pub(crate) fn expansion(&self) -> Vec<Place<'tcx>> {
+        let mut expansion = self.other_places.clone();
+        self.kind
+            .insert_target_into_expansion(self.target_place, &mut expansion);
+        expansion
+    }
 }
 
 impl ProjectionKind {
@@ -127,6 +159,23 @@ pub struct ConstantIndex {
     pub(crate) from_end: bool,
 }
 
+#[derive(Debug)]
+pub struct ExpandStep<'tcx> {
+    pub(crate) base_place: Place<'tcx>,
+    pub(crate) projected_place: Place<'tcx>,
+    pub(crate) kind: ProjectionKind,
+}
+
+impl<'tcx> ExpandStep<'tcx> {
+    pub(crate) fn new(from: Place<'tcx>, to: Place<'tcx>, kind: ProjectionKind) -> Self {
+        Self {
+            base_place: from,
+            projected_place: to,
+            kind,
+        }
+    }
+}
+
 impl<'tcx> Place<'tcx> {
     pub(crate) fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
         MirPlace {
@@ -149,7 +198,7 @@ impl<'tcx> Place<'tcx> {
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(Vec<(Self, Self, ProjectionKind)>, Vec<Self>), PCGError> {
+    ) -> Result<(Vec<ExpandStep<'tcx>>, Vec<Self>), PCGError> {
         assert!(
             self.is_prefix(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
@@ -157,10 +206,14 @@ impl<'tcx> Place<'tcx> {
         let mut place_set = Vec::new();
         let mut expanded = Vec::new();
         while self.projection.len() < to.projection.len() {
-            let (new_minuend, places, kind) = self.expand_one_level(to, repacker)?;
-            expanded.push((self, new_minuend, kind));
-            place_set.extend(places);
-            self = new_minuend;
+            let ShallowExpansion {
+                target_place,
+                other_places,
+                kind,
+            } = self.expand_one_level(to, repacker)?;
+            expanded.push(ExpandStep::new(self, target_place, kind));
+            place_set.extend(other_places);
+            self = target_place;
         }
         Ok((expanded, place_set))
     }
@@ -170,30 +223,31 @@ impl<'tcx> Place<'tcx> {
     /// `expand`.
     pub fn collapse(
         self,
-        from: &mut FxHashSet<Self>,
+        from: FxHashSet<Self>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Vec<(Self, Self, ProjectionKind)> {
+    ) -> Vec<ExpandStep<'tcx>> {
         let mut collapsed = Vec::new();
         let mut guide_places = vec![self];
-        while let Some(guide_place) = guide_places.pop() {
-            if !from.remove(&guide_place) {
-                let expand_guide = *from
-                    .iter()
-                    .find(|p| guide_place.is_prefix(**p))
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "The `from` set didn't contain all \
-                            the places required to construct the \
-                            `guide_place`. Currently tried to find \
-                            `{guide_place:?}` in `{from:?}`."
-                        )
-                    });
-                let (expanded, new_places) = guide_place.expand(expand_guide, repacker).unwrap();
-                // Doing `collapsed.extend(expanded)` would result in a reversed order.
-                // Could also change this to `collapsed.push(expanded)` and return Vec<Vec<_>>.
+        while let Some(place) = guide_places.pop() {
+            let mut next_projection_candidates: Vec<Place<'tcx>> = from
+                .iter()
+                .copied()
+                .filter(|p| place.is_prefix_exact(*p))
+                .collect();
+            while let Some(next_candidate) = next_projection_candidates.pop() {
+                eprintln!(
+                    "Projection candidate {} for {}",
+                    next_candidate.to_short_string(repacker),
+                    place.to_short_string(repacker)
+                );
+                let (expanded, new_places) = place.expand(next_candidate, repacker).unwrap();
+
+                // Don't consider unpacking with targets in `new_places` since they are going
+                // to be packed via the packing in `expanded`
+                next_projection_candidates.retain(|p| !new_places.contains(p));
+
                 collapsed.extend(expanded);
                 guide_places.extend(new_places);
-                from.remove(&expand_guide);
             }
         }
         collapsed.reverse();
@@ -202,14 +256,12 @@ impl<'tcx> Place<'tcx> {
 
     /// Expand `self` one level down by following the `guide_place`.
     /// Returns the new `self` and a vector containing other places that
-    /// could have resulted from the expansion. Note: this vector is always
-    /// incomplete when projecting with `Index` or `Subslice` and also when
-    /// projecting a slice type with `ConstantIndex`!
+    /// could have resulted from the expansion.
     pub fn expand_one_level(
         self,
         guide_place: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(Self, Vec<Self>, ProjectionKind), PCGError> {
+    ) -> Result<ShallowExpansion<'tcx>, PCGError> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
@@ -289,7 +341,7 @@ impl<'tcx> Place<'tcx> {
                 self,
             );
         }
-        Ok((new_current_place, other_places, kind))
+        Ok(ShallowExpansion::new(new_current_place, other_places, kind))
     }
 
     /// Expands a place `x.f.g` of type struct into a vector of places for

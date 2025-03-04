@@ -6,7 +6,7 @@
 
 use std::fmt::{Debug, Formatter, Result};
 
-use derive_more::{Deref, DerefMut};
+use derive_more::Deref;
 use rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
     middle::mir::Local,
@@ -17,9 +17,10 @@ use crate::{
     free_pcs::{CapabilityKind, RelatedSet, RepackOp},
     pcg_validity_assert, rustc_interface,
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceOrdering,
+        corrected::CorrectedPlace, display::DisplayWithRepacker, ExpandStep, Place, PlaceOrdering,
         PlaceRepacker,
     },
+    validity_checks_enabled,
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -73,7 +74,46 @@ impl<'tcx> CapabilityLocal<'tcx> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
+pub trait CheckValidityOnExpiry {
+    fn check_validity_on_expiry(&self);
+}
+
+pub struct DropGuard<'a, S: CheckValidityOnExpiry, T> {
+    source: *const S,
+    value: &'a mut T,
+}
+
+impl<'a, 'tcx, S: CheckValidityOnExpiry, T> std::ops::Deref for DropGuard<'a, S, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.value
+    }
+}
+
+impl<'a, 'tcx, S: CheckValidityOnExpiry, T> std::ops::DerefMut for DropGuard<'a, S, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.value
+    }
+}
+
+impl<'a, 'tcx, S: CheckValidityOnExpiry, T> DropGuard<'a, S, T> {
+    /// Caller must ensure that value borrows from `source`
+    pub(crate) unsafe fn new(source: *const S, value: &'a mut T) -> Self {
+        Self { source, value }
+    }
+}
+
+impl<'a, 'tcx, S: CheckValidityOnExpiry, T> Drop for DropGuard<'a, S, T> {
+    fn drop(&mut self) {
+        // SAFETY: DropGuard::new ensures that `value` mutably borrows from `source`
+        // once the DropGuard is dropped, `source` will no longer have any mutable references
+        // and we can safely obtain a shared reference to it
+        unsafe { (*self.source).check_validity_on_expiry() };
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Deref)]
 /// The permissions for all the projections of a place
 // We only need the projection part of the place
 pub struct CapabilityProjections<'tcx>(FxHashMap<Place<'tcx>, CapabilityKind>);
@@ -84,7 +124,100 @@ impl Debug for CapabilityProjections<'_> {
     }
 }
 
+impl<'tcx> CheckValidityOnExpiry for CapabilityProjections<'tcx> {
+    fn check_validity_on_expiry(&self) {
+        self.check_validity();
+    }
+}
+
 impl<'tcx> CapabilityProjections<'tcx> {
+    pub(crate) fn is_leaf(&self, place: Place<'tcx>) -> bool {
+        self.0.iter().all(|(p, _)| p.is_prefix(place))
+    }
+
+    pub(crate) fn get_mut(&mut self, place: Place<'tcx>) -> Option<&mut CapabilityKind> {
+        self.0.get_mut(&place)
+    }
+
+    pub(crate) fn insert(&mut self, place: Place<'tcx>, cap: CapabilityKind) {
+        self.0.insert(place, cap);
+    }
+
+    pub(crate) fn extend(
+        &mut self,
+        other: impl IntoIterator<Item = (Place<'tcx>, CapabilityKind)>,
+    ) {
+        self.0.extend(other);
+        if validity_checks_enabled() {
+            self.check_validity();
+        }
+    }
+
+    pub(crate) fn remove(&mut self, place: &Place<'tcx>) -> Option<CapabilityKind> {
+        self.0.remove(place)
+    }
+
+    pub(crate) fn iter_mut<'a>(
+        &'a mut self,
+    ) -> impl Iterator<
+        Item = (
+            Place<'tcx>,
+            DropGuard<'a, CapabilityProjections<'tcx>, CapabilityKind>,
+        ),
+    > {
+        struct Iter<'a, 'tcx> {
+            inner: *mut CapabilityProjections<'tcx>,
+            places: Vec<Place<'tcx>>,
+            idx: usize,
+            _marker: std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'a, 'tcx: 'a> Iterator for Iter<'a, 'tcx> {
+            type Item = (
+                Place<'tcx>,
+                DropGuard<'a, CapabilityProjections<'tcx>, CapabilityKind>,
+            );
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.idx >= self.places.len() {
+                    None
+                } else {
+                    let place: Place<'tcx> = self.places[self.idx];
+                    // SAFETY: As long as `Iter<'a, tcx> is live, self.inner is blocked`
+                    let capability: &'a mut CapabilityKind =
+                        unsafe { self.inner.as_mut().unwrap().get_mut(place).unwrap() };
+                    self.idx += 1;
+                    // SAFETY: `capability` borrows from self.inner
+                    let guard = unsafe { DropGuard::new(self.inner, capability) };
+                    Some((place, guard))
+                }
+            }
+        }
+
+        let places = self.0.keys().copied().collect();
+        Iter {
+            inner: self,
+            places,
+            idx: 0,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    fn check_validity(&self) {
+        for (place, cap) in &**self {
+            if cap.is_exclusive() {
+                for (other_place, other_cap) in &**self {
+                    if other_place.is_strict_prefix(*place) && other_cap.is_exclusive() {
+                        panic!(
+                            "Found place {:?} with Exclusive capability that has a prefix {:?} also with Exclusive capability",
+                            place,
+                            other_place
+                    );
+                    }
+                }
+            }
+        }
+    }
     pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(p, k)| format!("{}: {:?}", p.to_short_string(repacker), k))
@@ -108,6 +241,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
 
     pub(crate) fn update_cap(&mut self, place: Place<'tcx>, cap: CapabilityKind) {
         let _old = self.insert(place, cap);
+        if validity_checks_enabled() {
+            self.check_validity();
+        }
         // assert!(old.is_some());
     }
 
@@ -154,6 +290,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &mut self,
         from: Place<'tcx>,
         to: CorrectedPlace<'tcx>,
+        for_cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         assert!(
@@ -161,23 +298,55 @@ impl<'tcx> CapabilityProjections<'tcx> {
             "Mutable reference {:?} should be expanded in borrow PCG, not owned PCG",
             from
         );
-        pcg_validity_assert!(!self.contains_key(&to));
-        let (expanded, mut others) = from.expand(*to, repacker)?;
-        let mut perm = self.remove(&from).unwrap();
-        others.push(*to);
+        pcg_validity_assert!(
+            !self.contains_key(&to),
+            "We don't need to expand to {} because it already has a capability ({:?})",
+            to.to_short_string(repacker),
+            self.get(&to)
+        );
+
+        let (expand_steps, other_expanded_places) = from.expand(*to, repacker)?;
+
+        // Update permission of `from` place
+        let from_cap = *self.get(&from).unwrap();
+        let other_place_perm = from_cap;
+        let projection_path_perm = if for_cap.is_read() {
+            Some(CapabilityKind::Read)
+        } else {
+            None
+        };
+
+        for place in other_expanded_places.iter() {
+            self.insert(*place, other_place_perm);
+        }
+
         let mut ops = Vec::new();
-        for (from, to, kind) in expanded {
-            let others = others.extract_if(|other| !to.is_prefix(*other));
-            self.extend(others.map(|p| (p, perm)));
-            if kind.is_box() && perm.is_shallow_exclusive() {
-                ops.push(RepackOp::DerefShallowInit(from, to));
-                perm = CapabilityKind::Write;
+
+        for ExpandStep {
+            base_place,
+            projected_place,
+            kind,
+        } in expand_steps
+        {
+            if let Some(perm) = projection_path_perm {
+                self.insert(base_place, perm);
             } else {
-                ops.push(RepackOp::Expand(from, to, perm));
+                self.remove(&base_place);
+            }
+
+            if kind.is_box() && from_cap.is_shallow_exclusive() {
+                ops.push(RepackOp::DerefShallowInit(base_place, projected_place));
+            } else {
+                ops.push(RepackOp::Expand(base_place, projected_place, for_cap));
             }
         }
-        self.extend(others.into_iter().map(|p| (p, perm)));
-        // assert!(self.contains_key(&to), "{self:?}\n{to:?}");
+
+        self.insert(*to, from_cap);
+
+        if validity_checks_enabled() {
+            self.check_validity();
+        }
+
         Ok(ops)
     }
 
@@ -185,27 +354,33 @@ impl<'tcx> CapabilityProjections<'tcx> {
     // state can always be packed up to the root
     pub(crate) fn collapse(
         &mut self,
-        mut from: FxHashSet<Place<'tcx>>,
+        from: FxHashSet<Place<'tcx>>,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
-        // We could instead return this error, but failing early might be better
-        // for development
-        if self.contains_key(&to) {
-            let err = PCGInternalError::new(format!(
-                "Cannot collapse (from:{from:?}, to:{to:?}) because {to:?} already exists in {self:?}"
-            ));
-            panic!("{:?}", err);
-        }
+        let f = from.clone();
         let mut old_caps: FxHashMap<_, _> = from
             .iter()
             .flat_map(|&p| self.remove(&p).map(|cap| (p, cap)))
             .collect();
-        let collapsed = to.collapse(&mut from, repacker);
-        assert!(from.is_empty(), "{from:?} ({collapsed:?}) {to:?}");
+        let collapsed = to.collapse(from, repacker);
+        eprintln!(
+            "Collapsing to {} from {} requires {:?}",
+            to.to_short_string(repacker),
+            f.iter()
+                .map(|p| p.to_short_string(repacker))
+                .collect::<Vec<_>>()
+                .join(", "),
+            collapsed
+        );
         let mut exclusive_at = Vec::new();
         if !to.projects_shared_ref(repacker) {
-            for (to, _, kind) in &collapsed {
+            for ExpandStep {
+                projected_place: to,
+                kind,
+                ..
+            } in &collapsed
+            {
                 if kind.is_shared_ref() {
                     let mut is_prefixed = false;
                     exclusive_at
@@ -224,8 +399,15 @@ impl<'tcx> CapabilityProjections<'tcx> {
             }
         }
         let mut ops = Vec::new();
-        for (to, from, _) in collapsed {
-            let removed_perms: Vec<_> = old_caps.extract_if(|old, _| to.is_prefix(*old)).collect();
+        for ExpandStep {
+            base_place,
+            projected_place,
+            ..
+        } in &collapsed
+        {
+            let removed_perms: Vec<_> = old_caps
+                .extract_if(|old, _| projected_place.is_prefix(*old))
+                .collect();
             let perm = removed_perms
                 .iter()
                 .fold(CapabilityKind::Exclusive, |acc, (_, p)| {
@@ -235,17 +417,25 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 });
             for (from, from_perm) in removed_perms {
                 match from_perm.partial_cmp(&perm) {
-                    Some(std::cmp::Ordering::Equal) => {},  // Equal, do nothing
+                    Some(std::cmp::Ordering::Equal) => {} // Equal, do nothing
                     Some(std::cmp::Ordering::Greater) => {
                         ops.push(RepackOp::Weaken(from, from_perm, perm));
-                    },
+                    }
                     _ => panic!("Weaken {:?} {:?} {:?}", from, from_perm, perm),
                 }
             }
-            old_caps.insert(to, perm);
-            ops.push(RepackOp::Collapse(to, from, perm));
+            old_caps.insert(*base_place, perm);
+            ops.push(RepackOp::Collapse(*base_place, *projected_place, perm));
         }
+        pcg_validity_assert!(
+            old_caps.contains_key(&to),
+            "Old capabilities does not have a capability for collapse target {}",
+            to.to_short_string(repacker)
+        );
         self.insert(to, old_caps[&to]);
+        if validity_checks_enabled() {
+            self.check_validity();
+        }
         Ok(ops)
     }
 }

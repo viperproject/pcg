@@ -4,12 +4,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use itertools::Itertools;
+
 use crate::{
     combined_pcs::PCGError,
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
-    utils::{corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker},
+    utils::{
+        corrected::CorrectedPlace, display::DisplayWithRepacker, PlaceOrdering, PlaceRepacker,
+    },
 };
 
 pub trait RepackingBridgeSemiLattice<'tcx> {
@@ -57,7 +61,7 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
-                for (&p, k) in cps.iter_mut() {
+                for (p, mut k) in cps.iter_mut() {
                     if *k > CapabilityKind::Write {
                         repacks.push(RepackOp::Weaken(p, *k, CapabilityKind::Write));
                         *k = CapabilityKind::Write;
@@ -91,15 +95,23 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
         // TODO: remove need for clone
         let mut from = self.clone();
+        eprintln!("From initial: {:?}", from);
 
         let mut repacks = Vec::new();
-        for (&place, &kind) in &**other {
+        for (&place, &kind) in other.iter().sorted_by_key(|(p, _)| p.projection.len()) {
+            eprintln!("Place: {:?}, Kind: {:?}", place, kind);
             let place = CorrectedPlace::new(place, repacker);
             let related = from.find_all_related(*place, None);
+            if let Some(c) = from.get(&place)
+                && *c == kind
+            {
+                continue;
+            }
             for (from_place, _) in (*related).iter().copied() {
                 match from_place.partial_cmp(*place).unwrap() {
                     PlaceOrdering::Prefix => {
-                        let unpacks = from.expand(from_place, place, repacker)?;
+                        let unpacks =
+                            from.expand(from_place, place, CapabilityKind::Exclusive, repacker)?;
                         repacks.extend(unpacks);
                         break;
                     }
@@ -114,13 +126,21 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         let common_prefix = related.common_prefix(*place);
                         let collapse_repacks =
                             from.collapse(related.get_places(), common_prefix, repacker)?;
-                        let expand_repacks = from.expand(common_prefix, place, repacker)?;
+                        let expand_repacks =
+                            from.expand(common_prefix, place, CapabilityKind::Exclusive, repacker)?;
                         repacks.extend(collapse_repacks);
                         repacks.extend(expand_repacks);
                         break;
                     }
                     PlaceOrdering::Equal => {}
                 }
+            }
+            if !from.contains_key(&place) {
+                panic!(
+                    "from does not contain place: {}. From: {:?}",
+                    place.to_short_string(repacker),
+                    from
+                );
             }
             // Downgrade the permission if needed
             let curr = from[&place];
