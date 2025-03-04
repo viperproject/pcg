@@ -233,7 +233,12 @@ impl<'tcx> BorrowsState<'tcx> {
         for_exclusive: bool,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<bool, PCGError> {
-        let changed = self.insert(edge.clone());
+        let mut changed = self.insert(edge.clone());
+        eprintln!(
+            "Add edge {:?} (for exclusive: {})",
+            edge.to_short_string(repacker),
+            for_exclusive
+        );
         Ok(match edge.kind {
             BorrowPCGEdgeKind::Borrow(_) => todo!(),
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
@@ -263,22 +268,16 @@ impl<'tcx> BorrowsState<'tcx> {
                     // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
                     // gets its permission from `x↓'a`.
                     if !expansion.is_deref_of_borrow(repacker) {
-                        match expanded_capability {
-                            CapabilityKind::Read => {
-                                _ = self.set_capability(
-                                    base.into(),
-                                    CapabilityKind::Read,
-                                    repacker,
-                                );
-                            }
-                            _ => {
-                                _ = self.remove_capability(base.into());
-                            }
+                        if for_exclusive {
+                            changed |= self.remove_capability(base.into());
+                        } else {
+                            changed |=
+                                self.set_capability(base.into(), CapabilityKind::Read, repacker);
                         }
                     }
 
                     for p in expansion.expansion(repacker)?.iter() {
-                        _ = self.set_capability((*p).into(), expanded_capability, repacker);
+                        changed |= self.set_capability((*p).into(), expanded_capability, repacker);
                     }
                 }
                 changed
