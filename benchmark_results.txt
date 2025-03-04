@@ -78,3 +78,12 @@
 78_interior_mutability_observable.rs: 46875188
 79_add_overflow.rs: 69546402
 80_crc_bytewise.rs: 211820594
+79_add_overflow.rs: 69144639
+80_crc_bytewise.rs: 221361585
+81_shared_ref.rs: 43520001
+82_shared_ref_2.rs: 58097901
+83_prusti_wand.rs: 44743154
+84_prusti_ownership.rs: 41035866
+85_prusti_rpe_example.rs: 40983383
+86_prusti_mut_borrows.rs: 52540071
+87_prusti_create_box.rs: 50621751
