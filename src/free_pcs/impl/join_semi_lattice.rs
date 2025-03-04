@@ -6,7 +6,8 @@
 
 use std::rc::Rc;
 
-use rustc_interface::mir_dataflow::JoinSemiLattice;
+use itertools::Itertools;
+use crate::rustc_interface::mir_dataflow::JoinSemiLattice;
 
 use crate::{
     combined_pcs::{EvalStmtPhase, PCGInternalError},
@@ -14,8 +15,9 @@ use crate::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary,
         FreePlaceCapabilitySummary,
     },
-    rustc_interface,
-    utils::{corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker},
+    utils::{
+        corrected::CorrectedPlace, PlaceOrdering, PlaceRepacker,
+    },
 };
 
 impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
@@ -89,7 +91,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
             return Ok(true);
         }
         let mut changed = false;
-        for (&place, &kind) in &**other {
+        for (&place, &kind) in other.iter().sorted_by_key(|(p, _)| p.projection.len()) {
             let related = self.find_all_related(place, None);
             for (from_place, _) in (*related).iter().copied() {
                 let mut done_with_place = false;
@@ -144,7 +146,6 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                     }
                     PlaceOrdering::Both => {
                         changed = true;
-
                         let cp = related.common_prefix(place);
                         self.collapse(related.get_places(), cp, repacker)?;
                         done_with_place = true;

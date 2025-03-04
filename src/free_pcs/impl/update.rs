@@ -150,8 +150,23 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for_cap: CapabilityKind,
     ) -> Result<(), PCGError> {
         let related = self.find_all_related(to, None);
-        if for_cap.is_read() && self.contains_key(&to) {
-            return Ok(());
+        if for_cap.is_read() {
+            if self.contains_key(&to) {
+                return Ok(());
+            }
+            if let Some((projection_candidate, _)) = related
+                .iter()
+                .filter(|(p, _)| p.is_strict_prefix(to))
+                .max_by_key(|(p, _)| p.projection.len())
+            {
+                self.expand(
+                    *projection_candidate,
+                    CorrectedPlace::new(to, repacker),
+                    for_cap,
+                    repacker,
+                )?;
+                return Ok(());
+            }
         }
         for (from_place, cap) in (*related).iter().copied() {
             match from_place.partial_cmp(to).unwrap() {

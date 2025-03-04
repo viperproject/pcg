@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use itertools::Itertools;
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     index::{bit_set::BitSet, Idx},
@@ -22,7 +23,6 @@ use crate::{
     borrow_pcg::region_projection::PCGRegion,
     combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface,
-    utils::display::DisplayWithRepacker,
 };
 
 use super::Place;
@@ -60,7 +60,7 @@ impl<'tcx> ShallowExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn expansion(&self) -> Vec<Place<'tcx>> {
+    pub fn expansion(&self) -> Vec<Place<'tcx>> {
         let mut expansion = self.other_places.clone();
         self.kind
             .insert_target_into_expansion(self.target_place, &mut expansion);
@@ -232,14 +232,10 @@ impl<'tcx> Place<'tcx> {
             let mut next_projection_candidates: Vec<Place<'tcx>> = from
                 .iter()
                 .copied()
-                .filter(|p| place.is_prefix_exact(*p))
+                .filter(|p| place.is_strict_prefix(*p))
+                .sorted_by_key(|p| p.projection.len())
                 .collect();
             while let Some(next_candidate) = next_projection_candidates.pop() {
-                eprintln!(
-                    "Projection candidate {} for {}",
-                    next_candidate.to_short_string(repacker),
-                    place.to_short_string(repacker)
-                );
                 let (expanded, new_places) = place.expand(next_candidate, repacker).unwrap();
 
                 // Don't consider unpacking with targets in `new_places` since they are going

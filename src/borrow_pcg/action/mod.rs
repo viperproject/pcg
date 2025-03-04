@@ -234,11 +234,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<bool, PCGError> {
         let mut changed = self.insert(edge.clone());
-        eprintln!(
-            "Add edge {:?} (for exclusive: {})",
-            edge.to_short_string(repacker),
-            for_exclusive
-        );
         Ok(match edge.kind {
             BorrowPCGEdgeKind::Borrow(_) => todo!(),
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {

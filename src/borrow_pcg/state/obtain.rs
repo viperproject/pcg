@@ -13,7 +13,6 @@ use crate::combined_pcs::{PCGError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::{self, Mutability};
-use crate::utils::display::DisplayWithRepacker;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
@@ -190,11 +189,6 @@ impl<'tcx> BorrowsState<'tcx> {
         obtain_reason: ObtainReason,
         location: Location,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
-        eprintln!(
-            "Expanding to {} because of {:?}",
-            to_place.to_short_string(repacker),
-            obtain_reason
-        );
         let for_exclusive = obtain_reason.min_post_obtain_capability() != CapabilityKind::Read;
         let mut actions = ExecutedActions::new();
 
