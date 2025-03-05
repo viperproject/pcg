@@ -4,7 +4,7 @@ use std::{fmt, marker::PhantomData};
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
-use super::has_pcs_elem::HasPcsElems;
+use super::has_pcs_elem::HasPcgElems;
 use super::{
     borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
 };
@@ -169,6 +169,21 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx> RegionProjection<'tcx> {
+    pub(crate) fn try_into_local_region_projection(
+        self,
+    ) -> Result<RegionProjection<'tcx, MaybeOldPlace<'tcx>>, ()> {
+        match self.base {
+            MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
+                base: p.try_into()?,
+                region_idx: self.region_idx,
+                phantom: PhantomData,
+            }),
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+        }
+    }
+}
+
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     type Error = ();
     fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
@@ -258,8 +273,8 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         vec![&mut self.base]
     }
 }
@@ -460,7 +475,7 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     }
 }
 
-type LocalRegionProjection<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
+pub(crate) type LocalRegionProjection<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LocalRegionProjection<'tcx> {
     pub fn to_region_projection(
@@ -521,16 +536,16 @@ impl<'tcx> RegionProjection<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.base.pcs_elems()
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        self.base.pcg_elems()
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.pcs_elems(),
+            MaybeRemoteRegionProjectionBase::Place(p) => p.pcg_elems(),
             MaybeRemoteRegionProjectionBase::Const(_) => vec![],
         }
     }

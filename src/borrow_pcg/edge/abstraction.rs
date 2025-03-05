@@ -14,7 +14,7 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge
 use crate::borrow_pcg::domain::{AbstractionInputTarget, AbstractionOutputTarget};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::combined_pcs::{LocalNodeLike, PCGNode};
@@ -47,12 +47,12 @@ impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for LoopAbstraction<'tcx>
+impl<'tcx, T> HasPcgElems<T> for LoopAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
+    AbstractionBlockEdge<'tcx>: HasPcgElems<T>,
 {
-    fn pcs_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcs_elems()
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
+        self.edge.pcg_elems()
     }
 }
 
@@ -98,12 +98,12 @@ impl<'tcx> DisplayWithRepacker<'tcx> for FunctionCallAbstraction<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for FunctionCallAbstraction<'tcx>
+impl<'tcx, T> HasPcgElems<T> for FunctionCallAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx>: HasPcsElems<T>,
+    AbstractionBlockEdge<'tcx>: HasPcgElems<T>,
 {
-    fn pcs_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcs_elems()
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
+        self.edge.pcg_elems()
     }
 }
 
@@ -187,15 +187,15 @@ impl<'tcx> HasValidityCheck<'tcx> for AbstractionType<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for AbstractionType<'tcx>
+impl<'tcx, T> HasPcgElems<T> for AbstractionType<'tcx>
 where
-    LoopAbstraction<'tcx>: HasPcsElems<T>,
-    FunctionCallAbstraction<'tcx>: HasPcsElems<T>,
+    LoopAbstraction<'tcx>: HasPcgElems<T>,
+    FunctionCallAbstraction<'tcx>: HasPcgElems<T>,
 {
-    fn pcs_elems(&mut self) -> Vec<&mut T> {
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
         match self {
-            AbstractionType::FunctionCall(c) => c.pcs_elems(),
-            AbstractionType::Loop(c) => c.pcs_elems(),
+            AbstractionType::FunctionCall(c) => c.pcg_elems(),
+            AbstractionType::Loop(c) => c.pcg_elems(),
         }
     }
 }
@@ -251,8 +251,8 @@ impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         self.outputs.iter_mut().collect()
     }
 }
@@ -285,14 +285,14 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut result = vec![];
         for input in self.inputs.iter_mut() {
-            result.extend(input.pcs_elems());
+            result.extend(input.pcg_elems());
         }
         for output in self.outputs.iter_mut() {
-            result.extend(output.pcs_elems());
+            result.extend(output.pcg_elems());
         }
         result
     }

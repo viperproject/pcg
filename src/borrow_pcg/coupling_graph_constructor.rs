@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::BTreeSet};
 use super::{
     borrow_pcg_edge::LocalNode,
     graph::{coupling_imgcat_debug, BorrowsGraph},
-    has_pcs_elem::HasPcsElems,
+    has_pcs_elem::HasPcgElems,
     region_projection::{PCGRegion, RegionProjection},
 };
 use crate::utils::json::ToJsonWithRepacker;
@@ -189,10 +189,10 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for CGNode<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for CGNode<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for CGNode<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
-            CGNode::RegionProjection(rp) => rp.pcs_elems(),
+            CGNode::RegionProjection(rp) => rp.pcg_elems(),
             CGNode::RemotePlace(_) => vec![],
         }
     }

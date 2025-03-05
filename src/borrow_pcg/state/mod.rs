@@ -9,7 +9,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::borrow_pcg::edge::borrow::BorrowEdge;
+use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
@@ -437,7 +437,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub(crate) fn add_borrow(
         &mut self,
-        blocked_place: MaybeRemotePlace<'tcx>,
+        blocked_place: MaybeOldPlace<'tcx>,
         assigned_place: Place<'tcx>,
         kind: BorrowKind,
         location: Location,
@@ -458,7 +458,7 @@ impl<'tcx> BorrowsState<'tcx> {
             } => CapabilityKind::Exclusive,
             _ => CapabilityKind::Read,
         };
-        let borrow_edge = BorrowEdge::new(
+        let borrow_edge = LocalBorrow::new(
             blocked_place,
             assigned_place.into(),
             kind.mutability(),
@@ -468,9 +468,10 @@ impl<'tcx> BorrowsState<'tcx> {
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
         self.set_capability(rp.to_pcg_node(repacker), assigned_cap, repacker);
-        assert!(self
-            .graph
-            .insert(borrow_edge.to_borrow_pcg_edge(PathConditions::AtBlock(location.block))));
+        assert!(self.graph.insert(
+            BorrowEdge::Local(borrow_edge)
+                .to_borrow_pcg_edge(PathConditions::AtBlock(location.block))
+        ));
 
         // Update the capability of the blocked place, if necessary
         if !blocked_place.is_owned(repacker) {

@@ -1,4 +1,4 @@
-use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
 };
@@ -66,8 +66,8 @@ impl From<RemotePlace> for MaybeRemotePlace<'_> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => vec![p],
             MaybeRemotePlace::Remote(_) => vec![],

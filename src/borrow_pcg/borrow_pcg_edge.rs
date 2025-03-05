@@ -6,18 +6,22 @@ use rustc_interface::{
 use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     coupling_graph_constructor::CGNode,
+    edge::{
+        block::BlockEdge,
+        borrow::{LocalBorrow, RemoteBorrow},
+        outlives::OutlivesEdge, region_projection_member::RegionProjectionMember,
+    },
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::HasPcsElems,
+    has_pcs_elem::HasPcgElems,
     path_condition::{PathCondition, PathConditions},
-    region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-    edge::block::BlockEdge,
+    region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection},
 };
-use crate::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::PCGError};
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::PCGError};
 use crate::{
     combined_pcs::PCGNode,
     edgedata_enum, rustc_interface,
@@ -38,14 +42,23 @@ pub struct BorrowPCGEdge<'tcx> {
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
+impl<'tcx> From<RemoteBorrow> for BorrowPCGEdge<'tcx> {
+    fn from(borrow: RemoteBorrow) -> Self {
+        BorrowPCGEdge::new(
+            borrow.into(),
+            PathConditions::AtBlock((mir::Location::START).block),
+        )
+    }
+}
+
 pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPCGEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
     fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
 
     /// true iff any of the blocked places can be mutated via the blocking places
-    fn is_shared_borrow(&self) -> bool {
-        self.kind().is_shared_borrow()
+    fn is_shared_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.kind().is_shared_borrow(repacker)
     }
 
     fn blocked_places(
@@ -120,6 +133,12 @@ impl LocalNode<'_> {
 /// node other than a [`RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
+impl<'tcx> From<LocalRegionProjection<'tcx>> for LocalNode<'tcx> {
+    fn from(rp: LocalRegionProjection<'tcx>) -> Self {
+        LocalNode::RegionProjection(rp)
+    }
+}
+
 impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeOldPlace<'tcx> {
     type Error = ();
     fn try_from(node: LocalNode<'tcx>) -> Result<Self, Self::Error> {
@@ -130,8 +149,8 @@ impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
             LocalNode::Place(p) => vec![p],
             LocalNode::RegionProjection(rp) => vec![rp.place_mut()],
@@ -139,8 +158,8 @@ impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         match self {
             LocalNode::Place(_) => vec![],
             LocalNode::RegionProjection(rp) => vec![rp],
@@ -223,10 +242,10 @@ impl<T: std::fmt::Display> std::fmt::Display for PCGNode<'_, T> {
     }
 }
 
-impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>>
+impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>>
     for PCGNode<'tcx, T>
 {
-    fn pcs_elems(
+    fn pcg_elems(
         &mut self,
     ) -> Vec<&mut RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> {
         match self {
@@ -236,21 +255,21 @@ impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, MaybeRemoteRegionProjectionBase
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for PCGNode<'tcx>
+impl<'tcx, T> HasPcgElems<T> for PCGNode<'tcx>
 where
-    MaybeRemotePlace<'tcx>: HasPcsElems<T>,
-    RegionProjection<'tcx>: HasPcsElems<T>,
+    MaybeRemotePlace<'tcx>: HasPcgElems<T>,
+    RegionProjection<'tcx>: HasPcgElems<T>,
 {
-    fn pcs_elems(&mut self) -> Vec<&mut T> {
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
         match self {
-            PCGNode::Place(p) => p.pcs_elems(),
-            PCGNode::RegionProjection(rp) => rp.pcs_elems(),
+            PCGNode::Place(p) => p.pcg_elems(),
+            PCGNode::RegionProjection(rp) => rp.pcg_elems(),
         }
     }
 }
 
-impl<'tcx> HasPcsElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         vec![]
     }
 }
@@ -276,11 +295,17 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Local(_)) => None,
         }
     }
-    pub(crate) fn as_blocking_node(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<BlockingNode<'tcx>> {
+    pub(crate) fn as_blocking_node(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<BlockingNode<'tcx>> {
         self.as_local_node(repacker)
     }
 
-    pub(crate) fn as_local_node(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
+    pub(crate) fn as_local_node(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
@@ -391,12 +416,12 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     }
 }
 
-impl<'tcx, T> HasPcsElems<T> for BorrowPCGEdge<'tcx>
+impl<'tcx, T> HasPcgElems<T> for BorrowPCGEdge<'tcx>
 where
-    BorrowPCGEdgeKind<'tcx>: HasPcsElems<T>,
+    BorrowPCGEdgeKind<'tcx>: HasPcgElems<T>,
 {
-    fn pcs_elems(&mut self) -> Vec<&mut T> {
-        self.kind.pcs_elems()
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
+        self.kind.pcg_elems()
     }
 }
 
@@ -405,7 +430,8 @@ edgedata_enum!(
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
-    Block(BlockEdge<'tcx>)
+    Outlives(OutlivesEdge<'tcx>),
+    RegionProjectionMember(RegionProjectionMember<'tcx>),
 );
 
 pub(crate) trait ToBorrowsEdge<'tcx> {
@@ -439,11 +465,11 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
     }
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for BlockEdge<'tcx> {
+impl<'tcx> ToBorrowsEdge<'tcx> for OutlivesEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::Block(self),
+            kind: BorrowPCGEdgeKind::Outlives(self),
         }
     }
 }

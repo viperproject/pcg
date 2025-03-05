@@ -1,7 +1,16 @@
 use super::BorrowsVisitor;
 use crate::{
     borrow_pcg::{
-        action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, edge::block::{BlockEdge, BlockEdgeKind}, path_condition::PathConditions, region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection}, state::obtain::ObtainReason, visitor::StatementStage
+        action::BorrowPCGAction,
+        borrow_pcg_edge::BorrowPCGEdge,
+        edge::{
+            block::BlockEdge,
+            outlives::{OutlivesEdge, OutlivesEdgeKind},
+        },
+        path_condition::PathConditions,
+        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
+        state::obtain::ObtainReason,
+        visitor::StatementStage,
     },
     combined_pcs::{EvalStmtPhase, PCGError, PCGNodeLike, PCGUnsupportedError},
     free_pcs::CapabilityKind,
@@ -127,7 +136,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                 source_proj,
                                 target,
                                 location,
-                                |_| BlockEdgeKind::Todo,
+                                |_| OutlivesEdgeKind::Todo,
                             );
                         }
                     }
@@ -139,22 +148,21 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         {
                             self.apply_action(BorrowPCGAction::add_edge(
                                 BorrowPCGEdge::new(
-                                    BlockEdge::new(
-                                        smallvec![RegionProjection::new(
+                                    OutlivesEdge::new(
+                                        RegionProjection::new(
                                             (*const_region).into(),
                                             MaybeRemoteRegionProjectionBase::Const(c.const_),
                                             self.repacker,
                                         )
-                                        .unwrap()
-                                        .to_pcg_node(self.repacker)],
-                                        smallvec![RegionProjection::new(
+                                        .unwrap(),
+                                        RegionProjection::new(
                                             (*target_region).into(),
                                             target,
                                             self.repacker,
                                         )
                                         .unwrap()
-                                        .into()],
-                                        BlockEdgeKind::ConstRef,
+                                        .into(),
+                                        OutlivesEdgeKind::ConstRef,
                                     )
                                     .into(),
                                     PathConditions::AtBlock(location.block),
@@ -183,7 +191,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             source_proj.into(),
                             target,
                             location,
-                            |_| BlockEdgeKind::Todo,
+                            |_| OutlivesEdgeKind::Todo,
                         );
                     }
                 }
@@ -213,7 +221,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             source_proj.into(),
                             target,
                             location,
-                            |region| BlockEdgeKind::BorrowOutlives {
+                            |region| OutlivesEdgeKind::BorrowOutlives {
                                 toplevel: region == target_region,
                             },
                         );

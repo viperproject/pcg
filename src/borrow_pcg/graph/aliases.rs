@@ -1,7 +1,8 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode, edge::kind::BorrowPCGEdgeKind, region_projection::RegionIdx,
-        edge::block::BlockEdgeKind,
+        borrow_pcg_edge::LocalNode,
+        edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
+        region_projection::RegionIdx,
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
@@ -128,7 +129,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for edge in self.edges_blocked_by(node, repacker) {
             match edge.kind {
                 BorrowPCGEdgeKind::Borrow(borrow_edge) => {
-                    let blocked = borrow_edge.blocked_place;
+                    let blocked = borrow_edge.blocked_place();
                     extend(blocked.into(), seen, &mut result, direct);
                 }
                 BorrowPCGEdgeKind::BorrowPCGExpansion(e) => match e.base() {
@@ -143,41 +144,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 },
                 BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
-                        for input in abstraction_type.inputs() {
-                            extend(input.to_pcg_node(repacker), seen, &mut result, false);
-                        }
-                }
-                BorrowPCGEdgeKind::Block(region_projection_member) => {
-                    match &region_projection_member.kind {
-                        BlockEdgeKind::DerefRegionProjection => {
-                            for input in region_projection_member.inputs() {
-                                extend(input.to_pcg_node(repacker), seen, &mut result, direct);
-                            }
-                        }
-                        BlockEdgeKind::FunctionInput => {
-                            for input in region_projection_member.inputs() {
-                                match input {
-                                    PCGNode::Place(MaybeRemotePlace::Remote(rp)) => {
-                                        extend(
-                                            rp.deref_place(repacker.tcx()).into(),
-                                            seen,
-                                            &mut result,
-                                            direct,
-                                        );
-                                    }
-                                    _ => unreachable!(),
-                                }
-                            }
-                        }
-                        BlockEdgeKind::DerefBorrowOutlives => {}
-                        BlockEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
-                        _ => {
-                            for input in region_projection_member.inputs() {
-                                extend(input.to_pcg_node(repacker), seen, &mut result, false);
-                            }
-                        }
+                    for input in abstraction_type.inputs() {
+                        extend(input.to_pcg_node(repacker), seen, &mut result, false);
                     }
                 }
+                BorrowPCGEdgeKind::Outlives(outlives) => match &outlives.kind {
+                    OutlivesEdgeKind::DerefRegionProjection => {
+                        extend(
+                            outlives.long().to_pcg_node(repacker),
+                            seen,
+                            &mut result,
+                            direct,
+                        );
+                    }
+                    OutlivesEdgeKind::DerefBorrowOutlives => {}
+                    OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
+                    _ => {
+                        extend(outlives.long().to_pcg_node(repacker), seen, &mut result, false);
+                    }
+                },
+                _ => todo!(),
             }
         }
         result

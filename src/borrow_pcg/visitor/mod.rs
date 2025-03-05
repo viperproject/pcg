@@ -3,7 +3,6 @@ use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
-    borrow_pcg::edge::block::BlockEdgeKind,
     combined_pcs::{LocalNodeLike, PCGError, PCGNodeLike, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
@@ -25,7 +24,7 @@ use super::{
     action::BorrowPCGAction,
     borrow_pcg_edge::BorrowPCGEdge,
     coupling_graph_constructor::BorrowCheckerInterface,
-    edge::block::BlockEdge,
+    edge::{block::BlockEdge, outlives::{OutlivesEdge, OutlivesEdgeKind}},
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
 };
@@ -150,7 +149,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
         location: Location,
-        kind: impl Fn(PCGRegion) -> BlockEdgeKind,
+        kind: impl Fn(PCGRegion) -> OutlivesEdgeKind,
     ) {
         for target_proj in target.region_projections(self.repacker).into_iter() {
             if self.outlives(
@@ -159,9 +158,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ) {
                 self.apply_action(BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(
-                        BlockEdge::new(
-                            smallvec![source_proj.to_pcg_node(self.repacker)],
-                            smallvec![target_proj.to_local_node(self.repacker)],
+                        OutlivesEdge::new(
+                            source_proj.into(),
+                            target_proj.into(),
                             kind(target_proj.region(self.repacker)),
                         )
                         .into(),

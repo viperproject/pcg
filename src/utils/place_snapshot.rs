@@ -8,7 +8,7 @@ use crate::borrow_pcg::region_projection::{
 use crate::combined_pcs::{PCGNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
-    borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcsElems},
+    borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
     combined_pcs::LocalNodeLike,
     rustc_interface::{
         index::IndexVec,
@@ -115,8 +115,8 @@ impl<'tcx> PlaceSnapshot<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<Place<'tcx>> for PlaceSnapshot<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut Place<'tcx>> {
+impl<'tcx> HasPcgElems<Place<'tcx>> for PlaceSnapshot<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut Place<'tcx>> {
         vec![&mut self.place]
     }
 }
