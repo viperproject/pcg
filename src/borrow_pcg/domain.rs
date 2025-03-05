@@ -4,8 +4,10 @@ use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::edge::block::{BlockEdge, BlockEdgeKind};
+use crate::borrow_pcg::edge::block::BlockEdge;
+use crate::borrow_pcg::edge::borrow::RemoteBorrow;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::outlives::{OutlivesEdge, OutlivesEdgeKind};
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
@@ -178,45 +180,29 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 self.repacker,
             ));
             let _ = entry_state.apply_action(
-                BorrowPCGAction::add_edge(
-                    BorrowPCGEdge::new(
-                        BorrowPCGEdgeKind::Block(BlockEdge::new(
-                            smallvec![MaybeRemotePlace::place_assigned_to_local(local).into()],
-                            smallvec![RegionProjection::new(
-                                (*region).into(),
-                                arg_place,
-                                self.repacker
-                            )
-                            .unwrap()
-                            .into(),],
-                            BlockEdgeKind::FunctionInput,
-                        )),
-                        PathConditions::AtBlock((Location::START).block),
-                    ),
-                    true,
-                ),
+                BorrowPCGAction::add_edge(RemoteBorrow::new(local).into(), true),
                 self.repacker,
             );
         }
         for region in extract_regions(local_decl.ty) {
             let region_projection =
-                RegionProjection::new(region, arg_place, self.repacker).unwrap();
+                RegionProjection::new(region, arg_place.into(), self.repacker).unwrap();
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
             assert!(entry_state.apply_action(
                 BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(
-                        BlockEdge::new(
-                            smallvec![RegionProjection::new(
+                        OutlivesEdge::new(
+                            RegionProjection::new(
                             region,
-                            RemotePlace::new(local),
+                            RemotePlace::new(local).into(),
                             self.repacker,
                         )
                         .unwrap_or_else(|e| {
-                            panic!("Failed to create region for remote place (for {local:?}). Local ty: {:?}. Error: {:?}", local_decl.ty, e);
-                        })
-                        .to_pcg_node(self.repacker)],
-                        smallvec![region_projection.into()],
-                        BlockEdgeKind::Todo,
+                            panic!("Failed to create region for remote place (for {local:?}).
+                                    Local ty: {:?}. Error: {:?}", local_decl.ty, e);
+                        }),
+                       region_projection,
+                        OutlivesEdgeKind::Todo,
                     ).into(),
                     PathConditions::AtBlock((Location::START).block),
                     ),

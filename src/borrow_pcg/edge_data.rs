@@ -15,7 +15,9 @@ pub trait EdgeData<'tcx> {
     fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>>;
 
     /// True iff this is an edge from the owned PCG to the borrow PCG, e.g. x -> *x iff x is a reference type
-    fn is_owned_expansion(&self) -> bool;
+    fn is_owned_expansion(&self) -> bool {
+        false
+    }
 
     fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.blocked_nodes(repacker).contains(&node)
@@ -79,5 +81,40 @@ macro_rules! edgedata_enum {
                 }
             }
         )+
+
+        impl<$tcx> HasValidityCheck<$tcx> for $enum_name<$tcx> {
+            fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.check_validity(repacker),
+                    )+
+                }
+            }
+        }
+
+        impl<$tcx> DisplayWithRepacker<$tcx> for $enum_name<$tcx> {
+            fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.to_short_string(repacker),
+                    )+
+                }
+            }
+        }
+
+        impl<'tcx, T> HasPcgElems<T> for $enum_name<$tcx>
+            where
+                $(
+                    $inner_type: HasPcgElems<T>,
+                )+
+            {
+                fn pcg_elems(&mut self) -> Vec<&mut T> {
+                    match self {
+                        $(
+                            $enum_name::$variant_name(inner) => inner.pcg_elems(),
+                        )+
+                    }
+                }
+            }
     }
 }

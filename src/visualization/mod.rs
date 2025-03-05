@@ -11,9 +11,9 @@ pub mod legend;
 pub mod mir_graph;
 
 use crate::{
-    rustc_interface::middle::mir::Location,
     borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
     free_pcs::{CapabilityKind, CapabilitySummary},
+    rustc_interface::middle::mir::Location,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
 use std::{
@@ -151,8 +151,8 @@ enum GraphEdge {
     Borrow {
         borrowed_place: NodeId,
         assigned_region_projection: NodeId,
-        location: Location,
-        region: String,
+        location: Option<Location>,
+        region: Option<String>,
         path_conditions: String,
     },
     Projection {
@@ -204,7 +204,7 @@ impl GraphEdge {
                 from: borrowed_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string())
-                    .with_label(region.to_string())
+                    .with_label(region.as_ref().cloned().unwrap_or("".to_string()))
                     .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::DerefExpansion {

@@ -1,5 +1,5 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::has_pcs_elem::HasPcsElems;
+use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
@@ -331,11 +331,11 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> HasPcsElems<Place<'tcx>> for MaybeOldPlace<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut Place<'tcx>> {
+impl<'tcx> HasPcgElems<Place<'tcx>> for MaybeOldPlace<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut Place<'tcx>> {
         match self {
             MaybeOldPlace::Current { place } => vec![place],
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.pcs_elems(),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.pcg_elems(),
         }
     }
 }

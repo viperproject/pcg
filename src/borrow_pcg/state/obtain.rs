@@ -1,12 +1,13 @@
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::borrow_pcg::borrow_checker;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::borrow_pcg_expansion::{PlaceExpansion, BorrowPCGExpansion};
-use crate::borrow_pcg::edge::block::{BlockEdge, BlockEdgeKind};
+use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPCGExpansion, PlaceExpansion};
+use crate::borrow_pcg::edge::block::BlockEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::region_projection_member::{RegionProjectionMember, RpMemberDirection};
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::combined_pcs::{PCGError, PCGNodeLike};
@@ -100,7 +101,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let encapsulated_borrow_edges = self
                 .graph()
                 .borrows()
-                .filter(|borrow| match borrow.value.assigned_ref {
+                .filter(|borrow| match borrow.value.assigned_ref() {
                     MaybeOldPlace::Current {
                         place: assigned_place,
                     } => place.is_strict_prefix(assigned_place),
@@ -124,10 +125,10 @@ impl<'tcx> BorrowsState<'tcx> {
                     self.record_and_apply_action(
                         BorrowPCGAction::add_edge(
                             BorrowPCGEdge::new(
-                                BlockEdge::new(
-                                    smallvec![borrow.value.blocked_place.into()],
-                                    smallvec![ra.into()],
-                                    BlockEdgeKind::ContractRef,
+                                RegionProjectionMember::new(
+                                    ra.set_base(ra.base().into(), repacker),
+                                    borrow.value.blocked_place(),
+                                    RpMemberDirection::PlaceOutlivesRegion,
                                 )
                                 .into(),
                                 PathConditions::new(location.block),
@@ -198,30 +199,6 @@ impl<'tcx> BorrowsState<'tcx> {
             let expand_result = base.expand_one_level(to_place, repacker)?;
             let expansion = expand_result.expansion();
             let target = expand_result.target_place;
-
-            if let ty::TyKind::Ref(region, _, _) = base.ty(repacker).ty.kind() {
-                // This is a dereference, taking the the form t -> *t where t
-                // has type &'a T. We insert a region projection member for t↓'a
-                // -> *t if it doesn't already exist.
-
-                // e.g t|'a
-                let base_rp = RegionProjection::new((*region).into(), base, repacker).unwrap();
-
-                let block_edge = BlockEdge::new(
-                    smallvec![base_rp.to_pcg_node(repacker)],
-                    smallvec![target.into()],
-                    BlockEdgeKind::DerefRegionProjection,
-                );
-
-                self.record_and_apply_action(
-                    BorrowPCGAction::add_edge(
-                        BorrowPCGEdge::new(block_edge.into(), PathConditions::new(location.block)),
-                        for_exclusive,
-                    ),
-                    &mut actions,
-                    repacker,
-                )?;
-            }
 
             // We don't introduce an expansion if the place is owned, because
             // that is handled by the owned PCG.

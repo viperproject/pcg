@@ -6,7 +6,7 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::HasPcsElems,
+    has_pcs_elem::HasPcgElems,
     region_projection::RegionProjection,
 };
 use crate::utils::json::ToJsonWithRepacker;
@@ -36,6 +36,24 @@ use crate::{
 pub struct ExpansionOfBorrowed<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
     pub(crate) expansion: PlaceExpansion<'tcx>,
+}
+
+impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> DisplayWithRepacker<'tcx>
+    for ExpansionOfBorrowed<'tcx, P>
+{
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        let expansion_set: Vec<String> = self
+            .expansion(repacker)
+            .unwrap()
+            .into_iter()
+            .map(|place| place.to_short_string(repacker))
+            .collect();
+        format!(
+            "{{{}}} -> {{{}}}",
+            self.base.to_short_string(repacker),
+            expansion_set.join(", ")
+        )
+    }
 }
 
 impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for ExpansionOfBorrowed<'tcx, P> {
@@ -204,9 +222,9 @@ impl<'tcx> TryFrom<ExpansionOfBorrowed<'tcx, LocalNode<'tcx>>>
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for ExpansionOfBorrowed<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.base.pcs_elems()
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for ExpansionOfBorrowed<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        self.base.pcg_elems()
     }
 }
 
@@ -265,6 +283,16 @@ impl<'tcx> EdgeData<'tcx> for ExpansionOfBorrowed<'tcx> {
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct ExpansionOfOwned<'tcx> {
     base: MaybeOldPlace<'tcx>,
+}
+
+impl<'tcx> DisplayWithRepacker<'tcx> for ExpansionOfOwned<'tcx> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!(
+            "{{{}}} -> {{*{}}}",
+            self.base.to_short_string(repacker),
+            self.base.to_short_string(repacker)
+        )
+    }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for ExpansionOfOwned<'tcx> {
@@ -333,32 +361,6 @@ pub enum BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     FromBorrow(ExpansionOfBorrowed<'tcx, P>),
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx> + From<MaybeOldPlace<'tcx>> + HasPlace<'tcx>>
-    DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx, T>
-{
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        format!(
-            "{{{}}} -> {{{}}}",
-            self.base().to_short_string(repacker),
-            self.expansion(repacker)
-                .unwrap()
-                .iter()
-                .map(|p| p.to_short_string(repacker))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
-}
-
-impl<'tcx, P: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx, P> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        match self {
-            BorrowPCGExpansion::FromOwned(owned) => owned.check_validity(repacker),
-            BorrowPCGExpansion::FromBorrow(borrowed) => borrowed.check_validity(repacker),
-        }
-    }
-}
-
 impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>
     for BorrowPCGExpansion<'tcx, MaybeOldPlace<'tcx>>
 {
@@ -388,26 +390,17 @@ impl<'tcx, P: PCGNodeLike<'tcx> + From<MaybeOldPlace<'tcx>>> BorrowPCGExpansion<
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for ExpansionOfOwned<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for ExpansionOfOwned<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         vec![&mut self.base]
     }
 }
 
-impl<'tcx> HasPcsElems<MaybeOldPlace<'tcx>> for BorrowPCGExpansion<'tcx> {
-    fn pcs_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            BorrowPCGExpansion::FromOwned(owned) => owned.pcs_elems(),
-            BorrowPCGExpansion::FromBorrow(e) => e.pcs_elems(),
-        }
-    }
-}
-
-impl<'tcx, T> HasPcsElems<RegionProjection<'tcx, T>> for BorrowPCGExpansion<'tcx>
+impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, T>> for BorrowPCGExpansion<'tcx>
 where
-    BorrowPCGExpansion<'tcx>: HasPcsElems<T>,
+    BorrowPCGExpansion<'tcx>: HasPcgElems<T>,
 {
-    fn pcs_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
+    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
         vec![]
     }
 }

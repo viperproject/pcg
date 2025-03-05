@@ -235,7 +235,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<bool, PCGError> {
         let mut changed = self.insert(edge.clone());
         Ok(match edge.kind {
-            BorrowPCGEdgeKind::Borrow(_) => todo!(),
+            BorrowPCGEdgeKind::Borrow(_) => changed,
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                 if changed {
                     let base = expansion.base();
@@ -278,38 +278,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 changed
             }
             BorrowPCGEdgeKind::Abstraction(_) => changed,
-            BorrowPCGEdgeKind::Block(block_edge) => {
-                changed || self.set_capabilities_for_block_edge(block_edge, for_exclusive, repacker)
-            }
+            BorrowPCGEdgeKind::Outlives(_) => changed,
+            BorrowPCGEdgeKind::RegionProjectionMember(_) => changed,
         })
-    }
-
-    /// Adds a region projection member to the graph and sets appropriate
-    /// capabilities for the place and projection
-    #[must_use]
-    fn set_capabilities_for_block_edge(
-        &mut self,
-        member: BlockEdge<'tcx>,
-        for_exclusive: bool,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        for i in member.inputs.iter() {
-            if for_exclusive {
-                changed |= self.remove_capability(*i);
-            } else {
-                changed |= self.set_capability(*i, CapabilityKind::Read, repacker);
-            }
-        }
-        for o in member.outputs.iter() {
-            let output_cap = if for_exclusive {
-                CapabilityKind::Exclusive
-            } else {
-                CapabilityKind::Read
-            };
-            changed |= self.set_capability((*o).into(), output_cap, repacker);
-        }
-        changed
     }
 
     #[must_use]

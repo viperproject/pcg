@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    has_pcs_elem::{HasPcsElems, MakePlaceOld},
+    has_pcs_elem::{HasPcgElems, MakePlaceOld},
     latest::Latest,
 };
 
@@ -69,7 +69,7 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
             .clone()
             .into_iter()
             .map(|(mut node, capability)| {
-                let places = node.pcs_elems();
+                let places = node.pcg_elems();
                 for place in places {
                     if *place == old {
                         *place = new;

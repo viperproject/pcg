@@ -7,13 +7,16 @@ use std::{
 };
 
 use crate::{
+    borrow_pcg::coupling_graph_constructor::Coupled,
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self, BasicBlock, TerminatorEdges},
     },
     utils::{
-        display::{DebugLines, DisplayDiff, DisplayWithRepacker}, maybe_old::MaybeOldPlace, validity::HasValidityCheck
+        display::{DebugLines, DisplayDiff, DisplayWithRepacker},
+        maybe_old::MaybeOldPlace,
+        validity::HasValidityCheck,
     },
     validity_checks_enabled,
 };
@@ -26,14 +29,15 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
+    edge::{
+        block::{BlockEdge, BlockEdgeOutputs},
+        outlives::{OutlivesEdge, OutlivesEdgeKind},
+    },
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcsElems, MakePlaceOld},
+    has_pcs_elem::{HasPcgElems, MakePlaceOld},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjection,
-    edge::block::{
-        BlockEdge, BlockEdgeKind, BlockEdgeOutputs,
-    },
 };
 use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, LoopAbstraction,
@@ -215,29 +219,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         // nodes (via `[RegionProjectionMember.projections]`)
                         // These nodes may not have any edges in the coupling
                         // graph but must be included anyway.
-                        if let BorrowPCGEdgeKind::Block(region_projection_member) =
-                            edge.kind()
-                        {
-                            let coupled_input_projections: Vec<CGNode<'tcx>> =
-                                region_projection_member
-                                    .inputs
-                                    .iter()
-                                    .flat_map(|rp| (*rp).try_into())
-                                    .collect::<Vec<_>>();
-
-                            let coupled_output_projections: Vec<CGNode<'tcx>> =
-                                region_projection_member
-                                    .outputs
-                                    .iter()
-                                    .flat_map(|rp| (*rp).try_into())
-                                    .collect::<Vec<_>>();
-
-                            if !coupled_input_projections.is_empty() {
-                                graph.insert_endpoint(coupled_input_projections.into());
-                            }
-                            if !coupled_output_projections.is_empty() {
-                                graph.insert_endpoint(coupled_output_projections.into());
-                            }
+                        if let BorrowPCGEdgeKind::Outlives(outlives) = edge.kind() {
+                            graph.insert_endpoint(Coupled::singleton(outlives.long().into()));
+                            graph.insert_endpoint(Coupled::singleton(outlives.short().into()));
                         }
                         for node in edge.blocked_by_nodes(repacker) {
                             if let LocalNode::RegionProjection(rp) = node {
@@ -507,18 +491,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         break;
                     }
 
-                    // This node is not in the endpoint, so we create a corresponding
-                    // region projection member edge.
-                    let new_edge_kind =
-                        BorrowPCGEdgeKind::Block(BlockEdge::new(
-                            smallvec![node],
-                            rps.clone()
-                                .into_iter()
-                                .map(|rp| rp.try_to_local_node(repacker).unwrap())
-                                .collect::<BlockEdgeOutputs<'tcx>>(),
-                            BlockEdgeKind::Todo,
-                        ));
-                    self.insert(BorrowPCGEdge::new(new_edge_kind, edge.conditions().clone()));
+                    if let PCGNode::RegionProjection(blocked_rp) = node {
+                        for rp in rps.iter() {
+                            let outlives_edge = OutlivesEdge::new(
+                                blocked_rp,
+                                rp.try_into_local_region_projection().unwrap(),
+                                OutlivesEdgeKind::Todo,
+                            );
+                            self.insert(BorrowPCGEdge::new(
+                                outlives_edge.into(),
+                                edge.conditions().clone(),
+                            ));
+                        }
+                    }
                 }
                 self.remove(&edge);
             }
@@ -729,8 +714,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         old: MaybeOldPlace<'tcx>,
         new: MaybeOldPlace<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool
-    {
+    ) -> bool {
         self.mut_pcs_elems(
             |thing| {
                 if *thing == old {
@@ -791,11 +775,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool
     where
-        BorrowPCGEdge<'tcx>: HasPcsElems<T>,
+        BorrowPCGEdge<'tcx>: HasPcgElems<T>,
     {
         self.mut_edges(|edge| {
             let mut changed = false;
-            for rp in edge.pcs_elems() {
+            for rp in edge.pcg_elems() {
                 if f(rp) {
                     changed = true;
                 }
