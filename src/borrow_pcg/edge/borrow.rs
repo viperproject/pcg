@@ -1,7 +1,6 @@
 use crate::{
     combined_pcs::PCGNode,
     edgedata_enum,
-    free_pcs::RepackingBridgeSemiLattice,
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
@@ -10,7 +9,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace, Place},
+    utils::{remote::RemotePlace, HasPlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -18,12 +17,10 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::utils::display::DisplayWithRepacker;
-use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
-use serde_json::json;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LocalBorrow<'tcx> {
@@ -55,7 +52,6 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> RemoteBorrow<'tcx> {
-
     pub(crate) fn deref_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         self.assigned_ref.project_deref(repacker)
     }
@@ -237,6 +233,11 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
 
     fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         let rp = self.assigned_region_projection(repacker);
+        // eprintln!(
+        //     "{} is blocked by {}",
+        //     self.blocked_place.to_short_string(repacker),
+        //     rp.to_short_string(repacker)
+        // );
         vec![LocalNode::RegionProjection(rp)].into_iter().collect()
     }
 

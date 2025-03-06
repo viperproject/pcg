@@ -7,7 +7,7 @@ use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithRepacker, maybe_remote::MaybeRemotePlace, HasPlace, PlaceRepacker,
+        display::DisplayWithRepacker, HasPlace, PlaceRepacker,
     },
 };
 

@@ -1,9 +1,7 @@
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_checker;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPCGExpansion, PlaceExpansion};
-use crate::borrow_pcg::edge::block::BlockEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge::region_projection_member::{RegionProjectionMember, RpMemberDirection};
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
@@ -13,12 +11,11 @@ use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::combined_pcs::{PCGError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
-use crate::rustc_interface::middle::ty::{self, Mutability};
+use crate::rustc_interface::middle::ty::{Mutability};
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
-use smallvec::smallvec;
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we

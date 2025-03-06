@@ -414,10 +414,6 @@ impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PCGNodeLike<'tcx>>
             BorrowPCGExpansion::FromBorrow(e) => e.expansion(repacker),
         }
     }
-
-    pub fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<P> {
-        self.expansion(repacker).unwrap().into_iter().collect()
-    }
 }
 
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>

@@ -3,16 +3,13 @@ use crate::{
     borrow_pcg::{
         action::BorrowPCGAction,
         borrow_pcg_edge::BorrowPCGEdge,
-        edge::{
-            block::BlockEdge,
-            outlives::{OutlivesEdge, OutlivesEdgeKind},
-        },
+        edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::obtain::ObtainReason,
         visitor::StatementStage,
     },
-    combined_pcs::{EvalStmtPhase, PCGError, PCGNodeLike, PCGUnsupportedError},
+    combined_pcs::{EvalStmtPhase, PCGError, PCGUnsupportedError},
     free_pcs::CapabilityKind,
     rustc_interface::middle::{
         mir::{AggregateKind, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind},
@@ -20,7 +17,6 @@ use crate::{
     },
     utils::{self, display::DisplayWithRepacker, maybe_old::MaybeOldPlace},
 };
-use smallvec::smallvec;
 
 impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
     pub(crate) fn stmt_pre_main(&mut self, statement: &Statement<'tcx>, location: Location) {

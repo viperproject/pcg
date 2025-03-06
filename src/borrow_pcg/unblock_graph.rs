@@ -125,13 +125,14 @@ impl<'tcx> UnblockGraph<'tcx> {
     ) {
         if self.add_dependency(edge.clone().to_owned_edge()) {
             for blocking_node in edge.blocked_by_nodes(repacker) {
-                if !edge.is_owned_expansion() {
+                // if !edge.is_owned_expansion() {
                     self.unblock_node(blocking_node.into(), borrows, repacker);
-                }
+                // }
             }
         }
     }
 
+    #[tracing::instrument(skip(self, borrows, repacker))]
     pub(crate) fn unblock_node(
         &mut self,
         node: BlockedNode<'tcx>,
