@@ -13,6 +13,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum RpMemberDirection {
     PlaceOutlivesRegion,
+    #[allow(dead_code)]
     RegionOutlivesPlace,
 }
 
@@ -77,6 +78,10 @@ impl<'tcx> RegionProjectionMember<'tcx> {
                 self.place.try_to_local_node(repacker).unwrap()
             }
         }
+    }
+
+    pub(crate) fn direction(&self) -> RpMemberDirection {
+        self.direction
     }
 }
 

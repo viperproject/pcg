@@ -220,7 +220,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.place()
             .base_region_projection(repacker)
-            .map(|rp| rp.set_base((*self).into(), repacker))
+            .map(|rp| rp.set_base(*self, repacker))
     }
 
     pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

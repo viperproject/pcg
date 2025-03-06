@@ -107,7 +107,7 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
     }
 }
 
-impl<'tcx> RemoteBorrow<'tcx> {
+impl RemoteBorrow<'_> {
     pub(crate) fn new(local: mir::Local) -> Self {
         Self {
             local,
@@ -156,7 +156,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self {
             BorrowEdge::Local(borrow) => borrow.assigned_region_projection(repacker),
-            BorrowEdge::Remote(borrow) => borrow.assigned_region_projection(repacker).into(),
+            BorrowEdge::Remote(borrow) => borrow.assigned_region_projection(repacker),
         }
     }
 
@@ -170,14 +170,14 @@ impl<'tcx> BorrowEdge<'tcx> {
     pub fn deref_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.deref_place(repacker),
-            BorrowEdge::Remote(borrow) => borrow.deref_place(repacker).into(),
+            BorrowEdge::Remote(borrow) => borrow.deref_place(repacker),
         }
     }
 
     pub(crate) fn assigned_ref(&self) -> MaybeOldPlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.assigned_ref,
-            BorrowEdge::Remote(remote) => remote.assigned_ref().into(),
+            BorrowEdge::Remote(remote) => remote.assigned_ref()
         }
     }
 }
