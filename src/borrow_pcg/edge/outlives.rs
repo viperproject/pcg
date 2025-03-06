@@ -1,14 +1,11 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::HasPcgElems, region_projection::{LocalRegionProjection, RegionProjection}
-    },
-    combined_pcs::PCGNode,
-    rustc_interface::data_structures::fx::FxHashSet,
-    utils::{display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, PlaceRepacker},
+    }, combined_pcs::{PCGNode, PCGNodeLike}, pcg_validity_assert, rustc_interface::data_structures::fx::FxHashSet, utils::{display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, PlaceRepacker}
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct OutlivesEdge<'tcx> {
+pub struct OutlivesEdge<'tcx> {
     long: RegionProjection<'tcx>,
     short: LocalRegionProjection<'tcx>,
     pub(crate) kind: OutlivesEdgeKind,
@@ -55,7 +52,9 @@ impl<'tcx> OutlivesEdge<'tcx> {
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
         kind: OutlivesEdgeKind,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
+        pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
         Self { long, short, kind }
     }
 

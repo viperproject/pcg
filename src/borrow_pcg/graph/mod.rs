@@ -497,6 +497,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 blocked_rp,
                                 rp.try_into_local_region_projection().unwrap(),
                                 OutlivesEdgeKind::Todo,
+                                repacker
                             );
                             self.insert(BorrowPCGEdge::new(
                                 outlives_edge.into(),

@@ -317,12 +317,24 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
             BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => {
                 let base_node = self.insert_local_node(deref_expansion.base());
                 for place in deref_expansion.expansion(self.repacker()).unwrap() {
-                    let place = self.insert_local_node(place);
+                    let expansion_node = self.insert_local_node(place);
                     self.constructor().edges.insert(GraphEdge::DerefExpansion {
                         source: base_node,
-                        target: place,
+                        target: expansion_node,
                         path_conditions: format!("{}", edge.conditions()),
                     });
+                    if deref_expansion.is_deref_of_borrow(self.repacker())
+                        && let PCGNode::Place(base) = deref_expansion.base()
+                    {
+                        let base_rp = self.insert_local_node(
+                            base.base_region_projection(self.repacker()).unwrap().into(),
+                        );
+                        self.constructor().edges.insert(GraphEdge::Block {
+                            source: base_rp,
+                            target: expansion_node,
+                            kind: "".to_string(),
+                        });
+                    }
                 }
             }
             BorrowPCGEdgeKind::Borrow(borrow) => {
