@@ -188,28 +188,35 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             let region_projection =
                 RegionProjection::new(region, arg_place.into(), self.repacker).unwrap();
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
-            assert!(entry_state.apply_action(
-                BorrowPCGAction::add_edge(
-                    BorrowPCGEdge::new(
-                        OutlivesEdge::new(
-                            RegionProjection::new(
-                            region,
-                            RemotePlace::new(local).into(),
-                            self.repacker,
-                        )
-                        .unwrap_or_else(|e| {
-                            panic!("Failed to create region for remote place (for {local:?}).
-                                    Local ty: {:?}. Error: {:?}", local_decl.ty, e);
-                        }),
-                       region_projection,
-                        OutlivesEdgeKind::Todo,
-                    ).into(),
-                    PathConditions::AtBlock((Location::START).block),
+            assert!(entry_state
+                .apply_action(
+                    BorrowPCGAction::add_edge(
+                        BorrowPCGEdge::new(
+                            OutlivesEdge::new(
+                                RegionProjection::new(
+                                    region,
+                                    RemotePlace::new(local).into(),
+                                    self.repacker,
+                                )
+                                .unwrap_or_else(|e| {
+                                    panic!(
+                                        "Failed to create region for remote place (for {local:?}).
+                                    Local ty: {:?}. Error: {:?}",
+                                        local_decl.ty, e
+                                    );
+                                }),
+                                region_projection,
+                                OutlivesEdgeKind::Todo,
+                                self.repacker,
+                            )
+                            .into(),
+                            PathConditions::AtBlock((Location::START).block),
+                        ),
+                        true,
                     ),
-                    true,
-                ),
-                self.repacker,
-            ).unwrap());
+                    self.repacker,
+                )
+                .unwrap());
         }
     }
 

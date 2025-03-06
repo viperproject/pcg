@@ -9,7 +9,8 @@ use super::{
     edge::{
         block::BlockEdge,
         borrow::{LocalBorrow, RemoteBorrow},
-        outlives::OutlivesEdge, region_projection_member::RegionProjectionMember,
+        outlives::OutlivesEdge,
+        region_projection_member::RegionProjectionMember,
     },
     edge_data::EdgeData,
     graph::Conditioned,
@@ -42,8 +43,8 @@ pub struct BorrowPCGEdge<'tcx> {
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
 }
 
-impl<'tcx> From<RemoteBorrow> for BorrowPCGEdge<'tcx> {
-    fn from(borrow: RemoteBorrow) -> Self {
+impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdge<'tcx> {
+    fn from(borrow: RemoteBorrow<'tcx>) -> Self {
         BorrowPCGEdge::new(
             borrow.into(),
             PathConditions::AtBlock((mir::Location::START).block),

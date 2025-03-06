@@ -10,7 +10,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, Place},
+    utils::{remote::RemotePlace, HasPlace, Place},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -40,34 +40,49 @@ pub struct LocalBorrow<'tcx> {
 }
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
-pub struct RemoteBorrow {
+pub struct RemoteBorrow<'tcx> {
     local: mir::Local,
+
+    // We don't assume that it's still the derefence of the local of the remote place,
+    // because that local could be moved and the assigned ref should be renamed accordingly.
+    assigned_ref: MaybeOldPlace<'tcx>,
 }
 
-impl RemoteBorrow {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RemoteBorrow<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        vec![&mut self.assigned_ref]
+    }
+}
+
+impl<'tcx> RemoteBorrow<'tcx> {
+
+    pub(crate) fn deref_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        self.assigned_ref.project_deref(repacker)
+    }
+
     pub(crate) fn blocked_place(&self) -> RemotePlace {
         RemotePlace::new(self.local)
     }
 
-    pub(crate) fn assigned_ref(&self) -> mir::Local {
-        self.local
+    pub(crate) fn assigned_ref(&self) -> MaybeOldPlace<'tcx> {
+        self.assigned_ref
     }
 
-    pub(crate) fn assigned_region_projection<'tcx>(
+    pub(crate) fn assigned_region_projection(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Place<'tcx>> {
-        let local_place: Place<'tcx> = self.local.into();
-        local_place.base_region_projection(repacker).unwrap()
+    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+        self.assigned_ref.base_region_projection(repacker).unwrap()
     }
 
-    pub(crate) fn is_mut<'tcx>(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        let local_place: Place<'tcx> = self.local.into();
-        local_place.is_mut_ref(repacker.body(), repacker.tcx())
+    pub(crate) fn is_mut(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.assigned_ref
+            .place()
+            .is_mut_ref(repacker.body(), repacker.tcx())
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for RemoteBorrow {
+impl<'tcx> DisplayWithRepacker<'tcx> for RemoteBorrow<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",
@@ -78,13 +93,13 @@ impl<'tcx> DisplayWithRepacker<'tcx> for RemoteBorrow {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow {
+impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        Ok(())
+        self.assigned_ref.check_validity(repacker)
     }
 }
 
-impl<'tcx> EdgeData<'tcx> for RemoteBorrow {
+impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         vec![self.blocked_place().into()].into_iter().collect()
     }
@@ -96,34 +111,29 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow {
     }
 }
 
-impl RemoteBorrow {
+impl<'tcx> RemoteBorrow<'tcx> {
     pub(crate) fn new(local: mir::Local) -> Self {
-        Self { local }
+        Self {
+            local,
+            assigned_ref: local.into(),
+        }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowEdge<'tcx> {
     Local(LocalBorrow<'tcx>),
-    Remote(RemoteBorrow),
+    Remote(RemoteBorrow<'tcx>),
 }
 
 edgedata_enum!(
     BorrowEdge<'tcx>,
     Local(LocalBorrow<'tcx>),
-    Remote(RemoteBorrow),
+    Remote(RemoteBorrow<'tcx>),
 );
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowEdge<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            BorrowEdge::Local(borrow) => borrow.pcg_elems(),
-            BorrowEdge::Remote(borrow) => vec![],
-        }
-    }
-}
 impl<'tcx> BorrowEdge<'tcx> {
-    pub(crate) fn is_mut(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub fn is_mut(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self {
             BorrowEdge::Local(borrow) => borrow.is_mut(),
             BorrowEdge::Remote(borrow) => borrow.is_mut(repacker),
@@ -154,10 +164,17 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub(crate) fn blocked_place(&self) -> MaybeRemotePlace<'tcx> {
+    pub fn blocked_place(&self) -> MaybeRemotePlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.blocked_place.into(),
             BorrowEdge::Remote(borrow) => borrow.blocked_place().into(),
+        }
+    }
+
+    pub fn deref_place(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+        match self {
+            BorrowEdge::Local(borrow) => borrow.deref_place(repacker),
+            BorrowEdge::Remote(borrow) => borrow.deref_place(repacker).into(),
         }
     }
 

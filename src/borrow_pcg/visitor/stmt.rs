@@ -163,6 +163,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                         .unwrap()
                                         .into(),
                                         OutlivesEdgeKind::ConstRef,
+                                        self.repacker,
                                     )
                                     .into(),
                                     PathConditions::AtBlock(location.block),

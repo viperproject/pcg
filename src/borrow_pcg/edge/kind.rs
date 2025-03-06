@@ -16,8 +16,8 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
 
-impl<'tcx> From<RemoteBorrow> for BorrowPCGEdgeKind<'tcx> {
-    fn from(borrow: RemoteBorrow) -> Self {
+impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdgeKind<'tcx> {
+    fn from(borrow: RemoteBorrow<'tcx>) -> Self {
         BorrowPCGEdgeKind::Borrow(BorrowEdge::Remote(borrow))
     }
 }

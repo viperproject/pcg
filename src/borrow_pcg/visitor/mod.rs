@@ -162,6 +162,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                             source_proj.into(),
                             target_proj.into(),
                             kind(target_proj.region(self.repacker)),
+                            self.repacker,
                         )
                         .into(),
                         PathConditions::AtBlock(location.block),
