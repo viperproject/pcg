@@ -11,7 +11,7 @@ use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::combined_pcs::{PCGError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
-use crate::rustc_interface::middle::ty::{Mutability};
+use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;

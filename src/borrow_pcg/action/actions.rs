@@ -43,7 +43,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
                             ..
                         },
                     ..
-                } => Some(Conditioned::new(edge.clone(), conditions.clone())),
+                } => Some(Conditioned::new(*edge, conditions.clone())),
                 _ => None,
             })
             .collect()

@@ -165,7 +165,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     fn introduce_initial_borrows(&mut self, local: Local) {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
-        if let ty::TyKind::Ref(region, _, mutability) = local_decl.ty.kind() {
+        if let ty::TyKind::Ref(_, _, mutability) = local_decl.ty.kind() {
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
             assert!(entry_state.set_capability(
                 MaybeRemotePlace::place_assigned_to_local(local).into(),
