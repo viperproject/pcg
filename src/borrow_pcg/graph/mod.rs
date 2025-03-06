@@ -1,6 +1,5 @@
 pub mod aliases;
 
-use smallvec::smallvec;
 use std::{
     cell::{Ref, RefCell},
     collections::{HashMap, HashSet},
@@ -29,10 +28,7 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
-    edge::{
-        block::{BlockEdge, BlockEdgeOutputs},
-        outlives::{OutlivesEdge, OutlivesEdgeKind},
-    },
+    edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, MakePlaceOld},
     latest::Latest,

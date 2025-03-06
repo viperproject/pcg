@@ -1,7 +1,6 @@
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
-use crate::borrow_pcg::edge::block::BlockEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge::outlives::OutlivesEdge;
 use crate::borrow_pcg::graph::Conditioned;

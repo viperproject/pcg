@@ -7,8 +7,7 @@ use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     coupling_graph_constructor::CGNode,
     edge::{
-        block::BlockEdge,
-        borrow::{LocalBorrow, RemoteBorrow},
+        borrow::RemoteBorrow,
         outlives::OutlivesEdge,
         region_projection_member::RegionProjectionMember,
     },

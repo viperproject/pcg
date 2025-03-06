@@ -2,7 +2,6 @@ use tracing::instrument;
 
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
-use super::edge::block::BlockEdge;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
 use crate::combined_pcs::{PCGError, PCGNode};

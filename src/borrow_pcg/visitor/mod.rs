@@ -1,9 +1,8 @@
 use crate::combined_pcs::EvalStmtPhase::*;
-use smallvec::smallvec;
 use tracing::instrument;
 
 use crate::{
-    combined_pcs::{LocalNodeLike, PCGError, PCGNodeLike, PCGUnsupportedError},
+    combined_pcs::{PCGError, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
         index::IndexVec,
@@ -24,7 +23,7 @@ use super::{
     action::BorrowPCGAction,
     borrow_pcg_edge::BorrowPCGEdge,
     coupling_graph_constructor::BorrowCheckerInterface,
-    edge::{block::BlockEdge, outlives::{OutlivesEdge, OutlivesEdgeKind}},
+    edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
 };
