@@ -8,6 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
 use itertools::Itertools;
@@ -181,7 +182,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        assert!(
+        pcg_validity_assert!(
             place.is_owned(repacker),
             "Setting capability for non-owned place {}",
             place.to_short_string(repacker)
@@ -237,6 +238,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         //     self.get(&to)
         // );
 
+        tracing::info!("Expanding from {:?} to {:?} in {:?}", from, *to, self);
         let from_cap = self.get_capability(from).unwrap();
 
         let expansion = from.expand(*to, repacker)?;
