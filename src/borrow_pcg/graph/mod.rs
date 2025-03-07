@@ -398,14 +398,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }
 
-    fn construct_coupling_graph<T: BorrowCheckerInterface<'tcx>>(
+    fn construct_region_projection_abstraction<T: BorrowCheckerInterface<'tcx>>(
         &self,
         borrow_checker: &T,
         repacker: PlaceRepacker<'_, 'tcx>,
         block: BasicBlock,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         let constructor = CouplingGraphConstructor::new(borrow_checker, repacker, block);
-        constructor.construct_coupling_graph(self)
+        constructor.construct_region_projection_abstraction(self)
     }
 
     fn join_loop<T: BorrowCheckerInterface<'tcx>>(
@@ -426,9 +426,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         };
 
         let self_coupling_graph =
-            self.construct_coupling_graph(borrow_checker, repacker, other_block);
+            self.construct_region_projection_abstraction(borrow_checker, repacker, other_block);
         let other_coupling_graph =
-            other.construct_coupling_graph(borrow_checker, repacker, other_block);
+            other.construct_region_projection_abstraction(borrow_checker, repacker, other_block);
 
         if coupling_imgcat_debug() {
             self_coupling_graph

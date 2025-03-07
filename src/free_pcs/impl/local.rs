@@ -239,8 +239,16 @@ impl<'tcx> CapabilityProjections<'tcx> {
         // );
 
         tracing::debug!("Expanding from {:?} to {:?} in {:?}", from, *to, self);
-        let from_cap = self.get_capability(from).unwrap();
 
+        // TODO: How could `from` not have a capability?
+        let from_cap = if let Some(cap) = self.get_capability(from) {
+            cap
+        } else {
+            return Err(PCGError::internal(format!(
+                "No capability for {}",
+                from.to_short_string(repacker),
+            )));
+        };
         let expansion = from.expand(*to, repacker)?;
 
         // Update permission of `from` place
