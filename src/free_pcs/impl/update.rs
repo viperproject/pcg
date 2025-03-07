@@ -30,14 +30,18 @@ impl<'tcx> CapabilitySummary<'tcx> {
         place: Place<'tcx>,
         cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
+    ) -> Result<(), PCGError> {
         match &mut self[place.local] {
             CapabilityLocal::Unallocated => {
                 // TODO: Determine how this can happen.
-                tracing::warn!("Cannot set capability for unallocated local {:?}", place);
+                Err(PCGError::internal(format!(
+                    "Cannot set capability for unallocated local {:?}",
+                    place
+                )))
             }
             CapabilityLocal::Allocated(capability_projections) => {
                 capability_projections.set_capability(place, cap, repacker);
+                Ok(())
             }
         }
     }

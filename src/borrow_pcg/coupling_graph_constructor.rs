@@ -390,7 +390,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         }
     }
 
-    pub(crate) fn construct_coupling_graph(
+    pub(crate) fn construct_region_projection_abstraction(
         mut self,
         bg: &BorrowsGraph<'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {

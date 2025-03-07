@@ -34,6 +34,7 @@ use crate::{
 
 use super::{
     domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
+    PCGError,
 };
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::{
@@ -283,7 +284,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
     fn restore_loaned_capabilities(
         &self,
         state: &mut PlaceCapabilitySummary<'a, 'tcx>,
-    ) -> Vec<RepackOp<'tcx>> {
+    ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
         let pcg = state.pcg_mut();
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
 
@@ -296,17 +297,12 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                     .iter()
                     .flat_map(|p| p.as_current_place())
                 {
-                    if place.is_owned(self.cgx.rp)
-                        && !borrows.contains(place.into(), self.cgx.rp)
-                    {
-                        tracing::debug!(
-                            "Setting capability for place {:?} to Exclusive",
-                            place
-                        );
+                    if place.is_owned(self.cgx.rp) && !borrows.contains(place.into(), self.cgx.rp) {
+                        tracing::debug!("Setting capability for place {:?} to Exclusive", place);
                         pcg.owned
                             .data
                             .get_mut(EvalStmtPhase::PostMain)
-                            .set_capability(place, CapabilityKind::Exclusive, self.cgx.rp);
+                            .set_capability(place, CapabilityKind::Exclusive, self.cgx.rp)?;
                     }
                 }
             }
@@ -344,7 +340,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                 }
             }
         }
-        extra_ops
+        Ok(extra_ops)
     }
 }
 
@@ -396,7 +392,13 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
 
-        let mut extra_ops = self.restore_loaned_capabilities(state);
+        let mut extra_ops = match self.restore_loaned_capabilities(state) {
+            Ok(extra_ops) => extra_ops,
+            Err(e) => {
+                state.borrow_pcg_mut().report_error(e);
+                return;
+            }
+        };
 
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PreOperands].clone();
         self.fpcs.apply_before_statement_effect(
@@ -446,7 +448,13 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         self.borrows
             .apply_before_terminator_effect(state.borrow_pcg_mut(), terminator, location);
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
-        let mut extra_ops = self.restore_loaned_capabilities(state);
+        let mut extra_ops = match self.restore_loaned_capabilities(state) {
+            Ok(extra_ops) => extra_ops,
+            Err(e) => {
+                state.borrow_pcg_mut().report_error(e);
+                return;
+            }
+        };
         self.fpcs.apply_before_terminator_effect(
             state.owned_pcg_mut(),
             terminator,
