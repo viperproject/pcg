@@ -87,15 +87,15 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                     // Otherwise, this is an expansion from a place that won't survive the join
                     tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
                     tracing::debug!("other: {:?}", other);
-                    self.insert_expansion(*place, other_expansion.clone(), repacker);
+                    self.insert_expansion(*place, other_expansion.clone());
                     if let Some(cap) = other.get_capability(*place) {
-                        self.set_capability(*place, cap);
+                        self.set_capability(*place, cap, repacker);
                     } else {
                         self.remove_capability(*place);
                     }
                     for place in place.expansion_places(other_expansion, repacker) {
                         if let Some(cap) = other.get_capability(place) {
-                            self.set_capability(place, cap);
+                            self.set_capability(place, cap, repacker);
                         } else {
                             self.remove_capability(place);
                         }

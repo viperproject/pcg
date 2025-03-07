@@ -8,7 +8,11 @@ use std::fmt::{Display, Formatter, Result};
 
 use rustc_interface::middle::mir::Local;
 
-use crate::{free_pcs::CapabilityKind, rustc_interface, utils::Place};
+use crate::{
+    free_pcs::CapabilityKind,
+    pcg_validity_assert, rustc_interface,
+    utils::{Place, PlaceRepacker},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RepackOp<'tcx> {
@@ -83,9 +87,22 @@ impl Display for RepackOp<'_> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
-
     pub(crate) fn to_json(self) -> serde_json::Value {
         serde_json::Value::String(format!("{self:?}"))
+    }
+
+    pub(crate) fn expand(
+        from: Place<'tcx>,
+        to: Place<'tcx>,
+        for_cap: CapabilityKind,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Self {
+        pcg_validity_assert!(
+            to.is_owned(repacker),
+            "Expansion to borrowed place {:?}",
+            to
+        );
+        Self::Expand(from, to, for_cap)
     }
 
     pub fn affected_place(&self) -> Place<'tcx> {

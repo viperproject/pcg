@@ -151,6 +151,7 @@ enum GraphEdge {
     Borrow {
         borrowed_place: NodeId,
         assigned_region_projection: NodeId,
+        kind: String,
         location: Option<Location>,
         region: Option<String>,
         path_conditions: String,
@@ -198,13 +199,18 @@ impl GraphEdge {
                 assigned_region_projection: assigned_place,
                 location: _,
                 region,
+                kind,
                 path_conditions,
             } => DotEdge {
                 to: assigned_place.to_string(),
                 from: borrowed_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string())
-                    .with_label(region.as_ref().cloned().unwrap_or("".to_string()))
+                    .with_label(format!(
+                        "{} {}",
+                        kind,
+                        region.as_ref().cloned().unwrap_or("".to_string())
+                    ))
                     .with_tooltip(path_conditions.clone()),
             },
             GraphEdge::DerefExpansion {

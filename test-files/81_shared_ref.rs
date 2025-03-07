@@ -6,7 +6,7 @@ struct S {
 fn main() {
     let x = S { a: 1, b: 2 };
     let y = &x.a;
-    // PCG: bb0[4] post_main: x.b: E
+    // PCG: bb0[4] post_main: x.b: R
     // PCG: bb0[4] post_main: x.a: R
     // PCG: bb0[4] post_main: x: R
     // ~PCG: bb0[4] post_operands: Repacks Start: Collapse(_1, _1.0, R)

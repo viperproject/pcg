@@ -403,7 +403,6 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
 
         self.super_statement(statement, location);
 
-        // Will be included as start bridge ops
         if self.preparing && self.stage == StatementStage::Operands {
             match &statement.kind {
                 StatementKind::Assign(box (_, Rvalue::Cast(_, _, ty))) => {

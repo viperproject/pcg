@@ -8,20 +8,14 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    rustc_interface::{
-        data_structures::fx::FxHashMap,
-        middle::mir::Local,
-    },
+    rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
 use itertools::Itertools;
 
 use crate::{
     combined_pcs::{PCGError, PCGInternalError},
     free_pcs::{CapabilityKind, RepackOp},
-    pcg_validity_assert,
-    utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker,
-    },
+    utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
     validity_checks_enabled,
 };
 
@@ -112,7 +106,7 @@ impl<S: CheckValidityOnExpiry, T> Drop for DropGuard<'_, S, T> {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CapabilityProjections<'tcx> {
-     local: Local,
+    local: Local,
     expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
     capabilities: FxHashMap<Place<'tcx>, CapabilityKind>,
 }
@@ -122,18 +116,7 @@ impl CheckValidityOnExpiry for CapabilityProjections<'_> {
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {
-    pub(crate) fn insert_expansion(
-        &mut self,
-        place: Place<'tcx>,
-        expansion: PlaceExpansion<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        pcg_validity_assert!(
-            self.contains_expansion_to(place, repacker),
-            "{:?} does not contain expansion to {:?}",
-            self,
-            place
-        );
+    pub(crate) fn insert_expansion(&mut self, place: Place<'tcx>, expansion: PlaceExpansion<'tcx>) {
         self.expansions.insert(place, expansion);
     }
 
@@ -192,7 +175,17 @@ impl<'tcx> CapabilityProjections<'tcx> {
         self.local
     }
 
-    pub(crate) fn set_capability(&mut self, place: Place<'tcx>, cap: CapabilityKind) {
+    pub(crate) fn set_capability(
+        &mut self,
+        place: Place<'tcx>,
+        cap: CapabilityKind,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        assert!(
+            place.is_owned(repacker),
+            "Setting capability for non-owned place {}",
+            place.to_short_string(repacker)
+        );
         self.capabilities.insert(place, cap);
     }
 
@@ -221,6 +214,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for_cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
+        assert!(
+            to.is_owned(repacker),
+            "Expanding to borrowed place {:?}",
+            *to
+        );
         // assert!(
         //     !from.is_mut_ref(repacker.body(), repacker.tcx()),
         //     "Mutable reference {:?} should be expanded in borrow PCG, not owned PCG",
@@ -252,7 +250,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         };
 
         for place in expansion.other_expansions() {
-            self.set_capability(place, other_place_perm);
+            self.set_capability(place, other_place_perm, repacker);
         }
 
         let mut ops = Vec::new();
@@ -261,10 +259,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
             self.insert_expansion(
                 expansion.base_place(),
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
-                repacker,
             );
             if let Some(perm) = projection_path_perm {
-                self.set_capability(expansion.base_place(), perm);
+                self.set_capability(expansion.base_place(), perm, repacker);
             } else {
                 self.remove_capability(expansion.base_place());
             }
@@ -274,15 +271,16 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     expansion.target_place,
                 ));
             } else {
-                ops.push(RepackOp::Expand(
+                ops.push(RepackOp::expand(
                     expansion.base_place(),
                     expansion.target_place,
                     for_cap,
+                    repacker,
                 ));
             }
         }
 
-        self.set_capability(*to, from_cap);
+        self.set_capability(*to, from_cap, repacker);
 
         if validity_checks_enabled() {
             self.check_validity();
@@ -317,7 +315,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                         None => acc,
                     },
                 );
-                self.set_capability(p, retained_cap);
+                self.set_capability(p, retained_cap, repacker);
                 self.expansions.remove(&p);
                 RepackOp::Collapse(p, expansion_places[0], retained_cap)
             })

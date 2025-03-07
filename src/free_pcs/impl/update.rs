@@ -5,11 +5,12 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
+    borrow_pcg::state::BorrowsState,
     combined_pcs::PCGError,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg_validity_assert,
-    rustc_interface::middle::mir::{Local, RETURN_PLACE},
-    utils::{corrected::CorrectedPlace, LocalMutationIsAllowed, Place, PlaceRepacker},
+    rustc_interface::{ast::Mutability, middle::mir::{Local, RETURN_PLACE}},
+    utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place, PlaceRepacker},
 };
 
 use super::{
@@ -18,16 +19,29 @@ use super::{
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
-    pub(crate) fn set_capability(&mut self, place: Place<'tcx>, cap: CapabilityKind) {
+    pub(crate) fn set_capability(
+        &mut self,
+        place: Place<'tcx>,
+        cap: CapabilityKind,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
         self[place.local]
             .get_allocated_mut()
-            .set_capability(place, cap)
+            .set_capability(place, cap, repacker)
     }
 
+    pub(crate) fn remove_capability(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
+        self[place.local]
+            .get_allocated_mut()
+            .remove_capability(place)
+    }
+
+    #[tracing::instrument(skip(self, cond, repacker, borrows))]
     pub(crate) fn requires(
         &mut self,
         cond: Condition<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
+        borrows: &BorrowsState<'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
         match cond {
             Condition::RemoveCapability(place) => {
@@ -49,13 +63,27 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     CapabilityLocal::Allocated(_) => self.requires(
                         Condition::Capability(local.into(), CapabilityKind::Write),
                         repacker,
+                        borrows,
                     ),
                 }
             }
             Condition::Capability(place, cap) => {
-                let cp = self[place.local].get_allocated_mut();
-                let result = cp.repack(place, repacker, cap)?;
-                cp.set_capability(place, cap);
+                let nearest_owned_place = place.nearest_owned_place(repacker);
+                let cp = self[nearest_owned_place.local].get_allocated_mut();
+                let result = cp.repack(nearest_owned_place, repacker, cap)?;
+                if nearest_owned_place == place {
+                    cp.set_capability(place, cap, repacker);
+                } else {
+                    match nearest_owned_place.ref_mutability(repacker) {
+                        Some(Mutability::Mut) => {
+                            cp.remove_capability(nearest_owned_place);
+                        }
+                        Some(Mutability::Not) => {
+                            cp.set_capability(nearest_owned_place, CapabilityKind::Read, repacker);
+                        }
+                        None => unreachable!(),
+                    }
+                }
                 Ok(result)
             }
             Condition::Return => {
@@ -107,7 +135,11 @@ impl<'tcx> CapabilitySummary<'tcx> {
                     }
                     CapabilityKind::Exclusive => {
                         // Cannot get exclusive on a shared ref
-                        assert!(!place.projects_shared_ref(repacker));
+                        assert!(
+                            !place.projects_shared_ref(repacker),
+                            "Cannot get exclusive on projection of shared ref {}",
+                            place.to_short_string(repacker)
+                        );
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
@@ -149,9 +181,11 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 self[local] = CapabilityLocal::Allocated(CapabilityProjections::new_uninit(local));
             }
             Condition::Capability(place, cap) => {
-                self[place.local]
-                    .get_allocated_mut()
-                    .set_capability(place, cap);
+                if place.is_owned(repacker) {
+                    self[place.local]
+                        .get_allocated_mut()
+                        .set_capability(place, cap, repacker);
+                }
             }
         }
     }
@@ -193,23 +227,32 @@ impl<'tcx> CapabilityProjections<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         for_cap: CapabilityKind,
     ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
-        // TODO
-        // if !to.is_owned(repacker) {
-        // panic!("Cannot repack to borrowed place {:?}", to);
-        // }
-        let collapse_to = self.place_to_collapse_to(to, for_cap);
+        let nearest_owned_place = to.nearest_owned_place(repacker);
+        let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap);
         // eprintln!("Collapse to {collapse_to:?} for repack to {to:?} in {self:?}");
         let mut result = self.collapse(collapse_to, repacker)?;
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");
-        let prefix = self.get_longest_prefix(to);
-        if prefix != to && self.get_capability(to).is_none() {
+        let prefix = self.get_longest_prefix(nearest_owned_place);
+        if prefix != nearest_owned_place && self.get_capability(nearest_owned_place).is_none() {
             result.extend(self.expand(
                 prefix,
-                CorrectedPlace::new(to, repacker),
+                CorrectedPlace::new(nearest_owned_place, repacker),
                 for_cap,
                 repacker,
             )?);
+        }
+        if to != nearest_owned_place {
+            match nearest_owned_place.ref_mutability(repacker) {
+                Some(Mutability::Mut) => {
+                    tracing::info!("Remove capability {:?}", nearest_owned_place);
+                    self.remove_capability(nearest_owned_place);
+                }
+                Some(Mutability::Not) => {
+                    self.set_capability(nearest_owned_place, CapabilityKind::Read, repacker);
+                }
+                None => unreachable!(),
+            }
         }
         tracing::debug!("Result: {result:?}");
         tracing::debug!("Self: {self:?}");

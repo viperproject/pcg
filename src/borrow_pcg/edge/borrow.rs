@@ -28,7 +28,7 @@ pub struct LocalBorrow<'tcx> {
     pub blocked_place: MaybeOldPlace<'tcx>,
     /// The place that is assigned by the borrow, e.g. the x in `let x = &mut y;`
     pub(crate) assigned_ref: MaybeOldPlace<'tcx>,
-    mutability: Mutability,
+    kind: mir::BorrowKind,
 
     /// The location when the reborrow was created
     reserve_location: Location,
@@ -129,6 +129,14 @@ edgedata_enum!(
 );
 
 impl<'tcx> BorrowEdge<'tcx> {
+
+    pub(crate) fn kind(&self) -> Option<mir::BorrowKind> {
+        match self {
+            BorrowEdge::Local(borrow) => Some(borrow.kind),
+            BorrowEdge::Remote(_) => None,
+        }
+    }
+
     pub fn is_mut(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self {
             BorrowEdge::Local(borrow) => borrow.is_mut(),
@@ -177,7 +185,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     pub(crate) fn assigned_ref(&self) -> MaybeOldPlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.assigned_ref,
-            BorrowEdge::Remote(remote) => remote.assigned_ref()
+            BorrowEdge::Remote(remote) => remote.assigned_ref(),
         }
     }
 }
@@ -194,7 +202,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for LocalBorrow<'tcx> {
         format!(
             "borrow: {} = &{} {}",
             self.assigned_ref.to_short_string(repacker),
-            if self.mutability == Mutability::Mut {
+            if self.kind.mutability() == Mutability::Mut {
                 "mut "
             } else {
                 ""
@@ -250,7 +258,7 @@ impl<'tcx> LocalBorrow<'tcx> {
     pub(crate) fn new(
         blocked_place: MaybeOldPlace<'tcx>,
         assigned_place: MaybeOldPlace<'tcx>,
-        mutability: Mutability,
+        kind: mir::BorrowKind,
         reservation_location: Location,
         region: ty::Region<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -259,7 +267,7 @@ impl<'tcx> LocalBorrow<'tcx> {
         Self {
             blocked_place,
             assigned_ref: assigned_place,
-            mutability,
+            kind,
             reserve_location: reservation_location,
             region,
         }
@@ -270,7 +278,7 @@ impl<'tcx> LocalBorrow<'tcx> {
     }
 
     pub fn is_mut(&self) -> bool {
-        self.mutability == Mutability::Mut
+        self.kind.mutability() == Mutability::Mut
     }
 
     /// The deref of the assigned place of the borrow. For example, if the borrow is

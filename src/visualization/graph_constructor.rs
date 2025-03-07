@@ -18,7 +18,7 @@ use crate::{
 use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::rustc_interface::middle::ty::TyCtxt;
+use crate::rustc_interface::middle::{mir, ty::TyCtxt};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
@@ -123,11 +123,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_region_projection_node(
-        &mut self,
-        projection: RegionProjection<'tcx>,
-        capability: Option<CapabilityKind>,
-    ) -> NodeId {
+    fn insert_region_projection_node(&mut self, projection: RegionProjection<'tcx>) -> NodeId {
         if let Some(id) = self.region_projection_nodes.existing_id(&projection) {
             return id;
         }
@@ -136,14 +132,9 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             id,
             node_type: NodeType::RegionProjectionNode {
                 label: format!(
-                    "{}↓{}{}",
+                    "{}↓{}",
                     projection.place().to_short_string(self.repacker),
                     projection.region(self.repacker),
-                    if let Some(capability) = capability {
-                        format!(" {:?}", capability)
-                    } else {
-                        "".to_string()
-                    }
                 ),
             },
         };
@@ -153,7 +144,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
     fn insert_cg_node(&mut self, node: CGNode<'tcx>, capability: Option<CapabilityKind>) -> NodeId {
         match node {
-            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp, capability),
+            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp),
             CGNode::RemotePlace(rp) => self.insert_remote_node(rp, capability),
         }
     }
@@ -173,8 +164,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         for output in abstraction.outputs() {
             let output = output.set_base(output.base.into(), self.repacker);
-            let output =
-                self.insert_region_projection_node(output, capabilities.get(output.into()));
+            let output = self.insert_region_projection_node(output);
             output_nodes.insert(output);
         }
 
@@ -284,25 +274,18 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
         }
     }
     fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
-        let capabilities = self.capability_getter();
-        let node_capability = capabilities.get(node);
         match node {
             PCGNode::Place(place) => self.insert_maybe_remote_place(place),
-            PCGNode::RegionProjection(rp) => self
-                .constructor()
-                .insert_region_projection_node(rp, node_capability),
+            PCGNode::RegionProjection(rp) => self.constructor().insert_region_projection_node(rp),
         }
     }
 
     fn insert_local_node(&mut self, node: LocalNode<'tcx>) -> NodeId {
-        let capabilities = self.capability_getter();
-        let node_capability = capabilities.get(node.into());
         match node {
             LocalNode::Place(place) => self.insert_maybe_old_place(place),
             LocalNode::RegionProjection(rp) => {
                 let rp = rp.to_region_projection(self.repacker());
-                self.constructor()
-                    .insert_region_projection_node(rp, node_capability)
+                self.constructor().insert_region_projection_node(rp)
             }
         }
     }
@@ -342,17 +325,22 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                 let assigned_region_projection = borrow
                     .assigned_region_projection(self.repacker())
                     .to_region_projection(self.repacker());
-                let assigned_rp_pcg_node = assigned_region_projection.to_pcg_node(self.repacker());
-                let assigned_rp_node = self.constructor().insert_region_projection_node(
-                    assigned_region_projection,
-                    capabilities.get(assigned_rp_pcg_node),
-                );
+                let assigned_rp_node = self
+                    .constructor()
+                    .insert_region_projection_node(assigned_region_projection);
+                let kind = match borrow.kind() {
+                    Some(mir::BorrowKind::Shared) => "shared".to_string(),
+                    Some(mir::BorrowKind::Mut { kind }) => format!("{:?}", kind),
+                    Some(mir::BorrowKind::Fake(_)) => "fake".to_string(),
+                    None => "".to_string(),
+                };
                 self.constructor().edges.insert(GraphEdge::Borrow {
                     borrowed_place,
                     assigned_region_projection: assigned_rp_node,
                     location: borrow.reserve_location(),
                     region: borrow.borrow_region().map(|r| format!("{:?}", r)),
                     path_conditions: format!("{}", edge.conditions()),
+                    kind,
                 });
             }
             BorrowPCGEdgeKind::Abstraction(abstraction) => {
@@ -522,14 +510,12 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
                 self.repacker,
             );
             for (rp1, rp2) in connections {
-                let source = self.constructor.insert_region_projection_node(
-                    rp1.to_region_projection(self.repacker()),
-                    capabilities.get(rp1.to_pcg_node(self.repacker())),
-                );
-                let target = self.constructor.insert_region_projection_node(
-                    rp2.to_region_projection(self.repacker()),
-                    capabilities.get(rp2.to_pcg_node(self.repacker())),
-                );
+                let source = self
+                    .constructor
+                    .insert_region_projection_node(rp1.to_region_projection(self.repacker()));
+                let target = self
+                    .constructor
+                    .insert_region_projection_node(rp2.to_region_projection(self.repacker()));
                 self.constructor
                     .edges
                     .insert(GraphEdge::Projection { source, target });
