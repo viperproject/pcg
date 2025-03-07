@@ -238,7 +238,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         //     self.get(&to)
         // );
 
-        tracing::info!("Expanding from {:?} to {:?} in {:?}", from, *to, self);
+        tracing::debug!("Expanding from {:?} to {:?} in {:?}", from, *to, self);
         let from_cap = self.get_capability(from).unwrap();
 
         let expansion = from.expand(*to, repacker)?;

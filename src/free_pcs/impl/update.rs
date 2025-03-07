@@ -31,9 +31,15 @@ impl<'tcx> CapabilitySummary<'tcx> {
         cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        self[place.local]
-            .get_allocated_mut()
-            .set_capability(place, cap, repacker)
+        match &mut self[place.local] {
+            CapabilityLocal::Unallocated => {
+                // TODO: Determine how this can happen.
+                tracing::warn!("Cannot set capability for unallocated local {:?}", place);
+            }
+            CapabilityLocal::Allocated(capability_projections) => {
+                capability_projections.set_capability(place, cap, repacker);
+            }
+        }
     }
 
     #[tracing::instrument(skip(self, cond, repacker, borrows))]
@@ -70,7 +76,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             Condition::Capability(place, cap) => {
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
-                tracing::info!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
+                tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
                 let result = cp.repack(nearest_owned_place, repacker, cap)?;
                 if nearest_owned_place == place {
                     cp.set_capability(place, cap, repacker);
