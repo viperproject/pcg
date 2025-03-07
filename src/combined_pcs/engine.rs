@@ -13,10 +13,7 @@ use std::{
 use itertools::Itertools;
 
 use crate::{
-    borrow_pcg::{
-        action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdgeLike,
-        borrow_pcg_expansion::BorrowPCGExpansion, edge::kind::BorrowPCGEdgeKind,
-    },
+    borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdgeLike},
     free_pcs::{CapabilitySummary, RepackOp},
     rustc_interface::{
         borrowck::{
@@ -32,7 +29,6 @@ use crate::{
             ty::{self, GenericArgsRef, TyCtxt},
         },
     },
-    utils::HasPlace,
     BodyAndBorrows,
 };
 
@@ -294,54 +290,25 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
         for action in pcg.borrow.actions[EvalStmtPhase::PreOperands].iter() {
-            match &action.kind {
-                BorrowPCGActionKind::RemoveEdge(edge) => {
-                    for place in edge
-                        .blocked_places(self.cgx.rp)
-                        .iter()
-                        .flat_map(|p| p.as_current_place())
+            if let BorrowPCGActionKind::RemoveEdge(edge) = &action.kind {
+                for place in edge
+                    .blocked_places(self.cgx.rp)
+                    .iter()
+                    .flat_map(|p| p.as_current_place())
+                {
+                    if place.is_owned(self.cgx.rp)
+                        && !borrows.contains(place.into(), self.cgx.rp)
                     {
-                        if place.is_owned(self.cgx.rp)
-                            && !borrows.contains(place.into(), self.cgx.rp)
-                        {
-                            tracing::debug!(
-                                "Setting capability for place {:?} to Exclusive",
-                                place
-                            );
-                            pcg.owned
-                                .data
-                                .get_mut(EvalStmtPhase::PostMain)
-                                .set_capability(place, CapabilityKind::Exclusive, self.cgx.rp);
-                        }
+                        tracing::debug!(
+                            "Setting capability for place {:?} to Exclusive",
+                            place
+                        );
+                        pcg.owned
+                            .data
+                            .get_mut(EvalStmtPhase::PostMain)
+                            .set_capability(place, CapabilityKind::Exclusive, self.cgx.rp);
                     }
                 }
-                BorrowPCGActionKind::AddEdge { edge, .. } => {
-                    if let BorrowPCGEdgeKind::BorrowPCGExpansion(BorrowPCGExpansion::FromOwned(
-                        expansion,
-                    )) = edge.kind()
-                    {
-                        let base_place = expansion.base().place();
-                        if base_place.is_mut_ref(self.cgx.rp.body(), self.cgx.rp.tcx()) {
-                            let removed = pcg
-                                .owned
-                                .data
-                                .get_mut(EvalStmtPhase::PostMain)
-                                .remove_capability(base_place)
-                                .is_some();
-                            tracing::info!(
-                                "Removing capability for place {:?}: {}",
-                                base_place,
-                                removed
-                            );
-                        } else {
-                            pcg.owned
-                                .data
-                                .get_mut(EvalStmtPhase::PostMain)
-                                .set_capability(base_place, CapabilityKind::Read, self.cgx.rp);
-                        }
-                    }
-                }
-                _ => {}
             }
         }
         let mut extra_ops = vec![];
@@ -426,7 +393,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             .prepare_operands(state.borrow_pcg_mut(), statement, location)
             .is_err()
         {
-            return
+            return;
         }
 
         let mut extra_ops = self.restore_loaned_capabilities(state);

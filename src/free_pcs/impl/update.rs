@@ -9,8 +9,14 @@ use crate::{
     combined_pcs::PCGError,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg_validity_assert,
-    rustc_interface::{ast::Mutability, middle::mir::{Local, RETURN_PLACE}},
-    utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place, PlaceRepacker},
+    rustc_interface::{
+        ast::Mutability,
+        middle::mir::{Local, RETURN_PLACE},
+    },
+    utils::{
+        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
+        PlaceRepacker,
+    },
 };
 
 use super::{
@@ -28,12 +34,6 @@ impl<'tcx> CapabilitySummary<'tcx> {
         self[place.local]
             .get_allocated_mut()
             .set_capability(place, cap, repacker)
-    }
-
-    pub(crate) fn remove_capability(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self[place.local]
-            .get_allocated_mut()
-            .remove_capability(place)
     }
 
     #[tracing::instrument(skip(self, cond, repacker, borrows))]
@@ -70,6 +70,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             Condition::Capability(place, cap) => {
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
+                tracing::info!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
                 let result = cp.repack(nearest_owned_place, repacker, cap)?;
                 if nearest_owned_place == place {
                     cp.set_capability(place, cap, repacker);
@@ -229,12 +230,13 @@ impl<'tcx> CapabilityProjections<'tcx> {
     ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
         let nearest_owned_place = to.nearest_owned_place(repacker);
         let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap);
-        // eprintln!("Collapse to {collapse_to:?} for repack to {to:?} in {self:?}");
         let mut result = self.collapse(collapse_to, repacker)?;
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");
         let prefix = self.get_longest_prefix(nearest_owned_place);
-        if prefix != nearest_owned_place && self.get_capability(nearest_owned_place).is_none() {
+        if prefix != nearest_owned_place
+            && !self.contains_expansion_to(nearest_owned_place, repacker)
+        {
             result.extend(self.expand(
                 prefix,
                 CorrectedPlace::new(nearest_owned_place, repacker),

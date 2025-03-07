@@ -137,7 +137,7 @@ impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
         }
     }
 }
-impl<'a, 'tcx> Visitor<'tcx> for TripleWalker<'a, 'tcx> {
+impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
         let triple = match *operand {
