@@ -9,10 +9,13 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
+use crate::{
+    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
+    utils::display::DisplayWithRepacker,
+};
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -124,8 +127,20 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.graph.insert(edge)
     }
-    pub(super) fn remove(&mut self, edge: &BorrowPCGEdge<'tcx>) -> bool {
-        self.graph.remove(edge)
+    pub(super) fn remove(
+        &mut self,
+        edge: &BorrowPCGEdge<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let removed = self.graph.remove(edge);
+        if removed {
+            for node in edge.blocked_by_nodes(repacker) {
+                if !self.graph.contains(node, repacker) {
+                    let _ = self.remove_capability(node.into());
+                }
+            }
+        }
+        removed
     }
 
     fn record_and_apply_action(
@@ -242,6 +257,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PCGError> {
+        tracing::debug!("Removing edge {}", edge.kind().to_short_string(repacker));
         let mut actions = ExecutedActions::new();
         for place in edge.blocked_places(repacker) {
             if self.get_capability(place.into()) != Some(CapabilityKind::Read)
@@ -461,7 +477,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let borrow_edge = LocalBorrow::new(
             blocked_place,
             assigned_place.into(),
-            kind.mutability(),
+            kind,
             location,
             region,
             repacker,

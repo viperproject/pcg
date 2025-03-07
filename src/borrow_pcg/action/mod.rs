@@ -216,7 +216,7 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::SetLatest(place, location) => {
                 self.set_latest(place, location, repacker)
             }
-            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge),
+            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, repacker),
             BorrowPCGActionKind::AddEdge {
                 edge,
                 for_exclusive,
@@ -257,11 +257,12 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                     };
 
-                    // If the expansion is a deref of a borrow, its expansion should not
-                    // change the capability to the base. We are allowed to have e.g. exclusive
-                    // permission to `x: &'a mut T` and `*x` simultaneously. Intuitively, `*x`
-                    // gets its permission from `x↓'a`.
-                    if !expansion.is_deref_of_borrow(repacker) {
+                    let base_is_owned = match base {
+                        PCGNode::Place(p) => p.is_owned(repacker),
+                        PCGNode::RegionProjection(_) => false,
+                    };
+
+                    if !base_is_owned {
                         if for_exclusive {
                             changed |= self.remove_capability(base.into());
                         } else {

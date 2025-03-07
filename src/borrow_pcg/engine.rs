@@ -1,14 +1,15 @@
 use std::rc::Rc;
 
 use crate::{
-    combined_pcs::EvalStmtPhase, rustc_interface::{
+    combined_pcs::{EvalStmtPhase, PCGError},
+    rustc_interface::{
         borrowck::PoloniusOutput,
-        dataflow::Analysis,
         middle::{
             mir::{visit::Visitor, Body, Location, Statement, Terminator, TerminatorEdges},
             ty::TyCtxt,
         },
-    }, utils::display::DisplayDiff
+    },
+    utils::display::DisplayDiff,
 };
 
 use super::{
@@ -39,35 +40,27 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
-    type Domain = BorrowsDomain<'a, 'tcx>;
-    const NAME: &'static str = "borrows";
-
-    fn bottom_value(&self, _body: &Body<'tcx>) -> Self::Domain {
-        todo!()
-    }
-
-    fn initialize_start_block(&self, _body: &Body<'tcx>, _state: &mut Self::Domain) {
-        todo!()
-    }
-    fn apply_before_statement_effect(
+impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
+    pub(crate) fn prepare_operands(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
-    ) {
-        if state.has_error() {
-            return;
-        }
+    ) -> Result<(), PCGError> {
         state.data.enter_location(location);
 
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
+        if let Some(error) = state.error() {
+            return Err(error.clone());
+        }
 
         if !state.actions.pre_operands.is_empty() {
             state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
-        } else if !state.has_error() && state.data.states.0.pre_operands != state.data.states.0.post_main {
+        } else if !state.has_error()
+            && state.data.states.0.pre_operands != state.data.states.0.post_main
+        {
             panic!(
                 "{:?}: No actions were emitted, but the state has changed:\n{}",
                 location,
@@ -77,12 +70,21 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
                 )
             );
         }
+        Ok(())
+    }
+
+    pub(crate) fn apply_operands(
+        &mut self,
+        state: &mut BorrowsDomain<'a, 'tcx>,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) {
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
             .visit_statement(statement, location);
         state.data.states.0.post_operands = state.data.states.0.post_main.clone();
     }
 
-    fn apply_statement_effect(
+    pub(crate) fn apply_statement_effect(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
         statement: &Statement<'tcx>,
@@ -98,7 +100,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
             .visit_statement(statement, location);
     }
 
-    fn apply_before_terminator_effect(
+    pub(crate) fn apply_before_terminator_effect(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
         terminator: &Terminator<'tcx>,
@@ -116,7 +118,7 @@ impl<'a, 'tcx> Analysis<'tcx> for BorrowsEngine<'a, 'tcx> {
         state.data.post_operands_complete();
     }
 
-    fn apply_terminator_effect<'mir>(
+    pub(crate) fn apply_terminator_effect<'mir>(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
         terminator: &'mir Terminator<'tcx>,

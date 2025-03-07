@@ -4,7 +4,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::middle::mir::{
+use crate::pcg_validity_assert;
+use crate::rustc_interface::middle::mir::{
     visit::Visitor, BorrowKind, Local, Location, Operand, ProjectionElem, Rvalue, Statement,
     StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
 };
@@ -12,8 +13,7 @@ use rustc_interface::middle::mir::{
 use crate::{
     combined_pcs::{PCGError, PCGUnsupportedError},
     free_pcs::CapabilityKind,
-    rustc_interface,
-    utils::{Place, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -54,7 +54,16 @@ impl<'tcx> Condition<'tcx> {
         Condition::Capability(place.into(), capability)
     }
 
-    fn exclusive<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+    fn exclusive<T: Into<Place<'tcx>>>(
+        place: T,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Condition<'tcx> {
+        let place = place.into();
+        pcg_validity_assert!(
+            !place.projects_shared_ref(repacker),
+            "Cannot get exclusive on projection of shared ref {}",
+            place.to_short_string(repacker)
+        );
         Self::new(place, CapabilityKind::Exclusive)
     }
 
@@ -108,17 +117,27 @@ fn get_place_to_expand_to<'b, 'tcx>(
     curr_place
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct TripleWalker<'tcx> {
+pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
     /// Evaluate all Operands/Rvalues
     pub(crate) operand_triples: Vec<Triple<'tcx>>,
     /// Evaluate all other statements/terminators
     pub(crate) main_triples: Vec<Triple<'tcx>>,
-
+    #[allow(dead_code)]
+    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) error: Option<PCGError>,
 }
 
-impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
+impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
+    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+        Self {
+            operand_triples: Vec::new(),
+            main_triples: Vec::new(),
+            repacker,
+            error: None,
+        }
+    }
+}
+impl<'a, 'tcx> Visitor<'tcx> for TripleWalker<'a, 'tcx> {
     fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
         let triple = match *operand {
@@ -127,7 +146,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 post: None,
             },
             Operand::Move(place) => Triple {
-                pre: Condition::exclusive(place),
+                pre: Condition::exclusive(place, self.repacker),
                 post: Some(Condition::write(place)),
             },
             Operand::Constant(..) => return,
@@ -152,11 +171,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             &Ref(_, kind, place) => match kind {
                 BorrowKind::Shared => Condition::read(place),
                 BorrowKind::Fake(..) => return,
-                BorrowKind::Mut { .. } => Condition::exclusive(place),
+                BorrowKind::Mut { .. } => Condition::exclusive(place, self.repacker),
             },
             &RawPtr(mutbl, place) => {
                 if mutbl.is_mut() {
-                    Condition::exclusive(place)
+                    Condition::exclusive(place, self.repacker)
                 } else {
                     Condition::read(place)
                 }
@@ -175,17 +194,17 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 post: rvalue.capability().map(|cap| Condition::new(place, cap)),
             },
             FakeRead(box (_, place)) => Triple {
-                pre: Condition::exclusive(place),
+                pre: Condition::read(place),
                 post: None,
             },
             // Looking into `rustc` it seems that `PlaceMention` is effectively ignored.
             PlaceMention(_) => return,
             SetDiscriminant { box place, .. } => Triple {
-                pre: Condition::exclusive(place),
+                pre: Condition::exclusive(place, self.repacker),
                 post: None,
             },
             Deinit(box place) => Triple {
-                pre: Condition::exclusive(place),
+                pre: Condition::exclusive(place, self.repacker),
                 post: Some(Condition::write(place)),
             },
             StorageLive(local) => Triple {
@@ -197,7 +216,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 post: Some(Condition::Unalloc(local)),
             },
             Retag(_, box place) => Triple {
-                pre: Condition::exclusive(place),
+                pre: Condition::exclusive(place, self.repacker),
                 post: None,
             },
             _ => return,
@@ -211,7 +230,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
                 },
                 BorrowKind::Fake(..) => return,
                 BorrowKind::Mut { .. } => Triple {
-                    pre: Condition::exclusive(*place),
+                    pre: Condition::exclusive(*place, self.repacker),
                     post: Some(Condition::RemoveCapability((*place).into())),
                 },
             };
@@ -241,11 +260,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'tcx> {
             },
             &Call { destination, .. } => Triple {
                 pre: Condition::write(destination),
-                post: Some(Condition::exclusive(destination)),
+                post: Some(Condition::exclusive(destination, self.repacker)),
             },
             &Yield { resume_arg, .. } => Triple {
                 pre: Condition::write(resume_arg),
-                post: Some(Condition::exclusive(resume_arg)),
+                post: Some(Condition::exclusive(resume_arg, self.repacker)),
             },
             InlineAsm { .. } => {
                 self.error = Some(PCGError::unsupported(PCGUnsupportedError::InlineAssembly));
