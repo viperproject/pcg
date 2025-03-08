@@ -107,7 +107,7 @@ pub fn run_pcg_on_file(file: &Path) {
 #[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str, debug: bool) {
     match (name, version) {
-        ("ring", "0.17.3") => {
+        ("ring", "0.17.13") => {
             eprintln!("Skipping ring; it doesn't compile for some reason.");
             return;
         }
