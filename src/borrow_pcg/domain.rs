@@ -133,7 +133,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             // This is just for debugging for now, a heuristic to crash on
             // internal errors if the MIR is small, so that it's easy to
             // reproduce
-            if self.repacker.body().local_decls.len() < 20 {
+            if self.repacker.body().local_decls.len() < 40 {
                 panic!("PCG Internal Error: {:?}", internal_error);
             }
         }
