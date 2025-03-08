@@ -26,13 +26,6 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         }
     }
 
-    pub(crate) fn endpoints(&self) -> BTreeSet<Coupled<N>> {
-        self.inner
-            .node_indices()
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
-            .collect()
-    }
-
     pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();

@@ -169,21 +169,6 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
-impl<'tcx> RegionProjection<'tcx> {
-    pub(crate) fn try_into_local_region_projection(
-        self,
-    ) -> Result<RegionProjection<'tcx, MaybeOldPlace<'tcx>>, ()> {
-        match self.base {
-            MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
-                base: p.try_into()?,
-                region_idx: self.region_idx,
-                phantom: PhantomData,
-            }),
-            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
-        }
-    }
-}
-
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     type Error = ();
     fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
