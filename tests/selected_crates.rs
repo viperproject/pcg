@@ -8,7 +8,7 @@ fn test_selected_crates() {
     // common::run_on_crate("cc", "1.2.16", true);
     // common::run_on_crate("crc", "3.2.1", true);
     // common::run_on_crate("futures-util", "0.3.31", false);
-    // common::run_on_crate("http", "1.2.0", true);
+    common::run_on_crate("http", "1.2.0", true);
     // common::run_on_crate("miniz_oxide", "0.8.5", true);
     // common::run_on_crate("proc-macro2", "1.0.93", false);
     // common::run_on_crate("regex-automata", "0.4.9", true);

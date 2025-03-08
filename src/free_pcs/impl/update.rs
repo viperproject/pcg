@@ -25,24 +25,14 @@ use super::{
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
-    pub(crate) fn set_capability(
+    pub(crate) fn set_capability_if_allocated(
         &mut self,
         place: Place<'tcx>,
         cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(), PCGError> {
-        match &mut self[place.local] {
-            CapabilityLocal::Unallocated => {
-                // TODO: Determine how this can happen.
-                Err(PCGError::internal(format!(
-                    "Cannot set capability for unallocated local {:?}",
-                    place
-                )))
-            }
-            CapabilityLocal::Allocated(capability_projections) => {
-                capability_projections.set_capability(place, cap, repacker);
-                Ok(())
-            }
+    ) {
+        if let CapabilityLocal::Allocated(capability_projections) = &mut self[place.local] {
+            capability_projections.set_capability(place, cap, repacker);
         }
     }
 
