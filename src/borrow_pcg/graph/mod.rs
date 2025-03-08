@@ -428,7 +428,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut without_common_self = self.clone();
         let mut without_common_other = other.clone();
         for edge in common_edges.iter() {
-            tracing::info!("Removing common edge: {:?}", edge);
+            tracing::debug!("Removing common edge: {:?}", edge);
             without_common_self.edges.remove(edge);
             without_common_other.edges.remove(edge);
         }

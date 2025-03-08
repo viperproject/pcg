@@ -298,11 +298,18 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                     .flat_map(|p| p.as_current_place())
                 {
                     if place.is_owned(self.cgx.rp) && !borrows.contains(place.into(), self.cgx.rp) {
-                        tracing::debug!("Setting capability for place {:?} to Exclusive", place);
+                        // It's possible that the place isn't allocated because
+                        // it was already StorageDead'd. In this case it
+                        // shouldn't obtain any capability.
+                        // See test-files/92_http_path.rs for an example.
                         pcg.owned
                             .data
                             .get_mut(EvalStmtPhase::PostMain)
-                            .set_capability(place, CapabilityKind::Exclusive, self.cgx.rp)?;
+                            .set_capability_if_allocated(
+                                place,
+                                CapabilityKind::Exclusive,
+                                self.cgx.rp,
+                            );
                     }
                 }
             }
