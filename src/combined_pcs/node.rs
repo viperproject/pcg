@@ -18,12 +18,6 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn is_old(&self) -> bool {
-        match self {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(rp) => rp.base().is_old(),
-        }
-    }
     pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self {
             PCGNode::Place(p) => p.is_owned(repacker),

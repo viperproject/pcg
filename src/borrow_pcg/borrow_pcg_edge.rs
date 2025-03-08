@@ -86,8 +86,8 @@ impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
     }
 }
 
-impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, '_> {
-    fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
+impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
+    fn kind(&self) -> &'graph BorrowPCGEdgeKind<'tcx> {
         self.kind
     }
 
@@ -366,13 +366,6 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 }
 
 impl<'tcx> BorrowPCGEdge<'tcx> {
-    pub(crate) fn as_ref(&self) -> BorrowPCGEdgeRef<'tcx, '_> {
-        BorrowPCGEdgeRef {
-            kind: &self.kind,
-            conditions: &self.conditions,
-        }
-    }
-
     pub fn insert_path_condition(&mut self, pc: PathCondition) -> bool {
         self.conditions.insert(pc)
     }
