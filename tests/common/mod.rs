@@ -107,6 +107,10 @@ pub fn run_pcg_on_file(file: &Path) {
 #[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str, debug: bool) {
     match (name, version) {
+        ("net2", "0.2.39") => {
+            eprintln!("Skipping net2; this version doesn't compile.");
+            return;
+        }
         ("ring", "0.17.13") => {
             eprintln!("Skipping ring; it doesn't compile for some reason.");
             return;
