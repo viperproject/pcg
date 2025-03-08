@@ -107,6 +107,10 @@ pub fn run_pcg_on_file(file: &Path) {
 #[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str, debug: bool) {
     match (name, version) {
+        ("ring", "0.17.3") => {
+            eprintln!("Skipping ring; it doesn't compile for some reason.");
+            return;
+        }
         ("generic-array", "1.2.0") if rustversion::cfg!(nightly(2024 - 09 - 14)) => {
             eprintln!("Skipping generic-array; it's not supported on nightly 2024-09-14");
             return;
