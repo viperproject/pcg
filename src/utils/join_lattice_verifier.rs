@@ -30,6 +30,7 @@ pub(crate) trait HasBlock {
 }
 
 impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
+    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
         Self {
             graph: petgraph::Graph::new(),
