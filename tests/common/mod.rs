@@ -107,6 +107,14 @@ pub fn run_pcg_on_file(file: &Path) {
 #[allow(dead_code)]
 pub fn run_on_crate(name: &str, version: &str, debug: bool) {
     match (name, version) {
+        ("system-configuration", "0.6.1") => {
+            eprintln!("Skipping system-configuration; it doesn't compile.");
+            return;
+        }
+        ("ascii", "1.1.0") => {
+            eprintln!("Skipping ascii; it doesn't compile.");
+            return;
+        }
         ("net2", "0.2.39") => {
             eprintln!("Skipping net2; this version doesn't compile.");
             return;

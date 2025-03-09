@@ -17,7 +17,7 @@ use std::io::Write;
 
 use pcs::utils::PlaceRepacker;
 use std::cell::RefCell;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 #[rustversion::before(2024-11-09)]
 use pcs::rustc_interface::interface::Queries;
@@ -113,90 +113,74 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
 
     for def_id in tcx.hir().body_owners() {
         let kind = tcx.def_kind(def_id);
-        match kind {
-            hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
-                let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
-                let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
-                    let mut map = state.borrow_mut();
-                    unsafe {
-                        std::mem::transmute(
-                            map.remove(&def_id)
-                                .unwrap_or_else(|| panic!("No body found for {}", item_name)),
-                        )
-                    }
-                });
-
-                let safety = tcx.fn_sig(def_id).skip_binder().safety();
-                if safety == hir::Safety::Unsafe {
-                    warn!("Skipping unsafe function: {}", item_name);
-                    continue;
-                }
-                info!("Running PCG on function: {}", item_name);
-                info!("Path: {:?}", body.body.span);
-                info!("Number of basic blocks: {}", body.body.basic_blocks.len());
-                info!("Number of locals: {}", body.body.local_decls.len());
-                if should_check_body(&body) {
-                    let mut output = run_combined_pcs(
-                        &body,
-                        tcx,
-                        vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
-                    );
-                    if emit_pcg_annotations || check_pcg_annotations {
-                        let mut debug_lines = Vec::new();
-                        for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                            if let Ok(Some(block)) = output.get_all_for_bb(idx) {
-                                debug_lines
-                                    .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
-                            }
-                        }
-                        if emit_pcg_annotations {
-                            for line in debug_lines.iter() {
-                                eprintln!("// PCG: {}", line);
-                            }
-                        }
-                        if check_pcg_annotations {
-                            if let Ok(source) =
-                                tcx.sess.source_map().span_to_snippet(body.body.span)
-                            {
-                                let debug_lines_set: FxHashSet<_> =
-                                    debug_lines.into_iter().collect();
-                                let expected_annotations = source
-                                    .lines()
-                                    .flat_map(|l| l.split("// PCG: ").nth(1))
-                                    .map(|l| l.trim())
-                                    .collect::<Vec<_>>();
-                                let not_expected_annotations = source
-                                    .lines()
-                                    .flat_map(|l| l.split("// ~PCG: ").nth(1))
-                                    .map(|l| l.trim())
-                                    .collect::<Vec<_>>();
-                                let missing_annotations = expected_annotations
-                                    .iter()
-                                    .filter(|a| !debug_lines_set.contains(**a))
-                                    .collect::<Vec<_>>();
-                                if !missing_annotations.is_empty() {
-                                    panic!("Missing annotations: {:?}", missing_annotations);
-                                }
-                                for not_expected_annotation in not_expected_annotations {
-                                    if debug_lines_set.contains(not_expected_annotation) {
-                                        panic!(
-                                            "Unexpected annotation: {}",
-                                            not_expected_annotation
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::warn!("No source for function: {}", item_name);
-                            }
-                        }
-                    }
-                }
-                item_names.push(item_name);
+        if !matches!(kind, hir::def::DefKind::Fn | hir::def::DefKind::AssocFn) {
+            continue;
+        }
+        let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
+        let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
+            let mut map = state.borrow_mut();
+            unsafe {
+                std::mem::transmute(
+                    map.remove(&def_id)
+                        .unwrap_or_else(|| panic!("No body found for {}", item_name)),
+                )
             }
-            unsupported_item_kind => {
-                eprintln!("Unsupported item: {unsupported_item_kind:?}");
+        });
+
+        info!("Running PCG on function: {}", item_name);
+        tracing::debug!("Path: {:?}", body.body.span);
+        tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
+        tracing::debug!("Number of locals: {}", body.body.local_decls.len());
+        if should_check_body(&body) {
+            let mut output = run_combined_pcs(
+                &body,
+                tcx,
+                vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
+            );
+            if emit_pcg_annotations || check_pcg_annotations {
+                let mut debug_lines = Vec::new();
+                for (idx, _) in body.body.basic_blocks.iter_enumerated() {
+                    if let Ok(Some(block)) = output.get_all_for_bb(idx) {
+                        debug_lines.extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                    }
+                }
+                if emit_pcg_annotations {
+                    for line in debug_lines.iter() {
+                        eprintln!("// PCG: {}", line);
+                    }
+                }
+                if check_pcg_annotations {
+                    if let Ok(source) = tcx.sess.source_map().span_to_snippet(body.body.span) {
+                        let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
+                        let expected_annotations = source
+                            .lines()
+                            .flat_map(|l| l.split("// PCG: ").nth(1))
+                            .map(|l| l.trim())
+                            .collect::<Vec<_>>();
+                        let not_expected_annotations = source
+                            .lines()
+                            .flat_map(|l| l.split("// ~PCG: ").nth(1))
+                            .map(|l| l.trim())
+                            .collect::<Vec<_>>();
+                        let missing_annotations = expected_annotations
+                            .iter()
+                            .filter(|a| !debug_lines_set.contains(**a))
+                            .collect::<Vec<_>>();
+                        if !missing_annotations.is_empty() {
+                            panic!("Missing annotations: {:?}", missing_annotations);
+                        }
+                        for not_expected_annotation in not_expected_annotations {
+                            if debug_lines_set.contains(not_expected_annotation) {
+                                panic!("Unexpected annotation: {}", not_expected_annotation);
+                            }
+                        }
+                    } else {
+                        tracing::warn!("No source for function: {}", item_name);
+                    }
+                }
             }
         }
+        item_names.push(item_name);
     }
 
     if let Some(dir_path) = &vis_dir {

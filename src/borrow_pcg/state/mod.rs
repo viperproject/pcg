@@ -28,9 +28,7 @@ use crate::{
     },
     utils::{
         display::DebugLines,
-        join_lattice_verifier::{HasBlock, JoinLatticeVerifier},
-        validity::HasValidityCheck,
-        HasPlace,
+        validity::HasValidityCheck, HasPlace,
     },
     validity_checks_enabled,
 };
@@ -42,48 +40,11 @@ use std::rc::Rc;
 
 pub(crate) mod obtain;
 
-#[cfg(debug_assertions)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct JoinTransitionElem<'tcx> {
-    block: BasicBlock,
-    latest: Latest<'tcx>,
-    graph: BorrowsGraph<'tcx>,
-    capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
-}
-
-#[cfg(debug_assertions)]
-impl HasBlock for JoinTransitionElem<'_> {
-    fn block(&self) -> BasicBlock {
-        self.block
-    }
-}
-
-#[cfg(debug_assertions)]
-impl<'mir, 'tcx> DebugLines<PlaceRepacker<'mir, 'tcx>> for JoinTransitionElem<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Vec<String> {
-        let mut lines = Vec::new();
-        lines.push(format!("Block: {:?}", self.block));
-        for line in self.latest.debug_lines(repacker) {
-            lines.push(format!("Latest: {}", line));
-        }
-        for line in self.graph.debug_lines(repacker) {
-            lines.push(format!("Graph: {}", line));
-        }
-        for line in self.capabilities.debug_lines(repacker) {
-            lines.push(format!("Capabilities: {}", line));
-        }
-        lines
-    }
-}
-/// The "Borrow PCG"
 #[derive(Clone, Debug)]
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
     pub(crate) capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
-    #[cfg(debug_assertions)]
-    #[allow(dead_code)]
-    join_transitions: JoinLatticeVerifier<JoinTransitionElem<'tcx>>,
 }
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
@@ -117,8 +78,6 @@ impl Default for BorrowsState<'_> {
             latest: Latest::new(),
             graph: BorrowsGraph::new(),
             capabilities: Rc::new(BorrowPCGCapabilities::new()),
-            #[cfg(debug_assertions)]
-            join_transitions: JoinLatticeVerifier::new(),
         }
     }
 }
@@ -205,17 +164,6 @@ impl<'tcx> BorrowsState<'tcx> {
             true
         } else {
             false
-        }
-    }
-
-    #[cfg(debug_assertions)]
-    #[allow(dead_code)]
-    fn join_transition_elem(self, block: BasicBlock) -> JoinTransitionElem<'tcx> {
-        JoinTransitionElem {
-            block,
-            latest: self.latest,
-            graph: self.graph,
-            capabilities: self.capabilities,
         }
     }
 

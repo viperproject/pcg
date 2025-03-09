@@ -130,12 +130,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn report_error(&mut self, error: PCGError) {
         eprintln!("PCG Error: {:?}", error);
         if let PCGErrorKind::Internal(internal_error) = &error.kind {
-            // This is just for debugging for now, a heuristic to crash on
-            // internal errors if the MIR is small, so that it's easy to
-            // reproduce
-            if self.repacker.body().local_decls.len() < 40 {
-                panic!("PCG Internal Error: {:?}", internal_error);
-            }
+            // This is just for debugging for now
+            panic!("PCG Internal Error: {:?}", internal_error);
         }
         self.error = Some(error);
     }
