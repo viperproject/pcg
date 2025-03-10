@@ -247,7 +247,7 @@ pub enum PCGUnsupportedError {
     ExpansionOfAliasType,
     IndexingNonIndexableType,
     InlineAssembly,
-    Other(String),
+    NonConstantOperandFunctionCall,
     TwoPhaseBorrow,
     UnsafePtrCast,
 }

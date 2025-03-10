@@ -200,10 +200,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             (def_id, substs)
         } else {
             self.domain
-                .report_error(PCGError::unsupported(PCGUnsupportedError::Other(format!(
-                    "This type of function call is not yet supported: {:?}",
-                    func
-                ))));
+                .report_error(PCGError::unsupported(PCGUnsupportedError::NonConstantOperandFunctionCall));
             return;
         };
         let sig = self
