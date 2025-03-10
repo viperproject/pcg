@@ -404,21 +404,7 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         self.super_statement(statement, location);
 
         if self.preparing && self.stage == StatementStage::Operands {
-            match &statement.kind {
-                StatementKind::Assign(box (_, Rvalue::Cast(_, _, ty))) => {
-                    if ty.ref_mutability().is_some() {
-                        self.domain
-                            .report_error(PCGError::unsupported(PCGUnsupportedError::CastToRef));
-                        return;
-                    } else if ty.is_unsafe_ptr() {
-                        self.domain.report_error(PCGError::unsupported(
-                            PCGUnsupportedError::UnsafePtrCast,
-                        ));
-                        return;
-                    }
-                }
-
-                StatementKind::FakeRead(box (_, place)) => {
+            if let StatementKind::FakeRead(box (_, place)) = &statement.kind {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.repacker) {
                         let expansion_reason = ObtainReason::FakeRead;
@@ -437,8 +423,6 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                             }
                         }
                     }
-                }
-                _ => {}
             }
         } else if self.preparing && self.stage == StatementStage::Main {
             self.stmt_pre_main(statement, location);
