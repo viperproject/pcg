@@ -72,9 +72,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
                 tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
                 let result = cp.repack(nearest_owned_place, repacker, cap)?;
-                if nearest_owned_place == place {
-                    cp.set_capability(place, cap, repacker);
-                } else {
+                if nearest_owned_place != place {
                     match nearest_owned_place.ref_mutability(repacker) {
                         Some(Mutability::Mut) => {
                             cp.remove_capability(nearest_owned_place);

@@ -220,27 +220,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
             "Expanding to borrowed place {:?}",
             *to
         );
-        // assert!(
-        //     !from.is_mut_ref(repacker.body(), repacker.tcx()),
-        //     "Mutable reference {:?} should be expanded in borrow PCG, not owned PCG",
-        //     from
-        // );
-        // pcg_validity_assert!(
-        //     self.contains_key(&from),
-        //     "No capability for {} in {:?}",
-        //     from.to_short_string(repacker),
-        //     self
-        // );
-        // pcg_validity_assert!(
-        //     !self.contains_key(&to),
-        //     "We don't need to expand to {} because it already has a capability ({:?})",
-        //     to.to_short_string(repacker),
-        //     self.get(&to)
-        // );
 
-        tracing::debug!("Expanding from {:?} to {:?} in {:?}", from, *to, self);
+        tracing::debug!("Expanding from {:?} to {:?} for {:?}", from, *to, for_cap);
 
-        // TODO: How could `from` not have a capability?
         let from_cap = if let Some(cap) = self.get_capability(from) {
             cap
         } else {
@@ -252,7 +234,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let expansion = from.expand(*to, repacker)?;
 
         // Update permission of `from` place
-        let other_place_perm = from_cap;
         let projection_path_perm = if for_cap.is_read() {
             Some(CapabilityKind::Read)
         } else {
@@ -260,7 +241,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         };
 
         for place in expansion.other_expansions() {
-            self.set_capability(place, other_place_perm, repacker);
+            self.set_capability(place, for_cap, repacker);
         }
 
         let mut ops = Vec::new();
@@ -290,7 +271,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             }
         }
 
-        self.set_capability(*to, from_cap, repacker);
+        self.set_capability(*to, for_cap, repacker);
 
         if validity_checks_enabled() {
             self.check_validity();
