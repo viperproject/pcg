@@ -21,7 +21,7 @@ use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::PCGError};
+use crate::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::PcgError};
 use crate::{
     combined_pcs::PCGNode,
     edgedata_enum, rustc_interface,
@@ -217,7 +217,7 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         &self,
         elem: mir::PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Self, PCGError> {
+    ) -> Result<Self, PcgError> {
         Ok(match self {
             LocalNode::Place(p) => LocalNode::Place(p.project_deeper(elem, repacker)?),
             LocalNode::RegionProjection(rp) => {

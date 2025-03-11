@@ -11,7 +11,7 @@ use super::{
 };
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::{combined_pcs::PCGError, utils::place::corrected::CorrectedPlace};
+use crate::{combined_pcs::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     edgedata_enum,
@@ -199,7 +199,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx>> ExpansionOfBorrowed<'tcx, P> {
     pub fn expansion<'slf>(
         &'slf self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Vec<P>, PCGError> {
+    ) -> Result<Vec<P>, PcgError> {
         self.expansion
             .elems()
             .into_iter()
@@ -408,7 +408,7 @@ where
 impl<'tcx, P: HasPlace<'tcx> + From<MaybeOldPlace<'tcx>> + PCGNodeLike<'tcx>>
     BorrowPCGExpansion<'tcx, P>
 {
-    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<Vec<P>, PCGError> {
+    pub fn expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<Vec<P>, PcgError> {
         match self {
             BorrowPCGExpansion::FromOwned(owned) => Ok(vec![owned.expansion(repacker).into()]),
             BorrowPCGExpansion::FromBorrow(e) => e.expansion(repacker),
@@ -437,7 +437,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         base: P,
         expansion: PlaceExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Self, PCGError> {
+    ) -> Result<Self, PcgError> {
         if let LocalNode::Place(p) = base.into()
             && p.is_owned(repacker)
         {
@@ -457,7 +457,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         base: P,
         expansion: PlaceExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Self, PCGError> {
+    ) -> Result<Self, PcgError> {
         if let LocalNode::Place(p) = base.into() {
             assert!(!p.is_owned(repacker));
         }

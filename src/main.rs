@@ -139,9 +139,15 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
             );
             if emit_pcg_annotations || check_pcg_annotations {
                 let mut debug_lines = Vec::new();
-                for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                    if let Ok(Some(block)) = output.get_all_for_bb(idx) {
-                        debug_lines.extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+
+                if let Some(e) = output.first_error() {
+                    debug_lines.push(format!("{:?}", e));
+                } else {
+                    for (idx, _) in body.body.basic_blocks.iter_enumerated() {
+                        if let Ok(Some(block)) = output.get_all_for_bb(idx) {
+                            debug_lines
+                                .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                        }
                     }
                 }
                 if emit_pcg_annotations {
@@ -205,7 +211,6 @@ fn set_mir_borrowck(_session: &Session, providers: &mut Providers) {
 
 impl driver::Callbacks for PcsCallbacks {
     fn config(&mut self, config: &mut Config) {
-        info!("config");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }

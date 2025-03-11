@@ -33,8 +33,8 @@ use crate::{
 };
 
 use super::{
-    domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, EvalStmtPhase, PCGDebugData,
-    PCGError,
+    domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase,
+    PCGDebugData, PcgError,
 };
 use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::{
@@ -164,6 +164,7 @@ pub struct PCGEngine<'a, 'tcx> {
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
+    pub(crate) first_error: ErrorState,
 }
 impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
     pub(crate) fn edges_to_analyze<'mir>(
@@ -258,6 +259,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         let mut reachable_blocks = BitSet::new_empty(cgx.rp.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK);
         Self {
+            first_error: ErrorState::default(),
             reachable_blocks,
             cgx: cgx.clone(),
             fpcs,
@@ -284,7 +286,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
     fn restore_loaned_capabilities(
         &self,
         state: &mut PlaceCapabilitySummary<'a, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let pcg = state.pcg_mut();
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
 
@@ -349,6 +351,12 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         }
         Ok(extra_ops)
     }
+
+    fn record_error_if_first(&mut self, error: &PcgError) {
+        if self.first_error.error().is_none() {
+            self.first_error.record_error(error.clone());
+        }
+    }
 }
 
 impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
@@ -380,6 +388,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         self.curr_block.set(START_BLOCK);
         state.pcg_mut().initialize_as_start_block();
     }
+
     #[tracing::instrument(skip(self, state, statement))]
     fn apply_before_statement_effect(
         &mut self,
@@ -387,37 +396,53 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        if state.has_error() || !self.reachable_blocks.contains(location.block) {
+        if let Some(error) = state.error() {
+            self.record_error_if_first(error);
+            return;
+        }
+        if !self.reachable_blocks.contains(location.block) {
             return;
         }
         self.initialize(state, location.block);
-        if self
+        if let Err(e) = self
             .borrows
             .prepare_operands(state.borrow_pcg_mut(), statement, location)
-            .is_err()
         {
+            self.record_error_if_first(&e);
+            state.record_error(e);
             return;
         }
 
         let mut extra_ops = match self.restore_loaned_capabilities(state) {
             Ok(extra_ops) => extra_ops,
             Err(e) => {
-                state.borrow_pcg_mut().report_error(e);
+                self.record_error_if_first(&e);
+                state.record_error(e);
                 return;
             }
         };
 
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PreOperands].clone();
-        self.fpcs.apply_before_statement_effect(
+        if let Err(e) = self.fpcs.apply_before_statement_effect(
             state.owned_pcg_mut(),
             statement,
             &borrows,
             location,
-        );
+        ) {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return;
+        }
         extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
         state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
-        self.borrows
-            .apply_operands(state.borrow_pcg_mut(), statement, location);
+        if let Err(e) = self
+            .borrows
+            .apply_operands(state.borrow_pcg_mut(), statement, location)
+        {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return;
+        }
 
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
@@ -429,19 +454,37 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) {
-        if state.has_error() || !self.reachable_blocks.contains(location.block) {
+        if let Some(error) = state.error() {
+            if self.first_error.error().is_none() {
+                self.first_error.record_error(error.clone());
+            }
+            return;
+        }
+        if !self.reachable_blocks.contains(location.block) {
             return;
         }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
-        self.fpcs
-            .apply_statement_effect(state.owned_pcg_mut(), statement, &borrows, location);
-        self.borrows
-            .apply_statement_effect(state.borrow_pcg_mut(), statement, location);
+        if let Err(e) =
+            self.fpcs
+                .apply_statement_effect(state.owned_pcg_mut(), statement, &borrows, location)
+        {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return;
+        }
+        if let Err(e) =
+            self.borrows
+                .apply_statement_effect(state.borrow_pcg_mut(), statement, location)
+        {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return;
+        }
         self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
     }
 
-    #[tracing::instrument(skip(self, state, terminator))]
+    #[tracing::instrument(skip(self, state, terminator), fields(def_id = ?self.cgx.rp.body().source.def_id()))]
     fn apply_before_terminator_effect(
         &mut self,
         state: &mut Self::Domain,
@@ -452,22 +495,34 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        self.borrows
-            .apply_before_terminator_effect(state.borrow_pcg_mut(), terminator, location);
+        if let Err(e) = self.borrows.apply_before_terminator_effect(
+            state.borrow_pcg_mut(),
+            terminator,
+            location,
+        ) {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return;
+        }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
         let mut extra_ops = match self.restore_loaned_capabilities(state) {
             Ok(extra_ops) => extra_ops,
             Err(e) => {
-                state.borrow_pcg_mut().report_error(e);
+                self.record_error_if_first(&e);
+                state.record_error(e);
                 return;
             }
         };
-        self.fpcs.apply_before_terminator_effect(
+        if let Err(e) = self.fpcs.apply_before_terminator_effect(
             state.owned_pcg_mut(),
             terminator,
             &borrows,
             location,
-        );
+        ) {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return;
+        }
         extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
         state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
@@ -488,12 +543,23 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
                 self.reachable_blocks.insert(block);
             }
         }
-        self.borrows
-            .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location);
+        if let Err(e) =
+            self.borrows
+                .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location)
+        {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return edges;
+        }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
-        self.fpcs
-            .apply_terminator_effect(state.owned_pcg_mut(), terminator, &borrows, location);
-        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
+        if let Err(e) =
+            self.fpcs
+                .apply_terminator_effect(state.owned_pcg_mut(), terminator, &borrows, location)
+        {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+            return edges;
+        }
         self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
         edges
     }

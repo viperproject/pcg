@@ -20,7 +20,7 @@ use rustc_interface::{
 
 use crate::{
     borrow_pcg::region_projection::PCGRegion,
-    combined_pcs::{PCGError, PCGUnsupportedError},
+    combined_pcs::{PcgError, PCGUnsupportedError},
     rustc_interface,
 };
 
@@ -201,7 +201,7 @@ impl<'tcx> Place<'tcx> {
         mut self,
         to: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<DeepExpansion<'tcx>, PCGError> {
+    ) -> Result<DeepExpansion<'tcx>, PcgError> {
         assert!(
             self.is_prefix(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
@@ -226,7 +226,7 @@ impl<'tcx> Place<'tcx> {
         self,
         guide_place: Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<ShallowExpansion<'tcx>, PCGError> {
+    ) -> Result<ShallowExpansion<'tcx>, PcgError> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
@@ -317,7 +317,7 @@ impl<'tcx> Place<'tcx> {
         self,
         without_field: Option<usize>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Vec<Self>, PCGError> {
+    ) -> Result<Vec<Self>, PcgError> {
         let mut places = Vec::new();
         let typ = self.ty(repacker);
         if !matches!(typ.ty.kind(), TyKind::Adt(..)) {
@@ -394,7 +394,7 @@ impl<'tcx> Place<'tcx> {
                 );
             }
             TyKind::Alias(..) => {
-                return Err(PCGError::unsupported(
+                return Err(PcgError::unsupported(
                     PCGUnsupportedError::ExpansionOfAliasType,
                 ));
             }

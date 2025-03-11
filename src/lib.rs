@@ -232,12 +232,12 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         mir.region_inference_context(),
         None,
     );
-    let fpcg = PCGEngine::new(cgx, visualization_output_path.clone());
+    let engine = PCGEngine::new(cgx, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
     }
-    let analysis = compute_fixpoint(PCGAnalysis(fpcg), tcx, mir.body());
+    let analysis = compute_fixpoint(PCGAnalysis(engine), tcx, mir.body());
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = false;

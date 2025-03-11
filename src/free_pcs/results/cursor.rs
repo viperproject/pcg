@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::{
     borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGEngine, PCGError, PcgSuccessor},
+    combined_pcs::{EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -23,29 +23,21 @@ use crate::{
 };
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
-use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     borrow_pcg::engine::BorrowsStates,
     combined_pcs::PlaceCapabilitySummary,
-    free_pcs::{
-        CapabilitySummary, FreePlaceCapabilitySummary, RepackOp, RepackingBridgeSemiLattice,
-    },
+    free_pcs::{CapabilitySummary, RepackOp, RepackingBridgeSemiLattice},
     utils::PlaceRepacker,
 };
 
 pub trait HasPcg<'mir, 'tcx> {
-    fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx>;
-    fn get_curr_borrow_pcg(&self) -> &BorrowsDomain<'mir, 'tcx>;
+    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError>;
 }
 
 impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
-    fn get_curr_fpcg(&self) -> &FreePlaceCapabilitySummary<'mir, 'tcx> {
-        self.owned_pcg()
-    }
-
-    fn get_curr_borrow_pcg(&self) -> &BorrowsDomain<'mir, 'tcx> {
-        self.borrow_pcg()
+    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError> {
+        self.pcg.as_ref().map_err(|e| e.clone())
     }
 }
 
@@ -81,7 +73,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 
     pub fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.cursor.get().get_curr_fpcg().repacker
+        self.cursor.analysis().0.cgx.rp
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -89,10 +81,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     ///
     /// This function may return `None` if the PCG did not analyze this block.
     /// This could happen, for example, if the block would only be reached when unwinding from a panic.
-    pub(crate) fn next(
-        &mut self,
-        exp_loc: Location,
-    ) -> Result<Option<PcgLocation<'tcx>>, PCGError> {
+    fn next(&mut self, exp_loc: Location) -> Result<Option<PcgLocation<'tcx>>, PcgError> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
@@ -101,39 +90,36 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         let state = self.cursor.get();
 
-        let curr_fpcg = state.get_curr_fpcg();
-        let curr_borrows = state.get_curr_borrow_pcg();
-        if let Some(e) = curr_borrows.error() {
-            return Err(e.clone());
-        }
-        let repack_ops = curr_fpcg.repack_ops().map_err(|mut e| {
+        let pcg = state.get_pcg()?;
+
+        let repack_ops = pcg.owned.repack_ops().map_err(|mut e| {
             e.add_context(format!("At {:?}", location));
             e
         })?;
 
         let result = PcgLocation {
             location,
-            borrow_pcg_actions: curr_borrows.actions.clone(),
-            states: curr_fpcg.data.states.0.clone(),
+            borrow_pcg_actions: pcg.borrow.actions.clone(),
+            states: pcg.owned.data.states.0.clone(),
             repacks_start: repack_ops.start,
             repacks_middle: repack_ops.middle,
-            borrows: curr_borrows.data.states.0.clone(),
+            borrows: pcg.borrow.data.states.0.clone(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
 
         Ok(Some(result))
     }
-    pub(crate) fn terminator(&mut self) -> PcgTerminator<'tcx> {
+    pub(crate) fn terminator(&mut self) -> Result<PcgTerminator<'tcx>, PcgError> {
         let location = self.curr_stmt.unwrap();
         assert!(location == self.end_stmt.unwrap());
         self.curr_stmt = None;
         self.end_stmt = None;
 
+        let from_pcg = self.cursor.get().get_pcg()?;
+
         // TODO: cleanup
         let rp: PlaceRepacker = self.repacker();
-        let from_fpcg_state = self.cursor.get().get_curr_fpcg().clone();
-        let from_borrows_state = self.cursor.get().get_curr_borrow_pcg().clone();
         let block = &self.body()[location.block];
 
         // Currently we ignore blocks that are only reached via panics
@@ -150,26 +136,20 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
             .map(|succ| {
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
-                let to = entry_set.get_curr_fpcg();
-                let to_borrows_state = entry_set.get_curr_borrow_pcg();
-                PcgSuccessor::new(
+                let to = entry_set.get_pcg()?;
+                Ok(PcgSuccessor::new(
                     succ,
-                    from_fpcg_state.data.states[EvalStmtPhase::PostMain]
-                        .bridge(&to.data.entry_state, rp)
+                    from_pcg.owned.data.states[EvalStmtPhase::PostMain]
+                        .bridge(&to.owned.data.entry_state, rp)
                         .unwrap(),
                     {
                         let mut actions = BorrowPCGActions::new();
-                        let self_abstraction_edges = from_borrows_state.data.states
+                        let self_abstraction_edges = from_pcg.borrow.data.states
                             [EvalStmtPhase::PostMain]
                             .graph()
                             .abstraction_edges()
                             .collect::<FxHashSet<_>>();
-                        for abstraction in to_borrows_state
-                            .data
-                            .entry_state
-                            .graph()
-                            .abstraction_edges()
-                        {
+                        for abstraction in to.borrow.data.entry_state.graph().abstraction_edges() {
                             if !self_abstraction_edges.contains(&abstraction) {
                                 actions.push(
                                     BorrowPCGActionKind::AddEdge {
@@ -185,23 +165,31 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                         }
                         actions
                     },
-                    to_borrows_state.data.entry_state.latest.clone(),
-                )
+                    to.borrow.data.entry_state.latest.clone(),
+                ))
             })
-            .collect();
-        PcgTerminator { succs }
+            .collect::<Result<Vec<_>, PcgError>>()?;
+        Ok(PcgTerminator { succs })
     }
 
     /// Obtains the results of the dataflow analysis for all blocks.
     ///
     /// This is rather expensive to compute and may take a lot of memory. You
     /// may want to consider using `get_all_for_bb` instead.
-    pub fn results_for_all_blocks(&mut self) -> Result<PcgBasicBlocks<'tcx>, PCGError> {
+    pub fn results_for_all_blocks(&mut self) -> Result<PcgBasicBlocks<'tcx>, PcgError> {
         let mut result = IndexVec::new();
         for block in self.body().basic_blocks.indices() {
             result.push(self.get_all_for_bb(block)?);
         }
         Ok(PcgBasicBlocks(result))
+    }
+
+    fn analysis(&self) -> &PCGEngine<'mir, 'tcx> {
+        &self.cursor.results().analysis.0
+    }
+
+    pub fn first_error(&self) -> Option<PcgError> {
+        self.analysis().first_error.error().cloned()
     }
 
     /// Recommended interface.
@@ -211,14 +199,8 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     pub fn get_all_for_bb(
         &mut self,
         block: BasicBlock,
-    ) -> Result<Option<PcgBasicBlock<'tcx>>, PCGError> {
-        if !self
-            .cursor
-            .results()
-            .analysis
-            .0
-            .reachable_blocks
-            .contains(block)
+    ) -> Result<Option<PcgBasicBlock<'tcx>>, PcgError> {
+        if !self.analysis().reachable_blocks.contains(block)
         {
             return Ok(None);
         }
@@ -232,7 +214,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 return Ok(None);
             }
         }
-        let terminator = self.terminator();
+        let terminator = self.terminator()?;
         Ok(Some(PcgBasicBlock {
             statements,
             terminator,

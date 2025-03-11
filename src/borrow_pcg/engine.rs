@@ -1,15 +1,15 @@
 use std::rc::Rc;
 
 use crate::{
-    combined_pcs::{EvalStmtPhase, PCGError},
+    combined_pcs::{EvalStmtPhase, PcgError},
     rustc_interface::{
         borrowck::PoloniusOutput,
         middle::{
-            mir::{visit::Visitor, Body, Location, Statement, Terminator, TerminatorEdges},
+            mir::{Body, Location, Statement, Terminator, TerminatorEdges},
             ty::TyCtxt,
         },
     },
-    utils::display::DisplayDiff,
+    utils::{display::DisplayDiff, visitor::FallableVisitor},
 };
 
 use super::{
@@ -46,21 +46,16 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state: &mut BorrowsDomain<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
-    ) -> Result<(), PCGError> {
+    ) -> Result<(), PcgError> {
         state.data.enter_location(location);
 
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
-            .visit_statement(statement, location);
-        if let Some(error) = state.error() {
-            return Err(error.clone());
-        }
+            .visit_statement_fallable(statement, location)?;
 
         if !state.actions.pre_operands.is_empty() {
             state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
-        } else if !state.has_error()
-            && state.data.states.0.pre_operands != state.data.states.0.post_main
-        {
+        } else if state.data.states.0.pre_operands != state.data.states.0.post_main {
             panic!(
                 "{:?}: No actions were emitted, but the state has changed:\n{}",
                 location,
@@ -78,10 +73,11 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state: &mut BorrowsDomain<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
-            .visit_statement(statement, location);
+            .visit_statement_fallable(statement, location)?;
         state.data.states.0.post_operands = state.data.states.0.post_main.clone();
+        Ok(())
     }
 
     pub(crate) fn apply_statement_effect(
@@ -89,15 +85,13 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state: &mut BorrowsDomain<'a, 'tcx>,
         statement: &Statement<'tcx>,
         location: Location,
-    ) {
-        if state.has_error() {
-            return;
-        }
+    ) -> Result<(), PcgError> {
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
-            .visit_statement(statement, location);
+            .visit_statement_fallable(statement, location)?;
         state.data.states.0.pre_main = state.data.states.0.post_main.clone();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
-            .visit_statement(statement, location);
+            .visit_statement_fallable(statement, location)?;
+        Ok(())
     }
 
     pub(crate) fn apply_before_terminator_effect(
@@ -105,17 +99,15 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state: &mut BorrowsDomain<'a, 'tcx>,
         terminator: &Terminator<'tcx>,
         location: Location,
-    ) {
-        if state.has_error() {
-            return;
-        }
+    ) -> Result<(), PcgError> {
         state.data.enter_location(location);
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
-            .visit_terminator(terminator, location);
+            .visit_terminator_fallable(terminator, location)?;
         state.data.pre_operands_complete();
         BorrowsVisitor::applying(self, state, StatementStage::Operands)
-            .visit_terminator(terminator, location);
+            .visit_terminator_fallable(terminator, location)?;
         state.data.post_operands_complete();
+        Ok(())
     }
 
     pub(crate) fn apply_terminator_effect<'mir>(
@@ -123,16 +115,13 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state: &mut BorrowsDomain<'a, 'tcx>,
         terminator: &'mir Terminator<'tcx>,
         location: Location,
-    ) -> TerminatorEdges<'mir, 'tcx> {
-        if state.has_error() {
-            return terminator.edges();
-        }
+    ) -> Result<TerminatorEdges<'mir, 'tcx>, PcgError> {
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
-            .visit_terminator(terminator, location);
+            .visit_terminator_fallable(terminator, location)?;
         state.data.pre_main_complete();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
-            .visit_terminator(terminator, location);
-        terminator.edges()
+            .visit_terminator_fallable(terminator, location)?;
+        Ok(terminator.edges())
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
         state::obtain::ObtainReason,
         visitor::StatementStage,
     },
-    combined_pcs::{EvalStmtPhase, PCGError, PCGUnsupportedError},
+    combined_pcs::{EvalStmtPhase, PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
     rustc_interface::middle::{
         mir::{AggregateKind, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind},
@@ -19,7 +19,11 @@ use crate::{
 };
 
 impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
-    pub(crate) fn stmt_pre_main(&mut self, statement: &Statement<'tcx>, location: Location) {
+    pub(crate) fn stmt_pre_main(
+        &mut self,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
         match &statement.kind {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
@@ -28,15 +32,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     .domain
                     .data
                     .get_mut(EvalStmtPhase::PostMain)
-                    .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-                match actions {
-                    Ok(actions) => {
-                        self.record_actions(actions);
-                    }
-                    Err(e) => {
-                        self.domain.report_error(e);
-                    }
-                }
+                    .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
+                self.record_actions(actions);
             }
             StatementKind::Assign(box (target, _)) => {
                 let target: utils::Place<'tcx> = (*target).into();
@@ -51,15 +48,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     target,
                     location,
                     obtain_reason,
-                );
-                match obtain_actions {
-                    Ok(actions) => {
-                        self.record_actions(actions);
-                    }
-                    Err(e) => {
-                        self.domain.report_error(e);
-                    }
-                }
+                )?;
+                self.record_actions(obtain_actions);
 
                 if !target.is_owned(self.repacker) {
                     if let Some(target_cap) =
@@ -91,8 +81,13 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             }
             _ => {}
         }
+        Ok(())
     }
-    pub(crate) fn stmt_post_main(&mut self, statement: &Statement<'tcx>, location: Location) {
+    pub(crate) fn stmt_post_main(
+        &mut self,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
         assert!(!self.preparing);
         assert!(self.stage == StatementStage::Main);
         if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
@@ -196,13 +191,12 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
                     let blocked_place = blocked_place.with_inherent_region(self.repacker);
                     if !target.ty(self.repacker).ty.is_ref() {
-                        self.domain.report_error(PCGError::unsupported(
+                        return Err(PcgError::unsupported(
                             PCGUnsupportedError::AssignBorrowToNonReferenceType,
                         ));
-                        return;
                     }
                     if matches!(kind, BorrowKind::Fake(_)) {
-                        return;
+                        return Ok(());
                     }
                     state.add_borrow(
                         blocked_place.into(),
@@ -227,5 +221,6 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 _ => {}
             }
         }
+        Ok(())
     }
 }

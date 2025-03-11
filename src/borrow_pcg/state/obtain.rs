@@ -8,7 +8,7 @@ use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
-use crate::combined_pcs::{PCGError, PCGNodeLike};
+use crate::combined_pcs::{PcgError, PCGNodeLike};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
@@ -70,7 +70,7 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         location: Location,
         obtain_reason: ObtainReason,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
             actions.extend(self.contract_to(place, location, repacker)?);
@@ -91,7 +91,7 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
 
         {
@@ -186,7 +186,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         obtain_reason: ObtainReason,
         location: Location,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let for_exclusive = obtain_reason.min_post_obtain_capability() != CapabilityKind::Read;
         let mut actions = ExecutedActions::new();
 
