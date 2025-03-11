@@ -13,16 +13,20 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 
-use crate::{borrow_pcg::borrow_pcg_expansion::PlaceExpansion, combined_pcs::{PcgError, PCGUnsupportedError}, rustc_interface::{
-    ast::Mutability,
-    data_structures::fx::FxHasher,
-    index::IndexVec,
-    middle::{
-        mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
-        ty::{self, Ty, TyCtxt, TyKind},
+use crate::{
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    combined_pcs::{PCGUnsupportedError, PcgError},
+    rustc_interface::{
+        ast::Mutability,
+        data_structures::fx::FxHasher,
+        index::IndexVec,
+        middle::{
+            mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
+            ty::{self, Ty, TyCtxt, TyKind},
+        },
+        target::abi::VariantIdx,
     },
-    target::abi::VariantIdx,
-}};
+};
 
 #[cfg(feature = "debug_info")]
 use super::debug_info::DebugInfo;
@@ -156,7 +160,8 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Self, PcgError> {
-        self.project_deeper(elem, repacker).map_err(PcgError::unsupported)
+        self.project_deeper(elem, repacker)
+            .map_err(PcgError::unsupported)
     }
 
     fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
@@ -230,6 +235,16 @@ impl<'tcx> Place<'tcx> {
         let left = self.projection.iter().copied();
         let right = other.projection.iter().copied();
         left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
+    }
+
+    pub(crate) fn iter_places(self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<Self> {
+        let mut places = self
+            .iter_projections(repacker)
+            .into_iter()
+            .map(|(place, _)| place)
+            .collect::<Vec<_>>();
+        places.push(self);
+        places
     }
 }
 

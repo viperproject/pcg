@@ -14,14 +14,13 @@ use crate::{
         middle::mir::{Local, RETURN_PLACE},
     },
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
-        PlaceRepacker,
+        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place, PlaceRepacker,
     },
 };
 
 use super::{
     triple::{Condition, Triple},
-    CapabilitySummary, RelatedSet,
+    CapabilitySummary,
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
@@ -200,23 +199,19 @@ impl<'tcx> CapabilityProjections<'tcx> {
             .unwrap_or(self.get_local().into())
     }
 
+    // TODO: Check that this is correct w.r.t capabilities
     pub(crate) fn place_to_collapse_to(
         &self,
         to: Place<'tcx>,
-        for_cap: CapabilityKind,
+        _for_cap: CapabilityKind,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Place<'tcx> {
-        let related = self.find_all_related(to);
-        related.place_to_collapse_to(to, for_cap)
-    }
-
-    pub(crate) fn find_all_related(&self, to: Place<'tcx>) -> RelatedSet<'tcx> {
-        RelatedSet::new(
-            self.place_capabilities()
-                .iter()
-                .filter(|(p, _)| (*p).partial_cmp(&to).is_some())
-                .map(|(p, c)| (*p, *c))
-                .collect(),
-        )
+        for place in to.iter_places(repacker).into_iter().rev() {
+            if self.contains_expansion_to(place, repacker) {
+                return place;
+            }
+        }
+        return to.local.into();
     }
 
     #[tracing::instrument(skip(self, repacker))]
@@ -227,7 +222,8 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for_cap: CapabilityKind,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let nearest_owned_place = to.nearest_owned_place(repacker);
-        let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap);
+        let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, repacker);
+        tracing::info!("Collapse to: {collapse_to:?} for {to:?}");
         let mut result = self.collapse(collapse_to, repacker)?;
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");

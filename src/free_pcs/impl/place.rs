@@ -4,62 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use derive_more::Deref;
 use std::{
     cmp::Ordering,
     fmt::{Debug, Formatter, Result},
 };
-
-use crate::rustc_interface::data_structures::fx::FxHashSet;
-
-use crate::utils::Place;
-
-#[derive(Debug, Deref)]
-pub(crate) struct RelatedSet<'tcx>(FxHashSet<(Place<'tcx>, CapabilityKind)>);
-
-impl<'tcx> RelatedSet<'tcx> {
-    pub fn new(related: FxHashSet<(Place<'tcx>, CapabilityKind)>) -> Self {
-        // if validity_checks_enabled() {
-        //     // Assert that for each place with Capability Exclusive, there is no prefix also with exclusive
-        //     for &(place, cap) in &related {
-        //         if cap == CapabilityKind::Exclusive {
-        //             for &(other_place, other_cap) in &related {
-        //                 if other_place.is_strict_prefix(place)
-        //                     && other_cap == CapabilityKind::Exclusive
-        //                 {
-        //                     panic!(
-        //                         "Found place {:?} with Exclusive capability that has a prefix {:?} also with Exclusive capability",
-        //                         place,
-        //                         other_place
-        //                 );
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        Self(related)
-    }
-
-    pub(crate) fn place_to_collapse_to(
-        &self,
-        to: Place<'tcx>,
-        for_cap: CapabilityKind,
-    ) -> Place<'tcx> {
-        self.0.iter().fold(to.local.into(), |best, (p, cap)| {
-            if p.projection.len() >= best.projection.len()
-                && p.projection.len() <= to.projection.len()
-                && *cap >= for_cap
-            {
-                let result = to.common_prefix(*p);
-                if result.projection.len() > best.projection.len() {
-                    return result;
-                }
-            }
-            best
-        })
-    }
-
-}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
