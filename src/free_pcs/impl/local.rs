@@ -202,7 +202,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &mut self.capabilities
     }
 
-    pub(crate) fn place_capabilities(&self) -> &FxHashMap<Place<'tcx>, CapabilityKind> {
+    pub fn place_capabilities(&self) -> &FxHashMap<Place<'tcx>, CapabilityKind> {
         &self.capabilities
     }
 
