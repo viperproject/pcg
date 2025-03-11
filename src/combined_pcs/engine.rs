@@ -14,7 +14,7 @@ use itertools::Itertools;
 
 use crate::{
     borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdgeLike},
-    free_pcs::{CapabilitySummary, RepackOp},
+    free_pcs::RepackOp,
     rustc_interface::{
         borrowck::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -122,11 +122,6 @@ pub(crate) struct PCGContext<'mir, 'tcx> {
     pub(crate) rp: PlaceRepacker<'mir, 'tcx>,
     pub(crate) borrow_set: &'mir BorrowSet<'tcx>,
     pub(crate) region_inference_context: &'mir RegionInferenceContext<'tcx>,
-
-    /// The initial capability summary for all blocks. We use an RC'd pointer to
-    /// avoid copying the capability summary for each block (which can be large
-    /// if the function has many locals)
-    pub(crate) init_capability_summary: Rc<CapabilitySummary<'tcx>>,
     #[allow(dead_code)]
     pub(crate) output_facts: Option<OutputFacts>,
 }
@@ -140,12 +135,10 @@ impl<'mir, 'tcx> PCGContext<'mir, 'tcx> {
         output_facts: Option<OutputFacts>,
     ) -> Self {
         let rp = PlaceRepacker::new(mir, tcx);
-        let init_capability_summary = Rc::new(CapabilitySummary::default(rp.local_count()));
         Self {
             rp,
             borrow_set,
             region_inference_context,
-            init_capability_summary,
             output_facts,
         }
     }
@@ -306,7 +299,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                         // See test-files/92_http_path.rs for an example.
                         pcg.owned
                             .data
-                            .get_mut(EvalStmtPhase::PostMain)
+                            .unwrap_mut(EvalStmtPhase::PostMain)
                             .set_capability_if_allocated(
                                 place,
                                 CapabilityKind::Exclusive,
@@ -317,7 +310,7 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
             }
         }
         let mut extra_ops = vec![];
-        let fpcg_post_state = pcg.owned.data.get_mut(EvalStmtPhase::PostMain);
+        let fpcg_post_state = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
         for caps in fpcg_post_state.capability_projections() {
             let leaves = caps.leaves(self.cgx.rp);
 
@@ -388,6 +381,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
         self.curr_block.set(START_BLOCK);
         state.pcg_mut().initialize_as_start_block();
+        state.reachable = true;
     }
 
     #[tracing::instrument(skip(self, state, statement))]
@@ -401,7 +395,9 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             self.record_error_if_first(error);
             return;
         }
-        if !self.reachable_blocks.contains(location.block) {
+        if self.reachable_blocks.contains(location.block) {
+            state.reachable = true;
+        } else {
             return;
         }
         self.initialize(state, location.block);
@@ -414,6 +410,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
 
+        state.pcg_mut().owned.data.enter_transfer_fn();
         let mut extra_ops = match self.restore_loaned_capabilities(state) {
             Ok(extra_ops) => extra_ops,
             Err(e) => {
@@ -462,6 +459,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         if !self.reachable_blocks.contains(location.block) {
+            tracing::info!("unreachable block");
             return;
         }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
@@ -492,7 +490,15 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) {
-        if state.has_error() {
+        if let Some(error) = state.error() {
+            if self.first_error.error().is_none() {
+                self.first_error.record_error(error.clone());
+            }
+            return;
+        }
+        if self.reachable_blocks.contains(location.block) {
+            state.reachable = true;
+        } else {
             return;
         }
         self.initialize(state, location.block);
@@ -506,6 +512,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
+        state.pcg_mut().owned.data.enter_transfer_fn();
         let mut extra_ops = match self.restore_loaned_capabilities(state) {
             Ok(extra_ops) => extra_ops,
             Err(e) => {

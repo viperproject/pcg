@@ -98,6 +98,7 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
     debug_data: Option<PCGDebugData>,
 
     join_history: FxHashSet<BasicBlock>,
+    pub(crate) reachable: bool,
 }
 
 /// Outermost Vec can be considered a map StatementIndex -> Vec<BTreeMap<DataflowStmtPhase, String>>
@@ -409,7 +410,13 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                 _ => (&pcg.owned.data.entry_state, &pcg.borrow.data.entry_state),
             };
 
-            generate_dot_graph(self.cgx.rp, fpcs, borrows, &filename).unwrap();
+            generate_dot_graph(
+                self.cgx.rp,
+                fpcs.as_ref().as_ref().unwrap(),
+                borrows,
+                &filename,
+            )
+            .unwrap();
         }
     }
 
@@ -419,7 +426,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
-        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp, cgx.init_capability_summary.clone());
+        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
         let borrows = BorrowsDomain::new(cgx.rp, bc, block);
         let pcg = Pcg {
             owned: fpcs,
@@ -431,6 +438,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             pcg: Ok(pcg),
             debug_data,
             join_history: FxHashSet::default(),
+            reachable: false,
         }
     }
 }
@@ -450,6 +458,9 @@ impl Debug for PlaceCapabilitySummary<'_, '_> {
 impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     #[tracing::instrument(skip(self, other), fields(self_block = self.block().index(), other_block = other.block().index()))]
     fn join(&mut self, other: &Self) -> bool {
+        if !self.reachable && !other.reachable {
+            return false;
+        }
         if other.has_error() && !self.has_error() {
             self.pcg = other.pcg.clone();
             return true;
@@ -485,7 +496,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             Ok(changed) => changed,
             Err(e) => {
                 self.record_error(e);
-                return false
+                return false;
             }
         };
         let borrows = self.borrow_pcg_mut().join(other.borrow_pcg());

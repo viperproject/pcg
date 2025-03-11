@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use crate::borrow_pcg::engine::DataflowPhase;
 use crate::combined_pcs::EvalStmtPhase;
-use crate::rustc_interface::middle::mir::Location;
 
 use super::eval_stmt_data::EvalStmtData;
 
@@ -47,13 +46,23 @@ impl<T: Default> Default for DomainData<T> {
         }
     }
 }
-impl <T: Clone> DomainData<T> {
+impl<T: Clone> DomainData<T> {
     pub(crate) fn new(entry_state: Rc<T>) -> Self {
         Self {
             entry_state: entry_state.clone(),
             states: DomainDataStates::new(entry_state),
             phase: DataflowPhase::Init,
         }
+    }
+}
+
+impl<T: Clone> DomainData<Option<T>> {
+    pub(crate) fn unwrap_mut(&mut self, phase: EvalStmtPhase) -> &mut T {
+        self.states.get_mut(phase).as_mut().unwrap()
+    }
+
+    pub(crate) fn unwrap(&self, phase: EvalStmtPhase) -> &T {
+        self.states[phase].as_ref().as_ref().unwrap()
     }
 }
 
@@ -74,7 +83,7 @@ impl<T: Clone> DomainData<T> {
         assert!(self.phase == DataflowPhase::Transfer);
         self.states.0.pre_main = self.states.0.post_main.clone();
     }
-    pub(crate) fn enter_location(&mut self, _location: Location) {
+    pub(crate) fn enter_transfer_fn(&mut self) {
         if self.phase != DataflowPhase::Transfer {
             // The entry state may have taken into account previous joins
             self.states.0.post_main = self.entry_state.clone();

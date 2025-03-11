@@ -47,7 +47,7 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        state.data.enter_location(location);
+        state.data.enter_transfer_fn();
 
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
@@ -100,7 +100,7 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        state.data.enter_location(location);
+        state.data.enter_transfer_fn();
         BorrowsVisitor::preparing(self, state, StatementStage::Operands)
             .visit_terminator_fallable(terminator, location)?;
         state.data.pre_operands_complete();
