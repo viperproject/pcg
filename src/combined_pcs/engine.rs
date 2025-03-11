@@ -322,8 +322,9 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
             let leaves = caps.leaves(self.cgx.rp);
 
             for place in leaves {
-                tracing::debug!("Setting capability for place {:?} to Exclusive", place);
-                if !borrows.contains(place.into(), self.cgx.rp) {
+                if caps.get_capability(place) == Some(CapabilityKind::Read)
+                    && !borrows.contains(place.into(), self.cgx.rp)
+                {
                     caps.set_capability(place, CapabilityKind::Exclusive, self.cgx.rp);
                 }
             }
