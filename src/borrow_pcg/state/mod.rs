@@ -83,6 +83,9 @@ impl Default for BorrowsState<'_> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
+       self.capabilities.as_ref()
+    }
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.graph.insert(edge)
     }

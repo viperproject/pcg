@@ -91,7 +91,7 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
         self.0.remove(&node).is_some()
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
         self.0.iter().map(|(k, v)| (*k, *v))
     }
 
