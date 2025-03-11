@@ -100,7 +100,13 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         let result = PcgLocation {
             location,
             borrow_pcg_actions: pcg.borrow.actions.clone(),
-            states: pcg.owned.data.states.0.clone(),
+            states: pcg
+                .owned
+                .data
+                .states
+                .0
+                .clone()
+                .map(|s| Rc::new(s.as_ref().as_ref().unwrap().clone())),
             repacks_start: repack_ops.start,
             repacks_middle: repack_ops.middle,
             borrows: pcg.borrow.data.states.0.clone(),
@@ -139,8 +145,11 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 let to = entry_set.get_pcg()?;
                 Ok(PcgSuccessor::new(
                     succ,
-                    from_pcg.owned.data.states[EvalStmtPhase::PostMain]
-                        .bridge(&to.owned.data.entry_state, rp)
+                    from_pcg
+                        .owned
+                        .data
+                        .unwrap(EvalStmtPhase::PostMain)
+                        .bridge(to.owned.data.entry_state.as_ref().as_ref().unwrap(), rp)
                         .unwrap(),
                     {
                         let mut actions = BorrowPCGActions::new();
@@ -200,8 +209,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         &mut self,
         block: BasicBlock,
     ) -> Result<Option<PcgBasicBlock<'tcx>>, PcgError> {
-        if !self.analysis().reachable_blocks.contains(block)
-        {
+        if !self.analysis().reachable_blocks.contains(block) {
             return Ok(None);
         }
         self.analysis_for_bb(block);

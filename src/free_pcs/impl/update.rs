@@ -211,7 +211,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 return place;
             }
         }
-        return to.local.into();
+        to.local.into()
     }
 
     #[tracing::instrument(skip(self, repacker))]
@@ -223,7 +223,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let nearest_owned_place = to.nearest_owned_place(repacker);
         let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, repacker);
-        tracing::info!("Collapse to: {collapse_to:?} for {to:?}");
+        tracing::debug!("Collapse to: {collapse_to:?} for {to:?}");
         let mut result = self.collapse(collapse_to, repacker)?;
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");

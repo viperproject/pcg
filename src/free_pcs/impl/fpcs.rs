@@ -31,17 +31,14 @@ pub(crate) struct RepackOps<'tcx> {
 #[derive(Clone)]
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) data: DomainData<CapabilitySummary<'tcx>>,
+    pub(crate) data: DomainData<Option<CapabilitySummary<'tcx>>>,
     pub(crate) actions: EvalStmtData<Vec<RepackOp<'tcx>>>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) fn new(
-        repacker: PlaceRepacker<'a, 'tcx>,
-        capability_summary: Rc<CapabilitySummary<'tcx>>,
-    ) -> Self {
+    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
         Self {
             repacker,
-            data: DomainData::new(capability_summary),
+            data: DomainData::new(Rc::new(None)),
             actions: EvalStmtData::default(),
         }
     }
@@ -50,23 +47,26 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         let always_live = self.repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(self.repacker.body().arg_count);
-        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
-        for (local, cap) in entry_state.iter_enumerated_mut() {
-            let new_cap = if local == return_local {
-                // Return local is allocated but uninitialized
-                CapabilityLocal::new(local, CapabilityKind::Write)
-            } else if local <= last_arg {
-                // Arguments are allocated and initialized
-                CapabilityLocal::new(local, CapabilityKind::Exclusive)
-            } else if always_live.contains(local) {
-                // Always live locals start allocated but uninitialized
-                CapabilityLocal::new(local, CapabilityKind::Write)
-            } else {
-                // Other locals are unallocated
-                CapabilityLocal::Unallocated
-            };
-            *cap = new_cap;
-        }
+        let capability_summary = IndexVec::from_fn_n(
+            |local| {
+                if local == return_local {
+                    // Return local is allocated but uninitialized
+                    CapabilityLocal::new(local, CapabilityKind::Write)
+                } else if local <= last_arg {
+                    // Arguments are allocated and initialized
+                    CapabilityLocal::new(local, CapabilityKind::Exclusive)
+                } else if always_live.contains(local) {
+                    // Always live locals start allocated but uninitialized
+                    CapabilityLocal::new(local, CapabilityKind::Write)
+                } else {
+                    // Other locals are unallocated
+                    CapabilityLocal::Unallocated
+                }
+            },
+            self.repacker.local_count(),
+        );
+        self.data.entry_state = Rc::new(Some(CapabilitySummary(capability_summary)));
+        self.data.states.0.post_main = self.data.entry_state.clone();
     }
 
     pub(crate) fn repack_ops(&self) -> std::result::Result<RepackOps<'tcx>, PcgError> {
@@ -100,14 +100,14 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
             writeln!(f, "{start:?}")?;
         }
         CapabilitySummaryCompare(
-            &self.data.states[EvalStmtPhase::PreOperands],
-            &old.data.states[EvalStmtPhase::PostMain],
+            self.data.unwrap(EvalStmtPhase::PreOperands),
+            old.data.unwrap(EvalStmtPhase::PostMain),
             "",
         )
         .fmt(f)?;
         CapabilitySummaryCompare(
-            &self.data.states[EvalStmtPhase::PostOperands],
-            &self.data.states[EvalStmtPhase::PreOperands],
+            self.data.unwrap(EvalStmtPhase::PostOperands),
+            self.data.unwrap(EvalStmtPhase::PreOperands),
             "ARGUMENTS:\n",
         )
         .fmt(f)?;
@@ -115,14 +115,14 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
             writeln!(f, "{middle:?}")?;
         }
         CapabilitySummaryCompare(
-            &self.data.states[EvalStmtPhase::PreMain],
-            &self.data.states[EvalStmtPhase::PostOperands],
+            self.data.unwrap(EvalStmtPhase::PreMain),
+            self.data.unwrap(EvalStmtPhase::PostOperands),
             "",
         )
         .fmt(f)?;
         CapabilitySummaryCompare(
-            &self.data.states[EvalStmtPhase::PostMain],
-            &self.data.states[EvalStmtPhase::PreMain],
+            self.data.unwrap(EvalStmtPhase::PostMain),
+            self.data.unwrap(EvalStmtPhase::PreMain),
             "STATEMENT:\n",
         )
         .fmt(f)?;

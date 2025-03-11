@@ -89,12 +89,11 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         if let Some(error) = tw.error {
             return Err(error);
         }
-        state.data.enter_location(location);
         // Repack for operands
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.repacker);
-            let pre_operands = state.data.states.get_mut(EvalStmtPhase::PreOperands);
+            let pre_operands = state.data.unwrap_mut(EvalStmtPhase::PreOperands);
             let actions = pre_operands.requires(triple.pre(), self.repacker, borrows)?;
             state.actions[EvalStmtPhase::PreOperands].extend(actions);
         }
@@ -102,7 +101,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         // Apply operands effects
         state.data.states.0.post_operands = state.data.states.0.pre_operands.clone();
         for triple in tw.operand_triples {
-            let post_operands = state.data.states.get_mut(EvalStmtPhase::PostOperands);
+            let post_operands = state.data.unwrap_mut(EvalStmtPhase::PostOperands);
             let triple = triple.replace_place(self.repacker);
             post_operands.ensures(triple, self.repacker);
         }
@@ -124,7 +123,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         // Repack for main
         state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
         for &triple in &tw.main_triples {
-            let pre_main = state.data.states.get_mut(EvalStmtPhase::PreMain);
+            let pre_main = state.data.unwrap_mut(EvalStmtPhase::PreMain);
             let actions = pre_main.requires(triple.pre(), self.repacker, borrows)?;
             state.actions[EvalStmtPhase::PreMain].extend(actions);
         }
@@ -132,7 +131,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         // Apply main effects
         state.data.states.0.post_main = state.data.states.0.pre_main.clone();
         for triple in tw.main_triples {
-            let post_main = state.data.states.get_mut(EvalStmtPhase::PostMain);
+            let post_main = state.data.unwrap_mut(EvalStmtPhase::PostMain);
             post_main.ensures(triple, self.repacker);
         }
         Ok(())

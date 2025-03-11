@@ -19,9 +19,15 @@ use crate::{
 
 impl FreePlaceCapabilitySummary<'_, '_> {
     pub(crate) fn join(&mut self, other: &Self) -> Result<bool, PcgError> {
-        self.data.enter_join();
         let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
-        entry_state.join(&other.data.states[EvalStmtPhase::PostMain], self.repacker)
+        let other_state = other.data.unwrap(EvalStmtPhase::PostMain);
+        match entry_state.as_mut() {
+            Some(state) => state.join(other_state, self.repacker),
+            None => {
+                *entry_state = Some(other_state.clone());
+                Ok(true)
+            }
+        }
     }
 }
 
@@ -76,7 +82,6 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                         continue 'outer;
                     }
                 } else if self.contains_expansion_to(*place, repacker) {
-                    // Otherwise, this is an expansion from a place that won't survive the join
                     tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
                     tracing::debug!("other: {:?}", other);
                     self.insert_expansion(*place, other_expansion.clone());
@@ -95,6 +100,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                     changed = true;
                     continue 'outer;
                 }
+                // Otherwise, this is an expansion from a place that won't survive the join
             }
             break;
         }
