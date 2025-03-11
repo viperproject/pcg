@@ -129,8 +129,7 @@ edgedata_enum!(
 );
 
 impl<'tcx> BorrowEdge<'tcx> {
-
-    pub(crate) fn kind(&self) -> Option<mir::BorrowKind> {
+    pub fn kind(&self) -> Option<mir::BorrowKind> {
         match self {
             BorrowEdge::Local(borrow) => Some(borrow.kind),
             BorrowEdge::Remote(_) => None,
@@ -151,7 +150,7 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub(crate) fn borrow_region(&self) -> Option<ty::Region<'tcx>> {
+    pub fn borrow_region(&self) -> Option<ty::Region<'tcx>> {
         match self {
             BorrowEdge::Local(borrow) => Some(borrow.region),
             BorrowEdge::Remote(_) => None,
