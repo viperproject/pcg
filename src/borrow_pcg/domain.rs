@@ -9,7 +9,7 @@ use crate::borrow_pcg::edge::outlives::{OutlivesEdge, OutlivesEdgeKind};
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
-use crate::combined_pcs::{PCGError, PCGErrorKind, PCGNodeLike};
+use crate::combined_pcs::PCGNodeLike;
 use crate::free_pcs::CapabilityKind;
 use crate::utils;
 use crate::utils::domain_data::DomainData;
@@ -25,18 +25,17 @@ use super::{coupling_graph_constructor::CGNode, region_projection::RegionProject
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::remote::RemotePlace;
 
-use crate::rustc_interface::{
+use crate::rustc_interface::
     middle::{
         mir::{BasicBlock, Local, Location},
         ty::{self},
-    },
-    mir_dataflow::JoinSemiLattice,
-};
+    }
+;
 
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
-impl<'tcx> JoinSemiLattice for BorrowsDomain<'_, 'tcx> {
-    fn join(&mut self, other: &Self) -> bool {
+impl<'tcx> BorrowsDomain<'_, 'tcx> {
+    pub(crate) fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
         self.debug_join_iteration += 1;
 
@@ -46,12 +45,6 @@ impl<'tcx> JoinSemiLattice for BorrowsDomain<'_, 'tcx> {
                 self.block(),
                 self.debug_join_iteration
             );
-        }
-        if other.has_error() && !self.has_error() {
-            self.error = other.error.clone();
-            return true;
-        } else if self.has_error() {
-            return false;
         }
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
@@ -90,7 +83,6 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
     pub(crate) debug_join_iteration: usize,
-    error: Option<PCGError>,
 }
 
 impl PartialEq for BorrowsDomain<'_, '_> {
@@ -127,30 +119,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         self.block.unwrap()
     }
 
-    pub(crate) fn report_error(&mut self, error: PCGError) {
-        eprintln!("PCG Error: {:?}", error);
-        if let PCGErrorKind::Internal(internal_error) = &error.kind {
-            // This is just for debugging for now
-            panic!("PCG Internal Error: {:?}", internal_error);
-        }
-        self.error = Some(error);
-    }
-
-    #[allow(unused)]
-    pub(crate) fn has_internal_error(&self) -> bool {
-        self.error
-            .as_ref()
-            .is_some_and(|e| matches!(e.kind, PCGErrorKind::Internal(_)))
-    }
-
-    pub(crate) fn has_error(&self) -> bool {
-        self.error.is_some()
-    }
-
-    pub(crate) fn error(&self) -> Option<&PCGError> {
-        self.error.as_ref()
-    }
-
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
         bc: BorrowCheckerImpl<'mir, 'tcx>,
@@ -162,7 +130,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
             block,
             repacker,
             debug_join_iteration: 0,
-            error: None,
             bc,
         }
     }

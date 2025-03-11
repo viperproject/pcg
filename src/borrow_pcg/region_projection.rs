@@ -8,7 +8,7 @@ use super::has_pcs_elem::HasPcgElems;
 use super::{
     borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
 };
-use crate::combined_pcs::{PCGError, PCGInternalError};
+use crate::combined_pcs::{PcgError, PCGInternalError};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -330,7 +330,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<Self, PCGError>
+    ) -> Result<Self, PcgError>
     where
         Self: Clone + HasValidityCheck<'tcx>,
     {

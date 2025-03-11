@@ -14,7 +14,7 @@ use crate::{
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::{PCGError, PCGInternalError},
+    combined_pcs::{PcgError, PCGInternalError},
     free_pcs::{CapabilityKind, RepackOp},
     utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
     validity_checks_enabled,
@@ -214,7 +214,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to: CorrectedPlace<'tcx>,
         for_cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         assert!(
             to.is_owned(repacker),
             "Expanding to borrowed place {:?}",
@@ -226,7 +226,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let from_cap = if let Some(cap) = self.get_capability(from) {
             cap
         } else {
-            return Err(PCGError::internal(format!(
+            return Err(PcgError::internal(format!(
                 "No capability for {}",
                 from.to_short_string(repacker),
             )));

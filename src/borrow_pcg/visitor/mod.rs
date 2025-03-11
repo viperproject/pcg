@@ -1,15 +1,17 @@
-use crate::combined_pcs::EvalStmtPhase::*;
+use crate::{
+    combined_pcs::EvalStmtPhase::*,
+    utils::visitor::FallableVisitor,
+};
 use tracing::instrument;
 
 use crate::{
-    combined_pcs::{PCGError, PCGUnsupportedError},
+    combined_pcs::{PcgError, PCGUnsupportedError},
     rustc_interface::{
         borrowck::PoloniusOutput,
         index::IndexVec,
         middle::{
             mir::{
                 self,
-                visit::{PlaceContext, Visitor},
                 BorrowKind, Const, Location, Operand, Rvalue, Statement, StatementKind, Terminator,
                 TerminatorKind,
             },
@@ -183,7 +185,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         args: &[&Operand<'tcx>],
         destination: utils::Place<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         // This is just a performance optimization
         if self
             .domain
@@ -191,7 +193,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             .graph()
             .has_function_call_abstraction_at(location)
         {
-            return;
+            return Ok(());
         }
         let (func_def_id, substs) = if let Operand::Constant(box c) = func
             && let Const::Val(_, ty) = c.const_
@@ -199,9 +201,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            self.domain
-                .report_error(PCGError::unsupported(PCGUnsupportedError::NonConstantOperandFunctionCall));
-            return;
+            return Err(PcgError::unsupported(
+                PCGUnsupportedError::NonConstantOperandFunctionCall,
+            ));
         };
         let sig = self
             .repacker
@@ -216,7 +218,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         // This is also a performance optimization
         let output_lifetimes = extract_regions(sig.output());
         if output_lifetimes.is_empty() {
-            return;
+            return Ok(());
         }
 
         for arg in args.iter() {
@@ -234,10 +236,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                     self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
                 {
                     if let ty::TyKind::Closure(..) = ty.kind() {
-                        self.domain.report_error(PCGError::unsupported(
+                        return Err(PcgError::unsupported(
                             PCGUnsupportedError::ClosuresCapturingBorrows,
                         ));
-                        return;
                     }
                     let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
 
@@ -261,6 +262,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
                 }
             }
         }
+        Ok(())
     }
 
     fn projections_borrowing_from_input_lifetime(
@@ -285,12 +287,13 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
-    fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
-        self.super_operand(operand, location);
-        if self.domain.has_error() {
-            return;
-        }
+impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
+    fn visit_operand_fallable(
+        &mut self,
+        operand: &Operand<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        self.super_operand_fallable(operand, location)?;
         if self.stage == StatementStage::Operands && self.preparing {
             match operand {
                 Operand::Copy(place) | Operand::Move(place) => {
@@ -305,15 +308,8 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                         place,
                         location,
                         expansion_reason,
-                    );
-                    match expansion_actions {
-                        Ok(actions) => {
-                            self.record_actions(actions);
-                        }
-                        Err(e) => {
-                            self.domain.report_error(e);
-                        }
-                    }
+                    )?;
+                    self.record_actions(expansion_actions);
                 }
                 _ => {}
             }
@@ -334,24 +330,22 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 self.apply_action(BorrowPCGAction::make_place_old(place));
             }
         }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, terminator), fields(join_iteration = ?self.domain.debug_join_iteration))]
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
+    fn visit_terminator_fallable(
+        &mut self,
+        terminator: &Terminator<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
         if self.preparing && self.stage == StatementStage::Operands {
             let post_state = self.domain.data.states.get_mut(PostMain);
             let actions =
-                post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-            match actions {
-                Ok(actions) => {
-                    self.record_actions(actions);
-                }
-                Err(e) => {
-                    self.domain.report_error(e);
-                }
-            }
+                post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
+            self.record_actions(actions);
         }
-        self.super_terminator(terminator, location);
+        self.super_terminator_fallable(terminator, location)?;
         if self.stage == StatementStage::Main && !self.preparing {
             if let TerminatorKind::Call {
                 func,
@@ -371,13 +365,18 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
                     destination,
                     location,
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self), fields(join_iteration = ?self.domain.debug_join_iteration))]
-    fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
+    fn visit_statement_fallable(
+        &mut self,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
         self.debug_ctx = Some(DebugCtx::new(location));
 
         if self.preparing && self.stage == StatementStage::Operands {
@@ -387,73 +386,61 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 .data
                 .states
                 .get_mut(PostMain)
-                .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc);
-            match actions {
-                Ok(actions) => {
-                    self.record_actions(actions);
-                }
-                Err(e) => {
-                    self.domain.report_error(e);
-                }
-            }
+                .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
+            self.record_actions(actions);
         }
 
-        self.super_statement(statement, location);
+        self.super_statement_fallable(statement, location)?;
 
         if self.preparing && self.stage == StatementStage::Operands {
             if let StatementKind::FakeRead(box (_, place)) = &statement.kind {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    if !place.is_owned(self.repacker) {
-                        let expansion_reason = ObtainReason::FakeRead;
-                        let expansion_actions = self.domain.post_state_mut().obtain(
-                            self.repacker,
-                            place,
-                            location,
-                            expansion_reason,
-                        );
-                        match expansion_actions {
-                            Ok(actions) => {
-                                self.record_actions(actions);
-                            }
-                            Err(e) => {
-                                self.domain.report_error(e);
-                            }
-                        }
-                    }
+                let place: utils::Place<'tcx> = (*place).into();
+                if !place.is_owned(self.repacker) {
+                    let expansion_reason = ObtainReason::FakeRead;
+                    let expansion_actions = self.domain.post_state_mut().obtain(
+                        self.repacker,
+                        place,
+                        location,
+                        expansion_reason,
+                    )?;
+                    self.record_actions(expansion_actions);
+                }
             }
         } else if self.preparing && self.stage == StatementStage::Main {
-            self.stmt_pre_main(statement, location);
+            self.stmt_pre_main(statement, location)?;
         } else if !self.preparing && self.stage == StatementStage::Main {
-            self.stmt_post_main(statement, location);
+            self.stmt_post_main(statement, location)?;
         }
+        Ok(())
     }
 
-    fn visit_place(&mut self, place: &mir::Place<'tcx>, context: PlaceContext, location: Location) {
-        {
-            let place: utils::Place<'tcx> = (*place).into();
-            if place.contains_unsafe_deref(self.repacker) {
-                self.domain
-                    .report_error(PCGError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
-                return;
-            }
+    fn visit_place_fallable(
+        &mut self,
+        place: Place<'tcx>,
+        _context: mir::visit::PlaceContext,
+        _location: mir::Location,
+    ) -> Result<(), PcgError> {
+        if place.contains_unsafe_deref(self.repacker) {
+            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
         }
-        self.super_place(place, context, location);
+        Ok(())
     }
 
-    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
+    fn visit_rvalue_fallable(
+        &mut self,
+        rvalue: &Rvalue<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
         #[instrument(skip(this), fields(location = ?location))]
         fn visit_rvalue_inner<'tcx, 'mir, 'state>(
             this: &mut BorrowsVisitor<'tcx, 'mir, 'state>,
             rvalue: &Rvalue<'tcx>,
             location: Location,
-        ) {
+        ) -> Result<(), PcgError> {
             if matches!(rvalue, Rvalue::Ref(_, BorrowKind::Fake(_), _)) {
-                return;
+                return Ok(());
             }
-            this.super_rvalue(rvalue, location);
-            if this.domain.has_error() {
-                return;
-            }
+            this.super_rvalue_fallable(rvalue, location)?;
             use Rvalue::*;
             match rvalue {
                 Use(_)
@@ -482,18 +469,12 @@ impl<'tcx> Visitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                             place.into(),
                             location,
                             expansion_reason,
-                        );
-                        match expansion_actions {
-                            Ok(actions) => {
-                                this.record_actions(actions);
-                            }
-                            Err(e) => {
-                                this.domain.report_error(e);
-                            }
-                        }
+                        )?;
+                        this.record_actions(expansion_actions);
                     }
                 }
             }
+            Ok(())
         }
         visit_rvalue_inner(self, rvalue, location)
     }

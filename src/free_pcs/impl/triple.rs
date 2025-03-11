@@ -11,7 +11,7 @@ use crate::rustc_interface::middle::mir::{
 };
 
 use crate::{
-    combined_pcs::{PCGError, PCGUnsupportedError},
+    combined_pcs::{PcgError, PCGUnsupportedError},
     free_pcs::CapabilityKind,
     utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
 };
@@ -124,7 +124,7 @@ pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
     pub(crate) main_triples: Vec<Triple<'tcx>>,
     #[allow(dead_code)]
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) error: Option<PCGError>,
+    pub(crate) error: Option<PcgError>,
 }
 
 impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
@@ -267,11 +267,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                 post: Some(Condition::exclusive(resume_arg, self.repacker)),
             },
             InlineAsm { .. } => {
-                self.error = Some(PCGError::unsupported(PCGUnsupportedError::InlineAssembly));
+                self.error = Some(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));
                 return;
             }
             CoroutineDrop => {
-                self.error = Some(PCGError::unsupported(PCGUnsupportedError::Coroutines));
+                self.error = Some(PcgError::unsupported(PCGUnsupportedError::Coroutines));
                 return;
             }
             _ => todo!("{terminator:?}"),

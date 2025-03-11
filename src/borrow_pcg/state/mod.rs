@@ -11,7 +11,7 @@ use super::{
 };
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PCGError};
+use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
     borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
     utils::display::DisplayWithRepacker,
@@ -107,7 +107,7 @@ impl<'tcx> BorrowsState<'tcx> {
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<(), PCGError> {
+    ) -> Result<(), PcgError> {
         let changed = self.apply_action(action.clone(), repacker)?;
         if changed {
             actions.record(action);
@@ -204,7 +204,7 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
         context: &str,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
         tracing::debug!("Removing edge {}", edge.kind().to_short_string(repacker));
         let mut actions = ExecutedActions::new();
         for place in edge.blocked_places(repacker) {
@@ -328,7 +328,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         location: Location,
         bc: &impl BorrowCheckerInterface<'tcx>,
-    ) -> Result<ExecutedActions<'tcx>, PCGError> {
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         let prev_location = if location.statement_index == 0 {
             None

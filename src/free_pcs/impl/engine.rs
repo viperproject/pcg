@@ -9,7 +9,9 @@ use rustc_interface::middle::mir::{
 };
 
 use crate::{
-    borrow_pcg::state::BorrowsState, combined_pcs::EvalStmtPhase, rustc_interface,
+    borrow_pcg::state::BorrowsState,
+    combined_pcs::{EvalStmtPhase, PcgError},
+    rustc_interface,
     utils::PlaceRepacker,
 };
 
@@ -27,10 +29,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         let mut tw = TripleWalker::new(state.repacker);
         tw.visit_statement(statement, location);
-        self.apply_before(state, tw, borrows, location);
+        self.apply_before(state, tw, borrows, location)
     }
 
     pub(crate) fn apply_statement_effect(
@@ -39,10 +41,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         statement: &Statement<'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         let mut tw = TripleWalker::new(state.repacker);
         tw.visit_statement(statement, location);
-        self.apply_main(state, tw, borrows, location);
+        self.apply_main(state, tw, borrows, location)
     }
 
     pub(crate) fn apply_before_terminator_effect(
@@ -51,10 +53,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         terminator: &Terminator<'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         let mut tw = TripleWalker::new(state.repacker);
         tw.visit_terminator(terminator, location);
-        self.apply_before(state, tw, borrows, location);
+        self.apply_before(state, tw, borrows, location)
     }
 
     pub(crate) fn apply_terminator_effect<'mir>(
@@ -63,14 +65,14 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         terminator: &'mir Terminator<'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
-    ) -> TerminatorEdges<'mir, 'tcx> {
+    ) -> Result<TerminatorEdges<'mir, 'tcx>, PcgError> {
         if terminator.kind == mir::TerminatorKind::UnwindResume {
-            return terminator.edges();
+            return Ok(terminator.edges());
         }
         let mut tw = TripleWalker::new(state.repacker);
         tw.visit_terminator(terminator, location);
-        self.apply_main(state, tw, borrows, location);
-        terminator.edges()
+        self.apply_main(state, tw, borrows, location)?;
+        Ok(terminator.edges())
     }
 }
 
@@ -82,11 +84,10 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         tw: TripleWalker<'a, 'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         state.actions[EvalStmtPhase::PreOperands].clear();
         if let Some(error) = tw.error {
-            state.error = Some(error);
-            return;
+            return Err(error);
         }
         state.data.enter_location(location);
         // Repack for operands
@@ -94,16 +95,8 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         for &triple in &tw.operand_triples {
             let triple = triple.replace_place(self.repacker);
             let pre_operands = state.data.states.get_mut(EvalStmtPhase::PreOperands);
-            match pre_operands.requires(triple.pre(), self.repacker, borrows) {
-                Ok(ops) => {
-                    tracing::debug!("Extend PreOperands with {:?}", ops);
-                    state.actions[EvalStmtPhase::PreOperands].extend(ops);
-                }
-                Err(e) => {
-                    state.error = Some(e);
-                    return;
-                }
-            }
+            let actions = pre_operands.requires(triple.pre(), self.repacker, borrows)?;
+            state.actions[EvalStmtPhase::PreOperands].extend(actions);
         }
 
         // Apply operands effects
@@ -113,6 +106,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             let triple = triple.replace_place(self.repacker);
             post_operands.ensures(triple, self.repacker);
         }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, state, borrows, tw))]
@@ -122,26 +116,17 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         tw: TripleWalker<'a, 'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
-    ) {
+    ) -> Result<(), PcgError> {
         state.actions[EvalStmtPhase::PreMain].clear();
         if let Some(error) = tw.error {
-            state.error = Some(error);
-            return;
+            return Err(error);
         }
         // Repack for main
         state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
         for &triple in &tw.main_triples {
             let pre_main = state.data.states.get_mut(EvalStmtPhase::PreMain);
-            match pre_main.requires(triple.pre(), self.repacker, borrows) {
-                Ok(ops) => {
-                    tracing::debug!("Extend PreMain with {:?}", ops);
-                    state.actions[EvalStmtPhase::PreMain].extend(ops);
-                }
-                Err(e) => {
-                    state.error = Some(e);
-                    return;
-                }
-            }
+            let actions = pre_main.requires(triple.pre(), self.repacker, borrows)?;
+            state.actions[EvalStmtPhase::PreMain].extend(actions);
         }
 
         // Apply main effects
@@ -150,5 +135,6 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             let post_main = state.data.states.get_mut(EvalStmtPhase::PostMain);
             post_main.ensures(triple, self.repacker);
         }
+        Ok(())
     }
 }

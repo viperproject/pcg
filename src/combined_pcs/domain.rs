@@ -94,7 +94,7 @@ pub struct PlaceCapabilitySummary<'a, 'tcx> {
     cgx: Rc<PCGContext<'a, 'tcx>>,
     pub(crate) block: Option<BasicBlock>,
 
-    pub(crate) pcg: Pcg<'a, 'tcx>,
+    pub(crate) pcg: std::result::Result<Pcg<'a, 'tcx>, PcgError>,
     debug_data: Option<PCGDebugData>,
 
     join_history: FxHashSet<BasicBlock>,
@@ -178,19 +178,38 @@ impl DotGraphs {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct ErrorState {
+    error: Option<PcgError>,
+}
+
+impl ErrorState {
+    pub(crate) fn error(&self) -> Option<&PcgError> {
+        self.error.as_ref()
+    }
+
+    pub(crate) fn record_error(&mut self, error: PcgError) {
+        tracing::error!("PCG Error: {:?}", error);
+        self.error = Some(error);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PCGError {
+pub struct PcgError {
     pub(crate) kind: PCGErrorKind,
     pub(crate) context: Vec<String>,
 }
 
-impl From<PCGUnsupportedError> for PCGError {
+// Deprecated: use PcgError instead
+pub type PCGError = PcgError;
+
+impl From<PCGUnsupportedError> for PcgError {
     fn from(e: PCGUnsupportedError) -> Self {
         Self::new(PCGErrorKind::Unsupported(e), vec![])
     }
 }
 
-impl PCGError {
+impl PcgError {
     pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
         Self { kind, context }
     }
@@ -206,7 +225,7 @@ pub enum PCGErrorKind {
     Internal(PCGInternalError),
 }
 
-impl PCGError {
+impl PcgError {
     pub(crate) fn internal(msg: String) -> Self {
         Self {
             kind: PCGErrorKind::Internal(PCGInternalError::new(msg)),
@@ -231,16 +250,15 @@ impl PCGInternalError {
     }
 }
 
-impl From<PCGInternalError> for PCGError {
+impl From<PCGInternalError> for PcgError {
     fn from(e: PCGInternalError) -> Self {
-        PCGError::new(PCGErrorKind::Internal(e), vec![])
+        PcgError::new(PCGErrorKind::Internal(e), vec![])
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGUnsupportedError {
     AssignBorrowToNonReferenceType,
-    CastToRef,
     ClosuresCapturingBorrows,
     Coroutines,
     DerefUnsafePtr,
@@ -253,7 +271,7 @@ pub enum PCGUnsupportedError {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Pcg<'a, 'tcx> {
+pub struct Pcg<'a, 'tcx> {
     pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
     pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
 }
@@ -267,27 +285,45 @@ impl Pcg<'_, '_> {
 
 impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn has_error(&self) -> bool {
-        self.borrow_pcg().has_error() || self.owned_pcg().error.is_some()
+        self.pcg.is_err()
+    }
+
+    pub(crate) fn error(&self) -> Option<&PcgError> {
+        self.pcg.as_ref().err()
+    }
+
+    pub(crate) fn record_error(&mut self, error: PcgError) {
+        self.pcg = Err(error);
+    }
+
+    pub(crate) fn pcg(&self) -> &Pcg<'a, 'tcx> {
+        match &self.pcg {
+            Ok(pcg) => pcg,
+            Err(e) => panic!("PCG error: {:?}", e),
+        }
     }
 
     pub(crate) fn pcg_mut(&mut self) -> &mut Pcg<'a, 'tcx> {
-        &mut self.pcg
+        match &mut self.pcg {
+            Ok(pcg) => pcg,
+            Err(e) => panic!("PCG error: {:?}", e),
+        }
     }
 
     pub(crate) fn borrow_pcg_mut(&mut self) -> &mut BorrowsDomain<'a, 'tcx> {
-        &mut self.pcg.borrow
+        &mut self.pcg_mut().borrow
     }
 
     pub(crate) fn owned_pcg_mut(&mut self) -> &mut FreePlaceCapabilitySummary<'a, 'tcx> {
-        &mut self.pcg.owned
+        &mut self.pcg_mut().owned
     }
 
     pub(crate) fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'a, 'tcx> {
-        &self.pcg.owned
+        &self.pcg().owned
     }
 
     pub(crate) fn borrow_pcg(&self) -> &BorrowsDomain<'a, 'tcx> {
-        &self.pcg.borrow
+        &self.pcg().borrow
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
@@ -296,7 +332,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
 
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
         self.block = Some(block);
-        self.pcg.borrow.set_block(block);
+        self.pcg_mut().borrow.set_block(block);
     }
 
     pub fn set_debug_data(&mut self, output_dir: String, dot_graphs: Rc<RefCell<DotGraphs>>) {
@@ -363,7 +399,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
                 )
             }
 
-            let pcg = &self.pcg;
+            let pcg = &self.pcg();
 
             let (fpcs, borrows) = match phase {
                 DataflowStmtPhase::EvalStmt(phase) => (
@@ -392,7 +428,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         Self {
             cgx,
             block,
-            pcg,
+            pcg: Ok(pcg),
             debug_data,
             join_history: FxHashSet::default(),
         }
@@ -445,15 +481,13 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         if self.block().as_usize() == 0 {
             panic!("{:?}", other.block());
         }
-        let fpcs = self.owned_pcg_mut().join(other.owned_pcg());
-        if self.owned_pcg().has_internal_error() {
-            panic!(
-                "Error joining (self:{:?}, other:{:?}): {:?}",
-                self.block(),
-                other.block(),
-                self.owned_pcg().error.as_ref().unwrap()
-            );
-        }
+        let fpcs = match self.owned_pcg_mut().join(other.owned_pcg()) {
+            Ok(changed) => changed,
+            Err(e) => {
+                self.record_error(e);
+                return false
+            }
+        };
         let borrows = self.borrow_pcg_mut().join(other.borrow_pcg());
         if let Some(debug_data) = &self.debug_data {
             debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
@@ -472,8 +506,8 @@ impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>>
         ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
         f: &mut Formatter<'_>,
     ) -> Result {
-        self.pcg
+        self.pcg()
             .owned
-            .fmt_diff_with(&old.pcg.owned, &ctxt.0.fpcs, f)
+            .fmt_diff_with(&old.pcg().owned, &ctxt.0.fpcs, f)
     }
 }

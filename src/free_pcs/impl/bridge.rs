@@ -7,7 +7,7 @@
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::PCGError,
+    combined_pcs::PcgError,
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
@@ -19,16 +19,16 @@ pub trait RepackingBridgeSemiLattice<'tcx> {
         &self,
         other: &Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError>;
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>;
 }
 impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilitySummary<'tcx> {
     fn bridge(
         &self,
         other: &Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         if self.len() != other.len() {
-            return Err(PCGError::internal(format!(
+            return Err(PcgError::internal(format!(
                 "Capability summaries have different lengths: {} (previous) != {} (next)",
                 self.len(),
                 other.len()
@@ -48,7 +48,7 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
         &self,
         other: &Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         match (self, other) {
             (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(Vec::new()),
             (CapabilityLocal::Allocated(from_places), CapabilityLocal::Allocated(to_places)) => {
@@ -88,7 +88,7 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityProjections<'tcx> {
         &self,
         other: &Self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut repacks = vec![];
         let mut from = self.clone();
         let other_expansions = other.expansions();

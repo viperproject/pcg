@@ -6,7 +6,7 @@
 
 use crate::{
     borrow_pcg::state::BorrowsState,
-    combined_pcs::PCGError,
+    combined_pcs::PcgError,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg_validity_assert,
     rustc_interface::{
@@ -42,7 +42,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
         cond: Condition<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         borrows: &BorrowsState<'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         match cond {
             Condition::RemoveCapability(place) => {
                 let cp = self[place.local].get_allocated_mut();
@@ -225,7 +225,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         for_cap: CapabilityKind,
-    ) -> Result<Vec<RepackOp<'tcx>>, PCGError> {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let nearest_owned_place = to.nearest_owned_place(repacker);
         let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap);
         let mut result = self.collapse(collapse_to, repacker)?;

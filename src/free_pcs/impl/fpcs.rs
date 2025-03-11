@@ -9,17 +9,16 @@ use std::{
     rc::Rc,
 };
 
-use derive_more::{Deref, DerefMut};
 use crate::rustc_interface::{
-    index::Idx,
-    index::IndexVec,
+    index::{Idx, IndexVec},
     middle::mir::{Local, RETURN_PLACE},
     mir_dataflow::fmt::DebugWithContext,
 };
+use derive_more::{Deref, DerefMut};
 
 use super::{engine::FpcsEngine, CapabilityKind};
 use crate::{
-    combined_pcs::{EvalStmtPhase, PCGError, PCGErrorKind},
+    combined_pcs::{EvalStmtPhase, PcgError},
     free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
     utils::{domain_data::DomainData, eval_stmt_data::EvalStmtData, PlaceRepacker},
 };
@@ -33,16 +32,9 @@ pub(crate) struct RepackOps<'tcx> {
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) data: DomainData<CapabilitySummary<'tcx>>,
-    pub(crate) error: Option<PCGError>,
     pub(crate) actions: EvalStmtData<Vec<RepackOp<'tcx>>>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) fn has_internal_error(&self) -> bool {
-        self.error
-            .as_ref()
-            .is_some_and(|e| matches!(e.kind, PCGErrorKind::Internal(_)))
-    }
-
     pub(crate) fn new(
         repacker: PlaceRepacker<'a, 'tcx>,
         capability_summary: Rc<CapabilitySummary<'tcx>>,
@@ -50,7 +42,6 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         Self {
             repacker,
             data: DomainData::new(capability_summary),
-            error: None,
             actions: EvalStmtData::default(),
         }
     }
@@ -78,10 +69,7 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
         }
     }
 
-    pub(crate) fn repack_ops(&self) -> std::result::Result<RepackOps<'tcx>, PCGError> {
-        if let Some(error) = &self.error {
-            return Err(error.clone());
-        }
+    pub(crate) fn repack_ops(&self) -> std::result::Result<RepackOps<'tcx>, PcgError> {
         let start = self.actions[EvalStmtPhase::PreOperands].clone();
         let middle = self.actions[EvalStmtPhase::PreMain].clone();
         Ok(RepackOps { start, middle })

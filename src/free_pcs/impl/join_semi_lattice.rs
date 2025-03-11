@@ -6,8 +6,7 @@
 
 use std::rc::Rc;
 
-use crate::combined_pcs::PCGError;
-use crate::rustc_interface::mir_dataflow::JoinSemiLattice;
+use crate::combined_pcs::PcgError;
 use itertools::Itertools;
 
 use crate::{
@@ -18,27 +17,20 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-impl JoinSemiLattice for FreePlaceCapabilitySummary<'_, '_> {
-    #[must_use]
-    fn join(&mut self, other: &Self) -> bool {
+impl FreePlaceCapabilitySummary<'_, '_> {
+    pub(crate) fn join(&mut self, other: &Self) -> Result<bool, PcgError> {
         self.data.enter_join();
         let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
-        match entry_state.join(&other.data.states[EvalStmtPhase::PostMain], self.repacker) {
-            Ok(changed) => changed,
-            Err(e) => {
-                self.error = Some(e);
-                false
-            }
-        }
+        entry_state.join(&other.data.states[EvalStmtPhase::PostMain], self.repacker)
     }
 }
 
 pub(crate) trait RepackingJoinSemiLattice<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError>;
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError>;
 }
 
 impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilitySummary<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError> {
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
         let mut changed = false;
         for (l, to) in self.iter_enumerated_mut() {
             let local_changed = to.join(&other[l], repacker)?;
@@ -49,7 +41,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilitySummary<'tcx> {
 }
 
 impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocal<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError> {
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
         match (&mut *self, other) {
             (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(false),
             (CapabilityLocal::Allocated(to_places), CapabilityLocal::Allocated(from_places)) => {
@@ -66,7 +58,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocal<'tcx> {
 }
 
 impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PCGError> {
+    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
         let mut changed = false;
         'outer: loop {
             let expansions = self.expansions().clone();

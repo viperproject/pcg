@@ -16,6 +16,7 @@ pub mod json;
 pub mod place;
 pub mod place_snapshot;
 pub mod r#const;
+pub mod visitor;
 pub mod validity;
 pub use mutable::*;
 pub use place::*;

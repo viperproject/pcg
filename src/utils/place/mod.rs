@@ -13,7 +13,7 @@ use std::{
 
 use derive_more::{Deref, DerefMut};
 
-use crate::{borrow_pcg::borrow_pcg_expansion::PlaceExpansion, combined_pcs::{PCGError, PCGUnsupportedError}, rustc_interface::{
+use crate::{borrow_pcg::borrow_pcg_expansion::PlaceExpansion, combined_pcs::{PcgError, PCGUnsupportedError}, rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHasher,
     index::IndexVec,
@@ -138,7 +138,7 @@ pub trait HasPlace<'tcx>: Sized {
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Self, PCGError>;
+    ) -> std::result::Result<Self, PcgError>;
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)>;
 }
@@ -155,8 +155,8 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
         &self,
         elem: PlaceElem<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Self, PCGError> {
-        self.project_deeper(elem, repacker).map_err(PCGError::unsupported)
+    ) -> std::result::Result<Self, PcgError> {
+        self.project_deeper(elem, repacker).map_err(PcgError::unsupported)
     }
 
     fn iter_projections(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {

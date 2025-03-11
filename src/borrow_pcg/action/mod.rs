@@ -4,7 +4,7 @@ use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
-use crate::combined_pcs::{PCGError, PCGNode};
+use crate::combined_pcs::{PcgError, PCGNode};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
@@ -184,7 +184,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         action: BorrowPCGAction<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<bool, PCGError> {
+    ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPCGActionKind::Restore(restore) => {
                 let restore_node: PCGNode<'tcx> = restore.node().into();
@@ -231,7 +231,7 @@ impl<'tcx> BorrowsState<'tcx> {
         edge: BorrowPCGEdge<'tcx>,
         for_exclusive: bool,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Result<bool, PCGError> {
+    ) -> Result<bool, PcgError> {
         let mut changed = self.insert(edge.clone());
         Ok(match edge.kind {
             BorrowPCGEdgeKind::Borrow(_) => changed,
