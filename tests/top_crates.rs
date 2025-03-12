@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 
 mod common;
@@ -6,17 +7,22 @@ use common::{get, run_on_crate};
 #[test]
 #[ignore]
 pub fn top_crates() {
-    top_crates_range(0..500)
+    let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
+    top_crates_range(0..500, parallelism.parse().unwrap())
 }
 
-pub fn top_crates_range(range: std::ops::Range<usize>) {
+pub fn top_crates_range(range: std::ops::Range<usize>, parallelism: usize) {
     std::fs::create_dir_all("tmp").unwrap();
-    let top_crates = CratesIter::top(range);
-    for (i, krate) in top_crates {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(parallelism)
+        .build_global()
+        .unwrap();
+    let top_crates: Vec<_> = CratesIter::top(range).collect();
+    top_crates.into_par_iter().for_each(|(i, krate)| {
         let version = krate.version.unwrap_or(krate.newest_version);
         println!("Starting: {i} ({})", krate.name);
         run_on_crate(&krate.name, &version, false);
-    }
+    });
 }
 
 /// A create on crates.io.
