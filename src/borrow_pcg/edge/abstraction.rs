@@ -1,5 +1,10 @@
 use crate::{
-    borrow_pcg::borrow_pcg_edge::BlockedNode,
+    borrow_pcg::{
+        borrow_pcg_edge::BlockedNode,
+        has_pcs_elem::{default_make_place_old, MakePlaceOld},
+        latest::Latest,
+    },
+    edgedata_enum,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         hir::def_id::DefId,
@@ -8,6 +13,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
+    utils::Place,
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
@@ -31,6 +37,26 @@ pub struct LoopAbstraction<'tcx> {
     pub(crate) block: BasicBlock,
 }
 
+impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
+}
+
+impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
+    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        self.edge.blocked_nodes(repacker)
+    }
+
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+        self.edge.blocked_by_nodes(repacker)
+    }
+}
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         self.edge.check_validity(repacker)
@@ -86,6 +112,27 @@ pub struct FunctionCallAbstraction<'tcx> {
     edge: AbstractionBlockEdge<'tcx>,
 }
 
+impl<'tcx> MakePlaceOld<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
+}
+
+impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+        self.edge.blocked_nodes(repacker)
+    }
+
+    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+        self.edge.blocked_by_nodes(repacker)
+    }
+}
+
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         self.edge.check_validity(repacker)
@@ -138,64 +185,17 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> EdgeData<'tcx> for AbstractionType<'tcx> {
-    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        self.inputs().into_iter().map(|i| i.into()).collect()
-    }
-
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
-        self.outputs()
-            .into_iter()
-            .map(|o| o.to_local_node(repacker))
-            .collect()
-    }
-
-    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        let as_abstraction_input: Result<AbstractionInputTarget<'tcx>, _> = node.try_into();
-        match as_abstraction_input {
-            Ok(abstraction_input) => self.has_input(abstraction_input),
-            Err(_) => false,
-        }
-    }
-}
-
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum AbstractionType<'tcx> {
     FunctionCall(FunctionCallAbstraction<'tcx>),
     Loop(LoopAbstraction<'tcx>),
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionType<'tcx> {
-    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        match self {
-            AbstractionType::FunctionCall(c) => c.to_short_string(_repacker),
-            AbstractionType::Loop(c) => c.to_short_string(_repacker),
-        }
-    }
-}
-
-impl<'tcx> HasValidityCheck<'tcx> for AbstractionType<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        match self {
-            AbstractionType::FunctionCall(c) => c.check_validity(repacker),
-            AbstractionType::Loop(c) => c.check_validity(repacker),
-        }
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for AbstractionType<'tcx>
-where
-    LoopAbstraction<'tcx>: HasPcgElems<T>,
-    FunctionCallAbstraction<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        match self {
-            AbstractionType::FunctionCall(c) => c.pcg_elems(),
-            AbstractionType::Loop(c) => c.pcg_elems(),
-        }
-    }
-}
-
+edgedata_enum!(
+    AbstractionType<'tcx>,
+    FunctionCall(FunctionCallAbstraction<'tcx>),
+    Loop(LoopAbstraction<'tcx>),
+);
 #[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
     pub(crate) inputs: Vec<AbstractionInputTarget<'tcx>>,

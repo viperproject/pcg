@@ -9,7 +9,7 @@ use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     utils::{
-        display::DisplayWithRepacker, HasBasePlace, Place, PlaceRepacker, PlaceSnapshot,
+        display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
     },
     visualization::dot_graph::RankAnnotation,

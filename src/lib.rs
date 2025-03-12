@@ -17,10 +17,7 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-use borrow_pcg::{
-    borrow_pcg_edge::LocalNode,
-    latest::Latest,
-};
+use borrow_pcg::{borrow_pcg_edge::LocalNode, latest::Latest};
 use combined_pcs::{PCGContext, PCGEngine, PcgSuccessor};
 use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
@@ -42,31 +39,41 @@ use utils::json::ToJsonWithRepacker;
 pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
+/// If `_.2` is `None`, the capability is removed.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Weaken<'tcx> {
     pub(crate) place: Place<'tcx>,
     pub(crate) from: CapabilityKind,
-    pub(crate) to: CapabilityKind,
+    pub(crate) to: Option<CapabilityKind>,
 }
 
 impl<'tcx> Weaken<'tcx> {
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        let to_str = match self.to {
+            Some(to) => format!("{:?}", to),
+            None => "None".to_string(),
+        };
         format!(
-            "Weaken {} from {:?} to {:?}",
+            "Weaken {} from {:?} to {}",
             self.place.to_short_string(repacker),
             self.from,
-            self.to
+            to_str
         )
     }
 
-    pub(crate) fn new(place: Place<'tcx>, from: CapabilityKind, to: CapabilityKind) -> Self {
-        // TODO: For some reason this assert fails on the http crate. Figure out why.
-        pcg_validity_assert!(
-            from > to,
-            "FROM capability ({:?}) is not greater than TO capability ({:?})",
-            from,
-            to
-        );
+    pub(crate) fn new(
+        place: Place<'tcx>,
+        from: CapabilityKind,
+        to: Option<CapabilityKind>,
+    ) -> Self {
+        if let Some(to) = to {
+            pcg_validity_assert!(
+                from > to,
+                "FROM capability ({:?}) is not greater than TO capability ({:?})",
+                from,
+                to
+            );
+        }
         Self { place, from, to }
     }
 
@@ -78,7 +85,7 @@ impl<'tcx> Weaken<'tcx> {
         self.from
     }
 
-    pub fn to_cap(&self) -> CapabilityKind {
+    pub fn to_cap(&self) -> Option<CapabilityKind> {
         self.to
     }
 }
@@ -131,8 +138,6 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGActions<'tcx> {
             .collect()
     }
 }
-
-
 
 use borrow_pcg::action::actions::BorrowPCGActions;
 use std::sync::Mutex;
@@ -285,7 +290,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
             let pcs_block_option = if let Ok(opt) = fpcs_analysis.get_all_for_bb(block) {
                 opt
             } else {
-                continue
+                continue;
             };
             if pcs_block_option.is_none() {
                 continue;

@@ -1,7 +1,13 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::HasPcgElems, region_projection::{LocalRegionProjection, RegionProjection}
-    }, combined_pcs::{PCGNode, PCGNodeLike}, pcg_validity_assert, rustc_interface::data_structures::fx::FxHashSet, utils::{display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, PlaceRepacker}
+        borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld}, latest::Latest, region_projection::{LocalRegionProjection, RegionProjection}
+    },
+    combined_pcs::{PCGNode, PCGNodeLike},
+    pcg_validity_assert,
+    rustc_interface::data_structures::fx::FxHashSet,
+    utils::{
+        display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place, PlaceRepacker
+    },
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -9,6 +15,17 @@ pub struct OutlivesEdge<'tcx> {
     long: RegionProjection<'tcx>,
     short: LocalRegionProjection<'tcx>,
     pub(crate) kind: OutlivesEdgeKind,
+}
+
+impl<'tcx> MakePlaceOld<'tcx> for OutlivesEdge<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
 }
 
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for OutlivesEdge<'tcx> {

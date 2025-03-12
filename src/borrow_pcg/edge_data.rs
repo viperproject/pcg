@@ -70,6 +70,21 @@ macro_rules! edgedata_enum {
             }
         )+
 
+        impl<$tcx> $crate::borrow_pcg::has_pcs_elem::MakePlaceOld<$tcx> for $enum_name<$tcx> {
+            fn make_place_old(
+                &mut self,
+                place: $crate::utils::Place<'tcx>,
+                latest: &$crate::borrow_pcg::latest::Latest<'tcx>,
+                repacker: PlaceRepacker<'_, 'tcx>,
+            ) -> bool {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.make_place_old(place, latest, repacker),
+                    )+
+                }
+            }
+        }
+
         impl<$tcx> HasValidityCheck<$tcx> for $enum_name<$tcx> {
             fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
                 match self {

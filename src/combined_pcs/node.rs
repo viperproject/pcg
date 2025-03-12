@@ -1,6 +1,9 @@
+use crate::borrow_pcg::has_pcs_elem::{default_make_place_old, MakePlaceOld};
+use crate::borrow_pcg::latest::Latest;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
+use crate::utils::Place;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -23,6 +26,17 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(p) => p.is_owned(repacker),
             PCGNode::RegionProjection(_) => false,
         }
+    }
+}
+
+impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
     }
 }
 

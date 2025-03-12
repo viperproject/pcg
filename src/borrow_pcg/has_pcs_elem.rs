@@ -16,25 +16,20 @@ pub(crate) trait MakePlaceOld<'tcx> {
     ) -> bool;
 }
 
-impl<'tcx, T> MakePlaceOld<'tcx> for T
-where
-    T: HasPcgElems<MaybeOldPlace<'tcx>> + HasValidityCheck<'tcx>,
-{
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        for p in self.pcg_elems() {
-            if p.make_place_old(place, latest) {
-                changed = true;
-            }
+pub(crate) fn default_make_place_old<'tcx, T: HasPcgElems<MaybeOldPlace<'tcx>> + HasValidityCheck<'tcx>>(
+    this: &mut T,
+    place: Place<'tcx>,
+    latest: &Latest<'tcx>,
+    repacker: PlaceRepacker<'_, 'tcx>,
+) -> bool {
+    let mut changed = false;
+    for p in this.pcg_elems() {
+        if p.make_place_old(place, latest) {
+            changed = true;
         }
-        if validity_checks_enabled() {
-            self.assert_validity(repacker);
-        }
-        changed
     }
+    if validity_checks_enabled() {
+        this.assert_validity(repacker);
+    }
+    changed
 }
