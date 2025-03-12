@@ -1,3 +1,5 @@
+// This test fails if the expansion edge y -> *y does not block borrow edge y = &mut a.f.
+
 struct T {
     f: u32,
 }
@@ -7,9 +9,8 @@ struct U {
     g: u32,
 }
 
-
 pub fn test6() {
-    let mut a = U { f: 6, g: 1, };
+    let mut a = U { f: 6, g: 1 };
     let y = &mut a.f;
     let z = &mut a.g;
     *y = 7;

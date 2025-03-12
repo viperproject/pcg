@@ -7,7 +7,7 @@ use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithRepacker, HasPlace, PlaceRepacker,
+        display::DisplayWithRepacker, HasBasePlace, PlaceRepacker,
     },
 };
 
@@ -132,7 +132,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     let blocked = borrow_edge.blocked_place();
                     extend(blocked.into(), seen, &mut result, direct);
                 }
-                BorrowPCGEdgeKind::BorrowPCGExpansion(e) => match e.base() {
+                BorrowPCGEdgeKind::BorrowPCGExpansion(e) => match e.base {
                     PCGNode::Place(_) => {}
                     PCGNode::RegionProjection(region_projection) => {
                         extend(

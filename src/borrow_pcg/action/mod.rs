@@ -4,13 +4,13 @@ use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
 use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
-use crate::combined_pcs::{PcgError, PCGNode};
+use crate::combined_pcs::{PCGNode, PcgError};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
+use crate::utils::{HasBasePlace, Place, PlaceRepacker, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
@@ -237,23 +237,20 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGEdgeKind::Borrow(_) => changed,
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                 if changed {
-                    let base = expansion.base();
-                    let expanded_capability = match &expansion {
-                        BorrowPCGExpansion::FromOwned(expansion_of_owned) => {
-                            match expansion_of_owned.base().ty(repacker).ty.ref_mutability() {
-                                Some(Mutability::Mut) => CapabilityKind::Exclusive,
-                                Some(Mutability::Not) => CapabilityKind::Read,
-                                None => unreachable!(),
-                            }
+                    let base = expansion.base;
+                    let expanded_capability = if expansion.is_owned_expansion(repacker) {
+                        match expansion.base.place().ty(repacker).ty.ref_mutability() {
+                            Some(Mutability::Mut) => CapabilityKind::Exclusive,
+                            Some(Mutability::Not) => CapabilityKind::Read,
+                            None => unreachable!(),
                         }
-                        BorrowPCGExpansion::FromBorrow(expansion_of_borrowed) => {
-                            if let Some(capability) =
-                                self.get_capability(expansion_of_borrowed.base.into())
-                            {
-                                capability
-                            } else {
-                                return Ok(true);
-                            }
+                    } else {
+                        if !for_exclusive {
+                            CapabilityKind::Read
+                        } else if let Some(capability) = self.get_capability(base.into()) {
+                            capability
+                        } else {
+                            return Ok(true);
                         }
                     };
 
@@ -271,7 +268,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                     }
 
-                    for p in expansion.expansion(repacker)?.iter() {
+                    for p in expansion.expansion.iter() {
                         changed |= self.set_capability((*p).into(), expanded_capability, repacker);
                     }
                 }
