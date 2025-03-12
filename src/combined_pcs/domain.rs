@@ -267,8 +267,6 @@ pub enum PCGUnsupportedError {
     IndexingNonIndexableType,
     InlineAssembly,
     NonConstantOperandFunctionCall,
-    TwoPhaseBorrow,
-    UnsafePtrCast,
 }
 
 #[derive(Clone, PartialEq, Eq)]

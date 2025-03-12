@@ -1,19 +1,25 @@
+use std::collections::BTreeSet;
+
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPCGExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::borrow_pcg::edge::region_projection_member::{RegionProjectionMember, RpMemberDirection};
+use crate::borrow_pcg::edge::region_projection_member::{
+    RegionProjectionMember, RpMemberDirection,
+};
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
+use crate::borrow_pcg::has_pcs_elem::MakePlaceOld;
 use crate::borrow_pcg::path_condition::PathConditions;
+use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
-use crate::combined_pcs::{PcgError, PCGNodeLike};
+use crate::combined_pcs::{PCGNodeLike, PcgError};
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{Place, PlaceRepacker};
+use crate::utils::{HasBasePlace, Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 
@@ -190,7 +196,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let for_exclusive = obtain_reason.min_post_obtain_capability() != CapabilityKind::Read;
         let mut actions = ExecutedActions::new();
 
-        for (base, _) in to_place.iter_projections() {
+        for (base, _) in to_place.iter_projections(repacker) {
             let base: Place<'tcx> = base.into();
             let base = base.with_inherent_region(repacker);
             let expand_result = base.expand_one_level(to_place, repacker)?;
@@ -200,11 +206,19 @@ impl<'tcx> BorrowsState<'tcx> {
             // We don't introduce an expansion if the place is owned, because
             // that is handled by the owned PCG.
             if !target.is_owned(repacker) {
-                let expansion = BorrowPCGExpansion::new(
-                    base.into(),
-                    PlaceExpansion::from_places(expansion.clone(), repacker),
-                    repacker,
-                )?;
+                let place_expansion = PlaceExpansion::from_places(expansion.clone(), repacker);
+                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> =
+                    BorrowPCGExpansion::new(
+                        base.into(),
+                        place_expansion
+                            .elems()
+                            .into_iter()
+                            .map(|p| base.project_deeper(p, repacker))
+                            .collect::<Result<BTreeSet<_>, _>>()?
+                            .into_iter()
+                            .map(|p| p.into())
+                            .collect(),
+                    );
 
                 let action = BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(
@@ -227,15 +241,23 @@ impl<'tcx> BorrowsState<'tcx> {
                     .copied()
                     .collect::<Vec<_>>();
                 if !dest_places.is_empty() {
-                    let expansion = BorrowPCGExpansion::from_borrowed_base(
-                        rp.into(),
-                        PlaceExpansion::from_places(dest_places, repacker),
-                        repacker,
-                    )?;
+                    let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
+                    let expansion = PlaceExpansion::from_places(dest_places, repacker);
+                    let expansion_places: BTreeSet<LocalNode<'tcx>> = expansion
+                        .elems()
+                        .into_iter()
+                        .map(|p| rp.project_deeper(p, repacker))
+                        .collect::<Result<BTreeSet<_>, _>>()?
+                        .into_iter()
+                        .map(|p| p.into())
+                        .collect();
                     self.record_and_apply_action(
                         BorrowPCGAction::add_edge(
                             BorrowPCGEdge::new(
-                                BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                                BorrowPCGEdgeKind::BorrowPCGExpansion(BorrowPCGExpansion::new(
+                                    rp.into(),
+                                    expansion_places,
+                                )),
                                 PathConditions::new(location.block),
                             ),
                             for_exclusive,

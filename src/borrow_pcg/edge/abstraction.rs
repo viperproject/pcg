@@ -157,10 +157,6 @@ impl<'tcx> EdgeData<'tcx> for AbstractionType<'tcx> {
             Err(_) => false,
         }
     }
-
-    fn is_owned_expansion(&self) -> bool {
-        false
-    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -216,10 +212,6 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
             .into_iter()
             .map(|o| o.to_local_node(repacker))
             .collect()
-    }
-
-    fn is_owned_expansion(&self) -> bool {
-        false
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace},
+    utils::{remote::RemotePlace, HasBasePlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -248,9 +248,6 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         vec![LocalNode::RegionProjection(rp)].into_iter().collect()
     }
 
-    fn is_owned_expansion(&self) -> bool {
-        false
-    }
 }
 
 impl<'tcx> LocalBorrow<'tcx> {

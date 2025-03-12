@@ -17,7 +17,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection},
 };
-use crate::borrow_pcg::edge::borrow::BorrowEdge;
+use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasBasePlace};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -26,7 +26,7 @@ use crate::{
     combined_pcs::PCGNode,
     edgedata_enum, rustc_interface,
     utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place, PlaceRepacker,
+        display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker,
     },
 };
 
@@ -183,7 +183,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 /// other than a [`RemotePlace`] (which are roots by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
-impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
+impl<'tcx> HasBasePlace<'tcx> for LocalNode<'tcx> {
     fn place(&self) -> Place<'tcx> {
         match self {
             LocalNode::Place(p) => p.place(),
@@ -394,10 +394,6 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
 
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<BlockedNode<'tcx>> {
         self.kind().blocked_nodes(repacker)
-    }
-
-    fn is_owned_expansion(&self) -> bool {
-        self.kind().is_owned_expansion()
     }
 
     fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {

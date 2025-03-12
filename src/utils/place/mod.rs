@@ -12,6 +12,7 @@ use std::{
 };
 
 use derive_more::{Deref, DerefMut};
+use maybe_old::MaybeOldPlace;
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
@@ -133,7 +134,7 @@ impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
 }
 
 /// A trait for PCG nodes that contain a single place.
-pub trait HasPlace<'tcx>: Sized {
+pub trait HasBasePlace<'tcx>: Sized {
     fn place(&self) -> Place<'tcx>;
 
     fn place_mut(&mut self) -> &mut Place<'tcx>;
@@ -147,7 +148,7 @@ pub trait HasPlace<'tcx>: Sized {
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)>;
 }
 
-impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
+impl<'tcx> HasBasePlace<'tcx> for Place<'tcx> {
     fn place(&self) -> Place<'tcx> {
         *self
     }

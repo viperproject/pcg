@@ -25,7 +25,7 @@ use crate::{
             ty::{self, DebruijnIndex, RegionVid},
         },
     },
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasBasePlace, Place},
 };
 
 /// A region occuring in region projections
@@ -315,7 +315,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
+impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasBasePlace<'tcx>> HasBasePlace<'tcx>
     for RegionProjection<'tcx, T>
 {
     fn place(&self) -> Place<'tcx> {
