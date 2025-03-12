@@ -1,12 +1,11 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::HasPcgElems, region_projection::RegionProjection
+        borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld}, latest::Latest, region_projection::RegionProjection
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithRepacker, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
-        validity::HasValidityCheck, PlaceRepacker,
+        display::DisplayWithRepacker, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck, Place, PlaceRepacker
     },
 };
 
@@ -22,6 +21,17 @@ pub struct RegionProjectionMember<'tcx> {
     region_projection: RegionProjection<'tcx>,
     place: MaybeRemotePlace<'tcx>,
     direction: RpMemberDirection,
+}
+
+impl<'tcx> MakePlaceOld<'tcx> for RegionProjectionMember<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
 }
 
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjectionMember<'tcx> {

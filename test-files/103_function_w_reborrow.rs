@@ -13,6 +13,9 @@ fn main() {
     let mut z = &mut t3;
     let (r1, r2)  = f(x, y, z);
     let test_r1 = r1;
+    // After r1 dies, x is no longer part of the abstraction but the function abstraction is still live
+    // PCG: bb1[14] post_main: x: E
+    // PCG: bb1[14] post_main: FunctionCall(DefId(0:4 ~ 103_function_w_reborrow[da5a]::f), ['?8, '?9, '?10, '?11, '?12]) under conditions bb0 -> bb1,
     let test_r2 = r2;
     let test_x = x;
     let test_y = y;

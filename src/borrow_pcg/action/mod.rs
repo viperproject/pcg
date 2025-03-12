@@ -1,7 +1,6 @@
 use tracing::instrument;
 
 use super::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
-use super::borrow_pcg_expansion::BorrowPCGExpansion;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
 use crate::combined_pcs::{PCGNode, PcgError};
@@ -10,7 +9,7 @@ use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::{DebugLines, DisplayWithRepacker};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{HasBasePlace, Place, PlaceRepacker, SnapshotLocation};
+use crate::utils::{HasPlace, Place, PlaceRepacker, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
@@ -63,7 +62,11 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn weaken(place: Place<'tcx>, from: CapabilityKind, to: CapabilityKind) -> Self {
+    pub(super) fn weaken(
+        place: Place<'tcx>,
+        from: CapabilityKind,
+        to: Option<CapabilityKind>,
+    ) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::Weaken(Weaken::new(place, from, to)),
             debug_context: None,
@@ -209,7 +212,10 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPCGActionKind::Weaken(weaken) => {
                 let weaken_place: PCGNode<'tcx> = weaken.place().into();
                 assert_eq!(self.get_capability(weaken_place), Some(weaken.from));
-                assert!(self.set_capability(weaken_place, weaken.to, repacker));
+                match weaken.to {
+                    Some(to) => assert!(self.set_capability(weaken_place, to, repacker)),
+                    None => assert!(self.remove_capability(weaken_place)),
+                }
                 true
             }
             BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker),
@@ -244,14 +250,12 @@ impl<'tcx> BorrowsState<'tcx> {
                             Some(Mutability::Not) => CapabilityKind::Read,
                             None => unreachable!(),
                         }
+                    } else if !for_exclusive {
+                        CapabilityKind::Read
+                    } else if let Some(capability) = self.get_capability(base.into()) {
+                        capability
                     } else {
-                        if !for_exclusive {
-                            CapabilityKind::Read
-                        } else if let Some(capability) = self.get_capability(base.into()) {
-                            capability
-                        } else {
-                            return Ok(true);
-                        }
+                        return Ok(true);
                     };
 
                     let base_is_owned = match base {

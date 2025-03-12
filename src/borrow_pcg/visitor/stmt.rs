@@ -56,19 +56,19 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         self.domain.post_state_mut().get_capability(target.into())
                     {
                         if target_cap != CapabilityKind::Write {
-                            // debug_assert!(
-                            //     target_cap >= CapabilityKind::Write,
-                            //     "{:?}: {} cap {:?} is not greater than {:?}",
-                            //     location,
-                            //     target.to_short_string(self.repacker),
-                            //     target_cap,
-                            //     CapabilityKind::Write
-                            // );
-                            // self.apply_action(BorrowPCGAction::weaken(
-                            //     target,
-                            //     target_cap,
-                            //     CapabilityKind::Write,
-                            // ));
+                            debug_assert!(
+                                target_cap >= CapabilityKind::Write,
+                                "{:?}: {} cap {:?} is not greater than {:?}",
+                                location,
+                                target.to_short_string(self.repacker),
+                                target_cap,
+                                CapabilityKind::Write
+                            );
+                            self.apply_action(BorrowPCGAction::weaken(
+                                target,
+                                target_cap,
+                                Some(CapabilityKind::Write),
+                            ));
                         }
                     } else {
                         // TODO

@@ -18,14 +18,13 @@ use crate::validity_checks_enabled;
 use crate::{
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
-        data_structures::fx::FxHashSet,
         index::{Idx, IndexVec},
         middle::{
             mir::{Const, Local, PlaceElem},
             ty::{self, DebruijnIndex, RegionVid},
         },
     },
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasBasePlace, Place},
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
 };
 
 /// A region occuring in region projections
@@ -315,7 +314,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasBasePlace<'tcx>> HasBasePlace<'tcx>
+impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
     for RegionProjection<'tcx, T>
 {
     fn place(&self) -> Place<'tcx> {
@@ -496,28 +495,6 @@ impl<'tcx> RegionProjection<'tcx> {
     pub fn deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
         self.as_local_region_projection(repacker)
             .and_then(|rp| rp.deref(repacker))
-    }
-
-    /// Returns the set of pairs (srp, drp) where srp ∈
-    /// `source.region_projections(repacker)` and drp ∈
-    /// `dest.region_projections(repacker)` and `srp.region() == drp.region()`.
-    pub(crate) fn connections_between_places(
-        source: MaybeOldPlace<'tcx>,
-        dest: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> FxHashSet<(
-        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-    )> {
-        let mut edges = FxHashSet::default();
-        for rp in source.region_projections(repacker) {
-            for erp in dest.region_projections(repacker) {
-                if rp.region(repacker) == erp.region(repacker) {
-                    edges.insert((rp, erp));
-                }
-            }
-        }
-        edges
     }
 }
 

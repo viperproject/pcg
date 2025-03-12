@@ -9,7 +9,6 @@ use crate::borrow_pcg::edge::region_projection_member::{
     RegionProjectionMember, RpMemberDirection,
 };
 use crate::borrow_pcg::graph::borrows_imgcat_debug;
-use crate::borrow_pcg::has_pcs_elem::MakePlaceOld;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
@@ -19,7 +18,7 @@ use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{HasBasePlace, Place, PlaceRepacker};
+use crate::utils::{HasPlace, Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 
@@ -180,6 +179,26 @@ impl<'tcx> BorrowsState<'tcx> {
             )?);
         }
 
+        if !place.is_owned(repacker)
+            && self.set_capability(place.into(), CapabilityKind::Exclusive, repacker)
+        {
+            let mut current = place.parent_place().unwrap();
+            while !current.is_owned(repacker)
+                && self.get_capability(current.into()) == Some(CapabilityKind::Read)
+            {
+                self.record_and_apply_action(
+                    BorrowPCGAction::weaken(current, CapabilityKind::Read, None),
+                    &mut actions,
+                    repacker,
+                )?;
+                let parent = match current.parent_place() {
+                    Some(parent) => parent,
+                    None => break,
+                };
+                current = parent;
+            }
+        }
+
         Ok(actions)
     }
 
@@ -197,7 +216,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let mut actions = ExecutedActions::new();
 
         for (base, _) in to_place.iter_projections(repacker) {
-            let base: Place<'tcx> = base.into();
+            let base: Place<'tcx> = base;
             let base = base.with_inherent_region(repacker);
             let expand_result = base.expand_one_level(to_place, repacker)?;
             let expansion = expand_result.expansion();
@@ -207,18 +226,17 @@ impl<'tcx> BorrowsState<'tcx> {
             // that is handled by the owned PCG.
             if !target.is_owned(repacker) {
                 let place_expansion = PlaceExpansion::from_places(expansion.clone(), repacker);
-                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> =
-                    BorrowPCGExpansion::new(
-                        base.into(),
-                        place_expansion
-                            .elems()
-                            .into_iter()
-                            .map(|p| base.project_deeper(p, repacker))
-                            .collect::<Result<BTreeSet<_>, _>>()?
-                            .into_iter()
-                            .map(|p| p.into())
-                            .collect(),
-                    );
+                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> = BorrowPCGExpansion::new(
+                    base.into(),
+                    place_expansion
+                        .elems()
+                        .into_iter()
+                        .map(|p| base.project_deeper(p, repacker))
+                        .collect::<Result<BTreeSet<_>, _>>()?
+                        .into_iter()
+                        .map(|p| p.into())
+                        .collect(),
+                );
 
                 let action = BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(

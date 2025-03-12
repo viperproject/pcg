@@ -15,7 +15,7 @@ use crate::utils::display::DisplayWithRepacker;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::{HasBasePlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use derive_more::From;
 use serde_json::json;
 
@@ -135,7 +135,7 @@ impl std::fmt::Display for MaybeOldPlace<'_> {
     }
 }
 
-impl<'tcx> HasBasePlace<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
     fn place(&self) -> Place<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => *place,

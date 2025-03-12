@@ -15,7 +15,7 @@ use crate::{
     borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
     utils::display::DisplayWithRepacker,
 };
-use crate::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_old::MaybeOldPlace};
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -26,7 +26,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{display::DebugLines, validity::HasValidityCheck, HasBasePlace},
+    utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
 };
 use crate::{
@@ -349,7 +349,6 @@ impl<'tcx> BorrowsState<'tcx> {
                 let fg = slf.graph.frozen_graph();
                 let should_trim =
                     |p: LocalNode<'tcx>,
-                     edge: &BorrowPCGEdgeKind<'tcx>,
                      fg: &FrozenGraphRef<'slf, 'tcx>| {
                         if p.is_old() {
                             return true;
@@ -378,13 +377,13 @@ impl<'tcx> BorrowsState<'tcx> {
                     .into_iter()
                     .map(|e| e.to_owned_edge())
                 {
-                    tracing::info!("Checking leaf edge {:?}", edge.kind().to_short_string(repacker));
+                    tracing::debug!("Checking leaf edge {:?}", edge.kind().to_short_string(repacker));
                     let blocked_by_nodes = edge.blocked_by_nodes(repacker);
                     if blocked_by_nodes
                         .iter()
-                        .all(|p| should_trim(*p, &edge.kind(), &fg))
+                        .all(|p| should_trim(*p, &fg))
                     {
-                        tracing::info!("Trimming edge {:?}", edge.kind().to_short_string(repacker));
+                        tracing::debug!("Trimming edge {:?}", edge.kind().to_short_string(repacker));
                         edges_to_trim.push(edge);
                     }
                 }

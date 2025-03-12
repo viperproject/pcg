@@ -11,6 +11,8 @@ pub(crate) struct InputBuffer<'a> {
 
 impl<'a> InputBuffer<'a> {
     fn advance(&mut self, buf: usize) {
+        // *(*self).buffer should be R because `buffer` is a shared reference
+        // PCG: bb1[3] post_main: *(*self).buffer: R
         self.buffer = &self.buffer[buf..];
         self.read_bytes += buf;
     }
