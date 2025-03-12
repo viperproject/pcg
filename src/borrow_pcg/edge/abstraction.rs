@@ -295,10 +295,6 @@ impl<'tcx> AbstractionType<'tcx> {
         matches!(self, AbstractionType::FunctionCall(_))
     }
 
-    pub(crate) fn is_loop(&self) -> bool {
-        matches!(self, AbstractionType::Loop(_))
-    }
-
     pub fn location(&self) -> Location {
         match self {
             AbstractionType::FunctionCall(c) => c.location,

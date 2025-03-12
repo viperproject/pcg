@@ -18,6 +18,18 @@ use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
+
+impl<'tcx> TryFrom<AbstractionInputTarget<'tcx>> for RegionProjection<'tcx> {
+    type Error = ();
+
+    fn try_from(value: AbstractionInputTarget<'tcx>) -> Result<Self, Self::Error> {
+        match value {
+            CGNode::RegionProjection(rp) => Ok(rp.into()),
+            _ => Err(()),
+        }
+    }
+}
+
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 use super::visitor::extract_regions;
@@ -25,12 +37,10 @@ use super::{coupling_graph_constructor::CGNode, region_projection::RegionProject
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::remote::RemotePlace;
 
-use crate::rustc_interface::
-    middle::{
-        mir::{BasicBlock, Local, Location},
-        ty::{self},
-    }
-;
+use crate::rustc_interface::middle::{
+    mir::{BasicBlock, Local, Location},
+    ty::{self},
+};
 
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
@@ -153,7 +163,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                 self.repacker,
             );
         }
-        for region in extract_regions(local_decl.ty) {
+        for region in extract_regions(local_decl.ty, self.repacker) {
             let region_projection =
                 RegionProjection::new(region, arg_place.into(), self.repacker).unwrap();
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);

@@ -1,17 +1,15 @@
-use std::{cmp::Ordering, collections::BTreeSet};
+use std::collections::BTreeSet;
 
 use super::{
-    borrow_pcg_edge::LocalNode,
+    domain::AbstractionOutputTarget,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
-    region_projection::{PCGRegion, RegionProjection},
+    region_projection::PCGRegion,
 };
-use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
-use crate::utils::place::remote::RemotePlace;
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::PCGNode,
     coupling, pcg_validity_assert,
     rustc_interface::middle::mir::{BasicBlock, Location},
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
@@ -115,138 +113,37 @@ impl<T: Ord> From<Vec<T>> for Coupled<T> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
-pub enum CGNode<'tcx> {
-    RegionProjection(RegionProjection<'tcx>),
-    RemotePlace(RemotePlace),
-}
+pub type CGNode<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
 
-impl<'tcx> PCGNodeLike<'tcx> for CGNode<'tcx> {
-    fn to_pcg_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
-        match self {
-            CGNode::RegionProjection(rp) => rp.into(),
-            CGNode::RemotePlace(rp) => rp.into(),
-        }
-    }
-}
-
-impl<'tcx> DisplayWithRepacker<'tcx> for CGNode<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
-        match self {
-            CGNode::RegionProjection(rp) => rp.to_short_string(repacker),
-            CGNode::RemotePlace(rp) => rp.to_short_string(repacker),
-        }
-    }
-}
-
-impl<'tcx> ToJsonWithRepacker<'tcx> for CGNode<'tcx> {
-    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-        todo!()
-    }
-}
-
-impl<'tcx> HasValidityCheck<'tcx> for CGNode<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        match self {
-            CGNode::RegionProjection(rp) => rp.check_validity(repacker),
-            CGNode::RemotePlace(rp) => rp.check_validity(repacker),
-        }
-    }
-}
-impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for CGNode<'tcx> {
-    type Error = ();
-    fn try_from(node: MaybeRemotePlace<'tcx>) -> Result<Self, Self::Error> {
-        match node {
-            MaybeRemotePlace::Remote(rp) => Ok(CGNode::RemotePlace(rp)),
-            MaybeRemotePlace::Local(_) => Err(()),
-        }
-    }
-}
-
-impl<'tcx> TryFrom<PCGNode<'tcx>> for CGNode<'tcx> {
-    type Error = ();
-    fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
-        match node {
-            PCGNode::Place(p) => Ok(p.try_into()?),
-            PCGNode::RegionProjection(rp) => Ok(CGNode::RegionProjection(rp)),
-        }
-    }
-}
-
-impl<'tcx> TryFrom<LocalNode<'tcx>> for CGNode<'tcx> {
-    type Error = ();
-    fn try_from(node: LocalNode<'tcx>) -> Result<Self, Self::Error> {
-        match node {
-            LocalNode::Place(_) => Err(()),
-            LocalNode::RegionProjection(rp) => Ok(CGNode::RegionProjection(rp.into())),
-        }
-    }
-}
-
-impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for CGNode<'tcx> {
-    fn from(rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        CGNode::RegionProjection(rp.into())
+impl<'tcx> From<AbstractionOutputTarget<'tcx>> for CGNode<'tcx> {
+    fn from(target: AbstractionOutputTarget<'tcx>) -> Self {
+        CGNode::RegionProjection(target.into())
     }
 }
 
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for CGNode<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
-            CGNode::RegionProjection(rp) => rp.pcg_elems(),
-            CGNode::RemotePlace(_) => vec![],
+            CGNode::Place(p) => p.pcg_elems(),
+            CGNode::RegionProjection(rp) => rp.base.pcg_elems(),
         }
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx>> for CGNode<'tcx> {
-    fn from(rp: RegionProjection<'tcx>) -> Self {
-        CGNode::RegionProjection(rp)
-    }
-}
-
-impl From<RemotePlace> for CGNode<'_> {
-    fn from(rp: RemotePlace) -> Self {
-        CGNode::RemotePlace(rp)
-    }
-}
-
-impl<'tcx> TryFrom<CGNode<'tcx>> for RegionProjection<'tcx> {
-    type Error = ();
-    fn try_from(node: CGNode<'tcx>) -> Result<Self, Self::Error> {
+impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
+    fn from(node: CGNode<'tcx>) -> Self {
         match node {
-            CGNode::RegionProjection(rp) => Ok(rp),
-            CGNode::RemotePlace(_) => Err(()),
+            CGNode::Place(p) => p.into(),
+            CGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
         }
     }
 }
-
 impl CGNode<'_> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
-            CGNode::RegionProjection(rp) => rp.place().is_old(),
-            CGNode::RemotePlace(_) => false,
+            CGNode::Place(p) => p.is_old(),
+            CGNode::RegionProjection(rp) => rp.base().is_old(),
         }
-    }
-}
-
-impl std::fmt::Display for CGNode<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CGNode::RegionProjection(rp) => write!(f, "{}", rp),
-            CGNode::RemotePlace(rp) => write!(f, "{}", rp),
-        }
-    }
-}
-
-impl Ord for CGNode<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-impl PartialOrd for CGNode<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(format!("{:?}", self).cmp(&format!("{:?}", other)))
     }
 }
 
@@ -330,12 +227,12 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
             "bottom: {{{}}}, upper: {{{}}}",
             self.bottom_connect
                 .iter()
-                .map(|x| format!("{}", x))
+                .map(|x| format!("{:?}", x))
                 .collect::<Vec<_>>()
                 .join(", "),
             self.upper_candidate
                 .iter()
-                .map(|x| format!("{}", x))
+                .map(|x| format!("{:?}", x))
                 .collect::<Vec<_>>()
                 .join(", ")
         )
@@ -384,7 +281,7 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
                 self.add_edges_from(bg, bottom_connect, &coupled_set, history.clone());
             } else {
                 self.coupling_graph
-                    .add_edge(&coupled, &bottom_connect.clone().into());
+                    .add_edge(&coupled, &bottom_connect.clone().into(), self.repacker);
                 self.add_edges_from(bg, &coupled_set, &coupled_set, history.clone());
             }
         }
@@ -397,13 +294,13 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         tracing::debug!("Construct coupling graph start");
         let full_graph = bg.base_coupling_graph(self.repacker);
         if coupling_imgcat_debug() {
-            full_graph.render_with_imgcat("Base coupling graph");
+            full_graph.render_with_imgcat(self.repacker, "Base coupling graph");
         }
         let leaf_nodes = full_graph.leaf_nodes();
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.coupling_graph.insert_endpoint(node.clone());
+            self.coupling_graph.insert_endpoint(node.clone(), self.repacker);
             let node_set: BTreeSet<_> = node.into_iter().collect();
             self.add_edges_from(
                 &full_graph,

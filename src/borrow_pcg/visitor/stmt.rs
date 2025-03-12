@@ -167,7 +167,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 Rvalue::Use(Operand::Move(from)) => {
                     let from: utils::Place<'tcx> = (*from).into();
                     let target: utils::Place<'tcx> = (*target).into();
-                    if from.is_ref(self.repacker) {
+                    // if from.is_ref(self.repacker) {
                         let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
                         self.apply_action(BorrowPCGAction::rename_place(
                             old_place,
@@ -182,7 +182,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         //         |_| OutlivesEdgeKind::Todo,
                         //     );
                         // }
-                    }
+                    // }
                 }
                 Rvalue::Use(Operand::Copy(from)) => {
                     let from_place: utils::Place<'tcx> = (*from).into();

@@ -212,6 +212,7 @@ pub struct EdgeOptions {
     style: Option<String>,
     direction: Option<EdgeDirection>,
     tooltip: Option<String>,
+    penwidth: Option<String>,
 }
 
 impl EdgeOptions {
@@ -222,6 +223,7 @@ impl EdgeOptions {
             style: None,
             direction: Some(direction),
             tooltip: None,
+            penwidth: None,
         }
     }
 
@@ -232,7 +234,13 @@ impl EdgeOptions {
             style: None,
             direction: None,
             tooltip: None,
+            penwidth: None,
         }
+    }
+
+    pub fn with_penwidth(mut self, penwidth: f64) -> Self {
+        self.penwidth = Some(penwidth.to_string());
+        self
     }
 
     pub fn with_label(mut self, label: String) -> Self {
@@ -282,16 +290,21 @@ impl Display for DotEdge {
             Some(tooltip) => format!(", edgetooltip=\"{}\"", tooltip),
             None => "".to_string(),
         };
+        let penwidth_part = match &self.options.penwidth {
+            Some(penwidth) => format!(", penwidth=\"{}\"", penwidth),
+            None => "".to_string(),
+        };
         write!(
             f,
-            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}]",
+            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}{}]",
             self.from,
             self.to,
             self.options.label,
             style_part,
             direction_part,
             color_part,
-            tooltip_part
+            tooltip_part,
+            penwidth_part
         )
     }
 }

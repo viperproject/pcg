@@ -142,6 +142,7 @@ enum GraphEdge {
     Abstract {
         blocked: NodeId,
         blocking: NodeId,
+        label: String,
     },
     // For literal borrows
     Alias {
@@ -224,10 +225,16 @@ impl GraphEdge {
                     .with_color("green".to_string())
                     .with_tooltip(path_conditions.clone()),
             },
-            GraphEdge::Abstract { blocked, blocking } => DotEdge {
+            GraphEdge::Abstract {
+                blocked,
+                blocking,
+                label,
+            } => DotEdge {
                 from: blocked.to_string(),
                 to: blocking.to_string(),
-                options: EdgeOptions::directed(EdgeDirection::Forward),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_label(label.clone())
+                    .with_penwidth(3.0),
             },
             GraphEdge::Block {
                 source,
