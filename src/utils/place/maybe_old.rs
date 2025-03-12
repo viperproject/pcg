@@ -278,7 +278,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<RegionProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
-        extract_regions(place.ty(repacker).ty)
+        extract_regions(place.ty(repacker).ty, repacker)
             .iter()
             .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
             .collect()

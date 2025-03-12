@@ -40,7 +40,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for RemotePlace {
 
     fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
         let place: Place<'_> = self.local.into();
-        extract_regions(place.ty(repacker).ty)
+        extract_regions(place.ty(repacker).ty, repacker)
     }
 }
 

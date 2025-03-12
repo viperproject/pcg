@@ -113,7 +113,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for Place<'tcx> {
     }
 
     fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
-        extract_regions(self.ty(repacker).ty)
+        extract_regions(self.ty(repacker).ty, repacker)
     }
 }
 
@@ -350,7 +350,7 @@ impl<'tcx> Place<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> IndexVec<RegionIdx, PCGRegion> {
-        extract_regions(self.ty(repacker).ty)
+        extract_regions(self.ty(repacker).ty, repacker)
     }
 
     pub(crate) fn region_projections(
@@ -358,7 +358,7 @@ impl<'tcx> Place<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
-        extract_regions(place.ty(repacker).ty)
+        extract_regions(place.ty(repacker).ty, repacker)
             .iter()
             .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
             .collect()
@@ -369,7 +369,7 @@ impl<'tcx> Place<'tcx> {
         region: PCGRegion,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionIdx> {
-        extract_regions(self.ty(repacker).ty)
+        extract_regions(self.ty(repacker).ty, repacker)
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
             .map(|(idx, _)| idx)

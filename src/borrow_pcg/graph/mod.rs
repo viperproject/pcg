@@ -6,7 +6,6 @@ use std::{
 };
 
 use crate::{
-    borrow_pcg::coupling_graph_constructor::Coupled,
     combined_pcs::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
@@ -15,7 +14,9 @@ use crate::{
     utils::{
         display::{DebugLines, DisplayDiff, DisplayWithRepacker},
         maybe_old::MaybeOldPlace,
+        maybe_remote::MaybeRemotePlace,
         validity::HasValidityCheck,
+        PlaceSnapshot, SnapshotLocation,
     },
     validity_checks_enabled,
 };
@@ -149,10 +150,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         impl<'tcx> ExploreFrom<'tcx> {
-            pub fn new(current: PCGNode<'tcx>) -> Self {
+            pub fn new(current: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
                 Self {
                     current,
-                    connect: current.as_cg_node(),
+                    connect: current.as_cg_node(repacker),
                 }
             }
 
@@ -164,10 +165,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self.current
             }
 
-            pub fn extend(&self, node: PCGNode<'tcx>) -> Self {
+            pub fn extend(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
                 Self {
                     current: node,
-                    connect: node.as_cg_node().or(self.connect),
+                    connect: node.as_cg_node(repacker).or(self.connect),
                 }
             }
         }
@@ -179,7 +180,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     "Current: {}, Connect: {}",
                     self.current,
                     match self.connect {
-                        Some(cg_node) => format!("{}", cg_node),
+                        Some(cg_node) => format!("{:?}", cg_node),
                         None => "None".to_string(),
                     }
                 )
@@ -190,7 +191,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let mut queue = vec![];
         for node in self.roots(repacker) {
-            queue.push(ExploreFrom::new(node));
+            queue.push(ExploreFrom::new(node, repacker));
         }
 
         let blocking_map = FrozenGraphRef::new(self);
@@ -216,30 +217,30 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .map(|node| node.into())
                             .collect::<Vec<_>>()
                             .into();
-                        graph.add_edge(&inputs, &outputs);
+                        graph.add_edge(&inputs, &outputs, repacker);
                     }
                     _ => {
-                        // RegionProjectionMember edges may contain coupled
-                        // nodes (via `[RegionProjectionMember.projections]`)
-                        // These nodes may not have any edges in the coupling
-                        // graph but must be included anyway.
-                        if let BorrowPCGEdgeKind::Outlives(outlives) = edge.kind() {
-                            graph.insert_endpoint(Coupled::singleton(outlives.long().into()));
-                            graph.insert_endpoint(Coupled::singleton(outlives.short().into()));
-                        }
+                        // if let BorrowPCGEdgeKind::Outlives(outlives) = edge.kind() {
+                        //     graph.insert_endpoint(Coupled::singleton(outlives.long().into()));
+                        //     graph.insert_endpoint(Coupled::singleton(outlives.short().into()));
+                        // }
                         for node in edge.blocked_by_nodes(repacker) {
                             if let LocalNode::RegionProjection(rp) = node {
                                 if let Some(source) = ef.connect()
                                     && source != rp.into()
                                 {
-                                    graph.add_edge(&vec![source].into(), &vec![rp.into()].into());
+                                    graph.add_edge(
+                                        &vec![source].into(),
+                                        &vec![rp.into()].into(),
+                                        repacker,
+                                    );
                                 }
                             }
                         }
                     }
                 }
                 for node in edge.blocked_by_nodes(repacker) {
-                    queue.push(ef.extend(node.into()));
+                    queue.push(ef.extend(node.into(), repacker));
                 }
             }
         }
@@ -447,15 +448,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         if coupling_imgcat_debug() {
             self_coupling_graph
-                .render_with_imgcat(&format!("self coupling graph: {:?}", self_block));
-            other_coupling_graph
-                .render_with_imgcat(&format!("other coupling graph: {:?}", other_block));
+                .render_with_imgcat(repacker, &format!("self coupling graph: {:?}", self_block));
+            other_coupling_graph.render_with_imgcat(
+                repacker,
+                &format!("other coupling graph: {:?}", other_block),
+            );
         }
 
         let mut result = self_coupling_graph;
-        result.merge(&other_coupling_graph);
+        result.merge(&other_coupling_graph, repacker);
         if coupling_imgcat_debug() {
-            result.render_with_imgcat("merged coupling graph");
+            result.render_with_imgcat(repacker, "merged coupling graph");
         }
 
         self.edges
@@ -477,7 +480,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
             self.insert(abstraction);
         }
-
+        for node in result.roots() {
+            if let PCGNode::RegionProjection(rp) = node {
+                if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = rp.place() {
+                    let mut old_rp = rp;
+                    old_rp.base =
+                        PlaceSnapshot::new(place, SnapshotLocation::Start(self_block)).into();
+                    let mut latest = Latest::new();
+                    latest.insert(place, SnapshotLocation::Start(self_block), repacker);
+                    self.make_place_old(place, &latest, repacker);
+                    // self.insert(
+                    //     LoopAbstraction::new(
+                    //         AbstractionBlockEdge::new(
+                    //             vec![old_rp.into()].into_iter().collect(),
+                    //             vec![node.try_into().unwrap()].into_iter().collect(),
+                    //         ),
+                    //         self_block,
+                    //     )
+                    //     .to_borrow_pcg_edge(PathConditions::new(self_block)),
+                    // );
+                }
+            }
+        }
     }
 
     /// Returns true iff `edge` connects two nodes within an abstraction edge

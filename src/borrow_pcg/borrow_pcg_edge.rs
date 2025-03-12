@@ -4,23 +4,28 @@ use rustc_interface::{
 };
 
 use super::{
-    borrow_pcg_expansion::BorrowPCGExpansion, coupling_graph_constructor::CGNode, edge::{
-        borrow::RemoteBorrow,
-        outlives::OutlivesEdge,
+    borrow_pcg_expansion::BorrowPCGExpansion,
+    coupling_graph_constructor::CGNode,
+    edge::{
+        borrow::RemoteBorrow, outlives::OutlivesEdge,
         region_projection_member::RegionProjectionMember,
-    }, edge_data::EdgeData, graph::Conditioned, has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection}
+    },
+    edge_data::EdgeData,
+    graph::Conditioned,
+    has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld},
+    latest::Latest,
+    path_condition::{PathCondition, PathConditions},
+    region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection},
 };
-use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::PcgError};
+use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
     combined_pcs::PCGNode,
     edgedata_enum, rustc_interface,
-    utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker,
-    },
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, Place, PlaceRepacker},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -147,7 +152,6 @@ impl<'tcx> MakePlaceOld<'tcx> for LocalNode<'tcx> {
         default_make_place_old(self, place, latest, repacker)
     }
 }
-
 
 impl<'tcx> From<LocalRegionProjection<'tcx>> for LocalNode<'tcx> {
     fn from(rp: LocalRegionProjection<'tcx>) -> Self {
@@ -290,25 +294,21 @@ impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<
     }
 }
 
-impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
-    fn from(cg_node: CGNode<'tcx>) -> Self {
-        match cg_node {
-            CGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp),
-            CGNode::RemotePlace(rp) => PCGNode::Place(rp.into()),
-        }
-    }
-}
-
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn as_cg_node(self) -> Option<CGNode<'tcx>> {
+    pub(crate) fn as_cg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<CGNode<'tcx>> {
         match self {
-            PCGNode::Place(MaybeRemotePlace::Remote(remote_place)) => {
-                Some(CGNode::RemotePlace(remote_place))
-            }
-            PCGNode::RegionProjection(rp) => Some(CGNode::RegionProjection(rp)),
-            PCGNode::Place(MaybeRemotePlace::Local(_)) => None,
+            // Places are allowed only if they are roots of the borrow graph
+            PCGNode::Place(place) => match place {
+                MaybeRemotePlace::Local(maybe_old_place) => if maybe_old_place.is_owned(repacker) {
+                    Some(CGNode::Place(place))
+                } else {
+                    None
+                },
+                MaybeRemotePlace::Remote(remote_place) => Some(CGNode::Place(remote_place.into())),
+            },
+            PCGNode::RegionProjection(rp) => Some(CGNode::RegionProjection(rp.try_into().ok()?)),
         }
     }
     pub(crate) fn as_blocking_node(

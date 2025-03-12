@@ -142,10 +142,19 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
-    fn insert_cg_node(&mut self, node: CGNode<'tcx>, capability: Option<CapabilityKind>) -> NodeId {
+    fn insert_cg_node(
+        &mut self,
+        node: CGNode<'tcx>,
+        capability: &impl CapabilityGetter<'tcx>,
+    ) -> NodeId {
         match node {
-            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp),
-            CGNode::RemotePlace(rp) => self.insert_remote_node(rp, capability),
+            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp.into()),
+            CGNode::Place(MaybeRemotePlace::Local(place)) => {
+                self.insert_place_node(place.place(), place.location(), capability)
+            }
+            CGNode::Place(MaybeRemotePlace::Remote(place)) => {
+                self.insert_remote_node(place, capability.get(place.into()))
+            }
         }
     }
 
@@ -158,7 +167,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let mut output_nodes = BTreeSet::new();
 
         for input in abstraction.inputs() {
-            let input = self.insert_cg_node(input, capabilities.get(input.into()));
+            let input = self.insert_cg_node(input, capabilities);
             input_nodes.insert(input);
         }
 
@@ -168,44 +177,28 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             output_nodes.insert(output);
         }
 
+        let label = match abstraction {
+            AbstractionType::FunctionCall(fc) => {
+                format!(
+                    "call {} at {:?}",
+                    self.repacker.tcx().def_path_str(fc.def_id()),
+                    fc.location()
+                )
+            }
+            AbstractionType::Loop(loop_abstraction) => {
+                format!("loop at {:?}", loop_abstraction.location())
+            }
+        };
+
         for input in &input_nodes {
             for output in &output_nodes {
                 self.edges.insert(GraphEdge::Abstract {
                     blocked: *input,
                     blocking: *output,
+                    label: label.clone(),
                 });
             }
         }
-
-        if abstraction.is_loop() {
-            for output1 in output_nodes.iter() {
-                for output2 in output_nodes.iter() {
-                    if output1 < output2 {
-                        self.edges.insert(GraphEdge::Coupled {
-                            source: *output1,
-                            target: *output2,
-                        });
-                    }
-                }
-            }
-        }
-
-        assert!(!input_nodes.is_empty());
-        let cluster = GraphCluster {
-            id: format!(
-                "c{:?}_{}",
-                abstraction.location().block,
-                abstraction.location().statement_index
-            ),
-            label: format!("{:?}", abstraction.location()),
-            nodes: input_nodes
-                .iter()
-                .chain(output_nodes.iter())
-                .cloned()
-                .collect(),
-            min_rank_nodes: Some(input_nodes),
-        };
-        self.region_clusters.insert(cluster);
     }
 
     fn insert_remote_node(

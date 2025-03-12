@@ -5,8 +5,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
-use crate::borrow_pcg::graph::coupling_imgcat_debug;
 use crate::borrow_pcg::coupling_graph_constructor::Coupled;
+use crate::borrow_pcg::graph::coupling_imgcat_debug;
+use crate::utils::display::DisplayWithRepacker;
+use crate::utils::PlaceRepacker;
 use crate::visualization::dot_graph::DotGraph;
 use crate::{pcg_validity_assert, validity_checks_enabled};
 
@@ -19,11 +21,24 @@ pub(crate) struct DisjointSetGraph<N> {
     inner: petgraph::Graph<Coupled<N>, ()>,
 }
 
-impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
+impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSetGraph<N> {
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
         }
+    }
+
+    pub(crate) fn roots(&self) -> BTreeSet<N> {
+        self.inner
+            .node_indices()
+            .filter(|idx| {
+                self.inner
+                    .neighbors_directed(*idx, Direction::Incoming)
+                    .count()
+                    == 0
+            })
+            .flat_map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .collect()
     }
 
     pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
@@ -34,14 +49,14 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         })
     }
 
-    fn to_dot(&self) -> String {
+    fn to_dot(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         let arena = bumpalo::Bump::new();
         let to_render: petgraph::Graph<&str, ()> = self.inner.clone().map(
             |_, e| {
                 let node_name = format!(
                     "{}\n",
                     e.iter().fold(String::from("{"), |mut acc, x| {
-                        acc.push_str(&format!("{}\n", x));
+                        acc.push_str(&x.to_short_string(repacker));
                         acc
                     }) + "}"
                 );
@@ -61,8 +76,8 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         lines.join("\n")
     }
 
-    pub(crate) fn render_with_imgcat(&self, msg: &str) {
-        let dot = self.to_dot();
+    pub(crate) fn render_with_imgcat(&self, repacker: PlaceRepacker<'_, 'tcx>, msg: &str) {
+        let dot = self.to_dot(repacker);
         DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
             eprintln!("Error rendering graph: {}", e);
         });
@@ -80,8 +95,12 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         idx
     }
 
-    pub(crate) fn insert_endpoint(&mut self, endpoint: Coupled<N>) -> petgraph::prelude::NodeIndex {
-        let idx = self.join_nodes(&endpoint);
+    pub(crate) fn insert_endpoint(
+        &mut self,
+        endpoint: Coupled<N>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> petgraph::prelude::NodeIndex {
+        let idx = self.join_nodes(&endpoint, repacker);
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after inserting endpoint"
@@ -124,7 +143,11 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
     /// Joins the nodes in `nodes` into a single coupled node.
     ///
     /// **IMPORTANT**: This will invalidate existing node indices
-    fn join_nodes(&mut self, nodes: &Coupled<N>) -> petgraph::prelude::NodeIndex {
+    fn join_nodes(
+        &mut self,
+        nodes: &Coupled<N>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> petgraph::prelude::NodeIndex {
         let mut iter = nodes.iter().cloned();
         let first_elem = iter.next().unwrap();
         let mut idx = self.insert(first_elem);
@@ -136,7 +159,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
                 idx = self.lookup(first_elem).unwrap();
             }
         }
-        self.merge_sccs();
+        self.merge_sccs(repacker);
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after joining nodes"
@@ -148,7 +171,8 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
     fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
         self.inner.node_indices().find(|idx| {
             self.inner
-                .node_weight(*idx).is_some_and(|w| w.contains(&node))
+                .node_weight(*idx)
+                .is_some_and(|w| w.contains(&node))
         })
     }
 
@@ -158,7 +182,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
 
     /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
     /// operation, the indices of the nodes may change.
-    fn merge_sccs(&mut self) {
+    fn merge_sccs(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
         let old_graph = self.clone(); // For debugging
 
         'outer: loop {
@@ -176,8 +200,8 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         }
 
         if validity_checks_enabled() && !self.is_acyclic() && coupling_imgcat_debug() {
-            old_graph.render_with_imgcat("Before merging SCCs");
-            self.render_with_imgcat("After merging SCCs");
+            old_graph.render_with_imgcat(repacker, "Before merging SCCs");
+            self.render_with_imgcat(repacker, "After merging SCCs");
         }
 
         pcg_validity_assert!(
@@ -186,16 +210,16 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         );
     }
 
-    pub(crate) fn merge(&mut self, other: &Self) {
+    pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
         for (source, target) in other.edges() {
-            let source_idx = self.join_nodes(&source);
-            let target_idx = self.join_nodes(&target);
+            let source_idx = self.join_nodes(&source, repacker);
+            let target_idx = self.join_nodes(&target, repacker);
             if source_idx != target_idx {
                 self.inner.update_edge(source_idx, target_idx, ());
             }
         }
 
-        self.merge_sccs();
+        self.merge_sccs(repacker);
 
         pcg_validity_assert!(
             self.is_acyclic(),
@@ -215,7 +239,12 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
         pcg_validity_assert!(self.is_acyclic(), "Resulting graph contains cycles");
     }
 
-    pub(crate) fn add_edge(&mut self, from: &Coupled<N>, to: &Coupled<N>) {
+    pub(crate) fn add_edge(
+        &mut self,
+        from: &Coupled<N>,
+        to: &Coupled<N>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles before adding edge"
@@ -224,31 +253,31 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             from != to,
             "Self-loop edge {}",
             from.iter()
-                .map(|x| format!("{{{}}}", x))
+                .map(|x| x.to_short_string(repacker))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
         if from.is_empty() {
             assert!(!to.is_empty());
-            self.join_nodes(to);
+            self.join_nodes(to, repacker);
             pcg_validity_assert!(
                 self.is_acyclic(),
                 "Graph contains cycles after joining to nodes (from nodes empty)"
             );
         } else if to.is_empty() {
             assert!(!from.is_empty());
-            self.join_nodes(from);
+            self.join_nodes(from, repacker);
             pcg_validity_assert!(
                 self.is_acyclic(),
                 "Graph contains cycles after joining from nodes (to nodes empty)"
             );
         } else {
-            self.join_nodes(from);
+            self.join_nodes(from, repacker);
             pcg_validity_assert!(
                 self.is_acyclic(),
                 "Graph contains cycles after joining from nodes"
             );
-            let to_idx = self.join_nodes(to);
+            let to_idx = self.join_nodes(to, repacker);
             pcg_validity_assert!(
                 self.is_acyclic(),
                 "Graph contains cycles after joining to nodes"
@@ -256,7 +285,7 @@ impl<N: Copy + Ord + Clone + fmt::Display + Hash> DisjointSetGraph<N> {
             let from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
             self.inner.update_edge(from_idx, to_idx, ());
         }
-        self.merge_sccs();
+        self.merge_sccs(repacker);
         pcg_validity_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 

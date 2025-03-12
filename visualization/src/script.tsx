@@ -144,7 +144,7 @@ async function main() {
     const [showPathBlocksOnly, setShowPathBlocksOnly] = useState(
       localStorage.getItem("showPathBlocksOnly") === "true"
     );
-    const [showUnwindEdges, setShowUnwindEdges] = useState(true);
+    const [showUnwindEdges, setShowUnwindEdges] = useState(false);
     const [showPCG, setShowPCG] = useState(
       localStorage.getItem("showPCG") !== "false"
     );

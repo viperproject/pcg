@@ -466,7 +466,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             return false;
         }
 
-        // We've already joined this block, so in principle we can exit early
+        // We've already joined this block, we can exit early
         if self.cgx.rp.is_back_edge(other.block(), self.block())
             && self.join_history.contains(&other.block())
         {
@@ -487,9 +487,6 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         //     pcg_validity_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
         // }
         assert!(self.is_initialized() && other.is_initialized());
-        if self.block().as_usize() == 0 {
-            panic!("{:?}", other.block());
-        }
         let fpcs = match self.owned_pcg_mut().join(other.owned_pcg()) {
             Ok(changed) => changed,
             Err(e) => {

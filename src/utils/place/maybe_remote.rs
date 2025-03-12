@@ -1,3 +1,5 @@
+use derive_more::From;
+
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
@@ -11,7 +13,7 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
 use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot};
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
+#[derive(From, PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {
     /// A place that has a name in the program
     Local(MaybeOldPlace<'tcx>),
@@ -60,12 +62,6 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl From<RemotePlace> for MaybeRemotePlace<'_> {
-    fn from(remote_place: RemotePlace) -> Self {
-        MaybeRemotePlace::Remote(remote_place)
-    }
-}
-
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         match self {
@@ -85,7 +81,6 @@ impl std::fmt::Display for MaybeRemotePlace<'_> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
-
     pub fn place_assigned_to_local(local: mir::Local) -> Self {
         MaybeRemotePlace::Remote(RemotePlace { local })
     }
@@ -140,12 +135,6 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
 impl<'tcx> From<PlaceSnapshot<'tcx>> for MaybeRemotePlace<'tcx> {
     fn from(place: PlaceSnapshot<'tcx>) -> Self {
         MaybeRemotePlace::Local(place.into())
-    }
-}
-
-impl<'tcx> From<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
-    fn from(place: MaybeOldPlace<'tcx>) -> Self {
-        MaybeRemotePlace::Local(place)
     }
 }
 

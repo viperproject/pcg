@@ -8,7 +8,7 @@ use super::has_pcs_elem::HasPcgElems;
 use super::{
     borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
 };
-use crate::combined_pcs::{PcgError, PCGInternalError};
+use crate::combined_pcs::{PCGInternalError, PcgError};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -100,13 +100,6 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
-    pub(crate) fn is_old(&self) -> bool {
-        match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.is_old(),
-            MaybeRemoteRegionProjectionBase::Const(_) => false,
-        }
-    }
-
     pub(crate) fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place(),
@@ -149,7 +142,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
     fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.regions(repacker),
-            MaybeRemoteRegionProjectionBase::Const(c) => extract_regions(c.ty()),
+            MaybeRemoteRegionProjectionBase::Const(c) => extract_regions(c.ty(), repacker),
         }
     }
 }
@@ -166,6 +159,42 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
     phantom: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
+    for RegionProjection<'tcx, MaybeRemotePlace<'tcx>>
+{
+    fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
+        RegionProjection {
+            base: value.base.into(),
+            region_idx: value.region_idx,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjection<'tcx> {
+    fn from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
+        RegionProjection {
+            base: rp.base.into(),
+            region_idx: rp.region_idx,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemotePlace<'tcx>> {
+    type Error = ();
+    fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
+        match rp.base {
+            MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
+                base: p,
+                region_idx: rp.region_idx,
+                phantom: PhantomData,
+            }),
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+        }
+    }
 }
 
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
@@ -268,7 +297,7 @@ impl<'tcx> TryFrom<CGNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
     fn try_from(node: CGNode<'tcx>) -> Result<Self, Self::Error> {
         match node {
             CGNode::RegionProjection(rp) => rp.try_into(),
-            CGNode::RemotePlace(_) => Err(()),
+            CGNode::Place(_) => Err(()),
         }
     }
 }
