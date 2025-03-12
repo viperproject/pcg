@@ -4,20 +4,13 @@ use rustc_interface::{
 };
 
 use super::{
-    borrow_pcg_expansion::BorrowPCGExpansion,
-    coupling_graph_constructor::CGNode,
-    edge::{
+    borrow_pcg_expansion::BorrowPCGExpansion, coupling_graph_constructor::CGNode, edge::{
         borrow::RemoteBorrow,
         outlives::OutlivesEdge,
         region_projection_member::RegionProjectionMember,
-    },
-    edge_data::EdgeData,
-    graph::Conditioned,
-    has_pcs_elem::HasPcgElems,
-    path_condition::{PathCondition, PathConditions},
-    region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection},
+    }, edge_data::EdgeData, graph::Conditioned, has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld}, latest::Latest, path_condition::{PathCondition, PathConditions}, region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection}
 };
-use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasBasePlace};
+use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -40,6 +33,17 @@ pub struct BorrowPCGEdgeRef<'tcx, 'graph> {
 pub struct BorrowPCGEdge<'tcx> {
     pub(crate) conditions: PathConditions,
     pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
+}
+
+impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGEdge<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        self.kind.make_place_old(place, latest, repacker)
+    }
 }
 
 impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdge<'tcx> {
@@ -133,6 +137,18 @@ impl LocalNode<'_> {
 /// node other than a [`RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
+impl<'tcx> MakePlaceOld<'tcx> for LocalNode<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
+}
+
+
 impl<'tcx> From<LocalRegionProjection<'tcx>> for LocalNode<'tcx> {
     fn from(rp: LocalRegionProjection<'tcx>) -> Self {
         LocalNode::RegionProjection(rp)
@@ -183,7 +199,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 /// other than a [`RemotePlace`] (which are roots by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
-impl<'tcx> HasBasePlace<'tcx> for LocalNode<'tcx> {
+impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
     fn place(&self) -> Place<'tcx> {
         match self {
             LocalNode::Place(p) => p.place(),

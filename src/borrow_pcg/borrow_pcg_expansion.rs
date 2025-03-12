@@ -7,17 +7,17 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
+    borrow_pcg_edge::{BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::HasPcgElems,
+    has_pcs_elem::{HasPcgElems, MakePlaceOld},
+    latest::Latest,
     region_projection::RegionProjection,
 };
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::{combined_pcs::PcgError, utils::place::corrected::CorrectedPlace};
+use crate::utils::place::corrected::CorrectedPlace;
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
-    edgedata_enum,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
@@ -28,8 +28,8 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck,
-        ConstantIndex, HasBasePlace, Place, PlaceRepacker,
+        display::DisplayWithRepacker, validity::HasValidityCheck,
+        ConstantIndex, HasPlace, Place, PlaceRepacker,
     },
 };
 
@@ -167,6 +167,21 @@ pub struct BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     _marker: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.base.make_place_old(place, latest, repacker);
+        self.expansion.iter_mut().for_each(|p| {
+            changed |= p.make_place_old(place, latest, repacker);
+        });
+        changed
+    }
+}
+
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
@@ -189,7 +204,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx> {
 impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut base: FxHashSet<PCGNode<'tcx>> = vec![self.base.into()].into_iter().collect();
-        if let BlockingNode::Place(p) = self.base.into()
+        if let BlockingNode::Place(p) = self.base
             && let Some(base_projection) = p.base_region_projection(repacker)
         {
             base.insert(
@@ -240,9 +255,17 @@ where
     }
 }
 
-impl<'tcx, P: PCGNodeLike<'tcx> + HasBasePlace<'tcx> + Into<BlockingNode<'tcx>>>
+impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     BorrowPCGExpansion<'tcx, P>
 {
+    pub fn base(&self) -> P {
+        self.base
+    }
+
+    pub fn expansion(&self) -> &[P] {
+        &self.expansion
+    }
+
     pub(crate) fn is_deref_of_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self.base.into() {
             BlockingNode::Place(p) => p.ty(repacker).ty.is_ref(),

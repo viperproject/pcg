@@ -1,15 +1,12 @@
 use crate::{
-    combined_pcs::PCGNode,
-    edgedata_enum,
-    rustc_interface::{
+    borrow_pcg::{has_pcs_elem::{default_make_place_old, MakePlaceOld}, latest::Latest}, combined_pcs::PCGNode, edgedata_enum, rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{self, Location},
             ty::{self},
         },
-    },
-    utils::{remote::RemotePlace, HasBasePlace},
+    }, utils::{remote::RemotePlace, HasPlace, Place}
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -36,6 +33,18 @@ pub struct LocalBorrow<'tcx> {
     pub region: ty::Region<'tcx>,
 }
 
+impl<'tcx> MakePlaceOld<'tcx> for LocalBorrow<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
+}
+
+
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
 pub struct RemoteBorrow<'tcx> {
     local: mir::Local,
@@ -43,6 +52,17 @@ pub struct RemoteBorrow<'tcx> {
     // We don't assume that it's still the derefence of the local of the remote place,
     // because that local could be moved and the assigned ref should be renamed accordingly.
     assigned_ref: MaybeOldPlace<'tcx>,
+}
+
+impl<'tcx> MakePlaceOld<'tcx> for RemoteBorrow<'tcx> {
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        latest: &Latest<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        default_make_place_old(self, place, latest, repacker)
+    }
 }
 
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RemoteBorrow<'tcx> {
