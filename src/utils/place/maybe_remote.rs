@@ -9,7 +9,7 @@ use crate::utils::display::DisplayWithRepacker;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
-use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot};
+use crate::utils::{HasBasePlace, Place, PlaceRepacker, PlaceSnapshot};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {

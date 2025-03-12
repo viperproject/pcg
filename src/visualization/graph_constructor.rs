@@ -9,7 +9,7 @@ use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     utils::{
-        display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
+        display::DisplayWithRepacker, HasBasePlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
     },
     visualization::dot_graph::RankAnnotation,
@@ -298,16 +298,16 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     ) {
         match edge.kind() {
             BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => {
-                let base_node = self.insert_local_node(deref_expansion.base());
-                for place in deref_expansion.expansion(self.repacker()).unwrap() {
-                    let expansion_node = self.insert_local_node(place);
+                let base_node = self.insert_local_node(deref_expansion.base);
+                for place in deref_expansion.expansion.iter() {
+                    let expansion_node = self.insert_local_node(*place);
                     self.constructor().edges.insert(GraphEdge::DerefExpansion {
                         source: base_node,
                         target: expansion_node,
                         path_conditions: format!("{}", edge.conditions()),
                     });
                     if deref_expansion.is_deref_of_borrow(self.repacker())
-                        && let PCGNode::Place(base) = deref_expansion.base()
+                        && let PCGNode::Place(base) = deref_expansion.base
                     {
                         let base_rp = self.insert_local_node(
                             base.base_region_projection(self.repacker()).unwrap().into(),
@@ -500,27 +500,25 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
         }
         let mut projection = place.projection;
         let mut last_node = node;
-        let mut last_place = place.into();
         while !projection.is_empty() {
             projection = &projection[..projection.len() - 1];
             let place = Place::new(place.local, projection);
-            let connections = RegionProjection::connections_between_places(
-                place.into(),
-                last_place,
-                self.repacker,
-            );
-            for (rp1, rp2) in connections {
-                let source = self
-                    .constructor
-                    .insert_region_projection_node(rp1.to_region_projection(self.repacker()));
-                let target = self
-                    .constructor
-                    .insert_region_projection_node(rp2.to_region_projection(self.repacker()));
-                self.constructor
-                    .edges
-                    .insert(GraphEdge::Projection { source, target });
-            }
-            last_place = place.into();
+            // let connections = RegionProjection::connections_between_places(
+            //     place.into(),
+            //     last_place,
+            //     self.repacker,
+            // );
+            // for (rp1, rp2) in connections {
+            //     let source = self
+            //         .constructor
+            //         .insert_region_projection_node(rp1.to_region_projection(self.repacker()));
+            //     let target = self
+            //         .constructor
+            //         .insert_region_projection_node(rp2.to_region_projection(self.repacker()));
+            //     self.constructor
+            //         .edges
+            //         .insert(GraphEdge::Projection { source, target });
+            // }
             let node = self
                 .constructor
                 .insert_place_node(place, None, capabilities);

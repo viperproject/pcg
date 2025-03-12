@@ -56,19 +56,19 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         self.domain.post_state_mut().get_capability(target.into())
                     {
                         if target_cap != CapabilityKind::Write {
-                            debug_assert!(
-                                target_cap >= CapabilityKind::Write,
-                                "{:?}: {} cap {:?} is not greater than {:?}",
-                                location,
-                                target.to_short_string(self.repacker),
-                                target_cap,
-                                CapabilityKind::Write
-                            );
-                            self.apply_action(BorrowPCGAction::weaken(
-                                target,
-                                target_cap,
-                                CapabilityKind::Write,
-                            ));
+                            // debug_assert!(
+                            //     target_cap >= CapabilityKind::Write,
+                            //     "{:?}: {} cap {:?} is not greater than {:?}",
+                            //     location,
+                            //     target.to_short_string(self.repacker),
+                            //     target_cap,
+                            //     CapabilityKind::Write
+                            // );
+                            // self.apply_action(BorrowPCGAction::weaken(
+                            //     target,
+                            //     target_cap,
+                            //     CapabilityKind::Write,
+                            // ));
                         }
                     } else {
                         // TODO
@@ -169,11 +169,19 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     let target: utils::Place<'tcx> = (*target).into();
                     if from.is_ref(self.repacker) {
                         let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
-                        let new_place = target;
                         self.apply_action(BorrowPCGAction::rename_place(
                             old_place,
-                            new_place.into(),
+                            target.into(),
                         ));
+                        // for source_proj in old_place.region_projections(self.repacker).into_iter()
+                        // {
+                        //     self.connect_outliving_projections(
+                        //         source_proj.into(),
+                        //         target,
+                        //         location,
+                        //         |_| OutlivesEdgeKind::Todo,
+                        //     );
+                        // }
                     }
                 }
                 Rvalue::Use(Operand::Copy(from)) => {

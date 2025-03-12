@@ -14,11 +14,6 @@ pub trait EdgeData<'tcx> {
     /// obtain their capabilities from the nodes A.
     fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>>;
 
-    /// True iff this is an edge from the owned PCG to the borrow PCG, e.g. x -> *x iff x is a reference type
-    fn is_owned_expansion(&self) -> bool {
-        false
-    }
-
     fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.blocked_nodes(repacker).contains(&node)
     }
@@ -65,13 +60,6 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn is_owned_expansion(&self) -> bool {
-                match self {
-                    $(
-                        $enum_name::$variant_name(inner) => inner.is_owned_expansion(),
-                    )+
-                }
-            }
         }
 
         $(
