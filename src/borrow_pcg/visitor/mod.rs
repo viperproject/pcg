@@ -198,7 +198,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             (def_id, substs)
         } else {
             return Err(PcgError::unsupported(
-                PCGUnsupportedError::NonConstantOperandFunctionCall,
+                PCGUnsupportedError::ClosureCall,
             ));
         };
         let sig = self
