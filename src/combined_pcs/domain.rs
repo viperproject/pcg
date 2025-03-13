@@ -260,13 +260,11 @@ impl From<PCGInternalError> for PcgError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGUnsupportedError {
     AssignBorrowToNonReferenceType,
-    ClosuresCapturingBorrows,
-    Coroutines,
     DerefUnsafePtr,
     ExpansionOfAliasType,
     IndexingNonIndexableType,
     InlineAssembly,
-    NonConstantOperandFunctionCall,
+    ClosureCall,
 }
 
 #[derive(Clone, PartialEq, Eq)]

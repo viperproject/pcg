@@ -247,6 +247,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
             | UnwindResume
             | UnwindTerminate(_)
             | Unreachable
+            | CoroutineDrop
             | Assert { .. }
             | FalseEdge { .. }
             | FalseUnwind { .. } => return,
@@ -268,10 +269,6 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
             },
             InlineAsm { .. } => {
                 self.error = Some(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));
-                return;
-            }
-            CoroutineDrop => {
-                self.error = Some(PcgError::unsupported(PCGUnsupportedError::Coroutines));
                 return;
             }
             _ => todo!("{terminator:?}"),
