@@ -241,7 +241,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         if to != nearest_owned_place {
             match nearest_owned_place.ref_mutability(repacker) {
                 Some(Mutability::Mut) => {
-                    tracing::info!("Remove capability {:?}", nearest_owned_place);
                     self.remove_capability(nearest_owned_place);
                 }
                 Some(Mutability::Not) => {

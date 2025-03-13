@@ -491,9 +491,6 @@ impl<'tcx> BorrowsState<'tcx> {
         place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.graph.make_place_old(place, &self.latest, repacker);
-        changed |=
-            Rc::<_>::make_mut(&mut self.capabilities).make_place_old(place, &self.latest, repacker);
-        changed
+        self.graph.make_place_old(place, &self.latest, repacker)
     }
 }

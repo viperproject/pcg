@@ -7,14 +7,13 @@ use crate::{
     utils::{
         display::{DebugLines, DisplayWithRepacker},
         maybe_old::MaybeOldPlace,
-        Place, PlaceRepacker,
+        PlaceRepacker,
     },
 };
 
-use super::{
-    has_pcs_elem::{HasPcgElems, MakePlaceOld},
-    latest::Latest,
-};
+use super::
+    has_pcs_elem::HasPcgElems
+;
 
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
 /// information in the borrows graph directly to facilitate simpler logic for
@@ -37,25 +36,6 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
 impl<'tcx> BorrowPCGCapabilities<'tcx> {
     pub(crate) fn new() -> Self {
         Self(Default::default())
-    }
-
-    pub(crate) fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        self.0 = self
-            .0
-            .clone()
-            .into_iter()
-            .map(|(mut node, capability)| {
-                changed |= node.make_place_old(place, latest, repacker);
-                (node, capability)
-            })
-            .collect();
-        changed
     }
 
     pub(crate) fn rename_place(
