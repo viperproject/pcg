@@ -459,7 +459,6 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         if !self.reachable_blocks.contains(location.block) {
-            tracing::info!("unreachable block");
             return;
         }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();

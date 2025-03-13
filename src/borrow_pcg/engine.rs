@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    combined_pcs::{EvalStmtPhase, PcgError},
+    combined_pcs::PcgError,
     rustc_interface::{
         borrowck::PoloniusOutput,
         middle::{
@@ -59,8 +59,8 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
             panic!(
                 "{:?}: No actions were emitted, but the state has changed:\n{}",
                 location,
-                state.data.entry_state.fmt_diff(
-                    state.data.states[EvalStmtPhase::PreOperands].as_ref(),
+                state.data.states.0.pre_operands.fmt_diff(
+                    state.data.states.0.post_main.as_ref(),
                     PlaceRepacker::new(self.body, self.tcx)
                 )
             );

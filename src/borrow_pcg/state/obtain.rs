@@ -15,6 +15,7 @@ use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::combined_pcs::{PCGNodeLike, PcgError};
 use crate::free_pcs::CapabilityKind;
+use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -69,6 +70,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// capability.
     ///
     /// This also handles corresponding region projections of the place.
+    #[tracing::instrument(skip(self, repacker, location, obtain_reason))]
     pub(crate) fn obtain(
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -85,7 +87,23 @@ impl<'tcx> BorrowsState<'tcx> {
             let extra_acts = self.expand_to(place, repacker, obtain_reason, location)?;
             actions.extend(extra_acts);
         }
-
+        if !place.is_owned(repacker) {
+            pcg_validity_assert!(
+                self.get_capability(place.into()).is_some(),
+                "Place {:?} does not have a capability after obtain {:?}",
+                place,
+                obtain_reason
+            );
+            pcg_validity_assert!(
+                self.get_capability(place.into()).unwrap()
+                    >= obtain_reason.min_post_obtain_capability(),
+                "{:?} Capability {:?} for {:?} is not greater than {:?}",
+                location,
+                self.get_capability(place.into()).unwrap(),
+                place,
+                obtain_reason.min_post_obtain_capability()
+            );
+        }
         Ok(actions)
     }
 
@@ -179,10 +197,31 @@ impl<'tcx> BorrowsState<'tcx> {
             )?);
         }
 
-        if !place.is_owned(repacker)
-            && self.set_capability(place.into(), CapabilityKind::Exclusive, repacker)
+        // It's possible that `place` is not in the PCG, `expand_root` is the leaf
+        // node from which place will be expanded to.
+
+        let mut expand_root = place;
+        while self.get_capability(expand_root.into()).is_none() {
+            if expand_root.is_owned(repacker) {
+                return Ok(actions);
+            }
+            expand_root = expand_root.parent_place().unwrap();
+        }
+
+        // The expand_root may have capability read only. If we need an exclusive permission,
+        // then we need to change all Read permissions from `expand_root`'s parents to be None
+        // instead to ensure they are no longer accessible.
+
+        if !expand_root.is_owned(repacker)
+            && self.get_capability(expand_root.into()) == Some(CapabilityKind::Read)
         {
-            let mut current = place.parent_place().unwrap();
+            tracing::info!("Capability {:?} for {:?} is read", expand_root, location);
+            self.record_and_apply_action(
+                BorrowPCGAction::restore_capability(expand_root.into(), CapabilityKind::Exclusive),
+                &mut actions,
+                repacker,
+            )?;
+            let mut current = expand_root.parent_place().unwrap();
             while !current.is_owned(repacker)
                 && self.get_capability(current.into()) == Some(CapabilityKind::Read)
             {
