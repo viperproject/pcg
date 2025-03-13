@@ -3,7 +3,6 @@ name = "pcs"
 version = "0.1.0"
 authors = ["Prusti Devs <prusti_developers@sympa.ethz.ch>"]
 edition = "2021"
-build = "build.rs"
 
 [features]
 memory_profiling = [
