@@ -215,7 +215,6 @@ impl<'tcx> BorrowsState<'tcx> {
         if !expand_root.is_owned(repacker)
             && self.get_capability(expand_root.into()) == Some(CapabilityKind::Read)
         {
-            tracing::info!("Capability {:?} for {:?} is read", expand_root, location);
             self.record_and_apply_action(
                 BorrowPCGAction::restore_capability(expand_root.into(), CapabilityKind::Exclusive),
                 &mut actions,
