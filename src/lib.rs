@@ -338,6 +338,17 @@ macro_rules! pcg_validity_assert {
     };
 }
 
+#[macro_export]
+macro_rules! pcg_validity_warn {
+    ($cond:expr, $($arg:tt)*) => {
+        if $crate::validity_checks_enabled() {
+            if !$cond {
+                tracing::warn!($($arg)*);
+            }
+        }
+    };
+}
+
 pub(crate) fn validity_checks_enabled() -> bool {
     env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
 }

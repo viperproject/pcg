@@ -3,7 +3,7 @@ use crate::borrow_pcg::latest::Latest;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
-use crate::utils::Place;
+use crate::utils::{Place, SnapshotLocation};
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -90,6 +90,21 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithRe
 {
     fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         todo!()
+    }
+}
+
+pub trait MaybeHasLocation {
+    fn location(&self) -> Option<SnapshotLocation>;
+}
+
+impl<'tcx, T: MaybeHasLocation, U: RegionProjectionBaseLike<'tcx> + MaybeHasLocation>
+    MaybeHasLocation for PCGNode<'tcx, T, U>
+{
+    fn location(&self) -> Option<SnapshotLocation> {
+        match self {
+            PCGNode::Place(place) => place.location(),
+            PCGNode::RegionProjection(region_projection) => region_projection.base().location(),
+        }
     }
 }
 

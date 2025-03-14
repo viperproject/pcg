@@ -15,13 +15,13 @@ use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::combined_pcs::{PCGNodeLike, PcgError};
 use crate::free_pcs::CapabilityKind;
-use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{HasPlace, Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
+use crate::pcg_validity_assert;
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we
@@ -208,9 +208,9 @@ impl<'tcx> BorrowsState<'tcx> {
             expand_root = expand_root.parent_place().unwrap();
         }
 
-        // The expand_root may have capability read only. If we need an exclusive permission,
-        // then we need to change all Read permissions from `expand_root`'s parents to be None
-        // instead to ensure they are no longer accessible.
+        // The expand_root may have capability read only. We upgrade it to
+        // Exclusive, then we change all Read permissions from `expand_root`'s
+        // parents to be None instead to ensure they are no longer accessible.
 
         if !expand_root.is_owned(repacker)
             && self.get_capability(expand_root.into()) == Some(CapabilityKind::Read)
@@ -221,7 +221,7 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(actions)
     }
 
-    fn upgrade_read_to_exclusive(
+    pub(crate) fn upgrade_read_to_exclusive(
         &mut self,
         place: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -232,7 +232,16 @@ impl<'tcx> BorrowsState<'tcx> {
             &mut actions,
             repacker,
         )?;
-        let mut current = place.parent_place().unwrap();
+        actions.extend(self.remove_read_permission_upwards(place, repacker)?);
+        Ok(actions)
+    }
+
+    pub(crate) fn remove_read_permission_upwards(
+        &mut self,
+        mut current: Place<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
+        let mut actions = ExecutedActions::new();
         while !current.is_owned(repacker)
             && self.get_capability(current.into()) == Some(CapabilityKind::Read)
         {

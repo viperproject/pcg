@@ -1,5 +1,3 @@
-// TODO: This isn't working correctly yet.
-
 struct T{}
 fn f<'a, 'b, 'c, 'd, 'e, 'f>(x: &'a mut T, y: &'b mut T, z: &'c mut T) -> (&'d mut T, &'e mut T)
     where 'a: 'd, 'b: 'd, 'b: 'e, 'c: 'e

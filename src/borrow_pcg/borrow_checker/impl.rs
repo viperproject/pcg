@@ -1,8 +1,10 @@
 use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PCGRegion;
-use crate::borrow_pcg::visitor::extract_regions;
 use crate::combined_pcs::PCGNode;
-use crate::rustc_interface::borrowck::{BorrowSet, RegionInferenceContext};
+use crate::rustc_interface::borrowck::{
+    BorrowData, BorrowIndex, BorrowSet, RegionInferenceContext,
+};
+use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::compute_fixpoint;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
@@ -13,6 +15,7 @@ use std::rc::Rc;
 
 #[derive(Clone)]
 pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
+    #[allow(unused)]
     repacker: PlaceRepacker<'mir, 'tcx>,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
@@ -76,42 +79,47 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
                 return true;
             }
         };
-        let local_ty = self.repacker.body().local_decls[local].ty;
-        let regions = extract_regions(local_ty, self.repacker);
-
-        // Be conservative: regions within the struct may be live.
-        if regions.len() > 1 || (regions.len() == 1 && !local_ty.is_ref()) {
-            return true;
-        }
         let mut cursor = self.cursor.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
         cursor_contains_local(cursor, local)
     }
 
-    #[rustversion::since(2024-12-14)]
     fn twophase_borrow_activations(
         &self,
         location: Location,
     ) -> std::collections::BTreeSet<Location> {
-        let activation_map = self.borrows.activation_map();
+        let activation_map = get_activation_map(self.borrows);
         if let Some(borrows) = activation_map.get(&location) {
             return borrows
                 .iter()
-                .map(|idx| self.borrows[*idx].reserve_location())
+                .map(|idx| get_reserve_location(&self.borrows[*idx]))
                 .collect();
         } else {
             std::collections::BTreeSet::new()
         }
     }
+}
 
-    #[rustversion::before(2024-12-14)]
-    fn twophase_borrow_activations(
-        &self,
-        location: Location,
-    ) -> std::collections::BTreeSet<Location> {
-        self.borrows.activation_map[&location]
-            .iter()
-            .map(|idx| self.borrows[*idx].reserve_location)
-            .collect()
-    }
+#[rustversion::since(2024-12-14)]
+fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
+    borrow.reserve_location()
+}
+
+#[rustversion::since(2024-12-14)]
+fn get_activation_map<'a, 'tcx>(
+    borrows: &'a BorrowSet<'tcx>,
+) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
+    borrows.activation_map()
+}
+
+#[rustversion::before(2024-12-14)]
+fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
+    borrow.reserve_location
+}
+
+#[rustversion::before(2024-12-14)]
+fn get_activation_map<'a, 'tcx>(
+    borrows: &'a BorrowSet<'tcx>,
+) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
+    &borrows.activation_map
 }
