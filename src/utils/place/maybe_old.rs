@@ -194,7 +194,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> MaybeHasLocation for MaybeOldPlace<'tcx> {
+impl MaybeHasLocation for MaybeOldPlace<'_> {
     fn location(&self) -> Option<SnapshotLocation> {
         match self {
             MaybeOldPlace::Current { .. } => None,

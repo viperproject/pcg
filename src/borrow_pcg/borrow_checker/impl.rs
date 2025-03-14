@@ -90,10 +90,10 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     ) -> std::collections::BTreeSet<Location> {
         let activation_map = get_activation_map(self.borrows);
         if let Some(borrows) = activation_map.get(&location) {
-            return borrows
+            borrows
                 .iter()
                 .map(|idx| get_reserve_location(&self.borrows[*idx]))
-                .collect();
+                .collect()
         } else {
             std::collections::BTreeSet::new()
         }
@@ -106,8 +106,8 @@ fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
 }
 
 #[rustversion::since(2024-12-14)]
-fn get_activation_map<'a, 'tcx>(
-    borrows: &'a BorrowSet<'tcx>,
+fn get_activation_map<'a>(
+    borrows: &'a BorrowSet<'_>,
 ) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
     borrows.activation_map()
 }

@@ -257,7 +257,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
+impl BorrowsVisitor<'_, '_, '_> {
     fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
         let state = self.domain.data.states.get_mut(PostMain);
         let actions = state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
@@ -280,7 +280,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 let actions = self
                     .domain
                     .post_state_mut()
-                    .remove_read_permission_upwards(blocked_place.into(), self.repacker)?;
+                    .remove_read_permission_upwards(blocked_place, self.repacker)?;
                 self.record_actions(actions);
             }
         }
