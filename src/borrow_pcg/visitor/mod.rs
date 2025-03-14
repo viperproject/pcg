@@ -1,4 +1,7 @@
-use crate::{combined_pcs::EvalStmtPhase::*, utils::visitor::FallableVisitor};
+use crate::{
+    combined_pcs::EvalStmtPhase::*,
+    utils::{visitor::FallableVisitor, HasPlace},
+};
 use tracing::instrument;
 
 use crate::{
@@ -41,28 +44,6 @@ use crate::{
 
 mod stmt;
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum DebugCtx {
-    #[allow(unused)]
-    Location(Location),
-    #[allow(unused)]
-    Other,
-}
-
-impl DebugCtx {
-    pub(crate) fn new(location: Location) -> DebugCtx {
-        DebugCtx::Location(location)
-    }
-
-    #[allow(unused)]
-    pub(crate) fn location(&self) -> Option<Location> {
-        match self {
-            DebugCtx::Location(location) => Some(*location),
-            DebugCtx::Other => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum StatementStage {
     Operands,
@@ -74,7 +55,6 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
     stage: StatementStage,
     preparing: bool,
-    debug_ctx: Option<DebugCtx>,
     #[allow(dead_code)]
     output_facts: Option<&'mir PoloniusOutput>,
 }
@@ -136,7 +116,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             domain: state,
             stage,
             preparing,
-            debug_ctx: None,
             output_facts: engine.output_facts,
         }
     }
@@ -197,9 +176,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         {
             (def_id, substs)
         } else {
-            return Err(PcgError::unsupported(
-                PCGUnsupportedError::ClosureCall,
-            ));
+            return Err(PcgError::unsupported(PCGUnsupportedError::ClosureCall));
         };
         let sig = self
             .repacker
@@ -280,6 +257,36 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
+    fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
+        let state = self.domain.data.states.get_mut(PostMain);
+        let actions = state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
+        self.record_actions(actions);
+        for created_location in self.domain.bc.twophase_borrow_activations(location) {
+            let state = self.domain.data.states.get_mut(PostMain);
+            let borrow = state.graph().borrow_created_at(created_location).unwrap();
+            let blocked_place = borrow.blocked_place.place();
+            if state
+                .graph()
+                .contains(borrow.deref_place(self.repacker), self.repacker)
+            {
+                let upgrade_action = BorrowPCGAction::restore_capability(
+                    borrow.deref_place(self.repacker).place().into(),
+                    CapabilityKind::Exclusive,
+                );
+                self.apply_action(upgrade_action);
+            }
+                let downgrade_action = BorrowPCGAction::weaken(
+                    blocked_place.into(),
+                    CapabilityKind::Read,
+                    None,
+                );
+                self.apply_action(downgrade_action);
+        }
+        Ok(())
+    }
+}
+
 impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
     fn visit_operand_fallable(
         &mut self,
@@ -333,10 +340,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         location: Location,
     ) -> Result<(), PcgError> {
         if self.preparing && self.stage == StatementStage::Operands {
-            let post_state = self.domain.data.states.get_mut(PostMain);
-            let actions =
-                post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
-            self.record_actions(actions);
+            self.perform_base_pre_operand_actions(location)?;
         }
         self.super_terminator_fallable(terminator, location)?;
         if self.stage == StatementStage::Main && !self.preparing {
@@ -370,17 +374,8 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.debug_ctx = Some(DebugCtx::new(location));
-
         if self.preparing && self.stage == StatementStage::Operands {
-            // Remove places that are non longer live based on borrow checker information
-            let actions = self
-                .domain
-                .data
-                .states
-                .get_mut(PostMain)
-                .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
-            self.record_actions(actions);
+            self.perform_base_pre_operand_actions(location)?;
         }
 
         self.super_statement_fallable(statement, location)?;

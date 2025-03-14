@@ -29,6 +29,7 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
+    edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, MakePlaceOld},
     latest::Latest,
@@ -90,6 +91,17 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn borrow_created_at(&self, location: mir::Location) -> Option<&LocalBorrow<'tcx>> {
+        for edge in self.edges() {
+            if let BorrowPCGEdgeKind::Borrow(BorrowEdge::Local(borrow)) = edge.kind {
+                if borrow.reserve_location() == location {
+                    return Some(borrow);
+                }
+            }
+        }
+        None
+    }
+
     pub(crate) fn common_edges(&self, other: &Self) -> FxHashSet<BorrowPCGEdgeKind<'tcx>> {
         let mut common_edges = FxHashSet::default();
         for (edge_kind, _) in self.edges.iter() {
