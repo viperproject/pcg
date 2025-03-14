@@ -19,7 +19,7 @@ use crate::{
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::PCGNode,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
@@ -97,7 +97,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker) {
-                    let _ = self.remove_capability(node.into());
+                    let _ = self.remove_capability(node.place().into());
                 }
             }
         }
@@ -139,20 +139,20 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph().frozen_graph()
     }
 
-    pub(crate) fn get_capability(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(node)
+    pub(crate) fn get_capability(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+        self.capabilities.get(place)
     }
 
     /// Returns true iff the capability was changed.
     pub(crate) fn set_capability(
         &mut self,
-        node: PCGNode<'tcx>,
+        place: MaybeOldPlace<'tcx>,
         capability: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        assert!(!node.is_owned(repacker));
-        if self.get_capability(node) != Some(capability) {
-            Rc::<_>::make_mut(&mut self.capabilities).insert(node, capability);
+        assert!(!place.is_owned(repacker));
+        if self.get_capability(place) != Some(capability) {
+            Rc::<_>::make_mut(&mut self.capabilities).insert(place, capability);
             true
         } else {
             false
@@ -160,9 +160,9 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn remove_capability(&mut self, node: PCGNode<'tcx>) -> bool {
-        if self.get_capability(node).is_some() {
-            Rc::<_>::make_mut(&mut self.capabilities).remove(node);
+    pub(crate) fn remove_capability(&mut self, place: MaybeOldPlace<'tcx>) -> bool {
+        if self.get_capability(place).is_some() {
+            Rc::<_>::make_mut(&mut self.capabilities).remove(place);
             true
         } else {
             false
@@ -210,8 +210,8 @@ impl<'tcx> BorrowsState<'tcx> {
         tracing::debug!("Removing edge {}", edge.kind().to_short_string(repacker));
         let mut actions = ExecutedActions::new();
         for place in edge.blocked_places(repacker) {
-            if self.get_capability(place.into()) != Some(CapabilityKind::Read)
-                && let Some(place) = place.as_current_place()
+            if let Some(place) = place.as_current_place()
+                && self.get_capability(place.into()) != Some(CapabilityKind::Read)
                 && place.has_location_dependent_value(repacker)
             {
                 self.record_and_apply_action(
@@ -232,10 +232,12 @@ impl<'tcx> BorrowsState<'tcx> {
             .filter(|node| !fg.has_edge_blocking(*node, repacker))
             .collect::<Vec<_>>();
         for node in to_restore {
-            if let Some(local_node) = node.as_local_node(repacker) {
-                let blocked_cap = self.get_capability(node);
+            if let Some(place) = node.as_maybe_old_place()
+                && !place.is_owned(repacker)
+            {
+                let blocked_cap = self.get_capability(place);
 
-                let restore_cap = if local_node.place().projects_shared_ref(repacker) {
+                let restore_cap = if place.place().projects_shared_ref(repacker) {
                     CapabilityKind::Read
                 } else {
                     CapabilityKind::Exclusive
@@ -243,7 +245,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
                 if blocked_cap.is_none_or(|bc| bc < restore_cap) {
                     self.record_and_apply_action(
-                        BorrowPCGAction::restore_capability(local_node, restore_cap),
+                        BorrowPCGAction::restore_capability(place, restore_cap),
                         &mut actions,
                         repacker,
                     )?;
@@ -458,7 +460,9 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        self.set_capability(rp.to_pcg_node(repacker), assigned_cap, repacker);
+        if !rp.place().is_owned(repacker) {
+            self.set_capability(rp.place(), assigned_cap, repacker);
+        }
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge)
                 .to_borrow_pcg_edge(PathConditions::AtBlock(location.block))
@@ -470,13 +474,13 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowKind::Mut {
                     kind: MutBorrowKind::Default,
                 } => {
-                    let _ = self.remove_capability(blocked_place.into());
+                    let _ = self.remove_capability(blocked_place);
                 }
                 _ => {
-                    match self.get_capability(blocked_place.into()) {
+                    match self.get_capability(blocked_place) {
                         Some(CapabilityKind::Exclusive) => {
                             assert!(self.set_capability(
-                                blocked_place.into(),
+                                blocked_place,
                                 CapabilityKind::Read,
                                 repacker
                             ));
