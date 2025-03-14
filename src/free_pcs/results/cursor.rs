@@ -6,9 +6,14 @@
 
 use std::rc::Rc;
 
+use derive_more::Deref;
+
 use crate::{
-    borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
+    borrow_pcg::{
+        action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge,
+        coupling_graph_constructor::BorrowCheckerInterface, latest::Latest,
+    },
+    combined_pcs::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -31,26 +36,26 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-pub trait HasPcg<'mir, 'tcx> {
-    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError>;
+pub trait HasPcg<'mir, 'tcx, BC> {
+    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx, BC>, PcgError>;
 }
 
-impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
-    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError> {
+impl<'mir, 'tcx, BC> HasPcg<'mir, 'tcx, BC> for PlaceCapabilitySummary<'mir, 'tcx, BC> {
+    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx, BC>, PcgError> {
         self.pcg.as_ref().map_err(|e| e.clone())
     }
 }
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx> {
-    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>,
+pub struct FreePcsAnalysis<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> {
+    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx, BC>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>) -> Self {
+impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> FreePcsAnalysis<'mir, 'tcx, BC> {
+    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx, BC>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -73,7 +78,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 
     pub fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.cursor.analysis().0.cgx.rp
+        self.cursor.analysis().0.repacker
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -129,7 +134,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         let block = &self.body()[location.block];
 
         // Currently we ignore blocks that are only reached via panics
-        let succs = PCGEngine::successor_blocks(block.terminator())
+        let succs = successor_blocks(block.terminator())
             .into_iter()
             .filter(|succ| {
                 self.cursor
@@ -193,7 +198,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PCGEngine<'mir, 'tcx> {
+    fn analysis(&self) -> &PCGEngine<'mir, 'tcx, BC> {
         &self.cursor.results().analysis.0
     }
 
@@ -230,6 +235,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 }
 
+#[derive(Deref)]
 pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
 
 impl<'tcx> PcgBasicBlocks<'tcx> {

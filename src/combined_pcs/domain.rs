@@ -13,16 +13,17 @@ use std::{
 };
 
 use crate::{
+    borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
+    utils::PlaceRepacker,
     PCGAnalysis, RECORD_PCG,
 };
 
-use super::{PCGContext, PCGEngine};
-use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
+use super::PCGEngine;
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
@@ -90,11 +91,11 @@ pub(crate) struct PCGDebugData {
 }
 
 #[derive(Clone)]
-pub struct PlaceCapabilitySummary<'a, 'tcx> {
-    cgx: Rc<PCGContext<'a, 'tcx>>,
+pub struct PlaceCapabilitySummary<'a, 'tcx, BC> {
+    repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
 
-    pub(crate) pcg: std::result::Result<Pcg<'a, 'tcx>, PcgError>,
+    pub(crate) pcg: std::result::Result<Pcg<'a, 'tcx, BC>, PcgError>,
     debug_data: Option<PCGDebugData>,
 
     join_history: FxHashSet<BasicBlock>,
@@ -267,20 +268,26 @@ pub enum PCGUnsupportedError {
     ClosureCall,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct Pcg<'a, 'tcx> {
+#[derive(Clone, Eq)]
+pub struct Pcg<'a, 'tcx, BC> {
     pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
-    pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
+    pub(crate) borrow: BorrowsDomain<'a, 'tcx, BC>,
 }
 
-impl Pcg<'_, '_> {
+impl<BC> PartialEq for Pcg<'_, '_, BC> {
+    fn eq(&self, other: &Self) -> bool {
+        self.owned == other.owned && self.borrow == other.borrow
+    }
+}
+
+impl<BC> Pcg<'_, '_, BC> {
     pub(crate) fn initialize_as_start_block(&mut self) {
         self.owned.initialize_as_start_block();
         self.borrow.initialize_as_start_block();
     }
 }
 
-impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
+impl<'a, 'tcx, BC> PlaceCapabilitySummary<'a, 'tcx, BC> {
     pub(crate) fn has_error(&self) -> bool {
         self.pcg.is_err()
     }
@@ -293,21 +300,21 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         self.pcg = Err(error);
     }
 
-    pub(crate) fn pcg(&self) -> &Pcg<'a, 'tcx> {
+    pub(crate) fn pcg(&self) -> &Pcg<'a, 'tcx, BC> {
         match &self.pcg {
             Ok(pcg) => pcg,
             Err(e) => panic!("PCG error: {:?}", e),
         }
     }
 
-    pub(crate) fn pcg_mut(&mut self) -> &mut Pcg<'a, 'tcx> {
+    pub(crate) fn pcg_mut(&mut self) -> &mut Pcg<'a, 'tcx, BC> {
         match &mut self.pcg {
             Ok(pcg) => pcg,
             Err(e) => panic!("PCG error: {:?}", e),
         }
     }
 
-    pub(crate) fn borrow_pcg_mut(&mut self) -> &mut BorrowsDomain<'a, 'tcx> {
+    pub(crate) fn borrow_pcg_mut(&mut self) -> &mut BorrowsDomain<'a, 'tcx, BC> {
         &mut self.pcg_mut().borrow
     }
 
@@ -319,7 +326,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
         &self.pcg().owned
     }
 
-    pub(crate) fn borrow_pcg(&self) -> &BorrowsDomain<'a, 'tcx> {
+    pub(crate) fn borrow_pcg(&self) -> &BorrowsDomain<'a, 'tcx, BC> {
         &self.pcg().borrow
     }
 
@@ -407,7 +414,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             };
 
             generate_dot_graph(
-                self.cgx.rp,
+                self.repacker,
                 fpcs.as_ref().as_ref().unwrap(),
                 borrows,
                 &filename,
@@ -417,19 +424,19 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     }
 
     pub(crate) fn new(
-        cgx: Rc<PCGContext<'a, 'tcx>>,
-        bc: BorrowCheckerImpl<'a, 'tcx>,
+        repacker: PlaceRepacker<'a, 'tcx>,
+        bc: BC,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
-        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(cgx.rp, bc, block);
+        let fpcs = FreePlaceCapabilitySummary::new(repacker);
+        let borrows = BorrowsDomain::new(repacker, bc, block);
         let pcg = Pcg {
             owned: fpcs,
             borrow: borrows,
         };
         Self {
-            cgx,
+            repacker,
             block,
             pcg: Ok(pcg),
             debug_data,
@@ -439,19 +446,21 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     }
 }
 
-impl Eq for PlaceCapabilitySummary<'_, '_> {}
-impl PartialEq for PlaceCapabilitySummary<'_, '_> {
+impl<BC> Eq for PlaceCapabilitySummary<'_, '_, BC> {}
+impl<BC> PartialEq for PlaceCapabilitySummary<'_, '_, BC> {
     fn eq(&self, other: &Self) -> bool {
         self.pcg == other.pcg
     }
 }
-impl Debug for PlaceCapabilitySummary<'_, '_> {
+impl<BC> Debug for PlaceCapabilitySummary<'_, '_, BC> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}\n{:?}", self.owned_pcg(), self.borrow_pcg())
     }
 }
 
-impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
+impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> JoinSemiLattice
+    for PlaceCapabilitySummary<'mir, 'tcx, BC>
+{
     #[tracing::instrument(skip(self, other), fields(self_block = self.block().index(), other_block = other.block().index()))]
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
@@ -465,7 +474,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
         }
 
         // We've already joined this block, we can exit early
-        if self.cgx.rp.is_back_edge(other.block(), self.block())
+        if self.repacker.is_back_edge(other.block(), self.block())
             && self.join_history.contains(&other.block())
         {
             return false;
@@ -501,13 +510,13 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>>
-    for PlaceCapabilitySummary<'a, 'tcx>
+impl<'a, 'tcx, BC> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx, BC>>>
+    for PlaceCapabilitySummary<'a, 'tcx, BC>
 {
     fn fmt_diff_with(
         &self,
         old: &Self,
-        ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
+        ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx, BC>>,
         f: &mut Formatter<'_>,
     ) -> Result {
         self.pcg()

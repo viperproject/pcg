@@ -3,6 +3,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPCGAction,
         borrow_pcg_edge::BorrowPCGEdge,
+        coupling_graph_constructor::BorrowCheckerInterface,
         edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
@@ -19,7 +20,7 @@ use crate::{
     utils::{self, display::DisplayWithRepacker, maybe_old::MaybeOldPlace},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
+impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> BorrowsVisitor<'tcx, 'mir, '_, BC> {
     pub(crate) fn stmt_pre_main(
         &mut self,
         statement: &Statement<'tcx>,

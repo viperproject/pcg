@@ -17,11 +17,16 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-use borrow_pcg::{borrow_pcg_edge::LocalNode, latest::Latest};
-use combined_pcs::{PCGContext, PCGEngine, PcgSuccessor};
-use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
+use borrow_pcg::{
+    borrow_checker::r#impl::BorrowCheckerImpl, borrow_pcg_edge::LocalNode,
+    coupling_graph_constructor::BorrowCheckerInterface, latest::Latest,
+};
+use combined_pcs::{PCGEngine, PcgError, PcgSuccessor};
+use free_pcs::{CapabilityKind, PcgBasicBlocks, PcgLocation, RepackOp};
 use rustc_interface::{
-    borrowck::{self, BorrowSet, RegionInferenceContext},
+    borrowck::{
+        self, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext, PoloniusInput
+    },
     dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
 };
@@ -36,7 +41,8 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithRepacker;
 
-pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
+pub type FpcsOutput<'mir, 'tcx, BC = BorrowCheckerImpl<'mir, 'tcx>> =
+    free_pcs::FreePcsAnalysis<'mir, 'tcx, BC>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -211,6 +217,9 @@ pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
+    fn output_facts(&self) -> &Option<Box<PoloniusOutput>>;
+    fn location_table(&self) -> &LocationTable;
+    fn input_facts(&self) -> &PoloniusInput;
 }
 
 impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
@@ -223,21 +232,45 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx> {
         &self.region_inference_context
     }
+
+    fn output_facts(&self) -> &Option<Box<PoloniusOutput>> {
+        &self.output_facts
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        self.location_table.as_ref().unwrap()
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts.as_ref().unwrap()
+    }
 }
 
 pub fn run_combined_pcs<'mir, 'tcx>(
     mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
-) -> FpcsOutput<'mir, 'tcx> {
-    let cgx = PCGContext::new(
-        tcx,
-        mir.body(),
-        mir.borrow_set(),
-        mir.region_inference_context(),
-        None,
-    );
-    let engine = PCGEngine::new(cgx, visualization_output_path.clone());
+) -> FpcsOutput<'mir, 'tcx, BorrowCheckerImpl<'mir, 'tcx>> {
+    run_combined_pcs_with(mir, tcx, visualization_output_path)
+}
+
+pub fn compute_pcg_blocks<'mir, 'tcx: 'mir, BC: BorrowCheckerInterface<'mir, 'tcx> + 'mir>(
+    mir: &'mir impl BodyAndBorrows<'tcx>,
+    tcx: TyCtxt<'tcx>,
+    visualization_output_path: Option<String>,
+) -> Result<PcgBasicBlocks<'tcx>, PcgError> {
+    let mut analysis = run_combined_pcs_with::<'mir, 'tcx, BC>(mir, tcx, visualization_output_path);
+    analysis.results_for_all_blocks()
+}
+
+pub fn run_combined_pcs_with<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>>(
+    mir: &'mir impl BodyAndBorrows<'tcx>,
+    tcx: TyCtxt<'tcx>,
+    visualization_output_path: Option<String>,
+) -> FpcsOutput<'mir, 'tcx, BC> {
+    let repacker = PlaceRepacker::new(mir.body(), tcx);
+    let bc = BC::new(tcx, mir);
+    let engine = PCGEngine::new(repacker, bc, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
@@ -276,14 +309,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir.body())
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PCGContext::new(
-            tcx,
-            mir.body(),
-            mir.borrow_set(),
-            mir.region_inference_context(),
-            None,
-        )
-        .rp;
+        let rp = PlaceRepacker::new(mir.body(), tcx);
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
