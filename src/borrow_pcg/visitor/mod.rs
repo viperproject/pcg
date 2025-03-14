@@ -276,12 +276,13 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 );
                 self.apply_action(upgrade_action);
             }
-                let downgrade_action = BorrowPCGAction::weaken(
-                    blocked_place.into(),
-                    CapabilityKind::Read,
-                    None,
-                );
-                self.apply_action(downgrade_action);
+            if !blocked_place.is_owned(self.repacker) {
+                let actions = self
+                    .domain
+                    .post_state_mut()
+                    .remove_read_permission_upwards(blocked_place.into(), self.repacker)?;
+                self.record_actions(actions);
+            }
         }
         Ok(())
     }

@@ -6,7 +6,7 @@ use crate::{
         region_projection::RegionProjection,
         state::BorrowsState,
     },
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::{MaybeHasLocation, PCGNode, PCGNodeLike},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,

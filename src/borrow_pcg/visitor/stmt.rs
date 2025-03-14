@@ -11,6 +11,7 @@ use crate::{
     },
     combined_pcs::{EvalStmtPhase, PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
+    pcg_validity_assert,
     rustc_interface::middle::{
         mir::{AggregateKind, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind},
         ty::{self},
@@ -41,6 +42,21 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 // will be overwritten in the assignment.
                 if target.is_ref(self.repacker) {
                     self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
+
+                    // The permission to the target may have been Read originally.
+                    // Now, because it's been made old, the non-old place should be a leaf,
+                    // and its permission should be Exclusive.
+                    if self.domain.post_state_mut().get_capability(target.into())
+                        == Some(CapabilityKind::Read)
+                    {
+                        self.domain.post_state_mut().apply_action(
+                            BorrowPCGAction::restore_capability(
+                                target.into(),
+                                CapabilityKind::Exclusive,
+                            ),
+                            self.repacker,
+                        )?;
+                    }
                 }
                 let obtain_reason = ObtainReason::AssignTarget;
                 let obtain_actions = self.domain.post_state_mut().obtain(
@@ -56,7 +72,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         self.domain.post_state_mut().get_capability(target.into())
                     {
                         if target_cap != CapabilityKind::Write {
-                            debug_assert!(
+                            pcg_validity_assert!(
                                 target_cap >= CapabilityKind::Write,
                                 "{:?}: {} cap {:?} is not greater than {:?}",
                                 location,
@@ -168,20 +184,17 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     let from: utils::Place<'tcx> = (*from).into();
                     let target: utils::Place<'tcx> = (*target).into();
                     // if from.is_ref(self.repacker) {
-                        let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
-                        self.apply_action(BorrowPCGAction::rename_place(
-                            old_place,
-                            target.into(),
-                        ));
-                        // for source_proj in old_place.region_projections(self.repacker).into_iter()
-                        // {
-                        //     self.connect_outliving_projections(
-                        //         source_proj.into(),
-                        //         target,
-                        //         location,
-                        //         |_| OutlivesEdgeKind::Todo,
-                        //     );
-                        // }
+                    let old_place = MaybeOldPlace::new(from, Some(state.get_latest(from)));
+                    self.apply_action(BorrowPCGAction::rename_place(old_place, target.into()));
+                    // for source_proj in old_place.region_projections(self.repacker).into_iter()
+                    // {
+                    //     self.connect_outliving_projections(
+                    //         source_proj.into(),
+                    //         target,
+                    //         location,
+                    //         |_| OutlivesEdgeKind::Todo,
+                    //     );
+                    // }
                     // }
                 }
                 Rvalue::Use(Operand::Copy(from)) => {

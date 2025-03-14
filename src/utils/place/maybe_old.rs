@@ -6,7 +6,7 @@ use crate::borrow_pcg::region_projection::{
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::combined_pcs::{LocalNodeLike, PcgError, PCGNode, PCGNodeLike};
+use crate::combined_pcs::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
@@ -194,6 +194,14 @@ impl<'tcx> DisplayWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
+impl<'tcx> MaybeHasLocation for MaybeOldPlace<'tcx> {
+    fn location(&self) -> Option<SnapshotLocation> {
+        match self {
+            MaybeOldPlace::Current { .. } => None,
+            MaybeOldPlace::OldPlace(old_place) => Some(old_place.at),
+        }
+    }
+}
 impl<'tcx> MaybeOldPlace<'tcx> {
     pub fn is_old(&self) -> bool {
         matches!(self, MaybeOldPlace::OldPlace(_))
@@ -304,13 +312,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         matches!(self, MaybeOldPlace::Current { .. })
     }
 
-    pub fn location(&self) -> Option<SnapshotLocation> {
-        match self {
-            MaybeOldPlace::Current { .. } => None,
-            MaybeOldPlace::OldPlace(old_place) => Some(old_place.at),
-        }
-    }
-
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.place().to_json(repacker),
@@ -319,7 +320,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     }
 
     pub(crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
-        if self.is_current() && place.is_prefix(self.place()) {
+        if self.is_current() && (place.is_prefix(self.place()) || self.place().is_prefix(place)) {
             *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
                 place: self.place(),
                 at: latest.get(self.place()),
