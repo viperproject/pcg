@@ -9,13 +9,14 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
     borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
     utils::display::DisplayWithRepacker,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{
+    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
+};
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     combined_pcs::{PCGNode, PCGNodeLike},
@@ -29,6 +30,7 @@ use crate::{
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
 };
+use crate::{combined_pcs::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
@@ -102,7 +104,7 @@ impl<'tcx> BorrowsState<'tcx> {
         removed
     }
 
-    fn record_and_apply_action(
+    pub(crate) fn record_and_apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
@@ -347,29 +349,48 @@ impl<'tcx> BorrowsState<'tcx> {
                 bc: &impl BorrowCheckerInterface<'tcx>,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
-                let should_trim =
-                    |p: LocalNode<'tcx>,
-                     fg: &FrozenGraphRef<'slf, 'tcx>| {
-                        if p.is_old() {
-                            return true;
-                        }
-                        let place = match p {
-                            PCGNode::Place(p) => p.place(),
-                            PCGNode::RegionProjection(rp) => rp.place().place(),
-                        };
 
-                        if place.projection.is_empty() && repacker.is_arg(place.local) {
-                            return false;
-                        }
-
-                        if !place.projection.is_empty()
-                            && !fg.has_edge_blocking(place.into(), repacker)
-                        {
-                            return true;
-                        }
-
-                        prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
+                let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
+                    if p.is_old() {
+                        return true;
+                    }
+                    let place = match p {
+                        PCGNode::Place(p) => p.place(),
+                        PCGNode::RegionProjection(rp) => rp.place().place(),
                     };
+
+                    if place.projection.is_empty() && repacker.is_arg(place.local) {
+                        return false;
+                    }
+
+                    if !place.projection.is_empty() && !fg.has_edge_blocking(place.into(), repacker)
+                    {
+                        return true;
+                    }
+
+                    prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
+                };
+
+                let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                        if expansion.expansion().iter().all(|node| {
+                            node.is_old()
+                                || (prev_location.is_some()
+                                    && !bc.is_live(node.place().into(), prev_location.unwrap()))
+                        }) {
+                            true
+                        } else {
+                            expansion.expansion().iter().all(|node| {
+                                expansion.base().place().is_prefix_exact(node.place())
+                                    && expansion.base().location() == node.location()
+                            })
+                        }
+                    }
+                    _ => edge
+                        .blocked_by_nodes(repacker)
+                        .iter()
+                        .all(|p| should_kill_node(*p, &fg)),
+                };
 
                 let mut edges_to_trim = Vec::new();
                 for edge in fg
@@ -377,13 +398,11 @@ impl<'tcx> BorrowsState<'tcx> {
                     .into_iter()
                     .map(|e| e.to_owned_edge())
                 {
-                    tracing::debug!("Checking leaf edge {:?}", edge.kind().to_short_string(repacker));
-                    let blocked_by_nodes = edge.blocked_by_nodes(repacker);
-                    if blocked_by_nodes
-                        .iter()
-                        .all(|p| should_trim(*p, &fg))
-                    {
-                        tracing::debug!("Trimming edge {:?}", edge.kind().to_short_string(repacker));
+                    tracing::debug!(
+                        "Checking leaf edge {:?}",
+                        edge.kind().to_short_string(repacker)
+                    );
+                    if should_pack_edge(edge.kind()) {
                         edges_to_trim.push(edge);
                     }
                 }
