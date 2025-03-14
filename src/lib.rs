@@ -18,8 +18,7 @@ pub mod utils;
 pub mod visualization;
 
 use borrow_pcg::{
-    borrow_checker::r#impl::BorrowCheckerImpl, borrow_pcg_edge::LocalNode,
-    coupling_graph_constructor::BorrowCheckerInterface, latest::Latest,
+    borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface, latest::Latest,
 };
 use combined_pcs::{PCGEngine, PcgError, PcgSuccessor};
 use free_pcs::{CapabilityKind, PcgBasicBlocks, PcgLocation, RepackOp};
@@ -32,10 +31,7 @@ use rustc_interface::{
 };
 use serde_json::json;
 use utils::{
-    display::{DebugLines, DisplayWithRepacker},
-    env_feature_enabled,
-    validity::HasValidityCheck,
-    Place, PlaceRepacker,
+    display::{DebugLines, DisplayWithRepacker}, env_feature_enabled, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place, PlaceRepacker
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -100,7 +96,7 @@ impl<'tcx> Weaken<'tcx> {
 /// a lent exclusive capability should be restored to an exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RestoreCapability<'tcx> {
-    node: LocalNode<'tcx>,
+    place: MaybeOldPlace<'tcx>,
     capability: CapabilityKind,
 }
 
@@ -108,17 +104,17 @@ impl<'tcx> RestoreCapability<'tcx> {
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "Restore {} to {:?}",
-            self.node.to_short_string(repacker),
+            self.place.to_short_string(repacker),
             self.capability,
         )
     }
 
-    pub(crate) fn new(node: LocalNode<'tcx>, capability: CapabilityKind) -> Self {
-        Self { node, capability }
+    pub(crate) fn new(place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> Self {
+        Self { place, capability }
     }
 
-    pub fn node(&self) -> LocalNode<'tcx> {
-        self.node
+    pub fn place(&self) -> MaybeOldPlace<'tcx> {
+        self.place
     }
 
     pub fn capability(&self) -> CapabilityKind {

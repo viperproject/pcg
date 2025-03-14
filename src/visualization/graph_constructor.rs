@@ -153,7 +153,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 self.insert_place_node(place.place(), place.location(), capability)
             }
             CGNode::Place(MaybeRemotePlace::Remote(place)) => {
-                self.insert_remote_node(place, capability.get(place.into()))
+                self.insert_remote_node(place)
             }
         }
     }
@@ -204,7 +204,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     fn insert_remote_node(
         &mut self,
         remote_place: RemotePlace,
-        capability: Option<CapabilityKind>,
     ) -> NodeId {
         if let Some(id) = self.remote_nodes.existing_id(&remote_place) {
             return id;
@@ -216,7 +215,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 owned: false,
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
-                capability,
+                capability: None,
                 ty: format!("{:?}", remote_place.ty(self.repacker)),
             },
         };
@@ -233,7 +232,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         if let Some(node_id) = self.place_nodes.existing_id(&(place, location)) {
             return node_id;
         }
-        let capability = capability_getter.get(place.to_pcg_node(self.repacker));
+        let capability = capability_getter.get(place.into());
         let id = self.place_node_id(place, location);
         let label = format!("{:?}", place.to_string(self.repacker));
         let place_ty = place.ty(self.repacker);
@@ -258,12 +257,10 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
         constructor.insert_place_node(place.place(), place.location(), &capability_getter)
     }
     fn insert_maybe_remote_place(&mut self, place: MaybeRemotePlace<'tcx>) -> NodeId {
-        let capability_getter = self.capability_getter();
-        let capability = capability_getter.get(place.to_pcg_node(self.repacker()));
         let constructor = self.constructor();
         match place {
             MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place),
-            MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local, capability),
+            MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local),
         }
     }
     fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
@@ -393,7 +390,7 @@ pub struct PCSGraphConstructor<'a, 'tcx> {
 }
 
 trait CapabilityGetter<'tcx> {
-    fn get(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind>;
+    fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind>;
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
@@ -402,14 +399,13 @@ struct PCGCapabilityGetter<'a, 'tcx> {
 }
 
 impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
-    fn get(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind> {
+    fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
         if let Some(cap) = self.borrows_domain.get_capability(node) {
             return Some(cap);
         }
-        let place = node.as_current_place()?;
-        let alloc = self.summary.get(place.local)?;
+        let alloc = self.summary.get(node.place().local)?;
         if let CapabilityLocal::Allocated(projections) = alloc {
-            projections.get_capability(place)
+            projections.get_capability(node.place())
         } else {
             None
         }
@@ -419,7 +415,7 @@ impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
 struct NullCapabilityGetter;
 
 impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
-    fn get(&self, _: PCGNode<'tcx>) -> Option<CapabilityKind> {
+    fn get(&self, _: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
         None
     }
 }

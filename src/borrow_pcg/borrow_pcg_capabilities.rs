@@ -1,7 +1,6 @@
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::PCGNode,
     free_pcs::CapabilityKind,
     rustc_interface::data_structures::fx::FxHashMap,
     utils::{
@@ -11,16 +10,12 @@ use crate::{
     },
 };
 
-use super::
-    has_pcs_elem::HasPcgElems
-;
-
 /// Tracks the capabilities of places in the borrow PCG. We don't store this
 /// information in the borrows graph directly to facilitate simpler logic for
 /// joins (in particular, to identify when capabilities to a place in the PCG
 /// need to be weakened).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BorrowPCGCapabilities<'tcx>(FxHashMap<PCGNode<'tcx>, CapabilityKind>);
+pub struct BorrowPCGCapabilities<'tcx>(FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
@@ -48,35 +43,32 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
             .0
             .clone()
             .into_iter()
-            .map(|(mut node, capability)| {
-                let places = node.pcg_elems();
-                for place in places {
-                    if *place == old {
-                        *place = new;
-                        changed = true;
-                    }
+            .map(|(mut place, capability)| {
+                if place == old {
+                    place = new;
+                    changed = true;
                 }
-                (node, capability)
+                (place, capability)
             })
             .collect();
         changed
     }
 
     /// Returns true iff the capability was changed.
-    pub(super) fn insert(&mut self, node: PCGNode<'tcx>, capability: CapabilityKind) -> bool {
-        self.0.insert(node, capability) != Some(capability)
+    pub(super) fn insert(&mut self, place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> bool {
+        self.0.insert(place, capability) != Some(capability)
     }
 
-    pub(crate) fn remove(&mut self, node: PCGNode<'tcx>) -> bool {
-        self.0.remove(&node).is_some()
+    pub(crate) fn remove(&mut self, place: MaybeOldPlace<'tcx>) -> bool {
+        self.0.remove(&place).is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (PCGNode<'tcx>, CapabilityKind)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, CapabilityKind)> + '_ {
         self.0.iter().map(|(k, v)| (*k, *v))
     }
 
-    pub(crate) fn get<T: Into<PCGNode<'tcx>>>(&self, node: T) -> Option<CapabilityKind> {
-        self.0.get(&node.into()).copied()
+    pub(crate) fn get(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+        self.0.get(&place).copied()
     }
 
     pub(crate) fn join(&mut self, other: &Self) -> bool {

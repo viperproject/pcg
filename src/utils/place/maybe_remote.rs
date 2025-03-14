@@ -125,11 +125,6 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         }
     }
 
-    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.as_local_place()
-            .map(|p| p.is_owned(repacker))
-            .unwrap_or(false)
-    }
 }
 
 impl<'tcx> From<PlaceSnapshot<'tcx>> for MaybeRemotePlace<'tcx> {

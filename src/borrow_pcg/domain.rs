@@ -8,12 +8,8 @@ use crate::borrow_pcg::edge::outlives::{OutlivesEdge, OutlivesEdgeKind};
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
-use crate::combined_pcs::PCGNodeLike;
-use crate::free_pcs::CapabilityKind;
-use crate::utils;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
-use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{Place, PlaceRepacker};
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
@@ -147,17 +143,8 @@ impl<'mir, 'tcx, BC> BorrowsDomain<'mir, 'tcx, BC> {
     fn introduce_initial_borrows(&mut self, local: Local) {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
-        if let ty::TyKind::Ref(_, _, mutability) = local_decl.ty.kind() {
+        if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
-            assert!(entry_state.set_capability(
-                MaybeRemotePlace::place_assigned_to_local(local).into(),
-                if mutability.is_mut() {
-                    CapabilityKind::Exclusive
-                } else {
-                    CapabilityKind::Read
-                },
-                self.repacker,
-            ));
             let _ = entry_state.apply_action(
                 BorrowPCGAction::add_edge(RemoteBorrow::new(local).into(), true),
                 self.repacker,
@@ -201,15 +188,6 @@ impl<'mir, 'tcx, BC> BorrowsDomain<'mir, 'tcx, BC> {
 
     pub(crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
-            let arg_place: utils::Place<'tcx> = arg.into();
-            for rp in arg_place.region_projections(self.repacker) {
-                let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
-                assert!(entry_state.set_capability(
-                    rp.to_pcg_node(self.repacker),
-                    CapabilityKind::Exclusive,
-                    self.repacker
-                ));
-            }
             self.introduce_initial_borrows(arg);
         }
     }
