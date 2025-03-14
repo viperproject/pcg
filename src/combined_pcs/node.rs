@@ -20,15 +20,6 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
     RegionProjection(RegionProjection<'tcx, U>),
 }
 
-impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        match self {
-            PCGNode::Place(p) => p.is_owned(repacker),
-            PCGNode::RegionProjection(_) => false,
-        }
-    }
-}
-
 impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {
     fn make_place_old(
         &mut self,

@@ -146,8 +146,8 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
                 match output {
                     Ok(blocks) => {
                         for block in blocks.iter().flatten() {
-                                debug_lines
-                                    .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                            debug_lines
+                                .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
                         }
                     }
                     Err(e) => {
