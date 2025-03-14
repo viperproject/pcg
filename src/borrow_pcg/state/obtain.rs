@@ -215,28 +215,38 @@ impl<'tcx> BorrowsState<'tcx> {
         if !expand_root.is_owned(repacker)
             && self.get_capability(expand_root.into()) == Some(CapabilityKind::Read)
         {
+            actions.extend(self.upgrade_read_to_exclusive(expand_root, repacker)?);
+        }
+
+        Ok(actions)
+    }
+
+    fn upgrade_read_to_exclusive(
+        &mut self,
+        place: Place<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<ExecutedActions<'tcx>, PcgError> {
+        let mut actions = ExecutedActions::new();
+        self.record_and_apply_action(
+            BorrowPCGAction::restore_capability(place.into(), CapabilityKind::Exclusive),
+            &mut actions,
+            repacker,
+        )?;
+        let mut current = place.parent_place().unwrap();
+        while !current.is_owned(repacker)
+            && self.get_capability(current.into()) == Some(CapabilityKind::Read)
+        {
             self.record_and_apply_action(
-                BorrowPCGAction::restore_capability(expand_root.into(), CapabilityKind::Exclusive),
+                BorrowPCGAction::weaken(current, CapabilityKind::Read, None),
                 &mut actions,
                 repacker,
             )?;
-            let mut current = expand_root.parent_place().unwrap();
-            while !current.is_owned(repacker)
-                && self.get_capability(current.into()) == Some(CapabilityKind::Read)
-            {
-                self.record_and_apply_action(
-                    BorrowPCGAction::weaken(current, CapabilityKind::Read, None),
-                    &mut actions,
-                    repacker,
-                )?;
-                let parent = match current.parent_place() {
-                    Some(parent) => parent,
-                    None => break,
-                };
-                current = parent;
-            }
+            let parent = match current.parent_place() {
+                Some(parent) => parent,
+                None => break,
+            };
+            current = parent;
         }
-
         Ok(actions)
     }
 

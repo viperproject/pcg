@@ -16,10 +16,6 @@ pub(crate) struct BorrowCheckerImpl<'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
-
-    // TODO: Use this to determine when two-phase borrows are activated and
-    // update the PCG accordingly
-    #[allow(unused)]
     borrows: &'mir BorrowSet<'tcx>,
 }
 
@@ -97,10 +93,15 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         &self,
         location: Location,
     ) -> std::collections::BTreeSet<Location> {
-        self.borrows.activation_map()[&location]
-            .iter()
-            .map(|idx| self.borrows[*idx].reserve_location())
-            .collect()
+        let activation_map = self.borrows.activation_map();
+        if let Some(borrows) = activation_map.get(&location) {
+            return borrows
+                .iter()
+                .map(|idx| self.borrows[*idx].reserve_location())
+                .collect();
+        } else {
+            std::collections::BTreeSet::new()
+        }
     }
 
     #[rustversion::before(2024-12-14)]
