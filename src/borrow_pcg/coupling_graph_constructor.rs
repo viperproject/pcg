@@ -6,14 +6,15 @@ use super::{
     has_pcs_elem::HasPcgElems,
     region_projection::PCGRegion,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     combined_pcs::PCGNode,
     coupling, pcg_validity_assert,
     rustc_interface::middle::mir::{BasicBlock, Location},
+    rustc_interface::middle::ty,
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
 };
+use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 
 /// A collection of coupled PCG nodes. They will expire at the same time, and only one
 /// node in the set will be alive.
@@ -147,7 +148,8 @@ impl CGNode<'_> {
     }
 }
 
-pub(crate) trait BorrowCheckerInterface<'tcx> {
+pub trait BorrowCheckerInterface<'mir, 'tcx>: Clone {
+    fn new(tcx: ty::TyCtxt<'tcx>, body: &'mir impl BodyAndBorrows<'tcx>) -> Self;
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
 
@@ -239,7 +241,7 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
+impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'mir, 'tcx>>
     CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T>
 {
     pub(crate) fn new(
@@ -280,8 +282,11 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
             if !should_include {
                 self.add_edges_from(bg, bottom_connect, &coupled_set, history.clone());
             } else {
-                self.coupling_graph
-                    .add_edge(&coupled, &bottom_connect.clone().into(), self.repacker);
+                self.coupling_graph.add_edge(
+                    &coupled,
+                    &bottom_connect.clone().into(),
+                    self.repacker,
+                );
                 self.add_edges_from(bg, &coupled_set, &coupled_set, history.clone());
             }
         }
@@ -300,7 +305,8 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.coupling_graph.insert_endpoint(node.clone(), self.repacker);
+            self.coupling_graph
+                .insert_endpoint(node.clone(), self.repacker);
             let node_set: BTreeSet<_> = node.into_iter().collect();
             self.add_edges_from(
                 &full_graph,

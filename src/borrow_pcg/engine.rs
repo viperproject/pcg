@@ -13,6 +13,7 @@ use crate::{
 };
 
 use super::{
+    coupling_graph_constructor::BorrowCheckerInterface,
     state::BorrowsState,
     visitor::{BorrowsVisitor, StatementStage},
 };
@@ -41,9 +42,9 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
 }
 
 impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
-    pub(crate) fn prepare_operands(
+    pub(crate) fn prepare_operands<BC: BorrowCheckerInterface<'a, 'tcx>>(
         &mut self,
-        state: &mut BorrowsDomain<'a, 'tcx>,
+        state: &mut BorrowsDomain<'a, 'tcx, BC>,
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -68,9 +69,9 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn apply_operands(
+    pub(crate) fn apply_operands<BC: BorrowCheckerInterface<'a, 'tcx>>(
         &mut self,
-        state: &mut BorrowsDomain<'a, 'tcx>,
+        state: &mut BorrowsDomain<'a, 'tcx, BC>,
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -80,9 +81,9 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn apply_statement_effect(
+    pub(crate) fn apply_statement_effect<BC: BorrowCheckerInterface<'a, 'tcx>>(
         &mut self,
-        state: &mut BorrowsDomain<'a, 'tcx>,
+        state: &mut BorrowsDomain<'a, 'tcx, BC>,
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -94,9 +95,9 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn apply_before_terminator_effect(
+    pub(crate) fn apply_before_terminator_effect<BC: BorrowCheckerInterface<'a, 'tcx>>(
         &mut self,
-        state: &mut BorrowsDomain<'a, 'tcx>,
+        state: &mut BorrowsDomain<'a, 'tcx, BC>,
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -110,9 +111,9 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn apply_terminator_effect<'mir>(
+    pub(crate) fn apply_terminator_effect<'mir, BC: BorrowCheckerInterface<'a, 'tcx>>(
         &mut self,
-        state: &mut BorrowsDomain<'a, 'tcx>,
+        state: &mut BorrowsDomain<'a, 'tcx, BC>,
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> Result<TerminatorEdges<'mir, 'tcx>, PcgError> {

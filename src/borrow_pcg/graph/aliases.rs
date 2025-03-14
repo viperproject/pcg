@@ -6,9 +6,7 @@ use crate::{
     },
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{
-        display::DisplayWithRepacker, HasPlace, PlaceRepacker,
-    },
+    utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
@@ -160,7 +158,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     OutlivesEdgeKind::DerefBorrowOutlives => {}
                     OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
                     _ => {
-                        extend(outlives.long().to_pcg_node(repacker), seen, &mut result, false);
+                        extend(
+                            outlives.long().to_pcg_node(repacker),
+                            seen,
+                            &mut result,
+                            false,
+                        );
                     }
                 },
                 _ => todo!(),
@@ -184,11 +187,11 @@ fn test_aliases() {
         .with_writer(std::io::stderr)
         .init();
 
-    use crate::{run_combined_pcs, FpcsOutput};
+    use crate::{run_combined_pcs, BorrowCheckerInterface, FpcsOutput};
 
-    fn check_all_statements<'mir, 'tcx>(
+    fn check_all_statements<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>>(
         body: &'mir mir::Body<'tcx>,
-        pcg: &mut FpcsOutput<'mir, 'tcx>,
+        pcg: &mut FpcsOutput<'mir, 'tcx, BC>,
         f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {

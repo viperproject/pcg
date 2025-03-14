@@ -50,16 +50,18 @@ pub(crate) enum StatementStage {
     Main,
 }
 
-pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
+pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state, BC> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
+    pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
     stage: StatementStage,
     preparing: bool,
     #[allow(dead_code)]
     output_facts: Option<&'mir PoloniusOutput>,
 }
 
-impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
+impl<'tcx, 'mir, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>
+    BorrowsVisitor<'tcx, 'mir, 'state, BC>
+{
     fn curr_actions(&mut self) -> &mut BorrowPCGActions<'tcx> {
         match (self.stage, self.preparing) {
             (StatementStage::Operands, true) => &mut self.domain.actions.pre_operands,
@@ -87,9 +89,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     pub(super) fn preparing(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx>,
+        state: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
         stage: StatementStage,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state, BC> {
         let mut bv = BorrowsVisitor::new(engine, state, stage, true);
         bv.reset_actions();
         bv
@@ -97,9 +99,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     pub(super) fn applying(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx>,
+        state: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
         stage: StatementStage,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state, BC> {
         let mut bv = BorrowsVisitor::new(engine, state, stage, false);
         bv.reset_actions();
         bv
@@ -107,10 +109,10 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn new(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx>,
+        state: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
         stage: StatementStage,
         preparing: bool,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state, BC> {
         BorrowsVisitor {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
             domain: state,
@@ -257,7 +259,9 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-impl BorrowsVisitor<'_, '_, '_> {
+impl<'tcx, 'mir, BC: BorrowCheckerInterface<'mir, 'tcx>>
+    BorrowsVisitor<'tcx, 'mir, '_, BC>
+{
     fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
         let state = self.domain.data.states.get_mut(PostMain);
         let actions = state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
@@ -288,7 +292,9 @@ impl BorrowsVisitor<'_, '_, '_> {
     }
 }
 
-impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
+impl<'tcx, 'mir, BC: BorrowCheckerInterface<'mir, 'tcx>> FallableVisitor<'tcx>
+    for BorrowsVisitor<'tcx, 'mir, '_, BC>
+{
     fn visit_operand_fallable(
         &mut self,
         operand: &Operand<'tcx>,
@@ -421,8 +427,8 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         location: Location,
     ) -> Result<(), PcgError> {
         #[instrument(skip(this), fields(location = ?location))]
-        fn visit_rvalue_inner<'tcx, 'mir, 'state>(
-            this: &mut BorrowsVisitor<'tcx, 'mir, 'state>,
+        fn visit_rvalue_inner<'mir, 'tcx, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>(
+            this: &mut BorrowsVisitor<'tcx, 'mir, 'state, BC>,
             rvalue: &Rvalue<'tcx>,
             location: Location,
         ) -> Result<(), PcgError> {

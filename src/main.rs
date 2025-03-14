@@ -15,6 +15,8 @@ pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0
 use std::fs::File;
 use std::io::Write;
 
+use pcs::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
+use pcs::compute_pcg_blocks;
 use pcs::utils::PlaceRepacker;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
@@ -33,7 +35,7 @@ use pcs::rustc_interface::{
     },
     session::Session,
 };
-use pcs::{combined_pcs::BodyWithBorrowckFacts, run_combined_pcs, utils::env_feature_enabled};
+use pcs::{combined_pcs::BodyWithBorrowckFacts, utils::env_feature_enabled};
 
 struct PcsCallbacks;
 
@@ -81,7 +83,7 @@ fn in_cargo_crate() -> bool {
     std::env::var("CARGO_CRATE_NAME").is_ok()
 }
 
-fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
+fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
     if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
@@ -132,22 +134,24 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>) {
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
         if should_check_body(&body) {
-            let mut output = run_combined_pcs(
-                &body,
-                tcx,
-                vis_dir.map(|dir| format!("{}/{}", dir, item_name)),
-            );
+            let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
+            let output = if polonius {
+                compute_pcg_blocks::<'_, '_, PoloniusBorrowChecker<'_, '_>>(&body, tcx, item_dir)
+            } else {
+                compute_pcg_blocks::<'_, '_, BorrowCheckerImpl<'_, '_>>(&body, tcx, item_dir)
+            };
             if emit_pcg_annotations || check_pcg_annotations {
                 let mut debug_lines = Vec::new();
 
-                if let Some(e) = output.first_error() {
-                    debug_lines.push(format!("{:?}", e));
-                } else {
-                    for (idx, _) in body.body.basic_blocks.iter_enumerated() {
-                        if let Ok(Some(block)) = output.get_all_for_bb(idx) {
-                            debug_lines
-                                .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                match output {
+                    Ok(blocks) => {
+                        for block in blocks.iter().flatten() {
+                                debug_lines
+                                    .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
                         }
+                    }
+                    Err(e) => {
+                        debug_lines.push(format!("{:?}", e));
                     }
                 }
                 if emit_pcg_annotations {
@@ -231,7 +235,7 @@ impl driver::Callbacks for PcsCallbacks {
 
     #[rustversion::since(2024-11-09)]
     fn after_analysis(&mut self, _compiler: &Compiler, tcx: TyCtxt<'_>) -> Compilation {
-        run_pcg_on_all_fns(tcx);
+        run_pcg_on_all_fns(tcx, env_feature_enabled("PCG_POLONIUS").unwrap_or(false));
         if in_cargo_crate() {
             Compilation::Continue
         } else {

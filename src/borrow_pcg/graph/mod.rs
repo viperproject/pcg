@@ -419,22 +419,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }
 
-    fn construct_region_projection_abstraction<T: BorrowCheckerInterface<'tcx>>(
+    fn construct_region_projection_abstraction<'mir, T: BorrowCheckerInterface<'mir, 'tcx>>(
         &self,
         borrow_checker: &T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         let constructor = CouplingGraphConstructor::new(borrow_checker, repacker, block);
         constructor.construct_region_projection_abstraction(self)
     }
 
-    fn join_loop<T: BorrowCheckerInterface<'tcx>>(
+    fn join_loop<'mir, T: BorrowCheckerInterface<'mir, 'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
         borrow_checker: &T,
     ) {
         let common_edges = self.common_edges(other);
@@ -538,12 +538,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
-    pub(crate) fn join<T: BorrowCheckerInterface<'tcx>>(
+    pub(crate) fn join<'mir, T: BorrowCheckerInterface<'mir, 'tcx>>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
         bc: &T,
     ) -> bool {
         // For performance reasons we don't check validity here.
