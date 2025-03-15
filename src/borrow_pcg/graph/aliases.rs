@@ -187,11 +187,11 @@ fn test_aliases() {
         .with_writer(std::io::stderr)
         .init();
 
-    use crate::{run_combined_pcs, BorrowCheckerInterface, FpcsOutput};
+    use crate::{run_combined_pcs, FpcsOutput};
 
-    fn check_all_statements<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>>(
+    fn check_all_statements<'mir, 'tcx>(
         body: &'mir mir::Body<'tcx>,
-        pcg: &mut FpcsOutput<'mir, 'tcx, BC>,
+        pcg: &mut FpcsOutput<'mir, 'tcx>,
         f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {

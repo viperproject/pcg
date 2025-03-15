@@ -14,9 +14,11 @@ pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0
 
 use std::fs::File;
 use std::io::Write;
+use std::rc::Rc;
 
 use pcs::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
-use pcs::compute_pcg_blocks;
+use pcs::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use pcs::run_combined_pcs_with;
 use pcs::utils::PlaceRepacker;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
@@ -83,7 +85,7 @@ fn in_cargo_crate() -> bool {
     std::env::var("CARGO_CRATE_NAME").is_ok()
 }
 
-fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
+fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
     if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
@@ -119,7 +121,7 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             continue;
         }
         let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
-        let body: BodyWithBorrowckFacts<'_> = BODIES.with(|state| {
+        let body: BodyWithBorrowckFacts<'tcx> = BODIES.with(|state| {
             let mut map = state.borrow_mut();
             unsafe {
                 std::mem::transmute(
@@ -133,25 +135,27 @@ fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
         tracing::debug!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
+        let body = Rc::new(body);
         if should_check_body(&body) {
             let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
-            let output = if polonius {
-                compute_pcg_blocks::<'_, '_, PoloniusBorrowChecker<'_, '_>>(&body, tcx, item_dir)
+            let mut output = if polonius {
+                let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());
+                run_combined_pcs_with(body.as_ref(), tcx, bc, item_dir)
             } else {
-                compute_pcg_blocks::<'_, '_, BorrowCheckerImpl<'_, '_>>(&body, tcx, item_dir)
+                let bc = BorrowCheckerImpl::new(tcx, body.as_ref());
+                run_combined_pcs_with(body.as_ref(), tcx, bc, item_dir)
             };
             if emit_pcg_annotations || check_pcg_annotations {
                 let mut debug_lines = Vec::new();
 
-                match output {
-                    Ok(blocks) => {
-                        for block in blocks.iter().flatten() {
-                            debug_lines
-                                .extend(block.debug_lines(PlaceRepacker::new(&body.body, tcx)));
+                if let Some(err) = output.first_error() {
+                    debug_lines.push(format!("{:?}", err));
+                }
+                for block in body.body.basic_blocks.indices() {
+                    if let Ok(Some(state)) = output.get_all_for_bb(block) {
+                        for line in state.debug_lines(PlaceRepacker::new(&body.body, tcx)) {
+                            debug_lines.push(line);
                         }
-                    }
-                    Err(e) => {
-                        debug_lines.push(format!("{:?}", e));
                     }
                 }
                 if emit_pcg_annotations {

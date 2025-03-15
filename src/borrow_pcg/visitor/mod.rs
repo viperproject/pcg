@@ -23,7 +23,6 @@ use crate::{
 use super::{
     action::BorrowPCGAction,
     borrow_pcg_edge::BorrowPCGEdge,
-    coupling_graph_constructor::BorrowCheckerInterface,
     edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
@@ -50,18 +49,16 @@ pub(crate) enum StatementStage {
     Main,
 }
 
-pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state, BC> {
+pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
+    pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
     stage: StatementStage,
     preparing: bool,
     #[allow(dead_code)]
     output_facts: Option<&'mir PoloniusOutput>,
 }
 
-impl<'tcx, 'mir, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>
-    BorrowsVisitor<'tcx, 'mir, 'state, BC>
-{
+impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     fn curr_actions(&mut self) -> &mut BorrowPCGActions<'tcx> {
         match (self.stage, self.preparing) {
             (StatementStage::Operands, true) => &mut self.domain.actions.pre_operands,
@@ -89,9 +86,9 @@ impl<'tcx, 'mir, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>
 
     pub(super) fn preparing(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
+        state: &'state mut BorrowsDomain<'mir, 'tcx>,
         stage: StatementStage,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state, BC> {
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         let mut bv = BorrowsVisitor::new(engine, state, stage, true);
         bv.reset_actions();
         bv
@@ -99,9 +96,9 @@ impl<'tcx, 'mir, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>
 
     pub(super) fn applying(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
+        state: &'state mut BorrowsDomain<'mir, 'tcx>,
         stage: StatementStage,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state, BC> {
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         let mut bv = BorrowsVisitor::new(engine, state, stage, false);
         bv.reset_actions();
         bv
@@ -109,10 +106,10 @@ impl<'tcx, 'mir, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>
 
     fn new(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx, BC>,
+        state: &'state mut BorrowsDomain<'mir, 'tcx>,
         stage: StatementStage,
         preparing: bool,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state, BC> {
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
             domain: state,
@@ -259,12 +256,11 @@ impl<'tcx, 'mir, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>
     }
 }
 
-impl<'tcx, 'mir, BC: BorrowCheckerInterface<'mir, 'tcx>>
-    BorrowsVisitor<'tcx, 'mir, '_, BC>
-{
+impl BorrowsVisitor<'_, '_, '_> {
     fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
         let state = self.domain.data.states.get_mut(PostMain);
-        let actions = state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
+        let actions =
+            state.pack_old_and_dead_leaves(self.repacker, location, self.domain.bc.as_ref())?;
         self.record_actions(actions);
         for created_location in self.domain.bc.twophase_borrow_activations(location) {
             let state = self.domain.data.states.get_mut(PostMain);
@@ -292,9 +288,7 @@ impl<'tcx, 'mir, BC: BorrowCheckerInterface<'mir, 'tcx>>
     }
 }
 
-impl<'tcx, 'mir, BC: BorrowCheckerInterface<'mir, 'tcx>> FallableVisitor<'tcx>
-    for BorrowsVisitor<'tcx, 'mir, '_, BC>
-{
+impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
     fn visit_operand_fallable(
         &mut self,
         operand: &Operand<'tcx>,
@@ -427,8 +421,8 @@ impl<'tcx, 'mir, BC: BorrowCheckerInterface<'mir, 'tcx>> FallableVisitor<'tcx>
         location: Location,
     ) -> Result<(), PcgError> {
         #[instrument(skip(this), fields(location = ?location))]
-        fn visit_rvalue_inner<'mir, 'tcx, 'state, BC: BorrowCheckerInterface<'mir, 'tcx>>(
-            this: &mut BorrowsVisitor<'tcx, 'mir, 'state, BC>,
+        fn visit_rvalue_inner<'mir, 'tcx, 'state>(
+            this: &mut BorrowsVisitor<'tcx, 'mir, 'state>,
             rvalue: &Rvalue<'tcx>,
             location: Location,
         ) -> Result<(), PcgError> {

@@ -11,7 +11,7 @@ use derive_more::Deref;
 use crate::{
     borrow_pcg::{
         action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge,
-        coupling_graph_constructor::BorrowCheckerInterface, latest::Latest,
+        latest::Latest,
     },
     combined_pcs::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
@@ -36,26 +36,26 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-pub trait HasPcg<'mir, 'tcx, BC> {
-    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx, BC>, PcgError>;
+pub trait HasPcg<'mir, 'tcx> {
+    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError>;
 }
 
-impl<'mir, 'tcx, BC> HasPcg<'mir, 'tcx, BC> for PlaceCapabilitySummary<'mir, 'tcx, BC> {
-    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx, BC>, PcgError> {
+impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
+    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError> {
         self.pcg.as_ref().map_err(|e| e.clone())
     }
 }
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> {
-    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx, BC>>>,
+pub struct FreePcsAnalysis<'mir, 'tcx: 'mir> {
+    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> FreePcsAnalysis<'mir, 'tcx, BC> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx, BC>>>) -> Self {
+impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
+    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -198,7 +198,7 @@ impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> FreePcsAnalysis<'mir, '
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PCGEngine<'mir, 'tcx, BC> {
+    fn analysis(&self) -> &PCGEngine<'mir, 'tcx> {
         &self.cursor.results().analysis.0
     }
 
