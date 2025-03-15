@@ -18,27 +18,31 @@ pub mod utils;
 pub mod visualization;
 
 use borrow_pcg::{
-    borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface, latest::Latest,
+    borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface,
+    latest::Latest,
 };
-use combined_pcs::{PCGEngine, PcgError, PcgSuccessor};
-use free_pcs::{CapabilityKind, PcgBasicBlocks, PcgLocation, RepackOp};
+use combined_pcs::{PCGEngine, PcgSuccessor};
+use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
     borrowck::{
-        self, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext, PoloniusInput
+        self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
     },
     dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
 };
 use serde_json::json;
 use utils::{
-    display::{DebugLines, DisplayWithRepacker}, env_feature_enabled, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place, PlaceRepacker
+    display::{DebugLines, DisplayWithRepacker},
+    env_feature_enabled,
+    maybe_old::MaybeOldPlace,
+    validity::HasValidityCheck,
+    Place, PlaceRepacker,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithRepacker;
 
-pub type FpcsOutput<'mir, 'tcx, BC = BorrowCheckerImpl<'mir, 'tcx>> =
-    free_pcs::FreePcsAnalysis<'mir, 'tcx, BC>;
+pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -242,30 +246,22 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-pub fn run_combined_pcs<'mir, 'tcx>(
+pub fn run_combined_pcs<'mir, 'tcx: 'mir>(
     mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
-) -> FpcsOutput<'mir, 'tcx, BorrowCheckerImpl<'mir, 'tcx>> {
-    run_combined_pcs_with(mir, tcx, visualization_output_path)
+) -> FpcsOutput<'mir, 'tcx> {
+    let bc: BorrowCheckerImpl<'mir, 'tcx> = BorrowCheckerImpl::new(tcx, mir);
+    run_combined_pcs_with(mir, tcx, bc, visualization_output_path)
 }
 
-pub fn compute_pcg_blocks<'mir, 'tcx: 'mir, BC: BorrowCheckerInterface<'mir, 'tcx> + 'mir>(
-    mir: &'mir impl BodyAndBorrows<'tcx>,
+pub fn run_combined_pcs_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
+    mir: &'mir T,
     tcx: TyCtxt<'tcx>,
+    bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,
     visualization_output_path: Option<String>,
-) -> Result<PcgBasicBlocks<'tcx>, PcgError> {
-    let mut analysis = run_combined_pcs_with::<'mir, 'tcx, BC>(mir, tcx, visualization_output_path);
-    analysis.results_for_all_blocks()
-}
-
-pub fn run_combined_pcs_with<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>>(
-    mir: &'mir impl BodyAndBorrows<'tcx>,
-    tcx: TyCtxt<'tcx>,
-    visualization_output_path: Option<String>,
-) -> FpcsOutput<'mir, 'tcx, BC> {
+) -> FpcsOutput<'mir, 'tcx> {
     let repacker = PlaceRepacker::new(mir.body(), tcx);
-    let bc = BC::new(tcx, mir);
     let engine = PCGEngine::new(repacker, bc, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();

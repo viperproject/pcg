@@ -20,7 +20,7 @@ use crate::{
     free_pcs::RepackOp,
     rustc_interface::{
         borrowck::{
-            self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext
+            self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
         },
         dataflow::Analysis,
         index::{bit_set::BitSet, Idx, IndexVec},
@@ -137,11 +137,11 @@ struct PCGEngineDebugData {
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
 }
 
-pub struct PCGEngine<'a, 'tcx, BC> {
+pub struct PCGEngine<'a, 'tcx: 'a> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
-    borrow_checker: BC,
+    pub(crate) borrow_checker: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
@@ -188,7 +188,7 @@ pub(crate) fn successor_blocks(terminator: &Terminator<'_>) -> Vec<BasicBlock> {
     }
 }
 
-impl<'a, 'tcx, BC> PCGEngine<'a, 'tcx, BC> {
+impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -199,7 +199,7 @@ impl<'a, 'tcx, BC> PCGEngine<'a, 'tcx, BC> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PlaceCapabilitySummary<'a, 'tcx, BC>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PlaceCapabilitySummary<'a, 'tcx>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -216,7 +216,7 @@ impl<'a, 'tcx, BC> PCGEngine<'a, 'tcx, BC> {
 
     pub(crate) fn new(
         repacker: PlaceRepacker<'a, 'tcx>,
-        borrow_checker: BC,
+        borrow_checker: impl BorrowCheckerInterface<'a, 'tcx> + 'a,
         debug_output_dir: Option<String>,
     ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
@@ -250,13 +250,13 @@ impl<'a, 'tcx, BC> PCGEngine<'a, 'tcx, BC> {
             borrows,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
-            borrow_checker,
+            borrow_checker: Rc::new(borrow_checker),
         }
     }
 
     fn generate_dot_graph(
         &self,
-        state: &mut PlaceCapabilitySummary<'a, 'tcx, BC>,
+        state: &mut PlaceCapabilitySummary<'a, 'tcx>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
     ) {
@@ -265,7 +265,7 @@ impl<'a, 'tcx, BC> PCGEngine<'a, 'tcx, BC> {
 
     fn restore_loaned_capabilities(
         &self,
-        state: &mut PlaceCapabilitySummary<'a, 'tcx, BC>,
+        state: &mut PlaceCapabilitySummary<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let pcg = state.pcg_mut();
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
@@ -342,8 +342,8 @@ impl<'a, 'tcx, BC> PCGEngine<'a, 'tcx, BC> {
     }
 }
 
-impl<'a, 'tcx, BC: BorrowCheckerInterface<'a, 'tcx>> Analysis<'tcx> for PCGEngine<'a, 'tcx, BC> {
-    type Domain = PlaceCapabilitySummary<'a, 'tcx, BC>;
+impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
+    type Domain = PlaceCapabilitySummary<'a, 'tcx>;
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {

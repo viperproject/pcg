@@ -40,7 +40,7 @@ use crate::rustc_interface::middle::{
 
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
-impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> BorrowsDomain<'mir, 'tcx, BC> {
+impl<'tcx> BorrowsDomain<'_, 'tcx> {
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
         self.debug_join_iteration += 1;
@@ -69,7 +69,7 @@ impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> BorrowsDomain<'mir, 'tc
             &other_after,
             self_block,
             other.block(),
-            &self.bc,
+            self.bc.as_ref(),
             self.repacker,
         )
     }
@@ -79,27 +79,27 @@ impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> BorrowsDomain<'mir, 'tc
 /// The domain of the Borrow PCG dataflow analysis. Note that this contains many
 /// fields which serve as context (e.g. reference to a borrow-checker impl to
 /// properly compute joins) but are not updated in the analysis itself.
-pub struct BorrowsDomain<'mir, 'tcx, BC> {
+pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) data: DomainData<BorrowsState<'tcx>>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
     pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
-    pub(crate) bc: BC,
+    pub(crate) bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
     /// The number of times the join operation has been called, this is just
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
     pub(crate) debug_join_iteration: usize,
 }
 
-impl<BC> PartialEq for BorrowsDomain<'_, '_, BC> {
+impl PartialEq for BorrowsDomain<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.block == other.block
     }
 }
 
-impl<BC> Eq for BorrowsDomain<'_, '_, BC> {}
+impl Eq for BorrowsDomain<'_, '_> {}
 
-impl<BC> std::fmt::Debug for BorrowsDomain<'_, '_, BC> {
+impl std::fmt::Debug for BorrowsDomain<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BorrowsDomain")
             .field("states", &self.data.states)
@@ -108,7 +108,7 @@ impl<BC> std::fmt::Debug for BorrowsDomain<'_, '_, BC> {
     }
 }
 
-impl<'mir, 'tcx, BC> BorrowsDomain<'mir, 'tcx, BC> {
+impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
         self.data.states[PostMain].as_ref()
     }
@@ -127,7 +127,7 @@ impl<'mir, 'tcx, BC> BorrowsDomain<'mir, 'tcx, BC> {
 
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        bc: BC,
+        bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
