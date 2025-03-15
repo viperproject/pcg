@@ -41,6 +41,15 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
             .collect()
     }
 
+    pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
+        self.lookup(*node.iter().next().unwrap()).is_some_and(|idx| {
+            self.inner
+                .neighbors_directed(idx, Direction::Incoming)
+                .count()
+                == 0
+        })
+    }
+
     pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();
