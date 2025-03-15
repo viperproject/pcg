@@ -169,12 +169,12 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub(crate) fn join<'mir, T: BorrowCheckerInterface<'mir, 'tcx>>(
+    pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        bc: &T,
+        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
@@ -331,7 +331,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &'slf mut self,
         repacker: PlaceRepacker<'mir, 'tcx>,
         location: Location,
-        bc: &impl BorrowCheckerInterface<'mir, 'tcx>,
+        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         let prev_location = if location.statement_index == 0 {
@@ -348,7 +348,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 slf: &'slf mut BorrowsState<'tcx>,
                 repacker: PlaceRepacker<'mir, 'tcx>,
                 prev_location: Option<Location>,
-                bc: &impl BorrowCheckerInterface<'mir, 'tcx>,
+                bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
 

@@ -20,7 +20,7 @@ use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct PoloniusBorrowChecker<'mir, 'tcx> {
+pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
     repacker: PlaceRepacker<'mir, 'tcx>,
     output_facts: Rc<PoloniusOutput>,
@@ -28,8 +28,8 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx> {
     borrows: &'mir BorrowSet<'tcx>,
 }
 
-impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
-    fn new(tcx: ty::TyCtxt<'tcx>, body: &'mir impl BodyAndBorrows<'tcx>) -> Self {
+impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
+    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let location_table = body.location_table();
         let repacker = PlaceRepacker::new(body.body(), tcx);
         let output_facts = Output::compute(
@@ -87,7 +87,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'m
 }
 
 #[derive(Clone)]
-pub struct BorrowCheckerImpl<'mir, 'tcx> {
+pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     #[allow(unused)]
     repacker: PlaceRepacker<'mir, 'tcx>,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
@@ -111,7 +111,7 @@ fn cursor_contains_local(
 }
 
 impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
-    fn new(tcx: ty::TyCtxt<'tcx>, body: &'mir impl BodyAndBorrows<'tcx>) -> Self {
+    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let repacker = PlaceRepacker::new(body.body(), tcx);
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();

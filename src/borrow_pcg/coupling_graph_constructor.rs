@@ -148,16 +148,16 @@ impl CGNode<'_> {
     }
 }
 
-pub trait BorrowCheckerInterface<'mir, 'tcx>: Clone {
-    fn new(tcx: ty::TyCtxt<'tcx>, body: &'mir impl BodyAndBorrows<'tcx>) -> Self;
+pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
+    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self
+    where
+        Self: Sized;
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
 
     /// Returns the set of two-phase borrows that activate at `location`.
     /// Each borrow in the returned set is represented by the MIR location
     /// that it was created at.
-    /// TODO: Actually use this
-    #[allow(unused)]
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 }
 
@@ -207,9 +207,7 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T> {
-    #[allow(unused)]
-    liveness: &'regioncx T,
+pub(crate) struct CouplingGraphConstructor<'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
@@ -241,16 +239,12 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'mir, 'tcx>>
-    CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T>
-{
+impl<'mir, 'tcx> CouplingGraphConstructor<'mir, 'tcx> {
     pub(crate) fn new(
-        region_liveness: &'regioncx T,
         repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
     ) -> Self {
         Self {
-            liveness: region_liveness,
             repacker,
             block,
             coupling_graph: coupling::DisjointSetGraph::new(),

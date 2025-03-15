@@ -3,7 +3,6 @@ use crate::{
     borrow_pcg::{
         action::BorrowPCGAction,
         borrow_pcg_edge::BorrowPCGEdge,
-        coupling_graph_constructor::BorrowCheckerInterface,
         edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
@@ -20,7 +19,7 @@ use crate::{
     utils::{self, display::DisplayWithRepacker, maybe_old::MaybeOldPlace},
 };
 
-impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> BorrowsVisitor<'tcx, 'mir, '_, BC> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
     pub(crate) fn stmt_pre_main(
         &mut self,
         statement: &Statement<'tcx>,
@@ -34,7 +33,7 @@ impl<'mir, 'tcx, BC: BorrowCheckerInterface<'mir, 'tcx>> BorrowsVisitor<'tcx, 'm
                     .domain
                     .data
                     .get_mut(EvalStmtPhase::PostMain)
-                    .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
+                    .pack_old_and_dead_leaves(self.repacker, location, self.domain.bc.as_ref())?;
                 self.record_actions(actions);
             }
             StatementKind::Assign(box (target, _)) => {
