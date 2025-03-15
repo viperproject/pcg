@@ -207,17 +207,17 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct CouplingGraphConstructor<'mir, 'tcx> {
+pub(crate) struct RegionProjectionAbstractionConstructor<'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
-    coupling_graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
+    graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
 struct AddEdgeHistory<'a, 'tcx> {
-    bottom_connect: &'a BTreeSet<CGNode<'tcx>>,
-    upper_candidate: &'a BTreeSet<CGNode<'tcx>>,
+    bottom_connect: &'a Coupled<CGNode<'tcx>>,
+    upper_candidate: &'a Coupled<CGNode<'tcx>>,
 }
 
 impl std::fmt::Display for AddEdgeHistory<'_, '_> {
@@ -239,49 +239,64 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx> CouplingGraphConstructor<'mir, 'tcx> {
-    pub(crate) fn new(
-        repacker: PlaceRepacker<'mir, 'tcx>,
-        block: BasicBlock,
-    ) -> Self {
+impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
+    pub(crate) fn new(repacker: PlaceRepacker<'mir, 'tcx>, block: BasicBlock) -> Self {
         Self {
             repacker,
             block,
-            coupling_graph: coupling::DisjointSetGraph::new(),
+            graph: coupling::DisjointSetGraph::new(),
         }
     }
 
     fn add_edges_from<'a>(
         &mut self,
         bg: &coupling::DisjointSetGraph<CGNode<'tcx>>,
-        bottom_connect: &'a BTreeSet<CGNode<'tcx>>,
-        upper_candidate: &'a BTreeSet<CGNode<'tcx>>,
+        bottom_connect: &'a Coupled<CGNode<'tcx>>,
+        upper_candidate: &'a Coupled<CGNode<'tcx>>,
+        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
         history.add(AddEdgeHistory {
             bottom_connect,
             upper_candidate,
         });
-        let upper_candidate = upper_candidate.clone().into();
+        let upper_candidate = upper_candidate.clone();
         let endpoints = bg.endpoints_pointing_to(&upper_candidate);
         for coupled in endpoints {
             pcg_validity_assert!(
                 coupled != upper_candidate,
                 "Coupling graph should be acyclic"
             );
-            let should_include = coupled
-                .iter()
-                .any(|n| /* self.liveness.is_live(*n, self.block) && */ !n.is_old());
-            let coupled_set: BTreeSet<_> = coupled.clone().into_iter().collect();
+            let is_root = bg.is_root(&coupled) && !coupled.iter().any(|n| n.is_old());
+            let should_include = is_root
+                || coupled.iter().any(|n| {
+                    borrow_checker.is_live(
+                        (*n).into(),
+                        Location {
+                            block: self.block,
+                            statement_index: 0,
+                        },
+                    ) && !n.is_old()
+                });
+            tracing::info!(
+                "connect {} to {} ? (is_root: {:?}): {}",
+                bottom_connect.to_short_string(self.repacker),
+                coupled.to_short_string(self.repacker),
+                is_root,
+                should_include
+            );
             if !should_include {
-                self.add_edges_from(bg, bottom_connect, &coupled_set, history.clone());
-            } else {
-                self.coupling_graph.add_edge(
+                self.add_edges_from(
+                    bg,
+                    bottom_connect,
                     &coupled,
-                    &bottom_connect.clone().into(),
-                    self.repacker,
+                    borrow_checker,
+                    history.clone(),
                 );
-                self.add_edges_from(bg, &coupled_set, &coupled_set, history.clone());
+            } else {
+                self.graph
+                    .add_edge(&coupled, &bottom_connect.clone(), self.repacker);
+                self.add_edges_from(bg, &coupled, &coupled, borrow_checker, history.clone());
             }
         }
     }
@@ -289,9 +304,10 @@ impl<'mir, 'tcx> CouplingGraphConstructor<'mir, 'tcx> {
     pub(crate) fn construct_region_projection_abstraction(
         mut self,
         bg: &BorrowsGraph<'tcx>,
+        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         tracing::debug!("Construct coupling graph start");
-        let full_graph = bg.base_coupling_graph(self.repacker);
+        let full_graph = bg.base_rp_graph(self.repacker);
         if coupling_imgcat_debug() {
             full_graph.render_with_imgcat(self.repacker, "Base coupling graph");
         }
@@ -299,17 +315,16 @@ impl<'mir, 'tcx> CouplingGraphConstructor<'mir, 'tcx> {
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.coupling_graph
-                .insert_endpoint(node.clone(), self.repacker);
-            let node_set: BTreeSet<_> = node.into_iter().collect();
+            self.graph.insert_endpoint(node.clone(), self.repacker);
             self.add_edges_from(
                 &full_graph,
-                &node_set,
-                &node_set,
+                &node,
+                &node,
+                borrow_checker,
                 DebugRecursiveCallHistory::new(),
             );
         }
         tracing::debug!("Construct coupling graph end");
-        self.coupling_graph
+        self.graph
     }
 }

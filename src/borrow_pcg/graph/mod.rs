@@ -28,7 +28,9 @@ use super::{
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
-    coupling_graph_constructor::{BorrowCheckerInterface, CGNode, CouplingGraphConstructor},
+    coupling_graph_constructor::{
+        BorrowCheckerInterface, CGNode, RegionProjectionAbstractionConstructor,
+    },
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, MakePlaceOld},
@@ -150,7 +152,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .map(|(kind, conditions)| BorrowPCGEdgeRef { kind, conditions })
     }
 
-    pub(crate) fn base_coupling_graph(
+    pub(crate) fn base_rp_graph(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
@@ -213,7 +215,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             seen.insert(ef);
-            tracing::debug!("Exploring from {}", ef.current());
             let edges_blocking = blocking_map.get_edges_blocking(ef.current(), repacker);
             for edge in edges_blocking.iter() {
                 match edge.kind() {
@@ -232,10 +233,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         graph.add_edge(&inputs, &outputs, repacker);
                     }
                     _ => {
-                        // if let BorrowPCGEdgeKind::Outlives(outlives) = edge.kind() {
-                        //     graph.insert_endpoint(Coupled::singleton(outlives.long().into()));
-                        //     graph.insert_endpoint(Coupled::singleton(outlives.short().into()));
-                        // }
                         for node in edge.blocked_by_nodes(repacker) {
                             if let LocalNode::RegionProjection(rp) = node {
                                 if let Some(source) = ef.connect()
@@ -421,13 +418,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn construct_region_projection_abstraction<'mir>(
         &self,
-        #[allow(unused)]
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
-        let constructor = CouplingGraphConstructor::new(repacker, block);
-        constructor.construct_region_projection_abstraction(self)
+        let constructor = RegionProjectionAbstractionConstructor::new(repacker, block);
+        constructor.construct_region_projection_abstraction(self, borrow_checker)
     }
 
     fn join_loop<'mir>(

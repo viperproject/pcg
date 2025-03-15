@@ -5,8 +5,7 @@ use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PCGRegion;
 use crate::combined_pcs::PCGNode;
 use crate::rustc_interface::borrowck::{
-    BorrowData, BorrowIndex, BorrowSet, LocationTable, RegionInferenceContext,
-    PoloniusOutput,
+    BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::compute_fixpoint;
@@ -136,7 +135,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
                 if let Some(local) = rp.local() {
                     local
                 } else {
-                    todo!()
+                    return true; // e.g. from a constant or a remote place
                 }
             }
             PCGNode::Place(MaybeRemotePlace::Local(p)) => p.local(),
