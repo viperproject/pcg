@@ -9,7 +9,6 @@ pub struct DotGraph {
     pub name: String,
     pub nodes: Vec<DotNode>,
     pub edges: Vec<DotEdge>,
-    pub subgraphs: Vec<DotSubgraph>,
 }
 
 impl DotGraph {
@@ -114,9 +113,6 @@ impl Display for DotGraph {
         }
         for edge in &self.edges {
             writeln!(f, "{}", edge)?;
-        }
-        for subgraph in &self.subgraphs {
-            writeln!(f, "{}", subgraph)?;
         }
         writeln!(f, "}}")
     }
