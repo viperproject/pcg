@@ -49,6 +49,16 @@ pub trait DisplayWithRepacker<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String;
 }
 
+impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Vec<T> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        let comma_sep = self.iter()
+            .map(|t| t.to_short_string(repacker))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("[{comma_sep}]")
+    }
+}
+
 impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match self.to_string(repacker) {

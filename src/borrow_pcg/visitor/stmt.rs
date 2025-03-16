@@ -123,14 +123,18 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     fields,
                 ) => {
                     let target: utils::Place<'tcx> = (*target).into();
-                    for field in fields.iter() {
+                    for (field_idx, field) in fields.iter().enumerate() {
                         let operand_place: utils::Place<'tcx> = if let Some(place) = field.place() {
                             place.into()
                         } else {
                             continue;
                         };
-                        for source_proj in operand_place.region_projections(self.repacker) {
-                            let source_proj = source_proj.set_base(
+                        for (source_rp_idx, source_proj) in operand_place
+                            .region_projections(self.repacker)
+                            .iter()
+                            .enumerate()
+                        {
+                            let source_proj = source_proj.with_base(
                                 MaybeOldPlace::new(
                                     source_proj.base,
                                     Some(
@@ -143,7 +147,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                 source_proj,
                                 target,
                                 location,
-                                |_| OutlivesEdgeKind::Todo,
+                                |_| OutlivesEdgeKind::Aggregate {
+                                    field_idx,
+                                    target_rp_index: source_rp_idx,
+                                },
                             );
                         }
                     }
@@ -204,7 +211,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             source_proj.into(),
                             target,
                             location,
-                            |_| OutlivesEdgeKind::Todo,
+                            |_| OutlivesEdgeKind::CopySharedRef,
                         );
                     }
                 }

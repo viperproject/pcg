@@ -6,7 +6,7 @@ use crate::{
         region_projection::RegionProjection,
         state::BorrowsState,
     },
-    combined_pcs::{MaybeHasLocation, PCGNode, PCGNodeLike},
+    combined_pcs::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
@@ -152,9 +152,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             CGNode::Place(MaybeRemotePlace::Local(place)) => {
                 self.insert_place_node(place.place(), place.location(), capability)
             }
-            CGNode::Place(MaybeRemotePlace::Remote(place)) => {
-                self.insert_remote_node(place)
-            }
+            CGNode::Place(MaybeRemotePlace::Remote(place)) => self.insert_remote_node(place),
         }
     }
 
@@ -172,7 +170,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
 
         for output in abstraction.outputs() {
-            let output = output.set_base(output.base.into(), self.repacker);
+            let output = output.with_base(output.base.into(), self.repacker);
             let output = self.insert_region_projection_node(output);
             output_nodes.insert(output);
         }
@@ -201,10 +199,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn insert_remote_node(
-        &mut self,
-        remote_place: RemotePlace,
-    ) -> NodeId {
+    fn insert_remote_node(&mut self, remote_place: RemotePlace) -> NodeId {
         if let Some(id) = self.remote_nodes.existing_id(&remote_place) {
             return id;
         }
@@ -354,6 +349,42 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
                     target: output_node,
                     kind: format!("{:?}", member.direction()),
                 });
+            }
+            BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
+                let input_nodes = edge
+                    .inputs
+                    .iter()
+                    .map(|rp| self.insert_local_node(rp.to_local_node(self.repacker())))
+                    .collect::<Vec<_>>();
+                let output_nodes = edge
+                    .outputs
+                    .iter()
+                    .map(|rp| self.insert_local_node(rp.to_local_node(self.repacker())))
+                    .collect::<Vec<_>>();
+                let mut i = 0;
+                while i < edge.num_coupled_nodes() {
+                    self.constructor().edges.insert(GraphEdge::Coupled {
+                        source: input_nodes[i],
+                        target: output_nodes[i],
+                    });
+                    let mut j = i + 1;
+                    while j < edge.num_coupled_nodes() {
+                        self.constructor().edges.insert(GraphEdge::Coupled {
+                            source: input_nodes[i],
+                            target: output_nodes[j],
+                        });
+                        self.constructor().edges.insert(GraphEdge::Coupled {
+                            source: input_nodes[i],
+                            target: input_nodes[j],
+                        });
+                        self.constructor().edges.insert(GraphEdge::Coupled {
+                            source: output_nodes[i],
+                            target: output_nodes[j],
+                        });
+                        j += 1;
+                    }
+                    i += 1;
+                }
             }
         }
     }

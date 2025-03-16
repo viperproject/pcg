@@ -1,6 +1,7 @@
+use derive_more::Deref;
+
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge::outlives::OutlivesEdge;
 use crate::borrow_pcg::graph::Conditioned;
@@ -12,7 +13,7 @@ use crate::{validity_checks_enabled, Weaken};
 
 use super::BorrowPCGActionKind;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Deref, Debug, Default)]
 pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGActions<'tcx> {
@@ -64,22 +65,6 @@ impl<'tcx> BorrowPCGActions<'tcx> {
             .iter()
             .filter_map(|action| match action.kind() {
                 BorrowPCGActionKind::RemoveEdge(edge) => Some(edge.clone().into()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub fn expands(&self) -> FxHashSet<Conditioned<BorrowPCGExpansion<'tcx>>> {
-        self.0
-            .iter()
-            .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::AddEdge { edge, .. } => match edge.kind() {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => Some(Conditioned::new(
-                        expansion.clone(),
-                        edge.conditions().clone(),
-                    )),
-                    _ => None,
-                },
                 _ => None,
             })
             .collect()

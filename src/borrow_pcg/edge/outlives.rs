@@ -114,31 +114,37 @@ pub enum OutlivesEdgeKind {
     /// for `{y|'a} -> {x|'b}` of this kind is created if 'a outlives 'b.
     ///
     /// `toplevel` is true for edges to x↓'x, false otherwise.
-    BorrowOutlives { toplevel: bool },
+    BorrowOutlives {
+        toplevel: bool,
+    },
     /// If e.g {x|'a} -> {y|'b} is a BorrowsOutlives, then {*x|'a} -> {*y|'b} is a DerefBorrowsOutlives
     /// (it's introduced if e.g. *y is expanded in the PCG)
     DerefBorrowOutlives,
-    /// TODO: Provide more useful kinds, this enum variant should be removed
-    Todo,
+    /// Initial borrows edge
+    InitialBorrows,
+    CopySharedRef,
+    HavocRegion
 }
 
 impl std::fmt::Display for OutlivesEdgeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OutlivesEdgeKind::Aggregate {
-                field_idx,
-                target_rp_index,
-            } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
+                        field_idx,
+                        target_rp_index,
+                    } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
             OutlivesEdgeKind::Borrow => write!(f, "Borrow"),
             OutlivesEdgeKind::DerefRegionProjection => write!(f, "DerefRegionProjection"),
             OutlivesEdgeKind::Ref => write!(f, "Ref"),
             OutlivesEdgeKind::ContractRef => write!(f, "ContractRef"),
             OutlivesEdgeKind::ConstRef => write!(f, "ConstRef"),
             OutlivesEdgeKind::BorrowOutlives { toplevel } => {
-                write!(f, "BorrowOutlives({toplevel})")
-            }
-            OutlivesEdgeKind::Todo => write!(f, "Todo"),
+                        write!(f, "BorrowOutlives({toplevel})")
+                    }
             OutlivesEdgeKind::DerefBorrowOutlives => write!(f, "DerefBorrowOutlives"),
+            OutlivesEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
+            OutlivesEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
+            OutlivesEdgeKind::HavocRegion => write!(f, "HavocRegion"),
         }
     }
 }

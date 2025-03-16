@@ -124,7 +124,7 @@ pub trait PCGNodeLike<'tcx>:
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
                         MaybeRemotePlace::Local(maybe_old_place) => Some(
-                            rp.set_base(maybe_old_place, repacker)
+                            rp.with_base(maybe_old_place, repacker)
                                 .to_local_node(repacker),
                         ),
                         MaybeRemotePlace::Remote(_) => None,
