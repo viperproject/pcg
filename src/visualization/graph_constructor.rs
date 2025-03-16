@@ -2,7 +2,10 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, LocalNode},
         coupling_graph_constructor::CGNode,
-        graph::BorrowsGraph,
+        graph::{
+            materialize::{MaterializedEdge, SyntheticEdge},
+            BorrowsGraph,
+        },
         region_projection::RegionProjection,
         state::BorrowsState,
     },
@@ -12,61 +15,21 @@ use crate::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
     },
-    visualization::dot_graph::RankAnnotation,
 };
 
-use super::{dot_graph::DotSubgraph, Graph, GraphEdge, GraphNode, NodeId, NodeType};
+use super::{Graph, GraphEdge, GraphNode, NodeId, NodeType};
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::rustc_interface::middle::{mir, ty::TyCtxt};
+use crate::rustc_interface::middle::mir;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
 use std::collections::{BTreeSet, HashSet};
 
-#[derive(Eq, PartialEq, Hash)]
-pub struct GraphCluster {
-    label: String,
-    id: String,
-    nodes: BTreeSet<NodeId>,
-    min_rank_nodes: Option<BTreeSet<NodeId>>,
-}
-
-impl GraphCluster {
-    pub fn to_dot_subgraph(&self, nodes: &[GraphNode]) -> DotSubgraph {
-        DotSubgraph {
-            id: format!("cluster_{}", self.id),
-            label: self.label.clone(),
-            nodes: self
-                .nodes
-                .iter()
-                .map(|node_id| {
-                    nodes
-                        .iter()
-                        .find(|n| n.id == *node_id)
-                        .unwrap()
-                        .to_dot_node()
-                })
-                .collect(),
-            rank_annotations: self
-                .min_rank_nodes
-                .as_ref()
-                .map(|nodes| {
-                    vec![RankAnnotation {
-                        rank_type: "min".to_string(),
-                        nodes: nodes.iter().map(|n| n.to_string()).collect(),
-                    }]
-                })
-                .unwrap_or_default(),
-        }
-    }
-}
-
 struct GraphConstructor<'mir, 'tcx> {
     remote_nodes: IdLookup<RemotePlace>,
     place_nodes: IdLookup<(Place<'tcx>, Option<SnapshotLocation>)>,
     region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
-    region_clusters: HashSet<GraphCluster>,
     nodes: Vec<GraphNode>,
     edges: HashSet<GraphEdge>,
     repacker: PlaceRepacker<'mir, 'tcx>,
@@ -102,7 +65,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             remote_nodes: IdLookup::new('a'),
             place_nodes: IdLookup::new('p'),
             region_projection_nodes: IdLookup::new('r'),
-            region_clusters: HashSet::new(),
             nodes: vec![],
             edges: HashSet::new(),
             repacker,
@@ -110,7 +72,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 
     fn into_graph(self) -> Graph {
-        Graph::new(self.nodes, self.edges, self.region_clusters)
+        Graph::new(self.nodes, self.edges)
     }
 
     fn place_node_id(&mut self, place: Place<'tcx>, location: Option<SnapshotLocation>) -> NodeId {
@@ -276,6 +238,29 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     }
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
     fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
+    fn draw_materialized_edge<'graph>(&mut self, edge: MaterializedEdge<'tcx, 'graph>)
+    where
+        'mir: 'graph,
+    {
+        match edge {
+            MaterializedEdge::Real(edge) => {
+                self.draw_borrow_pcg_edge(edge, &self.capability_getter())
+            }
+            MaterializedEdge::Synthetic(edge) => self.draw_synthetic_edge(edge),
+        }
+    }
+    fn draw_synthetic_edge(&mut self, edge: SyntheticEdge<'tcx>) {
+        match edge {
+            SyntheticEdge::Alias(edge) => {
+                let blocked_place = self.insert_pcg_node(edge.blocked_place);
+                let blocking_place = self.insert_pcg_node(edge.blocking_place);
+                self.constructor().edges.insert(GraphEdge::Alias {
+                    blocked_place,
+                    blocking_place,
+                });
+            }
+        }
+    }
     fn draw_borrow_pcg_edge(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
@@ -390,14 +375,17 @@ trait PlaceGrapher<'mir, 'tcx: 'mir> {
     }
 }
 
-pub struct BorrowsGraphConstructor<'a, 'tcx> {
-    borrows_graph: &'a BorrowsGraph<'tcx>,
-    constructor: GraphConstructor<'a, 'tcx>,
-    repacker: PlaceRepacker<'a, 'tcx>,
+pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+    borrows_graph: &'graph BorrowsGraph<'tcx>,
+    constructor: GraphConstructor<'mir, 'tcx>,
+    repacker: PlaceRepacker<'mir, 'tcx>,
 }
 
-impl<'a, 'tcx> BorrowsGraphConstructor<'a, 'tcx> {
-    pub fn new(borrows_graph: &'a BorrowsGraph<'tcx>, repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+    pub fn new(
+        borrows_graph: &'graph BorrowsGraph<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> Self {
         Self {
             borrows_graph,
             constructor: GraphConstructor::new(repacker),
@@ -406,14 +394,16 @@ impl<'a, 'tcx> BorrowsGraphConstructor<'a, 'tcx> {
     }
 
     pub fn construct_graph(mut self) -> Graph {
-        for edge in self.borrows_graph.edges() {
-            self.draw_borrow_pcg_edge(edge, &NullCapabilityGetter);
+        let edges: Vec<MaterializedEdge<'tcx, 'graph>> =
+            self.borrows_graph.materialized_edges(self.repacker);
+        for edge in edges {
+            self.draw_materialized_edge(edge);
         }
         self.constructor.into_graph()
     }
 }
 
-pub struct PCSGraphConstructor<'a, 'tcx> {
+pub(crate) struct PcgGraphConstructor<'a, 'tcx> {
     summary: &'a CapabilitySummary<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
@@ -451,7 +441,7 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
     }
 }
 
-impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
+impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PcgGraphConstructor<'a, 'tcx> {
     fn repacker(&self) -> PlaceRepacker<'a, 'tcx> {
         self.repacker
     }
@@ -478,21 +468,23 @@ impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for PCSGraphConstructor<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> PlaceGrapher<'a, 'tcx> for BorrowsGraphConstructor<'a, 'tcx> {
-    fn repacker(&self) -> PlaceRepacker<'a, 'tcx> {
+impl<'graph, 'mir: 'graph, 'tcx: 'graph> PlaceGrapher<'mir, 'tcx>
+    for BorrowsGraphConstructor<'graph, 'mir, 'tcx>
+{
+    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
         self.repacker
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
+    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx> {
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir {
         NullCapabilityGetter
     }
 }
 
-impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
+impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
     pub fn new(
         summary: &'a CapabilitySummary<'tcx>,
         repacker: PlaceRepacker<'a, 'tcx>,
@@ -559,27 +551,39 @@ impl<'a, 'tcx> PCSGraphConstructor<'a, 'tcx> {
         self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
     }
 
-    pub fn tcx(&self) -> TyCtxt<'tcx> {
-        self.constructor.repacker.tcx()
-    }
-
     pub fn construct_graph(mut self) -> Graph {
-        for capability in self.summary.iter() {
+        let capability_getter = &PCGCapabilityGetter {
+            summary: self.summary,
+            borrows_domain: self.borrows_domain,
+        };
+        for (local, capability) in self.summary.iter_enumerated() {
             match capability {
                 CapabilityLocal::Unallocated => {}
                 CapabilityLocal::Allocated(projections) => {
-                    for place in projections.place_capabilities().keys() {
-                        let capability_getter = &PCGCapabilityGetter {
-                            summary: self.summary,
-                            borrows_domain: self.borrows_domain,
-                        };
+                    self.insert_place_and_previous_projections(
+                        local.into(),
+                        None,
+                        capability_getter,
+                    );
+                    for (place, expansion) in projections.expansions() {
                         self.insert_place_and_previous_projections(*place, None, capability_getter);
+                        for child_place in place.expansion_places(expansion, self.repacker) {
+                            self.insert_place_and_previous_projections(
+                                child_place,
+                                None,
+                                capability_getter,
+                            );
+                        }
                     }
                 }
             }
         }
-        for edge in self.borrows_domain.graph_edges() {
-            self.draw_borrow_pcg_edge(edge, &self.capability_getter());
+        for edge in self
+            .borrows_domain
+            .graph()
+            .materialized_edges(self.repacker)
+        {
+            self.draw_materialized_edge(edge);
         }
 
         self.constructor.into_graph()

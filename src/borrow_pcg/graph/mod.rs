@@ -1,6 +1,7 @@
 pub mod aliases;
 pub mod frozen;
 pub mod join;
+pub(crate) mod materialize;
 mod mutate;
 
 use std::collections::HashSet;
