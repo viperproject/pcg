@@ -146,7 +146,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         BorrowPCGAction::add_edge(
                             BorrowPCGEdge::new(
                                 RegionProjectionMember::new(
-                                    ra.set_base(ra.base().into(), repacker),
+                                    ra.with_base(ra.base().into(), repacker),
                                     borrow.value.blocked_place(),
                                     RpMemberDirection::PlaceOutlivesRegion,
                                 )

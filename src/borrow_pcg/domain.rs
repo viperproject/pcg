@@ -172,7 +172,7 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
                                     );
                                 }),
                                 region_projection,
-                                OutlivesEdgeKind::Todo,
+                                OutlivesEdgeKind::InitialBorrows,
                                 self.repacker,
                             )
                             .into(),

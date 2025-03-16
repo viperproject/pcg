@@ -209,7 +209,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
         {
             base.insert(
                 base_projection
-                    .set_base(base_projection.base.into(), repacker)
+                    .with_base(base_projection.base.into(), repacker)
                     .into(),
             );
         }
