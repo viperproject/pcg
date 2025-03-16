@@ -7,8 +7,10 @@
 pub mod dot_graph;
 pub mod drawer;
 pub mod graph_constructor;
+mod grapher;
 pub mod legend;
 pub mod mir_graph;
+mod node;
 
 use crate::{
     borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
@@ -56,6 +58,11 @@ pub struct GraphNode {
 }
 
 impl GraphNode {
+    #[cfg(test)]
+    fn label(&self) -> String {
+        self.node_type.label()
+    }
+
     fn to_dot_node(&self) -> DotNode {
         match &self.node_type {
             NodeType::PlaceNode {
@@ -136,9 +143,19 @@ enum NodeType {
     },
 }
 
+impl NodeType {
+    #[cfg(test)]
+    pub(crate) fn label(&self) -> String {
+        match self {
+            NodeType::PlaceNode { label, .. } => label.clone(),
+            NodeType::RegionProjectionNode { label } => label.clone(),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum GraphEdge {
+pub(crate) enum GraphEdge {
     Abstract {
         blocked: NodeId,
         blocking: NodeId,
@@ -178,7 +195,7 @@ enum GraphEdge {
 }
 
 impl GraphEdge {
-    fn to_dot_edge(&self) -> DotEdge {
+    pub(super) fn to_dot_edge(&self) -> DotEdge {
         match self {
             GraphEdge::Projection { source, target } => DotEdge {
                 from: source.to_string(),
@@ -258,7 +275,7 @@ impl GraphEdge {
     }
 }
 
-pub struct Graph {
+pub(crate) struct Graph {
     nodes: Vec<GraphNode>,
     edges: HashSet<GraphEdge>,
 }
@@ -266,6 +283,36 @@ pub struct Graph {
 impl Graph {
     fn new(nodes: Vec<GraphNode>, edges: HashSet<GraphEdge>) -> Self {
         Self { nodes, edges }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edge_between_labelled_nodes(
+        &self,
+        label1: &str,
+        label2: &str,
+    ) -> Result<&GraphEdge, String> {
+        let label_1_id = self
+            .nodes
+            .iter()
+            .find(|n| n.label() == label1)
+            .map(|n| n.id)
+            .ok_or(format!("No node with label: {}", label1))?;
+        let label_2_id = self
+            .nodes
+            .iter()
+            .find(|n| n.label() == label2)
+            .map(|n| n.id)
+            .ok_or(format!("No node with label: {}", label2))?;
+        self.edges
+            .iter()
+            .find(|edge| {
+                let dot_edge = edge.to_dot_edge();
+                dot_edge.from == label_1_id.to_string() && dot_edge.to == label_2_id.to_string()
+            })
+            .ok_or(format!(
+                "Edges exists, no edge between {} and {}",
+                label1, label2
+            ))
     }
 }
 
