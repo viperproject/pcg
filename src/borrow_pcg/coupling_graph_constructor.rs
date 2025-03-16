@@ -155,6 +155,10 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
 
+    fn same_region(&self, reg1: PCGRegion, reg2: PCGRegion) -> bool {
+        self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
+    }
+
     /// Returns the set of two-phase borrows that activate at `location`.
     /// Each borrow in the returned set is represented by the MIR location
     /// that it was created at.
@@ -278,13 +282,6 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
                         },
                     ) && !n.is_old()
                 });
-            tracing::info!(
-                "connect {} to {} ? (is_root: {:?}): {}",
-                bottom_connect.to_short_string(self.repacker),
-                coupled.to_short_string(self.repacker),
-                is_root,
-                should_include
-            );
             if !should_include {
                 self.add_edges_from(
                     bg,

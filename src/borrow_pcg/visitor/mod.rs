@@ -11,7 +11,7 @@ use crate::{
         index::IndexVec,
         middle::{
             mir::{
-                self, BorrowKind, Const, Location, Operand, Rvalue, Statement, StatementKind,
+                self, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind,
                 Terminator, TerminatorKind,
             },
             ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
@@ -31,16 +31,14 @@ use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::domain::BorrowsDomain;
-use crate::borrow_pcg::edge::abstraction::{
-    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
-};
 use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     free_pcs::CapabilityKind,
-    utils::{self, PlaceRepacker, PlaceSnapshot},
+    utils::{self, PlaceRepacker},
 };
 
+mod function_call;
 mod stmt;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -150,88 +148,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
         self.domain.bc.outlives(sup, sub)
-    }
-
-    /// Constructs a function call abstraction, if necessary.
-    fn construct_function_call_abstraction(
-        &mut self,
-        func: &Operand<'tcx>,
-        args: &[&Operand<'tcx>],
-        destination: utils::Place<'tcx>,
-        location: Location,
-    ) -> Result<(), PcgError> {
-        // This is just a performance optimization
-        if self
-            .domain
-            .post_main_state()
-            .graph()
-            .has_function_call_abstraction_at(location)
-        {
-            return Ok(());
-        }
-        let (func_def_id, substs) = if let Operand::Constant(box c) = func
-            && let Const::Val(_, ty) = c.const_
-            && let ty::TyKind::FnDef(def_id, substs) = ty.kind()
-        {
-            (def_id, substs)
-        } else {
-            return Err(PcgError::unsupported(PCGUnsupportedError::ClosureCall));
-        };
-        let sig = self
-            .repacker
-            .tcx()
-            .fn_sig(func_def_id)
-            .instantiate(self.repacker.tcx(), substs);
-        let sig = self
-            .repacker
-            .tcx()
-            .liberate_late_bound_regions(*func_def_id, sig);
-
-        // This is also a performance optimization
-        let output_lifetimes = extract_regions(sig.output(), self.repacker);
-        if output_lifetimes.is_empty() {
-            return Ok(());
-        }
-
-        for arg in args.iter() {
-            let input_place: utils::Place<'tcx> = match arg.place() {
-                Some(place) => place.into(),
-                None => continue,
-            };
-            let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
-                input_place,
-                self.domain.post_main_state().get_latest(input_place),
-            ));
-            let ty = input_place.ty(self.repacker).ty;
-            for (lifetime_idx, input_lifetime) in
-                extract_regions(ty, self.repacker).into_iter().enumerate()
-            {
-                for output in
-                    self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
-                {
-                    let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
-
-                    let block_edge = AbstractionBlockEdge::new(
-                        vec![input_rp.into()].into_iter().collect(),
-                        vec![output].into_iter().collect(),
-                    );
-                    self.apply_action(BorrowPCGAction::add_edge(
-                        BorrowPCGEdge::new(
-                            AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                                location,
-                                *func_def_id,
-                                substs,
-                                block_edge,
-                            ))
-                            .into(),
-                            PathConditions::AtBlock(location.block),
-                        ),
-                        true,
-                    ));
-                }
-            }
-        }
-        Ok(())
     }
 
     fn projections_borrowing_from_input_lifetime(
@@ -358,7 +274,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     location,
                     "Destination of Function Call",
                 ));
-                self.construct_function_call_abstraction(
+                self.make_function_call_abstraction(
                     func,
                     &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
                     destination,

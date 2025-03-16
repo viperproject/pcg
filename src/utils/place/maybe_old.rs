@@ -7,7 +7,7 @@ use crate::borrow_pcg::region_projection::{
 };
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::combined_pcs::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
-use crate::rustc_interface::index::IndexVec;
+use crate::rustc_interface::index::{Idx, IndexVec};
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use crate::rustc_interface::middle::mir::PlaceElem;
@@ -203,6 +203,10 @@ impl MaybeHasLocation for MaybeOldPlace<'_> {
     }
 }
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub(crate) fn with_location(self, location: SnapshotLocation) -> Self {
+        MaybeOldPlace::new(self.place(), Some(location))
+    }
+
     pub fn is_old(&self) -> bool {
         matches!(self, MaybeOldPlace::OldPlace(_))
     }
@@ -228,7 +232,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.place()
             .base_region_projection(repacker)
-            .map(|rp| rp.set_base(*self, repacker))
+            .map(|rp| rp.with_base(*self, repacker))
     }
 
     pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
@@ -265,12 +269,12 @@ impl<'tcx> MaybeOldPlace<'tcx> {
 
     pub(crate) fn region_projection(
         &self,
-        idx: usize,
+        idx: RegionIdx,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx, Self> {
         let region_projections = self.region_projections(repacker);
-        if idx < region_projections.len() {
-            region_projections[idx]
+        if idx.index() < region_projections.len() {
+            region_projections[idx.index()]
         } else {
             panic!(
                 "Region projection index {:?} out of bounds for place {:?}, ty: {:?}",

@@ -214,9 +214,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 true
             }
             BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker),
-            BorrowPCGActionKind::SetLatest(place, location) => {
-                self.set_latest(place, location, repacker)
-            }
+            BorrowPCGActionKind::SetLatest(place, location) => self.set_latest(place, location),
             BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, repacker),
             BorrowPCGActionKind::AddEdge {
                 edge,
@@ -235,7 +233,6 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<bool, PcgError> {
         let mut changed = self.insert(edge.clone());
         Ok(match edge.kind {
-            BorrowPCGEdgeKind::Borrow(_) => changed,
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                 if changed {
                     let base = expansion.base;
@@ -277,20 +274,13 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 changed
             }
-            BorrowPCGEdgeKind::Abstraction(_) => changed,
-            BorrowPCGEdgeKind::Outlives(_) => changed,
-            BorrowPCGEdgeKind::RegionProjectionMember(_) => changed,
+            _ => changed,
         })
     }
 
     #[must_use]
-    fn set_latest<T: Into<SnapshotLocation>>(
-        &mut self,
-        place: Place<'tcx>,
-        location: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
+    fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) -> bool {
         let location = location.into();
-        self.latest.insert(place, location, repacker)
+        self.latest.insert(place, location)
     }
 }

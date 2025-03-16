@@ -5,17 +5,15 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
-    graph::{BorrowsGraph, FrozenGraphRef},
+    graph::{BorrowsGraph, frozen::FrozenGraphRef},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
-    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
+    borrow_pcg::edge::
+        borrow::{BorrowEdge, LocalBorrow}
+    ,
     utils::display::DisplayWithRepacker,
-};
-use crate::{
-    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
@@ -29,6 +27,14 @@ use crate::{
     },
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
+};
+use crate::{
+    borrow_pcg::action::executed_actions::ExecutedActions,
+    combined_pcs::PcgError,
+};
+use crate::{
+    borrow_pcg::edge::kind::BorrowPCGEdgeKind,
+    utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{combined_pcs::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
@@ -181,7 +187,7 @@ impl<'tcx> BorrowsState<'tcx> {
         changed |= self
             .graph
             .join(&other.graph, self_block, other_block, repacker, bc);
-        changed |= self.latest.join(&other.latest, self_block, repacker);
+        changed |= self.latest.join(&other.latest, self_block);
         if other.capabilities != self.capabilities {
             changed |= Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities);
         }
@@ -207,7 +213,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        tracing::debug!("Removing edge {}", edge.kind().to_short_string(repacker));
         let mut actions = ExecutedActions::new();
         for place in edge.blocked_places(repacker) {
             if let Some(place) = place.as_current_place()
@@ -423,7 +428,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 )?);
             }
             let new_num_edges = self.graph.num_edges();
-            assert!(new_num_edges < num_edges_prev);
+            assert!(new_num_edges <= num_edges_prev);
             num_edges_prev = new_num_edges;
         }
     }

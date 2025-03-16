@@ -13,7 +13,7 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
-use crate::utils::PlaceRepacker;
+use crate::utils::{PlaceRepacker, SnapshotLocation};
 use crate::validity_checks_enabled;
 use crate::{
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
@@ -149,7 +149,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjection<'tcx, T> {
     fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
-        self.set_base(self.base.to_maybe_remote_region_projection_base(), repacker)
+        self.with_base(self.base.to_maybe_remote_region_projection_base(), repacker)
             .into()
     }
 }
@@ -173,6 +173,18 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
+impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    pub(crate) fn labelled(
+        self,
+        location: SnapshotLocation,
+    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+        RegionProjection {
+            base: self.base.with_location(location),
+            region_idx: self.region_idx,
+            phantom: PhantomData,
+        }
+    }
+}
 impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjection<'tcx> {
     fn from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
         RegionProjection {
@@ -220,7 +232,7 @@ impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
 impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, Place<'tcx>> {
     fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
         LocalNode::RegionProjection(
-            self.set_base(MaybeOldPlace::Current { place: self.base }, repacker),
+            self.with_base(MaybeOldPlace::Current { place: self.base }, repacker),
         )
     }
 }
@@ -461,7 +473,7 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         &mut self.base
     }
 
-    pub(crate) fn set_base<U: RegionProjectionBaseLike<'tcx>>(
+    pub(crate) fn with_base<U: RegionProjectionBaseLike<'tcx>>(
         self,
         base: U,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -495,7 +507,7 @@ impl<'tcx> LocalRegionProjection<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx> {
-        self.set_base(self.base.into(), repacker)
+        self.with_base(self.base.into(), repacker)
     }
 }
 
@@ -511,7 +523,7 @@ impl<'tcx> RegionProjection<'tcx> {
         match self.base {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 match maybe_remote_place {
-                    MaybeRemotePlace::Local(local) => Some(self.set_base(local, repacker)),
+                    MaybeRemotePlace::Local(local) => Some(self.with_base(local, repacker)),
                     _ => None,
                 }
             }
