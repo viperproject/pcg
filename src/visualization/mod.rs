@@ -29,7 +29,7 @@ use self::{
     dot_graph::{
         DotEdge, DotFloatAttr, DotLabel, DotNode, DotStringAttr, EdgeDirection, EdgeOptions,
     },
-    graph_constructor::{GraphCluster, PCSGraphConstructor},
+    graph_constructor::PcgGraphConstructor,
 };
 
 pub fn place_id(place: &Place<'_>) -> String {
@@ -261,37 +261,15 @@ impl GraphEdge {
 pub struct Graph {
     nodes: Vec<GraphNode>,
     edges: HashSet<GraphEdge>,
-    clusters: HashSet<GraphCluster>,
 }
 
 impl Graph {
-    fn new(
-        nodes: Vec<GraphNode>,
-        edges: HashSet<GraphEdge>,
-        clusters: HashSet<GraphCluster>,
-    ) -> Self {
-        Self {
-            nodes,
-            edges,
-            clusters,
-        }
+    fn new(nodes: Vec<GraphNode>, edges: HashSet<GraphEdge>) -> Self {
+        Self { nodes, edges }
     }
 }
 
-pub fn generate_dot_graph_str<'a, 'tcx: 'a>(
-    repacker: PlaceRepacker<'a, 'tcx>,
-    summary: &CapabilitySummary<'tcx>,
-    borrows_domain: &BorrowsState<'tcx>,
-) -> io::Result<String> {
-    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
-    let graph = constructor.construct_graph();
-    let mut buf = vec![];
-    let drawer = GraphDrawer::new(&mut buf);
-    drawer.draw(graph)?;
-    Ok(String::from_utf8(buf).unwrap())
-}
-
-pub fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
+pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
@@ -303,13 +281,13 @@ pub fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
     Ok(String::from_utf8(buf).unwrap())
 }
 
-pub fn generate_dot_graph<'a, 'tcx: 'a>(
+pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
     summary: &CapabilitySummary<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
+    let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {}: {}", file_path, e);

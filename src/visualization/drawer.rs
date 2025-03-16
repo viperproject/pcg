@@ -12,15 +12,10 @@ impl<T: io::Write> GraphDrawer<T> {
     }
 
     pub fn draw(mut self, graph: Graph) -> io::Result<()> {
-        let dot_graph = DotGraph {
+       let dot_graph = DotGraph {
             name: "CapabilitySummary".to_string(),
             nodes: graph.nodes.iter().map(|g| g.to_dot_node()).collect(),
             edges: graph.edges.into_iter().map(|e| e.to_dot_edge()).collect(),
-            subgraphs: graph
-                .clusters
-                .iter()
-                .map(|c| c.to_dot_subgraph(&graph.nodes))
-                .collect(),
         };
         writeln!(self.out, "{}", dot_graph)
     }

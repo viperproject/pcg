@@ -131,12 +131,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.contains(node.into(), repacker)
     }
 
-    pub(crate) fn graph_edges<'slf>(
-        &'slf self,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> {
-        self.graph.edges()
-    }
-
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }
