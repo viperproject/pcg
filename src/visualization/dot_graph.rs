@@ -5,17 +5,13 @@ use std::process::{Command, Stdio};
 
 type NodeId = String;
 
-pub struct DotGraph {
+pub(crate) struct DotGraph {
     pub name: String,
     pub nodes: Vec<DotNode>,
     pub edges: Vec<DotEdge>,
 }
 
 impl DotGraph {
-    pub fn write_to_file(&self, path: &str) -> std::io::Result<()> {
-        std::fs::write(path, self.to_string())
-    }
-
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
         tracing::debug!("{}", comment);
         let mut dot_process = Command::new("dot")
@@ -86,6 +82,7 @@ impl Display for RankAnnotation {
 impl Display for DotGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "digraph {} {{", self.name)?;
+        writeln!(f, "layout=dot")?;
         writeln!(f, "node [shape=rect]")?;
         for node in &self.nodes {
             writeln!(f, "{}", node)?;
@@ -191,13 +188,14 @@ pub enum EdgeDirection {
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
-pub struct EdgeOptions {
+pub(crate) struct EdgeOptions {
     label: String,
     color: Option<String>,
     style: Option<String>,
     direction: Option<EdgeDirection>,
     tooltip: Option<String>,
     penwidth: Option<String>,
+    weight: Option<String>,
 }
 
 impl EdgeOptions {
@@ -209,6 +207,7 @@ impl EdgeOptions {
             direction: Some(direction),
             tooltip: None,
             penwidth: None,
+            weight: None,
         }
     }
 
@@ -220,6 +219,7 @@ impl EdgeOptions {
             direction: None,
             tooltip: None,
             penwidth: None,
+            weight: None,
         }
     }
 
@@ -247,10 +247,15 @@ impl EdgeOptions {
         self.tooltip = Some(tooltip);
         self
     }
+
+    pub fn with_weight(mut self, weight: f64) -> Self {
+        self.weight = Some(weight.to_string());
+        self
+    }
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
-pub struct DotEdge {
+pub(crate) struct DotEdge {
     pub from: NodeId,
     pub to: NodeId,
     pub options: EdgeOptions,
@@ -279,9 +284,13 @@ impl Display for DotEdge {
             Some(penwidth) => format!(", penwidth=\"{}\"", penwidth),
             None => "".to_string(),
         };
+        let weight_part = match &self.options.weight {
+            Some(weight) => format!(", weight=\"{}\"", weight),
+            None => "".to_string(),
+        };
         write!(
             f,
-            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}{}]",
+            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}{}{}]",
             self.from,
             self.to,
             self.options.label,
@@ -289,7 +298,8 @@ impl Display for DotEdge {
             direction_part,
             color_part,
             tooltip_part,
-            penwidth_part
+            penwidth_part,
+            weight_part
         )
     }
 }

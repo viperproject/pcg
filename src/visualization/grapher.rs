@@ -163,22 +163,24 @@ pub(super) trait Grapher<'mir, 'tcx: 'mir> {
                         target: output_nodes[i],
                         directed: true,
                     });
-                    let mut j = i + 1;
+                    if i < edge.num_coupled_nodes() - 1 {
+                        self.constructor().edges.insert(GraphEdge::Coupled {
+                            source: input_nodes[i],
+                            target: input_nodes[i + 1],
+                            directed: false,
+                        });
+                        self.constructor().edges.insert(GraphEdge::Coupled {
+                            source: output_nodes[i],
+                            target: output_nodes[i + 1],
+                            directed: false,
+                        });
+                    }
+                    let mut j = 0;
                     while j < edge.num_coupled_nodes() {
                         self.constructor().edges.insert(GraphEdge::Coupled {
                             source: input_nodes[i],
                             target: output_nodes[j],
                             directed: true,
-                        });
-                        self.constructor().edges.insert(GraphEdge::Coupled {
-                            source: input_nodes[i],
-                            target: input_nodes[j],
-                            directed: false,
-                        });
-                        self.constructor().edges.insert(GraphEdge::Coupled {
-                            source: output_nodes[i],
-                            target: output_nodes[j],
-                            directed: false,
                         });
                         j += 1;
                     }
