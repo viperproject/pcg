@@ -273,7 +273,7 @@ impl GraphEdge {
                 let edge_options = if *directed {
                     EdgeOptions::directed(EdgeDirection::Forward)
                 } else {
-                    EdgeOptions::undirected()
+                    EdgeOptions::undirected().with_weight(2.0)
                 };
                 DotEdge {
                     from: source.to_string(),
