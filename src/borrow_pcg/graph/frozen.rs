@@ -312,6 +312,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                     BorrowPCGEdgeKind::Outlives(outlives_edge) => match outlives_edge.kind {
                         OutlivesEdgeKind::Aggregate { .. }
                         | OutlivesEdgeKind::InitialBorrows
+                        | OutlivesEdgeKind::HavocRegion
                         | OutlivesEdgeKind::ConstRef => {
                             if borrow_checker
                                 .same_region(outlives_edge.short().region(repacker), region)
@@ -328,7 +329,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                         }
                         OutlivesEdgeKind::CopySharedRef => {}
                         OutlivesEdgeKind::DerefBorrowOutlives => todo!(),
-                        OutlivesEdgeKind::HavocRegion => todo!(),
                     },
                     BorrowPCGEdgeKind::RegionProjectionMember(..) => todo!(),
                     BorrowPCGEdgeKind::FunctionCallRegionCoupling(..) => todo!(),
