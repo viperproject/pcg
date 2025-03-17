@@ -24,4 +24,5 @@ fn test_selected_crates() {
     // common::run_on_crate("tonic", "0.12.3", true);
     // common::run_on_crate("wasm-bindgen-backend", "0.2.100", true);
     // common::run_on_crate("zerovec-derive", "0.10.3", true);
+    // common::run_on_crate("bitflags", "2.9.0", true);
 }

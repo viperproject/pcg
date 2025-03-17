@@ -224,7 +224,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
 }
 
 impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
-    pub(crate) fn base(&self) -> P {
+    pub fn base(&self) -> P {
         self.base
     }
 }

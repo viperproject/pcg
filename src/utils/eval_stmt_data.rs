@@ -74,7 +74,12 @@ impl<T> EvalStmtData<T> {
             EvalStmtPhase::PostMain => &self.post_main,
         }
     }
+
     pub fn post_main(&self) -> &T {
+        &self.post_main
+    }
+
+    pub fn post_operands(&self) -> &T {
         &self.post_main
     }
 }

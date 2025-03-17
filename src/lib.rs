@@ -17,6 +17,8 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
+use std::rc::Rc;
+
 use borrow_pcg::{
     borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface,
     latest::Latest,
@@ -217,7 +219,13 @@ pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
+
+    #[rustversion::since(2024-10-03)]
     fn output_facts(&self) -> &Option<Box<PoloniusOutput>>;
+
+    #[rustversion::before(2024-10-03)]
+    fn output_facts(&self) -> &Option<Rc<PoloniusOutput>>;
+
     fn location_table(&self) -> &LocationTable;
     fn input_facts(&self) -> &PoloniusInput;
 }
@@ -233,7 +241,13 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
         &self.region_inference_context
     }
 
+    #[rustversion::since(2024-10-03)]
     fn output_facts(&self) -> &Option<Box<PoloniusOutput>> {
+        &self.output_facts
+    }
+
+    #[rustversion::before(2024-10-03)]
+    fn output_facts(&self) -> &Option<Rc<PoloniusOutput>> {
         &self.output_facts
     }
 
