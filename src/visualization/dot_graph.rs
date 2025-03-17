@@ -5,17 +5,13 @@ use std::process::{Command, Stdio};
 
 type NodeId = String;
 
-pub struct DotGraph {
+pub (crate) struct DotGraph {
     pub name: String,
     pub nodes: Vec<DotNode>,
     pub edges: Vec<DotEdge>,
 }
 
 impl DotGraph {
-    pub fn write_to_file(&self, path: &str) -> std::io::Result<()> {
-        std::fs::write(path, self.to_string())
-    }
-
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
         tracing::debug!("{}", comment);
         let mut dot_process = Command::new("dot")
@@ -191,7 +187,7 @@ pub enum EdgeDirection {
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
-pub struct EdgeOptions {
+pub (crate) struct EdgeOptions {
     label: String,
     color: Option<String>,
     style: Option<String>,
@@ -250,7 +246,7 @@ impl EdgeOptions {
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
-pub struct DotEdge {
+pub (crate) struct DotEdge {
     pub from: NodeId,
     pub to: NodeId,
     pub options: EdgeOptions,
