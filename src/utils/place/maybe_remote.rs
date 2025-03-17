@@ -103,7 +103,7 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         self.related_local_place().regions(repacker)
     }
 
-    pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
+    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
         if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = self {
             Some(*place)
         } else {
