@@ -310,7 +310,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                     }
                     BorrowPCGEdgeKind::Abstraction(_) => {}
                     BorrowPCGEdgeKind::Outlives(outlives_edge) => match outlives_edge.kind {
-                        OutlivesEdgeKind::Aggregate { .. } | OutlivesEdgeKind::InitialBorrows => {
+                        OutlivesEdgeKind::Aggregate { .. }
+                        | OutlivesEdgeKind::InitialBorrows
+                        | OutlivesEdgeKind::ConstRef => {
                             if borrow_checker
                                 .same_region(outlives_edge.short().region(repacker), region)
                             {
@@ -321,7 +323,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                         OutlivesEdgeKind::DerefRegionProjection => todo!(),
                         OutlivesEdgeKind::Ref => todo!(),
                         OutlivesEdgeKind::ContractRef => todo!(),
-                        OutlivesEdgeKind::ConstRef => todo!(),
                         OutlivesEdgeKind::BorrowOutlives { .. } => {
                             stack.push(outlives_edge.long().try_to_local_node(repacker).unwrap());
                         }
@@ -330,9 +331,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                         OutlivesEdgeKind::HavocRegion => todo!(),
                     },
                     BorrowPCGEdgeKind::RegionProjectionMember(..) => todo!(),
-                    BorrowPCGEdgeKind::FunctionCallRegionCoupling(
-                        ..
-                    ) => todo!(),
+                    BorrowPCGEdgeKind::FunctionCallRegionCoupling(..) => todo!(),
                 }
             }
         }
@@ -351,10 +350,7 @@ impl<'tcx> CoupledRoots<'tcx> {
         node: LocalRegionProjection<'tcx>,
         parent: RegionProjection<'tcx>,
     ) {
-        self.0
-            .entry(node)
-            .or_default()
-            .insert(parent);
+        self.0.entry(node).or_default().insert(parent);
     }
 
     fn all_parents(&self) -> FxHashSet<RegionProjection<'tcx>> {
