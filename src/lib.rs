@@ -17,6 +17,7 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
+#[rustversion::before(2024-10-03)]
 use std::rc::Rc;
 
 use borrow_pcg::{
