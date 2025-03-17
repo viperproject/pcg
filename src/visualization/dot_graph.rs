@@ -63,13 +63,6 @@ impl DotGraph {
     }
 }
 
-pub struct DotSubgraph {
-    pub id: String,
-    pub label: String,
-    pub nodes: Vec<DotNode>,
-    pub rank_annotations: Vec<RankAnnotation>,
-}
-
 pub struct RankAnnotation {
     pub rank_type: String,
     pub nodes: BTreeSet<NodeId>,
@@ -87,20 +80,6 @@ impl Display for RankAnnotation {
                 .collect::<Vec<_>>()
                 .join("; ")
         )
-    }
-}
-
-impl Display for DotSubgraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "subgraph {} {{", self.id)?;
-        writeln!(f, "label=\"{}\";", self.label)?;
-        for node in &self.nodes {
-            writeln!(f, "{}", node)?;
-        }
-        for rank_annotation in &self.rank_annotations {
-            writeln!(f, "{}", rank_annotation)?;
-        }
-        writeln!(f, "}}")
     }
 }
 
@@ -151,7 +130,17 @@ pub struct DotStringAttr(pub String);
 
 impl Display for DotStringAttr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\"{}\"", self.0)
+        write!(f, "\"{}\"", self.0.replace("\"", "\\\""))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dotstring_attr_escapes_quotes() {
+        let attr = DotStringAttr("extern \"RustCall\"".to_string());
+        assert_eq!(attr.to_string(), "\"extern \\\"RustCall\\\"\"");
     }
 }
 
@@ -276,7 +265,7 @@ impl Display for DotEdge {
         let direction_part = match &self.options.direction {
             Some(EdgeDirection::Backward) => ", dir=\"back\"",
             Some(EdgeDirection::Forward) => "",
-            None => ", arrowhead=\"none\"",
+            None => "dir=\"none\", constraint=false",
         };
         let color_part = match &self.options.color {
             Some(color) => format!(", color=\"{}\"", color),

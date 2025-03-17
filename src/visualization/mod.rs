@@ -191,6 +191,7 @@ pub(crate) enum GraphEdge {
     Coupled {
         source: NodeId,
         target: NodeId,
+        directed: bool,
     },
 }
 
@@ -200,7 +201,7 @@ impl GraphEdge {
             GraphEdge::Projection { source, target } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
-                options: EdgeOptions::undirected(),
+                options: EdgeOptions::directed(EdgeDirection::Forward),
             },
             GraphEdge::Alias {
                 blocked_place,
@@ -238,7 +239,7 @@ impl GraphEdge {
             } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
-                options: EdgeOptions::undirected()
+                options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("green".to_string())
                     .with_tooltip(path_conditions.clone()),
             },
@@ -264,13 +265,24 @@ impl GraphEdge {
                     .with_label(kind.clone())
                     .with_color("purple".to_string()),
             },
-            GraphEdge::Coupled { source, target } => DotEdge {
-                from: source.to_string(),
-                to: target.to_string(),
-                options: EdgeOptions::undirected()
-                    .with_color("red".to_string())
-                    .with_style("dashed".to_string()),
-            },
+            GraphEdge::Coupled {
+                source,
+                target,
+                directed,
+            } => {
+                let edge_options = if *directed {
+                    EdgeOptions::directed(EdgeDirection::Forward)
+                } else {
+                    EdgeOptions::undirected()
+                };
+                DotEdge {
+                    from: source.to_string(),
+                    to: target.to_string(),
+                    options: edge_options
+                        .with_color("red".to_string())
+                        .with_style("dashed".to_string()),
+                }
+            }
         }
     }
 }
