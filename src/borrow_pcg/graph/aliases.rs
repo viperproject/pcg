@@ -147,15 +147,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 BorrowPCGEdgeKind::Outlives(outlives) => match &outlives.kind {
-                    OutlivesEdgeKind::DerefRegionProjection => {
-                        extend(
-                            outlives.long().to_pcg_node(repacker),
-                            seen,
-                            &mut result,
-                            direct,
-                        );
-                    }
-                    OutlivesEdgeKind::DerefBorrowOutlives => {}
                     OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
                     _ => {
                         extend(

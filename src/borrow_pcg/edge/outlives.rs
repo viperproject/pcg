@@ -91,21 +91,14 @@ impl<'tcx> OutlivesEdge<'tcx> {
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum OutlivesEdgeKind {
-    Aggregate {
-        field_idx: usize,
-        target_rp_index: usize,
-    },
-    /// Region projections resulting from a borrow
-    Borrow,
-    /// e.g. `t|'a -> *t`.
-    DerefRegionProjection,
-    /// e.g. x -> r|'a
-    Ref,
     /// Region projection edge resulting due to contracting a place. For
     /// example, if the type of `x.t` is `&'a mut T` and there is a borrow `x.t
     /// = &mut y`, and we need to contract to `x`, then we need to replace the
     /// borrow edge with an edge `{y} -> {x↓'a}` of this kind.
-    ContractRef,
+    Aggregate {
+        field_idx: usize,
+        target_rp_index: usize,
+    },
     /// Connects a region projection from a constant to some PCG node. For
     /// example `let x: &'x C = c;` where `c` is a constant of type `&'c C`, then
     /// an edge `{c↓'c} -> {x↓'x}` of this kind is created.
@@ -117,10 +110,6 @@ pub enum OutlivesEdgeKind {
     BorrowOutlives {
         toplevel: bool,
     },
-    /// If e.g {x|'a} -> {y|'b} is a BorrowsOutlives, then {*x|'a} -> {*y|'b} is a DerefBorrowsOutlives
-    /// (it's introduced if e.g. *y is expanded in the PCG)
-    DerefBorrowOutlives,
-    /// Initial borrows edge
     InitialBorrows,
     CopySharedRef,
     HavocRegion
@@ -133,15 +122,10 @@ impl std::fmt::Display for OutlivesEdgeKind {
                         field_idx,
                         target_rp_index,
                     } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
-            OutlivesEdgeKind::Borrow => write!(f, "Borrow"),
-            OutlivesEdgeKind::DerefRegionProjection => write!(f, "DerefRegionProjection"),
-            OutlivesEdgeKind::Ref => write!(f, "Ref"),
-            OutlivesEdgeKind::ContractRef => write!(f, "ContractRef"),
             OutlivesEdgeKind::ConstRef => write!(f, "ConstRef"),
             OutlivesEdgeKind::BorrowOutlives { toplevel } => {
                         write!(f, "BorrowOutlives({toplevel})")
                     }
-            OutlivesEdgeKind::DerefBorrowOutlives => write!(f, "DerefBorrowOutlives"),
             OutlivesEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
             OutlivesEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
             OutlivesEdgeKind::HavocRegion => write!(f, "HavocRegion"),
