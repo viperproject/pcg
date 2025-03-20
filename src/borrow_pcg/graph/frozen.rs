@@ -320,15 +320,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                                 result.insert(outlives_edge.short(), outlives_edge.long());
                             }
                         }
-                        OutlivesEdgeKind::Borrow => todo!(),
-                        OutlivesEdgeKind::DerefRegionProjection => todo!(),
-                        OutlivesEdgeKind::Ref => todo!(),
-                        OutlivesEdgeKind::ContractRef => todo!(),
                         OutlivesEdgeKind::BorrowOutlives { .. } => {
                             stack.push(outlives_edge.long().try_to_local_node(repacker).unwrap());
                         }
                         OutlivesEdgeKind::CopySharedRef => {}
-                        OutlivesEdgeKind::DerefBorrowOutlives => todo!(),
                     },
                     BorrowPCGEdgeKind::RegionProjectionMember(..) => todo!(),
                     BorrowPCGEdgeKind::FunctionCallRegionCoupling(..) => todo!(),
