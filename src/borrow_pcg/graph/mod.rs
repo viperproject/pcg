@@ -192,20 +192,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         let mut seen = HashSet::new();
+        let frozen_graph = FrozenGraphRef::new(self);
 
         let mut queue = vec![];
-        for node in self.roots(repacker) {
-            queue.push(ExploreFrom::new(node, repacker));
+        for node in frozen_graph.roots(repacker).iter() {
+            tracing::debug!("Adding root node to queue: {:?}", node);
+            queue.push(ExploreFrom::new(*node, repacker));
         }
-
-        let blocking_map = FrozenGraphRef::new(self);
 
         while let Some(ef) = queue.pop() {
             if seen.contains(&ef) {
                 continue;
             }
             seen.insert(ef);
-            let edges_blocking = blocking_map.get_edges_blocking(ef.current(), repacker);
+            let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), repacker);
             for edge in edges_blocking.iter() {
                 match edge.kind() {
                     BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
@@ -221,6 +221,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .collect::<Vec<_>>()
                             .into();
                         graph.add_edge(&inputs, &outputs, repacker);
+                    }
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(e)
+                        if e.is_owned_expansion(repacker)
+                            && ef
+                                .current()
+                                .as_maybe_old_place().is_some_and(|p| p.is_owned(repacker)) =>
+                    {
+                        continue
                     }
                     _ => {
                         for node in edge.blocked_by_nodes(repacker) {
@@ -397,6 +405,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
     }
 
+    #[tracing::instrument(skip(self, borrow_checker, repacker))]
     fn construct_region_projection_abstraction<'mir>(
         &self,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,

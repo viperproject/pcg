@@ -42,12 +42,13 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     }
 
     pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
-        self.lookup(*node.iter().next().unwrap()).is_some_and(|idx| {
-            self.inner
-                .neighbors_directed(idx, Direction::Incoming)
-                .count()
-                == 0
-        })
+        self.lookup(*node.iter().next().unwrap())
+            .is_some_and(|idx| {
+                self.inner
+                    .neighbors_directed(idx, Direction::Incoming)
+                    .count()
+                    == 0
+            })
     }
 
     pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
@@ -254,6 +255,11 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         to: &Coupled<N>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
+        tracing::debug!(
+            "Adding edge {} -> {}",
+            from.to_short_string(repacker),
+            to.to_short_string(repacker)
+        );
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles before adding edge"
