@@ -180,7 +180,10 @@ impl BorrowsVisitor<'_, '_, '_> {
         self.record_actions(actions);
         for created_location in self.domain.bc.twophase_borrow_activations(location) {
             let state = self.domain.data.states.get_mut(PostMain);
-            let borrow = state.graph().borrow_created_at(created_location).unwrap();
+            let borrow = match state.graph().borrow_created_at(created_location) {
+                Some(borrow) => borrow,
+                None => continue,
+            };
             let blocked_place = borrow.blocked_place.place();
             if state
                 .graph()
