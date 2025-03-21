@@ -129,7 +129,17 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
         outlives(self.region_cx, sup, sub)
     }
 
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+    fn is_live(&self, node: PCGNode<'tcx>, mut location: Location) -> bool {
+        // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
+        // the statement at `location`. Therefore we need to decrement the statement
+        // index by 1 to get the liveness at the end of the previous statement.
+        // If this is the first statement of the block, we just say it's live,
+        // perhaps this could be addressed in some way?
+        if location.statement_index > 0 {
+            location.statement_index -= 1;
+        } else {
+            return true;
+        }
         let local = match node {
             PCGNode::RegionProjection(rp) => {
                 if let Some(local) = rp.local() {
