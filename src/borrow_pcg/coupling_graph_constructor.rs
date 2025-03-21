@@ -152,7 +152,12 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self
     where
         Self: Sized;
+
+    /// Returns true if the node is live *before* `location`.
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        !self.is_live(node, location)
+    }
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
 
     fn same_region(&self, reg1: PCGRegion, reg2: PCGRegion) -> bool {
