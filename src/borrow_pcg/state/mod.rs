@@ -5,15 +5,17 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
-    graph::{BorrowsGraph, frozen::FrozenGraphRef},
+    graph::{frozen::FrozenGraphRef, BorrowsGraph},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
+use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
-    borrow_pcg::edge::
-        borrow::{BorrowEdge, LocalBorrow}
-    ,
+    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
     utils::display::DisplayWithRepacker,
+};
+use crate::{
+    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
@@ -27,14 +29,6 @@ use crate::{
     },
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
-};
-use crate::{
-    borrow_pcg::action::executed_actions::ExecutedActions,
-    combined_pcs::PcgError,
-};
-use crate::{
-    borrow_pcg::edge::kind::BorrowPCGEdgeKind,
-    utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{combined_pcs::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
@@ -308,9 +302,12 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-    /// Removes leaves that are old or dead (based on the borrow checker). Note
-    /// that the liveness calculation is performed based on what happened at the
-    /// end of the *previous* statement.
+    /// Removes leaves that are old or dead (based on the borrow checker). This
+    /// function should called prior to evaluating the effect of the statement
+    /// at `location`.
+    ///
+    /// Note that the liveness calculation is performed based on what happened
+    /// at the end of the *previous* statement.
     ///
     /// For example when evaluating:
     /// ```text
@@ -318,7 +315,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// bb0[2]: *x = 2;
     /// bb0[3]: ... // x is dead
     /// ```
-    /// would not remove the *x -> y edge until this function is called at `bb0[3]`.
+    /// we do not remove the `*x -> y` edge until `bb0[3]`.
     /// This ensures that the edge appears in the graph at the end of `bb0[2]`
     /// (rather than never at all).
     ///
@@ -333,20 +330,12 @@ impl<'tcx> BorrowsState<'tcx> {
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
-        let prev_location = if location.statement_index == 0 {
-            None
-        } else {
-            Some(Location {
-                block: location.block,
-                statement_index: location.statement_index - 1,
-            })
-        };
         let mut num_edges_prev = self.graph.num_edges();
         loop {
             fn go<'slf, 'mir, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
                 repacker: PlaceRepacker<'mir, 'tcx>,
-                prev_location: Option<Location>,
+                location: Location,
                 bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
@@ -369,29 +358,28 @@ impl<'tcx> BorrowsState<'tcx> {
                         return true;
                     }
 
-                    prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
+                    bc.is_dead(place.into(), location)
                 };
 
-                let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                        if expansion.expansion().iter().all(|node| {
-                            node.is_old()
-                                || (prev_location.is_some()
-                                    && !bc.is_live(node.place().into(), prev_location.unwrap()))
-                        }) {
-                            true
-                        } else {
-                            expansion.expansion().iter().all(|node| {
-                                expansion.base().place().is_prefix_exact(node.place())
-                                    && expansion.base().location() == node.location()
-                            })
+                let should_pack_edge =
+                    |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
+                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                            if expansion.expansion().iter().all(|node| {
+                                node.is_old() || bc.is_dead(node.place().into(), location)
+                            }) {
+                                true
+                            } else {
+                                expansion.expansion().iter().all(|node| {
+                                    expansion.base().place().is_prefix_exact(node.place())
+                                        && expansion.base().location() == node.location()
+                                })
+                            }
                         }
-                    }
-                    _ => edge
-                        .blocked_by_nodes(repacker)
-                        .iter()
-                        .all(|p| should_kill_node(*p, &fg)),
-                };
+                        _ => edge
+                            .blocked_by_nodes(repacker)
+                            .iter()
+                            .all(|p| should_kill_node(*p, &fg)),
+                    };
 
                 let mut edges_to_trim = Vec::new();
                 for edge in fg
@@ -404,12 +392,13 @@ impl<'tcx> BorrowsState<'tcx> {
                         edge.kind().to_short_string(repacker)
                     );
                     if should_pack_edge(edge.kind()) {
+                        tracing::info!("Remove edge {}", edge.kind().to_short_string(repacker));
                         edges_to_trim.push(edge);
                     }
                 }
                 edges_to_trim
             }
-            let edges_to_trim = go(self, repacker, prev_location, bc);
+            let edges_to_trim = go(self, repacker, location, bc);
             if edges_to_trim.is_empty() {
                 break Ok(actions);
             }
