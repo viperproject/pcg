@@ -1,5 +1,6 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::HasPlace;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::PlaceRepacker};
@@ -11,15 +12,10 @@ use crate::{
         path_condition::PathConditions,
     },
     combined_pcs::PCGNode,
-    rustc_interface::
-        middle::mir::BasicBlock
-    ,
+    rustc_interface::middle::mir::BasicBlock,
     utils::{
-        display::DisplayDiff,
-        maybe_old::MaybeOldPlace,
-        maybe_remote::MaybeRemotePlace,
-        validity::HasValidityCheck,
-        PlaceSnapshot, SnapshotLocation,
+        display::DisplayDiff, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
+        validity::HasValidityCheck, PlaceSnapshot, SnapshotLocation,
     },
     validity_checks_enabled,
 };
@@ -27,6 +23,15 @@ use crate::{
 use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn render_debug_graph(&self, repacker: PlaceRepacker<'_, 'tcx>, comment: &str) {
+        if borrows_imgcat_debug() {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
+                    eprintln!("Error rendering self graph: {}", e);
+                });
+            }
+        }
+    }
 
     pub(crate) fn join<'mir>(
         &mut self,
@@ -40,31 +45,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // if validity_checks_enabled() {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
         // }
-        #[allow(unused)]
         let old_self = self.clone();
 
-        #[allow(unused)]
-        let other_frozen = other.frozen_graph();
-
-        if borrows_imgcat_debug() {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
-                DotGraph::render_with_imgcat(&dot_graph, &format!("Self graph: {:?}", self_block))
-                    .unwrap_or_else(|e| {
-                        eprintln!("Error rendering self graph: {}", e);
-                    });
-            }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
-                DotGraph::render_with_imgcat(
-                    &dot_graph,
-                    &format!("Other graph: {:?}", other_block),
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!("Error rendering other graph: {}", e);
-                });
-            }
-        }
-
         if repacker.is_back_edge(other_block, self_block) {
+            self.render_debug_graph(repacker, &format!("Self graph: {:?}", self_block));
+            other.render_debug_graph(repacker, &format!("Other graph: {:?}", other_block));
             self.join_loop(other, self_block, other_block, repacker, bc);
             let result = *self != old_self;
             if borrows_imgcat_debug() {
@@ -164,10 +149,31 @@ impl<'tcx> BorrowsGraph<'tcx> {
             without_common_other.edges.remove(edge);
         }
 
+        fn reconnect_root_lifetime_projections<'tcx>(
+            target: &mut BorrowsGraph<'tcx>,
+            source: &BorrowsGraph<'tcx>,
+            repacker: PlaceRepacker<'_, 'tcx>,
+        ) {
+            for root in target.roots(repacker) {
+                if let Some(node @ PCGNode::Place(place)) = root.as_blocking_node(repacker) {
+                    if place.place().is_deref() {
+                        for edge in source.edges_blocked_by(node, repacker) {
+                            if let BorrowPCGEdgeKind::BorrowPCGExpansion(_) = edge.kind() {
+                                target.insert(edge.to_owned_edge());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        reconnect_root_lifetime_projections(&mut without_common_self, self, repacker);
+        reconnect_root_lifetime_projections(&mut without_common_other, other, repacker);
+
         let self_coupling_graph = without_common_self.construct_region_projection_abstraction(
             borrow_checker,
             repacker,
-            other_block,
+            self_block,
         );
 
         let other_coupling_graph = without_common_other.construct_region_projection_abstraction(
