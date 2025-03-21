@@ -463,7 +463,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
 }
 
 impl<T: Copy> RegionProjection<'_, T> {
-    pub(crate) fn place(&self) -> T {
+    pub fn place(&self) -> T {
         self.base
     }
 }

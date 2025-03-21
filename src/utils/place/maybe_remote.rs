@@ -150,7 +150,7 @@ impl RemotePlace {
         Self { local }
     }
 
-    pub(crate) fn assigned_local(self) -> mir::Local {
+    pub fn assigned_local(self) -> mir::Local {
         self.local
     }
 
