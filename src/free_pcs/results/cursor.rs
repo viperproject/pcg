@@ -174,7 +174,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                         }
                         actions
                     },
-                    to.borrow.data.entry_state.latest.clone(),
+                    to.borrow.data.entry_state.clone(),
                 ))
             })
             .collect::<Result<Vec<_>, PcgError>>()?;
