@@ -1,5 +1,6 @@
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge_data::EdgeData;
 use crate::utils::HasPlace;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -12,6 +13,7 @@ use crate::{
         path_condition::PathConditions,
     },
     combined_pcs::PCGNode,
+    rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::BasicBlock,
     utils::{
         display::DisplayDiff, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
@@ -132,6 +134,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
+    fn transitively_blocking_edges<'graph, 'mir: 'graph>(
+        &'graph self,
+        node: PCGNode<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
+        let mut stack: Vec<BorrowPCGEdgeRef<'tcx, 'graph>> =
+            self.edges_blocking(node, repacker).collect();
+        let mut result = FxHashSet::default();
+        while let Some(edge) = stack.pop() {
+            result.insert(edge);
+            for blocking_node in edge.blocked_by_nodes(repacker) {
+                for edge in self.edges_blocking(blocking_node.into(), repacker) {
+                    if result.insert(edge) {
+                        stack.push(edge);
+                    }
+                }
+            }
+        }
+        result
+    }
+
     fn join_loop<'mir>(
         &mut self,
         other: &Self,
@@ -140,7 +163,25 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) {
-        let common_edges = self.common_edges(other);
+        let mut common_edges = self.common_edges(other);
+        let self_base_rp = self.base_rp_graph(repacker);
+        let other_base_rp = other.base_rp_graph(repacker);
+        for root in self_base_rp.roots() {
+            let mut stack = vec![root];
+            while let Some(node) = stack.pop() {
+                let children = self_base_rp.children(&node);
+                if children != other_base_rp.children(&node) {
+                    for pcg_node in node {
+                        for edge in self.transitively_blocking_edges(pcg_node.into(), repacker) {
+                            common_edges.remove(edge.kind());
+                        }
+                    }
+                }
+                for child in children {
+                    stack.push(child);
+                }
+            }
+        }
         let mut without_common_self = self.clone();
         let mut without_common_other = other.clone();
         for edge in common_edges.iter() {
@@ -148,6 +189,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
             without_common_self.edges.remove(edge);
             without_common_other.edges.remove(edge);
         }
+        without_common_self.render_debug_graph(
+            repacker,
+            &format!("self graph (disjoint): {:?}", self_block),
+        );
+        without_common_other.render_debug_graph(
+            repacker,
+            &format!("other graph (disjoint): {:?}", other_block),
+        );
 
         fn reconnect_root_lifetime_projections<'tcx>(
             target: &mut BorrowsGraph<'tcx>,
@@ -216,14 +265,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
             self.insert(abstraction);
         }
-        for node in result.roots() {
-            if let PCGNode::RegionProjection(rp) = node {
-                if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = rp.place() {
-                    let mut old_rp = rp;
-                    old_rp.base =
-                        PlaceSnapshot::new(place, SnapshotLocation::Start(self_block)).into();
-                    let latest = Latest::singleton(place, SnapshotLocation::Start(self_block));
-                    self.make_place_old(place, &latest, repacker);
+        for coupled in result.roots() {
+            for node in coupled {
+                if let PCGNode::RegionProjection(rp) = node {
+                    if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = rp.place() {
+                        let mut old_rp = rp;
+                        old_rp.base =
+                            PlaceSnapshot::new(place, SnapshotLocation::Start(self_block)).into();
+                        let latest = Latest::singleton(place, SnapshotLocation::Start(self_block));
+                        self.make_place_old(place, &latest, repacker);
+                    }
                 }
             }
         }

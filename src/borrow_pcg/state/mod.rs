@@ -9,11 +9,8 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
+use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
-use crate::{
-    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
-    utils::display::DisplayWithRepacker,
-};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
@@ -387,12 +384,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     .into_iter()
                     .map(|e| e.to_owned_edge())
                 {
-                    tracing::debug!(
-                        "Checking leaf edge {:?}",
-                        edge.kind().to_short_string(repacker)
-                    );
                     if should_pack_edge(edge.kind()) {
-                        tracing::info!("Remove edge {}", edge.kind().to_short_string(repacker));
                         edges_to_trim.push(edge);
                     }
                 }

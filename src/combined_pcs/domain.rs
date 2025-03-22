@@ -470,10 +470,10 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             return false;
         }
 
-        // We've already joined this block, we can exit early
         if self.repacker.is_back_edge(other.block(), self.block())
             && self.join_history.contains(&other.block())
         {
+            // We've already joined this block, we can exit early
             return false;
         } else {
             self.join_history.insert(other.block());

@@ -270,7 +270,7 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
             upper_candidate,
         });
         let upper_candidate = upper_candidate.clone();
-        let endpoints = bg.endpoints_pointing_to(&upper_candidate);
+        let endpoints = bg.parents(&upper_candidate);
         for coupled in endpoints {
             pcg_validity_assert!(
                 coupled != upper_candidate,

@@ -41,6 +41,7 @@ use crate::rustc_interface::middle::{
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
 impl<'tcx> BorrowsDomain<'_, 'tcx> {
+    #[tracing::instrument(skip(self, other), fields(self_block = ?self.block(), other_block = ?other.block()))]
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
         self.debug_join_iteration += 1;
@@ -52,33 +53,41 @@ impl<'tcx> BorrowsDomain<'_, 'tcx> {
                 self.debug_join_iteration
             );
         }
-        // For performance reasons we don't check validity here.
-        // if validity_checks_enabled() {
-        //     pcg_validity_assert!(other.is_valid(), "Other graph is invalid");
-        // }
+        let seen = self.data.incoming_states.contains(&other.block());
+
+        if seen && other.block() > self.block() {
+            // It's a loop, but we've already joined it
+            return false;
+        }
         let mut other_after = other.post_main_state().clone();
 
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let pc = PathCondition::new(other.block(), self.block());
         other_after.add_path_condition(pc);
-
-        let self_block = self.block();
-
-        Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state).join(
-            &other_after,
-            self_block,
-            other.block(),
-            self.bc.as_ref(),
-            self.repacker,
-        )
+        if seen {
+            // It's another iteration, reset the entry state
+            self.data.incoming_states = vec![other.block()].into_iter().collect();
+            self.data.entry_state = other_after.into();
+        } else {
+            self.data.incoming_states.insert(other.block());
+            let self_block = self.block();
+            Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state).join(
+                &other_after,
+                self_block,
+                other.block(),
+                self.bc.as_ref(),
+                self.repacker,
+            );
+        }
+        true
     }
 }
 
-#[derive(Clone)]
 /// The domain of the Borrow PCG dataflow analysis. Note that this contains many
 /// fields which serve as context (e.g. reference to a borrow-checker impl to
 /// properly compute joins) but are not updated in the analysis itself.
+#[derive(Clone)]
 pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) data: DomainData<BorrowsState<'tcx>>,
     pub(crate) block: Option<BasicBlock>,
@@ -89,6 +98,7 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
     pub(crate) debug_join_iteration: usize,
+    pub(crate) version: usize,
 }
 
 impl PartialEq for BorrowsDomain<'_, '_> {
@@ -125,6 +135,12 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
         self.block.unwrap()
     }
 
+    #[tracing::instrument(skip(self), fields(block = ?self.block()))]
+    pub(crate) fn increment_version(&mut self) {
+        self.version += 1;
+    }
+
+    #[tracing::instrument(skip(repacker, bc))]
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
         bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
@@ -136,6 +152,7 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
             block,
             repacker,
             debug_join_iteration: 0,
+            version: 0,
             bc,
         }
     }
