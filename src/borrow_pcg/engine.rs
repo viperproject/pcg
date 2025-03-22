@@ -41,6 +41,7 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
 }
 
 impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
+    #[tracing::instrument(skip(self,state,statement, location), fields(block = ?state.block()))]
     pub(crate) fn prepare_operands(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
@@ -94,6 +95,7 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, state, terminator))]
     pub(crate) fn apply_before_terminator_effect(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
@@ -121,6 +123,7 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state.data.pre_main_complete();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
             .visit_terminator_fallable(terminator, location)?;
+        state.increment_version();
         Ok(terminator.edges())
     }
 }
