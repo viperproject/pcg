@@ -1,3 +1,4 @@
+#[rustversion::since(2024-11-14)]
 use super::mir_dataflow::Analysis as MirAnalysis;
 
 use super::{

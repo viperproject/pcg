@@ -1,5 +1,8 @@
+use chrono::Local;
+use derive_more::Deref;
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 mod common;
 use common::{get, run_on_crate};
@@ -8,25 +11,32 @@ use common::{get, run_on_crate};
 #[ignore]
 pub fn top_crates() {
     let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
-    top_crates_range(0..500, parallelism.parse().unwrap())
+    top_crates_parallel(
+        500,
+        Some("2025-03-13".to_string()),
+        parallelism.parse().unwrap(),
+    )
 }
 
-pub fn top_crates_range(range: std::ops::Range<usize>, parallelism: usize) {
+pub fn top_crates_parallel(n: usize, date: Option<String>, parallelism: usize) {
     std::fs::create_dir_all("tmp").unwrap();
     rayon::ThreadPoolBuilder::new()
         .num_threads(parallelism)
         .build_global()
         .unwrap();
-    let top_crates: Vec<_> = CratesIter::top(range).collect();
-    top_crates.into_par_iter().for_each(|(i, krate)| {
-        let version = krate.version.unwrap_or(krate.newest_version);
-        println!("Starting: {i} ({})", krate.name);
-        run_on_crate(&krate.name, &version, false);
-    });
+    let top_crates: Vec<_> = Crates::top(n, date).to_vec();
+    top_crates
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, krate)| {
+            let version = krate.version.unwrap_or(krate.newest_version);
+            println!("Starting: {i} ({})", krate.name);
+            run_on_crate(&krate.name, &version, false);
+        });
 }
 
 /// A create on crates.io.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct Crate {
     #[serde(rename = "id")]
     name: String,
@@ -37,57 +47,87 @@ struct Crate {
 }
 
 /// The list of crates from crates.io
-#[derive(Debug, Deserialize)]
-struct CratesList {
+#[derive(Debug, Deref, Deserialize)]
+struct Crates {
     crates: Vec<Crate>,
 }
 
 const PAGE_SIZE: usize = 100;
-struct CratesIter {
-    curr_idx: usize,
-    curr_page: usize,
-    crates: Vec<Crate>,
+
+fn download_crates(n: usize) -> Vec<Crate> {
+    let mut all_crates = Vec::new();
+    let mut page = 1;
+
+    while all_crates.len() < n {
+        let url = format!(
+            "https://crates.io/api/v1/crates?page={}&per_page={PAGE_SIZE}&sort=downloads",
+            page,
+        );
+        let resp = get(&url).expect("Could not fetch top crates");
+        assert!(
+            resp.status().is_success(),
+            "Response status: {}",
+            resp.status()
+        );
+        let page_crates = match serde_json::from_reader::<_, Crates>(resp) {
+            Ok(page_crates) => page_crates,
+            Err(e) => panic!("Invalid JSON {e}"),
+        };
+        assert_eq!(page_crates.crates.len(), PAGE_SIZE);
+        all_crates.extend(page_crates.crates);
+        page += 1;
+    }
+
+    all_crates
 }
 
-impl CratesIter {
-    pub fn new(start: usize) -> Self {
-        Self {
-            curr_idx: start,
-            curr_page: start / PAGE_SIZE + 1,
-            crates: Vec::new(),
-        }
-    }
-    pub fn top(range: std::ops::Range<usize>) -> impl Iterator<Item = (usize, Crate)> {
-        Self::new(range.start).take(range.len())
-    }
+fn get_cache_path(date: &str) -> PathBuf {
+    PathBuf::from("tests/top-crates").join(format!("{date}.json"))
 }
 
-impl Iterator for CratesIter {
-    type Item = (usize, Crate);
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.crates.is_empty() {
-            let url = format!(
-                "https://crates.io/api/v1/crates?page={}&per_page={PAGE_SIZE}&sort=downloads",
-                self.curr_page,
+fn read_from_cache(cache_path: &Path) -> Option<Vec<Crate>> {
+    if let Ok(file) = std::fs::File::open(&cache_path) {
+        return Some(serde_json::from_reader::<_, Vec<Crate>>(file).unwrap());
+    }
+    None
+}
+
+fn write_to_cache(cache_path: PathBuf, crates: &[Crate]) {
+    let file = std::fs::File::create(&cache_path).unwrap_or_else(|err| {
+        panic!(
+            "Failed to create cache file {}: {}",
+            cache_path.display(),
+            err
+        );
+    });
+    serde_json::to_writer(file, &crates).unwrap();
+}
+
+impl Crates {
+    pub fn top(n: usize, date: Option<String>) -> Crates {
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        let date = date.unwrap_or_else(|| today.clone());
+        let cache_path = get_cache_path(&date);
+        let crates = read_from_cache(&cache_path).unwrap_or_else(move || {
+            assert_eq!(
+                date,
+                today,
+                "Cannot get crates from {} because we JSON file {} doesn't exist",
+                date,
+                cache_path.display()
             );
-            let resp = get(&url).expect("Could not fetch top crates");
-            assert!(
-                resp.status().is_success(),
-                "Response status: {}",
-                resp.status()
-            );
-            let page_crates: CratesList = match serde_json::from_reader(resp) {
-                Ok(page_crates) => page_crates,
-                Err(e) => panic!("Invalid JSON {e}"),
-            };
-            assert_eq!(page_crates.crates.len(), PAGE_SIZE);
-            self.crates = page_crates.crates;
-            self.crates.reverse();
-            self.crates
-                .truncate(self.crates.len() - self.curr_idx % PAGE_SIZE);
-            self.curr_page += 1;
+            let crates = download_crates(n);
+            write_to_cache(cache_path, &crates);
+            crates
+        });
+        assert!(
+            crates.len() >= n,
+            "Tried to get {} crates but only had {}",
+            n,
+            crates.len()
+        );
+        Crates {
+            crates: crates[..n].to_vec(),
         }
-        self.curr_idx += 1;
-        Some((self.curr_idx - 1, self.crates.pop().unwrap()))
     }
 }

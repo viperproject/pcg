@@ -119,10 +119,6 @@ pub fn run_on_crate(name: &str, version: &str, debug: bool) {
             eprintln!("Skipping net2; this version doesn't compile.");
             return;
         }
-        ("ring", "0.17.13") => {
-            eprintln!("Skipping ring; it doesn't compile for some reason.");
-            return;
-        }
         ("generic-array", "1.2.0") if rustversion::cfg!(nightly(2024 - 09 - 14)) => {
             eprintln!("Skipping generic-array; it's not supported on nightly 2024-09-14");
             return;

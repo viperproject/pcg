@@ -6,14 +6,15 @@ use super::{
     has_pcs_elem::HasPcgElems,
     region_projection::PCGRegion,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     combined_pcs::PCGNode,
     coupling, pcg_validity_assert,
     rustc_interface::middle::mir::{BasicBlock, Location},
+    rustc_interface::middle::ty,
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
 };
+use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 
 /// A collection of coupled PCG nodes. They will expire at the same time, and only one
 /// node in the set will be alive.
@@ -147,15 +148,25 @@ impl CGNode<'_> {
     }
 }
 
-pub(crate) trait BorrowCheckerInterface<'tcx> {
+pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
+    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self
+    where
+        Self: Sized;
+
+    /// Returns true if the node is live *before* `location`.
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        !self.is_live(node, location)
+    }
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
+
+    fn same_region(&self, reg1: PCGRegion, reg2: PCGRegion) -> bool {
+        self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
+    }
 
     /// Returns the set of two-phase borrows that activate at `location`.
     /// Each borrow in the returned set is represented by the MIR location
     /// that it was created at.
-    /// TODO: Actually use this
-    #[allow(unused)]
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 }
 
@@ -205,19 +216,17 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T> {
-    #[allow(unused)]
-    liveness: &'regioncx T,
+pub(crate) struct RegionProjectionAbstractionConstructor<'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
-    coupling_graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
+    graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
 struct AddEdgeHistory<'a, 'tcx> {
-    bottom_connect: &'a BTreeSet<CGNode<'tcx>>,
-    upper_candidate: &'a BTreeSet<CGNode<'tcx>>,
+    bottom_connect: &'a Coupled<CGNode<'tcx>>,
+    upper_candidate: &'a Coupled<CGNode<'tcx>>,
 }
 
 impl std::fmt::Display for AddEdgeHistory<'_, '_> {
@@ -239,50 +248,57 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
-    CouplingGraphConstructor<'regioncx, 'mir, 'tcx, T>
-{
-    pub(crate) fn new(
-        region_liveness: &'regioncx T,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-        block: BasicBlock,
-    ) -> Self {
+impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
+    pub(crate) fn new(repacker: PlaceRepacker<'mir, 'tcx>, block: BasicBlock) -> Self {
         Self {
-            liveness: region_liveness,
             repacker,
             block,
-            coupling_graph: coupling::DisjointSetGraph::new(),
+            graph: coupling::DisjointSetGraph::new(),
         }
     }
 
     fn add_edges_from<'a>(
         &mut self,
         bg: &coupling::DisjointSetGraph<CGNode<'tcx>>,
-        bottom_connect: &'a BTreeSet<CGNode<'tcx>>,
-        upper_candidate: &'a BTreeSet<CGNode<'tcx>>,
+        bottom_connect: &'a Coupled<CGNode<'tcx>>,
+        upper_candidate: &'a Coupled<CGNode<'tcx>>,
+        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
         history.add(AddEdgeHistory {
             bottom_connect,
             upper_candidate,
         });
-        let upper_candidate = upper_candidate.clone().into();
-        let endpoints = bg.endpoints_pointing_to(&upper_candidate);
+        let upper_candidate = upper_candidate.clone();
+        let endpoints = bg.parents(&upper_candidate);
         for coupled in endpoints {
             pcg_validity_assert!(
                 coupled != upper_candidate,
                 "Coupling graph should be acyclic"
             );
-            let should_include = coupled
-                .iter()
-                .any(|n| /* self.liveness.is_live(*n, self.block) && */ !n.is_old());
-            let coupled_set: BTreeSet<_> = coupled.clone().into_iter().collect();
+            let is_root = bg.is_root(&coupled) && !coupled.iter().any(|n| n.is_old());
+            let should_include = is_root
+                || coupled.iter().any(|n| {
+                    borrow_checker.is_live(
+                        (*n).into(),
+                        Location {
+                            block: self.block,
+                            statement_index: 0,
+                        },
+                    ) && !n.is_old()
+                });
             if !should_include {
-                self.add_edges_from(bg, bottom_connect, &coupled_set, history.clone());
+                self.add_edges_from(
+                    bg,
+                    bottom_connect,
+                    &coupled,
+                    borrow_checker,
+                    history.clone(),
+                );
             } else {
-                self.coupling_graph
-                    .add_edge(&coupled, &bottom_connect.clone().into(), self.repacker);
-                self.add_edges_from(bg, &coupled_set, &coupled_set, history.clone());
+                self.graph
+                    .add_edge(&coupled, &bottom_connect.clone(), self.repacker);
+                self.add_edges_from(bg, &coupled, &coupled, borrow_checker, history.clone());
             }
         }
     }
@@ -290,9 +306,10 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
     pub(crate) fn construct_region_projection_abstraction(
         mut self,
         bg: &BorrowsGraph<'tcx>,
+        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
         tracing::debug!("Construct coupling graph start");
-        let full_graph = bg.base_coupling_graph(self.repacker);
+        let full_graph = bg.base_rp_graph(self.repacker);
         if coupling_imgcat_debug() {
             full_graph.render_with_imgcat(self.repacker, "Base coupling graph");
         }
@@ -300,16 +317,16 @@ impl<'regioncx, 'mir, 'tcx, T: BorrowCheckerInterface<'tcx>>
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.coupling_graph.insert_endpoint(node.clone(), self.repacker);
-            let node_set: BTreeSet<_> = node.into_iter().collect();
+            self.graph.insert_endpoint(node.clone(), self.repacker);
             self.add_edges_from(
                 &full_graph,
-                &node_set,
-                &node_set,
+                &node,
+                &node,
+                borrow_checker,
                 DebugRecursiveCallHistory::new(),
             );
         }
         tracing::debug!("Construct coupling graph end");
-        self.coupling_graph
+        self.graph
     }
 }

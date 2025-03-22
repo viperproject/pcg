@@ -5,20 +5,15 @@ use std::process::{Command, Stdio};
 
 type NodeId = String;
 
-pub struct DotGraph {
+pub(crate) struct DotGraph {
     pub name: String,
     pub nodes: Vec<DotNode>,
     pub edges: Vec<DotEdge>,
-    pub subgraphs: Vec<DotSubgraph>,
 }
 
 impl DotGraph {
-    pub fn write_to_file(&self, path: &str) -> std::io::Result<()> {
-        std::fs::write(path, self.to_string())
-    }
-
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
-        tracing::debug!("{}", comment);
+        tracing::info!("{}", comment);
         let mut dot_process = Command::new("dot")
             .args(["-Tpng"])
             .stdin(Stdio::piped())
@@ -64,13 +59,6 @@ impl DotGraph {
     }
 }
 
-pub struct DotSubgraph {
-    pub id: String,
-    pub label: String,
-    pub nodes: Vec<DotNode>,
-    pub rank_annotations: Vec<RankAnnotation>,
-}
-
 pub struct RankAnnotation {
     pub rank_type: String,
     pub nodes: BTreeSet<NodeId>,
@@ -91,32 +79,16 @@ impl Display for RankAnnotation {
     }
 }
 
-impl Display for DotSubgraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "subgraph {} {{", self.id)?;
-        writeln!(f, "label=\"{}\";", self.label)?;
-        for node in &self.nodes {
-            writeln!(f, "{}", node)?;
-        }
-        for rank_annotation in &self.rank_annotations {
-            writeln!(f, "{}", rank_annotation)?;
-        }
-        writeln!(f, "}}")
-    }
-}
-
 impl Display for DotGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "digraph {} {{", self.name)?;
+        writeln!(f, "layout=dot")?;
         writeln!(f, "node [shape=rect]")?;
         for node in &self.nodes {
             writeln!(f, "{}", node)?;
         }
         for edge in &self.edges {
             writeln!(f, "{}", edge)?;
-        }
-        for subgraph in &self.subgraphs {
-            writeln!(f, "{}", subgraph)?;
         }
         writeln!(f, "}}")
     }
@@ -155,7 +127,17 @@ pub struct DotStringAttr(pub String);
 
 impl Display for DotStringAttr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\"{}\"", self.0)
+        write!(f, "\"{}\"", self.0.replace("\"", "\\\""))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dotstring_attr_escapes_quotes() {
+        let attr = DotStringAttr("extern \"RustCall\"".to_string());
+        assert_eq!(attr.to_string(), "\"extern \\\"RustCall\\\"\"");
     }
 }
 
@@ -206,13 +188,14 @@ pub enum EdgeDirection {
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
-pub struct EdgeOptions {
+pub(crate) struct EdgeOptions {
     label: String,
     color: Option<String>,
     style: Option<String>,
     direction: Option<EdgeDirection>,
     tooltip: Option<String>,
     penwidth: Option<String>,
+    weight: Option<String>,
 }
 
 impl EdgeOptions {
@@ -224,6 +207,7 @@ impl EdgeOptions {
             direction: Some(direction),
             tooltip: None,
             penwidth: None,
+            weight: None,
         }
     }
 
@@ -235,6 +219,7 @@ impl EdgeOptions {
             direction: None,
             tooltip: None,
             penwidth: None,
+            weight: None,
         }
     }
 
@@ -262,10 +247,15 @@ impl EdgeOptions {
         self.tooltip = Some(tooltip);
         self
     }
+
+    pub fn with_weight(mut self, weight: f64) -> Self {
+        self.weight = Some(weight.to_string());
+        self
+    }
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
-pub struct DotEdge {
+pub(crate) struct DotEdge {
     pub from: NodeId,
     pub to: NodeId,
     pub options: EdgeOptions,
@@ -280,7 +270,7 @@ impl Display for DotEdge {
         let direction_part = match &self.options.direction {
             Some(EdgeDirection::Backward) => ", dir=\"back\"",
             Some(EdgeDirection::Forward) => "",
-            None => ", arrowhead=\"none\"",
+            None => "dir=\"none\", constraint=false",
         };
         let color_part = match &self.options.color {
             Some(color) => format!(", color=\"{}\"", color),
@@ -294,9 +284,13 @@ impl Display for DotEdge {
             Some(penwidth) => format!(", penwidth=\"{}\"", penwidth),
             None => "".to_string(),
         };
+        let weight_part = match &self.options.weight {
+            Some(weight) => format!(", weight=\"{}\"", weight),
+            None => "".to_string(),
+        };
         write!(
             f,
-            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}{}]",
+            "    \"{}\" -> \"{}\" [label=\"{}\"{}{}{}{}{}{}]",
             self.from,
             self.to,
             self.options.label,
@@ -304,7 +298,8 @@ impl Display for DotEdge {
             direction_part,
             color_part,
             tooltip_part,
-            penwidth_part
+            penwidth_part,
+            weight_part
         )
     }
 }

@@ -17,11 +17,16 @@ pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-use borrow_pcg::{borrow_pcg_edge::LocalNode, latest::Latest};
-use combined_pcs::{PCGContext, PCGEngine, PcgSuccessor};
+use borrow_pcg::{
+    borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface,
+    latest::Latest,
+};
+use combined_pcs::{PCGEngine, PcgSuccessor};
 use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
-    borrowck::{self, BorrowSet, RegionInferenceContext},
+    borrowck::{
+        self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
+    },
     dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
 };
@@ -29,6 +34,7 @@ use serde_json::json;
 use utils::{
     display::{DebugLines, DisplayWithRepacker},
     env_feature_enabled,
+    maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
     Place, PlaceRepacker,
 };
@@ -94,7 +100,7 @@ impl<'tcx> Weaken<'tcx> {
 /// a lent exclusive capability should be restored to an exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RestoreCapability<'tcx> {
-    node: LocalNode<'tcx>,
+    place: MaybeOldPlace<'tcx>,
     capability: CapabilityKind,
 }
 
@@ -102,17 +108,17 @@ impl<'tcx> RestoreCapability<'tcx> {
     pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "Restore {} to {:?}",
-            self.node.to_short_string(repacker),
+            self.place.to_short_string(repacker),
             self.capability,
         )
     }
 
-    pub(crate) fn new(node: LocalNode<'tcx>, capability: CapabilityKind) -> Self {
-        Self { node, capability }
+    pub(crate) fn new(place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> Self {
+        Self { place, capability }
     }
 
-    pub fn node(&self) -> LocalNode<'tcx> {
-        self.node
+    pub fn place(&self) -> MaybeOldPlace<'tcx> {
+        self.place
     }
 
     pub fn capability(&self) -> CapabilityKind {
@@ -211,6 +217,9 @@ pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
+    fn output_facts(&self) -> &Option<Box<PoloniusOutput>>;
+    fn location_table(&self) -> &LocationTable;
+    fn input_facts(&self) -> &PoloniusInput;
 }
 
 impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
@@ -223,21 +232,37 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx> {
         &self.region_inference_context
     }
+
+    fn output_facts(&self) -> &Option<Box<PoloniusOutput>> {
+        &self.output_facts
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        self.location_table.as_ref().unwrap()
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts.as_ref().unwrap()
+    }
 }
 
-pub fn run_combined_pcs<'mir, 'tcx>(
+pub fn run_combined_pcs<'mir, 'tcx: 'mir>(
     mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
-    let cgx = PCGContext::new(
-        tcx,
-        mir.body(),
-        mir.borrow_set(),
-        mir.region_inference_context(),
-        None,
-    );
-    let engine = PCGEngine::new(cgx, visualization_output_path.clone());
+    let bc: BorrowCheckerImpl<'mir, 'tcx> = BorrowCheckerImpl::new(tcx, mir);
+    run_combined_pcs_with(mir, tcx, bc, visualization_output_path)
+}
+
+pub fn run_combined_pcs_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
+    mir: &'mir T,
+    tcx: TyCtxt<'tcx>,
+    bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,
+    visualization_output_path: Option<String>,
+) -> FpcsOutput<'mir, 'tcx> {
+    let repacker = PlaceRepacker::new(mir.body(), tcx);
+    let engine = PCGEngine::new(repacker, bc, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;
@@ -276,14 +301,7 @@ pub fn run_combined_pcs<'mir, 'tcx>(
         generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir.body())
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PCGContext::new(
-            tcx,
-            mir.body(),
-            mir.borrow_set(),
-            mir.region_inference_context(),
-            None,
-        )
-        .rp;
+        let rp = PlaceRepacker::new(mir.body(), tcx);
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
@@ -334,6 +352,17 @@ macro_rules! pcg_validity_assert {
     ($($arg:tt)*) => {
         if $crate::validity_checks_enabled() {
             assert!($($arg)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! pcg_validity_warn {
+    ($cond:expr, $($arg:tt)*) => {
+        if $crate::validity_checks_enabled() {
+            if !$cond {
+                tracing::warn!($($arg)*);
+            }
         }
     };
 }

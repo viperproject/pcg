@@ -7,8 +7,10 @@
 pub mod dot_graph;
 pub mod drawer;
 pub mod graph_constructor;
+mod grapher;
 pub mod legend;
 pub mod mir_graph;
+mod node;
 
 use crate::{
     borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
@@ -29,7 +31,7 @@ use self::{
     dot_graph::{
         DotEdge, DotFloatAttr, DotLabel, DotNode, DotStringAttr, EdgeDirection, EdgeOptions,
     },
-    graph_constructor::{GraphCluster, PCSGraphConstructor},
+    graph_constructor::PcgGraphConstructor,
 };
 
 pub fn place_id(place: &Place<'_>) -> String {
@@ -56,6 +58,11 @@ pub struct GraphNode {
 }
 
 impl GraphNode {
+    #[cfg(test)]
+    fn label(&self) -> String {
+        self.node_type.label()
+    }
+
     fn to_dot_node(&self) -> DotNode {
         match &self.node_type {
             NodeType::PlaceNode {
@@ -136,9 +143,19 @@ enum NodeType {
     },
 }
 
+impl NodeType {
+    #[cfg(test)]
+    pub(crate) fn label(&self) -> String {
+        match self {
+            NodeType::PlaceNode { label, .. } => label.clone(),
+            NodeType::RegionProjectionNode { label } => label.clone(),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum GraphEdge {
+pub(crate) enum GraphEdge {
     Abstract {
         blocked: NodeId,
         blocking: NodeId,
@@ -174,16 +191,17 @@ enum GraphEdge {
     Coupled {
         source: NodeId,
         target: NodeId,
+        directed: bool,
     },
 }
 
 impl GraphEdge {
-    fn to_dot_edge(&self) -> DotEdge {
+    pub(super) fn to_dot_edge(&self) -> DotEdge {
         match self {
             GraphEdge::Projection { source, target } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
-                options: EdgeOptions::undirected(),
+                options: EdgeOptions::directed(EdgeDirection::Forward),
             },
             GraphEdge::Alias {
                 blocked_place,
@@ -221,7 +239,7 @@ impl GraphEdge {
             } => DotEdge {
                 from: source.to_string(),
                 to: target.to_string(),
-                options: EdgeOptions::undirected()
+                options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("green".to_string())
                     .with_tooltip(path_conditions.clone()),
             },
@@ -247,51 +265,70 @@ impl GraphEdge {
                     .with_label(kind.clone())
                     .with_color("purple".to_string()),
             },
-            GraphEdge::Coupled { source, target } => DotEdge {
-                from: source.to_string(),
-                to: target.to_string(),
-                options: EdgeOptions::undirected()
-                    .with_color("red".to_string())
-                    .with_style("dashed".to_string()),
-            },
+            GraphEdge::Coupled {
+                source,
+                target,
+                directed,
+            } => {
+                let edge_options = if *directed {
+                    EdgeOptions::directed(EdgeDirection::Forward)
+                } else {
+                    EdgeOptions::undirected().with_weight(2.0)
+                };
+                DotEdge {
+                    from: source.to_string(),
+                    to: target.to_string(),
+                    options: edge_options
+                        .with_color("red".to_string())
+                        .with_style("dashed".to_string()),
+                }
+            }
         }
     }
 }
 
-pub struct Graph {
+pub(crate) struct Graph {
     nodes: Vec<GraphNode>,
     edges: HashSet<GraphEdge>,
-    clusters: HashSet<GraphCluster>,
 }
 
 impl Graph {
-    fn new(
-        nodes: Vec<GraphNode>,
-        edges: HashSet<GraphEdge>,
-        clusters: HashSet<GraphCluster>,
-    ) -> Self {
-        Self {
-            nodes,
-            edges,
-            clusters,
-        }
+    fn new(nodes: Vec<GraphNode>, edges: HashSet<GraphEdge>) -> Self {
+        Self { nodes, edges }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edge_between_labelled_nodes(
+        &self,
+        label1: &str,
+        label2: &str,
+    ) -> Result<&GraphEdge, String> {
+        let label_1_id = self
+            .nodes
+            .iter()
+            .find(|n| n.label() == label1)
+            .map(|n| n.id)
+            .ok_or(format!("No node with label: {}", label1))?;
+        let label_2_id = self
+            .nodes
+            .iter()
+            .find(|n| n.label() == label2)
+            .map(|n| n.id)
+            .ok_or(format!("No node with label: {}", label2))?;
+        self.edges
+            .iter()
+            .find(|edge| {
+                let dot_edge = edge.to_dot_edge();
+                dot_edge.from == label_1_id.to_string() && dot_edge.to == label_2_id.to_string()
+            })
+            .ok_or(format!(
+                "Edges exists, no edge between {} and {}",
+                label1, label2
+            ))
     }
 }
 
-pub fn generate_dot_graph_str<'a, 'tcx: 'a>(
-    repacker: PlaceRepacker<'a, 'tcx>,
-    summary: &CapabilitySummary<'tcx>,
-    borrows_domain: &BorrowsState<'tcx>,
-) -> io::Result<String> {
-    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
-    let graph = constructor.construct_graph();
-    let mut buf = vec![];
-    let drawer = GraphDrawer::new(&mut buf);
-    drawer.draw(graph)?;
-    Ok(String::from_utf8(buf).unwrap())
-}
-
-pub fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
+pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
@@ -303,13 +340,13 @@ pub fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
     Ok(String::from_utf8(buf).unwrap())
 }
 
-pub fn generate_dot_graph<'a, 'tcx: 'a>(
+pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
     summary: &CapabilitySummary<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor = PCSGraphConstructor::new(summary, repacker, borrows_domain);
+    let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {}: {}", file_path, e);

@@ -6,9 +6,14 @@
 
 use std::rc::Rc;
 
+use derive_more::Deref;
+
 use crate::{
-    borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
+    borrow_pcg::{
+        action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge,
+        latest::Latest,
+    },
+    combined_pcs::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -43,7 +48,7 @@ impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx> {
+pub struct FreePcsAnalysis<'mir, 'tcx: 'mir> {
     pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
@@ -73,7 +78,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 
     pub fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.cursor.analysis().0.cgx.rp
+        self.cursor.analysis().0.repacker
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -129,7 +134,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         let block = &self.body()[location.block];
 
         // Currently we ignore blocks that are only reached via panics
-        let succs = PCGEngine::successor_blocks(block.terminator())
+        let succs = successor_blocks(block.terminator())
             .into_iter()
             .filter(|succ| {
                 self.cursor
@@ -230,6 +235,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 }
 
+#[derive(Deref)]
 pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
 
 impl<'tcx> PcgBasicBlocks<'tcx> {

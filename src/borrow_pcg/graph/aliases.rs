@@ -4,11 +4,9 @@ use crate::{
         edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
         region_projection::RegionIdx,
     },
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{
-        display::DisplayWithRepacker, HasPlace, PlaceRepacker,
-    },
+    utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
@@ -82,15 +80,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     &mut FxHashSet::default(),
                     true,
                 ));
-                if let PCGNode::Place(p) = local_node {
-                    if let Some(rp) = p.deref_to_rp(repacker) {
-                        results.extend(self.direct_aliases(
-                            rp.try_to_local_node(repacker).unwrap(),
-                            repacker,
-                            &mut FxHashSet::default(),
-                            true,
-                        ));
-                    }
+                if let PCGNode::Place(p) = local_node
+                    && let Some(rp) = p.deref_to_rp(repacker)
+                {
+                    results.extend(self.direct_aliases(
+                        rp.to_local_node(repacker),
+                        repacker,
+                        &mut FxHashSet::default(),
+                        true,
+                    ));
                 }
             }
         }
@@ -149,20 +147,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 BorrowPCGEdgeKind::Outlives(outlives) => match &outlives.kind {
-                    OutlivesEdgeKind::DerefRegionProjection => {
+                    OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
+                    _ => {
                         extend(
                             outlives.long().to_pcg_node(repacker),
                             seen,
                             &mut result,
-                            direct,
+                            false,
                         );
                     }
-                    OutlivesEdgeKind::DerefBorrowOutlives => {}
-                    OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
-                    _ => {
-                        extend(outlives.long().to_pcg_node(repacker), seen, &mut result, false);
-                    }
                 },
+                BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
+                    for input in edge.inputs.iter() {
+                        extend(input.to_pcg_node(repacker), seen, &mut result, false);
+                    }
+                }
                 _ => todo!(),
             }
         }
@@ -229,6 +228,7 @@ fn test_aliases() {
             &body.body,
             tcx,
         );
+        // *_2 aliases _4 at bb3[1]
         assert!(aliases.contains(&temp4));
         assert!(aliases.contains(&x));
     });

@@ -7,6 +7,7 @@ use std::hash::Hash;
 
 use crate::borrow_pcg::coupling_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
+use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::visualization::dot_graph::DotGraph;
@@ -28,7 +29,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         }
     }
 
-    pub(crate) fn roots(&self) -> BTreeSet<N> {
+    pub(crate) fn roots(&self) -> FxHashSet<Coupled<N>> {
         self.inner
             .node_indices()
             .filter(|idx| {
@@ -37,8 +38,18 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                     .count()
                     == 0
             })
-            .flat_map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
+    }
+
+    pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
+        self.lookup(*node.iter().next().unwrap())
+            .is_some_and(|idx| {
+                self.inner
+                    .neighbors_directed(idx, Direction::Incoming)
+                    .count()
+                    == 0
+            })
     }
 
     pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
@@ -245,6 +256,11 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         to: &Coupled<N>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
+        tracing::debug!(
+            "Adding edge {} -> {}",
+            from.to_short_string(repacker),
+            to.to_short_string(repacker)
+        );
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles before adding edge"
@@ -298,13 +314,25 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
             .collect()
     }
 
-    pub(crate) fn endpoints_pointing_to(&self, node: &Coupled<N>) -> Vec<Coupled<N>> {
+    pub(crate) fn parents(&self, node: &Coupled<N>) -> Vec<Coupled<N>> {
         let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
         self.inner
             .node_indices()
             .filter(|idx| self.inner.contains_edge(*idx, node_idx))
             .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
+    }
+
+    pub(crate) fn children(&self, node: &Coupled<N>) -> FxHashSet<Coupled<N>> {
+        if let Some(node_idx) = self.lookup(*node.iter().next().unwrap()) {
+            self.inner
+                .node_indices()
+                .filter(|idx| self.inner.contains_edge(node_idx, *idx))
+                .map(|idx| self.inner.node_weight(idx).unwrap().clone())
+                .collect()
+        } else {
+            FxHashSet::default()
+        }
     }
 }
 

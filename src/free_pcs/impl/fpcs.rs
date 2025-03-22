@@ -38,7 +38,7 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
         Self {
             repacker,
-            data: DomainData::new(Rc::new(None)),
+            data: DomainData::default(),
             actions: EvalStmtData::default(),
         }
     }

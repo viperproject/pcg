@@ -7,8 +7,7 @@ use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     coupling_graph_constructor::CGNode,
     edge::{
-        borrow::RemoteBorrow, outlives::OutlivesEdge,
-        region_projection_member::RegionProjectionMember,
+        borrow::RemoteBorrow, coupling::FunctionCallRegionCoupling, outlives::OutlivesEdge, region_projection_member::RegionProjectionMember
     },
     edge_data::EdgeData,
     graph::Conditioned,
@@ -329,7 +328,7 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
             PCGNode::RegionProjection(rp) => {
                 let place = rp.place().as_local_place()?;
-                Some(LocalNode::RegionProjection(rp.set_base(place, repacker)))
+                Some(LocalNode::RegionProjection(rp.with_base(place, repacker)))
             }
         }
     }
@@ -437,6 +436,7 @@ edgedata_enum!(
     Abstraction(AbstractionType<'tcx>),
     Outlives(OutlivesEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
+    FunctionCallRegionCoupling(FunctionCallRegionCoupling<'tcx>),
 );
 
 pub(crate) trait ToBorrowsEdge<'tcx> {
