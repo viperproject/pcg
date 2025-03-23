@@ -92,6 +92,10 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         return;
     }
 
+    if std::env::var("PCG_TYPECHECK_ONLY").unwrap_or("false".to_string()).parse::<bool>().unwrap() {
+        return;
+    }
+
     let mut item_names = vec![];
 
     let user_specified_vis_dir = std::env::var("PCG_VISUALIZATION_DATA_DIR");

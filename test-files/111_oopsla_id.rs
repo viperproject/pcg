@@ -1,5 +1,6 @@
 fn id(input: String) -> String {
-    input
+    let tmp = input;
+    return tmp;
 }
 
 fn main() {
