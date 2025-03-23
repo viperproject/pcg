@@ -40,7 +40,7 @@ pub fn get_rust_toolchain_channel() -> String {
 }
 
 #[allow(dead_code)]
-pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool) {
+pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool, typecheck_only: bool) {
     let cwd = std::env::current_dir().unwrap();
     let cargo_build = Command::new("cargo")
         .arg("build")
@@ -58,6 +58,7 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool) {
         .arg("check")
         .env("RUST_TOOLCHAIN", get_rust_toolchain_channel())
         .env("RUSTUP_TOOLCHAIN", get_rust_toolchain_channel())
+        .env("PCG_TYPECHECK_ONLY", if typecheck_only { "true" } else { "false" })
         .env("RUSTC", &pcs_exe)
         .current_dir(dir)
         .status()
@@ -105,7 +106,7 @@ pub fn run_pcg_on_file(file: &Path) {
 }
 
 #[allow(dead_code)]
-pub fn run_on_crate(name: &str, version: &str, debug: bool) {
+pub fn run_on_crate(name: &str, version: &str, debug: bool, typecheck_only: bool) {
     match (name, version) {
         ("system-configuration", "0.6.1") => {
             eprintln!("Skipping system-configuration; it doesn't compile.");
@@ -183,7 +184,7 @@ pub fn run_on_crate(name: &str, version: &str, debug: bool) {
         .unwrap();
     writeln!(file, "\n[workspace]").unwrap();
     let dirname_path = PathBuf::from(&dirname);
-    run_pcg_on_crate_in_dir(&dirname_path, debug);
+    run_pcg_on_crate_in_dir(&dirname_path, debug, typecheck_only);
     std::fs::remove_dir_all(dirname).unwrap();
 }
 
