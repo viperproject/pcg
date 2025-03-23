@@ -1,7 +1,7 @@
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef};
+use crate::borrow_pcg::coupling_graph_constructor::RegionProjectionAbstractionConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::utils::HasPlace;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::PlaceRepacker};
@@ -164,8 +164,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) {
         let mut common_edges = self.common_edges(other);
-        let self_base_rp = self.base_rp_graph(repacker);
-        let other_base_rp = other.base_rp_graph(repacker);
+        let self_base_rp = RegionProjectionAbstractionConstructor::new(repacker, self_block)
+            .construct_region_projection_abstraction(self, borrow_checker);
+        let other_base_rp = RegionProjectionAbstractionConstructor::new(repacker, other_block)
+            .construct_region_projection_abstraction(other, borrow_checker);
         for root in self_base_rp.roots() {
             let mut stack = vec![root];
             while let Some(node) = stack.pop() {
@@ -197,27 +199,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             repacker,
             &format!("other graph (disjoint): {:?}", other_block),
         );
-
-        fn reconnect_root_lifetime_projections<'tcx>(
-            target: &mut BorrowsGraph<'tcx>,
-            source: &BorrowsGraph<'tcx>,
-            repacker: PlaceRepacker<'_, 'tcx>,
-        ) {
-            for root in target.roots(repacker) {
-                if let Some(node @ PCGNode::Place(place)) = root.as_blocking_node(repacker) {
-                    if place.place().is_deref() {
-                        for edge in source.edges_blocked_by(node, repacker) {
-                            if let BorrowPCGEdgeKind::BorrowPCGExpansion(_) = edge.kind() {
-                                target.insert(edge.to_owned_edge());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        reconnect_root_lifetime_projections(&mut without_common_self, self, repacker);
-        reconnect_root_lifetime_projections(&mut without_common_other, other, repacker);
 
         let self_coupling_graph = without_common_self.construct_region_projection_abstraction(
             borrow_checker,
