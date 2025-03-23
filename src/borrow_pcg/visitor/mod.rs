@@ -11,8 +11,8 @@ use crate::{
         index::IndexVec,
         middle::{
             mir::{
-                self, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind,
-                Terminator, TerminatorKind,
+                self, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind, Terminator,
+                TerminatorKind,
             },
             ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
         },
@@ -441,4 +441,16 @@ pub(crate) fn extract_regions<'tcx>(
     };
     ty.visit_with(&mut visitor);
     IndexVec::from_iter(visitor.lifetimes.iter().map(|r| (*r).into()))
+}
+
+#[allow(unused)]
+pub(crate) fn extract_inner_regions<'tcx>(
+    ty: ty::Ty<'tcx>,
+    repacker: PlaceRepacker<'_, 'tcx>,
+) -> IndexVec<RegionIdx, PCGRegion> {
+    if let ty::TyKind::Ref(_, ty, _) = ty.kind() {
+        extract_regions(*ty, repacker)
+    } else {
+        extract_regions(ty, repacker)
+    }
 }

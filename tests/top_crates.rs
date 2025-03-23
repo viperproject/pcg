@@ -14,13 +14,14 @@ pub fn top_crates() {
     let typecheck_only = std::env::var("PCG_TEST_CRATE_TYPECHECK_ONLY").unwrap_or("false".to_string());
     top_crates_parallel(
         500,
-        Some("2025-03-13".to_string()),
+        Some("2025-03-13"),
         parallelism.parse().unwrap(),
         typecheck_only.parse().unwrap(),
     )
 }
 
-pub fn top_crates_parallel(n: usize, date: Option<String>, parallelism: usize, typecheck_only: bool) {
+
+pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize, typecheck_only: bool) {
     std::fs::create_dir_all("tmp").unwrap();
     rayon::ThreadPoolBuilder::new()
         .num_threads(parallelism)
@@ -31,9 +32,9 @@ pub fn top_crates_parallel(n: usize, date: Option<String>, parallelism: usize, t
         .into_par_iter()
         .enumerate()
         .for_each(|(i, krate)| {
-            let version = krate.version.unwrap_or(krate.newest_version);
+            let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
-            run_on_crate(&krate.name, &version, false, typecheck_only);
+            run_on_crate(&krate.name, &version, date, false, typecheck_only);
         });
 }
 
@@ -46,6 +47,12 @@ struct Crate {
     version: Option<String>,
     #[serde(rename = "newest_version")]
     newest_version: String,
+}
+
+impl Crate {
+    fn version(&self) -> &str {
+        self.version.as_ref().unwrap_or(&self.newest_version)
+    }
 }
 
 /// The list of crates from crates.io
@@ -106,11 +113,11 @@ fn write_to_cache(cache_path: PathBuf, crates: &[Crate]) {
 }
 
 impl Crates {
-    pub fn top(n: usize, date: Option<String>) -> Crates {
+    pub fn top(n: usize, date: Option<&str>) -> Crates {
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let date = date.unwrap_or_else(|| today.clone());
+        let date = date.unwrap_or_else(|| today.as_str());
         let cache_path = get_cache_path(&date);
-        let crates = read_from_cache(&cache_path).unwrap_or_else(move || {
+        let crates = read_from_cache(&cache_path).unwrap_or_else(|| {
             assert_eq!(
                 date,
                 today,
