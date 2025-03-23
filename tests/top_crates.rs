@@ -11,14 +11,16 @@ use common::{get, run_on_crate};
 #[ignore]
 pub fn top_crates() {
     let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
+    let typecheck_only = std::env::var("PCG_TEST_CRATE_TYPECHECK_ONLY").unwrap_or("false".to_string());
     top_crates_parallel(
         500,
         Some("2025-03-13".to_string()),
         parallelism.parse().unwrap(),
+        typecheck_only.parse().unwrap(),
     )
 }
 
-pub fn top_crates_parallel(n: usize, date: Option<String>, parallelism: usize) {
+pub fn top_crates_parallel(n: usize, date: Option<String>, parallelism: usize, typecheck_only: bool) {
     std::fs::create_dir_all("tmp").unwrap();
     rayon::ThreadPoolBuilder::new()
         .num_threads(parallelism)
@@ -31,7 +33,7 @@ pub fn top_crates_parallel(n: usize, date: Option<String>, parallelism: usize) {
         .for_each(|(i, krate)| {
             let version = krate.version.unwrap_or(krate.newest_version);
             println!("Starting: {i} ({})", krate.name);
-            run_on_crate(&krate.name, &version, false);
+            run_on_crate(&krate.name, &version, false, typecheck_only);
         });
 }
 
