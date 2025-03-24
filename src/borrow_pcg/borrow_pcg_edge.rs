@@ -332,7 +332,7 @@ impl<'tcx> PCGNode<'tcx> {
             }
         }
     }
-    pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
+    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
         match self {
             BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) => {
                 Some(*place)

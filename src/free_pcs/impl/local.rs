@@ -14,7 +14,7 @@ use crate::{
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::{PcgError, PCGInternalError},
+    combined_pcs::{PCGInternalError, PcgError},
     free_pcs::{CapabilityKind, RepackOp},
     utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
     validity_checks_enabled,
@@ -226,10 +226,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let from_cap = if let Some(cap) = self.get_capability(from) {
             cap
         } else {
-            return Err(PcgError::internal(format!(
-                "No capability for {}",
-                from.to_short_string(repacker),
-            )));
+            let err = format!("No capability for {}", from.to_short_string(repacker));
+            tracing::error!("{}", err);
+            return Err(PcgError::internal(err));
         };
         let expansion = from.expand(*to, repacker)?;
 
