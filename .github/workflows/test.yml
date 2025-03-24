@@ -16,9 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Check for warnings
       env:
         RUSTFLAGS: "-D warnings"
@@ -28,10 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
-        components: clippy
     - name: Run Clippy
       run: cargo clippy -- -D warnings
 
@@ -41,6 +34,13 @@ jobs:
     - uses: actions/checkout@v4
     - name: Run tests on files
       run: cargo test --test test_files
+
+  build_2024_09_15:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build using Rust Nightly 2024-09-15
+      run: cargo +nightly-2024-09-15 build
 
   bench_test_files:
     runs-on: ubuntu-latest
@@ -58,9 +58,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run tests on selected crates
       run: cargo test --test selected_crates
 
@@ -68,9 +65,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run unit tests
       run: cargo test --lib
 
@@ -78,9 +72,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run unit tests
       run: cargo test --doc
 
@@ -98,10 +89,6 @@ jobs:
         repository: zgrannan/flowistry
         ref: zgrannan/pcg
         path: flowistry
-
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
 
     - name: Run flowistry tests
       working-directory: flowistry/crates/flowistry
