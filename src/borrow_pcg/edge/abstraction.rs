@@ -33,8 +33,8 @@ use std::collections::BTreeSet;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    pub(crate) edge: AbstractionBlockEdge<'tcx>,
-    pub(crate) block: BasicBlock,
+    pub edge: AbstractionBlockEdge<'tcx>,
+    pub block: BasicBlock,
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
