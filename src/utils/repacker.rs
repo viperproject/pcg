@@ -180,7 +180,7 @@ impl<'tcx> DeepExpansion<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub(crate) fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
+    pub fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),

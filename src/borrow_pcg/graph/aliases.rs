@@ -1,7 +1,8 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode,
+        borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
         edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
+        edge_data::EdgeData,
         region_projection::RegionIdx,
     },
     combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
@@ -25,6 +26,28 @@ struct Alias<'tcx> {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph>(
+        &'graph self,
+        node: LocalNode<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
+        let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
+        let mut stack = vec![node];
+        let mut seen: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
+        while let Some(node) = stack.pop() {
+            if seen.insert(node.into()) {
+                for edge in self.edges_blocked_by(node, repacker) {
+                    result.insert(edge);
+                    for node in edge.blocked_nodes(repacker) {
+                        if let Some(local_node) = node.try_to_local_node(repacker) {
+                            stack.push(local_node);
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
     pub(crate) fn aliases(
         &self,
         node: LocalNode<'tcx>,
