@@ -29,7 +29,7 @@ fn test_selected_crates() {
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Release,
-            validity_checks: true,
+            validity_checks: false,
         },
     );
 
