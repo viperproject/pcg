@@ -92,7 +92,11 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         return;
     }
 
-    if std::env::var("PCG_TYPECHECK_ONLY").unwrap_or("false".to_string()).parse::<bool>().unwrap() {
+    if std::env::var("PCG_TYPECHECK_ONLY")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .unwrap()
+    {
         return;
     }
 
@@ -233,7 +237,9 @@ impl driver::Callbacks for PcsCallbacks {
         _compiler: &Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
-        queries.global_ctxt().unwrap().enter(run_pcg_on_all_fns);
+        queries.global_ctxt().unwrap().enter(|tcx| {
+            run_pcg_on_all_fns(tcx, env_feature_enabled("PCG_POLONIUS").unwrap_or(false))
+        });
         if in_cargo_crate() {
             Compilation::Continue
         } else {
