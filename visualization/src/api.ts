@@ -1,5 +1,5 @@
 import { Assertion } from "./components/Assertions";
-import { CurrentPoint, PCGStmtVisualizationData } from "./types";
+import { CurrentPoint, PcgProgramPointData, PCGStmtVisualizationData } from "./types";
 
 export type MirGraphNode = {
   id: string;
@@ -69,10 +69,10 @@ export const getAssertions = async (functionName: string) => {
   }
 };
 
-export async function getPCGStmtVisualizationData(
+export async function getPcgProgramPointData(
   functionName: string,
   currentPoint: CurrentPoint
-): Promise<PCGStmtVisualizationData> {
+): Promise<PcgProgramPointData> {
   let path =
     currentPoint.type === "stmt"
       ? `block_${currentPoint.block}_stmt_${currentPoint.stmt}`
