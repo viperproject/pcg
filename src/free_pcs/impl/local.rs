@@ -126,6 +126,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
     }
 
     pub(crate) fn leaves(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<Place<'tcx>> {
+        if self.expansions.is_empty() {
+            return vec![self.local.into()];
+        }
         self.expansions
             .iter()
             .flat_map(|(p, e)| p.expansion_places(e, repacker))

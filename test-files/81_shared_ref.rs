@@ -6,6 +6,8 @@ struct S {
 fn main() {
     let x = S { a: 1, b: 2 };
     let y = &x.a;
+    // x.b should have R, because `x` has r. It should not be possible to
+    // have R to x and E for one of its fields.
     // PCG: bb0[4] post_main: x.b: R
     // PCG: bb0[4] post_main: x.a: R
     // PCG: bb0[4] post_main: x: R
