@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use smallvec::SmallVec;
+
 use super::{
     domain::AbstractionOutputTarget,
     graph::{coupling_imgcat_debug, BorrowsGraph},
@@ -25,7 +27,7 @@ use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 ///
 /// Internally, the nodes are stored in a `Vec` to allow for mutation
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Coupled<T>(Vec<T>);
+pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
@@ -55,7 +57,9 @@ impl<T: Clone> Coupled<T> {
     }
 
     pub fn singleton(item: T) -> Self {
-        Self(vec![item])
+        let mut sv = SmallVec::new();
+        sv.push(item);
+        Self(sv)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -73,7 +77,7 @@ impl<T: Clone> Coupled<T> {
 
 impl<T> IntoIterator for Coupled<T> {
     type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
+    type IntoIter = <SmallVec<[T; 4]> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

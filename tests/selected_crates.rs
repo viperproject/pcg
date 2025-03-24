@@ -8,7 +8,7 @@ fn test_selected_crates() {
     // common::run_on_crate("ascii", "1.1.0", true);
     // common::run_on_crate("cc", "1.2.16", true);
     // common::run_on_crate("crc", "3.2.1", true);
-    common::run_on_crate("cookie", "0.18.1", Some("2025-03-13"), false, true);
+    // common::run_on_crate("cookie", "0.18.1", Some("2025-03-13"), false, true);
     // common::run_on_crate("futures-util", "0.3.31", false);
     // common::run_on_crate("gimli", "0.31.1", false);
     // common::run_on_crate("http", "1.2.0", true);
@@ -24,5 +24,9 @@ fn test_selected_crates() {
     // common::run_on_crate("toml_edit", "0.22.23", false);
     // common::run_on_crate("tonic", "0.12.3", true);
     // common::run_on_crate("wasm-bindgen-backend", "0.2.100", true);
-    // common::run_on_crate("zerovec-derive", "0.10.3", true);
+    // common::run_on_crate("zerovec-derive", "0.10.3", Some("2025-03-13"), true, false);
+    common::run_on_crate("zerocopy-derive", "0.8.23", Some("2025-03-13"), common::RunOnCrateOptions::RunPCG {
+        target: common::Target::Debug,
+        validity_checks: false,
+    });
 }
