@@ -170,7 +170,6 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                 idx = self.lookup(first_elem).unwrap();
             }
         }
-        self.merge_sccs(repacker);
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after joining nodes"
@@ -191,36 +190,6 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         !petgraph::algo::is_cyclic_directed(&self.inner)
     }
 
-    /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
-    /// operation, the indices of the nodes may change.
-    fn merge_sccs(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
-        let old_graph = self.clone(); // For debugging
-
-        'outer: loop {
-            let sccs = petgraph::algo::kosaraju_scc(&self.inner);
-            for scc in sccs {
-                if scc.len() > 1 {
-                    self.merge_idxs(scc[0], scc[1]);
-                    // We need to recompute sccs because node indices may have changed
-                    continue 'outer;
-                } else if let Some(edge_idx) = self.inner.find_edge(scc[0], scc[0]) {
-                    self.inner.remove_edge(edge_idx);
-                }
-            }
-            break;
-        }
-
-        if validity_checks_enabled() && !self.is_acyclic() && coupling_imgcat_debug() {
-            old_graph.render_with_imgcat(repacker, "Before merging SCCs");
-            self.render_with_imgcat(repacker, "After merging SCCs");
-        }
-
-        pcg_validity_assert!(
-            self.is_acyclic(),
-            "Resulting graph contains cycles after merging SCCs"
-        );
-    }
-
     pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
         for (source, target) in other.edges() {
             let source_idx = self.join_nodes(&source, repacker);
@@ -229,8 +198,6 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                 self.inner.update_edge(source_idx, target_idx, ());
             }
         }
-
-        self.merge_sccs(repacker);
 
         pcg_validity_assert!(
             self.is_acyclic(),
@@ -301,7 +268,6 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
             let from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
             self.inner.update_edge(from_idx, to_idx, ());
         }
-        self.merge_sccs(repacker);
         pcg_validity_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 
