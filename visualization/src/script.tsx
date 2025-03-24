@@ -16,6 +16,7 @@ import {
   DagreInputNode,
   DagreNode,
   PathData,
+  PcgProgramPointData,
   PCGStmtVisualizationData,
 } from "./types";
 import Edge from "./components/Edge";
@@ -30,7 +31,7 @@ import {
   getFunctions,
   getGraphData,
   getPathData,
-  getPCGStmtVisualizationData,
+  getPcgProgramPointData,
   getPaths,
   getPCSIterations,
   PCSIterations,
@@ -124,8 +125,8 @@ async function main() {
     const [iterations, setIterations] = useState<PCSIterations>([]);
     const [selected, setSelected] = useState<Selection>(999); // HACK - always show last iteration
     const [pathData, setPathData] = useState<PathData | null>(null);
-    const [pcgStmtVisualizationData, setPcgStmtVisualizationData] =
-      useState<PCGStmtVisualizationData | null>(null);
+    const [pcgProgramPointData, setPcgProgramPointData] =
+      useState<PcgProgramPointData | null>(null);
     const [currentPoint, setCurrentPoint] = useState<CurrentPoint>({
       type: "stmt",
       block: 0,
@@ -325,11 +326,11 @@ async function main() {
 
       const fetchPcgStmtVisualizationData = async () => {
         try {
-          const pcgStmtVisualizationData = await getPCGStmtVisualizationData(
+          const pcgStmtVisualizationData = await getPcgProgramPointData(
             selectedFunction,
             currentPoint
           );
-          setPcgStmtVisualizationData(pcgStmtVisualizationData);
+          setPcgProgramPointData(pcgStmtVisualizationData);
         } catch (error) {
           console.error("Error fetching pcg stmt visualization data:", error);
         }
@@ -661,10 +662,12 @@ async function main() {
             ))}
           </svg>
         </div>
-        {pcgStmtVisualizationData && showPCGOps && (
+        {pcgProgramPointData && showPCGOps && (
           <>
-            <PCGOps data={pcgStmtVisualizationData} />
-            <LatestDisplay latest={pcgStmtVisualizationData.latest} />
+            <PCGOps data={pcgProgramPointData} />
+            {"latest" in pcgProgramPointData && (
+              <LatestDisplay latest={pcgProgramPointData.latest} />
+            )}
           </>
         )}
         {pathData && (
