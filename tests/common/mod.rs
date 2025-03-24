@@ -40,17 +40,25 @@ pub fn get_rust_toolchain_channel() -> String {
 }
 
 #[allow(dead_code)]
-pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool, typecheck_only: bool) {
+pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
     let cwd = std::env::current_dir().unwrap();
+    let build_args = match options.target() {
+        Target::Release => vec!["--release"],
+        Target::Debug => vec![],
+    };
     let cargo_build = Command::new("cargo")
         .arg("build")
-        .args(if !debug { vec!["--release"] } else { vec![] })
+        .args(build_args)
         .current_dir(&cwd)
         .status()
         .expect("Failed to build pcs_bin");
 
     assert!(cargo_build.success(), "Failed to build pcs_bin");
-    let target = if debug { "debug" } else { "release" };
+    let target = if matches!(options.target(), Target::Release) {
+        "release"
+    } else {
+        "debug"
+    };
     let cargo = "cargo";
     let pcs_exe = cwd.join(["target", target, "pcs_bin"].iter().collect::<PathBuf>());
     println!("Running PCS on directory: {}", dir.display());
@@ -59,8 +67,8 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, debug: bool, typecheck_only: bool) {
         .env("RUST_TOOLCHAIN", get_rust_toolchain_channel())
         .env("RUSTUP_TOOLCHAIN", get_rust_toolchain_channel())
         .env(
-            "PCG_TYPECHECK_ONLY",
-            if typecheck_only { "true" } else { "false" },
+            "PCG_VALIDITY_CHECKS",
+            format!("{}", options.validity_checks()),
         )
         .env("RUSTC", &pcs_exe)
         .current_dir(dir)
@@ -196,19 +204,48 @@ pub fn download_crate(name: &str, version: &str, date: Option<&str>) -> PathBuf 
 }
 
 #[allow(dead_code)]
-pub fn run_on_crate(
-    name: &str,
-    version: &str,
-    date: Option<&str>,
-    debug: bool,
-    typecheck_only: bool,
-) {
+#[derive(Debug, Clone, Copy)]
+pub enum Target {
+    Debug,
+    Release,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum RunOnCrateOptions {
+    TypecheckOnly,
+    RunPCG {
+        target: Target,
+        validity_checks: bool,
+    },
+}
+
+impl RunOnCrateOptions {
+    pub fn validity_checks(&self) -> bool {
+        match self {
+            RunOnCrateOptions::RunPCG {
+                validity_checks, ..
+            } => *validity_checks,
+            RunOnCrateOptions::TypecheckOnly => false,
+        }
+    }
+
+    pub fn target(&self) -> Target {
+        match self {
+            RunOnCrateOptions::RunPCG { target, .. } => *target,
+            RunOnCrateOptions::TypecheckOnly => Target::Release,
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn run_on_crate(name: &str, version: &str, date: Option<&str>, options: RunOnCrateOptions) {
     if let Err(e) = is_supported_crate(name, version) {
         eprintln!("{e}");
         return;
     }
     let dirname = download_crate(name, version, date);
-    run_pcg_on_crate_in_dir(&dirname, debug, typecheck_only);
+    run_pcg_on_crate_in_dir(&dirname, options);
     if let Some(date) = date {
         let cargo_lock_file = cached_cargo_lock_file(name, version, date);
         if !cargo_lock_file.exists() {

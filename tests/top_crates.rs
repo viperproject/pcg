@@ -5,23 +5,16 @@ use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{get, run_on_crate};
+use common::{get, run_on_crate, RunOnCrateOptions, Target};
 
 #[test]
 #[ignore]
 pub fn top_crates() {
     let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
-    let typecheck_only = std::env::var("PCG_TEST_CRATE_TYPECHECK_ONLY").unwrap_or("false".to_string());
-    top_crates_parallel(
-        500,
-        Some("2025-03-13"),
-        parallelism.parse().unwrap(),
-        typecheck_only.parse().unwrap(),
-    )
+    top_crates_parallel(500, Some("2025-03-13"), parallelism.parse().unwrap())
 }
 
-
-pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize, typecheck_only: bool) {
+pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
     std::fs::create_dir_all("tmp").unwrap();
     rayon::ThreadPoolBuilder::new()
         .num_threads(parallelism)
@@ -34,7 +27,15 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize, typ
         .for_each(|(i, krate)| {
             let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
-            run_on_crate(&krate.name, &version, date, false, typecheck_only);
+            run_on_crate(
+                &krate.name,
+                &version,
+                date,
+                RunOnCrateOptions::RunPCG {
+                    target: Target::Release,
+                    validity_checks: false,
+                },
+            );
         });
 }
 
