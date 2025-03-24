@@ -148,13 +148,15 @@ impl Debug for CapabilitySummary<'_> {
 }
 
 impl<'tcx> CapabilitySummary<'tcx> {
-    pub(crate) fn capability_projections(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
+
+    pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
         self.0
             .iter_mut()
             .filter(|c| !c.is_unallocated())
             .map(|c| c.get_allocated_mut())
             .collect()
     }
+
     pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.0
             .iter()
@@ -162,6 +164,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             .collect::<Vec<_>>()
             .concat()
     }
+
     pub fn default(local_count: usize) -> Self {
         Self(IndexVec::from_fn_n(
             |i| {
@@ -170,6 +173,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
             local_count,
         ))
     }
+
     pub fn empty() -> Self {
         Self(IndexVec::new())
     }

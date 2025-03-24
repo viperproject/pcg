@@ -256,9 +256,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     let err_msg =
                         format!("Place {} has no capability", to.to_short_string(repacker));
                     tracing::error!("{err_msg}");
-                    // panic!("{err_msg}");
-                    // return Err(PcgError::internal(err_msg));
-                    return Ok(result);
+                    panic!("{err_msg}");
                 }
             };
             if current_capability == CapabilityKind::Exclusive && for_cap == CapabilityKind::Write {

@@ -40,7 +40,13 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 let target: utils::Place<'tcx> = (*target).into();
                 // Any references to target should be made old because it
                 // will be overwritten in the assignment.
-                if target.is_ref(self.repacker) {
+                if target.is_ref(self.repacker)
+                    && self
+                        .domain
+                        .post_main_state()
+                        .graph()
+                        .contains(target, self.repacker)
+                {
                     self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
 
                     // The permission to the target may have been Read originally.
