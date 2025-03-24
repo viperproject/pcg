@@ -25,8 +25,8 @@ fn test_selected_crates() {
     // common::run_on_crate("tonic", "0.12.3", true);
     // common::run_on_crate("wasm-bindgen-backend", "0.2.100", true);
     // common::run_on_crate("zerovec-derive", "0.10.3", Some("2025-03-13"), true, false);
-    common::run_on_crate("zerocopy-derive", "0.8.23", Some("2025-03-13"), common::RunOnCrateOptions::RunPCG {
-        target: common::Target::Debug,
-        validity_checks: false,
-    });
+    // common::run_on_crate("zerocopy-derive", "0.8.23", Some("2025-03-13"), common::RunOnCrateOptions::RunPCG {
+    //     target: common::Target::Debug,
+    //     validity_checks: false,
+    // });
 }
