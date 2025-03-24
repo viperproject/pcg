@@ -36,6 +36,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                     validity_checks: false,
                 },
             );
+            println!("Finished: {i} ({})", krate.name);
         });
 }
 
