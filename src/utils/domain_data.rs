@@ -1,17 +1,16 @@
-use std::collections::BTreeSet;
 use std::rc::Rc;
 
 
 use crate::borrow_pcg::engine::DataflowPhase;
 use crate::combined_pcs::EvalStmtPhase;
-use crate::rustc_interface::middle::mir;
 
 use super::eval_stmt_data::EvalStmtData;
+use super::incoming_states::IncomingStates;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DomainData<T> {
     pub(crate) entry_state: Rc<T>,
-    pub(crate) incoming_states: BTreeSet<mir::BasicBlock>,
+    pub(crate) incoming_states: IncomingStates,
     pub(crate) states: DomainDataStates<T>,
     phase: DataflowPhase,
 }

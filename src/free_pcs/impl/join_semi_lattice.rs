@@ -6,7 +6,7 @@
 
 use std::rc::Rc;
 
-use crate::combined_pcs::PcgError;
+use crate::{combined_pcs::PcgError, utils::incoming_states::IncomingStates};
 use itertools::Itertools;
 
 use crate::{
@@ -17,8 +17,31 @@ use crate::{
     utils::PlaceRepacker,
 };
 
+use crate::rustc_interface::middle::mir;
+
 impl FreePlaceCapabilitySummary<'_, '_> {
-    pub(crate) fn join(&mut self, other: &Self) -> Result<bool, PcgError> {
+    pub(crate) fn join(
+        &mut self,
+        other: &Self,
+        self_block: mir::BasicBlock,
+        other_block: mir::BasicBlock,
+    ) -> Result<bool, PcgError> {
+        let seen = self.data.incoming_states.contains(other_block);
+
+        if seen && other_block > self_block {
+            // It's a loop, but we've already joined it
+            return Ok(false);
+        }
+
+        if seen {
+            // It's another iteration, reset the entry state
+            self.data.incoming_states = IncomingStates::singleton(other_block);
+            self.data.entry_state = other.data.states[EvalStmtPhase::PostMain].clone();
+            return Ok(true);
+        } else {
+            self.data.incoming_states.insert(other_block);
+        }
+
         let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
         let other_state = other.data.unwrap(EvalStmtPhase::PostMain);
         match entry_state.as_mut() {

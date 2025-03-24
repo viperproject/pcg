@@ -11,6 +11,7 @@ pub(crate) mod domain_data;
 pub mod debug_info;
 pub mod display;
 pub mod eval_stmt_data;
+pub (crate) mod incoming_states;
 pub mod join_lattice_verifier;
 pub mod json;
 pub mod place;

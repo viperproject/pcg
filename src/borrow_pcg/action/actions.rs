@@ -1,4 +1,4 @@
-use derive_more::Deref;
+use derive_more::{Deref, DerefMut};
 
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
@@ -13,7 +13,7 @@ use crate::{validity_checks_enabled, Weaken};
 
 use super::BorrowPCGActionKind;
 
-#[derive(Clone, Deref, Debug, Default)]
+#[derive(Clone, Deref, DerefMut, Debug, Default)]
 pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGActions<'tcx> {
