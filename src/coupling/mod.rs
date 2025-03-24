@@ -6,12 +6,11 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::borrow_pcg::coupling_graph_constructor::Coupled;
-use crate::borrow_pcg::graph::coupling_imgcat_debug;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::visualization::dot_graph::DotGraph;
-use crate::{pcg_validity_assert, validity_checks_enabled};
+use crate::pcg_validity_assert;
 
 /// A DAG where each node is a set of elements of type `N`. Cycles are resolved
 /// by merging the nodes in the cycle into a single node. The graph is always in
@@ -157,6 +156,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     fn join_nodes(
         &mut self,
         nodes: &Coupled<N>,
+        #[allow(unused)]
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> petgraph::prelude::NodeIndex {
         let mut iter = nodes.iter().cloned();
