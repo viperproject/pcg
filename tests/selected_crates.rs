@@ -21,6 +21,18 @@ fn test_selected_crates() {
     // common::run_on_crate("ring", "0.17.3", true);
     // common::run_on_crate("serde_with", "3.12.0", true);
     // common::run_on_crate("tap", "1.0.1", false);
+
+    // We should test this consistently because it's a good loop test
+    common::run_on_crate(
+        "tinytemplate",
+        "1.2.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Release,
+            validity_checks: true,
+        },
+    );
+
     // common::run_on_crate("toml_edit", "0.22.23", false);
     // common::run_on_crate("tonic", "0.12.3", true);
     // common::run_on_crate("wasm-bindgen-backend", "0.2.100", true);
