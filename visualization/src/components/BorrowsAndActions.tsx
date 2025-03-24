@@ -11,6 +11,7 @@ import {
   MaybeRemotePlace,
   LocalNode,
   PCGStmtVisualizationData,
+  PcgProgramPointData,
 } from "../types";
 import * as Viz from "@viz-js/viz";
 
@@ -103,21 +104,7 @@ function PCGNodeDisplay({ node }: { node: PCGNode<MaybeRemotePlace> }) {
   return <span>{JSON.stringify(node)}</span>;
 }
 
-function LocalPCGNodeDisplay({ node }: { node: LocalNode }) {
-  if (typeof node === "string") {
-    return <span>{node}</span>;
-  }
-  if ("region" in node) {
-    return (
-      <span>
-        <MaybeOldPlaceDisplay maybeOldPlace={node.place} />↓{node.region}
-      </span>
-    );
-  }
-  return <MaybeOldPlaceDisplay maybeOldPlace={node} />;
-}
-
-function BorrowsBridgeDisplay({  actions }: { actions: BorrowPCGActions }) {
+function BorrowsBridgeDisplay({ actions }: { actions: BorrowPCGActions }) {
   return (
     <ul>
       {actions.map((action, index) => (
@@ -127,7 +114,52 @@ function BorrowsBridgeDisplay({  actions }: { actions: BorrowPCGActions }) {
   );
 }
 
-export default function PCGOps({ data }: { data: PCGStmtVisualizationData }) {
+export default function PCGOps({ data }: { data: PcgProgramPointData }) {
+  let content;
+  if ("free_pcg_repacks_start" in data) {
+    content = (
+      <>
+        {[
+          "pre_operands" as const,
+          "post_operands" as const,
+          "pre_main" as const,
+          "post_main" as const,
+        ].map((key) => (
+          <div key={key}>
+            <h5>{key}</h5>
+            <BorrowsBridgeDisplay actions={data.borrow_actions[key]} />
+          </div>
+        ))}
+        <h4>Repacks (Start)</h4>
+        <ul>
+          {data.free_pcg_repacks_start.map((repack, index) => (
+            <li key={`start-${index}`}>{repack}</li>
+          ))}
+        </ul>
+        <h4>Repacks (Middle)</h4>
+        <ul>
+          {data.free_pcg_repacks_middle.map((repack, index) => (
+            <li key={`mid-${index}`}>{repack}</li>
+          ))}
+        </ul>
+      </>
+    );
+  } else {
+    content = (
+      <>
+        <h4>Owned Ops</h4>
+        <ul>
+          {data.owned_ops.map((op, index) => <li key={`owned-${index}`}>{op}</li>)}
+        </ul>
+        <h4>Borrow Ops</h4>
+        <ul>
+          {data.borrow_ops.map((op, index) => (
+            <li key={`borrow-${index}`}>{op}</li>
+          ))}
+        </ul>
+      </>
+    );
+  }
   return (
     <div
       style={{
@@ -142,30 +174,7 @@ export default function PCGOps({ data }: { data: PCGStmtVisualizationData }) {
         maxHeight: "80vh",
       }}
     >
-      <h4>Borrow PCG Bridge (Start)</h4>
-      {[
-        "pre_operands" as const,
-        "post_operands" as const,
-        "pre_main" as const,
-        "post_main" as const,
-      ].map((key) => (
-        <div key={key}>
-          <h5>{key}</h5>
-          <BorrowsBridgeDisplay actions={data.borrow_actions[key]} />
-        </div>
-      ))}
-      <h4>Repacks (Start)</h4>
-      <ul>
-        {data.free_pcg_repacks_start.map((repack, index) => (
-          <li key={`start-${index}`}>{repack}</li>
-        ))}
-      </ul>
-      <h4>Repacks (Middle)</h4>
-      <ul>
-        {data.free_pcg_repacks_middle.map((repack, index) => (
-          <li key={`mid-${index}`}>{repack}</li>
-        ))}
-      </ul>
+      {content}
     </div>
   );
 }
