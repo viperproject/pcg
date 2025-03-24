@@ -10,6 +10,7 @@ use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
+use crate::utils::incoming_states::IncomingStates;
 use crate::utils::{Place, PlaceRepacker};
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
@@ -53,7 +54,7 @@ impl<'tcx> BorrowsDomain<'_, 'tcx> {
                 self.debug_join_iteration
             );
         }
-        let seen = self.data.incoming_states.contains(&other.block());
+        let seen = self.data.incoming_states.contains(other.block());
 
         if seen && other.block() > self.block() {
             // It's a loop, but we've already joined it
@@ -67,7 +68,7 @@ impl<'tcx> BorrowsDomain<'_, 'tcx> {
         other_after.add_path_condition(pc);
         if seen {
             // It's another iteration, reset the entry state
-            self.data.incoming_states = vec![other.block()].into_iter().collect();
+            self.data.incoming_states = IncomingStates::singleton(other.block());
             self.data.entry_state = other_after.into();
         } else {
             self.data.incoming_states.insert(other.block());
@@ -98,7 +99,6 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
     pub(crate) debug_join_iteration: usize,
-    pub(crate) version: usize,
 }
 
 impl PartialEq for BorrowsDomain<'_, '_> {
@@ -135,11 +135,6 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
         self.block.unwrap()
     }
 
-    #[tracing::instrument(skip(self), fields(block = ?self.block()))]
-    pub(crate) fn increment_version(&mut self) {
-        self.version += 1;
-    }
-
     #[tracing::instrument(skip(repacker, bc))]
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
@@ -152,7 +147,6 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
             block,
             repacker,
             debug_join_iteration: 0,
-            version: 0,
             bc,
         }
     }

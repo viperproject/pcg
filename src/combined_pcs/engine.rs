@@ -14,7 +14,8 @@ use itertools::Itertools;
 
 use crate::{
     borrow_pcg::{
-        action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdgeLike,
+        action::{actions::BorrowPCGActions, BorrowPCGActionKind},
+        borrow_pcg_edge::BorrowPCGEdgeLike,
         coupling_graph_constructor::BorrowCheckerInterface,
     },
     free_pcs::RepackOp,
@@ -44,6 +45,20 @@ use crate::{
     free_pcs::{engine::FpcsEngine, CapabilityKind},
     utils::PlaceRepacker,
 };
+
+#[macro_export]
+macro_rules! handle_error {
+    ($self:expr, $state:expr, $expr:expr) => {
+        match $expr {
+            Ok(res) => res,
+            Err(e) => {
+                $self.record_error_if_first(&e);
+                $state.record_error(e);
+                return;
+            }
+        }
+    };
+}
 
 #[rustversion::since(2024-10-03)]
 type OutputFacts = Box<PoloniusOutput>;
@@ -76,7 +91,9 @@ impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
 
     #[rustversion::before(2024-10-03)]
     fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
-        self.output_facts.clone().map(|o| Box::new(o.as_ref().clone()))
+        self.output_facts
+            .clone()
+            .map(|o| Box::new(o.as_ref().clone()))
     }
 
     #[rustversion::since(2024-10-03)]
@@ -272,41 +289,53 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
     fn restore_loaned_capabilities(
         &self,
         state: &mut PlaceCapabilitySummary<'a, 'tcx>,
+        borrow_actions: BorrowPCGActions<'tcx>,
+        owned_phase: EvalStmtPhase,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let pcg = state.pcg_mut();
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
 
+        let owned_state = pcg.owned.data.unwrap_mut(owned_phase);
+
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
-        for action in pcg.borrow.actions[EvalStmtPhase::PreOperands].iter() {
-            if let BorrowPCGActionKind::RemoveEdge(edge) = &action.kind {
-                for place in edge
-                    .blocked_places(self.repacker)
-                    .iter()
-                    .flat_map(|p| p.as_current_place())
-                {
-                    if place.is_owned(self.repacker)
-                        && !borrows.contains(place.into(), self.repacker)
+        for action in borrow_actions.0.into_iter() {
+            match action.kind {
+                BorrowPCGActionKind::MakePlaceOld(place) => {
+                    if place.is_owned(self.repacker) {
+                        owned_state.set_capability_if_allocated(
+                            place,
+                            CapabilityKind::Exclusive,
+                            self.repacker,
+                        );
+                    }
+                }
+                BorrowPCGActionKind::RemoveEdge(edge) => {
+                    for place in edge
+                        .blocked_places(self.repacker)
+                        .iter()
+                        .flat_map(|p| p.as_current_place())
                     {
-                        // It's possible that the place isn't allocated because
-                        // it was already StorageDead'd. In this case it
-                        // shouldn't obtain any capability.
-                        // See test-files/92_http_path.rs for an example.
-                        pcg.owned
-                            .data
-                            .unwrap_mut(EvalStmtPhase::PostMain)
-                            .set_capability_if_allocated(
+                        if place.is_owned(self.repacker)
+                            && !borrows.contains(place.into(), self.repacker)
+                        {
+                            // It's possible that the place isn't allocated because
+                            // it was already StorageDead'd. In this case it
+                            // shouldn't obtain any capability.
+                            // See test-files/92_http_path.rs for an example.
+                            owned_state.set_capability_if_allocated(
                                 place,
                                 CapabilityKind::Exclusive,
                                 self.repacker,
                             );
+                        }
                     }
                 }
+                _ => {}
             }
         }
         let mut extra_ops = vec![];
-        let fpcg_post_state = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
-        for caps in fpcg_post_state.capability_projections() {
+        for caps in owned_state.capability_projections() {
             let leaves = caps.leaves(self.repacker);
 
             for place in leaves {
@@ -333,7 +362,6 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
                         .iter()
                         .all(|p| caps.get_capability(*p) == Some(candidate_cap))
                 {
-                    tracing::debug!("Collapsing {:?} to {:?}", expansion_places[0], base);
                     extra_ops.extend(caps.collapse(base, self.repacker).unwrap());
                 }
             }
@@ -396,46 +424,48 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        if let Err(e) = self
-            .borrows
-            .prepare_operands(state.borrow_pcg_mut(), statement, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+
+        handle_error!(
+            self,
+            state,
+            self.borrows
+                .prepare_operands(state.borrow_pcg_mut(), statement, location)
+        );
 
         state.pcg_mut().owned.data.enter_transfer_fn();
-        let mut extra_ops = match self.restore_loaned_capabilities(state) {
-            Ok(extra_ops) => extra_ops,
-            Err(e) => {
-                self.record_error_if_first(&e);
-                state.record_error(e);
-                return;
-            }
-        };
+        let mut extra_ops = handle_error!(
+            self,
+            state,
+            self.restore_loaned_capabilities(
+                state,
+                state
+                    .borrow_pcg()
+                    .actions
+                    .get(EvalStmtPhase::PreOperands)
+                    .clone(),
+                EvalStmtPhase::PostMain
+            )
+        );
 
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PreOperands].clone();
-        if let Err(e) = self.fpcs.apply_before_statement_effect(
-            state.owned_pcg_mut(),
-            statement,
-            &borrows,
-            location,
-        ) {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        handle_error!(
+            self,
+            state,
+            self.fpcs.apply_before_statement_effect(
+                state.owned_pcg_mut(),
+                statement,
+                &borrows,
+                location,
+            )
+        );
         extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
         state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
-        if let Err(e) = self
-            .borrows
-            .apply_operands(state.borrow_pcg_mut(), statement, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        handle_error!(
+            self,
+            state,
+            self.borrows
+                .apply_operands(state.borrow_pcg_mut(), statement, location)
+        );
 
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
@@ -457,22 +487,49 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
-        if let Err(e) =
+
+        handle_error!(
+            self,
+            state,
+            self.borrows
+                .prepare_statement_effect(state.borrow_pcg_mut(), statement, location)
+        );
+
+        let owned_pcg = state.owned_pcg_mut();
+        owned_pcg.data.states.0.pre_main = owned_pcg.data.states.0.post_operands.clone();
+
+        let mut extra_ops = handle_error!(
+            self,
+            state,
+            self.restore_loaned_capabilities(
+                state,
+                state
+                    .borrow_pcg()
+                    .actions
+                    .get(EvalStmtPhase::PreMain)
+                    .clone(),
+                EvalStmtPhase::PreMain
+            )
+        );
+
+        let owned_pcg = state.owned_pcg_mut();
+
+        handle_error!(
+            self,
+            state,
             self.fpcs
-                .apply_statement_effect(state.owned_pcg_mut(), statement, &borrows, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
-        if let Err(e) =
+                .apply_statement_effect(owned_pcg, statement, &borrows, location)
+        );
+        extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreMain]);
+        state.pcg_mut().owned.actions[EvalStmtPhase::PreMain].extend(extra_ops);
+
+        handle_error!(
+            self,
+            state,
             self.borrows
                 .apply_statement_effect(state.borrow_pcg_mut(), statement, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        );
+
         self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
     }
@@ -496,35 +553,40 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        if let Err(e) = self.borrows.apply_before_terminator_effect(
-            state.borrow_pcg_mut(),
-            terminator,
-            location,
-        ) {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        handle_error!(
+            self,
+            state,
+            self.borrows.apply_before_terminator_effect(
+                state.borrow_pcg_mut(),
+                terminator,
+                location,
+            )
+        );
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
         state.pcg_mut().owned.data.enter_transfer_fn();
-        let mut extra_ops = match self.restore_loaned_capabilities(state) {
-            Ok(extra_ops) => extra_ops,
-            Err(e) => {
-                self.record_error_if_first(&e);
-                state.record_error(e);
-                return;
-            }
-        };
-        if let Err(e) = self.fpcs.apply_before_terminator_effect(
-            state.owned_pcg_mut(),
-            terminator,
-            &borrows,
-            location,
-        ) {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        let mut extra_ops = handle_error!(
+            self,
+            state,
+            self.restore_loaned_capabilities(
+                state,
+                state
+                    .borrow_pcg()
+                    .actions
+                    .get(EvalStmtPhase::PreOperands)
+                    .clone(),
+                EvalStmtPhase::PostMain
+            )
+        );
+        handle_error!(
+            self,
+            state,
+            self.fpcs.apply_before_terminator_effect(
+                state.owned_pcg_mut(),
+                terminator,
+                &borrows,
+                location,
+            )
+        );
         extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
         state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);

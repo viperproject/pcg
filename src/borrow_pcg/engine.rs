@@ -80,8 +80,7 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state.data.states.0.post_operands = state.data.states.0.post_main.clone();
         Ok(())
     }
-
-    pub(crate) fn apply_statement_effect(
+    pub(crate) fn prepare_statement_effect(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
         statement: &Statement<'tcx>,
@@ -90,9 +89,17 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         BorrowsVisitor::preparing(self, state, StatementStage::Main)
             .visit_statement_fallable(statement, location)?;
         state.data.states.0.pre_main = state.data.states.0.post_main.clone();
-        BorrowsVisitor::applying(self, state, StatementStage::Main)
-            .visit_statement_fallable(statement, location)?;
         Ok(())
+    }
+
+    pub(crate) fn apply_statement_effect(
+        &mut self,
+        state: &mut BorrowsDomain<'a, 'tcx>,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        BorrowsVisitor::applying(self, state, StatementStage::Main)
+            .visit_statement_fallable(statement, location)
     }
 
     #[tracing::instrument(skip(self, state, terminator))]
@@ -123,7 +130,6 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         state.data.pre_main_complete();
         BorrowsVisitor::applying(self, state, StatementStage::Main)
             .visit_terminator_fallable(terminator, location)?;
-        state.increment_version();
         Ok(terminator.edges())
     }
 }
