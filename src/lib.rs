@@ -217,7 +217,7 @@ pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
-    fn output_facts(&self) -> &Option<Box<PoloniusOutput>>;
+    fn output_facts(&self) -> Option<Box<PoloniusOutput>>;
     fn location_table(&self) -> &LocationTable;
     fn input_facts(&self) -> &PoloniusInput;
 }
@@ -233,8 +233,14 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
         &self.region_inference_context
     }
 
-    fn output_facts(&self) -> &Option<Box<PoloniusOutput>> {
-        &self.output_facts
+    #[rustversion::before(2024-10-03)]
+    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
+        self.output_facts.clone().map(|o| Box::new(o.as_ref().clone()))
+    }
+
+    #[rustversion::since(2024-10-03)]
+    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
+        self.output_facts.clone()
     }
 
     fn location_table(&self) -> &LocationTable {
