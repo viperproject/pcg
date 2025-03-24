@@ -182,6 +182,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
             }
             &Len(place) | &Discriminant(place) | &CopyForDeref(place) => Condition::read(place),
         };
+        tracing::debug!("Pre: {pre:?}");
         self.operand_triples.push(Triple { pre, post: None });
     }
 

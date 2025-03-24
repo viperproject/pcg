@@ -14,7 +14,8 @@ use crate::{
         middle::mir::{Local, RETURN_PLACE},
     },
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place, PlaceRepacker,
+        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
+        PlaceRepacker,
     },
 };
 
@@ -70,7 +71,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
                 tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
-                let result = cp.repack(nearest_owned_place, repacker, cap)?;
+                let result = cp.repack(place, repacker, cap)?;
                 if nearest_owned_place != place {
                     match nearest_owned_place.ref_mutability(repacker) {
                         Some(Mutability::Mut) => {
@@ -215,7 +216,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     }
 
     #[tracing::instrument(skip(self, repacker))]
-    pub(super) fn repack(
+    fn repack(
         &mut self,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -247,6 +248,22 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     self.set_capability(nearest_owned_place, CapabilityKind::Read, repacker);
                 }
                 None => unreachable!(),
+            }
+        } else {
+            let current_capability = match self.get_capability(to) {
+                Some(cap) => cap,
+                None => {
+                    let err_msg =
+                        format!("Place {} has no capability", to.to_short_string(repacker));
+                    tracing::error!("{err_msg}");
+                    // panic!("{err_msg}");
+                    // return Err(PcgError::internal(err_msg));
+                    return Ok(result);
+                }
+            };
+            if current_capability == CapabilityKind::Exclusive && for_cap == CapabilityKind::Write {
+                result.push(RepackOp::Weaken(to, current_capability, for_cap));
+                self.set_capability(to, for_cap, repacker);
             }
         }
         tracing::debug!("Result: {result:?}");

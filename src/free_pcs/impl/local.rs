@@ -215,6 +215,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for_cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        tracing::debug!("Expanding to {:?}", *to);
         assert!(
             to.is_owned(repacker),
             "Expanding to borrowed place {:?}",

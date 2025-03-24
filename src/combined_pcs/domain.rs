@@ -470,16 +470,22 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             return false;
         }
 
-        if self.repacker.is_back_edge(other.block(), self.block())
-            && self.join_history.contains(&other.block())
+        let self_block = self.block();
+        let other_block = other.block();
+
+        if self.repacker.is_back_edge(other_block, self_block)
+            && self.join_history.contains(&other_block)
         {
             // We've already joined this block, we can exit early
             return false;
         } else {
-            self.join_history.insert(other.block());
+            self.join_history.insert(other_block);
         }
         assert!(self.is_initialized() && other.is_initialized());
-        let fpcs = match self.owned_pcg_mut().join(other.owned_pcg()) {
+        let fpcs = match self
+            .owned_pcg_mut()
+            .join(other.owned_pcg(), self_block, other_block)
+        {
             Ok(changed) => changed,
             Err(e) => {
                 self.record_error(e);
