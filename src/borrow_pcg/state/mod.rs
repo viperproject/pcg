@@ -128,11 +128,11 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
-    pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
+    pub fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
         self.graph().frozen_graph()
     }
 
-    pub(crate) fn get_capability(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+    pub fn get_capability(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
         self.capabilities.get(place)
     }
 

@@ -121,7 +121,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         self.expansions.insert(place, expansion);
     }
 
-    pub(crate) fn expansions(&self) -> &FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>> {
+    pub fn expansions(&self) -> &FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>> {
         &self.expansions
     }
 
@@ -197,7 +197,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         self.capabilities.remove(&place)
     }
 
-    pub(crate) fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+    pub fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
         self.capabilities.get(&place).copied()
     }
 

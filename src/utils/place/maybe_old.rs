@@ -334,6 +334,14 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             false
         }
     }
+
+    pub fn as_current_place(&self) -> Option<Place<'tcx>> {
+        if let MaybeOldPlace::Current { place } = self {
+            Some(*place)
+        } else {
+            None
+        }
+    }
 }
 
 impl<'tcx> HasPcgElems<Place<'tcx>> for MaybeOldPlace<'tcx> {

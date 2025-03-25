@@ -264,7 +264,7 @@ impl<'tcx> Place<'tcx> {
         Self(PlaceRef { local, projection })
     }
 
-    pub(crate) fn expansion_places(
+    pub fn expansion_places(
         self,
         expansion: &PlaceExpansion<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
