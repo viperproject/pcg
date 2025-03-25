@@ -1,4 +1,6 @@
-use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use smallvec::SmallVec;
+
+use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld};
 use crate::borrow_pcg::latest::Latest;
@@ -13,11 +15,11 @@ use crate::utils::{Place, PlaceRepacker};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct FunctionCallRegionCoupling<'tcx> {
-    pub(crate) inputs: Vec<LocalRegionProjection<'tcx>>,
-    pub(crate) outputs: Vec<LocalRegionProjection<'tcx>>,
+    pub(crate) inputs: SmallVec<[LocalRegionProjection<'tcx>; 4]>,
+    pub(crate) outputs: SmallVec<[LocalRegionProjection<'tcx>; 4]>,
 }
 
-impl <'tcx> FunctionCallRegionCoupling<'tcx> {
+impl<'tcx> FunctionCallRegionCoupling<'tcx> {
     pub fn inputs(&self) -> &[LocalRegionProjection<'tcx>] {
         &self.inputs
     }
@@ -93,6 +95,16 @@ impl<'tcx> FunctionCallRegionCoupling<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for FunctionCallRegionCoupling<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match node {
+            BlockedNode::Place(_) => false,
+            BlockedNode::RegionProjection(_) => self
+                .inputs
+                .iter()
+                .any(|rp| rp.to_pcg_node(repacker) == node),
+        }
+    }
+
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.inputs
             .iter()

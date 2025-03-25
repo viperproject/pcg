@@ -41,7 +41,7 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
 }
 
 impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
-    #[tracing::instrument(skip(self,state,statement, location), fields(block = ?state.block()))]
+    #[tracing::instrument(skip(self,state,statement), fields(block = ?state.block()))]
     pub(crate) fn prepare_operands(
         &mut self,
         state: &mut BorrowsDomain<'a, 'tcx>,
