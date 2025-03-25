@@ -9,13 +9,8 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::{
-    borrow_pcg::action::executed_actions::ExecutedActions,
-    combined_pcs::PcgError,
-};
-use crate::{
-    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
-};
+use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
+use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
@@ -337,7 +332,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let mut actions = ExecutedActions::new();
         let mut num_edges_prev = self.graph.num_edges();
         loop {
-            fn go<'slf, 'mir, 'tcx>(
+            fn go<'slf, 'mir: 'slf, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
                 repacker: PlaceRepacker<'mir, 'tcx>,
                 location: Location,

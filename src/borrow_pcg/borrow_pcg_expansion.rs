@@ -7,15 +7,15 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    borrow_pcg_edge::{BlockingNode, LocalNode},
+    borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, MakePlaceOld},
     latest::Latest,
     region_projection::RegionProjection,
 };
 use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::corrected::CorrectedPlace;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     combined_pcs::{PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -28,8 +28,8 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck,
-        ConstantIndex, HasPlace, Place, PlaceRepacker,
+        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex, HasPlace, Place,
+        PlaceRepacker,
     },
 };
 
@@ -202,6 +202,22 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        if self.base.to_pcg_node(repacker) == node {
+            return true;
+        }
+        if let BlockingNode::Place(p) = self.base
+            && let Some(base_projection) = p.base_region_projection(repacker)
+        {
+            let other: PCGNode<'tcx> = base_projection
+                .with_base(base_projection.base.into(), repacker)
+                .into();
+            other == node
+        } else {
+            false
+        }
+    }
+
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut base: FxHashSet<PCGNode<'tcx>> = vec![self.base.into()].into_iter().collect();
         if let BlockingNode::Place(p) = self.base

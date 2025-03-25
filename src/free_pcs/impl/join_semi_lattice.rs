@@ -36,8 +36,12 @@ impl FreePlaceCapabilitySummary<'_, '_> {
         if seen {
             // It's another iteration, reset the entry state
             self.data.incoming_states = IncomingStates::singleton(other_block);
-            self.data.entry_state = other.data.states[EvalStmtPhase::PostMain].clone();
-            return Ok(true);
+            if self.data.entry_state != other.data.states[EvalStmtPhase::PostMain] {
+                self.data.entry_state = other.data.states[EvalStmtPhase::PostMain].clone();
+                return Ok(true);
+            } else {
+                return Ok(false);
+            }
         } else {
             self.data.incoming_states.insert(other_block);
         }

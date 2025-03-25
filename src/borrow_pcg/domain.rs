@@ -69,7 +69,12 @@ impl<'tcx> BorrowsDomain<'_, 'tcx> {
         if seen {
             // It's another iteration, reset the entry state
             self.data.incoming_states = IncomingStates::singleton(other.block());
-            self.data.entry_state = other_after.into();
+            if other_after != *self.data.entry_state {
+                self.data.entry_state = other_after.into();
+                true
+            } else {
+                false
+            }
         } else {
             self.data.incoming_states.insert(other.block());
             let self_block = self.block();
@@ -79,9 +84,8 @@ impl<'tcx> BorrowsDomain<'_, 'tcx> {
                 other.block(),
                 self.bc.as_ref(),
                 self.repacker,
-            );
+            )
         }
-        true
     }
 }
 

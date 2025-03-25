@@ -52,6 +52,10 @@ impl<'tcx> DisplayWithRepacker<'tcx> for OutlivesEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for OutlivesEdge<'tcx> {
+    fn blocks_node(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.long.to_pcg_node(repacker) == node
+    }
+
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         std::iter::once(self.long.into()).collect()
     }
