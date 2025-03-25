@@ -22,6 +22,11 @@ pub(crate) struct DisjointSetGraph<N> {
     inner: petgraph::Graph<Coupled<N>, ()>,
 }
 
+struct JoinNodesResult {
+    index: petgraph::prelude::NodeIndex,
+    performed_merge: bool,
+}
+
 impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSetGraph<N> {
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
@@ -111,12 +116,18 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         endpoint: Coupled<N>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> petgraph::prelude::NodeIndex {
-        let idx = self.join_nodes(&endpoint, repacker);
+        let JoinNodesResult {
+            index,
+            performed_merge,
+        } = self.join_nodes(&endpoint);
+        if performed_merge {
+            self.merge_sccs(repacker);
+        }
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after inserting endpoint"
         );
-        idx
+        index
     }
 
     /// Merges the nodes at `old_idx` and `new_idx`.
@@ -154,29 +165,26 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     /// Joins the nodes in `nodes` into a single coupled node.
     ///
     /// **IMPORTANT**: This will invalidate existing node indices
-    fn join_nodes(
-        &mut self,
-        nodes: &Coupled<N>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> petgraph::prelude::NodeIndex {
+    #[must_use]
+    fn join_nodes(&mut self, nodes: &Coupled<N>) -> JoinNodesResult {
         let mut iter = nodes.iter().cloned();
         let first_elem = iter.next().unwrap();
         let mut idx = self.insert(first_elem);
+        let mut changed = false;
         for node in iter {
             let idx2 = self.insert(node);
             if idx2 != idx {
                 self.merge_idxs(idx, idx2);
                 // Indexes are invalidated after merging
                 idx = self.lookup(first_elem).unwrap();
+                changed = true;
             }
         }
-        self.merge_sccs(repacker);
-        pcg_validity_assert!(
-            self.is_acyclic(),
-            "Graph contains cycles after joining nodes"
-        );
         // We don't use `idx` here because node indices may change after merging SCCs.
-        self.lookup(*nodes.iter().next().unwrap()).unwrap()
+        JoinNodesResult {
+            index: self.lookup(*nodes.iter().next().unwrap()).unwrap(),
+            performed_merge: changed,
+        }
     }
 
     fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
@@ -225,15 +233,21 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     }
 
     pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
+        let mut should_merge_sccs = false;
         for (source, target) in other.edges() {
-            let source_idx = self.join_nodes(&source, repacker);
-            let target_idx = self.join_nodes(&target, repacker);
-            if source_idx != target_idx {
-                self.inner.update_edge(source_idx, target_idx, ());
+            let source_idx = self.join_nodes(&source);
+            should_merge_sccs |= source_idx.performed_merge;
+            let target_idx = self.join_nodes(&target);
+            should_merge_sccs |= target_idx.performed_merge;
+            if source_idx.index != target_idx.index {
+                self.inner.update_edge(source_idx.index, target_idx.index, ());
+                should_merge_sccs = true;
             }
         }
 
-        self.merge_sccs(repacker);
+        if should_merge_sccs {
+            self.merge_sccs(repacker);
+        }
 
         pcg_validity_assert!(
             self.is_acyclic(),
@@ -276,35 +290,25 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let mut should_merge_sccs;
         if from.is_empty() {
             assert!(!to.is_empty());
-            self.join_nodes(to, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining to nodes (from nodes empty)"
-            );
+            should_merge_sccs = self.join_nodes(to).performed_merge;
         } else if to.is_empty() {
             assert!(!from.is_empty());
-            self.join_nodes(from, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining from nodes (to nodes empty)"
-            );
+            should_merge_sccs = self.join_nodes(from).performed_merge;
         } else {
-            self.join_nodes(from, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining from nodes"
-            );
-            let to_idx = self.join_nodes(to, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining to nodes"
-            );
-            let from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
-            self.inner.update_edge(from_idx, to_idx, ());
+            let from_idx = self.join_nodes(from);
+            let to_idx = self.join_nodes(to);
+            should_merge_sccs = from_idx.performed_merge || to_idx.performed_merge;
+            if from_idx.index != to_idx.index {
+                self.inner.update_edge(from_idx.index, to_idx.index, ());
+                should_merge_sccs = true;
+            }
         }
-        self.merge_sccs(repacker);
+        if should_merge_sccs {
+            self.merge_sccs(repacker);
+        }
         pcg_validity_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 
