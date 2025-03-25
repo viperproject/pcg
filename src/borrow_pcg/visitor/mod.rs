@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    action::BorrowPCGAction,
+    action::{BorrowPCGAction, MakePlaceOldReason},
     borrow_pcg_edge::BorrowPCGEdge,
     edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
     path_condition::PathConditions,
@@ -247,7 +247,10 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         } else if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
-                self.apply_action(BorrowPCGAction::make_place_old(place));
+                self.apply_action(BorrowPCGAction::make_place_old(
+                    place,
+                    MakePlaceOldReason::MoveOut,
+                ));
             }
         }
         Ok(())

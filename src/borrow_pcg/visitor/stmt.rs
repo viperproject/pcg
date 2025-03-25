@@ -1,7 +1,7 @@
 use super::BorrowsVisitor;
 use crate::{
     borrow_pcg::{
-        action::BorrowPCGAction,
+        action::{BorrowPCGAction, MakePlaceOldReason},
         borrow_pcg_edge::BorrowPCGEdge,
         edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
         path_condition::PathConditions,
@@ -28,7 +28,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         match &statement.kind {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
-                self.apply_action(BorrowPCGAction::make_place_old(place));
+                self.apply_action(BorrowPCGAction::make_place_old(
+                    place,
+                    MakePlaceOldReason::StorageDead,
+                ));
                 let actions = self
                     .domain
                     .data
@@ -47,7 +50,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         .graph()
                         .contains(target, self.repacker)
                 {
-                    self.apply_action(BorrowPCGAction::make_place_old((*target).into()));
+                    self.apply_action(BorrowPCGAction::make_place_old(
+                        (*target).into(),
+                        MakePlaceOldReason::ReAssign,
+                    ));
 
                     // The permission to the target may have been Read originally.
                     // Now, because it's been made old, the non-old place should be a leaf,

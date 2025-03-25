@@ -25,6 +25,13 @@ use super::{
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
+    pub(crate) fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+        if let CapabilityLocal::Allocated(capability_projections) = &self[place.local] {
+            capability_projections.get_capability(place)
+        } else {
+            None
+        }
+    }
     pub(crate) fn set_capability_if_allocated(
         &mut self,
         place: Place<'tcx>,
