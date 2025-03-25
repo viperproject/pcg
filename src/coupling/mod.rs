@@ -233,20 +233,24 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     }
 
     pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
-        let mut should_merge_sccs = false;
         for (source, target) in other.edges() {
-            let source_idx = self.join_nodes(&source);
-            should_merge_sccs |= source_idx.performed_merge;
-            let target_idx = self.join_nodes(&target);
-            should_merge_sccs |= target_idx.performed_merge;
-            if source_idx.index != target_idx.index {
-                self.inner.update_edge(source_idx.index, target_idx.index, ());
-                should_merge_sccs = true;
+            let JoinNodesResult {
+                index: mut source_idx,
+                performed_merge,
+            } = self.join_nodes(&source);
+            if performed_merge {
+                self.merge_sccs(repacker);
             }
-        }
-
-        if should_merge_sccs {
-            self.merge_sccs(repacker);
+            let target_idx = self.join_nodes(&target);
+            if target_idx.performed_merge {
+                self.merge_sccs(repacker);
+                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
+            }
+            if source_idx != target_idx.index {
+                self.inner
+                    .update_edge(source_idx, target_idx.index, ());
+                self.merge_sccs(repacker);
+            }
         }
 
         pcg_validity_assert!(

@@ -260,10 +260,14 @@ impl<'tcx> CapabilityProjections<'tcx> {
             let current_capability = match self.get_capability(to) {
                 Some(cap) => cap,
                 None => {
-                    let err_msg =
-                        format!("Place {} has no capability", to.to_short_string(repacker));
-                    tracing::error!("{err_msg}");
-                    panic!("{err_msg}");
+                    // The loan for this place has just expired.
+                    // TODO: Make interaction between borrow and owned PCG more robust.
+                    self.set_capability(to, for_cap, repacker);
+                    return Ok(result)
+                    // let err_msg =
+                    //     format!("Place {} has no capability", to.to_short_string(repacker));
+                    // tracing::error!("{err_msg}");
+                    // panic!("{err_msg}");
                 }
             };
             if current_capability == CapabilityKind::Exclusive && for_cap == CapabilityKind::Write {
