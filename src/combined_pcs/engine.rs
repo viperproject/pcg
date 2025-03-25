@@ -90,11 +90,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
         &self.region_inference_context
     }
 
-<<<<<<< HEAD
-    #[rustversion::since(2024-10-03)]
-    fn output_facts(&self) -> &Option<Box<PoloniusOutput>> {
-        &self.output_facts
-=======
     #[rustversion::before(2024-10-03)]
     fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
         self.output_facts
@@ -105,7 +100,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
     #[rustversion::since(2024-10-03)]
     fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
         self.output_facts.clone()
->>>>>>> f5cc50a (WIP)
     }
 
     fn location_table(&self) -> &LocationTable {
