@@ -18,7 +18,7 @@ use crate::{
         validity::HasValidityCheck,
     },
 };
-use frozen::FrozenGraphRef;
+use frozen::{CachedLeafEdges, FrozenGraphRef};
 use serde_json::json;
 
 use super::{
@@ -206,7 +206,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
             seen.insert(ef);
             let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), repacker);
-            for edge in edges_blocking.iter() {
+            for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
                         let inputs = abstraction_edge
@@ -226,7 +226,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         if e.is_owned_expansion(repacker)
                             && ef
                                 .current()
-                                .as_maybe_old_place().is_some_and(|p| p.is_owned(repacker)) =>
+                                .as_maybe_old_place()
+                                .is_some_and(|p| p.is_owned(repacker)) =>
                     {
                         continue
                     }
@@ -297,7 +298,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// `blocking_map` can be provided to use a shared cache for computation
     /// of blocking calculations. The argument should be used if this function
     /// is to be called multiple times on the same graph.
-    pub(crate) fn is_leaf_edge<'graph, 'mir>(
+    pub(crate) fn is_leaf_edge<'graph, 'mir: 'graph>(
         &'graph self,
         edge: &impl BorrowPCGEdgeLike<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
@@ -318,11 +319,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         true
     }
 
-    pub(crate) fn leaf_edges_set<'slf, 'mir>(
+    pub(crate) fn leaf_edges_set<'slf, 'mir: 'slf>(
         &'slf self,
         repacker: PlaceRepacker<'mir, 'tcx>,
         frozen_graph: Option<&FrozenGraphRef<'slf, 'tcx>>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
+    ) -> CachedLeafEdges<'slf, 'tcx> {
         let fg = match frozen_graph {
             Some(fg) => fg,
             None => &self.frozen_graph(),
@@ -475,14 +476,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .filter(move |edge| edge.blocks_node(node, repacker))
     }
 
-    pub(crate) fn edges_blocking_set<'slf, 'mir>(
+    pub(crate) fn edges_blocking_set<'slf, 'mir: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
-        self.edges()
-            .filter(move |edge| edge.blocks_node(node, repacker))
-            .collect()
+    ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
+        self.edges_blocking(node, repacker).collect()
     }
 
     pub(crate) fn remove(&mut self, edge: &impl BorrowPCGEdgeLike<'tcx>) -> bool {

@@ -81,8 +81,12 @@ fn should_check_body(body: &BodyWithBorrowckFacts<'_>) -> bool {
     true
 }
 
+fn cargo_crate_name() -> Option<String> {
+    std::env::var("CARGO_CRATE_NAME").ok()
+}
+
 fn in_cargo_crate() -> bool {
-    std::env::var("CARGO_CRATE_NAME").is_ok()
+    cargo_crate_name().is_some()
 }
 
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
@@ -139,12 +143,17 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
             }
         });
 
-        info!("Running PCG on function: {}", item_name);
+        info!(
+            "{}Running PCG on function: {}",
+            cargo_crate_name().map_or("".to_string(), |name| format!("{}: ", name)),
+            item_name
+        );
         tracing::debug!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
         let body = Rc::new(body);
-        if should_check_body(&body) {
+        if should_check_body(&body)
+        {
             let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
             let mut output = if polonius {
                 let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());

@@ -126,6 +126,10 @@ impl<'tcx> MakePlaceOld<'tcx> for FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        self.edge.blocks_node(node, repacker)
+    }
+
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.edge.blocked_nodes(repacker)
     }
@@ -214,7 +218,7 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
                         .with_base(maybe_remote_place, repacker)
                         .into(),
                 ),
-                MaybeRemoteRegionProjectionBase::Const(_) => todo!(),
+                MaybeRemoteRegionProjectionBase::Const(_) => false,
             },
         }
     }

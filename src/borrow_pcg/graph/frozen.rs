@@ -1,5 +1,6 @@
 use std::cell::{Ref, RefCell};
 
+use derive_more::IntoIterator;
 use itertools::Itertools;
 
 use crate::{
@@ -21,14 +22,28 @@ use crate::{
 
 use super::BorrowsGraph;
 
+#[derive(Clone, IntoIterator)]
+pub struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPCGEdgeRef<'tcx, 'graph>>);
+
+impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
+    fn new(edges: Vec<BorrowPCGEdgeRef<'tcx, 'graph>>) -> Self {
+        Self(edges)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+type CachedBlockedEdges<'graph, 'tcx> = Vec<BorrowPCGEdgeRef<'tcx, 'graph>>;
+pub(crate) type CachedLeafEdges<'graph, 'tcx> = Vec<BorrowPCGEdgeRef<'tcx, 'graph>>;
+
 pub struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
     nodes_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
-    edges_blocking_cache:
-        RefCell<FxHashMap<PCGNode<'tcx>, FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>>>>,
-    edges_blocked_by_cache:
-        RefCell<FxHashMap<LocalNode<'tcx>, FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>>>>,
-    leaf_edges_cache: RefCell<Option<FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>>>>,
+    edges_blocking_cache: RefCell<FxHashMap<PCGNode<'tcx>, CachedBlockingEdges<'graph, 'tcx>>>,
+    edges_blocked_by_cache: RefCell<FxHashMap<LocalNode<'tcx>, CachedBlockedEdges<'graph, 'tcx>>>,
+    leaf_edges_cache: RefCell<Option<CachedLeafEdges<'graph, 'tcx>>>,
     roots_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
 }
 
@@ -78,22 +93,22 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub fn leaf_edges<'slf, 'mir>(
+    pub fn leaf_edges<'slf, 'mir: 'graph>(
         &'slf self,
         repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
+    ) -> CachedLeafEdges<'graph, 'tcx> {
         {
             let edges = self.leaf_edges_cache.borrow();
             if edges.is_some() {
                 return edges.as_ref().unwrap().clone();
             }
         }
-        let edges: FxHashSet<_> = self.graph.leaf_edges_set(repacker, Some(self));
+        let edges: CachedLeafEdges<'graph, 'tcx> = self.graph.leaf_edges_set(repacker, Some(self));
         self.leaf_edges_cache.replace(Some(edges.clone()));
         edges
     }
 
-    pub fn leaf_nodes<'slf, 'mir: 'slf>(
+    pub fn leaf_nodes<'slf, 'mir: 'graph>(
         &'slf self,
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> impl Iterator<Item = LocalNode<'tcx>> + 'slf {
@@ -106,36 +121,35 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         &mut self,
         node: LocalNode<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> &FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
+    ) -> &CachedBlockedEdges<'graph, 'tcx> {
         self.edges_blocked_by_cache
             .get_mut()
             .entry(node)
             .or_insert_with(|| self.graph.edges_blocked_by(node, repacker).collect())
     }
 
-    pub fn get_edges_blocking<'slf, 'mir>(
+    pub fn get_edges_blocking<'slf, 'mir: 'graph>(
         &'slf self,
         node: PCGNode<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
+    ) -> CachedBlockingEdges<'graph, 'tcx> {
         {
             let map = self.edges_blocking_cache.borrow();
             if map.contains_key(&node) {
                 return map[&node].clone();
             }
         }
-        let edges: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> =
-            self.graph.edges_blocking_set(node, repacker);
+        let edges = CachedBlockingEdges::new(self.graph.edges_blocking_set(node, repacker));
         self.edges_blocking_cache
             .borrow_mut()
             .insert(node, edges.clone());
         edges
     }
 
-    pub fn has_edge_blocking(
+    pub fn has_edge_blocking<'mir: 'graph>(
         &self,
         node: PCGNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> bool {
         {
             let map = self.edges_blocking_cache.borrow();
@@ -143,7 +157,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 return !map[&node].is_empty();
             }
         }
-        let edges: FxHashSet<_> = self.graph.edges_blocking_set(node, repacker);
+        let edges = CachedBlockingEdges::new(self.graph.edges_blocking_set(node, repacker));
         let result = !edges.is_empty();
         self.edges_blocking_cache.borrow_mut().insert(node, edges);
         result
@@ -249,13 +263,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 let blocking_edges = curr
                     .blocked_by_nodes(repacker)
                     .into_iter()
-                    .flat_map(|node| {
-                        graph
-                            .get_edges_blocking(node.into(), repacker)
-                            .iter()
-                            .copied()
-                            .collect::<Vec<_>>()
-                    })
+                    .flat_map(|node| graph.get_edges_blocking(node.into(), repacker))
                     .unique();
                 for edge in blocking_edges {
                     match self.clone().try_push(edge, repacker) {
@@ -274,8 +282,8 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
 
         for root in self.roots(repacker).iter() {
-            for edge in self.get_edges_blocking(*root, repacker).iter() {
-                if Path::new(*edge).leads_to_feasible_cycle(
+            for edge in self.get_edges_blocking(*root, repacker) {
+                if Path::new(edge).leads_to_feasible_cycle(
                     self,
                     repacker,
                     &mut allowed_path_prefixes,
