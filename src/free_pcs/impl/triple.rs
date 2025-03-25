@@ -6,12 +6,12 @@
 
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
-    visit::Visitor, BorrowKind, Local, Location, Operand, ProjectionElem, Rvalue, Statement,
-    StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
+    visit::Visitor, BorrowKind, Local, Location, MutBorrowKind, Operand, ProjectionElem, Rvalue,
+    Statement, StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
 };
 
 use crate::{
-    combined_pcs::{PcgError, PCGUnsupportedError},
+    combined_pcs::{PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
     utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
 };
@@ -230,10 +230,17 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                     post: Some(Condition::read(*place)),
                 },
                 BorrowKind::Fake(..) => return,
-                BorrowKind::Mut { .. } => Triple {
-                    pre: Condition::exclusive(*place, self.repacker),
-                    post: Some(Condition::RemoveCapability((*place).into())),
-                },
+                BorrowKind::Mut { kind } => {
+                    let post = if matches!(kind, MutBorrowKind::TwoPhaseBorrow) {
+                        Some(Condition::read(*place))
+                    } else {
+                        Some(Condition::RemoveCapability((*place).into()))
+                    };
+                    Triple {
+                        pre: Condition::exclusive(*place, self.repacker),
+                        post,
+                    }
+                }
             };
             self.main_triples.push(triple);
         }
