@@ -9,8 +9,13 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
-use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
+use crate::{
+    borrow_pcg::action::executed_actions::ExecutedActions,
+    combined_pcs::PcgError,
+};
+use crate::{
+    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
+};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
@@ -94,7 +99,9 @@ impl<'tcx> BorrowsState<'tcx> {
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker) {
-                    let _ = self.remove_capability(node.place().into());
+                    if let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
+                        let _ = self.remove_capability(place.into());
+                    }
                 }
             }
         }
@@ -191,6 +198,7 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
+    #[tracing::instrument(skip(self, edge, location, repacker))]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,

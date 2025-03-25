@@ -90,7 +90,8 @@ impl<'tcx> BorrowsState<'tcx> {
         if !place.is_owned(repacker) {
             pcg_validity_assert!(
                 self.get_capability(place.into()).is_some(),
-                "Place {:?} does not have a capability after obtain {:?}",
+                "{:?}: Place {:?} does not have a capability after obtain {:?}",
+                location,
                 place,
                 obtain_reason
             );
