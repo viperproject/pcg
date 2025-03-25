@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::json;
 
@@ -241,6 +241,41 @@ impl PathConditions {
         match self {
             PathConditions::AtBlock(b) => path.last() == Some(b),
             PathConditions::Paths(p) => p.has_suffix_of(path),
+        }
+    }
+
+    pub fn paths(&self) -> Option<HashSet<Vec<PathCondition>>> {
+        match self {
+            PathConditions::AtBlock(_b) => None,
+            PathConditions::Paths(p) => {
+                let end = self.end()?;
+                let mut paths = self.roots().into_iter().map(|b| (b, HashSet::default())).collect::<HashMap<_, _>>();
+                let mut change = true;
+                while change {
+                    change = false;
+                    for edge in p.0.iter() {
+                        assert_ne!(edge.from, edge.to);
+                        let to_paths = paths.entry(edge.to).or_insert_with(HashSet::default);
+                        // SAFETY: different entries in the map
+                        let to_paths: &mut HashSet<_> = unsafe {
+                            &mut *(to_paths as *mut _)
+                        };
+                        let Some(from_paths) = paths.get(&edge.from) else {
+                            continue;
+                        };
+                        let to_paths_len = to_paths.len();
+                        if from_paths.is_empty() {
+                            to_paths.insert(vec![*edge]);
+                        } else {
+                            to_paths.extend(from_paths.iter().map(|p: &Vec<_>| {
+                                p.iter().copied().chain([*edge].iter().copied()).collect()
+                            }));
+                        }
+                        change |= to_paths.len() != to_paths_len;
+                    }
+                }
+                paths.remove(&end)
+            }
         }
     }
 }
