@@ -3,7 +3,11 @@ use std::collections::BTreeSet;
 use smallvec::SmallVec;
 
 use super::{
-    borrow_pcg_edge::BorrowPCGEdge, domain::AbstractionOutputTarget, graph::{coupling_imgcat_debug, BorrowsGraph}, has_pcs_elem::HasPcgElems, region_projection::PCGRegion
+    domain::AbstractionOutputTarget,
+    edge::kind::BorrowPCGEdgeKind,
+    graph::{coupling_imgcat_debug, BorrowsGraph},
+    has_pcs_elem::HasPcgElems,
+    region_projection::PCGRegion,
 };
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
@@ -50,7 +54,8 @@ impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T
 }
 
 // pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
-pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, ()>;
+pub(crate) type AbstractionGraph<'tcx> =
+    coupling::DisjointSetGraph<CGNode<'tcx>, BorrowPCGEdgeKind<'tcx>>;
 
 impl<T: Clone> Coupled<T> {
     pub fn size(&self) -> usize {
@@ -267,6 +272,7 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
         bg: &AbstractionGraph<'tcx>,
         bottom_connect: &'a Coupled<CGNode<'tcx>>,
         upper_candidate: &'a Coupled<CGNode<'tcx>>,
+        mut weight: FxHashSet<BorrowPCGEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
@@ -276,7 +282,8 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
         });
         let upper_candidate = upper_candidate.clone();
         let endpoints = bg.parents(&upper_candidate);
-        for coupled in endpoints {
+        for (coupled, edge_weight) in endpoints {
+            weight.extend(edge_weight);
             pcg_validity_assert!(
                 coupled != upper_candidate,
                 "Coupling graph should be acyclic"
@@ -298,13 +305,25 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
                     bg,
                     bottom_connect,
                     &coupled,
+                    weight.clone(),
                     borrow_checker,
                     history.clone(),
                 );
             } else {
-                self.graph
-                    .add_edge(&coupled, &bottom_connect.clone(), self.repacker);
-                self.add_edges_from(bg, &coupled, &coupled, borrow_checker, history.clone());
+                self.graph.add_edge(
+                    &coupled,
+                    &bottom_connect.clone(),
+                    weight.clone(),
+                    self.repacker,
+                );
+                self.add_edges_from(
+                    bg,
+                    &coupled,
+                    &coupled,
+                    FxHashSet::default(),
+                    borrow_checker,
+                    history.clone(),
+                );
             }
         }
     }
@@ -328,6 +347,7 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
                 &full_graph,
                 &node,
                 &node,
+                FxHashSet::default(),
                 borrow_checker,
                 DebugRecursiveCallHistory::new(),
             );
