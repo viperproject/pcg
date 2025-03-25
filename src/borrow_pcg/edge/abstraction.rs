@@ -3,6 +3,7 @@ use crate::{
         borrow_pcg_edge::BlockedNode,
         has_pcs_elem::{default_make_place_old, MakePlaceOld},
         latest::Latest,
+        region_projection::MaybeRemoteRegionProjectionBase,
     },
     edgedata_enum,
     rustc_interface::{
@@ -29,6 +30,7 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::PlaceRepacker;
 use itertools::Itertools;
+use smallvec::SmallVec;
 use std::collections::BTreeSet;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -198,11 +200,24 @@ edgedata_enum!(
 );
 #[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
-    pub(crate) inputs: Vec<AbstractionInputTarget<'tcx>>,
+    pub(crate) inputs: SmallVec<[AbstractionInputTarget<'tcx>; 8]>,
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
 }
 
 impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        match node {
+            PCGNode::Place(p) => self.inputs.contains(&p.into()),
+            PCGNode::RegionProjection(region_projection) => match region_projection.base {
+                MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => self.inputs.contains(
+                    &region_projection
+                        .with_base(maybe_remote_place, repacker)
+                        .into(),
+                ),
+                MaybeRemoteRegionProjectionBase::Const(_) => todo!(),
+            },
+        }
+    }
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
