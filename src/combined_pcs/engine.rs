@@ -302,8 +302,16 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         // but are now no longer borrowed.
         for action in borrow_actions.0.into_iter() {
             match action.kind {
-                BorrowPCGActionKind::MakePlaceOld(place) => {
-                    if place.is_owned(self.repacker) {
+                BorrowPCGActionKind::MakePlaceOld(place, _) => {
+                    if place.is_owned(self.repacker)
+                        && owned_state.get_capability(place) != Some(CapabilityKind::Write)
+                    {
+                        // A bit of an annoying hack: if the place has *no* capability (or read cap), then it's borrowed.
+                        // The borrows are now going to refer to the old place, so we can regain exclusive cap here.
+                        // However, the borrows graph currently reports this action even for things that aren't borrowed,
+                        // (esp. for StorageDead on a place with only Write permission). So we only restore permission
+                        // if the place actually has a value.
+                        // TODO: We should fix this when merging owned and borrow PCG logic.
                         owned_state.set_capability_if_allocated(
                             place,
                             CapabilityKind::Exclusive,
@@ -451,7 +459,6 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         );
 
         state.pcg_mut().owned.data.enter_transfer_fn();
-
         // Restore caps for owned places according to borrow expiry
         self.restore_loaned_capabilities(
             state,
@@ -545,10 +552,6 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             self.fpcs
                 .apply_statement_effect(owned_pcg, statement, &borrows, location)
         );
-
-        // Update the owned actions to include the regain capability stuff
-        // extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreMain]);
-        // state.pcg_mut().owned.actions[EvalStmtPhase::PreMain].extend(extra_ops);
 
         handle_error!(
             self,

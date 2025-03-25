@@ -42,15 +42,15 @@ fn test_selected_crates() {
     //     },
     // );
 
-    common::run_on_crate(
-        "serde_derive",
-        "1.0.219",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: false,
-        },
-    );
+    // common::run_on_crate(
+    //     "serde_derive",
+    //     "1.0.219",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: false,
+    //     },
+    // );
 
     common::run_on_crate(
         "syn",

@@ -34,8 +34,8 @@ impl<'tcx> BorrowPCGAction<'tcx> {
             BorrowPCGActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
             }
-            BorrowPCGActionKind::MakePlaceOld(place) => {
-                format!("Make {} an old place", place.to_short_string(repacker))
+            BorrowPCGActionKind::MakePlaceOld(place, reason) => {
+                format!("Make {} an old place ({:?})", place.to_short_string(repacker), reason)
             }
             BorrowPCGActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
@@ -111,9 +111,9 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn make_place_old(place: Place<'tcx>) -> Self {
+    pub(super) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
         BorrowPCGAction {
-            kind: BorrowPCGActionKind::MakePlaceOld(place),
+            kind: BorrowPCGActionKind::MakePlaceOld(place, reason),
             debug_context: None,
         }
     }
@@ -129,10 +129,17 @@ impl<'tcx> From<BorrowPCGActionKind<'tcx>> for BorrowPCGAction<'tcx> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MakePlaceOldReason {
+    StorageDead,
+    ReAssign,
+    MoveOut,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPCGActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
-    MakePlaceOld(Place<'tcx>),
+    MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
     SetLatest(Place<'tcx>, Location),
     RemoveEdge(BorrowPCGEdge<'tcx>),
     AddEdge {
@@ -152,8 +159,8 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
             BorrowPCGActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
             }
-            BorrowPCGActionKind::MakePlaceOld(place) => {
-                format!("Make {} an old place", place.to_short_string(repacker))
+            BorrowPCGActionKind::MakePlaceOld(place, reason) => {
+                format!("Make {} an old place ({:?})", place.to_short_string(repacker), reason)
             }
             BorrowPCGActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
@@ -213,7 +220,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 true
             }
-            BorrowPCGActionKind::MakePlaceOld(place) => self.make_place_old(place, repacker),
+            BorrowPCGActionKind::MakePlaceOld(place, _) => self.make_place_old(place, repacker),
             BorrowPCGActionKind::SetLatest(place, location) => self.set_latest(place, location),
             BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, repacker),
             BorrowPCGActionKind::AddEdge {
