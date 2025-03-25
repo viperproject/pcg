@@ -143,11 +143,11 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
             }
         });
 
-        // info!(
-        //     "{}Running PCG on function: {}",
-        //     cargo_crate_name().map_or("".to_string(), |name| format!("{}: ", name)),
-        //     item_name
-        // );
+        info!(
+            "{}Running PCG on function: {}",
+            cargo_crate_name().map_or("".to_string(), |name| format!("{}: ", name)),
+            item_name
+        );
         tracing::debug!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());

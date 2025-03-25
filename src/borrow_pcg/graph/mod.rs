@@ -7,14 +7,17 @@ mod mutate;
 use std::collections::HashSet;
 
 use crate::{
-    borrow_pcg::coupling_graph_constructor::AbstractionGraph, combined_pcs::PCGNode, rustc_interface::{
+    borrow_pcg::coupling_graph_constructor::AbstractionGraph,
+    combined_pcs::PCGNode,
+    rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self, BasicBlock},
-    }, utils::{
+    },
+    utils::{
         display::{DebugLines, DisplayWithRepacker},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-    }
+    },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
 use serde_json::json;
@@ -32,10 +35,7 @@ use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
-use crate::{
-    coupling,
-    utils::{env_feature_enabled, PlaceRepacker},
-};
+use crate::utils::{env_feature_enabled, PlaceRepacker};
 
 #[derive(Clone, Debug)]
 pub struct BorrowsGraph<'tcx> {
@@ -218,7 +218,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .map(|node| node.into())
                             .collect::<Vec<_>>()
                             .into();
-                        graph.add_edge(&inputs, &outputs, repacker);
+                        graph.add_edge(
+                            &inputs,
+                            &outputs,
+                            std::iter::once(edge.kind().to_owned()).collect(),
+                            repacker,
+                        );
                     }
                     BorrowPCGEdgeKind::BorrowPCGExpansion(e)
                         if e.is_owned_expansion(repacker)
@@ -238,6 +243,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                     graph.add_edge(
                                         &vec![source].into(),
                                         &vec![rp.into()].into(),
+                                        std::iter::once(edge.kind().to_owned()).collect(),
                                         repacker,
                                     );
                                 }
