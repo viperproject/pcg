@@ -3,15 +3,13 @@ use std::collections::BTreeSet;
 use smallvec::SmallVec;
 
 use super::{
-    domain::AbstractionOutputTarget,
-    graph::{coupling_imgcat_debug, BorrowsGraph},
-    has_pcs_elem::HasPcgElems,
-    region_projection::PCGRegion,
+    borrow_pcg_edge::BorrowPCGEdge, domain::AbstractionOutputTarget, graph::{coupling_imgcat_debug, BorrowsGraph}, has_pcs_elem::HasPcgElems, region_projection::PCGRegion
 };
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     combined_pcs::PCGNode,
     coupling, pcg_validity_assert,
+    rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
     rustc_interface::middle::ty,
     utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
@@ -50,6 +48,9 @@ impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T
         )
     }
 }
+
+// pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
+pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, ()>;
 
 impl<T: Clone> Coupled<T> {
     pub fn size(&self) -> usize {
@@ -224,7 +225,7 @@ pub(crate) struct RegionProjectionAbstractionConstructor<'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
-    graph: coupling::DisjointSetGraph<CGNode<'tcx>>,
+    graph: AbstractionGraph<'tcx>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -257,13 +258,13 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
         Self {
             repacker,
             block,
-            graph: coupling::DisjointSetGraph::new(),
+            graph: AbstractionGraph::new(),
         }
     }
 
     fn add_edges_from<'a>(
         &mut self,
-        bg: &coupling::DisjointSetGraph<CGNode<'tcx>>,
+        bg: &AbstractionGraph<'tcx>,
         bottom_connect: &'a Coupled<CGNode<'tcx>>,
         upper_candidate: &'a Coupled<CGNode<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
@@ -283,13 +284,14 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
             let is_root = bg.is_root(&coupled) && !coupled.iter().any(|n| n.is_old());
             let should_include = is_root
                 || coupled.iter().any(|n| {
-                    borrow_checker.is_live(
+                    let is_live = borrow_checker.is_live(
                         (*n).into(),
                         Location {
                             block: self.block,
                             statement_index: 0,
                         },
-                    ) && !n.is_old()
+                    );
+                    is_live && !n.is_old()
                 });
             if !should_include {
                 self.add_edges_from(
@@ -311,7 +313,7 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
         mut self,
         bg: &BorrowsGraph<'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-    ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
+    ) -> AbstractionGraph<'tcx> {
         tracing::debug!("Construct coupling graph start");
         let full_graph = bg.base_rp_graph(self.repacker);
         if coupling_imgcat_debug() {

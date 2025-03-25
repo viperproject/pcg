@@ -164,15 +164,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) {
         let mut common_edges = self.common_edges(other);
-        let self_base_rp = RegionProjectionAbstractionConstructor::new(repacker, self_block)
+        let self_coupling_graph = RegionProjectionAbstractionConstructor::new(repacker, self_block)
             .construct_region_projection_abstraction(self, borrow_checker);
-        let other_base_rp = RegionProjectionAbstractionConstructor::new(repacker, other_block)
+        let other_coupling_graph = RegionProjectionAbstractionConstructor::new(repacker, other_block)
             .construct_region_projection_abstraction(other, borrow_checker);
-        for root in self_base_rp.roots() {
+        for root in self_coupling_graph.roots() {
             let mut stack = vec![root];
             while let Some(node) = stack.pop() {
-                let children = self_base_rp.children(&node);
-                if children != other_base_rp.children(&node) {
+                let children = self_coupling_graph.children(&node);
+                if children != other_coupling_graph.children(&node) {
                     for pcg_node in node {
                         for edge in self.transitively_blocking_edges(pcg_node.into(), repacker) {
                             common_edges.remove(edge.kind());
@@ -184,33 +184,33 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        let mut without_common_self = self.clone();
-        let mut without_common_other = other.clone();
-        for edge in common_edges.iter() {
-            tracing::debug!("Removing common edge: {:?}", edge);
-            without_common_self.edges.remove(edge);
-            without_common_other.edges.remove(edge);
-        }
-        without_common_self.render_debug_graph(
-            repacker,
-            &format!("self graph (disjoint): {:?}", self_block),
-        );
-        without_common_other.render_debug_graph(
-            repacker,
-            &format!("other graph (disjoint): {:?}", other_block),
-        );
+        // let mut without_common_self = self.clone();
+        // let mut without_common_other = other.clone();
+        // for edge in common_edges.iter() {
+        //     tracing::debug!("Removing common edge: {:?}", edge);
+        //     without_common_self.edges.remove(edge);
+        //     without_common_other.edges.remove(edge);
+        // }
+        // without_common_self.render_debug_graph(
+        //     repacker,
+        //     &format!("self graph (disjoint): {:?}", self_block),
+        // );
+        // without_common_other.render_debug_graph(
+        //     repacker,
+        //     &format!("other graph (disjoint): {:?}", other_block),
+        // );
 
-        let self_coupling_graph = without_common_self.construct_region_projection_abstraction(
-            borrow_checker,
-            repacker,
-            self_block,
-        );
+        // let self_coupling_graph = without_common_self.construct_region_projection_abstraction(
+        //     borrow_checker,
+        //     repacker,
+        //     self_block,
+        // );
 
-        let other_coupling_graph = without_common_other.construct_region_projection_abstraction(
-            borrow_checker,
-            repacker,
-            other_block,
-        );
+        // let other_coupling_graph = without_common_other.construct_region_projection_abstraction(
+        //     borrow_checker,
+        //     repacker,
+        //     other_block,
+        // );
 
         if coupling_imgcat_debug() {
             self_coupling_graph
