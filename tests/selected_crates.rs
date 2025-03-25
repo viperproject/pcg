@@ -53,6 +53,46 @@ fn test_selected_crates() {
     // );
 
     common::run_on_crate(
+        "regex-syntax",
+        "0.8.5",
+        None,
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+        },
+    );
+
+    common::run_on_crate(
+        "crossbeam-deque",
+        "0.8.6",
+        None,
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Release,
+            validity_checks: false,
+        },
+    );
+
+    common::run_on_crate(
+        "itertools",
+        "0.14.0",
+        None,
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Release,
+            validity_checks: false,
+        },
+    );
+
+    common::run_on_crate(
+        "opentelemetry",
+        "0.28.0",
+        None,
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Release,
+            validity_checks: false,
+        },
+    );
+
+    common::run_on_crate(
         "syn",
         "2.0.100",
         Some("2025-03-13"),

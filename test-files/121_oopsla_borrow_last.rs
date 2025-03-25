@@ -1,32 +1,23 @@
-struct Tree {
-    value: i32,
-    left: Option<Box<Tree>>,
-    right: Option<Box<Tree>>,
+struct List {
+    head: u32,
+    tail: Option<Box<List>>,
 }
 
-fn f<'a>(left: &'a mut Tree, right: &'a mut Tree) {
-    let lhs = &mut *left;
-    let rhs = &mut *right;
-    let mut ptr = match lhs.left {
-        Some(ref mut left) => &mut **left,
-        None => return,
-    };
-    let mut fallback = match rhs.left {
-        Some(ref mut left) => &mut **left,
-        None => return,
-    };
-
-    while lhs.right.is_some() {
-        ptr = rhs;
-        match ptr.right {
-            Some(ref mut right) => fallback = &mut **right,
-            None => return,
+fn f(left_orig: &mut List, right_orig: &mut List) {
+    let mut left: &mut List = &mut *left_orig;
+    let mut right: &mut List = &mut *right_orig;
+    let mut c = None;
+    while true {
+        left = left.tail.as_mut().unwrap();
+        right = right.tail.as_mut().unwrap();
+        if true {
+            c = Some(&mut left.tail);
+        } else {
+            c = Some(&mut right.tail);
         }
     }
-    fallback.value = 1;
-    ptr.value = 2;
-    lhs.value = 3;
-    rhs.value = 4;
+    *c.unwrap() = None;
+    left_orig.tail = None;
 }
 
 fn main() {

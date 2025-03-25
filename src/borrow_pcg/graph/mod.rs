@@ -7,16 +7,14 @@ mod mutate;
 use std::collections::HashSet;
 
 use crate::{
-    combined_pcs::PCGNode,
-    rustc_interface::{
+    borrow_pcg::coupling_graph_constructor::AbstractionGraph, combined_pcs::PCGNode, rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self, BasicBlock},
-    },
-    utils::{
+    }, utils::{
         display::{DebugLines, DisplayWithRepacker},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-    },
+    }
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
 use serde_json::json;
@@ -145,8 +143,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn base_rp_graph(
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
-        let mut graph: coupling::DisjointSetGraph<CGNode<'tcx>> = coupling::DisjointSetGraph::new();
+    ) -> AbstractionGraph<'tcx> {
+        let mut graph: AbstractionGraph<'tcx> = AbstractionGraph::new();
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         struct ExploreFrom<'tcx> {
             current: PCGNode<'tcx>,
@@ -412,7 +410,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
-    ) -> coupling::DisjointSetGraph<CGNode<'tcx>> {
+    ) -> AbstractionGraph<'tcx> {
         let constructor = RegionProjectionAbstractionConstructor::new(repacker, block);
         constructor.construct_region_projection_abstraction(self, borrow_checker)
     }

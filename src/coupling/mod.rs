@@ -18,8 +18,8 @@ use crate::{pcg_validity_assert, validity_checks_enabled};
 /// a transitively reduced form (see
 /// https://en.wikipedia.org/wiki/Transitive_reduction)
 #[derive(Clone)]
-pub(crate) struct DisjointSetGraph<N> {
-    inner: petgraph::Graph<Coupled<N>, ()>,
+pub(crate) struct DisjointSetGraph<N, E> {
+    inner: petgraph::Graph<Coupled<N>, E>,
 }
 
 struct JoinNodesResult {
@@ -27,7 +27,7 @@ struct JoinNodesResult {
     performed_merge: bool,
 }
 
-impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSetGraph<N> {
+impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSetGraph<N, ()> {
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
@@ -45,6 +45,20 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
             })
             .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
+    }
+
+    pub(crate) fn height(&self) -> usize {
+        let mut max_height = 0;
+        for node in self.roots() {
+            let height = petgraph::algo::dijkstra(
+                &self.inner,
+                self.lookup(*node.iter().next().unwrap()).unwrap(),
+                None,
+                |_| 1,
+            );
+            max_height = max_height.max(*height.values().max().unwrap_or(&0));
+        }
+        max_height
     }
 
     pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
@@ -94,6 +108,13 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
 
     pub(crate) fn render_with_imgcat(&self, repacker: PlaceRepacker<'_, 'tcx>, msg: &str) {
         let dot = self.to_dot(repacker);
+        // let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_string());
+        // let timestamp = std::time::SystemTime::now()
+        //     .duration_since(std::time::UNIX_EPOCH)
+        //     .unwrap()
+        //     .as_nanos();
+        // let dot_file = format!("/pcs/dotfiles/{crate_name}_{timestamp}.dot");
+        // std::fs::write(&dot_file, &dot).unwrap();
         DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
             eprintln!("Error rendering graph: {}", e);
         });
@@ -247,8 +268,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                 source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
             }
             if source_idx != target_idx.index {
-                self.inner
-                    .update_edge(source_idx, target_idx.index, ());
+                self.inner.update_edge(source_idx, target_idx.index, ());
                 self.merge_sccs(repacker);
             }
         }
@@ -362,7 +382,7 @@ impl<N: Ord> HyperEdge<N> {
     }
 }
 
-impl<N> fmt::Display for DisjointSetGraph<N>
+impl<N, E> fmt::Display for DisjointSetGraph<N, E>
 where
     N: Eq + Hash + Clone + fmt::Display + Copy + Ord + fmt::Debug,
 {
