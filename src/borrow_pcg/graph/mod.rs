@@ -25,7 +25,7 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
     coupling_graph_constructor::{
-        BorrowCheckerInterface, CGNode, RegionProjectionAbstractionConstructor,
+        BorrowCheckerInterface, CGNode, AbstractionGraphConstructor,
     },
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
@@ -417,8 +417,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         block: BasicBlock,
     ) -> AbstractionGraph<'tcx> {
-        let constructor = RegionProjectionAbstractionConstructor::new(repacker, block);
-        constructor.construct_region_projection_abstraction(self, borrow_checker)
+        let constructor = AbstractionGraphConstructor::new(repacker, block);
+        constructor.construct_abstraction_graph(self, borrow_checker)
     }
 
     /// Returns true iff `edge` connects two nodes within an abstraction edge

@@ -9,23 +9,17 @@ impl List {
     }
 }
 
-fn f(left_orig: &mut List, right_orig: &mut List) {
-    let mut left: &mut List = &mut *left_orig;
-    let mut right: &mut List = &mut *right_orig;
-    let mut c = None;
-    let mut cont = left.len() > 0 && right.len() > 0;
+fn f(left_in: &mut List, right_in: &mut List) {
+    let mut left: &mut List = &mut *left_in;
+    let mut right: &mut List = &mut *right_in;
+    let mut c = None; let mut cont = true;
     while cont {
-        left = left.tail.as_mut().unwrap();
-        right = right.tail.as_mut().unwrap();
-        cont = left.len() > 0 && right.len() > 0;
-        if left.head < right.head {
-            c = Some(&mut left.tail);
-        } else {
-            c = Some(&mut right.tail);
-        }
+      left = left.tail.as_mut().unwrap();
+      cont = left.len() > 0;
+      if left.head > 0 { c = Some(&mut left.tail); }
+      else             { c = Some(&mut right.tail); }
     }
-    *c.unwrap() = None;
-    left_orig.tail = None;
+    *c.unwrap() = None; left_in.tail = None;
 }
 
 fn main() {
