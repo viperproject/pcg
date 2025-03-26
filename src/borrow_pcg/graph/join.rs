@@ -1,5 +1,5 @@
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef};
-use crate::borrow_pcg::coupling_graph_constructor::RegionProjectionAbstractionConstructor;
+use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::visualization::dot_graph::DotGraph;
@@ -164,11 +164,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) {
-        let self_coupling_graph = RegionProjectionAbstractionConstructor::new(repacker, self_block)
-            .construct_region_projection_abstraction(self, borrow_checker);
+        let self_coupling_graph = AbstractionGraphConstructor::new(repacker, self_block)
+            .construct_abstraction_graph(self, borrow_checker);
         let other_coupling_graph =
-            RegionProjectionAbstractionConstructor::new(repacker, other_block)
-                .construct_region_projection_abstraction(other, borrow_checker);
+            AbstractionGraphConstructor::new(repacker, other_block)
+                .construct_abstraction_graph(other, borrow_checker);
 
         if coupling_imgcat_debug() {
             self_coupling_graph

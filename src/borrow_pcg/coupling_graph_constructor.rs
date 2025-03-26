@@ -226,7 +226,7 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct RegionProjectionAbstractionConstructor<'mir, 'tcx> {
+pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
     repacker: PlaceRepacker<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
@@ -258,7 +258,7 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
+impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
     pub(crate) fn new(repacker: PlaceRepacker<'mir, 'tcx>, block: BasicBlock) -> Self {
         Self {
             repacker,
@@ -328,7 +328,7 @@ impl<'mir, 'tcx> RegionProjectionAbstractionConstructor<'mir, 'tcx> {
         }
     }
 
-    pub(crate) fn construct_region_projection_abstraction(
+    pub(crate) fn construct_abstraction_graph(
         mut self,
         bg: &BorrowsGraph<'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
