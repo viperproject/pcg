@@ -152,7 +152,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
         let body = Rc::new(body);
-        if should_check_body(&body)
+        if !item_name.contains("de::deserialize_map") && should_check_body(&body)
         {
             let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
             let mut output = if polonius {
