@@ -37,8 +37,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
     ) -> Result<(), PcgError> {
         // This is just a performance optimization
         if self
-            .domain
-            .post_main_state()
+            .state
             .graph()
             .has_function_call_abstraction_at(location)
         {
@@ -81,7 +80,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 let input_place: utils::Place<'tcx> = mir_place.into();
                 let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                     input_place,
-                    self.domain.post_main_state().get_latest(input_place),
+                    self.state.get_latest(input_place),
                 ));
                 input_place.region_projections(self.repacker)
             })
@@ -122,7 +121,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         let mut coupled_region_projections = CoupledRegionProjections::default();
 
         for projection in arg_region_projections.iter() {
-            coupled_region_projections.insert(*projection, self.domain.bc.as_ref(), self.repacker);
+            coupled_region_projections.insert(*projection, self.bc.as_ref(), self.repacker);
         }
 
         for coupled in coupled_region_projections.iter() {
@@ -145,11 +144,11 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
 
         for coupled in coupled_region_projections.0.into_iter() {
             if coupled.len() > 1 {
-                let coupled_lifetime_roots = self
-                    .domain
-                    .post_main_state()
-                    .frozen_graph()
-                    .coupled_lifetime_roots(coupled, self.domain.bc.as_ref(), self.repacker);
+                let coupled_lifetime_roots = self.state.frozen_graph().coupled_lifetime_roots(
+                    coupled,
+                    self.bc.as_ref(),
+                    self.repacker,
+                );
                 for (node, to_connect) in coupled_lifetime_roots.connections_to_create().iter() {
                     for parent in to_connect.iter() {
                         let action = BorrowPCGAction::add_edge(
