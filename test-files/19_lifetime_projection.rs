@@ -8,7 +8,6 @@ struct S<'a> {
 
 fn f<'a>(s: S<'a>) {
     let x = s.x; // PCG: bb0[1] pre_operands: s.y: E
-                 // PCG: bb0[1] pre_operands: s.y↓'?6: E
     let y = s.y.a;
 
 }

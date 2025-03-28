@@ -1,15 +1,19 @@
-use crate::{combined_pcs::EvalStmtPhase::*, utils::visitor::FallableVisitor};
+use std::rc::Rc;
+
+use crate::{
+    combined_pcs::EvalStmtPhase::*,
+    utils::{visitor::FallableVisitor, HasPlace},
+};
 use tracing::instrument;
 
 use crate::{
     combined_pcs::{PCGUnsupportedError, PcgError},
     rustc_interface::{
-        borrowck::PoloniusOutput,
         index::IndexVec,
         middle::{
             mir::{
-                self, BorrowKind, Const, Location, Operand, Rvalue, Statement, StatementKind,
-                Terminator, TerminatorKind,
+                self, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind, Terminator,
+                TerminatorKind,
             },
             ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
         },
@@ -18,50 +22,27 @@ use crate::{
 };
 
 use super::{
-    action::BorrowPCGAction,
+    action::{BorrowPCGAction, MakePlaceOldReason},
     borrow_pcg_edge::BorrowPCGEdge,
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
+    state::BorrowsState,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::domain::BorrowsDomain;
-use crate::borrow_pcg::edge::abstraction::{
-    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
-};
 use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     free_pcs::CapabilityKind,
-    utils::{self, PlaceRepacker, PlaceSnapshot},
+    utils::{self, PlaceRepacker},
 };
 
+mod function_call;
 mod stmt;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum DebugCtx {
-    #[allow(unused)]
-    Location(Location),
-    #[allow(unused)]
-    Other,
-}
-
-impl DebugCtx {
-    pub(crate) fn new(location: Location) -> DebugCtx {
-        DebugCtx::Location(location)
-    }
-
-    #[allow(unused)]
-    pub(crate) fn location(&self) -> Option<Location> {
-        match self {
-            DebugCtx::Location(location) => Some(*location),
-            DebugCtx::Other => None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum StatementStage {
@@ -71,38 +52,25 @@ pub(crate) enum StatementStage {
 
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
+    actions: &'state mut BorrowPCGActions<'tcx>,
+    state: &'state mut BorrowsState<'tcx>,
+    bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
     stage: StatementStage,
     preparing: bool,
-    debug_ctx: Option<DebugCtx>,
-    #[allow(dead_code)]
-    output_facts: Option<&'mir PoloniusOutput>,
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
-    fn curr_actions(&mut self) -> &mut BorrowPCGActions<'tcx> {
-        match (self.stage, self.preparing) {
-            (StatementStage::Operands, true) => &mut self.domain.actions.pre_operands,
-            (StatementStage::Operands, false) => &mut self.domain.actions.post_operands,
-            (StatementStage::Main, true) => &mut self.domain.actions.pre_main,
-            (StatementStage::Main, false) => &mut self.domain.actions.post_main,
-        }
-    }
-
     fn reset_actions(&mut self) {
-        self.curr_actions().clear();
+        self.actions.clear();
     }
 
     fn record_actions(&mut self, actions: ExecutedActions<'tcx>) {
-        self.curr_actions().extend(actions.actions());
+        self.actions.extend(actions.actions());
     }
 
     fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
-        self.curr_actions().push(action.clone());
-        self.domain
-            .post_state_mut()
-            .apply_action(action, self.repacker)
-            .unwrap()
+        self.actions.push(action.clone());
+        self.state.apply_action(action, self.repacker).unwrap()
     }
 
     pub(super) fn preparing(
@@ -127,17 +95,24 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn new(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx>,
+        domain: &'state mut BorrowsDomain<'mir, 'tcx>,
         stage: StatementStage,
         preparing: bool,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
+        let actions = match (stage, preparing) {
+            (StatementStage::Operands, true) => &mut domain.actions.pre_operands,
+            (StatementStage::Operands, false) => &mut domain.actions.post_operands,
+            (StatementStage::Main, true) => &mut domain.actions.pre_main,
+            (StatementStage::Main, false) => &mut domain.actions.post_main,
+        };
+        let state = domain.data.get_mut(PostMain);
         BorrowsVisitor {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
-            domain: state,
+            actions,
+            state,
+            bc: domain.bc.clone(),
             stage,
             preparing,
-            debug_ctx: None,
-            output_facts: engine.output_facts,
         }
     }
 
@@ -171,91 +146,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
-        self.domain.bc.outlives(sup, sub)
-    }
-
-    /// Constructs a function call abstraction, if necessary.
-    fn construct_function_call_abstraction(
-        &mut self,
-        func: &Operand<'tcx>,
-        args: &[&Operand<'tcx>],
-        destination: utils::Place<'tcx>,
-        location: Location,
-    ) -> Result<(), PcgError> {
-        // This is just a performance optimization
-        if self
-            .domain
-            .post_main_state()
-            .graph()
-            .has_function_call_abstraction_at(location)
-        {
-            return Ok(());
-        }
-        let (func_def_id, substs) = if let Operand::Constant(box c) = func
-            && let Const::Val(_, ty) = c.const_
-            && let ty::TyKind::FnDef(def_id, substs) = ty.kind()
-        {
-            (def_id, substs)
-        } else {
-            return Err(PcgError::unsupported(
-                PCGUnsupportedError::NonConstantOperandFunctionCall,
-            ));
-        };
-        let sig = self
-            .repacker
-            .tcx()
-            .fn_sig(func_def_id)
-            .instantiate(self.repacker.tcx(), substs);
-        let sig = self
-            .repacker
-            .tcx()
-            .liberate_late_bound_regions(*func_def_id, sig);
-
-        // This is also a performance optimization
-        let output_lifetimes = extract_regions(sig.output(), self.repacker);
-        if output_lifetimes.is_empty() {
-            return Ok(());
-        }
-
-        for arg in args.iter() {
-            let input_place: utils::Place<'tcx> = match arg.place() {
-                Some(place) => place.into(),
-                None => continue,
-            };
-            let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
-                input_place,
-                self.domain.post_main_state().get_latest(input_place),
-            ));
-            let ty = input_place.ty(self.repacker).ty;
-            for (lifetime_idx, input_lifetime) in
-                extract_regions(ty, self.repacker).into_iter().enumerate()
-            {
-                for output in
-                    self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
-                {
-                    let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
-
-                    let block_edge = AbstractionBlockEdge::new(
-                        vec![input_rp.into()].into_iter().collect(),
-                        vec![output].into_iter().collect(),
-                    );
-                    self.apply_action(BorrowPCGAction::add_edge(
-                        BorrowPCGEdge::new(
-                            AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                                location,
-                                *func_def_id,
-                                substs,
-                                block_edge,
-                            ))
-                            .into(),
-                            PathConditions::AtBlock(location.block),
-                        ),
-                        true,
-                    ));
-                }
-            }
-        }
-        Ok(())
+        self.bc.outlives(sup, sub)
     }
 
     fn projections_borrowing_from_input_lifetime(
@@ -280,6 +171,40 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
+impl BorrowsVisitor<'_, '_, '_> {
+    fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
+        let actions =
+            self.state
+                .pack_old_and_dead_leaves(self.repacker, location, self.bc.as_ref())?;
+        self.record_actions(actions);
+        for created_location in self.bc.twophase_borrow_activations(location) {
+            let borrow = match self.state.graph().borrow_created_at(created_location) {
+                Some(borrow) => borrow,
+                None => continue,
+            };
+            let blocked_place = borrow.blocked_place.place();
+            if self
+                .state
+                .graph()
+                .contains(borrow.deref_place(self.repacker), self.repacker)
+            {
+                let upgrade_action = BorrowPCGAction::restore_capability(
+                    borrow.deref_place(self.repacker).place().into(),
+                    CapabilityKind::Exclusive,
+                );
+                self.apply_action(upgrade_action);
+            }
+            if !blocked_place.is_owned(self.repacker) {
+                let actions = self
+                    .state
+                    .remove_read_permission_upwards(blocked_place, self.repacker)?;
+                self.record_actions(actions);
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
     fn visit_operand_fallable(
         &mut self,
@@ -296,12 +221,9 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                         ObtainReason::MoveOperand
                     };
                     let place: utils::Place<'tcx> = (*place).into();
-                    let expansion_actions = self.domain.post_state_mut().obtain(
-                        self.repacker,
-                        place,
-                        location,
-                        expansion_reason,
-                    )?;
+                    let expansion_actions =
+                        self.state
+                            .obtain(self.repacker, place, location, expansion_reason)?;
                     self.record_actions(expansion_actions);
                 }
                 _ => {}
@@ -310,33 +232,30 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
             if let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
                 if !place.is_owned(self.repacker) {
-                    self.domain.post_state_mut().set_capability(
-                        place.into(),
-                        CapabilityKind::Write,
-                        self.repacker,
-                    );
+                    self.state
+                        .set_capability(place.into(), CapabilityKind::Write, self.repacker);
                 }
             }
         } else if self.stage == StatementStage::Main && !self.preparing {
             if let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
-                self.apply_action(BorrowPCGAction::make_place_old(place));
+                self.apply_action(BorrowPCGAction::make_place_old(
+                    place,
+                    MakePlaceOldReason::MoveOut,
+                ));
             }
         }
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, terminator), fields(join_iteration = ?self.domain.debug_join_iteration))]
+    #[tracing::instrument(skip(self, terminator))]
     fn visit_terminator_fallable(
         &mut self,
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
         if self.preparing && self.stage == StatementStage::Operands {
-            let post_state = self.domain.data.states.get_mut(PostMain);
-            let actions =
-                post_state.pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
-            self.record_actions(actions);
+            self.perform_base_pre_operand_actions(location)?;
         }
         self.super_terminator_fallable(terminator, location)?;
         if self.stage == StatementStage::Main && !self.preparing {
@@ -353,7 +272,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     location,
                     "Destination of Function Call",
                 ));
-                self.construct_function_call_abstraction(
+                self.make_function_call_abstraction(
                     func,
                     &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
                     destination,
@@ -364,23 +283,14 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), fields(join_iteration = ?self.domain.debug_join_iteration))]
+    #[tracing::instrument(skip(self))]
     fn visit_statement_fallable(
         &mut self,
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.debug_ctx = Some(DebugCtx::new(location));
-
         if self.preparing && self.stage == StatementStage::Operands {
-            // Remove places that are non longer live based on borrow checker information
-            let actions = self
-                .domain
-                .data
-                .states
-                .get_mut(PostMain)
-                .pack_old_and_dead_leaves(self.repacker, location, &self.domain.bc)?;
-            self.record_actions(actions);
+            self.perform_base_pre_operand_actions(location)?;
         }
 
         self.super_statement_fallable(statement, location)?;
@@ -390,12 +300,9 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 let place: utils::Place<'tcx> = (*place).into();
                 if !place.is_owned(self.repacker) {
                     let expansion_reason = ObtainReason::FakeRead;
-                    let expansion_actions = self.domain.post_state_mut().obtain(
-                        self.repacker,
-                        place,
-                        location,
-                        expansion_reason,
-                    )?;
+                    let expansion_actions =
+                        self.state
+                            .obtain(self.repacker, place, location, expansion_reason)?;
                     self.record_actions(expansion_actions);
                 }
             }
@@ -425,7 +332,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         location: Location,
     ) -> Result<(), PcgError> {
         #[instrument(skip(this), fields(location = ?location))]
-        fn visit_rvalue_inner<'tcx, 'mir, 'state>(
+        fn visit_rvalue_inner<'mir, 'tcx, 'state>(
             this: &mut BorrowsVisitor<'tcx, 'mir, 'state>,
             rvalue: &Rvalue<'tcx>,
             location: Location,
@@ -457,7 +364,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                         _ => ObtainReason::RValueSimpleRead,
                     };
                     if this.stage == StatementStage::Operands && this.preparing {
-                        let expansion_actions = this.domain.post_state_mut().obtain(
+                        let expansion_actions = this.state.obtain(
                             this.repacker,
                             place.into(),
                             location,
@@ -526,4 +433,16 @@ pub(crate) fn extract_regions<'tcx>(
     };
     ty.visit_with(&mut visitor);
     IndexVec::from_iter(visitor.lifetimes.iter().map(|r| (*r).into()))
+}
+
+#[allow(unused)]
+pub(crate) fn extract_inner_regions<'tcx>(
+    ty: ty::Ty<'tcx>,
+    repacker: PlaceRepacker<'_, 'tcx>,
+) -> IndexVec<RegionIdx, PCGRegion> {
+    if let ty::TyKind::Ref(_, ty, _) = ty.kind() {
+        extract_regions(*ty, repacker)
+    } else {
+        extract_regions(ty, repacker)
+    }
 }

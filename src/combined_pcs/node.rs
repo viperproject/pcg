@@ -3,7 +3,7 @@ use crate::borrow_pcg::latest::Latest;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
-use crate::utils::Place;
+use crate::utils::{Place, SnapshotLocation};
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -18,15 +18,6 @@ use crate::{
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjectionBase<'tcx>> {
     Place(T),
     RegionProjection(RegionProjection<'tcx, U>),
-}
-
-impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        match self {
-            PCGNode::Place(p) => p.is_owned(repacker),
-            PCGNode::RegionProjection(_) => false,
-        }
-    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {
@@ -93,6 +84,21 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithRe
     }
 }
 
+pub trait MaybeHasLocation {
+    fn location(&self) -> Option<SnapshotLocation>;
+}
+
+impl<'tcx, T: MaybeHasLocation, U: RegionProjectionBaseLike<'tcx> + MaybeHasLocation>
+    MaybeHasLocation for PCGNode<'tcx, T, U>
+{
+    fn location(&self) -> Option<SnapshotLocation> {
+        match self {
+            PCGNode::Place(place) => place.location(),
+            PCGNode::RegionProjection(region_projection) => region_projection.base().location(),
+        }
+    }
+}
+
 pub trait PCGNodeLike<'tcx>:
     Clone
     + Copy
@@ -118,7 +124,7 @@ pub trait PCGNodeLike<'tcx>:
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
                         MaybeRemotePlace::Local(maybe_old_place) => Some(
-                            rp.set_base(maybe_old_place, repacker)
+                            rp.with_base(maybe_old_place, repacker)
                                 .to_local_node(repacker),
                         ),
                         MaybeRemotePlace::Remote(_) => None,

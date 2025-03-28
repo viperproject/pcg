@@ -1,3 +1,4 @@
+#[rustversion::since(2024-11-14)]
 use super::mir_dataflow::Analysis as MirAnalysis;
 
 use super::{
@@ -20,10 +21,11 @@ pub trait Analysis<'tcx> {
 
     fn apply_before_statement_effect(
         &mut self,
-        state: &mut Self::Domain,
-        statement: &Statement<'tcx>,
-        location: Location,
-    );
+        _state: &mut Self::Domain,
+        _statement: &Statement<'tcx>,
+        _location: Location,
+    ) {
+    }
 
     fn apply_statement_effect(
         &mut self,
@@ -34,10 +36,11 @@ pub trait Analysis<'tcx> {
 
     fn apply_before_terminator_effect(
         &mut self,
-        state: &mut Self::Domain,
-        terminator: &Terminator<'tcx>,
-        location: Location,
-    );
+        _state: &mut Self::Domain,
+        _terminator: &Terminator<'tcx>,
+        _location: Location,
+    ) {
+    }
 
     fn apply_terminator_effect<'mir>(
         &mut self,

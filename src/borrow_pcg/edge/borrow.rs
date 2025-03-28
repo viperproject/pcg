@@ -116,6 +116,14 @@ impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
+    fn blocks_node(&self, node: BlockedNode<'tcx>, _repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        if let BlockedNode::Place(MaybeRemotePlace::Remote(rp)) = node {
+            self.blocked_place() == rp
+        } else {
+            false
+        }
+    }
+
     fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         vec![self.blocked_place().into()].into_iter().collect()
     }

@@ -14,7 +14,8 @@ use crate::{
         middle::mir::{Local, RETURN_PLACE},
     },
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place, PlaceRepacker,
+        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
+        PlaceRepacker,
     },
 };
 
@@ -24,6 +25,13 @@ use super::{
 };
 
 impl<'tcx> CapabilitySummary<'tcx> {
+    pub(crate) fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+        if let CapabilityLocal::Allocated(capability_projections) = &self[place.local] {
+            capability_projections.get_capability(place)
+        } else {
+            None
+        }
+    }
     pub(crate) fn set_capability_if_allocated(
         &mut self,
         place: Place<'tcx>,
@@ -70,7 +78,7 @@ impl<'tcx> CapabilitySummary<'tcx> {
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
                 tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
-                let result = cp.repack(nearest_owned_place, repacker, cap)?;
+                let result = cp.repack(place, repacker, cap)?;
                 if nearest_owned_place != place {
                     match nearest_owned_place.ref_mutability(repacker) {
                         Some(Mutability::Mut) => {
@@ -193,9 +201,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
     fn get_longest_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
         self.place_capabilities()
             .iter()
-            .filter(|(p, _)| p.is_prefix(to))
-            .max_by_key(|(p, _)| p.projection.len())
-            .map(|(p, _)| *p)
+            .flat_map(|(p, _)| p.try_into())
+            .filter(|p: &Place| p.is_prefix(to))
+            .max_by_key(|p| p.projection.len())
             .unwrap_or(self.get_local().into())
     }
 
@@ -215,7 +223,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     }
 
     #[tracing::instrument(skip(self, repacker))]
-    pub(super) fn repack(
+    fn repack(
         &mut self,
         to: Place<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
@@ -247,6 +255,24 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     self.set_capability(nearest_owned_place, CapabilityKind::Read, repacker);
                 }
                 None => unreachable!(),
+            }
+        } else {
+            let current_capability = match self.get_capability(to) {
+                Some(cap) => cap,
+                None => {
+                    // The loan for this place has just expired.
+                    // TODO: Make interaction between borrow and owned PCG more robust.
+                    self.set_capability(to, for_cap, repacker);
+                    return Ok(result);
+                    // let err_msg =
+                    //     format!("Place {} has no capability", to.to_short_string(repacker));
+                    // tracing::error!("{err_msg}");
+                    // panic!("{err_msg}");
+                }
+            };
+            if current_capability == CapabilityKind::Exclusive && for_cap == CapabilityKind::Write {
+                result.push(RepackOp::Weaken(to, current_capability, for_cap));
+                self.set_capability(to, for_cap, repacker);
             }
         }
         tracing::debug!("Result: {result:?}");

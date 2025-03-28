@@ -1,4 +1,5 @@
 use petgraph::dot::{Config, Dot};
+use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use std::collections::BTreeSet;
@@ -7,6 +8,7 @@ use std::hash::Hash;
 
 use crate::borrow_pcg::coupling_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
+use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::PlaceRepacker;
 use crate::visualization::dot_graph::DotGraph;
@@ -17,18 +19,25 @@ use crate::{pcg_validity_assert, validity_checks_enabled};
 /// a transitively reduced form (see
 /// https://en.wikipedia.org/wiki/Transitive_reduction)
 #[derive(Clone)]
-pub(crate) struct DisjointSetGraph<N> {
-    inner: petgraph::Graph<Coupled<N>, ()>,
+pub(crate) struct DisjointSetGraph<N, E> {
+    inner: petgraph::Graph<Coupled<N>, FxHashSet<E>>,
 }
 
-impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSetGraph<N> {
+struct JoinNodesResult {
+    index: petgraph::prelude::NodeIndex,
+    performed_merge: bool,
+}
+
+impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + Eq + Hash>
+    DisjointSetGraph<N, E>
+{
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
         }
     }
 
-    pub(crate) fn roots(&self) -> BTreeSet<N> {
+    pub(crate) fn roots(&self) -> FxHashSet<Coupled<N>> {
         self.inner
             .node_indices()
             .filter(|idx| {
@@ -37,15 +46,42 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                     .count()
                     == 0
             })
-            .flat_map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
             .collect()
     }
 
-    pub(crate) fn edges(&self) -> impl Iterator<Item = (Coupled<N>, Coupled<N>)> + '_ {
+    #[allow(dead_code)]
+    pub(crate) fn height(&self) -> usize {
+        let mut max_height = 0;
+        for node in self.roots() {
+            let height = petgraph::algo::dijkstra(
+                &self.inner,
+                self.lookup(*node.iter().next().unwrap()).unwrap(),
+                None,
+                |_| 1,
+            );
+            max_height = max_height.max(*height.values().max().unwrap_or(&0));
+        }
+        max_height
+    }
+
+    pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
+        self.lookup(*node.iter().next().unwrap())
+            .is_some_and(|idx| {
+                self.inner
+                    .neighbors_directed(idx, Direction::Incoming)
+                    .count()
+                    == 0
+            })
+    }
+
+    pub(crate) fn edges(
+        &self,
+    ) -> impl Iterator<Item = (Coupled<N>, Coupled<N>, FxHashSet<E>)> + '_ {
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();
             let target = self.inner.node_weight(e.target()).unwrap();
-            (source.clone(), target.clone())
+            (source.clone(), target.clone(), e.weight().clone())
         })
     }
 
@@ -78,6 +114,13 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
 
     pub(crate) fn render_with_imgcat(&self, repacker: PlaceRepacker<'_, 'tcx>, msg: &str) {
         let dot = self.to_dot(repacker);
+        // let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_string());
+        // let timestamp = std::time::SystemTime::now()
+        //     .duration_since(std::time::UNIX_EPOCH)
+        //     .unwrap()
+        //     .as_nanos();
+        // let dot_file = format!("/pcs/dotfiles/{crate_name}_{timestamp}.dot");
+        // std::fs::write(&dot_file, &dot).unwrap();
         DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
             eprintln!("Error rendering graph: {}", e);
         });
@@ -100,12 +143,18 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         endpoint: Coupled<N>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> petgraph::prelude::NodeIndex {
-        let idx = self.join_nodes(&endpoint, repacker);
+        let JoinNodesResult {
+            index,
+            performed_merge,
+        } = self.join_nodes(&endpoint);
+        if performed_merge {
+            self.merge_sccs(repacker);
+        }
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after inserting endpoint"
         );
-        idx
+        index
     }
 
     /// Merges the nodes at `old_idx` and `new_idx`.
@@ -128,14 +177,14 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         let edges_from_old = self.inner.edges_directed(old_idx, Direction::Incoming);
         let to_add = edges_to_old
             .filter(|e| e.source() != new_idx)
-            .map(|e| (e.source(), new_idx))
+            .map(|e| (e.source(), new_idx, e.weight().clone()))
             .chain(
                 edges_from_old
                     .filter(|e| e.target() != new_idx)
-                    .map(|e| (new_idx, e.target())),
+                    .map(|e| (new_idx, e.target(), e.weight().clone())),
             );
-        for (source, target) in to_add.collect::<Vec<_>>() {
-            self.inner.update_edge(source, target, ());
+        for (source, target, weight) in to_add.collect::<Vec<_>>() {
+            self.inner.update_edge(source, target, weight);
         }
         assert!(self.inner.remove_node(old_idx).is_some());
     }
@@ -143,29 +192,26 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     /// Joins the nodes in `nodes` into a single coupled node.
     ///
     /// **IMPORTANT**: This will invalidate existing node indices
-    fn join_nodes(
-        &mut self,
-        nodes: &Coupled<N>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> petgraph::prelude::NodeIndex {
+    #[must_use]
+    fn join_nodes(&mut self, nodes: &Coupled<N>) -> JoinNodesResult {
         let mut iter = nodes.iter().cloned();
         let first_elem = iter.next().unwrap();
         let mut idx = self.insert(first_elem);
+        let mut changed = false;
         for node in iter {
             let idx2 = self.insert(node);
             if idx2 != idx {
                 self.merge_idxs(idx, idx2);
                 // Indexes are invalidated after merging
                 idx = self.lookup(first_elem).unwrap();
+                changed = true;
             }
         }
-        self.merge_sccs(repacker);
-        pcg_validity_assert!(
-            self.is_acyclic(),
-            "Graph contains cycles after joining nodes"
-        );
         // We don't use `idx` here because node indices may change after merging SCCs.
-        self.lookup(*nodes.iter().next().unwrap()).unwrap()
+        JoinNodesResult {
+            index: self.lookup(*nodes.iter().next().unwrap()).unwrap(),
+            performed_merge: changed,
+        }
     }
 
     fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
@@ -183,6 +229,9 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
     /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
     /// operation, the indices of the nodes may change.
     fn merge_sccs(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+        if self.is_acyclic() {
+            return;
+        }
         let old_graph = self.clone(); // For debugging
 
         'outer: loop {
@@ -210,16 +259,42 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         );
     }
 
-    pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
-        for (source, target) in other.edges() {
-            let source_idx = self.join_nodes(&source, repacker);
-            let target_idx = self.join_nodes(&target, repacker);
-            if source_idx != target_idx {
-                self.inner.update_edge(source_idx, target_idx, ());
+    pub(crate) fn add_edge_via_indices(
+        &mut self,
+        source: NodeIndex,
+        target: NodeIndex,
+        weight: FxHashSet<E>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        if source != target {
+            let edge_index = self.inner.find_edge(source, target);
+            if let Some(index) = edge_index
+                && let Some(current_weight) = self.inner.edge_weight_mut(index)
+            {
+                current_weight.extend(weight)
+            } else {
+                self.inner.update_edge(source, target, weight);
             }
+            self.merge_sccs(repacker);
         }
+    }
 
-        self.merge_sccs(repacker);
+    pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
+        for (source, target, weight) in other.edges() {
+            let JoinNodesResult {
+                index: mut source_idx,
+                performed_merge,
+            } = self.join_nodes(&source);
+            if performed_merge {
+                self.merge_sccs(repacker);
+            }
+            let target_idx = self.join_nodes(&target);
+            if target_idx.performed_merge {
+                self.merge_sccs(repacker);
+                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
+            }
+            self.add_edge_via_indices(source_idx, target_idx.index, weight, repacker);
+        }
 
         pcg_validity_assert!(
             self.is_acyclic(),
@@ -243,8 +318,14 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
         &mut self,
         from: &Coupled<N>,
         to: &Coupled<N>,
+        weight: FxHashSet<E>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
+        tracing::debug!(
+            "Adding edge {} -> {}",
+            from.to_short_string(repacker),
+            to.to_short_string(repacker)
+        );
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles before adding edge"
@@ -257,35 +338,22 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let should_merge_sccs;
         if from.is_empty() {
             assert!(!to.is_empty());
-            self.join_nodes(to, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining to nodes (from nodes empty)"
-            );
+            should_merge_sccs = self.join_nodes(to).performed_merge;
         } else if to.is_empty() {
             assert!(!from.is_empty());
-            self.join_nodes(from, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining from nodes (to nodes empty)"
-            );
+            should_merge_sccs = self.join_nodes(from).performed_merge;
         } else {
-            self.join_nodes(from, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining from nodes"
-            );
-            let to_idx = self.join_nodes(to, repacker);
-            pcg_validity_assert!(
-                self.is_acyclic(),
-                "Graph contains cycles after joining to nodes"
-            );
-            let from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
-            self.inner.update_edge(from_idx, to_idx, ());
+            let from_idx = self.join_nodes(from);
+            let to_idx = self.join_nodes(to);
+            should_merge_sccs = from_idx.performed_merge || to_idx.performed_merge;
+            self.add_edge_via_indices(from_idx.index, to_idx.index, weight, repacker);
         }
-        self.merge_sccs(repacker);
+        if should_merge_sccs {
+            self.merge_sccs(repacker);
+        }
         pcg_validity_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 
@@ -298,12 +366,26 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash> DisjointSet
             .collect()
     }
 
-    pub(crate) fn endpoints_pointing_to(&self, node: &Coupled<N>) -> Vec<Coupled<N>> {
+    pub(crate) fn parents(&self, node: &Coupled<N>) -> Vec<(Coupled<N>, FxHashSet<E>)> {
         let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
         self.inner
-            .node_indices()
-            .filter(|idx| self.inner.contains_edge(*idx, node_idx))
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .edges_directed(node_idx, Direction::Incoming)
+            .map(|e| {
+                let source = self.inner.node_weight(e.source()).unwrap().clone();
+                (source, e.weight().clone())
+            })
+            .collect()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn children(&self, node: &Coupled<N>) -> Vec<(Coupled<N>, FxHashSet<E>)> {
+        let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
+        self.inner
+            .edges_directed(node_idx, Direction::Outgoing)
+            .map(|e| {
+                let source = self.inner.node_weight(e.source()).unwrap().clone();
+                (source, e.weight().clone())
+            })
             .collect()
     }
 }
@@ -323,7 +405,7 @@ impl<N: Ord> HyperEdge<N> {
     }
 }
 
-impl<N> fmt::Display for DisjointSetGraph<N>
+impl<N, E> fmt::Display for DisjointSetGraph<N, E>
 where
     N: Eq + Hash + Clone + fmt::Display + Copy + Ord + fmt::Debug,
 {

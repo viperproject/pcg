@@ -1,14 +1,13 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode,
+        borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
         edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
+        edge_data::EdgeData,
         region_projection::RegionIdx,
     },
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{
-        display::DisplayWithRepacker, HasPlace, PlaceRepacker,
-    },
+    utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
 };
 
 use super::BorrowsGraph;
@@ -27,6 +26,28 @@ struct Alias<'tcx> {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph>(
+        &'graph self,
+        node: LocalNode<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
+        let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
+        let mut stack = vec![node];
+        let mut seen: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
+        while let Some(node) = stack.pop() {
+            if seen.insert(node.into()) {
+                for edge in self.edges_blocked_by(node, repacker) {
+                    result.insert(edge);
+                    for node in edge.blocked_nodes(repacker) {
+                        if let Some(local_node) = node.try_to_local_node(repacker) {
+                            stack.push(local_node);
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
     pub(crate) fn aliases(
         &self,
         node: LocalNode<'tcx>,
@@ -82,15 +103,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     &mut FxHashSet::default(),
                     true,
                 ));
-                if let PCGNode::Place(p) = local_node {
-                    if let Some(rp) = p.deref_to_rp(repacker) {
-                        results.extend(self.direct_aliases(
-                            rp.try_to_local_node(repacker).unwrap(),
-                            repacker,
-                            &mut FxHashSet::default(),
-                            true,
-                        ));
-                    }
+                if let PCGNode::Place(p) = local_node
+                    && let Some(rp) = p.deref_to_rp(repacker)
+                {
+                    results.extend(self.direct_aliases(
+                        rp.to_local_node(repacker),
+                        repacker,
+                        &mut FxHashSet::default(),
+                        true,
+                    ));
                 }
             }
         }
@@ -149,20 +170,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 BorrowPCGEdgeKind::Outlives(outlives) => match &outlives.kind {
-                    OutlivesEdgeKind::DerefRegionProjection => {
+                    OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
+                    _ => {
                         extend(
                             outlives.long().to_pcg_node(repacker),
                             seen,
                             &mut result,
-                            direct,
+                            false,
                         );
                     }
-                    OutlivesEdgeKind::DerefBorrowOutlives => {}
-                    OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
-                    _ => {
-                        extend(outlives.long().to_pcg_node(repacker), seen, &mut result, false);
-                    }
                 },
+                BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
+                    for input in edge.inputs.iter() {
+                        extend(input.to_pcg_node(repacker), seen, &mut result, false);
+                    }
+                }
                 _ => todo!(),
             }
         }
@@ -229,6 +251,7 @@ fn test_aliases() {
             &body.body,
             tcx,
         );
+        // *_2 aliases _4 at bb3[1]
         assert!(aliases.contains(&temp4));
         assert!(aliases.contains(&x));
     });

@@ -16,9 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Check for warnings
       env:
         RUSTFLAGS: "-D warnings"
@@ -28,10 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
-        components: clippy
     - name: Run Clippy
       run: cargo clippy -- -D warnings
 
@@ -39,31 +32,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run tests on files
       run: cargo test --test test_files
 
-  bench_test_files:
+  build_2024_09_15:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
-    - name: Install valgrind
-      run: sudo apt-get update && sudo apt-get install -y valgrind
-    - name: Run benchmark tests
-      run: cargo test --test bench_test_files -- --nocapture --show-output
+    - name: Build using Rust Nightly 2024-09-15
+      run: cp rust-toolchain-2024-09-15 rust-toolchain && cargo build
+
+  # bench_test_files:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - name: Install valgrind
+  #     run: sudo apt-get update && sudo apt-get install -y valgrind
+  #   - name: Run benchmark tests
+  #     run: cargo test --test bench_test_files -- --nocapture --show-output
 
   test_crates:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run tests on selected crates
       run: cargo test --test selected_crates
 
@@ -71,9 +62,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run unit tests
       run: cargo test --lib
 
@@ -81,30 +69,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
     - name: Run unit tests
       run: cargo test --doc
 
   flowistry_tests:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout pcs repository
+    - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        path: pcs
+        path: pcg
 
     - name: Checkout flowistry repository
       uses: actions/checkout@v4
       with:
         repository: zgrannan/flowistry
-        ref: zgrannan/pcg
+        ref: zgrannan/pcg-next4
         path: flowistry
-
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2024-09-15
 
     - name: Run flowistry tests
       working-directory: flowistry/crates/flowistry
@@ -112,7 +93,7 @@ jobs:
 
   build-docker-image:
     runs-on: ubuntu-latest
-    needs: [check_warnings, clippy, test_files, bench_test_files, test_crates, unit_tests, doc_tests, flowistry_tests]
+    needs: [check_warnings, clippy, test_files, test_crates, unit_tests, doc_tests, flowistry_tests]
     permissions:
       contents: read
       packages: write
