@@ -123,6 +123,13 @@ export type PCGStmtVisualizationData = {
   borrow_actions: EvalStmtData<BorrowPCGActions>;
 };
 
+export type PcgSuccessorVisualizationData = {
+  owned_ops: string[];
+  borrow_ops: string[];
+};
+
+export type PcgProgramPointData = PCGStmtVisualizationData | PcgSuccessorVisualizationData;
+
 type EvalStmtData<T> = {
   pre_operands: T;
   post_operands: T;

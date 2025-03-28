@@ -13,8 +13,13 @@ use std::{
 use itertools::Itertools;
 
 use crate::{
-    borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdgeLike},
-    free_pcs::RepackOp,
+    borrow_pcg::{
+        action::{actions::BorrowPCGActions, BorrowPCGActionKind},
+        borrow_pcg_edge::BorrowPCGEdgeLike,
+        coupling_graph_constructor::BorrowCheckerInterface,
+        graph::frozen::FrozenGraphRef,
+    },
+    free_pcs::{CapabilitySummary, RepackOp},
     rustc_interface::{
         borrowck::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -26,7 +31,7 @@ use crate::{
                 self, BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
                 START_BLOCK,
             },
-            ty::{self, GenericArgsRef, TyCtxt},
+            ty::{self, GenericArgsRef},
         },
     },
     BodyAndBorrows,
@@ -36,12 +41,25 @@ use super::{
     domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase,
     PCGDebugData, PcgError,
 };
-use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::{
     borrow_pcg::engine::BorrowsEngine,
     free_pcs::{engine::FpcsEngine, CapabilityKind},
     utils::PlaceRepacker,
 };
+
+#[macro_export]
+macro_rules! handle_error {
+    ($self:expr, $state:expr, $expr:expr) => {
+        match $expr {
+            Ok(res) => res,
+            Err(e) => {
+                $self.record_error_if_first(&e);
+                $state.record_error(e);
+                return;
+            }
+        }
+    };
+}
 
 #[rustversion::since(2024-10-03)]
 type OutputFacts = Box<PoloniusOutput>;
@@ -70,6 +88,26 @@ impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
     }
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx> {
         &self.region_inference_context
+    }
+
+    #[rustversion::before(2024-10-03)]
+    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
+        self.output_facts
+            .clone()
+            .map(|o| Box::new(o.as_ref().clone()))
+    }
+
+    #[rustversion::since(2024-10-03)]
+    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
+        self.output_facts.clone()
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        self.location_table.as_ref().unwrap()
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts.as_ref().unwrap()
     }
 }
 
@@ -118,89 +156,63 @@ impl<'tcx> From<borrowck::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts
     }
 }
 
-pub(crate) struct PCGContext<'mir, 'tcx> {
-    pub(crate) rp: PlaceRepacker<'mir, 'tcx>,
-    pub(crate) borrow_set: &'mir BorrowSet<'tcx>,
-    pub(crate) region_inference_context: &'mir RegionInferenceContext<'tcx>,
-    #[allow(dead_code)]
-    pub(crate) output_facts: Option<OutputFacts>,
-}
-
-impl<'mir, 'tcx> PCGContext<'mir, 'tcx> {
-    pub fn new(
-        tcx: TyCtxt<'tcx>,
-        mir: &'mir Body<'tcx>,
-        borrow_set: &'mir BorrowSet<'tcx>,
-        region_inference_context: &'mir RegionInferenceContext<'tcx>,
-        output_facts: Option<OutputFacts>,
-    ) -> Self {
-        let rp = PlaceRepacker::new(mir, tcx);
-        Self {
-            rp,
-            borrow_set,
-            region_inference_context,
-            output_facts,
-        }
-    }
-}
-
 struct PCGEngineDebugData {
     debug_output_dir: String,
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
 }
 
-pub struct PCGEngine<'a, 'tcx> {
-    pub(crate) cgx: Rc<PCGContext<'a, 'tcx>>,
+pub struct PCGEngine<'a, 'tcx: 'a> {
+    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
-    borrow_checker: BorrowCheckerImpl<'a, 'tcx>,
+    pub(crate) borrow_checker: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
     pub(crate) first_error: ErrorState,
 }
-impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
-    pub(crate) fn edges_to_analyze<'mir>(
-        terminator: &'mir Terminator<'tcx>,
-    ) -> TerminatorEdges<'mir, 'tcx> {
-        match &terminator.kind {
-            mir::TerminatorKind::FalseUnwind { real_target, .. } => {
-                TerminatorEdges::Single(*real_target)
-            }
-            mir::TerminatorKind::Call { target, .. } => {
-                if let Some(target) = target {
-                    TerminatorEdges::Single(*target)
-                } else {
-                    TerminatorEdges::None
-                }
-            }
-            mir::TerminatorKind::Assert { target, .. } => TerminatorEdges::Single(*target),
-            mir::TerminatorKind::Drop { target, .. } => TerminatorEdges::Single(*target),
-            _ => terminator.edges(),
+pub(crate) fn edges_to_analyze<'tcx, 'mir>(
+    terminator: &'mir Terminator<'tcx>,
+) -> TerminatorEdges<'mir, 'tcx> {
+    match &terminator.kind {
+        mir::TerminatorKind::FalseUnwind { real_target, .. } => {
+            TerminatorEdges::Single(*real_target)
         }
-    }
-
-    pub(crate) fn successor_blocks<'mir>(terminator: &'mir Terminator<'tcx>) -> Vec<BasicBlock> {
-        match Self::edges_to_analyze(terminator) {
-            TerminatorEdges::None => vec![],
-            TerminatorEdges::Single(basic_block) => vec![basic_block],
-            TerminatorEdges::Double(basic_block, basic_block1) => vec![basic_block, basic_block1],
-            TerminatorEdges::AssignOnReturn {
-                return_, cleanup, ..
-            } => {
-                let mut result = vec![];
-                for block in return_ {
-                    result.push(*block);
-                }
-                if let Some(cleanup) = cleanup {
-                    result.push(cleanup);
-                }
-                result
+        mir::TerminatorKind::Call { target, .. } => {
+            if let Some(target) = target {
+                TerminatorEdges::Single(*target)
+            } else {
+                TerminatorEdges::None
             }
-            TerminatorEdges::SwitchInt { targets, .. } => targets.all_targets().to_vec(),
         }
+        mir::TerminatorKind::Assert { target, .. } => TerminatorEdges::Single(*target),
+        mir::TerminatorKind::Drop { target, .. } => TerminatorEdges::Single(*target),
+        _ => terminator.edges(),
     }
+}
 
+pub(crate) fn successor_blocks(terminator: &Terminator<'_>) -> Vec<BasicBlock> {
+    match edges_to_analyze(terminator) {
+        TerminatorEdges::None => vec![],
+        TerminatorEdges::Single(basic_block) => vec![basic_block],
+        TerminatorEdges::Double(basic_block, basic_block1) => vec![basic_block, basic_block1],
+        TerminatorEdges::AssignOnReturn {
+            return_, cleanup, ..
+        } => {
+            let mut result = vec![];
+            for block in return_ {
+                result.push(*block);
+            }
+            if let Some(cleanup) = cleanup {
+                result.push(cleanup);
+            }
+            result
+        }
+        TerminatorEdges::SwitchInt { targets, .. } => targets.all_targets().to_vec(),
+    }
+}
+
+impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -226,7 +238,11 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
         assert!(state.is_initialized());
     }
 
-    pub(crate) fn new(cgx: PCGContext<'a, 'tcx>, debug_output_dir: Option<String>) -> Self {
+    pub(crate) fn new(
+        repacker: PlaceRepacker<'a, 'tcx>,
+        borrow_checker: impl BorrowCheckerInterface<'a, 'tcx> + 'a,
+        debug_output_dir: Option<String>,
+    ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
             if std::path::Path::new(&dir_path).exists() {
                 std::fs::remove_dir_all(&dir_path).expect("Failed to delete directory contents");
@@ -234,36 +250,31 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
             create_dir_all(&dir_path).expect("Failed to create directory for DOT files");
             let dot_graphs = IndexVec::from_fn_n(
                 |_| Rc::new(RefCell::new(DotGraphs::new())),
-                cgx.rp.body().basic_blocks.len(),
+                repacker.body().basic_blocks.len(),
             );
             PCGEngineDebugData {
                 debug_output_dir: dir_path.clone(),
                 dot_graphs,
             }
         });
-        let fpcs = FpcsEngine { repacker: cgx.rp };
+        let fpcs = FpcsEngine { repacker };
         let borrows = BorrowsEngine::new(
-            cgx.rp.tcx(),
-            cgx.rp.body(),
+            repacker.tcx(),
+            repacker.body(),
             None, // TODO
                   // cgx.output_facts.as_ref().map(|o| o.as_ref()),
         );
-        let cgx = Rc::new(cgx);
-        let mut reachable_blocks = BitSet::new_empty(cgx.rp.body().basic_blocks.len());
+        let mut reachable_blocks = BitSet::new_empty(repacker.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK);
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
-            cgx: cgx.clone(),
+            repacker,
             fpcs,
             borrows,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
-            borrow_checker: BorrowCheckerImpl::new(
-                cgx.rp,
-                cgx.region_inference_context,
-                cgx.borrow_set,
-            ),
+            borrow_checker: Rc::new(borrow_checker),
         }
     }
 
@@ -279,49 +290,87 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
     fn restore_loaned_capabilities(
         &self,
         state: &mut PlaceCapabilitySummary<'a, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
+        borrow_actions: BorrowPCGActions<'tcx>,
+        owned_phase: EvalStmtPhase,
+    ) {
         let pcg = state.pcg_mut();
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
 
+        let owned_state = pcg.owned.data.unwrap_mut(owned_phase);
+
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
-        for action in pcg.borrow.actions[EvalStmtPhase::PreOperands].iter() {
-            if let BorrowPCGActionKind::RemoveEdge(edge) = &action.kind {
-                for place in edge
-                    .blocked_places(self.cgx.rp)
-                    .iter()
-                    .flat_map(|p| p.as_current_place())
-                {
-                    if place.is_owned(self.cgx.rp) && !borrows.contains(place.into(), self.cgx.rp) {
-                        // It's possible that the place isn't allocated because
-                        // it was already StorageDead'd. In this case it
-                        // shouldn't obtain any capability.
-                        // See test-files/92_http_path.rs for an example.
-                        pcg.owned
-                            .data
-                            .unwrap_mut(EvalStmtPhase::PostMain)
-                            .set_capability_if_allocated(
-                                place,
-                                CapabilityKind::Exclusive,
-                                self.cgx.rp,
-                            );
+        for action in borrow_actions.0.into_iter() {
+            match action.kind {
+                BorrowPCGActionKind::MakePlaceOld(place, _) => {
+                    if place.is_owned(self.repacker)
+                        && owned_state.get_capability(place) != Some(CapabilityKind::Write)
+                    {
+                        // A bit of an annoying hack: if the place has *no* capability (or read cap), then it's borrowed.
+                        // The borrows are now going to refer to the old place, so we can regain exclusive cap here.
+                        // However, the borrows graph currently reports this action even for things that aren't borrowed,
+                        // (esp. for StorageDead on a place with only Write permission). So we only restore permission
+                        // if the place actually has a value.
+                        // TODO: We should fix this when merging owned and borrow PCG logic.
+                        owned_state.set_capability_if_allocated(
+                            place,
+                            CapabilityKind::Exclusive,
+                            self.repacker,
+                        );
                     }
                 }
+                BorrowPCGActionKind::RemoveEdge(edge) => {
+                    for place in edge
+                        .blocked_places(self.repacker)
+                        .iter()
+                        .flat_map(|p| p.as_current_place())
+                    {
+                        if place.is_owned(self.repacker)
+                            && !borrows.contains(place.into(), self.repacker)
+                        {
+                            // It's possible that the place isn't allocated because
+                            // it was already StorageDead'd. In this case it
+                            // shouldn't obtain any capability.
+                            // See test-files/92_http_path.rs for an example.
+                            owned_state.set_capability_if_allocated(
+                                place,
+                                CapabilityKind::Exclusive,
+                                self.repacker,
+                            );
+                        }
+                    }
+                }
+                _ => {}
             }
         }
-        let mut extra_ops = vec![];
-        let fpcg_post_state = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
-        for caps in fpcg_post_state.capability_projections() {
-            let leaves = caps.leaves(self.cgx.rp);
+    }
+
+    fn regain_exclusive_capabilities_from_read_leafs(
+        &self,
+        owned_state: &mut CapabilitySummary<'tcx>,
+        borrows: &FrozenGraphRef<'_, 'tcx>,
+    ) {
+        for caps in owned_state.capability_projections_mut() {
+            let leaves = caps.leaves(self.repacker);
 
             for place in leaves {
                 if caps.get_capability(place) == Some(CapabilityKind::Read)
-                    && !borrows.contains(place.into(), self.cgx.rp)
+                    && !borrows.contains(place.into(), self.repacker)
                 {
-                    caps.set_capability(place, CapabilityKind::Exclusive, self.cgx.rp);
+                    caps.set_capability(place, CapabilityKind::Exclusive, self.repacker);
                 }
             }
+        }
+    }
 
+    #[must_use]
+    fn collapse_owned_places(
+        &self,
+        owned_state: &mut CapabilitySummary<'tcx>,
+        borrows: &FrozenGraphRef<'_, 'tcx>,
+    ) -> Vec<RepackOp<'tcx>> {
+        let mut ops = vec![];
+        for caps in owned_state.capability_projections_mut() {
             let mut expansions = caps
                 .expansions()
                 .clone()
@@ -329,21 +378,20 @@ impl<'a, 'tcx> PCGEngine<'a, 'tcx> {
                 .sorted_by_key(|(p, _)| p.projection.len())
                 .collect::<Vec<_>>();
             while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, self.cgx.rp);
+                let expansion_places = base.expansion_places(&expansion, self.repacker);
                 if expansion_places
                     .iter()
-                    .all(|p| !borrows.contains((*p).into(), self.cgx.rp))
+                    .all(|p| !borrows.contains((*p).into(), self.repacker))
                     && let Some(candidate_cap) = caps.get_capability(expansion_places[0])
                     && expansion_places
                         .iter()
                         .all(|p| caps.get_capability(*p) == Some(candidate_cap))
                 {
-                    tracing::debug!("Collapsing {:?} to {:?}", expansion_places[0], base);
-                    extra_ops.extend(caps.collapse(base, self.cgx.rp).unwrap());
+                    ops.extend(caps.collapse(base, self.repacker).unwrap());
                 }
             }
         }
-        Ok(extra_ops)
+        ops
     }
 
     fn record_error_if_first(&mut self, error: &PcgError) {
@@ -371,7 +419,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             (None, None)
         };
         PlaceCapabilitySummary::new(
-            self.cgx.clone(),
+            self.repacker,
             self.borrow_checker.clone(),
             block,
             debug_data,
@@ -401,51 +449,60 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        if let Err(e) = self
-            .borrows
-            .prepare_operands(state.borrow_pcg_mut(), statement, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+
+        // Handle initial borrow actions, mostly expiring borrows
+        handle_error!(
+            self,
+            state,
+            self.borrows
+                .prepare_operands(state.borrow_pcg_mut(), statement, location)
+        );
 
         state.pcg_mut().owned.data.enter_transfer_fn();
-        let mut extra_ops = match self.restore_loaned_capabilities(state) {
-            Ok(extra_ops) => extra_ops,
-            Err(e) => {
-                self.record_error_if_first(&e);
-                state.record_error(e);
-                return;
-            }
-        };
+        // Restore caps for owned places according to borrow expiry
+        self.restore_loaned_capabilities(
+            state,
+            state
+                .borrow_pcg()
+                .actions
+                .get(EvalStmtPhase::PreOperands)
+                .clone(),
+            EvalStmtPhase::PostMain,
+        );
+
+        let pcg = state.pcg_mut();
+        let owned = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
+        let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
+
+        let mut extra_ops = self.collapse_owned_places(owned, &borrows);
+        self.regain_exclusive_capabilities_from_read_leafs(owned, &borrows);
 
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PreOperands].clone();
-        if let Err(e) = self.fpcs.apply_before_statement_effect(
-            state.owned_pcg_mut(),
-            statement,
-            &borrows,
-            location,
-        ) {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        handle_error!(
+            self,
+            state,
+            self.fpcs.apply_before_statement_effect(
+                state.owned_pcg_mut(),
+                statement,
+                &borrows,
+                location,
+            )
+        );
         extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
         state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
-        if let Err(e) = self
-            .borrows
-            .apply_operands(state.borrow_pcg_mut(), statement, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        handle_error!(
+            self,
+            state,
+            self.borrows
+                .apply_operands(state.borrow_pcg_mut(), statement, location)
+        );
 
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
     }
+
+    #[tracing::instrument(skip(self, state, statement))]
     fn apply_statement_effect(
         &mut self,
         state: &mut Self::Domain,
@@ -461,28 +518,53 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         if !self.reachable_blocks.contains(location.block) {
             return;
         }
+
+        // Begin by handling borrow pre_main actions
+
+        handle_error!(
+            self,
+            state,
+            self.borrows
+                .prepare_statement_effect(state.borrow_pcg_mut(), statement, location)
+        );
+
+        // Any borrows that have expired, we regain capabilities to corresponding owned places
+        let owned_pcg = state.owned_pcg_mut();
+        owned_pcg.data.states.0.pre_main = owned_pcg.data.states.0.post_operands.clone();
+
+        self.restore_loaned_capabilities(
+            state,
+            state
+                .borrow_pcg()
+                .actions
+                .get(EvalStmtPhase::PreMain)
+                .clone(),
+            EvalStmtPhase::PreMain,
+        );
+
+        // Do all of the owned effects
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
-        if let Err(e) =
+        let owned_pcg = state.owned_pcg_mut();
+
+        handle_error!(
+            self,
+            state,
             self.fpcs
-                .apply_statement_effect(state.owned_pcg_mut(), statement, &borrows, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
-        if let Err(e) =
+                .apply_statement_effect(owned_pcg, statement, &borrows, location)
+        );
+
+        handle_error!(
+            self,
+            state,
             self.borrows
                 .apply_statement_effect(state.borrow_pcg_mut(), statement, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        );
+
         self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
     }
 
-    #[tracing::instrument(skip(self, state, terminator), fields(def_id = ?self.cgx.rp.body().source.def_id()))]
+    #[tracing::instrument(skip(self, state, terminator), fields(def_id = ?self.repacker.body().source.def_id()))]
     fn apply_before_terminator_effect(
         &mut self,
         state: &mut Self::Domain,
@@ -501,52 +583,54 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             return;
         }
         self.initialize(state, location.block);
-        if let Err(e) = self.borrows.apply_before_terminator_effect(
-            state.borrow_pcg_mut(),
-            terminator,
-            location,
-        ) {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
+        handle_error!(
+            self,
+            state,
+            self.borrows.apply_before_terminator_effect(
+                state.borrow_pcg_mut(),
+                terminator,
+                location,
+            )
+        );
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
         state.pcg_mut().owned.data.enter_transfer_fn();
-        let mut extra_ops = match self.restore_loaned_capabilities(state) {
-            Ok(extra_ops) => extra_ops,
-            Err(e) => {
-                self.record_error_if_first(&e);
-                state.record_error(e);
-                return;
-            }
-        };
-        if let Err(e) = self.fpcs.apply_before_terminator_effect(
-            state.owned_pcg_mut(),
-            terminator,
-            &borrows,
-            location,
-        ) {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return;
-        }
-        extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
-        state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
+        self.restore_loaned_capabilities(
+            state,
+            state
+                .borrow_pcg()
+                .actions
+                .get(EvalStmtPhase::PreOperands)
+                .clone(),
+            EvalStmtPhase::PostMain,
+        );
+        handle_error!(
+            self,
+            state,
+            self.fpcs.apply_before_terminator_effect(
+                state.owned_pcg_mut(),
+                terminator,
+                &borrows,
+                location,
+            )
+        );
+        // extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
+        // state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
     }
+
     fn apply_terminator_effect<'mir>(
         &mut self,
         state: &mut Self::Domain,
         terminator: &'mir Terminator<'tcx>,
         location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
-        let edges = Self::edges_to_analyze(terminator);
+        let edges = edges_to_analyze(terminator);
         if state.has_error() || !self.reachable_blocks.contains(location.block) {
             return edges;
         } else {
-            for block in Self::successor_blocks(terminator) {
+            for block in successor_blocks(terminator) {
                 self.reachable_blocks.insert(block);
             }
         }

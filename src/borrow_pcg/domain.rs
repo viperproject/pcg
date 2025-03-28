@@ -2,19 +2,15 @@ use std::rc::Rc;
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::edge::borrow::RemoteBorrow;
 use crate::borrow_pcg::edge::outlives::{OutlivesEdge, OutlivesEdgeKind};
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::combined_pcs::EvalStmtPhase::*;
-use crate::combined_pcs::PCGNodeLike;
-use crate::free_pcs::CapabilityKind;
-use crate::utils;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
-use crate::utils::maybe_remote::MaybeRemotePlace;
+use crate::utils::incoming_states::IncomingStates;
 use crate::utils::{Place, PlaceRepacker};
 
 pub type AbstractionInputTarget<'tcx> = CGNode<'tcx>;
@@ -32,6 +28,7 @@ impl<'tcx> TryFrom<AbstractionInputTarget<'tcx>> for RegionProjection<'tcx> {
 
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
+use super::coupling_graph_constructor::BorrowCheckerInterface;
 use super::visitor::extract_regions;
 use super::{coupling_graph_constructor::CGNode, region_projection::RegionProjection};
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -45,6 +42,7 @@ use crate::rustc_interface::middle::{
 const DEBUG_JOIN_ITERATION_LIMIT: usize = 10000;
 
 impl<'tcx> BorrowsDomain<'_, 'tcx> {
+    #[tracing::instrument(skip(self, other), fields(self_block = ?self.block(), other_block = ?other.block()))]
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         self.data.enter_join();
         self.debug_join_iteration += 1;
@@ -56,39 +54,51 @@ impl<'tcx> BorrowsDomain<'_, 'tcx> {
                 self.debug_join_iteration
             );
         }
-        // For performance reasons we don't check validity here.
-        // if validity_checks_enabled() {
-        //     pcg_validity_assert!(other.is_valid(), "Other graph is invalid");
-        // }
+        let seen = self.data.incoming_states.contains(other.block());
+
+        if seen && other.block() > self.block() {
+            // It's a loop, but we've already joined it
+            return false;
+        }
         let mut other_after = other.post_main_state().clone();
 
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let pc = PathCondition::new(other.block(), self.block());
         other_after.add_path_condition(pc);
-
-        let self_block = self.block();
-
-        Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state).join(
-            &other_after,
-            self_block,
-            other.block(),
-            &self.bc,
-            self.repacker,
-        )
+        if seen {
+            // It's another iteration, reset the entry state
+            self.data.incoming_states = IncomingStates::singleton(other.block());
+            if other_after != *self.data.entry_state {
+                self.data.entry_state = other_after.into();
+                true
+            } else {
+                false
+            }
+        } else {
+            self.data.incoming_states.insert(other.block());
+            let self_block = self.block();
+            Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state).join(
+                &other_after,
+                self_block,
+                other.block(),
+                self.bc.as_ref(),
+                self.repacker,
+            )
+        }
     }
 }
 
-#[derive(Clone)]
 /// The domain of the Borrow PCG dataflow analysis. Note that this contains many
 /// fields which serve as context (e.g. reference to a borrow-checker impl to
 /// properly compute joins) but are not updated in the analysis itself.
+#[derive(Clone)]
 pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) data: DomainData<BorrowsState<'tcx>>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
     pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
-    pub(crate) bc: BorrowCheckerImpl<'mir, 'tcx>,
+    pub(crate) bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
     /// The number of times the join operation has been called, this is just
     /// used for debugging to identify if the dataflow analysis is not
     /// terminating.
@@ -112,7 +122,7 @@ impl std::fmt::Debug for BorrowsDomain<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
+impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
     pub(crate) fn post_main_state(&self) -> &BorrowsState<'tcx> {
         self.data.states[PostMain].as_ref()
     }
@@ -129,9 +139,10 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
         self.block.unwrap()
     }
 
+    #[tracing::instrument(skip(repacker, bc))]
     pub(crate) fn new(
         repacker: PlaceRepacker<'mir, 'tcx>,
-        bc: BorrowCheckerImpl<'mir, 'tcx>,
+        bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
         block: Option<BasicBlock>,
     ) -> Self {
         Self {
@@ -147,17 +158,8 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
     fn introduce_initial_borrows(&mut self, local: Local) {
         let local_decl = &self.repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
-        if let ty::TyKind::Ref(_, _, mutability) = local_decl.ty.kind() {
+        if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
             let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
-            assert!(entry_state.set_capability(
-                MaybeRemotePlace::place_assigned_to_local(local).into(),
-                if mutability.is_mut() {
-                    CapabilityKind::Exclusive
-                } else {
-                    CapabilityKind::Read
-                },
-                self.repacker,
-            ));
             let _ = entry_state.apply_action(
                 BorrowPCGAction::add_edge(RemoteBorrow::new(local).into(), true),
                 self.repacker,
@@ -185,7 +187,7 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
                                     );
                                 }),
                                 region_projection,
-                                OutlivesEdgeKind::Todo,
+                                OutlivesEdgeKind::InitialBorrows,
                                 self.repacker,
                             )
                             .into(),
@@ -201,15 +203,6 @@ impl<'mir, 'tcx> BorrowsDomain<'mir, 'tcx> {
 
     pub(crate) fn initialize_as_start_block(&mut self) {
         for arg in self.repacker.body().args_iter() {
-            let arg_place: utils::Place<'tcx> = arg.into();
-            for rp in arg_place.region_projections(self.repacker) {
-                let entry_state = Rc::<BorrowsState<'tcx>>::make_mut(&mut self.data.entry_state);
-                assert!(entry_state.set_capability(
-                    rp.to_pcg_node(self.repacker),
-                    CapabilityKind::Exclusive,
-                    self.repacker
-                ));
-            }
             self.introduce_initial_borrows(arg);
         }
     }

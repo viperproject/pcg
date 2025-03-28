@@ -60,6 +60,12 @@ impl<'tcx> Latest<'tcx> {
         Self(FxHashMap::default())
     }
 
+    pub(crate) fn singleton(place: Place<'tcx>, location: SnapshotLocation) -> Self {
+        let mut latest = Self::new();
+        latest.insert(place, location);
+        latest
+    }
+
     fn get_exact(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
         self.0.get(&place).copied()
     }
@@ -81,21 +87,11 @@ impl<'tcx> Latest<'tcx> {
         self.get_opt(place).unwrap_or(SnapshotLocation::start())
     }
 
-    pub fn insert(
+    pub (super) fn insert(
         &mut self,
         place: Place<'tcx>,
         location: SnapshotLocation,
-        _repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        // TODO: Should this assertion pass?
-        // if let Some(existing) = self.get_opt(place) {
-        //     if existing != location && !place.has_location_dependent_value(repacker) {
-        //         panic!(
-        //             "location changed for place with location-independent value: {:?} -> {:?}",
-        //             existing, location
-        //         );
-        //     }
-        // }
         self.insert_unchecked(place, location)
     }
 
@@ -131,7 +127,6 @@ impl<'tcx> Latest<'tcx> {
         &mut self,
         other: &Self,
         block: BasicBlock,
-        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
         if self.0.is_empty() {
             if other.0.is_empty() {
@@ -149,7 +144,7 @@ impl<'tcx> Latest<'tcx> {
                     changed = true;
                 }
             } else {
-                self.insert(*place, *other_loc, repacker);
+                self.insert(*place, *other_loc);
                 changed = true;
             }
         }

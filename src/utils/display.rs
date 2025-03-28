@@ -49,6 +49,17 @@ pub trait DisplayWithRepacker<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String;
 }
 
+impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Vec<T> {
+    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        let comma_sep = self
+            .iter()
+            .map(|t| t.to_short_string(repacker))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("[{comma_sep}]")
+    }
+}
+
 impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         match self.to_string(repacker) {
@@ -120,7 +131,7 @@ impl<'tcx> Place<'tcx> {
                     let field_name = match ty.kind() {
                         TyKind::Adt(def, _substs) => {
                             let fields = match def.adt_kind() {
-                                AdtKind::Struct => &def.non_enum_variant().fields,
+                                AdtKind::Struct | AdtKind::Union => &def.non_enum_variant().fields,
                                 AdtKind::Enum => {
                                     let Some(PlaceElem::Downcast(_, variant_idx)) =
                                         self.projection.get(index - 1)
@@ -129,7 +140,6 @@ impl<'tcx> Place<'tcx> {
                                     };
                                     &def.variant(*variant_idx).fields
                                 }
-                                kind => unimplemented!("{kind:?}"),
                             };
 
                             fields[field].ident(repacker.tcx).to_string()

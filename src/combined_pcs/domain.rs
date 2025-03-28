@@ -13,16 +13,17 @@ use std::{
 };
 
 use crate::{
+    borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
+    utils::PlaceRepacker,
     PCGAnalysis, RECORD_PCG,
 };
 
-use super::{PCGContext, PCGEngine};
-use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
+use super::PCGEngine;
 use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
@@ -89,15 +90,32 @@ pub(crate) struct PCGDebugData {
     pub(crate) dot_graphs: Rc<RefCell<DotGraphs>>,
 }
 
+#[derive(Clone, Eq)]
+pub struct Pcg<'a, 'tcx> {
+    pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
+    pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
+}
+
+impl PartialEq for Pcg<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.owned == other.owned && self.borrow == other.borrow
+    }
+}
+
+impl Pcg<'_, '_> {
+    pub(crate) fn initialize_as_start_block(&mut self) {
+        self.owned.initialize_as_start_block();
+        self.borrow.initialize_as_start_block();
+    }
+}
+
 #[derive(Clone)]
 pub struct PlaceCapabilitySummary<'a, 'tcx> {
-    cgx: Rc<PCGContext<'a, 'tcx>>,
+    repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
-
     pub(crate) pcg: std::result::Result<Pcg<'a, 'tcx>, PcgError>,
-    debug_data: Option<PCGDebugData>,
-
-    join_history: FxHashSet<BasicBlock>,
+    pub(crate) debug_data: Option<PCGDebugData>,
+    pub(crate) join_history: FxHashSet<BasicBlock>,
     pub(crate) reachable: bool,
 }
 
@@ -260,26 +278,11 @@ impl From<PCGInternalError> for PcgError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGUnsupportedError {
     AssignBorrowToNonReferenceType,
-    ClosuresCapturingBorrows,
-    Coroutines,
     DerefUnsafePtr,
     ExpansionOfAliasType,
     IndexingNonIndexableType,
     InlineAssembly,
-    NonConstantOperandFunctionCall,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct Pcg<'a, 'tcx> {
-    pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
-    pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
-}
-
-impl Pcg<'_, '_> {
-    pub(crate) fn initialize_as_start_block(&mut self) {
-        self.owned.initialize_as_start_block();
-        self.borrow.initialize_as_start_block();
-    }
+    ClosureCall,
 }
 
 impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
@@ -409,7 +412,7 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
             };
 
             generate_dot_graph(
-                self.cgx.rp,
+                self.repacker,
                 fpcs.as_ref().as_ref().unwrap(),
                 borrows,
                 &filename,
@@ -419,19 +422,19 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     }
 
     pub(crate) fn new(
-        cgx: Rc<PCGContext<'a, 'tcx>>,
-        bc: BorrowCheckerImpl<'a, 'tcx>,
+        repacker: PlaceRepacker<'a, 'tcx>,
+        bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
-        let fpcs = FreePlaceCapabilitySummary::new(cgx.rp);
-        let borrows = BorrowsDomain::new(cgx.rp, bc, block);
+        let fpcs = FreePlaceCapabilitySummary::new(repacker);
+        let borrows = BorrowsDomain::new(repacker, bc, block);
         let pcg = Pcg {
             owned: fpcs,
             borrow: borrows,
         };
         Self {
-            cgx,
+            repacker,
             block,
             pcg: Ok(pcg),
             debug_data,
@@ -441,20 +444,21 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     }
 }
 
-impl Eq for PlaceCapabilitySummary<'_, '_> {}
-impl PartialEq for PlaceCapabilitySummary<'_, '_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.pcg == other.pcg
-    }
-}
 impl Debug for PlaceCapabilitySummary<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}\n{:?}", self.owned_pcg(), self.borrow_pcg())
     }
 }
 
+impl Eq for PlaceCapabilitySummary<'_, '_> {}
+
+impl PartialEq for PlaceCapabilitySummary<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.pcg == other.pcg
+    }
+}
+
 impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
-    #[tracing::instrument(skip(self, other), fields(self_block = self.block().index(), other_block = other.block().index()))]
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;
@@ -466,28 +470,22 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
             return false;
         }
 
-        // We've already joined this block, we can exit early
-        if self.cgx.rp.is_back_edge(other.block(), self.block())
-            && self.join_history.contains(&other.block())
+        let self_block = self.block();
+        let other_block = other.block();
+
+        if self.repacker.is_back_edge(other_block, self_block)
+            && self.join_history.contains(&other_block)
         {
+            // We've already joined this block, we can exit early
             return false;
         } else {
-            self.join_history.insert(other.block());
+            self.join_history.insert(other_block);
         }
-        // For performance reasons we don't check validity here.
-        // if validity_checks_enabled() {
-        //     if !other.is_valid() {
-        //         eprintln!(
-        //             "Block {:?} is invalid. Body source: {:?}, span: {:?}",
-        //             other.block(),
-        //             self.cgx.mir.body.source,
-        //             self.cgx.mir.body.span
-        //         );
-        //     }
-        //     pcg_validity_assert!(other.is_valid(), "Block {:?} is invalid!", other.block());
-        // }
         assert!(self.is_initialized() && other.is_initialized());
-        let fpcs = match self.owned_pcg_mut().join(other.owned_pcg()) {
+        let fpcs = match self
+            .owned_pcg_mut()
+            .join(other.owned_pcg(), self_block, other_block)
+        {
             Ok(changed) => changed,
             Err(e) => {
                 self.record_error(e);

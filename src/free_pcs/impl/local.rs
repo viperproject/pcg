@@ -14,7 +14,7 @@ use crate::{
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::{PcgError, PCGInternalError},
+    combined_pcs::{PCGInternalError, PcgError},
     free_pcs::{CapabilityKind, RepackOp},
     utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
     validity_checks_enabled,
@@ -126,6 +126,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
     }
 
     pub(crate) fn leaves(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<Place<'tcx>> {
+        if self.expansions.is_empty() {
+            return vec![self.local.into()];
+        }
         self.expansions
             .iter()
             .flat_map(|(p, e)| p.expansion_places(e, repacker))
@@ -215,6 +218,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for_cap: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        tracing::debug!("Expanding to {:?}", *to);
         assert!(
             to.is_owned(repacker),
             "Expanding to borrowed place {:?}",
@@ -226,10 +230,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let from_cap = if let Some(cap) = self.get_capability(from) {
             cap
         } else {
-            return Err(PcgError::internal(format!(
-                "No capability for {}",
-                from.to_short_string(repacker),
-            )));
+            let err = format!("No capability for {}", from.to_short_string(repacker));
+            tracing::error!("{}", err);
+            return Err(PcgError::internal(err));
         };
         let expansion = from.expand(*to, repacker)?;
 

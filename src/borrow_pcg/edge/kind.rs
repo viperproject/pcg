@@ -4,6 +4,7 @@ use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::PlaceRepacker;
 
 use super::borrow::RemoteBorrow;
+use super::coupling::FunctionCallRegionCoupling;
 use super::outlives::OutlivesEdge;
 use super::region_projection_member::RegionProjectionMember;
 
@@ -14,6 +15,7 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     Abstraction(AbstractionType<'tcx>),
     Outlives(OutlivesEdge<'tcx>),
     RegionProjectionMember(RegionProjectionMember<'tcx>),
+    FunctionCallRegionCoupling(FunctionCallRegionCoupling<'tcx>),
 }
 
 impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdgeKind<'tcx> {

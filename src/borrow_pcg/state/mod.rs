@@ -5,20 +5,18 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
-    graph::{BorrowsGraph, FrozenGraphRef},
+    graph::{frozen::FrozenGraphRef, BorrowsGraph},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
-    borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow},
-    utils::display::DisplayWithRepacker,
+    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     borrow_pcg::edge_data::EdgeData,
-    combined_pcs::{PCGNode, PCGNodeLike},
+    combined_pcs::PCGNode,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
@@ -29,6 +27,7 @@ use crate::{
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
 };
+use crate::{combined_pcs::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
@@ -95,14 +94,16 @@ impl<'tcx> BorrowsState<'tcx> {
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker) {
-                    let _ = self.remove_capability(node.into());
+                    if let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
+                        let _ = self.remove_capability(place.into());
+                    }
                 }
             }
         }
         removed
     }
 
-    fn record_and_apply_action(
+    pub(crate) fn record_and_apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
@@ -123,12 +124,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.contains(node.into(), repacker)
     }
 
-    pub(crate) fn graph_edges<'slf>(
-        &'slf self,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> {
-        self.graph.edges()
-    }
-
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }
@@ -137,20 +132,20 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph().frozen_graph()
     }
 
-    pub(crate) fn get_capability(&self, node: PCGNode<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(node)
+    pub(crate) fn get_capability(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+        self.capabilities.get(place)
     }
 
     /// Returns true iff the capability was changed.
     pub(crate) fn set_capability(
         &mut self,
-        node: PCGNode<'tcx>,
+        place: MaybeOldPlace<'tcx>,
         capability: CapabilityKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        assert!(!node.is_owned(repacker));
-        if self.get_capability(node) != Some(capability) {
-            Rc::<_>::make_mut(&mut self.capabilities).insert(node, capability);
+        assert!(!place.is_owned(repacker));
+        if self.get_capability(place) != Some(capability) {
+            Rc::<_>::make_mut(&mut self.capabilities).insert(place, capability);
             true
         } else {
             false
@@ -158,28 +153,28 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    pub(crate) fn remove_capability(&mut self, node: PCGNode<'tcx>) -> bool {
-        if self.get_capability(node).is_some() {
-            Rc::<_>::make_mut(&mut self.capabilities).remove(node);
+    pub(crate) fn remove_capability(&mut self, place: MaybeOldPlace<'tcx>) -> bool {
+        if self.get_capability(place).is_some() {
+            Rc::<_>::make_mut(&mut self.capabilities).remove(place);
             true
         } else {
             false
         }
     }
 
-    pub(crate) fn join<'mir, T: BorrowCheckerInterface<'tcx>>(
+    pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        bc: &T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
         changed |= self
             .graph
             .join(&other.graph, self_block, other_block, repacker, bc);
-        changed |= self.latest.join(&other.latest, self_block, repacker);
+        changed |= self.latest.join(&other.latest, self_block);
         if other.capabilities != self.capabilities {
             changed |= Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities);
         }
@@ -198,6 +193,7 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
+    #[tracing::instrument(skip(self, edge, location, repacker))]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
@@ -205,11 +201,10 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        tracing::debug!("Removing edge {}", edge.kind().to_short_string(repacker));
         let mut actions = ExecutedActions::new();
         for place in edge.blocked_places(repacker) {
-            if self.get_capability(place.into()) != Some(CapabilityKind::Read)
-                && let Some(place) = place.as_current_place()
+            if let Some(place) = place.as_current_place()
+                && self.get_capability(place.into()) != Some(CapabilityKind::Read)
                 && place.has_location_dependent_value(repacker)
             {
                 self.record_and_apply_action(
@@ -230,10 +225,12 @@ impl<'tcx> BorrowsState<'tcx> {
             .filter(|node| !fg.has_edge_blocking(*node, repacker))
             .collect::<Vec<_>>();
         for node in to_restore {
-            if let Some(local_node) = node.as_local_node(repacker) {
-                let blocked_cap = self.get_capability(node);
+            if let Some(place) = node.as_maybe_old_place()
+                && !place.is_owned(repacker)
+            {
+                let blocked_cap = self.get_capability(place);
 
-                let restore_cap = if local_node.place().projects_shared_ref(repacker) {
+                let restore_cap = if place.place().projects_shared_ref(repacker) {
                     CapabilityKind::Read
                 } else {
                     CapabilityKind::Exclusive
@@ -241,7 +238,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
                 if blocked_cap.is_none_or(|bc| bc < restore_cap) {
                     self.record_and_apply_action(
-                        BorrowPCGAction::restore_capability(local_node, restore_cap),
+                        BorrowPCGAction::restore_capability(place, restore_cap),
                         &mut actions,
                         repacker,
                     )?;
@@ -305,9 +302,12 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-    /// Removes leaves that are old or dead (based on the borrow checker). Note
-    /// that the liveness calculation is performed based on what happened at the
-    /// end of the *previous* statement.
+    /// Removes leaves that are old or dead (based on the borrow checker). This
+    /// function should called prior to evaluating the effect of the statement
+    /// at `location`.
+    ///
+    /// Note that the liveness calculation is performed based on what happened
+    /// at the end of the *previous* statement.
     ///
     /// For example when evaluating:
     /// ```text
@@ -315,7 +315,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// bb0[2]: *x = 2;
     /// bb0[3]: ... // x is dead
     /// ```
-    /// would not remove the *x -> y edge until this function is called at `bb0[3]`.
+    /// we do not remove the `*x -> y` edge until `bb0[3]`.
     /// This ensures that the edge appears in the graph at the end of `bb0[2]`
     /// (rather than never at all).
     ///
@@ -327,48 +327,58 @@ impl<'tcx> BorrowsState<'tcx> {
         &'slf mut self,
         repacker: PlaceRepacker<'mir, 'tcx>,
         location: Location,
-        bc: &impl BorrowCheckerInterface<'tcx>,
+        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
-        let prev_location = if location.statement_index == 0 {
-            None
-        } else {
-            Some(Location {
-                block: location.block,
-                statement_index: location.statement_index - 1,
-            })
-        };
         let mut num_edges_prev = self.graph.num_edges();
         loop {
-            fn go<'slf, 'mir, 'tcx>(
+            fn go<'slf, 'mir: 'slf, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
                 repacker: PlaceRepacker<'mir, 'tcx>,
-                prev_location: Option<Location>,
-                bc: &impl BorrowCheckerInterface<'tcx>,
+                location: Location,
+                bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
-                let should_trim =
-                    |p: LocalNode<'tcx>,
-                     fg: &FrozenGraphRef<'slf, 'tcx>| {
-                        if p.is_old() {
-                            return true;
-                        }
-                        let place = match p {
-                            PCGNode::Place(p) => p.place(),
-                            PCGNode::RegionProjection(rp) => rp.place().place(),
-                        };
 
-                        if place.projection.is_empty() && repacker.is_arg(place.local) {
-                            return false;
-                        }
+                let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
+                    if p.is_old() {
+                        return true;
+                    }
+                    let place = match p {
+                        PCGNode::Place(p) => p.place(),
+                        PCGNode::RegionProjection(rp) => rp.place().place(),
+                    };
 
-                        if !place.projection.is_empty()
-                            && !fg.has_edge_blocking(place.into(), repacker)
-                        {
-                            return true;
-                        }
+                    if place.projection.is_empty() && repacker.is_arg(place.local) {
+                        return false;
+                    }
 
-                        prev_location.is_some() && !bc.is_live(place.into(), prev_location.unwrap())
+                    if !place.projection.is_empty() && !fg.has_edge_blocking(place.into(), repacker)
+                    {
+                        return true;
+                    }
+
+                    bc.is_dead(place.into(), location)
+                };
+
+                let should_pack_edge =
+                    |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
+                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                            if expansion.expansion().iter().all(|node| {
+                                node.is_old() || bc.is_dead(node.place().into(), location)
+                            }) {
+                                true
+                            } else {
+                                expansion.expansion().iter().all(|node| {
+                                    expansion.base().place().is_prefix_exact(node.place())
+                                        && expansion.base().location() == node.location()
+                                })
+                            }
+                        }
+                        _ => edge
+                            .blocked_by_nodes(repacker)
+                            .iter()
+                            .all(|p| should_kill_node(*p, &fg)),
                     };
 
                 let mut edges_to_trim = Vec::new();
@@ -377,19 +387,13 @@ impl<'tcx> BorrowsState<'tcx> {
                     .into_iter()
                     .map(|e| e.to_owned_edge())
                 {
-                    tracing::debug!("Checking leaf edge {:?}", edge.kind().to_short_string(repacker));
-                    let blocked_by_nodes = edge.blocked_by_nodes(repacker);
-                    if blocked_by_nodes
-                        .iter()
-                        .all(|p| should_trim(*p, &fg))
-                    {
-                        tracing::debug!("Trimming edge {:?}", edge.kind().to_short_string(repacker));
+                    if should_pack_edge(edge.kind()) {
                         edges_to_trim.push(edge);
                     }
                 }
                 edges_to_trim
             }
-            let edges_to_trim = go(self, repacker, prev_location, bc);
+            let edges_to_trim = go(self, repacker, location, bc);
             if edges_to_trim.is_empty() {
                 break Ok(actions);
             }
@@ -402,7 +406,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 )?);
             }
             let new_num_edges = self.graph.num_edges();
-            assert!(new_num_edges < num_edges_prev);
+            assert!(new_num_edges <= num_edges_prev);
             num_edges_prev = new_num_edges;
         }
     }
@@ -439,7 +443,9 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        self.set_capability(rp.to_pcg_node(repacker), assigned_cap, repacker);
+        if !rp.place().is_owned(repacker) {
+            self.set_capability(rp.place(), assigned_cap, repacker);
+        }
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge)
                 .to_borrow_pcg_edge(PathConditions::AtBlock(location.block))
@@ -451,13 +457,13 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowKind::Mut {
                     kind: MutBorrowKind::Default,
                 } => {
-                    let _ = self.remove_capability(blocked_place.into());
+                    let _ = self.remove_capability(blocked_place);
                 }
                 _ => {
-                    match self.get_capability(blocked_place.into()) {
+                    match self.get_capability(blocked_place) {
                         Some(CapabilityKind::Exclusive) => {
                             assert!(self.set_capability(
-                                blocked_place.into(),
+                                blocked_place,
                                 CapabilityKind::Read,
                                 repacker
                             ));

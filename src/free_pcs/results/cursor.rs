@@ -6,9 +6,13 @@
 
 use std::rc::Rc;
 
+use derive_more::Deref;
+
 use crate::{
-    borrow_pcg::{action::BorrowPCGActionKind, borrow_pcg_edge::BorrowPCGEdge, latest::Latest},
-    combined_pcs::{EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
+    borrow_pcg::{
+        action::BorrowPCGActionKind, borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef}, graph::BorrowsGraph, latest::Latest
+    },
+    combined_pcs::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -43,7 +47,7 @@ impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx> {
+pub struct FreePcsAnalysis<'mir, 'tcx: 'mir> {
     pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
@@ -73,7 +77,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 
     pub fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.cursor.analysis().0.cgx.rp
+        self.cursor.analysis().0.repacker
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -129,7 +133,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         let block = &self.body()[location.block];
 
         // Currently we ignore blocks that are only reached via panics
-        let succs = PCGEngine::successor_blocks(block.terminator())
+        let succs = successor_blocks(block.terminator())
             .into_iter()
             .filter(|succ| {
                 self.cursor
@@ -230,6 +234,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 }
 
+#[derive(Deref)]
 pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
 
 impl<'tcx> PcgBasicBlocks<'tcx> {
@@ -241,21 +246,47 @@ impl<'tcx> PcgBasicBlocks<'tcx> {
         }
     }
 
+    fn aggregate<'mir, T: std::hash::Hash + std::cmp::Eq>(
+        &self,
+        f: impl Fn(&PcgLocation<'tcx>) -> FxHashSet<T>,
+    ) -> FxHashSet<T> {
+        let mut result = FxHashSet::default();
+        for block in self.0.iter() {
+            if let Some(pcg_block) = &block {
+                for stmt in pcg_block.statements.iter() {
+                    result.extend(f(stmt));
+                }
+            }
+        }
+        result
+    }
+
+    pub fn ancestor_edge_graph<'mir>(
+        &self,
+        place: mir::Place<'tcx>,
+        body: &'mir Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+    ) -> BorrowsGraph<'tcx> {
+        let mut graph = BorrowsGraph::new();
+        let edges = self.aggregate(|stmt| {
+            stmt.ancestor_edges(place.into(), PlaceRepacker::new(body, tcx))
+                .into_iter()
+                .map(|e| e.to_owned_edge())
+                .collect()
+        });
+        for edge in edges {
+            graph.insert(edge);
+        }
+        graph
+    }
+
     pub fn all_place_aliases<'mir>(
         &self,
         place: mir::Place<'tcx>,
         body: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
     ) -> FxHashSet<mir::Place<'tcx>> {
-        let mut result = FxHashSet::default();
-        for block in self.0.iter() {
-            if let Some(pcg_block) = &block {
-                for stmt in pcg_block.statements.iter() {
-                    result.extend(stmt.aliases(place, body, tcx));
-                }
-            }
-        }
-        result
+        self.aggregate(|stmt| stmt.aliases(place, body, tcx))
     }
 }
 
@@ -312,6 +343,27 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
 impl<'tcx> PcgLocation<'tcx> {
     pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> &BorrowPCGActions<'tcx> {
         &self.borrow_pcg_actions[phase]
+    }
+
+    pub fn ancestor_edges<'slf, 'mir: 'slf>(
+        &'slf self,
+        place: Place<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
+        let mut ancestors = self
+            .borrows
+            .post_main
+            .graph()
+            .ancestor_edges(place.into(), repacker);
+        for rp in place.region_projections(repacker) {
+            ancestors.extend(
+                self.borrows
+                    .post_main
+                    .graph()
+                    .ancestor_edges(rp.into(), repacker),
+            );
+        }
+        ancestors
     }
 
     pub fn aliases<'mir>(

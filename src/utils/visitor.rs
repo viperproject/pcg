@@ -42,6 +42,7 @@ pub(crate) trait FallableVisitor<'tcx> {
         Ok(())
     }
 
+    #[allow(unreachable_patterns)]
     fn super_statement_fallable(
         &mut self,
         statement: &mir::Statement<'tcx>,

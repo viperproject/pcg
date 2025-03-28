@@ -71,6 +71,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         }
         let mut tw = TripleWalker::new(state.repacker);
         tw.visit_terminator(terminator, location);
+        state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
         self.apply_main(state, tw, borrows, location)?;
         Ok(terminator.edges())
     }
@@ -92,7 +93,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         // Repack for operands
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         for &triple in &tw.operand_triples {
-            let triple = triple.replace_place(self.repacker);
+            // let triple = triple.replace_place(self.repacker);
             let pre_operands = state.data.unwrap_mut(EvalStmtPhase::PreOperands);
             let actions = pre_operands.requires(triple.pre(), self.repacker, borrows)?;
             state.actions[EvalStmtPhase::PreOperands].extend(actions);
@@ -120,8 +121,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         if let Some(error) = tw.error {
             return Err(error);
         }
-        // Repack for main
-        state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
+
         for &triple in &tw.main_triples {
             let pre_main = state.data.unwrap_mut(EvalStmtPhase::PreMain);
             let actions = pre_main.requires(triple.pre(), self.repacker, borrows)?;
