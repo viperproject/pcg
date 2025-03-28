@@ -47,20 +47,6 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-#[macro_export]
-macro_rules! handle_error {
-    ($self:expr, $state:expr, $expr:expr, $ret:expr) => {
-        match $expr {
-            Ok(res) => res,
-            Err(e) => {
-                $self.record_error_if_first(&e);
-                $state.record_error(e);
-                return $ret;
-            }
-        }
-    };
-}
-
 #[rustversion::since(2024-10-03)]
 type OutputFacts = Box<PoloniusOutput>;
 
@@ -236,6 +222,55 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
             );
         }
         assert!(state.is_initialized());
+    }
+
+    fn analyze_terminator(
+        &mut self,
+        state: &mut PlaceCapabilitySummary<'a, 'tcx>,
+        terminator: &Terminator<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        if self.reachable_blocks.contains(location.block) {
+            state.reachable = true;
+        } else {
+            return Ok(());
+        }
+        self.initialize(state, location.block);
+        self.borrows.apply_before_terminator_effect(
+            state.borrow_pcg_mut(),
+            terminator,
+            location,
+        )?;
+        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
+        state.pcg_mut().owned.data.enter_transfer_fn();
+        self.restore_loaned_capabilities(
+            state,
+            state
+                .borrow_pcg()
+                .actions
+                .get(EvalStmtPhase::PreOperands)
+                .clone(),
+            EvalStmtPhase::PostMain,
+        );
+        self.fpcs.apply_before_terminator_effect(
+            state.owned_pcg_mut(),
+            terminator,
+            &borrows,
+            location,
+        )?;
+        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
+        for block in successor_blocks(terminator) {
+            self.reachable_blocks.insert(block);
+        }
+        self.borrows
+            .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location)?;
+        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
+        self.fpcs
+            .apply_terminator_effect(state.owned_pcg_mut(), terminator, &borrows, location)?;
+        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
+        Ok(())
     }
 
     fn analyze_statement(
@@ -543,74 +578,10 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             }
             return edges;
         }
-        if self.reachable_blocks.contains(location.block) {
-            state.reachable = true;
-        } else {
-            return edges;
-        }
-        self.initialize(state, location.block);
-        handle_error!(
-            self,
-            state,
-            self.borrows.apply_before_terminator_effect(
-                state.borrow_pcg_mut(),
-                terminator,
-                location,
-            ),
-            edges
-        );
-        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
-        state.pcg_mut().owned.data.enter_transfer_fn();
-        self.restore_loaned_capabilities(
-            state,
-            state
-                .borrow_pcg()
-                .actions
-                .get(EvalStmtPhase::PreOperands)
-                .clone(),
-            EvalStmtPhase::PostMain,
-        );
-        handle_error!(
-            self,
-            state,
-            self.fpcs.apply_before_terminator_effect(
-                state.owned_pcg_mut(),
-                terminator,
-                &borrows,
-                location,
-            ),
-            edges
-        );
-        // extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
-        // state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
-        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
-        if state.has_error() || !self.reachable_blocks.contains(location.block) {
-            return edges;
-        } else {
-            for block in successor_blocks(terminator) {
-                self.reachable_blocks.insert(block);
-            }
-        }
-        if let Err(e) =
-            self.borrows
-                .apply_terminator_effect(state.borrow_pcg_mut(), terminator, location)
-        {
+        if let Err(e) = self.analyze_terminator(state, terminator, location) {
             self.record_error_if_first(&e);
             state.record_error(e);
-            return edges;
         }
-        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
-        if let Err(e) =
-            self.fpcs
-                .apply_terminator_effect(state.owned_pcg_mut(), terminator, &borrows, location)
-        {
-            self.record_error_if_first(&e);
-            state.record_error(e);
-            return edges;
-        }
-        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
         edges
     }
 }
