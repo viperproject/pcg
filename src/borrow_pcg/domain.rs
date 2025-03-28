@@ -127,10 +127,6 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
         self.data.states[PostMain].as_ref()
     }
 
-    pub(crate) fn post_state_mut(&mut self) -> &mut BorrowsState<'tcx> {
-        self.data.states.get_mut(PostMain)
-    }
-
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
         self.block = Some(block);
     }
