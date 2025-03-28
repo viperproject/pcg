@@ -2,12 +2,9 @@ use std::rc::Rc;
 
 use crate::{
     combined_pcs::PcgError,
-    rustc_interface::{
-        borrowck::PoloniusOutput,
-        middle::{
-            mir::{Body, Location, Statement, Terminator, TerminatorEdges},
-            ty::TyCtxt,
-        },
+    rustc_interface::middle::{
+        mir::{Body, Location, Statement, Terminator, TerminatorEdges},
+        ty::TyCtxt,
     },
     utils::{display::DisplayDiff, visitor::FallableVisitor},
 };
@@ -23,20 +20,11 @@ use crate::utils::PlaceRepacker;
 pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) tcx: TyCtxt<'tcx>,
     pub(crate) body: &'mir Body<'tcx>,
-    pub(crate) output_facts: Option<&'mir PoloniusOutput>,
 }
 
 impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
-    pub(crate) fn new(
-        tcx: TyCtxt<'tcx>,
-        body: &'mir Body<'tcx>,
-        output_facts: Option<&'mir PoloniusOutput>,
-    ) -> Self {
-        BorrowsEngine {
-            tcx,
-            body,
-            output_facts,
-        }
+    pub(crate) fn new(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> Self {
+        BorrowsEngine { tcx, body }
     }
 }
 
