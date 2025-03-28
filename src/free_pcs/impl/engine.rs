@@ -5,14 +5,14 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use rustc_interface::middle::mir::{
-    self, visit::Visitor, Location, Statement, Terminator, TerminatorEdges,
+    self, Location, Statement, Terminator, TerminatorEdges,
 };
 
 use crate::{
     borrow_pcg::state::BorrowsState,
     combined_pcs::{EvalStmtPhase, PcgError},
     rustc_interface,
-    utils::PlaceRepacker,
+    utils::{visitor::FallableVisitor, PlaceRepacker},
 };
 
 use super::{triple::TripleWalker, FreePlaceCapabilitySummary};
@@ -31,7 +31,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_statement(statement, location);
+        tw.visit_statement_fallable(statement, location)?;
         self.apply_before(state, tw, borrows, location)
     }
 
@@ -43,7 +43,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_statement(statement, location);
+        tw.visit_statement_fallable(statement, location)?;
         self.apply_main(state, tw, borrows, location)
     }
 
@@ -55,7 +55,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_terminator(terminator, location);
+        tw.visit_terminator_fallable(terminator, location)?;
         self.apply_before(state, tw, borrows, location)
     }
 
@@ -70,7 +70,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             return Ok(terminator.edges());
         }
         let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_terminator(terminator, location);
+        tw.visit_terminator_fallable(terminator, location)?;
         state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
         self.apply_main(state, tw, borrows, location)?;
         Ok(terminator.edges())
@@ -87,13 +87,9 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         state.actions[EvalStmtPhase::PreOperands].clear();
-        if let Some(error) = tw.error {
-            return Err(error);
-        }
         // Repack for operands
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
         for &triple in &tw.operand_triples {
-            // let triple = triple.replace_place(self.repacker);
             let pre_operands = state.data.unwrap_mut(EvalStmtPhase::PreOperands);
             let actions = pre_operands.requires(triple.pre(), self.repacker, borrows)?;
             state.actions[EvalStmtPhase::PreOperands].extend(actions);
@@ -118,10 +114,6 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         state.actions[EvalStmtPhase::PreMain].clear();
-        if let Some(error) = tw.error {
-            return Err(error);
-        }
-
         for &triple in &tw.main_triples {
             let pre_main = state.data.unwrap_mut(EvalStmtPhase::PreMain);
             let actions = pre_main.requires(triple.pre(), self.repacker, borrows)?;

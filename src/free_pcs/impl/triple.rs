@@ -6,10 +6,11 @@
 
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
-    visit::Visitor, BorrowKind, Local, Location, MutBorrowKind, Operand, ProjectionElem, Rvalue,
-    Statement, StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
+    self, BorrowKind, Local, Location, MutBorrowKind, Operand, ProjectionElem,
+    Rvalue, Statement, StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
 };
 
+use crate::utils::visitor::FallableVisitor;
 use crate::{
     combined_pcs::{PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
@@ -122,9 +123,7 @@ pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
     pub(crate) operand_triples: Vec<Triple<'tcx>>,
     /// Evaluate all other statements/terminators
     pub(crate) main_triples: Vec<Triple<'tcx>>,
-    #[allow(dead_code)]
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) error: Option<PcgError>,
 }
 
 impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
@@ -133,13 +132,16 @@ impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
             operand_triples: Vec::new(),
             main_triples: Vec::new(),
             repacker,
-            error: None,
         }
     }
 }
-impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
-    fn visit_operand(&mut self, operand: &Operand<'tcx>, location: Location) {
-        self.super_operand(operand, location);
+impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
+    fn visit_operand_fallable(
+        &mut self,
+        operand: &mir::Operand<'tcx>,
+        location: mir::Location,
+    ) -> Result<(), PcgError> {
+        self.super_operand_fallable(operand, location)?;
         let triple = match *operand {
             Operand::Copy(place) => Triple {
                 pre: Condition::read(place),
@@ -149,13 +151,18 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                 pre: Condition::exclusive(place, self.repacker),
                 post: Some(Condition::write(place)),
             },
-            Operand::Constant(..) => return,
+            Operand::Constant(..) => return Ok(()),
         };
         self.operand_triples.push(triple);
+        Ok(())
     }
 
-    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
-        self.super_rvalue(rvalue, location);
+    fn visit_rvalue_fallable(
+        &mut self,
+        rvalue: &mir::Rvalue<'tcx>,
+        location: mir::Location,
+    ) -> Result<(), PcgError> {
+        self.super_rvalue_fallable(rvalue, location)?;
         use Rvalue::*;
         let pre = match rvalue {
             Use(_)
@@ -166,11 +173,11 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
             | NullaryOp(_, _)
             | UnaryOp(_, _)
             | Aggregate(_, _)
-            | ShallowInitBox(_, _) => return,
+            | ShallowInitBox(_, _) => return Ok(()),
 
             &Ref(_, kind, place) => match kind {
                 BorrowKind::Shared => Condition::read(place),
-                BorrowKind::Fake(..) => return,
+                BorrowKind::Fake(..) => return Ok(()),
                 BorrowKind::Mut { .. } => Condition::exclusive(place, self.repacker),
             },
             &RawPtr(mutbl, place) => {
@@ -184,10 +191,15 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
         };
         tracing::debug!("Pre: {pre:?}");
         self.operand_triples.push(Triple { pre, post: None });
+        Ok(())
     }
 
-    fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
-        self.super_statement(statement, location);
+    fn visit_statement_fallable(
+        &mut self,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        self.super_statement_fallable(statement, location)?;
         use StatementKind::*;
         let t = match statement.kind {
             Assign(box (place, ref rvalue)) => Triple {
@@ -199,7 +211,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                 post: None,
             },
             // Looking into `rustc` it seems that `PlaceMention` is effectively ignored.
-            PlaceMention(_) => return,
+            PlaceMention(_) => return Ok(()),
             SetDiscriminant { box place, .. } => Triple {
                 pre: Condition::exclusive(place, self.repacker),
                 post: None,
@@ -220,7 +232,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                 pre: Condition::exclusive(place, self.repacker),
                 post: None,
             },
-            _ => return,
+            _ => return Ok(()),
         };
         self.main_triples.push(t);
         if let Assign(box (_, Rvalue::Ref(_, kind, place))) = &statement.kind {
@@ -229,7 +241,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                     pre: Condition::read(*place),
                     post: Some(Condition::read(*place)),
                 },
-                BorrowKind::Fake(..) => return,
+                BorrowKind::Fake(..) => return Ok(()),
                 BorrowKind::Mut { kind } => {
                     let post = if matches!(kind, MutBorrowKind::TwoPhaseBorrow) {
                         Some(Condition::read(*place))
@@ -244,10 +256,15 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
             };
             self.main_triples.push(triple);
         }
+        Ok(())
     }
 
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
-        self.super_terminator(terminator, location);
+    fn visit_terminator_fallable(
+        &mut self,
+        terminator: &Terminator<'tcx>,
+        location: mir::Location,
+    ) -> Result<(), PcgError> {
+        self.super_terminator_fallable(terminator, location)?;
         use TerminatorKind::*;
         let t = match &terminator.kind {
             Goto { .. }
@@ -258,7 +275,7 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
             | CoroutineDrop
             | Assert { .. }
             | FalseEdge { .. }
-            | FalseUnwind { .. } => return,
+            | FalseUnwind { .. } => return Ok(()),
             Return => Triple {
                 pre: Condition::Return,
                 post: Some(Condition::write(RETURN_PLACE)),
@@ -276,12 +293,21 @@ impl<'tcx> Visitor<'tcx> for TripleWalker<'_, 'tcx> {
                 post: Some(Condition::exclusive(resume_arg, self.repacker)),
             },
             InlineAsm { .. } => {
-                self.error = Some(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));
-                return;
+                return Err(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));
             }
             _ => todo!("{terminator:?}"),
         };
         self.main_triples.push(t);
+        Ok(())
+    }
+
+    fn visit_place_fallable(
+        &mut self,
+        _place: Place<'tcx>,
+        _context: mir::visit::PlaceContext,
+        _location: mir::Location,
+    ) -> Result<(), PcgError> {
+        Ok(())
     }
 }
 
