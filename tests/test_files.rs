@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use std::path::PathBuf;
 
 mod common;
@@ -12,8 +13,7 @@ fn check_test_files() {
 
     let test_files = common::get_test_files(&test_dir);
 
-    // Run each test file
-    for test_file in test_files {
-        common::run_pcg_on_file(&test_file);
-    }
+    test_files.par_iter().for_each(|test_file| {
+        common::run_pcg_on_file(test_file);
+    });
 }

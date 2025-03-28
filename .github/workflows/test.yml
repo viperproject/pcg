@@ -84,7 +84,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: zgrannan/flowistry
-        ref: zgrannan/pcg
+        ref: zgrannan/pcg-next4
         path: flowistry
 
     - name: Run flowistry tests

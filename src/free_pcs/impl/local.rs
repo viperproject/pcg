@@ -7,9 +7,7 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    pcg_validity_assert,
-    rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, combined_pcs::place_capabilities::PlaceCapabilities, pcg_validity_assert, rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local}
 };
 use itertools::Itertools;
 
@@ -109,7 +107,7 @@ impl<S: CheckValidityOnExpiry, T> Drop for DropGuard<'_, S, T> {
 pub struct CapabilityProjections<'tcx> {
     local: Local,
     expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
-    capabilities: FxHashMap<Place<'tcx>, CapabilityKind>,
+    capabilities: PlaceCapabilities<'tcx>,
 }
 
 impl CheckValidityOnExpiry for CapabilityProjections<'_> {
@@ -144,10 +142,12 @@ impl<'tcx> CapabilityProjections<'tcx> {
     }
 
     pub fn new(local: Local, perm: CapabilityKind) -> Self {
+        let mut capabilities = PlaceCapabilities::new();
+        capabilities.insert(local.into(), perm);
         Self {
             local,
             expansions: FxHashMap::default(),
-            capabilities: FxHashMap::from_iter([(local.into(), perm)]),
+            capabilities
         }
     }
     pub fn new_uninit(local: Local) -> Self {
@@ -190,22 +190,22 @@ impl<'tcx> CapabilityProjections<'tcx> {
             "Setting capability for non-owned place {}",
             place.to_short_string(repacker)
         );
-        self.capabilities.insert(place, cap);
+        self.capabilities.insert(place.into(), cap);
     }
 
     pub(crate) fn remove_capability(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.remove(&place)
+        self.capabilities.remove(place.into())
     }
 
     pub(crate) fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(&place).copied()
+        self.capabilities.get(place.into())
     }
 
-    pub(crate) fn place_capabilities_mut(&mut self) -> &mut FxHashMap<Place<'tcx>, CapabilityKind> {
+    pub(crate) fn place_capabilities_mut(&mut self) -> &mut PlaceCapabilities<'tcx> {
         &mut self.capabilities
     }
 
-    pub fn place_capabilities(&self) -> &FxHashMap<Place<'tcx>, CapabilityKind> {
+    pub fn place_capabilities(&self) -> &PlaceCapabilities<'tcx> {
         &self.capabilities
     }
 

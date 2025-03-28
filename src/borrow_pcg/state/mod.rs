@@ -1,6 +1,5 @@
 use super::{
     action::BorrowPCGAction,
-    borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
@@ -9,7 +8,7 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
+use crate::{borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow}, combined_pcs::place_capabilities::PlaceCapabilities};
 use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
@@ -40,7 +39,7 @@ pub(crate) mod obtain;
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    pub(crate) capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
+    pub(crate) capabilities: Rc<PlaceCapabilities<'tcx>>,
 }
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
@@ -73,13 +72,13 @@ impl Default for BorrowsState<'_> {
         Self {
             latest: Latest::new(),
             graph: BorrowsGraph::new(),
-            capabilities: Rc::new(BorrowPCGCapabilities::new()),
+            capabilities: Rc::new(PlaceCapabilities::new()),
         }
     }
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
+    pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {
         self.capabilities.as_ref()
     }
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {

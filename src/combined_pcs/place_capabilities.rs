@@ -15,9 +15,9 @@ use crate::{
 /// joins (in particular, to identify when capabilities to a place in the PCG
 /// need to be weakened).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BorrowPCGCapabilities<'tcx>(FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
+pub struct PlaceCapabilities<'tcx>(pub(crate)FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for PlaceCapabilities<'tcx> {
     fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
@@ -28,7 +28,7 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGCapabilities<'tcx> {
     }
 }
 
-impl<'tcx> BorrowPCGCapabilities<'tcx> {
+impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn new() -> Self {
         Self(Default::default())
     }
@@ -55,12 +55,12 @@ impl<'tcx> BorrowPCGCapabilities<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    pub(super) fn insert(&mut self, place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> bool {
+    pub(crate) fn insert(&mut self, place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> bool {
         self.0.insert(place, capability) != Some(capability)
     }
 
-    pub(crate) fn remove(&mut self, place: MaybeOldPlace<'tcx>) -> bool {
-        self.0.remove(&place).is_some()
+    pub(crate) fn remove(&mut self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+        self.0.remove(&place)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, CapabilityKind)> + '_ {

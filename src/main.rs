@@ -16,17 +16,17 @@ use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
 
-use pcs::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
-use pcs::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcs::run_combined_pcs_with;
-use pcs::utils::PlaceRepacker;
+use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
+use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use pcg::run_combined_pcs_with;
+use pcg::utils::PlaceRepacker;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
 
 #[rustversion::before(2024-11-09)]
 use pcs::rustc_interface::interface::Queries;
 
-use pcs::rustc_interface::{
+use pcg::rustc_interface::{
     borrowck,
     data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
@@ -37,7 +37,7 @@ use pcs::rustc_interface::{
     },
     session::Session,
 };
-use pcs::{combined_pcs::BodyWithBorrowckFacts, utils::env_feature_enabled};
+use pcg::{combined_pcs::BodyWithBorrowckFacts, utils::env_feature_enabled};
 
 struct PcsCallbacks;
 
