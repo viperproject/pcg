@@ -258,12 +258,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
             }
         });
         let fpcs = FpcsEngine { repacker };
-        let borrows = BorrowsEngine::new(
-            repacker.tcx(),
-            repacker.body(),
-            None, // TODO
-                  // cgx.output_facts.as_ref().map(|o| o.as_ref()),
-        );
+        let borrows = BorrowsEngine::new(repacker.tcx(), repacker.body());
         let mut reachable_blocks = BitSet::new_empty(repacker.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK);
         Self {

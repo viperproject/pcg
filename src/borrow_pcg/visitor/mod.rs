@@ -7,7 +7,6 @@ use tracing::instrument;
 use crate::{
     combined_pcs::{PCGUnsupportedError, PcgError},
     rustc_interface::{
-        borrowck::PoloniusOutput,
         index::IndexVec,
         middle::{
             mir::{
@@ -52,8 +51,6 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) domain: &'state mut BorrowsDomain<'mir, 'tcx>,
     stage: StatementStage,
     preparing: bool,
-    #[allow(dead_code)]
-    output_facts: Option<&'mir PoloniusOutput>,
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
@@ -113,7 +110,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             domain: state,
             stage,
             preparing,
-            output_facts: engine.output_facts,
         }
     }
 
