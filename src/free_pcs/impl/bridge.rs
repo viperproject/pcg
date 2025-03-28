@@ -11,7 +11,7 @@ use crate::{
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
     },
-    utils::{corrected::CorrectedPlace, PlaceRepacker},
+    utils::{corrected::CorrectedPlace, maybe_old::MaybeOldPlace, PlaceRepacker},
 };
 
 pub trait RepackingBridgeSemiLattice<'tcx> {
@@ -59,9 +59,11 @@ impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocal<'tcx> {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
-                for (p, k) in cps.place_capabilities_mut() {
-                    if *k > CapabilityKind::Write {
-                        repacks.push(RepackOp::Weaken(*p, *k, CapabilityKind::Write));
+                for (p, k) in cps.place_capabilities_mut().0.iter_mut() {
+                    if let MaybeOldPlace::Current { place } = p
+                        && *k > CapabilityKind::Write
+                    {
+                        repacks.push(RepackOp::Weaken(*place, *k, CapabilityKind::Write));
                         *k = CapabilityKind::Write;
                     }
                 }

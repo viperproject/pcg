@@ -1,6 +1,5 @@
 pub mod action;
 pub mod borrow_checker;
-pub mod borrow_pcg_capabilities;
 pub mod borrow_pcg_edge;
 pub mod borrow_pcg_expansion;
 pub mod graph;

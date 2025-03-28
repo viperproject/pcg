@@ -201,9 +201,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
     fn get_longest_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
         self.place_capabilities()
             .iter()
-            .filter(|(p, _)| p.is_prefix(to))
-            .max_by_key(|(p, _)| p.projection.len())
-            .map(|(p, _)| *p)
+            .flat_map(|(p, _)| p.try_into())
+            .filter(|p: &Place| p.is_prefix(to))
+            .max_by_key(|p| p.projection.len())
             .unwrap_or(self.get_local().into())
     }
 
@@ -263,7 +263,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     // The loan for this place has just expired.
                     // TODO: Make interaction between borrow and owned PCG more robust.
                     self.set_capability(to, for_cap, repacker);
-                    return Ok(result)
+                    return Ok(result);
                     // let err_msg =
                     //     format!("Place {} has no capability", to.to_short_string(repacker));
                     // tracing::error!("{err_msg}");

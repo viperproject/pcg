@@ -16,10 +16,10 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
-use derive_more::From;
+use derive_more::{From, TryInto};
 use serde_json::json;
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd, TryInto)]
 pub enum MaybeOldPlace<'tcx> {
     Current { place: Place<'tcx> },
     OldPlace(PlaceSnapshot<'tcx>),

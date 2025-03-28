@@ -9,6 +9,8 @@ mod domain;
 mod node;
 mod successor;
 
+pub(crate) mod place_capabilities;
+
 pub use engine::*;
 pub use domain::*;
 pub use node::*;
