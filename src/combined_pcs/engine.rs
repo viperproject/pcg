@@ -49,13 +49,13 @@ use crate::{
 
 #[macro_export]
 macro_rules! handle_error {
-    ($self:expr, $state:expr, $expr:expr) => {
+    ($self:expr, $state:expr, $expr:expr, $ret:expr) => {
         match $expr {
             Ok(res) => res,
             Err(e) => {
                 $self.record_error_if_first(&e);
                 $state.record_error(e);
-                return;
+                return $ret;
             }
         }
     };
@@ -236,6 +236,87 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
             );
         }
         assert!(state.is_initialized());
+    }
+
+    fn analyze_statement(
+        &mut self,
+        state: &mut PlaceCapabilitySummary<'a, 'tcx>,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        self.initialize(state, location.block);
+
+        // Handle initial borrow actions, mostly expiring borrows
+        self.borrows
+            .prepare_operands(state.borrow_pcg_mut(), statement, location)?;
+
+        state.pcg_mut().owned.data.enter_transfer_fn();
+        // Restore caps for owned places according to borrow expiry
+        self.restore_loaned_capabilities(
+            state,
+            state
+                .borrow_pcg()
+                .actions
+                .get(EvalStmtPhase::PreOperands)
+                .clone(),
+            EvalStmtPhase::PostMain,
+        );
+
+        let pcg = state.pcg_mut();
+        let owned = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
+        let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
+
+        let mut extra_ops = self.collapse_owned_places(owned, &borrows);
+        self.regain_exclusive_capabilities_from_read_leafs(owned, &borrows);
+
+        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PreOperands].clone();
+        self.fpcs.apply_before_statement_effect(
+            state.owned_pcg_mut(),
+            statement,
+            &borrows,
+            location,
+        )?;
+        extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
+        state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
+        self.borrows
+            .apply_operands(state.borrow_pcg_mut(), statement, location)?;
+
+        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
+
+        // Begin by handling borrow pre_main actions
+
+        self.borrows
+            .prepare_statement_effect(state.borrow_pcg_mut(), statement, location)?;
+
+        // Any borrows that have expired, we regain capabilities to corresponding owned places
+        let owned_pcg = state.owned_pcg_mut();
+        owned_pcg.data.states.0.pre_main = owned_pcg.data.states.0.post_operands.clone();
+
+        self.restore_loaned_capabilities(
+            state,
+            state
+                .borrow_pcg()
+                .actions
+                .get(EvalStmtPhase::PreMain)
+                .clone(),
+            EvalStmtPhase::PreMain,
+        );
+
+        // Do all of the owned effects
+        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
+        let owned_pcg = state.owned_pcg_mut();
+
+        self.fpcs
+            .apply_statement_effect(owned_pcg, statement, &borrows, location)?;
+
+        self.borrows
+            .apply_statement_effect(state.borrow_pcg_mut(), statement, location)?;
+
+        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
+        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
+        Ok(())
     }
 
     pub(crate) fn new(
@@ -428,7 +509,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
     }
 
     #[tracing::instrument(skip(self, state, statement))]
-    fn apply_before_statement_effect(
+    fn apply_statement_effect(
         &mut self,
         state: &mut Self::Domain,
         statement: &Statement<'tcx>,
@@ -443,139 +524,29 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
         } else {
             return;
         }
-        self.initialize(state, location.block);
-
-        // Handle initial borrow actions, mostly expiring borrows
-        handle_error!(
-            self,
-            state,
-            self.borrows
-                .prepare_operands(state.borrow_pcg_mut(), statement, location)
-        );
-
-        state.pcg_mut().owned.data.enter_transfer_fn();
-        // Restore caps for owned places according to borrow expiry
-        self.restore_loaned_capabilities(
-            state,
-            state
-                .borrow_pcg()
-                .actions
-                .get(EvalStmtPhase::PreOperands)
-                .clone(),
-            EvalStmtPhase::PostMain,
-        );
-
-        let pcg = state.pcg_mut();
-        let owned = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
-        let borrows = pcg.borrow.data.states[EvalStmtPhase::PostMain].frozen_graph();
-
-        let mut extra_ops = self.collapse_owned_places(owned, &borrows);
-        self.regain_exclusive_capabilities_from_read_leafs(owned, &borrows);
-
-        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PreOperands].clone();
-        handle_error!(
-            self,
-            state,
-            self.fpcs.apply_before_statement_effect(
-                state.owned_pcg_mut(),
-                statement,
-                &borrows,
-                location,
-            )
-        );
-        extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
-        state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
-        handle_error!(
-            self,
-            state,
-            self.borrows
-                .apply_operands(state.borrow_pcg_mut(), statement, location)
-        );
-
-        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
+        if let Err(e) = self.analyze_statement(state, statement, location) {
+            self.record_error_if_first(&e);
+            state.record_error(e);
+        }
     }
 
-    #[tracing::instrument(skip(self, state, statement))]
-    fn apply_statement_effect(
+    fn apply_terminator_effect<'mir>(
         &mut self,
         state: &mut Self::Domain,
-        statement: &Statement<'tcx>,
+        terminator: &'mir Terminator<'tcx>,
         location: Location,
-    ) {
+    ) -> TerminatorEdges<'mir, 'tcx> {
+        let edges = edges_to_analyze(terminator);
         if let Some(error) = state.error() {
             if self.first_error.error().is_none() {
                 self.first_error.record_error(error.clone());
             }
-            return;
-        }
-        if !self.reachable_blocks.contains(location.block) {
-            return;
-        }
-
-        // Begin by handling borrow pre_main actions
-
-        handle_error!(
-            self,
-            state,
-            self.borrows
-                .prepare_statement_effect(state.borrow_pcg_mut(), statement, location)
-        );
-
-        // Any borrows that have expired, we regain capabilities to corresponding owned places
-        let owned_pcg = state.owned_pcg_mut();
-        owned_pcg.data.states.0.pre_main = owned_pcg.data.states.0.post_operands.clone();
-
-        self.restore_loaned_capabilities(
-            state,
-            state
-                .borrow_pcg()
-                .actions
-                .get(EvalStmtPhase::PreMain)
-                .clone(),
-            EvalStmtPhase::PreMain,
-        );
-
-        // Do all of the owned effects
-        let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostMain].clone();
-        let owned_pcg = state.owned_pcg_mut();
-
-        handle_error!(
-            self,
-            state,
-            self.fpcs
-                .apply_statement_effect(owned_pcg, statement, &borrows, location)
-        );
-
-        handle_error!(
-            self,
-            state,
-            self.borrows
-                .apply_statement_effect(state.borrow_pcg_mut(), statement, location)
-        );
-
-        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
-    }
-
-    #[tracing::instrument(skip(self, state, terminator), fields(def_id = ?self.repacker.body().source.def_id()))]
-    fn apply_before_terminator_effect(
-        &mut self,
-        state: &mut Self::Domain,
-        terminator: &Terminator<'tcx>,
-        location: Location,
-    ) {
-        if let Some(error) = state.error() {
-            if self.first_error.error().is_none() {
-                self.first_error.record_error(error.clone());
-            }
-            return;
+            return edges;
         }
         if self.reachable_blocks.contains(location.block) {
             state.reachable = true;
         } else {
-            return;
+            return edges;
         }
         self.initialize(state, location.block);
         handle_error!(
@@ -585,7 +556,8 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
                 state.borrow_pcg_mut(),
                 terminator,
                 location,
-            )
+            ),
+            edges
         );
         let borrows = state.borrow_pcg().data.states[EvalStmtPhase::PostOperands].clone();
         state.pcg_mut().owned.data.enter_transfer_fn();
@@ -606,22 +578,14 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
                 terminator,
                 &borrows,
                 location,
-            )
+            ),
+            edges
         );
         // extra_ops.append(&mut state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands]);
         // state.pcg_mut().owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
-    }
-
-    fn apply_terminator_effect<'mir>(
-        &mut self,
-        state: &mut Self::Domain,
-        terminator: &'mir Terminator<'tcx>,
-        location: Location,
-    ) -> TerminatorEdges<'mir, 'tcx> {
-        let edges = edges_to_analyze(terminator);
         if state.has_error() || !self.reachable_blocks.contains(location.block) {
             return edges;
         } else {
