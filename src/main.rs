@@ -24,7 +24,7 @@ use std::cell::RefCell;
 use tracing::{debug, info, trace};
 
 #[rustversion::before(2024-11-09)]
-use pcs::rustc_interface::interface::Queries;
+use pcg::rustc_interface::interface::Queries;
 
 use pcg::rustc_interface::{
     borrowck,

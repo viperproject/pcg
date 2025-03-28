@@ -75,10 +75,10 @@ jobs:
   flowistry_tests:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout pcs repository
+    - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        path: pcs
+        path: pcg
 
     - name: Checkout flowistry repository
       uses: actions/checkout@v4
