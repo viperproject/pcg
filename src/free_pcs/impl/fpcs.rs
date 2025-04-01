@@ -18,7 +18,7 @@ use derive_more::{Deref, DerefMut};
 
 use super::{engine::FpcsEngine, CapabilityKind};
 use crate::{
-    combined_pcs::{EvalStmtPhase, PcgError},
+    pcg::{EvalStmtPhase, PcgError},
     free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
     utils::{domain_data::DomainData, eval_stmt_data::EvalStmtData, PlaceRepacker},
 };

@@ -12,7 +12,7 @@ use crate::{
         latest::Latest,
         path_condition::PathConditions,
     },
-    combined_pcs::PCGNode,
+    pcg::PCGNode,
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::BasicBlock,
     utils::{

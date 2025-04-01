@@ -6,7 +6,7 @@ use crate::{
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection},
     },
-    combined_pcs::{PCGNode, PCGNodeLike},
+    pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{

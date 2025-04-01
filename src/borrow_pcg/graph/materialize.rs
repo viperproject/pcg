@@ -5,7 +5,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef},
         edge::kind::BorrowPCGEdgeKind,
     },
-    combined_pcs::PCGNode,
+    pcg::PCGNode,
     utils::PlaceRepacker,
 };
 

@@ -3,7 +3,7 @@ use tracing::instrument;
 use super::borrow_pcg_edge::BorrowPCGEdge;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
-use crate::combined_pcs::PcgError;
+use crate::pcg::PcgError;
 use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithRepacker;

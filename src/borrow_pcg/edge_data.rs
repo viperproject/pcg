@@ -1,4 +1,4 @@
-use crate::combined_pcs::PCGNode;
+use crate::pcg::PCGNode;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::PlaceRepacker;
 

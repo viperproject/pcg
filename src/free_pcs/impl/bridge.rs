@@ -7,7 +7,7 @@
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::PcgError,
+    pcg::PcgError,
     free_pcs::{
         CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilityLocals, RepackOp,
     },

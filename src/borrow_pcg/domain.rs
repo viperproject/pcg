@@ -7,7 +7,7 @@ use crate::borrow_pcg::edge::borrow::RemoteBorrow;
 use crate::borrow_pcg::edge::outlives::{OutlivesEdge, OutlivesEdgeKind};
 use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::state::BorrowsState;
-use crate::combined_pcs::EvalStmtPhase::*;
+use crate::pcg::EvalStmtPhase::*;
 use crate::utils::domain_data::DomainData;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::incoming_states::IncomingStates;

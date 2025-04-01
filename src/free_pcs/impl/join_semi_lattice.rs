@@ -6,11 +6,11 @@
 
 use std::rc::Rc;
 
-use crate::{combined_pcs::PcgError, utils::incoming_states::IncomingStates};
+use crate::{pcg::PcgError, utils::incoming_states::IncomingStates};
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::EvalStmtPhase,
+    pcg::EvalStmtPhase,
     free_pcs::{
         CapabilityLocal, CapabilityProjections, CapabilityLocals, FreePlaceCapabilitySummary,
     },

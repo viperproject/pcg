@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::combined_pcs::PCGInternalError;
+use crate::pcg::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
 use super::borrow_pcg_edge::BorrowPCGEdgeLike;

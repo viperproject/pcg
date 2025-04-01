@@ -12,7 +12,7 @@ use crate::rustc_interface::middle::mir::{
 
 use crate::utils::visitor::FallableVisitor;
 use crate::{
-    combined_pcs::{PCGUnsupportedError, PcgError},
+    pcg::{PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
     utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
 };

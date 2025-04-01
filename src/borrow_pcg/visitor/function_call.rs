@@ -15,7 +15,7 @@ use crate::{
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, PCGRegion},
     },
-    combined_pcs::{PCGUnsupportedError, PcgError},
+    pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{

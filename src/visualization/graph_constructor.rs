@@ -5,7 +5,7 @@ use crate::{
         region_projection::RegionProjection,
         state::BorrowsState,
     },
-    combined_pcs::MaybeHasLocation,
+    pcg::MaybeHasLocation,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,

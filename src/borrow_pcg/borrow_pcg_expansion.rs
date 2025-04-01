@@ -17,7 +17,7 @@ use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::corrected::CorrectedPlace;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
-    combined_pcs::{PCGNode, PCGNodeLike},
+    pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
