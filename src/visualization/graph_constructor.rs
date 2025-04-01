@@ -6,7 +6,7 @@ use crate::{
         state::BorrowsState,
     },
     combined_pcs::MaybeHasLocation,
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
+    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
@@ -212,14 +212,14 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 }
 
 pub(crate) struct PcgGraphConstructor<'a, 'tcx> {
-    summary: &'a CapabilitySummary<'tcx>,
+    summary: &'a CapabilityLocals<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
     repacker: PlaceRepacker<'a, 'tcx>,
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
-    summary: &'a CapabilitySummary<'tcx>,
+    summary: &'a CapabilityLocals<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
 }
 
@@ -290,7 +290,7 @@ impl<'graph, 'mir: 'graph, 'tcx: 'graph> Grapher<'mir, 'tcx>
 
 impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
     pub fn new(
-        summary: &'a CapabilitySummary<'tcx>,
+        summary: &'a CapabilityLocals<'tcx>,
         repacker: PlaceRepacker<'a, 'tcx>,
         borrows_domain: &'a BorrowsState<'tcx>,
     ) -> Self {

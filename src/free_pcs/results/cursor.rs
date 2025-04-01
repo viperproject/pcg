@@ -30,8 +30,8 @@ use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     borrow_pcg::engine::BorrowsStates,
-    combined_pcs::PlaceCapabilitySummary,
-    free_pcs::{CapabilitySummary, RepackOp, RepackingBridgeSemiLattice},
+    combined_pcs::PcgDomain,
+    free_pcs::{CapabilityLocals, RepackOp, RepackingBridgeSemiLattice},
     utils::PlaceRepacker,
 };
 
@@ -39,7 +39,7 @@ pub trait HasPcg<'mir, 'tcx> {
     fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError>;
 }
 
-impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PlaceCapabilitySummary<'mir, 'tcx> {
+impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PcgDomain<'mir, 'tcx> {
     fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError> {
         self.pcg.as_ref().map_err(|e| e.clone())
     }
@@ -314,7 +314,7 @@ impl<'tcx> PcgBasicBlock<'tcx> {
     }
 }
 
-pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilitySummary<'tcx>>>;
+pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilityLocals<'tcx>>>;
 
 #[derive(Debug)]
 pub struct PcgLocation<'tcx> {

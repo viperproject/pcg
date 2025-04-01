@@ -20,7 +20,7 @@ use crate::{
         coupling_graph_constructor::BorrowCheckerInterface,
         graph::frozen::FrozenGraphRef,
     },
-    free_pcs::{triple::TripleWalker, CapabilitySummary, FreePlaceCapabilitySummary, RepackOp},
+    free_pcs::{triple::TripleWalker, CapabilityLocals, RepackOp},
     rustc_interface::{
         borrowck::{
             self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -40,7 +40,7 @@ use crate::{
 };
 
 use super::{
-    domain::PlaceCapabilitySummary, DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase,
+    domain::PcgDomain, DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase,
     PCGDebugData, PcgError,
 };
 use crate::{
@@ -217,7 +217,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PlaceCapabilitySummary<'a, 'tcx>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -235,7 +235,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
     #[tracing::instrument(skip(self, state))]
     fn analyze(
         &mut self,
-        state: &mut PlaceCapabilitySummary<'a, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx>,
         object: AnalysisObject<'_, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -272,15 +272,16 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         }
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PreOperands].frozen_graph();
 
+        pcg.owned.data.states.0.pre_operands = pcg.owned.data.states.0.post_main.clone();
+
         // Restore caps for owned places according to borrow expiry
         self.restore_loaned_capabilities(
-            &mut pcg.owned,
+            pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands),
             &borrows,
             pcg.borrow.actions.get(EvalStmtPhase::PreOperands),
-            EvalStmtPhase::PostMain,
         );
 
-        let owned = pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain);
+        let owned = pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands);
 
         self.regain_exclusive_capabilities_from_read_leafs(owned, &borrows);
         let mut extra_ops = self.collapse_owned_places(owned, &borrows);
@@ -298,8 +299,20 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         {
             let borrows = pcg.borrow.data.states[EvalStmtPhase::PreOperands].clone();
 
-            self.fpcs
-                .apply_before(&mut pcg.owned, &tw, &borrows, location)?;
+            pcg.owned.actions.pre_operands = self.fpcs.analyze(
+                pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands),
+                &tw,
+                &borrows,
+                EvalStmtPhase::PreOperands,
+            )?;
+
+            pcg.owned.data.states.0.post_operands = pcg.owned.data.states.0.pre_operands.clone();
+            pcg.owned.actions.post_operands = self.fpcs.analyze(
+                pcg.owned.data.unwrap_mut(EvalStmtPhase::PostOperands),
+                &tw,
+                &borrows,
+                EvalStmtPhase::PostOperands,
+            )?;
         }
         extra_ops.append(&mut pcg.owned.actions[EvalStmtPhase::PreOperands]);
         pcg.owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
@@ -330,17 +343,28 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         pcg.owned.data.states.0.pre_main = pcg.owned.data.states.0.post_operands.clone();
 
         self.restore_loaned_capabilities(
-            &mut pcg.owned,
+            pcg.owned.data.unwrap_mut(EvalStmtPhase::PreMain),
             &pcg.borrow.data.states[EvalStmtPhase::PreMain].frozen_graph(),
             pcg.borrow.actions.get(EvalStmtPhase::PreMain),
-            EvalStmtPhase::PreMain,
         );
 
         // Do all of the owned effects
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PreMain].clone();
 
-        self.fpcs
-            .apply_main(&mut pcg.owned, tw, &borrows, location)?;
+        pcg.owned.actions.pre_main = self.fpcs.analyze(
+            pcg.owned.data.unwrap_mut(EvalStmtPhase::PreMain),
+            &tw,
+            &borrows,
+            EvalStmtPhase::PreMain,
+        )?;
+
+        pcg.owned.data.states.0.post_main = pcg.owned.data.states.0.pre_main.clone();
+        pcg.owned.actions.post_main = self.fpcs.analyze(
+            pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain),
+            &tw,
+            &borrows,
+            EvalStmtPhase::PostMain,
+        )?;
 
         pcg.borrow.data.states.0.post_main = pcg.borrow.data.states.0.pre_main.clone();
 
@@ -397,7 +421,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
 
     fn generate_dot_graph(
         &self,
-        state: &mut PlaceCapabilitySummary<'a, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
     ) {
@@ -406,20 +430,17 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
 
     fn restore_loaned_capabilities(
         &self,
-        owned: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
+        owned: &mut CapabilityLocals<'tcx>,
         borrows: &FrozenGraphRef<'_, 'tcx>,
         borrow_actions: &BorrowPCGActions<'tcx>,
-        owned_phase: EvalStmtPhase,
     ) {
-        let owned_state = owned.data.unwrap_mut(owned_phase);
-
         // Restore capabilities for owned places that were previously lent out
         // but are now no longer borrowed.
         for action in borrow_actions.0.iter() {
             match &action.kind {
                 BorrowPCGActionKind::MakePlaceOld(place, _) => {
                     if place.is_owned(self.repacker)
-                        && owned_state.get_capability(*place) != Some(CapabilityKind::Write)
+                        && owned.get_capability(*place) != Some(CapabilityKind::Write)
                     {
                         // A bit of an annoying hack: if the place has *no* capability (or read cap), then it's borrowed.
                         // The borrows are now going to refer to the old place, so we can regain exclusive cap here.
@@ -427,7 +448,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
                         // (esp. for StorageDead on a place with only Write permission). So we only restore permission
                         // if the place actually has a value.
                         // TODO: We should fix this when merging owned and borrow PCG logic.
-                        owned_state.set_capability_if_allocated(
+                        owned.set_capability_if_allocated(
                             *place,
                             CapabilityKind::Exclusive,
                             self.repacker,
@@ -447,7 +468,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
                             // it was already StorageDead'd. In this case it
                             // shouldn't obtain any capability.
                             // See test-files/92_http_path.rs for an example.
-                            owned_state.set_capability_if_allocated(
+                            owned.set_capability_if_allocated(
                                 place,
                                 CapabilityKind::Exclusive,
                                 self.repacker,
@@ -462,7 +483,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
 
     fn regain_exclusive_capabilities_from_read_leafs(
         &self,
-        owned_state: &mut CapabilitySummary<'tcx>,
+        owned_state: &mut CapabilityLocals<'tcx>,
         borrows: &FrozenGraphRef<'_, 'tcx>,
     ) {
         for caps in owned_state.capability_projections_mut() {
@@ -481,7 +502,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
     #[must_use]
     fn collapse_owned_places(
         &self,
-        owned_state: &mut CapabilitySummary<'tcx>,
+        owned_state: &mut CapabilityLocals<'tcx>,
         borrows: &FrozenGraphRef<'_, 'tcx>,
     ) -> Vec<RepackOp<'tcx>> {
         let mut ops = vec![];
@@ -517,7 +538,7 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
-    type Domain = PlaceCapabilitySummary<'a, 'tcx>;
+    type Domain = PcgDomain<'a, 'tcx>;
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {
@@ -533,7 +554,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PCGEngine<'a, 'tcx> {
             // For results cursor, don't set block or consider debug data
             (None, None)
         };
-        PlaceCapabilitySummary::new(
+        PcgDomain::new(
             self.repacker,
             self.borrow_checker.clone(),
             block,

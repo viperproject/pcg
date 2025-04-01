@@ -9,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     combined_pcs::PcgError,
     free_pcs::{
-        CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilitySummary, RepackOp,
+        CapabilityKind, CapabilityLocal, CapabilityProjections, CapabilityLocals, RepackOp,
     },
     utils::{corrected::CorrectedPlace, maybe_old::MaybeOldPlace, PlaceRepacker},
 };
@@ -21,7 +21,7 @@ pub trait RepackingBridgeSemiLattice<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>;
 }
-impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilitySummary<'tcx> {
+impl<'tcx> RepackingBridgeSemiLattice<'tcx> for CapabilityLocals<'tcx> {
     fn bridge(
         &self,
         other: &Self,
