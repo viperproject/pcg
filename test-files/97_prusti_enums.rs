@@ -30,8 +30,8 @@ struct T3 {
 fn test2(x: T3, y: T2) {
     let mut x = x;
     if let T2::E2c(T1 { f: z, .. }) = x.g {}
-// ~PCG: bb4[3] post_main: Repacks Middle: Collapse(_3, _3.0, W)
-// ~PCG: bb4[3] post_main: Repacks Middle: Expand(_3, _3.1, W)
+// ~PCG: bb4[3] pre_main: Collapse(_3, _3.0, W)
+// ~PCG: bb4[3] pre_main: Expand(_3, _3.1, W)
     x.g = y;
 }
 

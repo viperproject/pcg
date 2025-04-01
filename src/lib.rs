@@ -8,21 +8,23 @@
 #![feature(box_patterns, hash_extract_if, extract_if)]
 #![feature(if_let_guard, let_chains)]
 #![feature(never_type)]
+pub mod action;
 pub mod borrow_pcg;
-pub mod pcg;
 pub mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
+pub mod pcg;
 pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
+use action::PcgActions;
 use borrow_pcg::{
     borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface,
     latest::Latest,
 };
+use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{PCGEngine, PcgSuccessor};
-use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
     borrowck::{
         self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -163,21 +165,17 @@ lazy_static::lazy_static! {
 struct PCGStmtVisualizationData<'a, 'tcx> {
     /// The value of the "latest" map at the end of the statement.
     latest: &'a Latest<'tcx>,
-    free_pcg_repacks_start: &'a Vec<RepackOp<'tcx>>,
-    free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
-    borrow_actions: &'a EvalStmtData<BorrowPCGActions<'tcx>>,
+    actions: &'a EvalStmtData<PcgActions<'tcx>>,
 }
 
 struct PcgSuccessorVisualizationData<'a, 'tcx> {
-    owned_ops: &'a [RepackOp<'tcx>],
-    borrow_ops: &'a BorrowPCGActions<'tcx>,
+    actions: &'a PcgActions<'tcx>,
 }
 
 impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
     fn from(successor: &'a PcgSuccessor<'tcx>) -> Self {
         Self {
-            owned_ops: successor.owned_ops(),
-            borrow_ops: successor.borrow_ops(),
+            actions: &successor.actions,
         }
     }
 }
@@ -185,8 +183,7 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
 impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
-            "owned_ops": self.owned_ops.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "borrow_ops": self.borrow_ops.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
+            "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
         })
     }
 }
@@ -195,9 +192,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
-            "free_pcg_repacks_start": self.free_pcg_repacks_start.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "free_pcg_repacks_middle": self.free_pcg_repacks_middle.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "borrow_actions": self.borrow_actions.to_json(repacker),
+            "actions": self.actions.to_json(repacker),
         })
     }
 }
@@ -206,9 +201,7 @@ impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx
     fn from(location: &'a PcgLocation<'tcx>) -> Self {
         Self {
             latest: &location.borrows.post_main.latest,
-            free_pcg_repacks_start: &location.repacks_start,
-            free_pcg_repacks_middle: &location.repacks_middle,
-            borrow_actions: &location.borrow_pcg_actions,
+            actions: &location.actions,
         }
     }
 }
@@ -235,7 +228,9 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 
     #[rustversion::before(2024-10-03)]
     fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
-        self.output_facts.clone().map(|o| Box::new(o.as_ref().clone()))
+        self.output_facts
+            .clone()
+            .map(|o| Box::new(o.as_ref().clone()))
     }
 
     #[rustversion::since(2024-10-03)]

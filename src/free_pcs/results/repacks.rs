@@ -87,6 +87,11 @@ impl Display for RepackOp<'_> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
+
+    pub(crate) fn debug_line(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        format!("{self:?}")
+    }
+
     pub(crate) fn to_json(self) -> serde_json::Value {
         serde_json::Value::String(format!("{self:?}"))
     }
