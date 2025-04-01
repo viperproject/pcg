@@ -110,7 +110,7 @@ impl Pcg<'_, '_> {
 }
 
 #[derive(Clone)]
-pub struct PlaceCapabilitySummary<'a, 'tcx> {
+pub struct PcgDomain<'a, 'tcx> {
     repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) pcg: std::result::Result<Pcg<'a, 'tcx>, PcgError>,
@@ -285,7 +285,7 @@ pub enum PCGUnsupportedError {
     ClosureCall,
 }
 
-impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
+impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     pub(crate) fn has_error(&self) -> bool {
         self.pcg.is_err()
     }
@@ -444,21 +444,21 @@ impl<'a, 'tcx> PlaceCapabilitySummary<'a, 'tcx> {
     }
 }
 
-impl Debug for PlaceCapabilitySummary<'_, '_> {
+impl Debug for PcgDomain<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}\n{:?}", self.owned_pcg(), self.borrow_pcg())
     }
 }
 
-impl Eq for PlaceCapabilitySummary<'_, '_> {}
+impl Eq for PcgDomain<'_, '_> {}
 
-impl PartialEq for PlaceCapabilitySummary<'_, '_> {
+impl PartialEq for PcgDomain<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         self.pcg == other.pcg
     }
 }
 
-impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
+impl JoinSemiLattice for PcgDomain<'_, '_> {
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;
@@ -502,7 +502,7 @@ impl JoinSemiLattice for PlaceCapabilitySummary<'_, '_> {
 }
 
 impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>>
-    for PlaceCapabilitySummary<'a, 'tcx>
+    for PcgDomain<'a, 'tcx>
 {
     fn fmt_diff_with(
         &self,

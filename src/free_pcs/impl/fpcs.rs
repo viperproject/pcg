@@ -31,7 +31,7 @@ pub(crate) struct RepackOps<'tcx> {
 #[derive(Clone)]
 pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
     pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) data: DomainData<Option<CapabilitySummary<'tcx>>>,
+    pub(crate) data: DomainData<Option<CapabilityLocals<'tcx>>>,
     pub(crate) actions: EvalStmtData<Vec<RepackOp<'tcx>>>,
 }
 impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
@@ -65,7 +65,7 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
             },
             self.repacker.local_count(),
         );
-        self.data.entry_state = Rc::new(Some(CapabilitySummary(capability_summary)));
+        self.data.entry_state = Rc::new(Some(CapabilityLocals(capability_summary)));
         self.data.states.0.post_main = self.data.entry_state.clone();
     }
 
@@ -132,7 +132,7 @@ impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySum
 
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
 /// The free pcs of all locals
-pub struct CapabilitySummary<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
+pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 
 // impl Default for CapabilitySummary<'_> {
 //     fn default() -> Self {
@@ -140,14 +140,14 @@ pub struct CapabilitySummary<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 //     }
 // }
 
-impl Debug for CapabilitySummary<'_> {
+impl Debug for CapabilityLocals<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let v: Vec<_> = self.0.iter().filter(|c| !c.is_unallocated()).collect();
         v.fmt(f)
     }
 }
 
-impl<'tcx> CapabilitySummary<'tcx> {
+impl<'tcx> CapabilityLocals<'tcx> {
 
     pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
         self.0
@@ -180,8 +180,8 @@ impl<'tcx> CapabilitySummary<'tcx> {
 }
 
 struct CapabilitySummaryCompare<'a, 'tcx>(
-    &'a CapabilitySummary<'tcx>,
-    &'a CapabilitySummary<'tcx>,
+    &'a CapabilityLocals<'tcx>,
+    &'a CapabilityLocals<'tcx>,
     &'a str,
 );
 impl Debug for CapabilitySummaryCompare<'_, '_> {

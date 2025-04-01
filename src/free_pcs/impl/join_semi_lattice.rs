@@ -12,7 +12,7 @@ use itertools::Itertools;
 use crate::{
     combined_pcs::EvalStmtPhase,
     free_pcs::{
-        CapabilityLocal, CapabilityProjections, CapabilitySummary, FreePlaceCapabilitySummary,
+        CapabilityLocal, CapabilityProjections, CapabilityLocals, FreePlaceCapabilitySummary,
     },
     utils::PlaceRepacker,
 };
@@ -62,7 +62,7 @@ pub(crate) trait RepackingJoinSemiLattice<'tcx> {
     fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError>;
 }
 
-impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilitySummary<'tcx> {
+impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocals<'tcx> {
     fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
         let mut changed = false;
         for (l, to) in self.iter_enumerated_mut() {

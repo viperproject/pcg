@@ -21,10 +21,10 @@ use crate::{
 
 use super::{
     triple::{Condition, Triple},
-    CapabilitySummary,
+    CapabilityLocals,
 };
 
-impl<'tcx> CapabilitySummary<'tcx> {
+impl<'tcx> CapabilityLocals<'tcx> {
     pub(crate) fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
         if let CapabilityLocal::Allocated(capability_projections) = &self[place.local] {
             capability_projections.get_capability(place)

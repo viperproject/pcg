@@ -14,7 +14,7 @@ mod node;
 
 use crate::{
     borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
-    free_pcs::{CapabilityKind, CapabilitySummary},
+    free_pcs::{CapabilityKind, CapabilityLocals},
     rustc_interface::middle::mir::Location,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
@@ -342,7 +342,7 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
 
 pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
-    summary: &CapabilitySummary<'tcx>,
+    summary: &CapabilityLocals<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
