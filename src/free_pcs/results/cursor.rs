@@ -9,8 +9,12 @@ use std::rc::Rc;
 use derive_more::Deref;
 
 use crate::{
+    action::PcgActions,
     borrow_pcg::{
-        action::BorrowPCGActionKind, borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef}, graph::BorrowsGraph, latest::Latest
+        action::BorrowPCGActionKind,
+        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef},
+        graph::BorrowsGraph,
+        latest::Latest,
     },
     pcg::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
@@ -30,8 +34,8 @@ use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     borrow_pcg::engine::BorrowsStates,
-    pcg::PcgDomain,
     free_pcs::{CapabilityLocals, RepackOp, RepackingBridgeSemiLattice},
+    pcg::PcgDomain,
     utils::PlaceRepacker,
 };
 
@@ -41,7 +45,7 @@ pub trait HasPcg<'mir, 'tcx> {
 
 impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PcgDomain<'mir, 'tcx> {
     fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError> {
-        self.pcg.as_ref().map_err(|e| e.clone())
+        self.data.as_ref().map_err(|e| e.clone()).map(|d| &d.pcg)
     }
 }
 
@@ -96,14 +100,9 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         let pcg = state.get_pcg()?;
 
-        let repack_ops = pcg.owned.repack_ops().map_err(|mut e| {
-            e.add_context(format!("At {:?}", location));
-            e
-        })?;
-
         let result = PcgLocation {
             location,
-            borrow_pcg_actions: pcg.borrow.actions.clone(),
+            actions: state.data.as_ref().map_err(|e| e.clone())?.actions.clone(),
             states: pcg
                 .owned
                 .data
@@ -111,8 +110,6 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 .0
                 .clone()
                 .map(|s| Rc::new(s.as_ref().as_ref().unwrap().clone())),
-            repacks_start: repack_ops.start,
-            repacks_middle: repack_ops.middle,
             borrows: pcg.borrow.data.states.0.clone(),
         };
 
@@ -147,37 +144,40 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
                 let to = entry_set.get_pcg()?;
+
+                let owned_bridge = from_pcg
+                    .owned
+                    .data
+                    .unwrap(EvalStmtPhase::PostMain)
+                    .bridge(to.owned.data.entry_state.as_ref().as_ref().unwrap(), rp)
+                    .unwrap();
+
+                let mut borrow_actions = BorrowPCGActions::new();
+                let self_abstraction_edges = from_pcg.borrow.data.states[EvalStmtPhase::PostMain]
+                    .graph()
+                    .abstraction_edges()
+                    .collect::<FxHashSet<_>>();
+                for abstraction in to.borrow.data.entry_state.graph().abstraction_edges() {
+                    if !self_abstraction_edges.contains(&abstraction) {
+                        borrow_actions.push(
+                            BorrowPCGActionKind::AddEdge {
+                                edge: BorrowPCGEdge::new(
+                                    abstraction.value.clone().into(),
+                                    abstraction.conditions,
+                                ),
+                                for_exclusive: true,
+                            }
+                            .into(),
+                        );
+                    }
+                }
+
+                let mut actions: PcgActions<'tcx> = owned_bridge.into();
+                actions.extend(borrow_actions.0.into_iter().map(|a| a.into()));
+
                 Ok(PcgSuccessor::new(
                     succ,
-                    from_pcg
-                        .owned
-                        .data
-                        .unwrap(EvalStmtPhase::PostMain)
-                        .bridge(to.owned.data.entry_state.as_ref().as_ref().unwrap(), rp)
-                        .unwrap(),
-                    {
-                        let mut actions = BorrowPCGActions::new();
-                        let self_abstraction_edges = from_pcg.borrow.data.states
-                            [EvalStmtPhase::PostMain]
-                            .graph()
-                            .abstraction_edges()
-                            .collect::<FxHashSet<_>>();
-                        for abstraction in to.borrow.data.entry_state.graph().abstraction_edges() {
-                            if !self_abstraction_edges.contains(&abstraction) {
-                                actions.push(
-                                    BorrowPCGActionKind::AddEdge {
-                                        edge: BorrowPCGEdge::new(
-                                            abstraction.value.clone().into(),
-                                            abstraction.conditions,
-                                        ),
-                                        for_exclusive: true,
-                                    }
-                                    .into(),
-                                );
-                            }
-                        }
-                        actions
-                    },
+                    actions,
                     to.borrow.data.entry_state.clone(),
                 ))
             })
@@ -319,13 +319,9 @@ pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilityLocals<'tcx>>>;
 #[derive(Debug)]
 pub struct PcgLocation<'tcx> {
     pub location: Location,
-    /// Repacks before the statement
-    pub repacks_start: Vec<RepackOp<'tcx>>,
-    /// Repacks in the middle of the statement
-    pub repacks_middle: Vec<RepackOp<'tcx>>,
     pub states: CapabilitySummaries<'tcx>,
     pub borrows: BorrowsStates<'tcx>,
-    pub(crate) borrow_pcg_actions: EvalStmtData<BorrowPCGActions<'tcx>>,
+    pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
 impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
@@ -341,8 +337,11 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
 }
 
 impl<'tcx> PcgLocation<'tcx> {
-    pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> &BorrowPCGActions<'tcx> {
-        &self.borrow_pcg_actions[phase]
+    pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> BorrowPCGActions<'tcx> {
+        self.actions[phase].borrow_pcg_actions()
+    }
+    pub fn actions(&self, phase: EvalStmtPhase) -> &PcgActions<'tcx> {
+        &self.actions[phase]
     }
 
     pub fn ancestor_edges<'slf, 'mir: 'slf>(
@@ -394,16 +393,10 @@ impl<'tcx> PcgLocation<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Vec<String> {
         let mut result = self.states[phase].debug_lines(repacker);
-        for action in self.borrow_pcg_actions[phase].iter() {
+        for action in self.actions[phase].0.iter() {
             result.push(action.debug_line(repacker));
         }
         result.extend(self.borrows[phase].debug_lines(repacker));
-        for line in self.repacks_start.debug_lines(repacker) {
-            result.push(format!("Repacks Start: {}", line));
-        }
-        for line in self.repacks_middle.debug_lines(repacker) {
-            result.push(format!("Repacks Middle: {}", line));
-        }
         result
     }
 }

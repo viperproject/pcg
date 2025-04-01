@@ -40,8 +40,8 @@ use crate::{
 };
 
 use super::{
-    domain::PcgDomain, DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase,
-    PCGDebugData, PcgError,
+    domain::PcgDomain, DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase, PCGDebugData,
+    PcgError,
 };
 use crate::{
     borrow_pcg::engine::BorrowsEngine,
@@ -244,20 +244,24 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         } else {
             return Ok(());
         }
+
         if let AnalysisObject::Terminator(t) = object {
             for block in successor_blocks(t) {
                 self.reachable_blocks.insert(block);
             }
         }
+
         self.initialize(state, location.block);
 
-        let pcg = state.pcg_mut();
+        let pcg_data = state.data.as_mut().unwrap();
+
+        let pcg = &mut pcg_data.pcg;
         pcg.borrow.data.enter_transfer_fn();
 
         pcg.borrow.data.states.0.pre_operands = pcg.borrow.data.states.0.post_main.clone();
 
         // Handle initial borrow actions, mostly expiring borrows
-        pcg.borrow.actions.pre_operands = self.borrows.analyze(
+        let initial_borrow_actions = self.borrows.analyze(
             Rc::make_mut(&mut pcg.borrow.data.states.0.pre_operands),
             self.borrow_checker.clone(),
             object,
@@ -278,13 +282,19 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         self.restore_loaned_capabilities(
             pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands),
             &borrows,
-            pcg.borrow.actions.get(EvalStmtPhase::PreOperands),
+            &initial_borrow_actions,
         );
+
+        pcg_data.actions.pre_operands = initial_borrow_actions.into();
 
         let owned = pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands);
 
         self.regain_exclusive_capabilities_from_read_leafs(owned, &borrows);
-        let mut extra_ops = self.collapse_owned_places(owned, &borrows);
+        pcg_data.actions.pre_operands.extend(
+            self.collapse_owned_places(owned, &borrows)
+                .into_iter()
+                .map(|a| a.into()),
+        );
 
         let mut tw = TripleWalker::new(self.repacker);
         match object {
@@ -299,39 +309,51 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         {
             let borrows = pcg.borrow.data.states[EvalStmtPhase::PreOperands].clone();
 
-            pcg.owned.actions.pre_operands = self.fpcs.analyze(
-                pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands),
-                &tw,
-                &borrows,
-                EvalStmtPhase::PreOperands,
-            )?;
+            pcg_data.actions.pre_operands.extend(
+                self.fpcs
+                    .analyze(
+                        pcg.owned.data.unwrap_mut(EvalStmtPhase::PreOperands),
+                        &tw,
+                        &borrows,
+                        EvalStmtPhase::PreOperands,
+                    )?
+                    .into_iter()
+                    .map(|a| a.into()),
+            );
 
             pcg.owned.data.states.0.post_operands = pcg.owned.data.states.0.pre_operands.clone();
-            pcg.owned.actions.post_operands = self.fpcs.analyze(
-                pcg.owned.data.unwrap_mut(EvalStmtPhase::PostOperands),
-                &tw,
-                &borrows,
-                EvalStmtPhase::PostOperands,
-            )?;
+            pcg_data.actions.post_operands = self
+                .fpcs
+                .analyze(
+                    pcg.owned.data.unwrap_mut(EvalStmtPhase::PostOperands),
+                    &tw,
+                    &borrows,
+                    EvalStmtPhase::PostOperands,
+                )?
+                .into();
         }
-        extra_ops.append(&mut pcg.owned.actions[EvalStmtPhase::PreOperands]);
-        pcg.owned.actions[EvalStmtPhase::PreOperands].extend(extra_ops);
 
         pcg.borrow.data.states.0.post_operands = pcg.borrow.data.states.0.pre_operands.clone();
 
-        pcg.borrow.actions.post_operands = self.borrows.analyze(
-            Rc::make_mut(&mut pcg.borrow.data.states.0.post_operands),
-            self.borrow_checker.clone(),
-            object,
-            EvalStmtPhase::PostOperands,
-            location,
-        )?;
+        pcg_data.actions.post_operands.extend(
+            self.borrows
+                .analyze(
+                    Rc::make_mut(&mut pcg.borrow.data.states.0.post_operands),
+                    self.borrow_checker.clone(),
+                    object,
+                    EvalStmtPhase::PostOperands,
+                    location,
+                )?
+                .0
+                .into_iter()
+                .map(|a| a.into()),
+        );
 
         // Begin by handling borrow pre_main actions
 
         pcg.borrow.data.states.0.pre_main = pcg.borrow.data.states.0.post_operands.clone();
 
-        pcg.borrow.actions.pre_main = self.borrows.analyze(
+        let pre_main_borrow_actions = self.borrows.analyze(
             Rc::make_mut(&mut pcg.borrow.data.states.0.pre_main),
             self.borrow_checker.clone(),
             object,
@@ -345,36 +367,52 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         self.restore_loaned_capabilities(
             pcg.owned.data.unwrap_mut(EvalStmtPhase::PreMain),
             &pcg.borrow.data.states[EvalStmtPhase::PreMain].frozen_graph(),
-            pcg.borrow.actions.get(EvalStmtPhase::PreMain),
+            &pre_main_borrow_actions,
         );
+
+        pcg_data.actions.pre_main = pre_main_borrow_actions.into();
 
         // Do all of the owned effects
         let borrows = pcg.borrow.data.states[EvalStmtPhase::PreMain].clone();
 
-        pcg.owned.actions.pre_main = self.fpcs.analyze(
-            pcg.owned.data.unwrap_mut(EvalStmtPhase::PreMain),
-            &tw,
-            &borrows,
-            EvalStmtPhase::PreMain,
-        )?;
+        pcg_data.actions.pre_main.extend(
+            self.fpcs
+                .analyze(
+                    pcg.owned.data.unwrap_mut(EvalStmtPhase::PreMain),
+                    &tw,
+                    &borrows,
+                    EvalStmtPhase::PreMain,
+                )?
+                .into_iter()
+                .map(|a| a.into()),
+        );
 
         pcg.owned.data.states.0.post_main = pcg.owned.data.states.0.pre_main.clone();
-        pcg.owned.actions.post_main = self.fpcs.analyze(
-            pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain),
-            &tw,
-            &borrows,
-            EvalStmtPhase::PostMain,
-        )?;
+        pcg_data.actions.post_main = self
+            .fpcs
+            .analyze(
+                pcg.owned.data.unwrap_mut(EvalStmtPhase::PostMain),
+                &tw,
+                &borrows,
+                EvalStmtPhase::PostMain,
+            )?
+            .into();
 
         pcg.borrow.data.states.0.post_main = pcg.borrow.data.states.0.pre_main.clone();
 
-        pcg.borrow.actions.post_main = self.borrows.analyze(
-            Rc::make_mut(&mut pcg.borrow.data.states.0.post_main),
-            self.borrow_checker.clone(),
-            object,
-            EvalStmtPhase::PostMain,
-            location,
-        )?;
+        pcg_data.actions.post_main.extend(
+            self.borrows
+                .analyze(
+                    Rc::make_mut(&mut pcg.borrow.data.states.0.post_main),
+                    self.borrow_checker.clone(),
+                    object,
+                    EvalStmtPhase::PostMain,
+                    location,
+                )?
+                .0
+                .into_iter()
+                .map(|a| a.into()),
+        );
 
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);

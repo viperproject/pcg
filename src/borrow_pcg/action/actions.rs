@@ -72,10 +72,6 @@ impl<'tcx> BorrowPCGActions<'tcx> {
 }
 
 impl<'tcx> BorrowPCGActions<'tcx> {
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &BorrowPCGAction<'tcx>> {
-        self.0.iter()
-    }
-
     pub(crate) fn new() -> Self {
         Self(vec![])
     }

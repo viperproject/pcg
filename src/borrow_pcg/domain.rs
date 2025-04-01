@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::edge::borrow::RemoteBorrow;
@@ -9,7 +8,6 @@ use crate::borrow_pcg::path_condition::{PathCondition, PathConditions};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::pcg::EvalStmtPhase::*;
 use crate::utils::domain_data::DomainData;
-use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::utils::incoming_states::IncomingStates;
 use crate::utils::{Place, PlaceRepacker};
 
@@ -97,7 +95,6 @@ pub struct BorrowsDomain<'mir, 'tcx> {
     pub(crate) data: DomainData<BorrowsState<'tcx>>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) repacker: PlaceRepacker<'mir, 'tcx>,
-    pub(crate) actions: EvalStmtData<BorrowPCGActions<'tcx>>,
     pub(crate) bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
     /// The number of times the join operation has been called, this is just
     /// used for debugging to identify if the dataflow analysis is not
@@ -143,7 +140,6 @@ impl<'mir, 'tcx: 'mir> BorrowsDomain<'mir, 'tcx> {
     ) -> Self {
         Self {
             data: DomainData::default(),
-            actions: EvalStmtData::default(),
             block,
             repacker,
             debug_join_iteration: 0,

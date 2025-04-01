@@ -13,13 +13,14 @@ use std::{
 };
 
 use crate::{
+    action::PcgActions,
     borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
-    utils::PlaceRepacker,
+    utils::{eval_stmt_data::EvalStmtData, PlaceRepacker},
     PCGAnalysis, RECORD_PCG,
 };
 
@@ -109,11 +110,17 @@ impl Pcg<'_, '_> {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct PcgDomainData<'a, 'tcx> {
+    pub(crate) pcg: Pcg<'a, 'tcx>,
+    pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
+}
+
 #[derive(Clone)]
 pub struct PcgDomain<'a, 'tcx> {
     repacker: PlaceRepacker<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
-    pub(crate) pcg: std::result::Result<Pcg<'a, 'tcx>, PcgError>,
+    pub(crate) data: std::result::Result<PcgDomainData<'a, 'tcx>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
     pub(crate) join_history: FxHashSet<BasicBlock>,
     pub(crate) reachable: bool,
@@ -232,10 +239,6 @@ impl PcgError {
     pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
         Self { kind, context }
     }
-
-    pub(crate) fn add_context(&mut self, context: String) {
-        self.context.push(context);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,27 +290,27 @@ pub enum PCGUnsupportedError {
 
 impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     pub(crate) fn has_error(&self) -> bool {
-        self.pcg.is_err()
+        self.data.is_err()
     }
 
     pub(crate) fn error(&self) -> Option<&PcgError> {
-        self.pcg.as_ref().err()
+        self.data.as_ref().err()
     }
 
     pub(crate) fn record_error(&mut self, error: PcgError) {
-        self.pcg = Err(error);
+        self.data = Err(error);
     }
 
     pub(crate) fn pcg(&self) -> &Pcg<'a, 'tcx> {
-        match &self.pcg {
-            Ok(pcg) => pcg,
+        match &self.data {
+            Ok(data) => &data.pcg,
             Err(e) => panic!("PCG error: {:?}", e),
         }
     }
 
     pub(crate) fn pcg_mut(&mut self) -> &mut Pcg<'a, 'tcx> {
-        match &mut self.pcg {
-            Ok(pcg) => pcg,
+        match &mut self.data {
+            Ok(data) => &mut data.pcg,
             Err(e) => panic!("PCG error: {:?}", e),
         }
     }
@@ -436,7 +439,10 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         Self {
             repacker,
             block,
-            pcg: Ok(pcg),
+            data: Ok(PcgDomainData {
+                pcg,
+                actions: EvalStmtData::default(),
+            }),
             debug_data,
             join_history: FxHashSet::default(),
             reachable: false,
@@ -454,7 +460,7 @@ impl Eq for PcgDomain<'_, '_> {}
 
 impl PartialEq for PcgDomain<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.pcg == other.pcg
+        self.data == other.data
     }
 }
 
@@ -464,7 +470,7 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
             return false;
         }
         if other.has_error() && !self.has_error() {
-            self.pcg = other.pcg.clone();
+            self.data = other.data.clone();
             return true;
         } else if self.has_error() {
             return false;
@@ -501,9 +507,7 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>>
-    for PcgDomain<'a, 'tcx>
-{
+impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
         old: &Self,
