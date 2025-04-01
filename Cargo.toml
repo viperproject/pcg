@@ -57,5 +57,5 @@ chrono = "0.4"
 rustc_private = true
 
 [[bin]]
-name = "pcs_bin"
+name = "pcg_bin"
 path = "src/main.rs"

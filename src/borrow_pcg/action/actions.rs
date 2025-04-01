@@ -72,9 +72,6 @@ impl<'tcx> BorrowPCGActions<'tcx> {
 }
 
 impl<'tcx> BorrowPCGActions<'tcx> {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
     pub(crate) fn iter(&self) -> impl Iterator<Item = &BorrowPCGAction<'tcx>> {
         self.0.iter()
     }
@@ -89,10 +86,6 @@ impl<'tcx> BorrowPCGActions<'tcx> {
 
     pub(crate) fn last(&self) -> Option<&BorrowPCGAction<'tcx>> {
         self.0.last()
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.0.clear();
     }
 
     pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {

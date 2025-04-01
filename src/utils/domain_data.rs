@@ -54,23 +54,6 @@ impl<T: Clone> DomainData<Option<T>> {
 }
 
 impl<T: Clone> DomainData<T> {
-    pub(crate) fn get_mut(&mut self, phase: EvalStmtPhase) -> &mut T {
-        self.states.get_mut(phase)
-    }
-    pub(crate) fn pre_operands_complete(&mut self) {
-        assert!(self.phase == DataflowPhase::Transfer);
-        self.states.0.pre_operands = self.states.0.post_main.clone();
-    }
-    pub(crate) fn post_operands_complete(&mut self) {
-        assert!(self.phase == DataflowPhase::Transfer);
-        self.states.0.post_operands = self.states.0.post_main.clone();
-    }
-
-    pub(crate) fn pre_main_complete(&mut self) {
-        assert!(self.phase == DataflowPhase::Transfer);
-        self.states.0.pre_main = self.states.0.post_main.clone();
-    }
-
     pub(crate) fn enter_transfer_fn(&mut self) {
         if self.phase != DataflowPhase::Transfer {
             // The entry state may have taken into account previous joins

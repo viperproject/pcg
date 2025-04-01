@@ -206,7 +206,7 @@ fn test_aliases() {
         .with_writer(std::io::stderr)
         .init();
 
-    use crate::{run_combined_pcs, FpcsOutput};
+    use crate::{run_pcg, FpcsOutput};
 
     fn check_all_statements<'mir, 'tcx>(
         body: &'mir mir::Body<'tcx>,
@@ -239,7 +239,7 @@ fn test_aliases() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[1];
         let placer = Placer::new(tcx, &body.body);
@@ -268,7 +268,7 @@ fn test_aliases() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[12];
         let placer = Placer::new(tcx, &body.body);
@@ -289,7 +289,7 @@ fn test_aliases() {
         }
         "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let bb = pcg.get_all_for_bb(1usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[2];
         let placer = Placer::new(tcx, &body.body);
@@ -315,7 +315,7 @@ fn test_aliases() {
                 }
                 "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[2];
         let placer = Placer::new(tcx, &body.body);
@@ -348,7 +348,7 @@ fn main() {
 }
         "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let bb = pcg.get_all_for_bb(2usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[1];
         let init_z: mir::Place<'_> = mir::Local::from(5_usize).into();
@@ -392,7 +392,7 @@ fn main() {
     }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[0];
         let init_z: mir::Place<'_> = mir::Local::from(5_usize).into();
@@ -426,7 +426,7 @@ fn main() {
     }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let x = placer.local("x").mk();
         check_all_statements(&body.body, &mut pcg, |_location, stmt| {
@@ -451,7 +451,7 @@ fn main() {
 }
 "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let temp: mir::Place<'_> = mir::Local::from(4_usize).into();
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
@@ -473,7 +473,7 @@ fn main() {
                 println!("Elapsed: {}s", elapsed.as_secs());
             }"#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let temp_9: mir::Place<'_> = mir::Local::from(9_usize).into();
         let deref_temp_9 = temp_9.project_deeper(&[mir::ProjectionElem::Deref], tcx);
 
@@ -502,7 +502,7 @@ fn main() {
       let e = foo(c, d);
     }"#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = bb0.statements.last().unwrap();
@@ -521,7 +521,7 @@ fn main() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[10];
@@ -539,7 +539,7 @@ fn main() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let stmt = &bb0.statements[11];
@@ -571,7 +571,7 @@ fn main() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_combined_pcs(body, tcx, None);
+        let mut pcg = run_pcg(body, tcx, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[13];

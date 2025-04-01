@@ -208,7 +208,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 )
                 .to_borrow_pcg_edge(PathConditions::new(self_block));
 
-                tracing::info!("Inserting abstraction: {:?}", abstraction);
                 self.insert(abstraction);
                 self.edges
                     .retain(|edge_kind, _| !to_remove.contains(edge_kind));

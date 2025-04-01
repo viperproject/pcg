@@ -7,9 +7,8 @@ use crate::{
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::obtain::ObtainReason,
-        visitor::StatementStage,
     },
-    combined_pcs::{PCGUnsupportedError, PcgError},
+    combined_pcs::{EvalStmtPhase, PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
     pcg_validity_assert,
     rustc_interface::middle::{
@@ -105,8 +104,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        assert!(!self.preparing);
-        assert!(self.stage == StatementStage::Main);
+        assert!(self.phase == EvalStmtPhase::PostMain);
         if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
             let target: utils::Place<'tcx> = (*target).into();
             self.apply_action(BorrowPCGAction::set_latest(

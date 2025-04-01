@@ -252,16 +252,16 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-pub fn run_combined_pcs<'mir, 'tcx: 'mir>(
+pub fn run_pcg<'mir, 'tcx: 'mir>(
     mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
     let bc: BorrowCheckerImpl<'mir, 'tcx> = BorrowCheckerImpl::new(tcx, mir);
-    run_combined_pcs_with(mir, tcx, bc, visualization_output_path)
+    run_pcg_with(mir, tcx, bc, visualization_output_path)
 }
 
-pub fn run_combined_pcs_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
+pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
     mir: &'mir T,
     tcx: TyCtxt<'tcx>,
     bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,

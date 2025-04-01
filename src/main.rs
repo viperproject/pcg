@@ -18,7 +18,7 @@ use std::rc::Rc;
 
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcg::run_combined_pcs_with;
+use pcg::run_pcg_with;
 use pcg::utils::PlaceRepacker;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
@@ -152,17 +152,14 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
         let body = Rc::new(body);
-        if !item_name.contains("de::deserialize_map")
-            && !item_name.contains("derive_known_layout_inner")
-            && should_check_body(&body)
-        {
+        if should_check_body(&body) {
             let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
             let mut output = if polonius {
                 let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());
-                run_combined_pcs_with(body.as_ref(), tcx, bc, item_dir)
+                run_pcg_with(body.as_ref(), tcx, bc, item_dir)
             } else {
                 let bc = BorrowCheckerImpl::new(tcx, body.as_ref());
-                run_combined_pcs_with(body.as_ref(), tcx, bc, item_dir)
+                run_pcg_with(body.as_ref(), tcx, bc, item_dir)
             };
             if emit_pcg_annotations || check_pcg_annotations {
                 let mut debug_lines = Vec::new();

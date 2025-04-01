@@ -51,17 +51,17 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
         .args(build_args)
         .current_dir(&cwd)
         .status()
-        .expect("Failed to build pcs_bin");
+        .expect("Failed to build pcg_bin");
 
-    assert!(cargo_build.success(), "Failed to build pcs_bin");
+    assert!(cargo_build.success(), "Failed to build pcg_bin");
     let target = if matches!(options.target(), Target::Release) {
         "release"
     } else {
         "debug"
     };
     let cargo = "cargo";
-    let pcs_exe = cwd.join(["target", target, "pcs_bin"].iter().collect::<PathBuf>());
-    println!("Running PCS on directory: {}", dir.display());
+    let pcs_exe = cwd.join(["target", target, "pcg_bin"].iter().collect::<PathBuf>());
+    println!("Running PCG on directory: {}", dir.display());
     let exit = Command::new(cargo)
         .arg("check")
         .env("RUST_TOOLCHAIN", get_rust_toolchain_channel())
@@ -90,7 +90,7 @@ pub fn is_polonius_test_file(file: &Path) -> bool {
 #[allow(dead_code)]
 pub fn run_pcg_on_file(file: &Path) {
     let workspace_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let pcs_exe = workspace_dir.join("target/debug/pcs_bin");
+    let pcs_exe = workspace_dir.join("target/debug/pcg_bin");
     println!("Running PCG on file: {}", file.display());
 
     let status = Command::new(&pcs_exe)

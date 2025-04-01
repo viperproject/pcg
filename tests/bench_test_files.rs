@@ -38,7 +38,7 @@ fn run_cachegrind(file_path: &Path) -> u64 {
     let output = Command::new("valgrind")
         .args([
             "--tool=cachegrind",
-            "target/release/pcs_bin",
+            "target/release/pcg_bin",
             file_path.to_str().unwrap(),
         ])
         .env(

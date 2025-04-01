@@ -6,6 +6,8 @@ fn f1<'a>(p: &'a mut Point) -> &'a mut u32 {
     // exclusive (e.g. mutably reborrowed)
     // PCG: bb0[4] post_operands: (*p).x: R
     if p.x == 0 {
+        // PCG: bb1[3] pre_operands: Add Edge: {p} -> {*p} under conditions bb1
+        // PCG: bb1[3] pre_operands: Add Edge: {*p} -> {(*p).y, (*p).x} under conditions bb1
         &mut p.x
     } else {
         &mut p.x

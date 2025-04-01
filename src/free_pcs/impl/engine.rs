@@ -4,15 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::middle::mir::{
-    self, Location, Statement, Terminator, TerminatorEdges,
-};
+use crate::rustc_interface::middle::mir::Location;
 
 use crate::{
     borrow_pcg::state::BorrowsState,
     combined_pcs::{EvalStmtPhase, PcgError},
-    rustc_interface,
-    utils::{visitor::FallableVisitor, PlaceRepacker},
+    utils::PlaceRepacker,
 };
 
 use super::{triple::TripleWalker, FreePlaceCapabilitySummary};
@@ -23,73 +20,18 @@ pub struct FpcsEngine<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
-    pub(crate) fn apply_before_statement_effect(
-        &mut self,
-        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
-        statement: &Statement<'tcx>,
-        borrows: &BorrowsState<'tcx>,
-        location: Location,
-    ) -> Result<(), PcgError> {
-        let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_statement_fallable(statement, location)?;
-        self.apply_before(state, tw, borrows, location)
-    }
-
-    pub(crate) fn apply_statement_effect(
-        &mut self,
-        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
-        statement: &Statement<'tcx>,
-        borrows: &BorrowsState<'tcx>,
-        location: Location,
-    ) -> Result<(), PcgError> {
-        let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_statement_fallable(statement, location)?;
-        self.apply_main(state, tw, borrows, location)
-    }
-
-    pub(crate) fn apply_before_terminator_effect(
-        &mut self,
-        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
-        terminator: &Terminator<'tcx>,
-        borrows: &BorrowsState<'tcx>,
-        location: Location,
-    ) -> Result<(), PcgError> {
-        let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_terminator_fallable(terminator, location)?;
-        self.apply_before(state, tw, borrows, location)
-    }
-
-    pub(crate) fn apply_terminator_effect<'mir>(
-        &mut self,
-        state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
-        terminator: &'mir Terminator<'tcx>,
-        borrows: &BorrowsState<'tcx>,
-        location: Location,
-    ) -> Result<TerminatorEdges<'mir, 'tcx>, PcgError> {
-        if terminator.kind == mir::TerminatorKind::UnwindResume {
-            return Ok(terminator.edges());
-        }
-        let mut tw = TripleWalker::new(state.repacker);
-        tw.visit_terminator_fallable(terminator, location)?;
-        state.data.states.0.pre_main = state.data.states.0.post_operands.clone();
-        self.apply_main(state, tw, borrows, location)?;
-        Ok(terminator.edges())
-    }
-}
-
-impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
     #[tracing::instrument(skip(self, state, borrows, tw))]
-    fn apply_before(
+    pub(crate) fn apply_before(
         &self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
-        tw: TripleWalker<'a, 'tcx>,
+        tw: &TripleWalker<'a, 'tcx>,
         borrows: &BorrowsState<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
         state.actions[EvalStmtPhase::PreOperands].clear();
         // Repack for operands
         state.data.states.0.pre_operands = state.data.states.0.post_main.clone();
-        for &triple in &tw.operand_triples {
+        for triple in tw.operand_triples.iter() {
             let pre_operands = state.data.unwrap_mut(EvalStmtPhase::PreOperands);
             let actions = pre_operands.requires(triple.pre(), self.repacker, borrows)?;
             state.actions[EvalStmtPhase::PreOperands].extend(actions);
@@ -97,7 +39,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
 
         // Apply operands effects
         state.data.states.0.post_operands = state.data.states.0.pre_operands.clone();
-        for triple in tw.operand_triples {
+        for triple in tw.operand_triples.iter() {
             let post_operands = state.data.unwrap_mut(EvalStmtPhase::PostOperands);
             let triple = triple.replace_place(self.repacker);
             post_operands.ensures(triple, self.repacker);
@@ -106,7 +48,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
     }
 
     #[tracing::instrument(skip(self, state, borrows, tw))]
-    fn apply_main(
+    pub(crate) fn apply_main(
         &self,
         state: &mut FreePlaceCapabilitySummary<'a, 'tcx>,
         tw: TripleWalker<'a, 'tcx>,

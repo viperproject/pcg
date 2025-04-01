@@ -19,11 +19,12 @@ pub trait Analysis<'tcx> {
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain);
 
+    #[tracing::instrument(skip(self, _state, _statement))]
     fn apply_before_statement_effect(
         &mut self,
         _state: &mut Self::Domain,
         _statement: &Statement<'tcx>,
-        _location: Location,
+        location: Location,
     ) {
     }
 
@@ -61,7 +62,7 @@ where
     <T as mir_dataflow::AnalysisDomain<'tcx>>::Domain: mir_dataflow::fmt::DebugWithContext<T>,
 {
     let engine = mir_dataflow::Engine::new_generic(tcx, body, analysis);
-    engine.pass_name("free_pcg").iterate_to_fixpoint()
+    engine.pass_name("pcg").iterate_to_fixpoint()
 }
 
 #[rustversion::since(2024-11-14)]

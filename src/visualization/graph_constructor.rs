@@ -381,7 +381,7 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        run_combined_pcs, utils::PlaceRepacker,
+        run_pcg, utils::PlaceRepacker,
         visualization::graph_constructor::PcgGraphConstructor,
     };
 
@@ -404,7 +404,7 @@ fn main() {
 "#;
         rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
             let repacker = PlaceRepacker::new(&body.body, tcx);
-            let mut pcg = run_combined_pcs(body, tcx, None);
+            let mut pcg = run_pcg(body, tcx, None);
             let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
             let stmt = &bb.statements[22];
             let graph =

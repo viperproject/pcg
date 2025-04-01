@@ -1,3 +1,7 @@
+// TODO: Actually this is never tested currently because the span isn't matched :/
+// The not expected annotation might erroneously come from the PartialEq impl
+// ~PCG: bb5[0] post_operands: Repacks Start: Collapse(_10, _10.0, E)
+
 #[derive(Clone,PartialEq,Eq)]
 enum A {
     ANone(u32),

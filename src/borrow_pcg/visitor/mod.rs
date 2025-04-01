@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    combined_pcs::EvalStmtPhase::*,
+    combined_pcs::EvalStmtPhase,
     utils::{visitor::FallableVisitor, HasPlace},
 };
 use tracing::instrument;
@@ -33,7 +33,6 @@ use super::{
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
-use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
@@ -44,26 +43,15 @@ use crate::{
 mod function_call;
 mod stmt;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum StatementStage {
-    Operands,
-    Main,
-}
-
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
-    actions: &'state mut BorrowPCGActions<'tcx>,
+    pub(super) actions: BorrowPCGActions<'tcx>,
     state: &'state mut BorrowsState<'tcx>,
     bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
-    stage: StatementStage,
-    preparing: bool,
+    phase: EvalStmtPhase,
 }
 
 impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
-    fn reset_actions(&mut self) {
-        self.actions.clear();
-    }
-
     fn record_actions(&mut self, actions: ExecutedActions<'tcx>) {
         self.actions.extend(actions.actions());
     }
@@ -73,46 +61,18 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         self.state.apply_action(action, self.repacker).unwrap()
     }
 
-    pub(super) fn preparing(
+    pub(super) fn new(
         engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx>,
-        stage: StatementStage,
+        state: &'state mut BorrowsState<'tcx>,
+        bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
+        phase: EvalStmtPhase,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        let mut bv = BorrowsVisitor::new(engine, state, stage, true);
-        bv.reset_actions();
-        bv
-    }
-
-    pub(super) fn applying(
-        engine: &BorrowsEngine<'mir, 'tcx>,
-        state: &'state mut BorrowsDomain<'mir, 'tcx>,
-        stage: StatementStage,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        let mut bv = BorrowsVisitor::new(engine, state, stage, false);
-        bv.reset_actions();
-        bv
-    }
-
-    fn new(
-        engine: &BorrowsEngine<'mir, 'tcx>,
-        domain: &'state mut BorrowsDomain<'mir, 'tcx>,
-        stage: StatementStage,
-        preparing: bool,
-    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
-        let actions = match (stage, preparing) {
-            (StatementStage::Operands, true) => &mut domain.actions.pre_operands,
-            (StatementStage::Operands, false) => &mut domain.actions.post_operands,
-            (StatementStage::Main, true) => &mut domain.actions.pre_main,
-            (StatementStage::Main, false) => &mut domain.actions.post_main,
-        };
-        let state = domain.data.get_mut(PostMain);
         BorrowsVisitor {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
-            actions,
+            actions: BorrowPCGActions::new(),
             state,
-            bc: domain.bc.clone(),
-            stage,
-            preparing,
+            bc,
+            phase,
         }
     }
 
@@ -212,8 +172,8 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         location: Location,
     ) -> Result<(), PcgError> {
         self.super_operand_fallable(operand, location)?;
-        if self.stage == StatementStage::Operands && self.preparing {
-            match operand {
+        match self.phase {
+            EvalStmtPhase::PreOperands => match operand {
                 Operand::Copy(place) | Operand::Move(place) => {
                     let expansion_reason = if matches!(operand, Operand::Copy(..)) {
                         ObtainReason::CopyOperand
@@ -227,23 +187,29 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     self.record_actions(expansion_actions);
                 }
                 _ => {}
-            }
-        } else if self.stage == StatementStage::Operands && !self.preparing {
-            if let Operand::Move(place) = operand {
-                let place: utils::Place<'tcx> = (*place).into();
-                if !place.is_owned(self.repacker) {
-                    self.state
-                        .set_capability(place.into(), CapabilityKind::Write, self.repacker);
+            },
+            EvalStmtPhase::PostOperands => {
+                if let Operand::Move(place) = operand {
+                    let place: utils::Place<'tcx> = (*place).into();
+                    if !place.is_owned(self.repacker) {
+                        self.state.set_capability(
+                            place.into(),
+                            CapabilityKind::Write,
+                            self.repacker,
+                        );
+                    }
                 }
             }
-        } else if self.stage == StatementStage::Main && !self.preparing {
-            if let Operand::Move(place) = operand {
-                let place: utils::Place<'tcx> = (*place).into();
-                self.apply_action(BorrowPCGAction::make_place_old(
-                    place,
-                    MakePlaceOldReason::MoveOut,
-                ));
+            EvalStmtPhase::PostMain => {
+                if let Operand::Move(place) = operand {
+                    let place: utils::Place<'tcx> = (*place).into();
+                    self.apply_action(BorrowPCGAction::make_place_old(
+                        place,
+                        MakePlaceOldReason::MoveOut,
+                    ));
+                }
             }
+            _ => {}
         }
         Ok(())
     }
@@ -254,31 +220,30 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if self.preparing && self.stage == StatementStage::Operands {
+        if self.phase == EvalStmtPhase::PreOperands {
             self.perform_base_pre_operand_actions(location)?;
         }
         self.super_terminator_fallable(terminator, location)?;
-        if self.stage == StatementStage::Main && !self.preparing {
-            if let TerminatorKind::Call {
+        if self.phase == EvalStmtPhase::PostMain
+            && let TerminatorKind::Call {
                 func,
                 args,
                 destination,
                 ..
             } = &terminator.kind
-            {
-                let destination: utils::Place<'tcx> = (*destination).into();
-                self.apply_action(BorrowPCGAction::set_latest(
-                    destination,
-                    location,
-                    "Destination of Function Call",
-                ));
-                self.make_function_call_abstraction(
-                    func,
-                    &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
-                    destination,
-                    location,
-                )?;
-            }
+        {
+            let destination: utils::Place<'tcx> = (*destination).into();
+            self.apply_action(BorrowPCGAction::set_latest(
+                destination,
+                location,
+                "Destination of Function Call",
+            ));
+            self.make_function_call_abstraction(
+                func,
+                &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
+                destination,
+                location,
+            )?;
         }
         Ok(())
     }
@@ -289,27 +254,32 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if self.preparing && self.stage == StatementStage::Operands {
+        if self.phase == EvalStmtPhase::PreOperands {
             self.perform_base_pre_operand_actions(location)?;
         }
 
         self.super_statement_fallable(statement, location)?;
 
-        if self.preparing && self.stage == StatementStage::Operands {
-            if let StatementKind::FakeRead(box (_, place)) = &statement.kind {
-                let place: utils::Place<'tcx> = (*place).into();
-                if !place.is_owned(self.repacker) {
-                    let expansion_reason = ObtainReason::FakeRead;
-                    let expansion_actions =
-                        self.state
-                            .obtain(self.repacker, place, location, expansion_reason)?;
-                    self.record_actions(expansion_actions);
+        match self.phase {
+            EvalStmtPhase::PreOperands => {
+                if let StatementKind::FakeRead(box (_, place)) = &statement.kind {
+                    let place: utils::Place<'tcx> = (*place).into();
+                    if !place.is_owned(self.repacker) {
+                        let expansion_reason = ObtainReason::FakeRead;
+                        let expansion_actions =
+                            self.state
+                                .obtain(self.repacker, place, location, expansion_reason)?;
+                        self.record_actions(expansion_actions);
+                    }
                 }
             }
-        } else if self.preparing && self.stage == StatementStage::Main {
-            self.stmt_pre_main(statement, location)?;
-        } else if !self.preparing && self.stage == StatementStage::Main {
-            self.stmt_post_main(statement, location)?;
+            EvalStmtPhase::PreMain => {
+                self.stmt_pre_main(statement, location)?;
+            }
+            EvalStmtPhase::PostMain => {
+                self.stmt_post_main(statement, location)?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -363,7 +333,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                         Rvalue::RawPtr(mutbl, _) => ObtainReason::CreatePtr(*mutbl),
                         _ => ObtainReason::RValueSimpleRead,
                     };
-                    if this.stage == StatementStage::Operands && this.preparing {
+                    if this.phase == EvalStmtPhase::PreOperands {
                         let expansion_actions = this.state.obtain(
                             this.repacker,
                             place.into(),
