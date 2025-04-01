@@ -7,12 +7,12 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, combined_pcs::place_capabilities::PlaceCapabilities, pcg_validity_assert, rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local}
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, pcg::place_capabilities::PlaceCapabilities, pcg_validity_assert, rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local}
 };
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::{PCGInternalError, PcgError},
+    pcg::{PCGInternalError, PcgError},
     free_pcs::{CapabilityKind, RepackOp},
     utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
     validity_checks_enabled,

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use crate::{
     borrow_pcg::coupling_graph_constructor::AbstractionGraph,
-    combined_pcs::PCGNode,
+    pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self, BasicBlock},

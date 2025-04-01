@@ -1,5 +1,5 @@
 use crate::{
-    borrow_pcg::{has_pcs_elem::{default_make_place_old, MakePlaceOld}, latest::Latest}, combined_pcs::PCGNode, edgedata_enum, rustc_interface::{
+    borrow_pcg::{has_pcs_elem::{default_make_place_old, MakePlaceOld}, latest::Latest}, pcg::PCGNode, edgedata_enum, rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{

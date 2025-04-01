@@ -6,7 +6,7 @@
 
 use crate::{
     borrow_pcg::state::BorrowsState,
-    combined_pcs::PcgError,
+    pcg::PcgError,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg_validity_assert,
     rustc_interface::{

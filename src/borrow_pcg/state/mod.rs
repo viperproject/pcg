@@ -8,14 +8,14 @@ use super::{
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
 };
-use crate::{borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow}, combined_pcs::place_capabilities::PlaceCapabilities};
-use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
+use crate::{borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow}, pcg::place_capabilities::PlaceCapabilities};
+use crate::{borrow_pcg::action::executed_actions::ExecutedActions, pcg::PcgError};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
-    combined_pcs::PCGNode,
+    pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
@@ -26,7 +26,7 @@ use crate::{
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
 };
-use crate::{combined_pcs::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
+use crate::{pcg::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},

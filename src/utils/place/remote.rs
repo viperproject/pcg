@@ -2,7 +2,7 @@ use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::combined_pcs::{PCGNode, PCGNodeLike};
+use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithRepacker;

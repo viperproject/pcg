@@ -3,7 +3,7 @@ use polonius_engine::Output;
 
 use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PCGRegion;
-use crate::combined_pcs::PCGNode;
+use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
     BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext,
 };

@@ -15,7 +15,7 @@ use derive_more::{Deref, DerefMut};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    combined_pcs::{PCGUnsupportedError, PcgError},
+    pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHasher,
@@ -42,7 +42,7 @@ use crate::{
         },
         visitor::extract_regions,
     },
-    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
 };
 
 pub mod corrected;

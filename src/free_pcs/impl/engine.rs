@@ -8,7 +8,7 @@ use crate::free_pcs::RepackOp;
 
 use crate::{
     borrow_pcg::state::BorrowsState,
-    combined_pcs::{EvalStmtPhase, PcgError},
+    pcg::{EvalStmtPhase, PcgError},
     utils::PlaceRepacker,
 };
 

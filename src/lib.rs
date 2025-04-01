@@ -9,7 +9,7 @@
 #![feature(if_let_guard, let_chains)]
 #![feature(never_type)]
 pub mod borrow_pcg;
-pub mod combined_pcs;
+pub mod pcg;
 pub mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
@@ -21,7 +21,7 @@ use borrow_pcg::{
     borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface,
     latest::Latest,
 };
-use combined_pcs::{PCGEngine, PcgSuccessor};
+use pcg::{PCGEngine, PcgSuccessor};
 use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use rustc_interface::{
     borrowck::{

@@ -12,7 +12,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPCGActionKind, borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef}, graph::BorrowsGraph, latest::Latest
     },
-    combined_pcs::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
+    pcg::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -30,7 +30,7 @@ use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     borrow_pcg::engine::BorrowsStates,
-    combined_pcs::PcgDomain,
+    pcg::PcgDomain,
     free_pcs::{CapabilityLocals, RepackOp, RepackingBridgeSemiLattice},
     utils::PlaceRepacker,
 };

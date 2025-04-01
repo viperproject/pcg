@@ -24,7 +24,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::combined_pcs::{LocalNodeLike, PCGNode};
+use crate::pcg::{LocalNodeLike, PCGNode};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;

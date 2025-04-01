@@ -2,7 +2,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld}, latest::Latest, region_projection::RegionProjection
     },
-    combined_pcs::{PCGNode, PCGNodeLike},
+    pcg::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
         display::DisplayWithRepacker, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck, Place, PlaceRepacker

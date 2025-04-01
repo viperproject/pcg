@@ -5,7 +5,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::LocalRegionProjection;
-use crate::combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike};
+use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
 use crate::pcg_validity_assert;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithRepacker;

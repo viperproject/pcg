@@ -12,7 +12,7 @@ use crate::{
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, RegionProjection},
     },
-    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::TerminatorEdges,

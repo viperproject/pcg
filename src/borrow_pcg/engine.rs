@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    combined_pcs::{AnalysisObject, EvalStmtPhase, PcgError},
+    pcg::{AnalysisObject, EvalStmtPhase, PcgError},
     rustc_interface::middle::{
         mir::{Body, Location},
         ty::TyCtxt,

@@ -5,11 +5,11 @@ use super::{validity::HasValidityCheck, Place, PlaceRepacker};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::combined_pcs::{PCGNode, PCGNodeLike};
+use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
-    combined_pcs::LocalNodeLike,
+    pcg::LocalNodeLike,
     rustc_interface::{
         index::IndexVec,
         middle::mir::{BasicBlock, Location},

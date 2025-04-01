@@ -5,7 +5,7 @@ use crate::{
         edge_data::EdgeData,
         region_projection::RegionIdx,
     },
-    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
 };

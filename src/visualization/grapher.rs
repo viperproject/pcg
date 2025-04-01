@@ -4,7 +4,7 @@ use crate::{
         edge::kind::BorrowPCGEdgeKind,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
-    combined_pcs::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike},
     free_pcs::CapabilityKind,
     rustc_interface::middle::mir,
     utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, HasPlace, PlaceRepacker},

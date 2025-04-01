@@ -8,7 +8,7 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::obtain::ObtainReason,
     },
-    combined_pcs::{EvalStmtPhase, PCGUnsupportedError, PcgError},
+    pcg::{EvalStmtPhase, PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
     pcg_validity_assert,
     rustc_interface::middle::{

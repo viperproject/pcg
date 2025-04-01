@@ -37,7 +37,7 @@ use pcg::rustc_interface::{
     },
     session::Session,
 };
-use pcg::{combined_pcs::BodyWithBorrowckFacts, utils::env_feature_enabled};
+use pcg::{pcg::BodyWithBorrowckFacts, utils::env_feature_enabled};
 
 struct PcsCallbacks;
 

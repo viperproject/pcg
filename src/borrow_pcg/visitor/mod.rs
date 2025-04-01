@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
 use crate::{
-    combined_pcs::EvalStmtPhase,
+    pcg::EvalStmtPhase,
     utils::{visitor::FallableVisitor, HasPlace},
 };
 use tracing::instrument;
 
 use crate::{
-    combined_pcs::{PCGUnsupportedError, PcgError},
+    pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
         index::IndexVec,
         middle::{
