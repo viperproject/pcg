@@ -131,7 +131,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         coupled.clone(),
                         coupled
                             .iter()
-                            .map(|rp| rp.labelled(location.into()))
+                            .map(|rp| rp.label_place(location.into()))
                             .collect(),
                     )
                     .into(),

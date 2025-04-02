@@ -67,13 +67,18 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             return id;
         }
         let id = self.region_projection_nodes.node_id(&projection);
+        let location = match projection.location {
+            Some(location) => format!(" at {:?}", location),
+            None => "".to_string(),
+        };
         let node = GraphNode {
             id,
             node_type: NodeType::RegionProjectionNode {
                 label: format!(
-                    "{}↓{}",
+                    "{}↓{}{}",
                     projection.place().to_short_string(self.repacker),
                     projection.region(self.repacker),
+                    location,
                 ),
             },
         };

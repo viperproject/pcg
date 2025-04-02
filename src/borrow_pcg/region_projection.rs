@@ -158,6 +158,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
+    pub(crate) location: Option<SnapshotLocation>,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -168,19 +169,21 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
         RegionProjection {
             base: value.base.into(),
             region_idx: value.region_idx,
+            location: value.location,
             phantom: PhantomData,
         }
     }
 }
 
 impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    pub(crate) fn labelled(
+    pub(crate) fn label_place(
         self,
         location: SnapshotLocation,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         RegionProjection {
             base: self.base.with_location(location),
             region_idx: self.region_idx,
+            location: self.location,
             phantom: PhantomData,
         }
     }
@@ -190,6 +193,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjec
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
+            location: rp.location,
             phantom: PhantomData,
         }
     }
@@ -202,6 +206,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemot
             MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
                 base: p,
                 region_idx: rp.region_idx,
+                location: rp.location,
                 phantom: PhantomData,
             }),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
@@ -216,6 +221,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
             MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
                 base: p.try_into()?,
                 region_idx: rp.region_idx,
+                location: rp.location,
                 phantom: PhantomData,
             }),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
@@ -293,6 +299,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
+            location: rp.location,
             phantom: PhantomData,
         }
     }
@@ -322,6 +329,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
         Ok(RegionProjection {
             base: rp.base.try_into()?,
             region_idx: rp.region_idx,
+            location: rp.location,
             phantom: PhantomData,
         })
     }
@@ -338,6 +346,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for RegionProjectio
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
+            location: rp.location,
             phantom: PhantomData,
         }
     }
@@ -350,6 +359,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
+            location: rp.location,
             phantom: PhantomData,
         }
     }
@@ -444,6 +454,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         let result = Self {
             base,
             region_idx,
+            location: None,
             phantom: PhantomData,
         };
         if validity_checks_enabled() {
@@ -481,6 +492,7 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         let result = RegionProjection {
             base,
             region_idx: self.region_idx,
+            location: self.location,
             phantom: PhantomData,
         };
         result.assert_validity(repacker);
