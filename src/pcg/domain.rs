@@ -19,15 +19,11 @@ use crate::{
         state::BorrowsState,
     },
     rustc_interface::{
-        data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
     utils::{
-        domain_data::{DomainData, DomainDataIndex},
-        eval_stmt_data::EvalStmtData,
-        incoming_states::IncomingStates,
-        PlaceRepacker,
+        domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, validity::HasValidityCheck, PlaceRepacker
     },
     DebugLines, PCGAnalysis, RECORD_PCG,
 };
@@ -104,8 +100,14 @@ pub struct Pcg<'tcx> {
     pub(crate) borrow: BorrowsState<'tcx>,
 }
 
+impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> std::result::Result<(), String> {
+        self.borrow.check_validity(repacker)
+    }
+}
+
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
-    pub fn borrow(&self) -> &BorrowsState<'tcx> {
+    pub fn borrow_pcg(&self) -> &BorrowsState<'tcx> {
         &self.borrow
     }
 
@@ -154,11 +156,10 @@ pub struct PcgDomain<'a, 'tcx> {
     pub(crate) block: Option<BasicBlock>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
-    pub(crate) join_history: FxHashSet<BasicBlock>,
     pub(crate) reachable: bool,
 }
 
-impl<'a, 'tcx> Debug for PcgDomain<'a, 'tcx> {
+impl Debug for PcgDomain<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}", self.data)
     }
@@ -429,7 +430,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
             }
 
             let pcg = match phase {
-                DataflowStmtPhase::EvalStmt(phase) => &self.pcg(DomainDataIndex::Eval(phase)),
+                DataflowStmtPhase::EvalStmt(phase) => self.pcg(DomainDataIndex::Eval(phase)),
                 _ => self.pcg(DomainDataIndex::Initial),
             };
 
@@ -455,7 +456,6 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
             block,
             data: Ok(PcgDomainData::default()),
             debug_data,
-            join_history: FxHashSet::default(),
             reachable: false,
         }
     }

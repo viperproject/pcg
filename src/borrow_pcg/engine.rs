@@ -10,12 +10,9 @@ use crate::{
 };
 
 use super::{
-    action::actions::BorrowPCGActions,
-    coupling_graph_constructor::BorrowCheckerInterface,
-    state::BorrowsState,
+    action::actions::BorrowPCGActions, coupling_graph_constructor::BorrowCheckerInterface,
     visitor::BorrowsVisitor,
 };
-use crate::utils::eval_stmt_data::EvalStmtData;
 
 pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) tcx: TyCtxt<'tcx>,
@@ -48,13 +45,4 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         }
         Ok(bv.actions)
     }
-}
-
-pub(crate) type BorrowsStates<'tcx> = EvalStmtData<Rc<BorrowsState<'tcx>>>;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum DataflowPhase {
-    Init,
-    Join,
-    Transfer,
 }

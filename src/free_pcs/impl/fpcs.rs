@@ -4,10 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::{
-    fmt::{Debug, Formatter, Result},
-    rc::Rc,
-};
+use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     free_pcs::RepackOp,
@@ -22,13 +19,12 @@ use crate::{
 use derive_more::{Deref, DerefMut};
 
 use super::{
-    engine::FpcsEngine, join_semi_lattice::RepackingJoinSemiLattice, CapabilityKind,
+    engine::FpcsEngine, CapabilityKind,
     RepackingBridgeSemiLattice,
 };
 use crate::{
     free_pcs::{CapabilityLocal, CapabilityProjections},
-    pcg::EvalStmtPhase,
-    utils::{domain_data::DomainData, PlaceRepacker},
+    utils::PlaceRepacker,
 };
 
 #[derive(Clone, Default)]
@@ -43,10 +39,6 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for FreePlaceCapabilitySummary<'t
 }
 
 impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
-    pub(crate) fn new() -> Self {
-        Self { data: None }
-    }
-
     pub(crate) fn data(&self) -> &CapabilityLocals<'tcx> {
         self.data.as_ref().unwrap()
     }
