@@ -8,8 +8,8 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::obtain::ObtainReason,
     },
-    pcg::{EvalStmtPhase, PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
+    pcg::{EvalStmtPhase, PCGUnsupportedError, PcgError},
     pcg_validity_assert,
     rustc_interface::middle::{
         mir::{AggregateKind, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind},
@@ -33,6 +33,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 ));
                 let actions = self.state.pack_old_and_dead_leaves(
                     self.repacker,
+                    self.capabilities,
                     location,
                     self.bc.as_ref(),
                 )?;
@@ -53,24 +54,29 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     // The permission to the target may have been Read originally.
                     // Now, because it's been made old, the non-old place should be a leaf,
                     // and its permission should be Exclusive.
-                    if self.state.get_capability(target.into()) == Some(CapabilityKind::Read) {
+                    if self.capabilities.get(target.into()) == Some(CapabilityKind::Read) {
                         self.state.apply_action(
                             BorrowPCGAction::restore_capability(
                                 target.into(),
                                 CapabilityKind::Exclusive,
                             ),
+                            self.capabilities,
                             self.repacker,
                         )?;
                     }
                 }
                 let obtain_reason = ObtainReason::AssignTarget;
-                let obtain_actions =
-                    self.state
-                        .obtain(self.repacker, target, location, obtain_reason)?;
+                let obtain_actions = self.state.obtain(
+                    self.repacker,
+                    target,
+                    self.capabilities,
+                    location,
+                    obtain_reason,
+                )?;
                 self.record_actions(obtain_actions);
 
                 if !target.is_owned(self.repacker) {
-                    if let Some(target_cap) = self.state.get_capability(target.into()) {
+                    if let Some(target_cap) = self.capabilities.get(target.into()) {
                         if target_cap != CapabilityKind::Write {
                             pcg_validity_assert!(
                                 target_cap >= CapabilityKind::Write,
@@ -113,8 +119,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 "Target of Assignment",
             ));
             if !target.is_owned(self.repacker) {
-                self.state
-                    .set_capability(target.into(), CapabilityKind::Exclusive, self.repacker);
+                self.capabilities
+                    .insert(target.into(), CapabilityKind::Exclusive);
             }
             match rvalue {
                 Rvalue::Aggregate(
@@ -218,6 +224,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         *kind,
                         location,
                         *region,
+                        self.capabilities,
                         self.repacker,
                     );
                     let target_region = target.ty_region(self.repacker).unwrap();

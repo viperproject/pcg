@@ -8,20 +8,16 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     free_pcs::RepackOp,
-    pcg::PcgError,
+    pcg::{place_capabilities::PlaceCapabilities, PcgError},
     rustc_interface::{
         index::{Idx, IndexVec},
-        middle::mir::{Local, RETURN_PLACE},
+        middle::mir::{self, Local, RETURN_PLACE},
         mir_dataflow::fmt::DebugWithContext,
     },
-    DebugLines,
 };
 use derive_more::{Deref, DerefMut};
 
-use super::{
-    engine::FpcsEngine, CapabilityKind,
-    RepackingBridgeSemiLattice,
-};
+use super::{engine::FpcsEngine, CapabilityKind};
 use crate::{
     free_pcs::{CapabilityLocal, CapabilityProjections},
     utils::PlaceRepacker,
@@ -32,43 +28,48 @@ pub struct FreePlaceCapabilitySummary<'tcx> {
     pub(crate) data: Option<CapabilityLocals<'tcx>>,
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for FreePlaceCapabilitySummary<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.data().debug_lines(repacker)
-    }
-}
-
 impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
-    pub(crate) fn data(&self) -> &CapabilityLocals<'tcx> {
+    #[cfg(test)]
+    pub(crate) fn locals(&self) -> &CapabilityLocals<'tcx> {
         self.data.as_ref().unwrap()
+    }
+
+    pub(crate) fn locals_mut(&mut self) -> &mut CapabilityLocals<'tcx> {
+        self.data.as_mut().unwrap()
     }
 
     pub(crate) fn bridge(
         &self,
         other: &Self,
+        place_capabilities: &PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
-        self.data
-            .as_ref()
-            .unwrap()
-            .bridge(other.data.as_ref().unwrap(), repacker)
+        self.data.as_ref().unwrap().bridge(
+            other.data.as_ref().unwrap(),
+            place_capabilities,
+            repacker,
+        )
     }
 
-    pub fn initialize_as_start_block(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+    pub fn initialize_as_start_block(
+        &mut self,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
         let always_live = repacker.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(repacker.body().arg_count);
         let capability_summary = IndexVec::from_fn_n(
-            |local| {
+            |local: mir::Local| {
                 if local == return_local {
-                    // Return local is allocated but uninitialized
-                    CapabilityLocal::new(local, CapabilityKind::Write)
+                    capabilities.insert(local.into(), CapabilityKind::Write);
+                    CapabilityLocal::new(local)
                 } else if local <= last_arg {
-                    // Arguments are allocated and initialized
-                    CapabilityLocal::new(local, CapabilityKind::Exclusive)
+                    capabilities.insert(local.into(), CapabilityKind::Exclusive);
+                    CapabilityLocal::new(local)
                 } else if always_live.contains(local) {
-                    // Always live locals start allocated but uninitialized
-                    CapabilityLocal::new(local, CapabilityKind::Write)
+                    capabilities.insert(local.into(), CapabilityKind::Write);
+                    CapabilityLocal::new(local)
                 } else {
                     // Other locals are unallocated
                     CapabilityLocal::Unallocated
@@ -107,12 +108,6 @@ impl<'tcx> DebugWithContext<FpcsEngine<'_, 'tcx>> for FreePlaceCapabilitySummary
 /// The free pcs of all locals
 pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 
-// impl Default for CapabilitySummary<'_> {
-//     fn default() -> Self {
-//         Self::empty()
-//     }
-// }
-
 impl Debug for CapabilityLocals<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let v: Vec<_> = self.0.iter().filter(|c| !c.is_unallocated()).collect();
@@ -129,19 +124,9 @@ impl<'tcx> CapabilityLocals<'tcx> {
             .collect()
     }
 
-    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.0
-            .iter()
-            .map(|c| c.debug_lines(repacker))
-            .collect::<Vec<_>>()
-            .concat()
-    }
-
     pub fn default(local_count: usize) -> Self {
         Self(IndexVec::from_fn_n(
-            |i| {
-                CapabilityLocal::Allocated(CapabilityProjections::new(i, CapabilityKind::Exclusive))
-            },
+            |i| CapabilityLocal::Allocated(CapabilityProjections::new(i)),
             local_count,
         ))
     }

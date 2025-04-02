@@ -6,13 +6,12 @@
 
 use crate::free_pcs::RepackOp;
 
+use crate::pcg::Pcg;
 use crate::{
-    borrow_pcg::state::BorrowsState,
     pcg::{EvalStmtPhase, PcgError},
     utils::PlaceRepacker,
 };
 
-use super::CapabilityLocals;
 use super::triple::TripleWalker;
 
 #[derive(Clone)]
@@ -23,32 +22,31 @@ pub struct FpcsEngine<'a, 'tcx> {
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
     pub(crate) fn analyze(
         &self,
-        state: &mut CapabilityLocals<'tcx>,
+        state: &mut Pcg<'tcx>,
         tw: &TripleWalker<'a, 'tcx>,
-        borrows: &BorrowsState<'tcx>,
         phase: EvalStmtPhase,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         match phase {
             EvalStmtPhase::PreOperands => {
                 for triple in tw.operand_triples.iter() {
-                    actions.extend(state.requires(triple.pre(), self.repacker, borrows)?);
+                    actions.extend(state.owned_requires(triple.pre(), self.repacker)?);
                 }
             }
             EvalStmtPhase::PostOperands => {
                 for triple in tw.operand_triples.iter() {
                     let triple = triple.replace_place(self.repacker);
-                    state.ensures(triple, self.repacker);
+                    state.owned_ensures(triple, self.repacker);
                 }
             }
             EvalStmtPhase::PreMain => {
                 for triple in tw.main_triples.iter() {
-                    actions.extend(state.requires(triple.pre(), self.repacker, borrows)?);
+                    actions.extend(state.owned_requires(triple.pre(), self.repacker)?);
                 }
             }
             EvalStmtPhase::PostMain => {
                 for triple in tw.main_triples.iter() {
-                    state.ensures(*triple, self.repacker);
+                    state.owned_ensures(*triple, self.repacker);
                 }
             }
         }

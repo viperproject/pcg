@@ -24,7 +24,7 @@ use borrow_pcg::{
     latest::Latest,
 };
 use free_pcs::{CapabilityKind, PcgLocation};
-use pcg::{EvalStmtPhase, PCGEngine, PcgSuccessor};
+use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{
         self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -263,7 +263,7 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
     visualization_output_path: Option<String>,
 ) -> FpcsOutput<'mir, 'tcx> {
     let repacker = PlaceRepacker::new(mir.body(), tcx);
-    let engine = PCGEngine::new(repacker, bc, visualization_output_path.clone());
+    let engine = PcgEngine::new(repacker, bc, visualization_output_path.clone());
     {
         let mut record_pcs = RECORD_PCG.lock().unwrap();
         *record_pcs = true;

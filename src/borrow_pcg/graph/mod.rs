@@ -37,7 +37,7 @@ use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::{env_feature_enabled, PlaceRepacker};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashMap<BorrowPCGEdgeKind<'tcx>, PathConditions>,
 }

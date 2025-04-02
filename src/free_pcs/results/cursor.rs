@@ -16,7 +16,7 @@ use crate::{
         graph::BorrowsGraph,
         latest::Latest,
     },
-    pcg::{successor_blocks, EvalStmtPhase, PCGEngine, Pcg, PcgError, PcgSuccessor},
+    pcg::{successor_blocks, EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -42,13 +42,13 @@ use crate::{
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
 pub struct FreePcsAnalysis<'mir, 'tcx: 'mir> {
-    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>,
+    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
 impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PCGEngine<'mir, 'tcx>>>) -> Self {
+    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -128,9 +128,11 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
                 let to = &entry_set.data()?.pcg;
 
-                let owned_bridge = from_pcg.states[EvalStmtPhase::PostMain]
+                let from = &from_pcg.states[EvalStmtPhase::PostMain];
+
+                let owned_bridge = from
                     .owned
-                    .bridge(&to.entry_state.owned, rp)
+                    .bridge(&to.entry_state.owned, &from.capabilities, rp)
                     .unwrap();
 
                 let mut borrow_actions = BorrowPCGActions::new();
@@ -179,7 +181,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PCGEngine<'mir, 'tcx> {
+    fn analysis(&self) -> &PcgEngine<'mir, 'tcx> {
         &self.cursor.results().analysis.0
     }
 

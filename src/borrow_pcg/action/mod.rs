@@ -3,8 +3,9 @@ use tracing::instrument;
 use super::borrow_pcg_edge::BorrowPCGEdge;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
-use crate::pcg::PcgError;
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::place_capabilities::PlaceCapabilities;
+use crate::pcg::PcgError;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::json::ToJsonWithRepacker;
@@ -35,7 +36,11 @@ impl<'tcx> BorrowPCGAction<'tcx> {
                 restore_capability.debug_line(repacker)
             }
             BorrowPCGActionKind::MakePlaceOld(place, reason) => {
-                format!("Make {} an old place ({:?})", place.to_short_string(repacker), reason)
+                format!(
+                    "Make {} an old place ({:?})",
+                    place.to_short_string(repacker),
+                    reason
+                )
             }
             BorrowPCGActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
@@ -160,7 +165,11 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
                 restore_capability.debug_line(repacker)
             }
             BorrowPCGActionKind::MakePlaceOld(place, reason) => {
-                format!("Make {} an old place ({:?})", place.to_short_string(repacker), reason)
+                format!(
+                    "Make {} an old place ({:?})",
+                    place.to_short_string(repacker),
+                    reason
+                )
             }
             BorrowPCGActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
@@ -196,16 +205,17 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPCGActionKind::Restore(restore) => {
                 let restore_place: MaybeOldPlace<'tcx> = restore.place();
-                if let Some(cap) = self.get_capability(restore_place) {
+                if let Some(cap) = capabilities.get(restore_place) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
                 if !restore_place.is_owned(repacker)
-                    && !self.set_capability(restore_place, restore.capability(), repacker)
+                    && !capabilities.insert(restore_place, restore.capability())
                 {
                     panic!("Capability should have been updated")
                 }
@@ -213,21 +223,21 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             BorrowPCGActionKind::Weaken(weaken) => {
                 let weaken_place: MaybeOldPlace<'tcx> = weaken.place().into();
-                assert_eq!(self.get_capability(weaken_place), Some(weaken.from));
+                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
                 match weaken.to {
-                    Some(to) => assert!(self.set_capability(weaken_place, to, repacker)),
-                    None => assert!(self.remove_capability(weaken_place)),
+                    Some(to) => assert!(capabilities.insert(weaken_place, to)),
+                    None => assert!(capabilities.remove(weaken_place).is_some()),
                 }
                 true
             }
             BorrowPCGActionKind::MakePlaceOld(place, _) => self.make_place_old(place, repacker),
             BorrowPCGActionKind::SetLatest(place, location) => self.set_latest(place, location),
-            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, repacker),
+            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, repacker),
             BorrowPCGActionKind::AddEdge {
                 edge,
                 for_exclusive,
-            } => self.handle_add_edge(edge, for_exclusive, repacker)?,
-            BorrowPCGActionKind::RenamePlace { old, new } => self.rename_place(old, new, repacker),
+            } => self.handle_add_edge(edge, for_exclusive, capabilities, repacker)?,
+            BorrowPCGActionKind::RenamePlace { old, new } => self.rename_place(old, new, capabilities, repacker),
         };
         Ok(result)
     }
@@ -236,6 +246,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         edge: BorrowPCGEdge<'tcx>,
         for_exclusive: bool,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = self.insert(edge.clone());
@@ -251,7 +262,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                     } else if !for_exclusive {
                         CapabilityKind::Read
-                    } else if let Some(capability) = self.get_capability(base.place().into()) {
+                    } else if let Some(capability) = capabilities.get(base.place().into()) {
                         capability
                     } else {
                         return Ok(true);
@@ -259,23 +270,16 @@ impl<'tcx> BorrowsState<'tcx> {
 
                     if !base.place().is_owned(repacker) {
                         if for_exclusive {
-                            changed |= self.remove_capability(base.place().into());
+                            changed |= capabilities.remove(base.place().into()).is_some();
                         } else {
-                            changed |= self.set_capability(
-                                base.place().into(),
-                                CapabilityKind::Read,
-                                repacker,
-                            );
+                            changed |=
+                                capabilities.insert(base.place().into(), CapabilityKind::Read);
                         }
                     }
 
                     for p in expansion.expansion.iter() {
                         if !p.place().is_owned(repacker) {
-                            changed |= self.set_capability(
-                                p.place().into(),
-                                expanded_capability,
-                                repacker,
-                            );
+                            changed |= capabilities.insert(p.place().into(), expanded_capability);
                         }
                     }
                 }

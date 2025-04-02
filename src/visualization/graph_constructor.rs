@@ -6,7 +6,7 @@ use crate::{
         state::BorrowsState,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::MaybeHasLocation,
+    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
@@ -214,26 +214,18 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 pub(crate) struct PcgGraphConstructor<'a, 'tcx> {
     summary: &'a CapabilityLocals<'tcx>,
     borrows_domain: &'a BorrowsState<'tcx>,
+    capabilities: &'a PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
     repacker: PlaceRepacker<'a, 'tcx>,
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
-    summary: &'a CapabilityLocals<'tcx>,
-    borrows_domain: &'a BorrowsState<'tcx>,
+    capabilities: &'a PlaceCapabilities<'tcx>,
 }
 
 impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
-    fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
-        if let Some(cap) = self.borrows_domain.get_capability(node) {
-            return Some(cap);
-        }
-        let alloc = self.summary.get(node.place().local)?;
-        if let CapabilityLocal::Allocated(projections) = alloc {
-            projections.get_capability(node.place())
-        } else {
-            None
-        }
+    fn get(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+        self.capabilities.get(place)
     }
 }
 
@@ -266,8 +258,7 @@ impl<'a, 'tcx> Grapher<'a, 'tcx> for PcgGraphConstructor<'a, 'tcx> {
 
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
         PCGCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
+            capabilities: self.capabilities,
         }
     }
 }
@@ -293,10 +284,12 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
         summary: &'a CapabilityLocals<'tcx>,
         repacker: PlaceRepacker<'a, 'tcx>,
         borrows_domain: &'a BorrowsState<'tcx>,
+        capabilities: &'a PlaceCapabilities<'tcx>,
     ) -> Self {
         Self {
             summary,
             borrows_domain,
+            capabilities,
             constructor: GraphConstructor::new(repacker),
             repacker,
         }
@@ -333,16 +326,14 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
 
     fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
         let capability_getter = &PCGCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
+            capabilities: self.capabilities,
         };
         self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
     }
 
     pub fn construct_graph(mut self) -> Graph {
         let capability_getter = &PCGCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
+            capabilities: self.capabilities,
         };
         for (local, capability) in self.summary.iter_enumerated() {
             match capability {
@@ -407,8 +398,13 @@ fn main() {
             let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
-            let graph = PcgGraphConstructor::new(&pcg.owned.data(), repacker, &pcg.borrow)
-                .construct_graph();
+            let graph = PcgGraphConstructor::new(
+                &pcg.owned.locals(),
+                repacker,
+                &pcg.borrow,
+                &pcg.capabilities,
+            )
+            .construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }
