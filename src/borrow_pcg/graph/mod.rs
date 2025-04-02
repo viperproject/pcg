@@ -15,7 +15,6 @@ use crate::{
     },
     utils::{
         display::{DebugLines, DisplayWithRepacker},
-        maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
     },
 };
@@ -441,25 +440,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             return true;
         }
         false
-    }
-
-    pub(crate) fn rename_place(
-        &mut self,
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        self.mut_pcs_elems(
-            |thing| {
-                if *thing == old {
-                    *thing = new;
-                    true
-                } else {
-                    false
-                }
-            },
-            repacker,
-        )
     }
 
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {

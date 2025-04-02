@@ -321,6 +321,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                         OutlivesEdgeKind::Aggregate { .. }
                         | OutlivesEdgeKind::InitialBorrows
                         | OutlivesEdgeKind::HavocRegion
+                        | OutlivesEdgeKind::Move
                         | OutlivesEdgeKind::ConstRef => {
                             if borrow_checker
                                 .same_region(outlives_edge.short().region(repacker), region)

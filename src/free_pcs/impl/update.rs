@@ -47,7 +47,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
             Condition::Capability(place, cap) => {
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
-                tracing::info!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
+                tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
                 let result = cp.repack(place, place_capabilities, repacker, cap)?;
                 if nearest_owned_place != place {
                     match nearest_owned_place.ref_mutability(repacker) {

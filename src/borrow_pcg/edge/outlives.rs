@@ -84,12 +84,16 @@ impl<'tcx> OutlivesEdge<'tcx> {
         Self { long, short, kind }
     }
 
-    pub(crate) fn long(&self) -> RegionProjection<'tcx> {
+    pub fn long(&self) -> RegionProjection<'tcx> {
         self.long
     }
 
-    pub(crate) fn short(&self) -> LocalRegionProjection<'tcx> {
+    pub fn short(&self) -> LocalRegionProjection<'tcx> {
         self.short
+    }
+
+    pub fn kind(&self) -> OutlivesEdgeKind {
+        self.kind
     }
 }
 
@@ -116,23 +120,25 @@ pub enum OutlivesEdgeKind {
     },
     InitialBorrows,
     CopySharedRef,
-    HavocRegion
+    Move,
+    HavocRegion,
 }
 
 impl std::fmt::Display for OutlivesEdgeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OutlivesEdgeKind::Aggregate {
-                        field_idx,
-                        target_rp_index,
-                    } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
+                field_idx,
+                target_rp_index,
+            } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
             OutlivesEdgeKind::ConstRef => write!(f, "ConstRef"),
             OutlivesEdgeKind::BorrowOutlives { toplevel } => {
-                        write!(f, "BorrowOutlives({toplevel})")
-                    }
+                write!(f, "BorrowOutlives({toplevel})")
+            }
             OutlivesEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
             OutlivesEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
             OutlivesEdgeKind::HavocRegion => write!(f, "HavocRegion"),
+            OutlivesEdgeKind::Move => write!(f, "Move"),
         }
     }
 }

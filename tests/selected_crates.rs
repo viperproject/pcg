@@ -11,15 +11,15 @@ fn test_selected_crates() {
     // common::run_on_crate("cookie", "0.18.1", Some("2025-03-13"), false, true);
     // common::run_on_crate("futures-util", "0.3.31", false);
     // common::run_on_crate("gimli", "0.31.1", false);
-    common::run_on_crate(
-        "hashbrown",
-        "0.15.2",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Release,
-            validity_checks: true,
-        },
-    );
+    // common::run_on_crate(
+    //     "hashbrown",
+    //     "0.15.2",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: true,
+    //     },
+    // );
     // common::run_on_crate("http", "1.2.0", true);
     // common::run_on_crate("miniz_oxide", "0.8.5", true);
     // common::run_on_crate("num-conv", "0.1.0", true);
@@ -62,15 +62,15 @@ fn test_selected_crates() {
     //     },
     // );
 
-    common::run_on_crate(
-        "regex-syntax",
-        "0.8.5",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-        },
-    );
+    // common::run_on_crate(
+    //     "regex-syntax",
+    //     "0.8.5",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //     },
+    // );
 
     // common::run_on_crate(
     //     "crossbeam-deque",

@@ -202,15 +202,6 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 }
                 _ => {}
             },
-            EvalStmtPhase::PostOperands => {
-                if let Operand::Move(place) = operand {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    if !place.is_owned(self.repacker) {
-                        self.capabilities
-                            .insert(place.into(), CapabilityKind::Write);
-                    }
-                }
-            }
             EvalStmtPhase::PostMain => {
                 if let Operand::Move(place) = operand {
                     let place: utils::Place<'tcx> = (*place).into();

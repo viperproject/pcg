@@ -19,10 +19,10 @@ fn client<'a>(
     let z = &mut x;
     s
 // s could potentially borrow from any input at this point, due to the call to `f`
-// PCG: bb1[6] post_main: _12 at After(bb0[18])↓'?30 -> RETURN↓'?15 under conditions bb0 -> bb1,
-// PCG: bb1[6] post_main: _13 at After(bb0[20])↓'?31 -> RETURN↓'?15 under conditions bb0 -> bb1,
-// PCG: bb1[6] post_main: _6 at After(bb0[2])↓'?21 -> RETURN↓'?15 under conditions bb0 -> bb1,
-// PCG: bb1[6] post_main: _7 at After(bb0[4])↓'?22 -> RETURN↓'?15 under conditions bb0 -> bb1,
+// PCG: bb1[6] post_operands: _6 at After(bb0[2])↓'?21 -> s↓'?20 under conditions bb0 -> bb1,
+// PCG: bb1[6] post_operands: _7 at After(bb0[4])↓'?22 -> s↓'?20 under conditions bb0 -> bb1,
+// PCG: bb1[6] post_operands: _12 at After(bb0[18])↓'?30 -> s↓'?20 under conditions bb0 -> bb1,
+// PCG: bb1[6] post_operands: _13 at After(bb0[20])↓'?31 -> s↓'?20 under conditions bb0 -> bb1,
 }
 
 fn main(){

@@ -200,19 +200,6 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-    #[must_use]
-    pub(crate) fn rename_place(
-        &mut self,
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = self.graph.rename_place(old, new, repacker);
-        changed |= capabilities.rename_place(old, new);
-        changed
-    }
-
     #[tracing::instrument(skip(self, edge, location, repacker))]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
