@@ -35,8 +35,7 @@ use crate::{
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
-    borrow_pcg::engine::BorrowsStates,
-    free_pcs::{CapabilityLocals, RepackOp, RepackingBridgeSemiLattice},
+    free_pcs::{CapabilityLocals, RepackOp},
     utils::PlaceRepacker,
 };
 
@@ -315,8 +314,7 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
 impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         // TODO
-        // self.states.check_validity(repacker)
-        Ok(())
+        self.states.check_validity(repacker)
     }
 }
 

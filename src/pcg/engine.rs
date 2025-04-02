@@ -256,9 +256,10 @@ impl<'a, 'tcx: 'a> PCGEngine<'a, 'tcx> {
         let pcg_data = state.data.as_mut().unwrap();
 
         let pcg = &mut pcg_data.pcg;
-        pcg.enter_transfer_fn();
-
-        pcg.states.0.pre_operands = pcg.states.0.post_main.clone();
+        if location.statement_index != 0 {
+            pcg.entry_state = pcg.states.0.post_main.clone();
+        }
+        pcg.states.0.pre_operands = pcg.entry_state.clone();
         let pre_operands = Rc::<_>::make_mut(&mut pcg.states.0.pre_operands);
 
         // Handle initial borrow actions, mostly expiring borrows

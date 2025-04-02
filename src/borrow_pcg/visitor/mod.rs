@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    pcg::{EvalStmtPhase, Pcg},
+    pcg::EvalStmtPhase,
     utils::{visitor::FallableVisitor, HasPlace},
 };
 use tracing::instrument;

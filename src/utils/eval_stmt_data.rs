@@ -1,6 +1,7 @@
+use std::rc::Rc;
+
 use serde_json::json;
 use crate::utils::json::ToJsonWithRepacker;
-use crate::borrow_pcg::engine::BorrowsStates;
 use crate::pcg::EvalStmtPhase;
 use crate::utils::PlaceRepacker;
 use crate::utils::validity::HasValidityCheck;
@@ -35,6 +36,14 @@ impl<T: Default> Default for EvalStmtData<T> {
     }
 }
 
+impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<Rc<T>> {
+    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+        self.pre_operands.check_validity(repacker)?;
+        self.post_operands.check_validity(repacker)?;
+        self.pre_main.check_validity(repacker)?;
+        self.post_main.check_validity(repacker)
+    }
+}
 impl<T> EvalStmtData<T> {
     pub fn map<U>(self, f: impl Fn(T) -> U) -> EvalStmtData<U> {
         EvalStmtData {
@@ -95,14 +104,5 @@ impl<T> std::ops::IndexMut<EvalStmtPhase> for EvalStmtData<T> {
             EvalStmtPhase::PreMain => &mut self.pre_main,
             EvalStmtPhase::PostMain => &mut self.post_main,
         }
-    }
-}
-
-impl<'tcx> HasValidityCheck<'tcx> for BorrowsStates<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        self.pre_operands.check_validity(repacker)?;
-        self.post_operands.check_validity(repacker)?;
-        self.pre_main.check_validity(repacker)?;
-        self.post_main.check_validity(repacker)
     }
 }
