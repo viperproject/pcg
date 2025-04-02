@@ -47,27 +47,6 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         })
     }
 
-    pub(crate) fn rename_place(
-        &mut self,
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        self.0 = self
-            .0
-            .clone()
-            .into_iter()
-            .map(|(mut place, capability)| {
-                if place == old {
-                    place = new;
-                    changed = true;
-                }
-                (place, capability)
-            })
-            .collect();
-        changed
-    }
-
     /// Returns true iff the capability was changed.
     pub(crate) fn insert(
         &mut self,

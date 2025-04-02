@@ -189,21 +189,18 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         }
                     }
                 }
-                Rvalue::Use(Operand::Move(from)) => {
+                Rvalue::Use(operand @ (Operand::Move(from) | Operand::Copy(from))) => {
                     let from: utils::Place<'tcx> = (*from).into();
-                    let target: utils::Place<'tcx> = (*target).into();
-                    let old_place = MaybeOldPlace::new(from, Some(self.state.get_latest(from)));
-                    self.apply_action(BorrowPCGAction::rename_place(old_place, target.into()));
-                }
-                Rvalue::Use(Operand::Copy(from)) => {
-                    let from_place: utils::Place<'tcx> = (*from).into();
-                    for source_proj in from_place.region_projections(self.repacker).into_iter() {
-                        self.connect_outliving_projections(
-                            source_proj.into(),
-                            target,
-                            location,
-                            |_| OutlivesEdgeKind::CopySharedRef,
-                        );
+                    let (from, kind) = if matches!(operand, Operand::Move(_)) {
+                        (
+                            MaybeOldPlace::new(from, Some(self.state.get_latest(from))),
+                            OutlivesEdgeKind::Move,
+                        )
+                    } else {
+                        (from.into(), OutlivesEdgeKind::CopySharedRef)
+                    };
+                    for source_proj in from.region_projections(self.repacker).into_iter() {
+                        self.connect_outliving_projections(source_proj, target, location, |_| kind);
                     }
                 }
                 Rvalue::Ref(region, kind, blocked_place) => {

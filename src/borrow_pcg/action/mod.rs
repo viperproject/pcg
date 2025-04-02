@@ -50,9 +50,6 @@ impl<'tcx> BorrowPCGAction<'tcx> {
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
             }
-            BorrowPCGActionKind::RenamePlace { old, new } => {
-                format!("Rename {:?} to {:?}", old, new)
-            }
         }
     }
 
@@ -77,13 +74,6 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     ) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::Weaken(Weaken::new(place, from, to)),
-            debug_context: None,
-        }
-    }
-
-    pub(super) fn rename_place(old: MaybeOldPlace<'tcx>, new: MaybeOldPlace<'tcx>) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::RenamePlace { old, new },
             debug_context: None,
         }
     }
@@ -151,10 +141,6 @@ pub enum BorrowPCGActionKind<'tcx> {
         edge: BorrowPCGEdge<'tcx>,
         for_exclusive: bool,
     },
-    RenamePlace {
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-    },
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
@@ -178,9 +164,6 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
             ),
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
-            }
-            BorrowPCGActionKind::RenamePlace { old, new } => {
-                format!("Rename {:?} to {:?}", old, new)
             }
             BorrowPCGActionKind::AddEdge {
                 edge,
@@ -237,7 +220,6 @@ impl<'tcx> BorrowsState<'tcx> {
                 edge,
                 for_exclusive,
             } => self.handle_add_edge(edge, for_exclusive, capabilities, repacker)?,
-            BorrowPCGActionKind::RenamePlace { old, new } => self.rename_place(old, new, capabilities, repacker),
         };
         Ok(result)
     }
