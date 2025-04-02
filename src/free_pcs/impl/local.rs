@@ -227,8 +227,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         Ok(ops)
     }
 
-    // TODO: this could be implemented more efficiently, by assuming that a valid
-    // state can always be packed up to the root
     pub(crate) fn collapse(
         &mut self,
         to: Place<'tcx>,

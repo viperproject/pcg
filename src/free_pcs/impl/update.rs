@@ -88,14 +88,19 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     } else {
                         Condition::Unalloc(local)
                     };
-                    self.check_pre_satisfied(pre, repacker);
+                    self.check_pre_satisfied(pre, place_capabilities, repacker);
                 }
                 Ok(vec![])
             }
         }
     }
 
-    fn check_pre_satisfied(&self, pre: Condition<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) {
+    fn check_pre_satisfied(
+        &self,
+        pre: Condition<'tcx>,
+        capabilities: &PlaceCapabilities<'tcx>,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
         match pre {
             Condition::RemoveCapability(_place) => {}
             Condition::Unalloc(local) => {
@@ -104,14 +109,13 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
             }
-            Condition::AllocateOrDeallocate(_local) => {
-                // TODO: This assertion fails for proc_macro2 crate, determine why
-                // assert_eq!(
-                //     self[local].get_allocated()[&local.into()],
-                //     CapabilityKind::Write,
-                //     "local: {local:?}, body: {:?}\n",
-                //     repacker.body().source.def_id()
-                // );
+            Condition::AllocateOrDeallocate(local) => {
+                assert_eq!(
+                    capabilities.get(local.into()),
+                    Some(CapabilityKind::Write),
+                    "local: {local:?}, body: {:?}\n",
+                    repacker.body().source.def_id()
+                );
             }
             Condition::Capability(place, cap) => {
                 match cap {
@@ -149,7 +153,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     } else {
                         Condition::Unalloc(local)
                     };
-                    self.check_pre_satisfied(pre, repacker);
+                    self.check_pre_satisfied(pre, capabilities, repacker);
                 }
             }
         }
@@ -160,7 +164,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         place_capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        self.check_pre_satisfied(t.pre(), repacker);
+        self.check_pre_satisfied(t.pre(), place_capabilities, repacker);
         let Some(post) = t.post() else {
             return;
         };
