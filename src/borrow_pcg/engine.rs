@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    pcg::{AnalysisObject, EvalStmtPhase, PcgError},
+    pcg::{AnalysisObject, EvalStmtPhase, Pcg, PcgError},
     rustc_interface::middle::{
         mir::{Body, Location},
         ty::TyCtxt,
@@ -31,13 +31,13 @@ impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
 impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
     pub(crate) fn analyze(
         &mut self,
-        state: &mut BorrowsState<'tcx>,
+        state: &mut Pcg<'tcx>,
         bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
         object: AnalysisObject<'_, 'tcx>,
         phase: EvalStmtPhase,
         location: Location,
     ) -> Result<BorrowPCGActions<'tcx>, PcgError> {
-        let mut bv = BorrowsVisitor::new(self, state, bc, phase);
+        let mut bv = BorrowsVisitor::new(self, &mut state.borrow, bc, phase);
         match object {
             AnalysisObject::Statement(statement) => {
                 bv.visit_statement_fallable(statement, location)?;

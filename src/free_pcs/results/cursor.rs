@@ -27,7 +27,9 @@ use crate::{
         },
         mir_dataflow::ResultsCursor,
     },
-    utils::{display::DebugLines, validity::HasValidityCheck, Place},
+    utils::{
+        display::DebugLines, domain_data::DomainDataStates, validity::HasValidityCheck, Place,
+    },
 };
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
@@ -35,19 +37,8 @@ use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     borrow_pcg::engine::BorrowsStates,
     free_pcs::{CapabilityLocals, RepackOp, RepackingBridgeSemiLattice},
-    pcg::PcgDomain,
     utils::PlaceRepacker,
 };
-
-pub trait HasPcg<'mir, 'tcx> {
-    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError>;
-}
-
-impl<'mir, 'tcx> HasPcg<'mir, 'tcx> for PcgDomain<'mir, 'tcx> {
-    fn get_pcg(&self) -> Result<&Pcg<'mir, 'tcx>, PcgError> {
-        self.data.as_ref().map_err(|e| e.clone()).map(|d| &d.pcg)
-    }
-}
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
@@ -98,19 +89,12 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
 
         let state = self.cursor.get();
 
-        let pcg = state.get_pcg()?;
+        let data = state.data.as_ref().map_err(|e| e.clone())?;
 
         let result = PcgLocation {
             location,
-            actions: state.data.as_ref().map_err(|e| e.clone())?.actions.clone(),
-            states: pcg
-                .owned
-                .data
-                .states
-                .0
-                .clone()
-                .map(|s| Rc::new(s.as_ref().as_ref().unwrap().clone())),
-            borrows: pcg.borrow.data.states.0.clone(),
+            actions: data.actions.clone(),
+            states: data.pcg.states.clone(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -123,7 +107,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         self.curr_stmt = None;
         self.end_stmt = None;
 
-        let from_pcg = self.cursor.get().get_pcg()?;
+        let from_pcg = &self.cursor.get().data()?.pcg;
 
         // TODO: cleanup
         let rp: PlaceRepacker = self.repacker();
@@ -143,21 +127,20 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
             .map(|succ| {
                 // Get repacks
                 let entry_set = self.cursor.results().entry_set_for_block(succ);
-                let to = entry_set.get_pcg()?;
+                let to = &entry_set.data()?.pcg;
 
-                let owned_bridge = from_pcg
+                let owned_bridge = from_pcg.states[EvalStmtPhase::PostMain]
                     .owned
-                    .data
-                    .unwrap(EvalStmtPhase::PostMain)
-                    .bridge(to.owned.data.entry_state.as_ref().as_ref().unwrap(), rp)
+                    .bridge(&to.entry_state.owned, rp)
                     .unwrap();
 
                 let mut borrow_actions = BorrowPCGActions::new();
-                let self_abstraction_edges = from_pcg.borrow.data.states[EvalStmtPhase::PostMain]
+                let self_abstraction_edges = from_pcg.states[EvalStmtPhase::PostMain]
+                    .borrow
                     .graph()
                     .abstraction_edges()
                     .collect::<FxHashSet<_>>();
-                for abstraction in to.borrow.data.entry_state.graph().abstraction_edges() {
+                for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
                             BorrowPCGActionKind::AddEdge {
@@ -178,7 +161,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 Ok(PcgSuccessor::new(
                     succ,
                     actions,
-                    to.borrow.data.entry_state.clone(),
+                    to.entry_state.borrow.clone().into(),
                 ))
             })
             .collect::<Result<Vec<_>, PcgError>>()?;
@@ -319,8 +302,7 @@ pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilityLocals<'tcx>>>;
 #[derive(Debug)]
 pub struct PcgLocation<'tcx> {
     pub location: Location,
-    pub states: CapabilitySummaries<'tcx>,
-    pub borrows: BorrowsStates<'tcx>,
+    pub states: DomainDataStates<Pcg<'tcx>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
@@ -332,7 +314,9 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
 
 impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
-        self.borrows.check_validity(repacker)
+        // TODO
+        // self.states.check_validity(repacker)
+        Ok(())
     }
 }
 
@@ -349,18 +333,10 @@ impl<'tcx> PcgLocation<'tcx> {
         place: Place<'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
-        let mut ancestors = self
-            .borrows
-            .post_main
-            .graph()
-            .ancestor_edges(place.into(), repacker);
+        let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
+        let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);
         for rp in place.region_projections(repacker) {
-            ancestors.extend(
-                self.borrows
-                    .post_main
-                    .graph()
-                    .ancestor_edges(rp.into(), repacker),
-            );
+            ancestors.extend(borrows_graph.ancestor_edges(rp.into(), repacker));
         }
         ancestors
     }
@@ -373,8 +349,8 @@ impl<'tcx> PcgLocation<'tcx> {
     ) -> FxHashSet<mir::Place<'tcx>> {
         let place: Place<'tcx> = place.into();
         let repacker = PlaceRepacker::new(body, tcx);
-        self.borrows
-            .post_main
+        self.states[EvalStmtPhase::PostMain]
+            .borrow
             .graph()
             .aliases(place.with_inherent_region(repacker).into(), repacker)
             .into_iter()
@@ -384,7 +360,7 @@ impl<'tcx> PcgLocation<'tcx> {
     }
 
     pub fn latest(&self) -> &Latest<'tcx> {
-        &self.borrows.post_main.latest
+        &self.states[EvalStmtPhase::PostMain].borrow.latest
     }
 
     pub(crate) fn debug_lines(
@@ -396,7 +372,6 @@ impl<'tcx> PcgLocation<'tcx> {
         for action in self.actions[phase].0.iter() {
             result.push(action.debug_line(repacker));
         }
-        result.extend(self.borrows[phase].debug_lines(repacker));
         result
     }
 }

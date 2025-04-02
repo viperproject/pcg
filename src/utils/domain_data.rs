@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
 
+use derive_more::From;
+
 use crate::borrow_pcg::engine::DataflowPhase;
 use crate::pcg::EvalStmtPhase;
 
@@ -15,14 +17,46 @@ pub(crate) struct DomainData<T> {
     phase: DataflowPhase,
 }
 
+#[derive(From)]
+pub enum DomainDataIndex {
+    Eval(EvalStmtPhase),
+    Initial,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct DomainDataStates<T>(pub(crate) EvalStmtData<Rc<T>>);
+pub struct DomainDataStates<T>(pub(crate) EvalStmtData<Rc<T>>);
 
 impl<T> std::ops::Index<EvalStmtPhase> for DomainDataStates<T> {
     type Output = Rc<T>;
 
     fn index(&self, phase: EvalStmtPhase) -> &Self::Output {
         &self.0[phase]
+    }
+}
+
+impl<T> std::ops::IndexMut<EvalStmtPhase> for DomainDataStates<T> {
+    fn index_mut(&mut self, phase: EvalStmtPhase) -> &mut Self::Output {
+        &mut self.0[phase]
+    }
+}
+
+impl<T> std::ops::Index<DomainDataIndex> for DomainData<T> {
+    type Output = Rc<T>;
+
+    fn index(&self, phase: DomainDataIndex) -> &Self::Output {
+        match phase {
+            DomainDataIndex::Eval(phase) => &self.states[phase],
+            DomainDataIndex::Initial => &self.entry_state,
+        }
+    }
+}
+
+impl<T> std::ops::IndexMut<DomainDataIndex> for DomainData<T> {
+    fn index_mut(&mut self, phase: DomainDataIndex) -> &mut Self::Output {
+        match phase {
+            DomainDataIndex::Eval(phase) => &mut self.states[phase],
+            DomainDataIndex::Initial => &mut self.entry_state,
+        }
     }
 }
 

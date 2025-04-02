@@ -4,14 +4,21 @@ use super::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
+    edge::borrow::RemoteBorrow,
     graph::{frozen::FrozenGraphRef, BorrowsGraph},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
+    visitor::extract_regions,
 };
-use crate::{borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow}, pcg::place_capabilities::PlaceCapabilities};
-use crate::{borrow_pcg::action::executed_actions::ExecutedActions, pcg::PcgError};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
+};
+use crate::{
+    borrow_pcg::edge::{
+        borrow::{BorrowEdge, LocalBorrow},
+        outlives::OutlivesEdgeKind,
+    },
+    pcg::place_capabilities::PlaceCapabilities,
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
@@ -19,18 +26,26 @@ use crate::{
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
-            mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
+            mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
             ty::{self},
         },
     },
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
 };
-use crate::{pcg::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
+use crate::{
+    borrow_pcg::{
+        action::executed_actions::ExecutedActions, edge::outlives::OutlivesEdge,
+        region_projection::RegionProjection,
+    },
+    pcg::PcgError,
+    utils::remote::RemotePlace,
+};
 use crate::{
     free_pcs::CapabilityKind,
     utils::{Place, PlaceRepacker, SnapshotLocation},
 };
+use crate::{pcg::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 use std::rc::Rc;
 
 pub(crate) mod obtain;
@@ -78,6 +93,56 @@ impl Default for BorrowsState<'_> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    fn introduce_initial_borrows(&mut self, local: mir::Local, repacker: PlaceRepacker<'_, 'tcx>) {
+        let local_decl = &repacker.body().local_decls[local];
+        let arg_place: Place<'tcx> = local.into();
+        if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
+            let _ = self.apply_action(
+                BorrowPCGAction::add_edge(RemoteBorrow::new(local).into(), true),
+                repacker,
+            );
+        }
+        for region in extract_regions(local_decl.ty, repacker) {
+            let region_projection =
+                RegionProjection::new(region, arg_place.into(), repacker).unwrap();
+            assert!(self
+                .apply_action(
+                    BorrowPCGAction::add_edge(
+                        BorrowPCGEdge::new(
+                            OutlivesEdge::new(
+                                RegionProjection::new(
+                                    region,
+                                    RemotePlace::new(local).into(),
+                                    repacker,
+                                )
+                                .unwrap_or_else(|e| {
+                                    panic!(
+                                        "Failed to create region for remote place (for {local:?}).
+                                    Local ty: {:?}. Error: {:?}",
+                                        local_decl.ty, e
+                                    );
+                                }),
+                                region_projection,
+                                OutlivesEdgeKind::InitialBorrows,
+                                repacker,
+                            )
+                            .into(),
+                            PathConditions::AtBlock((Location::START).block),
+                        ),
+                        true,
+                    ),
+                    repacker,
+                )
+                .unwrap());
+        }
+    }
+
+    pub(crate) fn initialize_as_start_block(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+        for arg in repacker.body().args_iter() {
+            self.introduce_initial_borrows(arg, repacker);
+        }
+    }
+
     pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {
         self.capabilities.as_ref()
     }

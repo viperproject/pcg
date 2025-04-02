@@ -14,18 +14,25 @@ use std::{
 
 use crate::{
     action::PcgActions,
-    borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface,
+    borrow_pcg::{
+        coupling_graph_constructor::BorrowCheckerInterface, path_condition::PathCondition,
+        state::BorrowsState,
+    },
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
-    utils::{eval_stmt_data::EvalStmtData, PlaceRepacker},
-    PCGAnalysis, RECORD_PCG,
+    utils::{
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        incoming_states::IncomingStates,
+        PlaceRepacker,
+    },
+    DebugLines, PCGAnalysis, RECORD_PCG,
 };
 
 use super::PCGEngine;
-use crate::borrow_pcg::domain::BorrowsDomain;
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
 #[derive(Copy, Clone)]
@@ -91,39 +98,70 @@ pub(crate) struct PCGDebugData {
     pub(crate) dot_graphs: Rc<RefCell<DotGraphs>>,
 }
 
-#[derive(Clone, Eq)]
-pub struct Pcg<'a, 'tcx> {
-    pub(crate) owned: FreePlaceCapabilitySummary<'a, 'tcx>,
-    pub(crate) borrow: BorrowsDomain<'a, 'tcx>,
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Pcg<'tcx> {
+    pub(crate) owned: FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) borrow: BorrowsState<'tcx>,
 }
 
-impl PartialEq for Pcg<'_, '_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.owned == other.owned && self.borrow == other.borrow
+impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
+    pub fn borrow(&self) -> &BorrowsState<'tcx> {
+        &self.borrow
+    }
+
+    #[tracing::instrument(skip(self, other, bc, repacker))]
+    pub(crate) fn join(
+        &mut self,
+        other: &Self,
+        self_block: BasicBlock,
+        other_block: BasicBlock,
+        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> std::result::Result<bool, PcgError> {
+        let mut res = self.owned.join(&other.owned, repacker)?;
+        // For edges in the other graph that actually belong to it,
+        // add the path condition that leads them to this block
+        let mut other = other.clone();
+        let pc = PathCondition::new(other_block, self_block);
+        other.borrow.add_path_condition(pc);
+        res |= self
+            .borrow
+            .join(&other.borrow, self_block, other_block, bc, repacker);
+        Ok(res)
+    }
+
+    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Vec<String> {
+        let mut result = self.owned.debug_lines(repacker);
+        result.extend(self.borrow.debug_lines(repacker));
+        result
+    }
+    pub(crate) fn initialize_as_start_block(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+        self.owned.initialize_as_start_block(repacker);
+        self.borrow.initialize_as_start_block(repacker);
     }
 }
 
-impl Pcg<'_, '_> {
-    pub(crate) fn initialize_as_start_block(&mut self) {
-        self.owned.initialize_as_start_block();
-        self.borrow.initialize_as_start_block();
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct PcgDomainData<'a, 'tcx> {
-    pub(crate) pcg: Pcg<'a, 'tcx>,
+#[derive(Clone, PartialEq, Eq, Default, Debug)]
+pub struct PcgDomainData<'tcx> {
+    pub(crate) pcg: DomainData<Pcg<'tcx>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
 #[derive(Clone)]
 pub struct PcgDomain<'a, 'tcx> {
     repacker: PlaceRepacker<'a, 'tcx>,
+    bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
     pub(crate) block: Option<BasicBlock>,
-    pub(crate) data: std::result::Result<PcgDomainData<'a, 'tcx>, PcgError>,
+    pub(crate) data: std::result::Result<PcgDomainData<'tcx>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
     pub(crate) join_history: FxHashSet<BasicBlock>,
     pub(crate) reachable: bool,
+}
+
+impl<'a, 'tcx> Debug for PcgDomain<'a, 'tcx> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{:?}", self.data)
+    }
 }
 
 /// Outermost Vec can be considered a map StatementIndex -> Vec<BTreeMap<DataflowStmtPhase, String>>
@@ -301,34 +339,21 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         self.data = Err(error);
     }
 
-    pub(crate) fn pcg(&self) -> &Pcg<'a, 'tcx> {
-        match &self.data {
-            Ok(data) => &data.pcg,
-            Err(e) => panic!("PCG error: {:?}", e),
-        }
+    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx>, PcgError> {
+        self.data.as_ref().map_err(|e| e.clone())
     }
 
-    pub(crate) fn pcg_mut(&mut self) -> &mut Pcg<'a, 'tcx> {
+    pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'tcx> {
         match &mut self.data {
-            Ok(data) => &mut data.pcg,
+            Ok(data) => Rc::<Pcg<'tcx>>::make_mut(&mut data.pcg[phase]),
             Err(e) => panic!("PCG error: {:?}", e),
         }
     }
-
-    pub(crate) fn borrow_pcg_mut(&mut self) -> &mut BorrowsDomain<'a, 'tcx> {
-        &mut self.pcg_mut().borrow
-    }
-
-    pub(crate) fn owned_pcg_mut(&mut self) -> &mut FreePlaceCapabilitySummary<'a, 'tcx> {
-        &mut self.pcg_mut().owned
-    }
-
-    pub(crate) fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'a, 'tcx> {
-        &self.pcg().owned
-    }
-
-    pub(crate) fn borrow_pcg(&self) -> &BorrowsDomain<'a, 'tcx> {
-        &self.pcg().borrow
+    pub fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'tcx> {
+        match &self.data {
+            Ok(data) => &data.pcg[phase.into()],
+            Err(e) => panic!("PCG error: {:?}", e),
+        }
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
@@ -337,7 +362,6 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
 
     pub(crate) fn set_block(&mut self, block: BasicBlock) {
         self.block = Some(block);
-        self.pcg_mut().borrow.set_block(block);
     }
 
     pub fn set_debug_data(&mut self, output_dir: String, dot_graphs: Rc<RefCell<DotGraphs>>) {
@@ -404,20 +428,15 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
                 )
             }
 
-            let pcg = &self.pcg();
-
-            let (fpcs, borrows) = match phase {
-                DataflowStmtPhase::EvalStmt(phase) => (
-                    &pcg.owned.data.states[phase],
-                    &pcg.borrow.data.states[phase],
-                ),
-                _ => (&pcg.owned.data.entry_state, &pcg.borrow.data.entry_state),
+            let pcg = match phase {
+                DataflowStmtPhase::EvalStmt(phase) => &self.pcg(DomainDataIndex::Eval(phase)),
+                _ => self.pcg(DomainDataIndex::Initial),
             };
 
             generate_dot_graph(
                 self.repacker,
-                fpcs.as_ref().as_ref().unwrap(),
-                borrows,
+                pcg.owned.data.as_ref().unwrap(),
+                &pcg.borrow,
                 &filename,
             )
             .unwrap();
@@ -430,29 +449,15 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
-        let fpcs = FreePlaceCapabilitySummary::new(repacker);
-        let borrows = BorrowsDomain::new(repacker, bc, block);
-        let pcg = Pcg {
-            owned: fpcs,
-            borrow: borrows,
-        };
         Self {
             repacker,
+            bc,
             block,
-            data: Ok(PcgDomainData {
-                pcg,
-                actions: EvalStmtData::default(),
-            }),
+            data: Ok(PcgDomainData::default()),
             debug_data,
             join_history: FxHashSet::default(),
             reachable: false,
         }
-    }
-}
-
-impl Debug for PcgDomain<'_, '_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{:?}\n{:?}", self.owned_pcg(), self.borrow_pcg())
     }
 }
 
@@ -472,50 +477,74 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
         if other.has_error() && !self.has_error() {
             self.data = other.data.clone();
             return true;
-        } else if self.has_error() {
-            return false;
         }
 
         let self_block = self.block();
         let other_block = other.block();
 
-        if self.repacker.is_back_edge(other_block, self_block)
-            && self.join_history.contains(&other_block)
-        {
-            // We've already joined this block, we can exit early
+        let data = match &mut self.data {
+            Ok(data) => data,
+            Err(_) => return false,
+        };
+
+        let seen = data.pcg.incoming_states.contains(other_block);
+
+        if seen && other_block > self_block {
+            // It's a loop, but we've already joined it
             return false;
-        } else {
-            self.join_history.insert(other_block);
         }
+
+        let first_join = data.pcg.incoming_states.is_empty();
+
+        if first_join || seen {
+            // Either this is the first time we're joining the block (and we
+            // should inherit the existing state) or we're seeing the same block
+            // for the first time again.
+            // In either case, we should inherit the state from the other block.
+            data.pcg.incoming_states = IncomingStates::singleton(other_block);
+
+            let other_state = &other.data.as_ref().unwrap().pcg.states[EvalStmtPhase::PostMain];
+            data.pcg.entry_state = other_state.clone();
+            let entry_state_mut = Rc::<Pcg<'_>>::make_mut(&mut data.pcg.entry_state);
+            entry_state_mut
+                .borrow
+                .add_path_condition(PathCondition::new(other_block, self_block));
+            return true;
+        } else {
+            data.pcg.incoming_states.insert(other_block);
+        }
+
         assert!(self.is_initialized() && other.is_initialized());
-        let fpcs = match self
-            .owned_pcg_mut()
-            .join(other.owned_pcg(), self_block, other_block)
-        {
+        let pcg =
+            Rc::<Pcg<'_>>::make_mut(&mut self.data.as_mut().unwrap().pcg[DomainDataIndex::Initial]);
+        let result = match pcg.join(
+            other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
+            self_block,
+            other_block,
+            &*self.bc,
+            self.repacker,
+        ) {
             Ok(changed) => changed,
             Err(e) => {
                 self.record_error(e);
-                return false;
+                false
             }
         };
-        let borrows = self.borrow_pcg_mut().join(other.borrow_pcg());
         if let Some(debug_data) = &self.debug_data {
             debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
             self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         }
-        fpcs || borrows
+        result
     }
 }
 
 impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
-        old: &Self,
-        ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
-        f: &mut Formatter<'_>,
+        _old: &Self,
+        _ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
+        _f: &mut Formatter<'_>,
     ) -> Result {
-        self.pcg()
-            .owned
-            .fmt_diff_with(&old.pcg().owned, &ctxt.0.fpcs, f)
+        todo!()
     }
 }
