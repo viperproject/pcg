@@ -13,10 +13,7 @@ pub mod mir_graph;
 mod node;
 
 use crate::{
-    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
-    free_pcs::{CapabilityKind, CapabilityLocals},
-    rustc_interface::middle::mir::Location,
-    utils::{Place, PlaceRepacker, SnapshotLocation},
+    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState}, free_pcs::{CapabilityKind, CapabilityLocals}, pcg::place_capabilities::PlaceCapabilities, rustc_interface::middle::mir::Location, utils::{Place, PlaceRepacker, SnapshotLocation}
 };
 use std::{
     collections::HashSet,
@@ -344,9 +341,10 @@ pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
     repacker: PlaceRepacker<'a, 'tcx>,
     summary: &CapabilityLocals<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
+    capabilities: &PlaceCapabilities<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain);
+    let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain, capabilities);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {}: {}", file_path, e);

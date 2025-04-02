@@ -13,15 +13,16 @@ use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::borrow_pcg::unblock_graph::UnblockGraph;
-use crate::pcg::{PCGNodeLike, PcgError};
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::place_capabilities::PlaceCapabilities;
+use crate::pcg::{PCGNodeLike, PcgError};
+use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{HasPlace, Place, PlaceRepacker};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
-use crate::pcg_validity_assert;
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we
@@ -75,32 +76,34 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         repacker: PlaceRepacker<'_, 'tcx>,
         place: Place<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
         obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
-            actions.extend(self.contract_to(place, location, repacker)?);
+            actions.extend(self.contract_to(place, capabilities, location, repacker)?);
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(place, repacker, obtain_reason, location)?;
+            let extra_acts =
+                self.expand_to(place, capabilities, repacker, obtain_reason, location)?;
             actions.extend(extra_acts);
         }
         if !place.is_owned(repacker) {
             pcg_validity_assert!(
-                self.get_capability(place.into()).is_some(),
+                capabilities.get(place.into()).is_some(),
                 "{:?}: Place {:?} does not have a capability after obtain {:?}",
                 location,
                 place,
                 obtain_reason
             );
             pcg_validity_assert!(
-                self.get_capability(place.into()).unwrap()
+                capabilities.get(place.into()).unwrap()
                     >= obtain_reason.min_post_obtain_capability(),
                 "{:?} Capability {:?} for {:?} is not greater than {:?}",
                 location,
-                self.get_capability(place.into()).unwrap(),
+                capabilities.get(place.into()).unwrap(),
                 place,
                 obtain_reason.min_post_obtain_capability()
             );
@@ -113,6 +116,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn contract_to(
         &mut self,
         place: Place<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
@@ -138,6 +142,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 let to_remove: BorrowPCGEdge<'tcx> = borrow.clone().into();
                 actions.extend(self.remove_edge_and_set_latest(
                     to_remove,
+                    capabilities,
                     location,
                     repacker,
                     &format!("Contract To {:?}", place),
@@ -157,6 +162,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             true,
                         ),
                         &mut actions,
+                        capabilities,
                         repacker,
                     )?;
                 }
@@ -192,6 +198,7 @@ impl<'tcx> BorrowsState<'tcx> {
         for action in unblock_actions {
             actions.extend(self.remove_edge_and_set_latest(
                 action.edge,
+                capabilities,
                 location,
                 repacker,
                 &format!("Contract To {:?}", place),
@@ -202,7 +209,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // node from which place will be expanded to.
 
         let mut expand_root = place;
-        while self.get_capability(expand_root.into()).is_none() {
+        while capabilities.get(expand_root.into()).is_none() {
             if expand_root.is_owned(repacker) {
                 return Ok(actions);
             }
@@ -214,9 +221,9 @@ impl<'tcx> BorrowsState<'tcx> {
         // parents to be None instead to ensure they are no longer accessible.
 
         if !expand_root.is_owned(repacker)
-            && self.get_capability(expand_root.into()) == Some(CapabilityKind::Read)
+            && capabilities.get(expand_root.into()) == Some(CapabilityKind::Read)
         {
-            actions.extend(self.upgrade_read_to_exclusive(expand_root, repacker)?);
+            actions.extend(self.upgrade_read_to_exclusive(expand_root, capabilities, repacker)?);
         }
 
         Ok(actions)
@@ -225,30 +232,34 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(
         &mut self,
         place: Place<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         self.record_and_apply_action(
             BorrowPCGAction::restore_capability(place.into(), CapabilityKind::Exclusive),
             &mut actions,
+            capabilities,
             repacker,
         )?;
-        actions.extend(self.remove_read_permission_upwards(place, repacker)?);
+        actions.extend(self.remove_read_permission_upwards(place, capabilities, repacker)?);
         Ok(actions)
     }
 
     pub(crate) fn remove_read_permission_upwards(
         &mut self,
         mut current: Place<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         while !current.is_owned(repacker)
-            && self.get_capability(current.into()) == Some(CapabilityKind::Read)
+            && capabilities.get(current.into()) == Some(CapabilityKind::Read)
         {
             self.record_and_apply_action(
                 BorrowPCGAction::weaken(current, CapabilityKind::Read, None),
                 &mut actions,
+                capabilities,
                 repacker,
             )?;
             let parent = match current.parent_place() {
@@ -266,10 +277,12 @@ impl<'tcx> BorrowsState<'tcx> {
     fn expand_to(
         &mut self,
         to_place: Place<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         obtain_reason: ObtainReason,
         location: Location,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
+        tracing::debug!("Expanding to {:?}", to_place);
         let for_exclusive = obtain_reason.min_post_obtain_capability() != CapabilityKind::Read;
         let mut actions = ExecutedActions::new();
 
@@ -303,7 +316,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     ),
                     for_exclusive,
                 );
-                self.record_and_apply_action(action, &mut actions, repacker)?;
+                self.record_and_apply_action(action, &mut actions, capabilities, repacker)?;
             }
 
             for rp in base.region_projections(repacker) {
@@ -339,6 +352,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             for_exclusive,
                         ),
                         &mut actions,
+                        capabilities,
                         repacker,
                     )?;
                 }

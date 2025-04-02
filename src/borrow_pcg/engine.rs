@@ -34,7 +34,8 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         phase: EvalStmtPhase,
         location: Location,
     ) -> Result<BorrowPCGActions<'tcx>, PcgError> {
-        let mut bv = BorrowsVisitor::new(self, &mut state.borrow, bc, phase);
+        let mut bv =
+            BorrowsVisitor::new(self, &mut state.borrow, &mut state.capabilities, bc, phase);
         match object {
             AnalysisObject::Statement(statement) => {
                 bv.visit_statement_fallable(statement, location)?;

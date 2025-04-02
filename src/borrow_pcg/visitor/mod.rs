@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    pcg::EvalStmtPhase,
+    pcg::{place_capabilities::PlaceCapabilities, EvalStmtPhase},
     utils::{visitor::FallableVisitor, HasPlace},
 };
 use tracing::instrument;
@@ -47,6 +47,7 @@ pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
     pub(super) actions: BorrowPCGActions<'tcx>,
     state: &'state mut BorrowsState<'tcx>,
+    capabilities: &'state mut PlaceCapabilities<'tcx>,
     bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
     phase: EvalStmtPhase,
 }
@@ -58,12 +59,15 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
         self.actions.push(action.clone());
-        self.state.apply_action(action, self.repacker).unwrap()
+        self.state
+            .apply_action(action, self.capabilities, self.repacker)
+            .unwrap()
     }
 
     pub(super) fn new(
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsState<'tcx>,
+        capabilities: &'state mut PlaceCapabilities<'tcx>,
         bc: Rc<dyn BorrowCheckerInterface<'mir, 'tcx> + 'mir>,
         phase: EvalStmtPhase,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
@@ -71,6 +75,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             repacker: PlaceRepacker::new(engine.body, engine.tcx),
             actions: BorrowPCGActions::new(),
             state,
+            capabilities,
             bc,
             phase,
         }
@@ -133,9 +138,12 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
 impl BorrowsVisitor<'_, '_, '_> {
     fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
-        let actions =
-            self.state
-                .pack_old_and_dead_leaves(self.repacker, location, self.bc.as_ref())?;
+        let actions = self.state.pack_old_and_dead_leaves(
+            self.repacker,
+            self.capabilities,
+            location,
+            self.bc.as_ref(),
+        )?;
         self.record_actions(actions);
         for created_location in self.bc.twophase_borrow_activations(location) {
             let borrow = match self.state.graph().borrow_created_at(created_location) {
@@ -155,9 +163,11 @@ impl BorrowsVisitor<'_, '_, '_> {
                 self.apply_action(upgrade_action);
             }
             if !blocked_place.is_owned(self.repacker) {
-                let actions = self
-                    .state
-                    .remove_read_permission_upwards(blocked_place, self.repacker)?;
+                let actions = self.state.remove_read_permission_upwards(
+                    blocked_place,
+                    self.capabilities,
+                    self.repacker,
+                )?;
                 self.record_actions(actions);
             }
         }
@@ -181,9 +191,13 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                         ObtainReason::MoveOperand
                     };
                     let place: utils::Place<'tcx> = (*place).into();
-                    let expansion_actions =
-                        self.state
-                            .obtain(self.repacker, place, location, expansion_reason)?;
+                    let expansion_actions = self.state.obtain(
+                        self.repacker,
+                        place,
+                        self.capabilities,
+                        location,
+                        expansion_reason,
+                    )?;
                     self.record_actions(expansion_actions);
                 }
                 _ => {}
@@ -192,11 +206,8 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 if let Operand::Move(place) = operand {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.repacker) {
-                        self.state.set_capability(
-                            place.into(),
-                            CapabilityKind::Write,
-                            self.repacker,
-                        );
+                        self.capabilities
+                            .insert(place.into(), CapabilityKind::Write);
                     }
                 }
             }
@@ -266,9 +277,13 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.repacker) {
                         let expansion_reason = ObtainReason::FakeRead;
-                        let expansion_actions =
-                            self.state
-                                .obtain(self.repacker, place, location, expansion_reason)?;
+                        let expansion_actions = self.state.obtain(
+                            self.repacker,
+                            place,
+                            self.capabilities,
+                            location,
+                            expansion_reason,
+                        )?;
                         self.record_actions(expansion_actions);
                     }
                 }
@@ -337,6 +352,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                         let expansion_actions = this.state.obtain(
                             this.repacker,
                             place.into(),
+                            this.capabilities,
                             location,
                             expansion_reason,
                         )?;

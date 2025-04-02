@@ -7,15 +7,16 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, pcg::place_capabilities::PlaceCapabilities, pcg_validity_assert, rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local}
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    pcg::place_capabilities::PlaceCapabilities,
+    rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
 use itertools::Itertools;
 
 use crate::{
-    pcg::{PCGInternalError, PcgError},
     free_pcs::{CapabilityKind, RepackOp},
+    pcg::{PCGInternalError, PcgError},
     utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
-    validity_checks_enabled,
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -36,13 +37,6 @@ impl Debug for CapabilityLocal<'_> {
 }
 
 impl<'tcx> CapabilityLocal<'tcx> {
-    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        match self {
-            Self::Unallocated => vec![],
-            Self::Allocated(cps) => cps.debug_lines(repacker),
-        }
-    }
-
     pub fn get_allocated(&self) -> &CapabilityProjections<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
@@ -55,8 +49,8 @@ impl<'tcx> CapabilityLocal<'tcx> {
             Self::Unallocated => panic!("Expected allocated local"),
         }
     }
-    pub fn new(local: Local, perm: CapabilityKind) -> Self {
-        Self::Allocated(CapabilityProjections::new(local, perm))
+    pub fn new(local: Local) -> Self {
+        Self::Allocated(CapabilityProjections::new(local))
     }
     pub fn is_unallocated(&self) -> bool {
         matches!(self, Self::Unallocated)
@@ -107,7 +101,6 @@ impl<S: CheckValidityOnExpiry, T> Drop for DropGuard<'_, S, T> {
 pub struct CapabilityProjections<'tcx> {
     local: Local,
     expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
-    capabilities: PlaceCapabilities<'tcx>,
 }
 
 impl CheckValidityOnExpiry for CapabilityProjections<'_> {
@@ -134,24 +127,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.capabilities
-            .iter()
-            .map(|(p, k)| format!("{}: {:?}", p.to_short_string(repacker), k))
-            .collect()
-    }
-
-    pub fn new(local: Local, perm: CapabilityKind) -> Self {
-        let mut capabilities = PlaceCapabilities::new();
-        capabilities.insert(local.into(), perm);
+    pub fn new(local: Local) -> Self {
         Self {
             local,
             expansions: FxHashMap::default(),
-            capabilities
         }
-    }
-    pub fn new_uninit(local: Local) -> Self {
-        Self::new(local, CapabilityKind::Write)
     }
 
     pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
@@ -179,46 +159,14 @@ impl<'tcx> CapabilityProjections<'tcx> {
         self.local
     }
 
-    pub(crate) fn set_capability(
-        &mut self,
-        place: Place<'tcx>,
-        cap: CapabilityKind,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) {
-        pcg_validity_assert!(
-            place.is_owned(repacker),
-            "Setting capability for non-owned place {}",
-            place.to_short_string(repacker)
-        );
-        self.capabilities.insert(place.into(), cap);
-    }
-
-    pub(crate) fn remove_capability(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.remove(place.into())
-    }
-
-    pub(crate) fn get_capability(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(place.into())
-    }
-
-    pub(crate) fn place_capabilities_mut(&mut self) -> &mut PlaceCapabilities<'tcx> {
-        &mut self.capabilities
-    }
-
-    pub fn place_capabilities(&self) -> &PlaceCapabilities<'tcx> {
-        &self.capabilities
-    }
-
-    fn check_validity(&self) {}
-
     pub(crate) fn expand(
         &mut self,
         from: Place<'tcx>,
         to: CorrectedPlace<'tcx>,
         for_cap: CapabilityKind,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
-        tracing::debug!("Expanding to {:?}", *to);
         assert!(
             to.is_owned(repacker),
             "Expanding to borrowed place {:?}",
@@ -227,7 +175,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
 
         tracing::debug!("Expanding from {:?} to {:?} for {:?}", from, *to, for_cap);
 
-        let from_cap = if let Some(cap) = self.get_capability(from) {
+        let from_cap = if let Some(cap) = capabilities.get(from.into()) {
             cap
         } else {
             let err = format!("No capability for {}", from.to_short_string(repacker));
@@ -244,7 +192,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         };
 
         for place in expansion.other_expansions() {
-            self.set_capability(place, for_cap, repacker);
+            capabilities.insert(place.into(), for_cap);
         }
 
         let mut ops = Vec::new();
@@ -255,9 +203,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
             if let Some(perm) = projection_path_perm {
-                self.set_capability(expansion.base_place(), perm, repacker);
+                capabilities.insert(expansion.base_place().into(), perm);
             } else {
-                self.remove_capability(expansion.base_place());
+                capabilities.remove(expansion.base_place().into());
             }
             if expansion.kind.is_box() && from_cap.is_shallow_exclusive() {
                 ops.push(RepackOp::DerefShallowInit(
@@ -274,11 +222,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             }
         }
 
-        self.set_capability(*to, for_cap, repacker);
-
-        if validity_checks_enabled() {
-            self.check_validity();
-        }
+        capabilities.insert((*to).into(), for_cap);
 
         Ok(ops)
     }
@@ -288,6 +232,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     pub(crate) fn collapse(
         &mut self,
         to: Place<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
         let expansions = self
@@ -302,21 +247,20 @@ impl<'tcx> CapabilityProjections<'tcx> {
             .into_iter()
             .map(|(p, expansion)| {
                 let expansion_places = p.expansion_places(&expansion, repacker);
-                let retained_cap = expansion_places.iter().fold(
-                    CapabilityKind::Exclusive,
-                    |acc, place| match self.remove_capability(*place) {
-                        Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
-                        None => acc,
-                    },
-                );
-                self.set_capability(p, retained_cap, repacker);
+                let retained_cap =
+                    expansion_places
+                        .iter()
+                        .fold(CapabilityKind::Exclusive, |acc, place| {
+                            match capabilities.remove((*place).into()) {
+                                Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
+                                None => acc,
+                            }
+                        });
+                capabilities.insert(p.into(), retained_cap);
                 self.expansions.remove(&p);
                 RepackOp::Collapse(p, expansion_places[0], retained_cap)
             })
             .collect();
-        if validity_checks_enabled() {
-            self.check_validity();
-        }
         Ok(ops)
     }
 }

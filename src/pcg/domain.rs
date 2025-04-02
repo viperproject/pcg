@@ -18,17 +18,25 @@ use crate::{
         coupling_graph_constructor::BorrowCheckerInterface, path_condition::PathCondition,
         state::BorrowsState,
     },
+    free_pcs::{
+        triple::{Condition, Triple},
+        RepackOp,
+    },
     rustc_interface::{
         middle::mir::BasicBlock,
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
     utils::{
-        domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, validity::HasValidityCheck, PlaceRepacker
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        incoming_states::IncomingStates,
+        validity::HasValidityCheck,
+        PlaceRepacker,
     },
     DebugLines, PCGAnalysis, RECORD_PCG,
 };
 
-use super::PCGEngine;
+use super::{place_capabilities::PlaceCapabilities, PcgEngine};
 use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
 
 #[derive(Copy, Clone)]
@@ -98,6 +106,7 @@ pub(crate) struct PCGDebugData {
 pub struct Pcg<'tcx> {
     pub(crate) owned: FreePlaceCapabilitySummary<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
+    pub(crate) capabilities: PlaceCapabilities<'tcx>,
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
@@ -111,6 +120,22 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
+    pub(crate) fn owned_requires(
+        &mut self,
+        cond: Condition<'tcx>,
+        repacker: PlaceRepacker<'mir, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        self.owned
+            .locals_mut()
+            .requires(cond, repacker, &mut self.capabilities, &self.borrow)
+    }
+
+    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>, repacker: PlaceRepacker<'mir, 'tcx>) {
+        self.owned
+            .locals_mut()
+            .ensures(t, &mut self.capabilities, repacker);
+    }
+
     #[tracing::instrument(skip(self, other, bc, repacker))]
     pub(crate) fn join(
         &mut self,
@@ -120,7 +145,12 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
-        let mut res = self.owned.join(&other.owned, repacker)?;
+        let mut res = self.owned.join(
+            &other.owned,
+            &mut self.capabilities,
+            &other.capabilities,
+            repacker,
+        )?;
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
@@ -129,17 +159,20 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         res |= self
             .borrow
             .join(&other.borrow, self_block, other_block, bc, repacker);
+        res |= self.capabilities.join(&other.capabilities);
         Ok(res)
     }
 
     pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Vec<String> {
-        let mut result = self.owned.debug_lines(repacker);
-        result.extend(self.borrow.debug_lines(repacker));
+        let mut result = self.borrow.debug_lines(repacker);
+        result.extend(self.capabilities.debug_lines(repacker));
         result
     }
     pub(crate) fn initialize_as_start_block(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
-        self.owned.initialize_as_start_block(repacker);
-        self.borrow.initialize_as_start_block(repacker);
+        self.owned
+            .initialize_as_start_block(&mut self.capabilities, repacker);
+        self.borrow
+            .initialize_as_start_block(&mut self.capabilities, repacker);
     }
 }
 
@@ -438,6 +471,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
                 self.repacker,
                 pcg.owned.data.as_ref().unwrap(),
                 &pcg.borrow,
+                &pcg.capabilities,
                 &filename,
             )
             .unwrap();
@@ -538,11 +572,11 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PCGEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &PCGAnalysis<PCGEngine<'a, 'tcx>>,
+        _ctxt: &PCGAnalysis<PcgEngine<'a, 'tcx>>,
         _f: &mut Formatter<'_>,
     ) -> Result {
         todo!()
