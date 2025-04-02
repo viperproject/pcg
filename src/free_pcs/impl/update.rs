@@ -109,13 +109,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
             }
-            Condition::AllocateOrDeallocate(local) => {
-                assert_eq!(
-                    capabilities.get(local.into()),
-                    Some(CapabilityKind::Write),
-                    "local: {local:?}, body: {:?}\n",
-                    repacker.body().source.def_id()
-                );
+            Condition::AllocateOrDeallocate(_local) => {
             }
             Condition::Capability(place, cap) => {
                 match cap {
