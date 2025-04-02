@@ -17,13 +17,6 @@ use crate::{
     utils::{corrected::CorrectedPlace, maybe_old::MaybeOldPlace, PlaceRepacker},
 };
 
-pub trait RepackingBridgeSemiLattice<'tcx> {
-    fn bridge(
-        &self,
-        other: &Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>;
-}
 impl<'tcx> CapabilityLocals<'tcx> {
     pub(crate) fn bridge(
         &self,
