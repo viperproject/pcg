@@ -93,11 +93,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             ));
                         }
                     } else {
-                        // TODO
-                        // panic!(
-                        //     "No capability found for {}",
-                        //     target.to_short_string(self.repacker)
-                        // );
+                        panic!(
+                            "No capability found for {}",
+                            target.to_short_string(self.repacker)
+                        );
                     }
                 }
             }

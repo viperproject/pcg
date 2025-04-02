@@ -72,6 +72,45 @@ jobs:
     - name: Run unit tests
       run: cargo test --doc
 
+  prusti_purification_tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        path: pcg
+
+    - name: Checkout symbolic execution repository
+      uses: actions/checkout@v4
+      with:
+        repository: zgrannan/symbolic-execution
+        ref: zgrannan/next4
+        path: symbolic-execution
+
+    - name: Checkout prusti repository
+      uses: actions/checkout@v4
+      with:
+        repository: zgrannan/prusti-dev
+        ref: zgrannan/next4
+        path: prusti-dev
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly-2024-10-15
+        components: rustc-dev, llvm-tools-preview
+        override: true
+
+    - name: Install Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Run Prusti tests
+      working-directory: prusti-dev
+      run: ./x.py setup && python3 test-rpe.py
+
   flowistry_tests:
     runs-on: ubuntu-latest
     steps:

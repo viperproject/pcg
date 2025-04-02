@@ -79,15 +79,6 @@ impl<'tcx> UnblockGraph<'tcx> {
         let mut edges = self.edges;
         let mut actions = vec![];
 
-        // There might be duplicates because the same action may be required by
-        // two unblocks in the graphs that occur for different reasons down this
-        // path. TODO: Confirm that such graphs are actually valid
-        let mut push_action = |action| {
-            if !actions.contains(&action) {
-                actions.push(action);
-            }
-        };
-
         while !edges.is_empty() {
             let mut to_keep = edges.clone();
 
@@ -98,7 +89,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
-                    push_action(BorrowPCGUnblockAction { edge: edge.clone() });
+                    actions.push(BorrowPCGUnblockAction { edge: edge.clone() });
                     to_keep.remove(edge);
                 }
             }
