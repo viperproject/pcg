@@ -54,7 +54,6 @@ impl<'tcx> CapabilityLocal<'tcx> {
                 from_places.bridge(to_places, &place_capabilities, repacker)
             }
             (CapabilityLocal::Allocated(cps), CapabilityLocal::Unallocated) => {
-                // TODO: remove need for clone
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
