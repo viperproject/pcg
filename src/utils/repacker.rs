@@ -454,15 +454,4 @@ impl<'tcx> Place<'tcx> {
             ret
         })
     }
-
-    pub(crate) fn mk_place_elem(
-        self,
-        elem: PlaceElem<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> Self {
-        let elems = repacker
-            .tcx
-            .mk_place_elems_from_iter(self.projection.iter().copied().chain([elem]));
-        Self::new(self.local, elems)
-    }
 }

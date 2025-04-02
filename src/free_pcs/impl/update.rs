@@ -4,14 +4,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::cmp::Ordering;
+
 use crate::{
-    borrow_pcg::state::BorrowsState,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg::{place_capabilities::PlaceCapabilities, PcgError},
     pcg_validity_assert,
     rustc_interface::{
         ast::Mutability,
-        middle::mir::{Local, RETURN_PLACE},
+        middle::mir::RETURN_PLACE,
     },
     utils::{
         corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
@@ -25,43 +26,28 @@ use super::{
 };
 
 impl<'tcx> CapabilityLocals<'tcx> {
-    #[tracing::instrument(skip(self, cond, repacker, borrows))]
+    #[tracing::instrument(skip(self, repacker, place_capabilities))]
     pub(crate) fn requires(
         &mut self,
         cond: Condition<'tcx>,
         repacker: PlaceRepacker<'_, 'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        borrows: &BorrowsState<'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
-        match cond {
+        let ops = match cond {
             Condition::RemoveCapability(place) => {
                 place_capabilities.remove(place.into());
-                Ok(vec![])
+                vec![]
             }
-            Condition::Unalloc(_) => Ok(vec![]),
+            Condition::Unalloc(_) => vec![],
             Condition::AllocateOrDeallocate(local) => {
-                match &mut self[local] {
-                    cap @ CapabilityLocal::Unallocated => {
-                        // A bit of an unusual case: we're at a StorageDead but
-                        // already deallocated. Allocate now so that the
-                        // precondition of SD can be met, but we'll catch this in
-                        // `bridge` and emit a IgnoreSD op.
-                        *cap = CapabilityLocal::Allocated(CapabilityProjections::new(local));
-                        place_capabilities.insert(local.into(), CapabilityKind::Write);
-                        Ok(vec![])
-                    }
-                    CapabilityLocal::Allocated(_) => self.requires(
-                        Condition::Capability(local.into(), CapabilityKind::Write),
-                        repacker,
-                        place_capabilities,
-                        borrows,
-                    ),
-                }
+                self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
+                place_capabilities.insert(local.into(), CapabilityKind::Write);
+                vec![]
             }
             Condition::Capability(place, cap) => {
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
-                tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
+                tracing::info!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
                 let result = cp.repack(place, place_capabilities, repacker, cap)?;
                 if nearest_owned_place != place {
                     match nearest_owned_place.ref_mutability(repacker) {
@@ -75,26 +61,15 @@ impl<'tcx> CapabilityLocals<'tcx> {
                         None => unreachable!(),
                     }
                 }
-                Ok(result)
+                result
             }
-            Condition::Return => {
-                let always_live = repacker.always_live_locals();
-                for local in 0..repacker.local_count() {
-                    let local = Local::from_usize(local);
-                    let pre = if local == RETURN_PLACE {
-                        Condition::Capability(RETURN_PLACE.into(), CapabilityKind::Exclusive)
-                    } else if always_live.contains(local) {
-                        Condition::Capability(local.into(), CapabilityKind::Write)
-                    } else {
-                        Condition::Unalloc(local)
-                    };
-                    self.check_pre_satisfied(pre, place_capabilities, repacker);
-                }
-                Ok(vec![])
-            }
-        }
+            Condition::Return => vec![],
+        };
+        self.check_pre_satisfied(cond, place_capabilities, repacker);
+        Ok(ops)
     }
 
+    #[tracing::instrument(skip(self, capabilities, repacker))]
     fn check_pre_satisfied(
         &self,
         pre: Condition<'tcx>,
@@ -109,10 +84,9 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
             }
-            Condition::AllocateOrDeallocate(_local) => {
-            }
-            Condition::Capability(place, cap) => {
-                match cap {
+            Condition::AllocateOrDeallocate(_local) => {}
+            Condition::Capability(place, required_cap) => {
+                match required_cap {
                     CapabilityKind::Read => {
                         // TODO
                     }
@@ -132,33 +106,34 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
-
-                let _cp = self[place.local].get_allocated();
-                // assert_eq!(cp[&place], *cap); // TODO: is this too strong for shallow exclusive?
+                if place.is_owned(repacker) {
+                    if let Some(current_cap) = capabilities.get(place.into()) {
+                        if matches!(
+                            current_cap.partial_cmp(&required_cap),
+                            Some(Ordering::Less) | None
+                        ) {
+                            tracing::error!(
+                            "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
+                        );
+                        }
+                    } else {
+                        tracing::error!("No capability for {place:?}");
+                    }
+                }
             }
             Condition::Return => {
-                let always_live = repacker.always_live_locals();
-                for local in 0..repacker.local_count() {
-                    let local = Local::from_usize(local);
-                    let pre = if local == RETURN_PLACE {
-                        Condition::Capability(RETURN_PLACE.into(), CapabilityKind::Exclusive)
-                    } else if always_live.contains(local) {
-                        Condition::Capability(local.into(), CapabilityKind::Write)
-                    } else {
-                        Condition::Unalloc(local)
-                    };
-                    self.check_pre_satisfied(pre, capabilities, repacker);
-                }
+                assert!(
+                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
+                );
             }
         }
     }
+    #[tracing::instrument(skip(self, place_capabilities))]
     pub(crate) fn ensures(
         &mut self,
         t: Triple<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
     ) {
-        self.check_pre_satisfied(t.pre(), place_capabilities, repacker);
         let Some(post) = t.post() else {
             return;
         };
