@@ -127,13 +127,11 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         self.owned
             .locals_mut()
-            .requires(cond, repacker, &mut self.capabilities, &self.borrow)
+            .requires(cond, repacker, &mut self.capabilities)
     }
 
-    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>, repacker: PlaceRepacker<'mir, 'tcx>) {
-        self.owned
-            .locals_mut()
-            .ensures(t, &mut self.capabilities, repacker);
+    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>) {
+        self.owned.locals_mut().ensures(t, &mut self.capabilities);
     }
 
     #[tracing::instrument(skip(self, other, bc, repacker))]

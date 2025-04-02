@@ -35,8 +35,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             }
             EvalStmtPhase::PostOperands => {
                 for triple in tw.operand_triples.iter() {
-                    let triple = triple.replace_place(self.repacker);
-                    state.owned_ensures(triple, self.repacker);
+                    state.owned_ensures(*triple);
                 }
             }
             EvalStmtPhase::PreMain => {
@@ -46,7 +45,7 @@ impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
             }
             EvalStmtPhase::PostMain => {
                 for triple in tw.main_triples.iter() {
-                    state.owned_ensures(*triple, self.repacker);
+                    state.owned_ensures(*triple);
                 }
             }
         }

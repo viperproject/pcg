@@ -14,6 +14,7 @@ use derive_more::From;
 use itertools::Itertools;
 
 use crate::{
+    action::PcgActions,
     borrow_pcg::{
         action::{actions::BorrowPCGActions, BorrowPCGActionKind},
         borrow_pcg_edge::BorrowPCGEdgeLike,
@@ -41,7 +42,7 @@ use crate::{
 
 use super::{
     domain::PcgDomain, place_capabilities::PlaceCapabilities, DataflowStmtPhase, DotGraphs,
-    ErrorState, EvalStmtPhase, PCGDebugData, PcgError,
+    ErrorState, EvalStmtPhase, PCGDebugData, Pcg, PcgError,
 };
 use crate::{
     borrow_pcg::engine::BorrowsEngine,
@@ -232,6 +233,43 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         assert!(state.is_initialized());
     }
 
+    #[tracing::instrument(skip(self, pcg, object, tw, location))]
+    fn analyze_pre_main(
+        &mut self,
+        pcg: &mut Rc<Pcg<'tcx>>,
+        object: AnalysisObject<'_, 'tcx>,
+        tw: &TripleWalker<'_, 'tcx>,
+        location: Location,
+    ) -> Result<PcgActions<'tcx>, PcgError> {
+        let pre_main = Rc::<_>::make_mut(pcg);
+        let pre_main_borrow_actions = self.borrows.analyze(
+            pre_main,
+            self.borrow_checker.clone(),
+            object,
+            EvalStmtPhase::PreMain,
+            location,
+        )?;
+
+        self.restore_loaned_capabilities(
+            &mut pre_main.capabilities,
+            &pre_main.borrow.frozen_graph(),
+            &pre_main_borrow_actions,
+        );
+
+        let mut actions: PcgActions<'tcx> = pre_main_borrow_actions.into();
+
+        // Do all of the owned effects
+
+        actions.extend(
+            self.fpcs
+                .analyze(pre_main, tw, EvalStmtPhase::PreMain)?
+                .into_iter()
+                .map(|a| a.into()),
+        );
+
+        Ok(actions)
+    }
+
     #[tracing::instrument(skip(self, state, object))]
     fn analyze(
         &mut self,
@@ -340,34 +378,11 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
 
         pcg.states.0.pre_main = pcg.states.0.post_operands.clone();
 
-        let pre_main = Rc::<_>::make_mut(&mut pcg.states.0.pre_main);
+        pcg_data.actions.pre_main =
+            self.analyze_pre_main(&mut pcg.states.0.pre_main, object, &tw, location)?;
 
-        let pre_main_borrow_actions = self.borrows.analyze(
-            pre_main,
-            self.borrow_checker.clone(),
-            object,
-            EvalStmtPhase::PreMain,
-            location,
-        )?;
+        pcg.states.0.post_main = pcg.states.0.pre_main.clone();
 
-        self.restore_loaned_capabilities(
-            &mut pre_main.capabilities,
-            &pre_main.borrow.frozen_graph(),
-            &pre_main_borrow_actions,
-        );
-
-        pcg_data.actions.pre_main = pre_main_borrow_actions.into();
-
-        // Do all of the owned effects
-
-        pcg_data.actions.pre_main.extend(
-            self.fpcs
-                .analyze(pre_main, &tw, EvalStmtPhase::PreMain)?
-                .into_iter()
-                .map(|a| a.into()),
-        );
-
-        pcg.states.0.post_main = pre_main.clone().into();
         let post_main = Rc::<_>::make_mut(&mut pcg.states.0.post_main);
         pcg_data.actions.post_main = self
             .fpcs

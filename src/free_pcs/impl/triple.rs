@@ -6,7 +6,7 @@
 
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
-    self, BorrowKind, Local, Location, MutBorrowKind, Operand, ProjectionElem,
+    self, BorrowKind, Local, Location, MutBorrowKind, Operand,
     Rvalue, Statement, StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
 };
 
@@ -29,15 +29,6 @@ impl<'tcx> Triple<'tcx> {
     }
     pub fn post(self) -> Option<Condition<'tcx>> {
         self.post
-    }
-
-    /// Replace all places in the `Condition` with ones that are just above the
-    /// first dereference of a ref.
-    pub fn replace_place<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
-        Self {
-            pre: self.pre.fpcg_condition(repacker),
-            post: self.post.map(|c| c.fpcg_condition(repacker)),
-        }
     }
 }
 
@@ -75,47 +66,6 @@ impl<'tcx> Condition<'tcx> {
     fn read<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
         Self::new(place, CapabilityKind::Read)
     }
-
-    /// Returns the condition for the place in the free PCG. If the place is
-    /// already in the free PCG, this will be the same condition. However, if
-    /// the place is in the borrow PCG, we must have an exclusive access to the
-    /// corresponding place in the free PCG, e.g., obtaining "Write" capability
-    /// to *_2 requires an exclusive capability to _2
-    pub fn fpcg_condition<'b>(self, repacker: PlaceRepacker<'b, 'tcx>) -> Self {
-        match self {
-            Condition::Capability(place, kind) => {
-                let fpcg_place = get_place_to_expand_to(place, repacker);
-                let capability_kind = if place != fpcg_place {
-                    CapabilityKind::Exclusive
-                } else {
-                    kind
-                };
-                Condition::Capability(fpcg_place, capability_kind)
-            }
-            _ => self,
-        }
-    }
-}
-
-fn get_place_to_expand_to<'b, 'tcx>(
-    place: Place<'tcx>,
-    repacker: PlaceRepacker<'b, 'tcx>,
-) -> Place<'tcx> {
-    let mut curr_place: Place<'tcx> = place.local.into();
-    for elem in place.projection {
-        if *elem == ProjectionElem::Deref && curr_place.ty(repacker).ty.is_ref() {
-            return curr_place;
-        }
-
-        // For some reason the field projection may yield a different lifetime parameter
-        // what is expected based on the ADT definition and substs.
-        // We use the ADT definition because it will ensure that in the PCS the lifetime parameter
-        // of all fields relates to the parameter of their parent struct.
-        curr_place = curr_place
-            .mk_place_elem(*elem, repacker)
-            .with_inherent_region(repacker);
-    }
-    curr_place
 }
 
 pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
