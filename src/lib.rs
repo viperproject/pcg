@@ -24,7 +24,7 @@ use borrow_pcg::{
     latest::Latest,
 };
 use free_pcs::{CapabilityKind, PcgLocation};
-use pcg::{PCGEngine, PcgSuccessor};
+use pcg::{EvalStmtPhase, PCGEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{
         self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
@@ -200,7 +200,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
 impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
     fn from(location: &'a PcgLocation<'tcx>) -> Self {
         Self {
-            latest: &location.borrows.post_main.latest,
+            latest: &location.states[EvalStmtPhase::PostMain].borrow.latest,
             actions: &location.actions,
         }
     }

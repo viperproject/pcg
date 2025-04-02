@@ -4,57 +4,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::rc::Rc;
-
-use crate::{pcg::PcgError, utils::incoming_states::IncomingStates};
+use crate::pcg::PcgError;
 use itertools::Itertools;
 
 use crate::{
-    pcg::EvalStmtPhase,
     free_pcs::{
-        CapabilityLocal, CapabilityProjections, CapabilityLocals, FreePlaceCapabilitySummary,
+        CapabilityLocal, CapabilityLocals, CapabilityProjections, FreePlaceCapabilitySummary,
     },
     utils::PlaceRepacker,
 };
 
-use crate::rustc_interface::middle::mir;
-
-impl FreePlaceCapabilitySummary<'_, '_> {
+impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
     pub(crate) fn join(
         &mut self,
         other: &Self,
-        self_block: mir::BasicBlock,
-        other_block: mir::BasicBlock,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let seen = self.data.incoming_states.contains(other_block);
-
-        if seen && other_block > self_block {
-            // It's a loop, but we've already joined it
-            return Ok(false);
-        }
-
-        if seen {
-            // It's another iteration, reset the entry state
-            self.data.incoming_states = IncomingStates::singleton(other_block);
-            if self.data.entry_state != other.data.states[EvalStmtPhase::PostMain] {
-                self.data.entry_state = other.data.states[EvalStmtPhase::PostMain].clone();
-                return Ok(true);
-            } else {
-                return Ok(false);
-            }
-        } else {
-            self.data.incoming_states.insert(other_block);
-        }
-
-        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
-        let other_state = other.data.unwrap(EvalStmtPhase::PostMain);
-        match entry_state.as_mut() {
-            Some(state) => state.join(other_state, self.repacker),
-            None => {
-                *entry_state = Some(other_state.clone());
-                Ok(true)
-            }
-        }
+        self.data
+            .as_mut()
+            .unwrap()
+            .join(other.data.as_ref().unwrap(), repacker)
     }
 }
 

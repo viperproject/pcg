@@ -5,8 +5,8 @@ use crate::{
         region_projection::RegionProjection,
         state::BorrowsState,
     },
-    pcg::MaybeHasLocation,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
+    pcg::MaybeHasLocation,
     utils::{
         display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
         SnapshotLocation,
@@ -381,8 +381,7 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        run_pcg, utils::PlaceRepacker,
-        visualization::graph_constructor::PcgGraphConstructor,
+        run_pcg, utils::PlaceRepacker, visualization::graph_constructor::PcgGraphConstructor,
     };
 
     // 26_ref_in_struct.rs
@@ -407,9 +406,9 @@ fn main() {
             let mut pcg = run_pcg(body, tcx, None);
             let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
             let stmt = &bb.statements[22];
-            let graph =
-                PcgGraphConstructor::new(&stmt.states.post_main, repacker, &stmt.borrows.post_main)
-                    .construct_graph();
+            let pcg = &stmt.states.0.post_main;
+            let graph = PcgGraphConstructor::new(&pcg.owned.data(), repacker, &pcg.borrow)
+                .construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }

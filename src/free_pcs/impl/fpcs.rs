@@ -9,37 +9,63 @@ use std::{
     rc::Rc,
 };
 
-use crate::rustc_interface::{
-    index::{Idx, IndexVec},
-    middle::mir::{Local, RETURN_PLACE},
-    mir_dataflow::fmt::DebugWithContext,
+use crate::{
+    free_pcs::RepackOp,
+    pcg::PcgError,
+    rustc_interface::{
+        index::{Idx, IndexVec},
+        middle::mir::{Local, RETURN_PLACE},
+        mir_dataflow::fmt::DebugWithContext,
+    },
+    DebugLines,
 };
 use derive_more::{Deref, DerefMut};
 
-use super::{engine::FpcsEngine, CapabilityKind};
+use super::{
+    engine::FpcsEngine, join_semi_lattice::RepackingJoinSemiLattice, CapabilityKind,
+    RepackingBridgeSemiLattice,
+};
 use crate::{
-    pcg::EvalStmtPhase,
     free_pcs::{CapabilityLocal, CapabilityProjections},
+    pcg::EvalStmtPhase,
     utils::{domain_data::DomainData, PlaceRepacker},
 };
 
-#[derive(Clone)]
-pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) data: DomainData<Option<CapabilityLocals<'tcx>>>,
+#[derive(Clone, Default)]
+pub struct FreePlaceCapabilitySummary<'tcx> {
+    pub(crate) data: Option<CapabilityLocals<'tcx>>,
 }
-impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
-        Self {
-            repacker,
-            data: DomainData::default(),
-        }
+
+impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for FreePlaceCapabilitySummary<'tcx> {
+    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+        self.data().debug_lines(repacker)
+    }
+}
+
+impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+    pub(crate) fn new() -> Self {
+        Self { data: None }
     }
 
-    pub fn initialize_as_start_block(&mut self) {
-        let always_live = self.repacker.always_live_locals();
+    pub(crate) fn data(&self) -> &CapabilityLocals<'tcx> {
+        self.data.as_ref().unwrap()
+    }
+
+    pub(crate) fn bridge(
+        &self,
+        other: &Self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        self.data
+            .as_ref()
+            .unwrap()
+            .bridge(other.data.as_ref().unwrap(), repacker)
+    }
+
+    pub fn initialize_as_start_block(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+        let always_live = repacker.always_live_locals();
         let return_local = RETURN_PLACE;
-        let last_arg = Local::new(self.repacker.body().arg_count);
+        let last_arg = Local::new(repacker.body().arg_count);
         let capability_summary = IndexVec::from_fn_n(
             |local| {
                 if local == return_local {
@@ -56,30 +82,29 @@ impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
                     CapabilityLocal::Unallocated
                 }
             },
-            self.repacker.local_count(),
+            repacker.local_count(),
         );
-        self.data.entry_state = Rc::new(Some(CapabilityLocals(capability_summary)));
-        self.data.states.0.post_main = self.data.entry_state.clone();
+        self.data = Some(CapabilityLocals(capability_summary));
     }
 }
 
-impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
+impl PartialEq for FreePlaceCapabilitySummary<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.data.states[EvalStmtPhase::PostMain] == other.data.states[EvalStmtPhase::PostMain]
+        self.data == other.data
     }
 }
-impl Eq for FreePlaceCapabilitySummary<'_, '_> {}
+impl Eq for FreePlaceCapabilitySummary<'_> {}
 
-impl Debug for FreePlaceCapabilitySummary<'_, '_> {
+impl Debug for FreePlaceCapabilitySummary<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.data.states[EvalStmtPhase::PostMain].fmt(f)
+        self.data.fmt(f)
     }
 }
-impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySummary<'a, 'tcx> {
+impl<'tcx> DebugWithContext<FpcsEngine<'_, 'tcx>> for FreePlaceCapabilitySummary<'tcx> {
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &FpcsEngine<'a, 'tcx>,
+        _ctxt: &FpcsEngine<'_, 'tcx>,
         _f: &mut Formatter<'_>,
     ) -> Result {
         todo!()
@@ -104,7 +129,6 @@ impl Debug for CapabilityLocals<'_> {
 }
 
 impl<'tcx> CapabilityLocals<'tcx> {
-
     pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
         self.0
             .iter_mut()

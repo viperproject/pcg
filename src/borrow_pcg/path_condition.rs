@@ -3,7 +3,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde_json::json;
 
 use crate::{
-    pcg_validity_assert, rustc_interface::middle::mir::{BasicBlock, START_BLOCK}, utils::PlaceRepacker
+    pcg_validity_assert,
+    rustc_interface::middle::mir::{BasicBlock, START_BLOCK},
+    utils::PlaceRepacker,
 };
 
 use crate::utils::json::ToJsonWithRepacker;
@@ -66,10 +68,7 @@ impl PCGraph {
     }
 
     pub(crate) fn edges_to(&self, block: BasicBlock) -> BTreeSet<PathCondition> {
-        self.0
-            .iter()
-            .filter(|pc| pc.to == block).copied()
-            .collect()
+        self.0.iter().filter(|pc| pc.to == block).copied().collect()
     }
 
     pub(crate) fn roots(&self) -> HashSet<BasicBlock> {
@@ -226,7 +225,12 @@ impl PathConditions {
     pub fn insert(&mut self, pc: PathCondition) -> bool {
         match self {
             PathConditions::AtBlock(b) => {
-                assert!(*b == pc.from);
+                assert!(
+                    *b == pc.from,
+                    "Path condition {:?} can't arise from block {:?}",
+                    pc,
+                    *b
+                );
                 *self = PathConditions::Paths(PCGraph::singleton(pc));
                 true
             }
@@ -249,7 +253,11 @@ impl PathConditions {
             PathConditions::AtBlock(_b) => None,
             PathConditions::Paths(p) => {
                 let end = self.end()?;
-                let mut paths = self.roots().into_iter().map(|b| (b, HashSet::default())).collect::<HashMap<_, _>>();
+                let mut paths = self
+                    .roots()
+                    .into_iter()
+                    .map(|b| (b, HashSet::default()))
+                    .collect::<HashMap<_, _>>();
                 let mut change = true;
                 while change {
                     change = false;
@@ -257,9 +265,7 @@ impl PathConditions {
                         assert_ne!(edge.from, edge.to);
                         let to_paths = paths.entry(edge.to).or_insert_with(HashSet::default);
                         // SAFETY: different entries in the map
-                        let to_paths: &mut HashSet<_> = unsafe {
-                            &mut *(to_paths as *mut _)
-                        };
+                        let to_paths: &mut HashSet<_> = unsafe { &mut *(to_paths as *mut _) };
                         let Some(from_paths) = paths.get(&edge.from) else {
                             continue;
                         };
