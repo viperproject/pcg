@@ -168,12 +168,14 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                         RegionProjection::new(
                                             (*const_region).into(),
                                             MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                            None,
                                             self.repacker,
                                         )
                                         .unwrap(),
                                         RegionProjection::new(
                                             (*target_region).into(),
                                             target,
+                                            None,
                                             self.repacker,
                                         )
                                         .unwrap()

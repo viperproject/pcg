@@ -6,6 +6,7 @@ use super::{
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::borrow::RemoteBorrow,
     graph::{frozen::FrozenGraphRef, BorrowsGraph},
+    has_pcs_elem::LabelRegionProjection,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
@@ -70,6 +71,15 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub(crate) fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) {
+        self.graph
+            .mut_edges(|edge| edge.label_region_projection(projection, location, repacker));
+    }
     fn introduce_initial_borrows(
         &mut self,
         local: mir::Local,
@@ -87,7 +97,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         for region in extract_regions(local_decl.ty, repacker) {
             let region_projection =
-                RegionProjection::new(region, arg_place.into(), repacker).unwrap();
+                RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
             assert!(self
                 .apply_action(
                     BorrowPCGAction::add_edge(
@@ -96,6 +106,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 RegionProjection::new(
                                     region,
                                     RemotePlace::new(local).into(),
+                                    None,
                                     repacker,
                                 )
                                 .unwrap_or_else(|e| {

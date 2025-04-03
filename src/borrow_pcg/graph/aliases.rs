@@ -180,11 +180,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         );
                     }
                 },
-                BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
-                    for input in edge.inputs.iter() {
-                        extend(input.to_pcg_node(repacker), seen, &mut result, false);
-                    }
-                }
                 _ => todo!(),
             }
         }

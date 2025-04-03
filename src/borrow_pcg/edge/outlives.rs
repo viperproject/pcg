@@ -2,7 +2,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::EdgeData,
-        has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld},
+        has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection},
     },
@@ -11,7 +11,7 @@ use crate::{
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
         display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place,
-        PlaceRepacker,
+        PlaceRepacker, SnapshotLocation,
     },
 };
 
@@ -20,6 +20,19 @@ pub struct OutlivesEdge<'tcx> {
     long: RegionProjection<'tcx>,
     short: LocalRegionProjection<'tcx>,
     pub(crate) kind: OutlivesEdgeKind,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for OutlivesEdge<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.long.label_region_projection(projection, location, repacker);
+        changed |= self.short.label_region_projection(projection, location, repacker);
+        changed
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for OutlivesEdge<'tcx> {

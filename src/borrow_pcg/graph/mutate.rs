@@ -21,7 +21,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }
 
-    fn mut_edges<'slf>(
+    pub(crate) fn mut_edges<'slf>(
         &'slf mut self,
         mut f: impl FnMut(&mut BorrowPCGEdge<'tcx>) -> bool,
     ) -> bool {

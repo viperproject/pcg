@@ -203,10 +203,6 @@ impl MaybeHasLocation for MaybeOldPlace<'_> {
     }
 }
 impl<'tcx> MaybeOldPlace<'tcx> {
-    pub(crate) fn with_location(self, location: SnapshotLocation) -> Self {
-        MaybeOldPlace::new(self.place(), Some(location))
-    }
-
     pub fn is_old(&self) -> bool {
         matches!(self, MaybeOldPlace::OldPlace(_))
     }
@@ -292,7 +288,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty, repacker)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
+            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
             .collect()
     }
 

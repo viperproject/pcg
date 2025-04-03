@@ -1,10 +1,21 @@
 use super::latest::Latest;
+use super::region_projection::RegionProjection;
 use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::SnapshotLocation;
 use crate::utils::{validity::HasValidityCheck, Place, PlaceRepacker};
 use crate::validity_checks_enabled;
 
 pub(crate) trait HasPcgElems<T> {
     fn pcg_elems(&mut self) -> Vec<&mut T>;
+}
+
+pub(crate) trait LabelRegionProjection<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool;
 }
 
 pub(crate) trait MakePlaceOld<'tcx> {
@@ -16,7 +27,10 @@ pub(crate) trait MakePlaceOld<'tcx> {
     ) -> bool;
 }
 
-pub(crate) fn default_make_place_old<'tcx, T: HasPcgElems<MaybeOldPlace<'tcx>> + HasValidityCheck<'tcx>>(
+pub(crate) fn default_make_place_old<
+    'tcx,
+    T: HasPcgElems<MaybeOldPlace<'tcx>> + HasValidityCheck<'tcx>,
+>(
     this: &mut T,
     place: Place<'tcx>,
     latest: &Latest<'tcx>,

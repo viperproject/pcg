@@ -281,7 +281,7 @@ impl<'tcx> Place<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.ty_region(repacker)
-            .map(|region| RegionProjection::new(region, self, repacker).unwrap())
+            .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -360,7 +360,7 @@ impl<'tcx> Place<'tcx> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty, repacker)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
+            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
             .collect()
     }
 

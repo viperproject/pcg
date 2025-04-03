@@ -9,7 +9,6 @@ use crate::{
         domain::{AbstractionInputTarget, AbstractionOutputTarget},
         edge::{
             abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
-            coupling::FunctionCallRegionCoupling,
             outlives::{OutlivesEdge, OutlivesEdgeKind},
         },
         path_condition::PathConditions,
@@ -23,7 +22,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{self, maybe_old::MaybeOldPlace, PlaceRepacker, PlaceSnapshot},
+    utils::{self, maybe_old::MaybeOldPlace, PlaceRepacker, PlaceSnapshot, SnapshotLocation},
 };
 
 impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
@@ -86,6 +85,14 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             })
             .collect::<Vec<_>>();
 
+        for arg in arg_region_projections.iter() {
+            self.state.label_region_projection(
+                arg,
+                SnapshotLocation::before(location),
+                self.repacker,
+            );
+        }
+
         #[derive(Default, Deref)]
         struct CoupledRegionProjections<'tcx>(Vec<FxHashSet<LocalRegionProjection<'tcx>>>);
 
@@ -127,13 +134,25 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         for coupled in coupled_region_projections.iter() {
             let create_edge_action = BorrowPCGAction::add_edge(
                 BorrowPCGEdge::new(
-                    FunctionCallRegionCoupling::new(
-                        coupled.clone(),
-                        coupled
-                            .iter()
-                            .map(|rp| rp.label_place(location.into()))
-                            .collect(),
-                    )
+                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                        location,
+                        *func_def_id,
+                        substs,
+                        AbstractionBlockEdge::new(
+                            coupled
+                                .iter()
+                                .map(|rp| {
+                                    rp.label_projection(SnapshotLocation::before(location))
+                                        .into()
+                                })
+                                .collect(),
+                            coupled
+                                .clone()
+                                .into_iter()
+                                .map(|rp| rp.label_projection(location.into()))
+                                .collect(),
+                        ),
+                    ))
                     .into(),
                     PathConditions::AtBlock(location.block),
                 ),
@@ -175,7 +194,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 Some(place) => place.into(),
                 None => continue,
             };
-            let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(input_place, location));
+            let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                input_place,
+                self.state.get_latest(input_place),
+            ));
             let ty = input_place.ty(self.repacker).ty;
             for (lifetime_idx, input_lifetime) in
                 extract_regions(ty, self.repacker).into_iter_enumerated()
@@ -183,7 +205,9 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 for output in
                     self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
                 {
-                    let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
+                    let input_rp = input_place
+                        .region_projection(lifetime_idx, self.repacker)
+                        .label_projection(location.into());
                     self.apply_action(mk_create_edge_action(input_rp.into(), output));
                 }
             }

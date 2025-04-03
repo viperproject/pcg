@@ -4,7 +4,7 @@ use crate::{
         edge::kind::BorrowPCGEdgeKind,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
-    pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike},
+    pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
     free_pcs::CapabilityKind,
     rustc_interface::middle::mir,
     utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, HasPlace, PlaceRepacker},
@@ -144,48 +144,6 @@ pub(super) trait Grapher<'mir, 'tcx: 'mir> {
                     target: output_node,
                     kind: format!("{:?}", member.direction()),
                 });
-            }
-            BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
-                let input_nodes = edge
-                    .inputs
-                    .iter()
-                    .map(|rp| self.insert_local_node(rp.to_local_node(self.repacker())))
-                    .collect::<Vec<_>>();
-                let output_nodes = edge
-                    .outputs
-                    .iter()
-                    .map(|rp| self.insert_local_node(rp.to_local_node(self.repacker())))
-                    .collect::<Vec<_>>();
-                let mut i = 0;
-                while i < edge.num_coupled_nodes() {
-                    self.constructor().edges.insert(GraphEdge::Coupled {
-                        source: input_nodes[i],
-                        target: output_nodes[i],
-                        directed: true,
-                    });
-                    if i < edge.num_coupled_nodes() - 1 {
-                        self.constructor().edges.insert(GraphEdge::Coupled {
-                            source: input_nodes[i],
-                            target: input_nodes[i + 1],
-                            directed: false,
-                        });
-                        self.constructor().edges.insert(GraphEdge::Coupled {
-                            source: output_nodes[i],
-                            target: output_nodes[i + 1],
-                            directed: false,
-                        });
-                    }
-                    let mut j = 0;
-                    while j < edge.num_coupled_nodes() {
-                        self.constructor().edges.insert(GraphEdge::Coupled {
-                            source: input_nodes[i],
-                            target: output_nodes[j],
-                            directed: true,
-                        });
-                        j += 1;
-                    }
-                    i += 1;
-                }
             }
         }
     }

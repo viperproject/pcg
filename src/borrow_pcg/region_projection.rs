@@ -4,7 +4,7 @@ use std::{fmt, marker::PhantomData};
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
-use super::has_pcs_elem::HasPcgElems;
+use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
     borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
 };
@@ -162,6 +162,24 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
+    for RegionProjection<'tcx, P>
+{
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        if self.region_idx == projection.region_idx && self.base == projection.base.into() {
+            self.location = Some(location);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     for RegionProjection<'tcx, MaybeRemotePlace<'tcx>>
 {
@@ -176,14 +194,14 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
 }
 
 impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    pub(crate) fn label_place(
+    pub(crate) fn label_projection(
         self,
         location: SnapshotLocation,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         RegionProjection {
-            base: self.base.with_location(location),
+            base: self.base,
             region_idx: self.region_idx,
-            location: self.location,
+            location: Some(location),
             phantom: PhantomData,
         }
     }
@@ -387,28 +405,28 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
         RegionProjection::new(
             self.region(repacker),
             self.base.project_deeper(elem, repacker)?,
+            self.location,
             repacker,
         )
         .map_err(|e| e.into())
     }
 
     fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
-        self.assert_validity(repacker); // DEBUG: Something's wrong if this fails here
+        self.assert_validity(repacker);
         self.base
             .iter_projections(repacker)
             .into_iter()
             .map(move |(base, elem)| {
                 (
-                    RegionProjection::new(self.region(repacker), base, repacker).unwrap_or_else(
-                        |e| {
+                    RegionProjection::new(self.region(repacker), base, self.location, repacker)
+                        .unwrap_or_else(|e| {
                             panic!(
                                 "Error iter projections for {}: {:?}. Place ty: {:?}",
                                 self.to_short_string(repacker),
                                 e,
                                 base.place().ty(repacker),
                             );
-                        },
-                    ),
+                        }),
                     elem,
                 )
             })
@@ -435,6 +453,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn new(
         region: PCGRegion,
         base: T,
+        location: Option<SnapshotLocation>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<Self, PCGInternalError> {
         let region_idx = base
@@ -454,7 +473,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         let result = Self {
             base,
             region_idx,
-            location: None,
+            location,
             phantom: PhantomData,
         };
         if validity_checks_enabled() {

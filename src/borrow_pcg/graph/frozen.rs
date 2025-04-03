@@ -335,7 +335,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                         OutlivesEdgeKind::CopySharedRef => {}
                     },
                     BorrowPCGEdgeKind::RegionProjectionMember(..) => todo!(),
-                    BorrowPCGEdgeKind::FunctionCallRegionCoupling(..) => todo!(),
                 }
             }
         }
