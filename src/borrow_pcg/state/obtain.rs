@@ -5,24 +5,17 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPCGExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::borrow_pcg::edge::region_projection_member::{
-    RegionProjectionMember, RpMemberDirection,
-};
-use crate::borrow_pcg::graph::borrows_imgcat_debug;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
-use crate::borrow_pcg::unblock_graph::UnblockGraph;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
-use crate::pcg::{PCGNodeLike, PcgError};
+use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{HasPlace, Place, PlaceRepacker};
-use crate::visualization::dot_graph::DotGraph;
-use crate::visualization::generate_borrows_dot_graph;
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we
@@ -82,7 +75,11 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
-            actions.extend(self.contract_to(place, capabilities, location, repacker)?);
+            actions.extend(self.upgrade_closest_root_to_exclusive(
+                place,
+                capabilities,
+                repacker,
+            )?);
         }
 
         if !self.contains(place, repacker) {
@@ -111,107 +108,19 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(actions)
     }
 
-    /// Contracts the PCG to the given place by converting borrows to region projection members
-    /// and performing unblock operations.
-    pub(crate) fn contract_to(
+    pub(crate) fn upgrade_closest_root_to_exclusive(
         &mut self,
         place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        location: Location,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        let mut actions = ExecutedActions::new();
-
-        {
-            let encapsulated_borrow_edges = self
-                .graph()
-                .borrows()
-                .filter(|borrow| match borrow.value.assigned_ref() {
-                    MaybeOldPlace::Current {
-                        place: assigned_place,
-                    } => place.is_strict_prefix(assigned_place),
-                    _ => false,
-                })
-                .collect::<Vec<_>>();
-
-            // If we are going to contract a place, borrows may need to be converted
-            // to region projection member edges. For example, if the type of `x.t` is
-            // `&'a mut T` and there is a borrow `x.t = &mut y`, and we need to contract to `x`, then we need
-            // to replace the borrow edge with an edge `{y} -> {x↓'a}`.
-            for borrow in encapsulated_borrow_edges {
-                let to_remove: BorrowPCGEdge<'tcx> = borrow.clone().into();
-                actions.extend(self.remove_edge_and_set_latest(
-                    to_remove,
-                    capabilities,
-                    location,
-                    repacker,
-                    &format!("Contract To {:?}", place),
-                )?);
-                for ra in place.region_projections(repacker) {
-                    self.record_and_apply_action(
-                        BorrowPCGAction::add_edge(
-                            BorrowPCGEdge::new(
-                                RegionProjectionMember::new(
-                                    ra.with_base(ra.base().into(), repacker),
-                                    borrow.value.blocked_place(),
-                                    RpMemberDirection::PlaceOutlivesRegion,
-                                )
-                                .into(),
-                                PathConditions::new(location.block),
-                            ),
-                            true,
-                        ),
-                        &mut actions,
-                        capabilities,
-                        repacker,
-                    )?;
-                }
-            }
-        }
-
-        let mut ug = UnblockGraph::new();
-        ug.unblock_node(place.to_pcg_node(repacker), self, repacker);
-        for rp in place.region_projections(repacker) {
-            ug.unblock_node(rp.to_pcg_node(repacker), self, repacker);
-        }
-
-        // The place itself could be in the owned PCG, but we want to unblock
-        // the borrowed parts. For example if the place is a struct S, with
-        // owned fields S.f and S.g, we will want to unblock S.f and S.g.
-        for root_node in self.roots(repacker) {
-            if let Some(root_node_place) = root_node.as_current_place() {
-                if place.is_prefix(root_node_place) {
-                    ug.unblock_node(root_node, self, repacker);
-                }
-            }
-        }
-        let unblock_actions = ug.actions(repacker).unwrap_or_else(|e| {
-            if borrows_imgcat_debug() {
-                let dot_graph = generate_borrows_dot_graph(repacker, self.graph()).unwrap();
-                DotGraph::render_with_imgcat(&dot_graph, "Borrows graph for unblock actions")
-                    .unwrap_or_else(|e| {
-                        eprintln!("Error rendering borrows graph: {}", e);
-                    });
-            }
-            panic!("Error when contracting to {:?}: {:?}", place, e);
-        });
-        for action in unblock_actions {
-            actions.extend(self.remove_edge_and_set_latest(
-                action.edge,
-                capabilities,
-                location,
-                repacker,
-                &format!("Contract To {:?}", place),
-            )?);
-        }
-
         // It's possible that `place` is not in the PCG, `expand_root` is the leaf
         // node from which place will be expanded to.
 
         let mut expand_root = place;
         while capabilities.get(expand_root.into()).is_none() {
             if expand_root.is_owned(repacker) {
-                return Ok(actions);
+                return Ok(ExecutedActions::new());
             }
             expand_root = expand_root.parent_place().unwrap();
         }
@@ -223,10 +132,10 @@ impl<'tcx> BorrowsState<'tcx> {
         if !expand_root.is_owned(repacker)
             && capabilities.get(expand_root.into()) == Some(CapabilityKind::Read)
         {
-            actions.extend(self.upgrade_read_to_exclusive(expand_root, capabilities, repacker)?);
+            self.upgrade_read_to_exclusive(expand_root, capabilities, repacker)
+        } else {
+            Ok(ExecutedActions::new())
         }
-
-        Ok(actions)
     }
 
     pub(crate) fn upgrade_read_to_exclusive(

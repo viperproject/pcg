@@ -478,12 +478,6 @@ impl<'tcx> Place<'tcx> {
             .unwrap_or(false)
     }
 
-    /// Check if the place `self` is a strict prefix of `place`, that is,
-    /// `self` is a prefix of `place` and `self` != `place`.
-    pub(crate) fn is_strict_prefix(self, place: Self) -> bool {
-        self.is_prefix(place) && self != place
-    }
-
     /// Check if the place `self` is an exact prefix of `place`. For example:
     ///
     /// +   `is_prefix(x.f, x.f) == false`

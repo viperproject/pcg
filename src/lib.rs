@@ -350,9 +350,28 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
 
 #[macro_export]
 macro_rules! pcg_validity_assert {
-    ($($arg:tt)*) => {
+    ($cond:expr) => {
         if $crate::validity_checks_enabled() {
-            assert!($($arg)*);
+            if $crate::validity_checks_warn_only() {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                if !$cond {
+                    tracing::error!("assertion failed: {}", stringify!($cond));
+                }
+            } else {
+                assert!($cond);
+            }
+        }
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        if $crate::validity_checks_enabled() {
+            if $crate::validity_checks_warn_only() {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                if !$cond {
+                    tracing::error!($($arg)*);
+                }
+            } else {
+                assert!($cond, $($arg)*);
+            }
         }
     };
 }
@@ -370,4 +389,8 @@ macro_rules! pcg_validity_warn {
 
 pub(crate) fn validity_checks_enabled() -> bool {
     env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
+}
+
+pub(crate) fn validity_checks_warn_only() -> bool {
+    env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false)
 }

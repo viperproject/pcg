@@ -136,15 +136,6 @@ pub(super) trait Grapher<'mir, 'tcx: 'mir> {
                     kind: format!("{}", member.kind),
                 });
             }
-            BorrowPCGEdgeKind::RegionProjectionMember(member) => {
-                let input_node = self.insert_pcg_node(member.blocked_node());
-                let output_node = self.insert_local_node(member.blocked_by_node(self.repacker()));
-                self.constructor().edges.insert(GraphEdge::Block {
-                    source: input_node,
-                    target: output_node,
-                    kind: format!("{:?}", member.direction()),
-                });
-            }
         }
     }
 }

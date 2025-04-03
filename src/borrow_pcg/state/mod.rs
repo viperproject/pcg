@@ -24,12 +24,9 @@ use crate::{
 use crate::{
     borrow_pcg::edge_data::EdgeData,
     pcg::PCGNode,
-    rustc_interface::{
-        data_structures::fx::FxHashSet,
-        middle::{
-            mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
-            ty::{self},
-        },
+    rustc_interface::middle::{
+        mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
+        ty::{self},
     },
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
@@ -313,10 +310,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: PlaceRepacker<'mir, 'tcx>,
     ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.graph.edges_blocking(node, repacker).collect()
-    }
-
-    pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        self.graph.roots(repacker)
     }
 
     pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {

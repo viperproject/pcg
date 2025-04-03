@@ -179,8 +179,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             false,
                         );
                     }
-                },
-                _ => todo!(),
+                }
             }
         }
         result
