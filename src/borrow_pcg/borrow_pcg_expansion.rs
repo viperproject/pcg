@@ -9,11 +9,11 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcgElems, MakePlaceOld},
+    has_pcs_elem::{HasPcgElems, LabelRegionProjection, MakePlaceOld},
     latest::Latest,
     region_projection::RegionProjection,
 };
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::{json::ToJsonWithRepacker, SnapshotLocation};
 use crate::utils::place::corrected::CorrectedPlace;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
@@ -165,6 +165,21 @@ pub struct BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
     pub(crate) expansion: Vec<P>,
     _marker: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.base.label_region_projection(projection, location, repacker);
+        for p in &mut self.expansion {
+            changed |= p.label_region_projection(projection, location, repacker);
+        }
+        changed
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {

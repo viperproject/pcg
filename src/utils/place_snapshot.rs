@@ -27,6 +27,15 @@ impl SnapshotLocation {
         SnapshotLocation::After(Location::START)
     }
 
+    pub(crate) fn before(mut loc: Location) -> Self {
+        if loc.statement_index == 0 {
+            SnapshotLocation::Start(loc.block)
+        } else {
+            loc.statement_index -= 1;
+            SnapshotLocation::After(loc)
+        }
+    }
+
     pub(crate) fn to_json(self) -> serde_json::Value {
         match self {
             SnapshotLocation::After(loc) => format!("after {:?}", loc).into(),

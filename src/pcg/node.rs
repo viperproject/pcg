@@ -1,6 +1,9 @@
-use crate::borrow_pcg::has_pcs_elem::{default_make_place_old, MakePlaceOld};
+use crate::borrow_pcg::has_pcs_elem::{
+    default_make_place_old, LabelRegionProjection, MakePlaceOld,
+};
 use crate::borrow_pcg::latest::Latest;
 use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{Place, SnapshotLocation};
@@ -18,6 +21,23 @@ use crate::{
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjectionBase<'tcx>> {
     Place(T),
     RegionProjection(RegionProjection<'tcx, U>),
+}
+
+impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
+    for PCGNode<'tcx, T, U>
+{
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        if let PCGNode::RegionProjection(this_projection) = self {
+            this_projection.label_region_projection(projection, location, repacker)
+        } else {
+            false
+        }
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {

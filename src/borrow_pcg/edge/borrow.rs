@@ -1,12 +1,19 @@
 use crate::{
-    borrow_pcg::{has_pcs_elem::{default_make_place_old, MakePlaceOld}, latest::Latest}, pcg::PCGNode, edgedata_enum, rustc_interface::{
+    borrow_pcg::{
+        has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
+        latest::Latest,
+    },
+    edgedata_enum,
+    pcg::PCGNode,
+    rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHashSet,
         middle::{
             mir::{self, Location},
             ty::{self},
         },
-    }, utils::{remote::RemotePlace, HasPlace, Place}
+    },
+    utils::{remote::RemotePlace, HasPlace, Place, SnapshotLocation},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -31,6 +38,29 @@ pub struct LocalBorrow<'tcx> {
     reserve_location: Location,
 
     pub region: ty::Region<'tcx>,
+
+    blocked_rp_snapshot: Option<SnapshotLocation>,
+    assigned_rp_snapshot: Option<SnapshotLocation>,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        if self.blocked_place.base_region_projection(repacker) == Some(*projection) {
+            self.blocked_rp_snapshot = Some(location);
+            changed = true;
+        }
+        if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
+            self.assigned_rp_snapshot = Some(location);
+            changed = true;
+        }
+        changed
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for LocalBorrow<'tcx> {
@@ -44,14 +74,24 @@ impl<'tcx> MakePlaceOld<'tcx> for LocalBorrow<'tcx> {
     }
 }
 
-
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
 pub struct RemoteBorrow<'tcx> {
     local: mir::Local,
 
-    // We don't assume that it's still the derefence of the local of the remote place,
+    // We don't assume that it's still the dereference of the local of the remote place,
     // because that local could be moved and the assigned ref should be renamed accordingly.
     assigned_ref: MaybeOldPlace<'tcx>,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        _projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        _location: SnapshotLocation,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        false
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for RemoteBorrow<'tcx> {
@@ -275,7 +315,6 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         // );
         vec![LocalNode::RegionProjection(rp)].into_iter().collect()
     }
-
 }
 
 impl<'tcx> LocalBorrow<'tcx> {
@@ -294,6 +333,8 @@ impl<'tcx> LocalBorrow<'tcx> {
             kind,
             reserve_location: reservation_location,
             region,
+            blocked_rp_snapshot: None,
+            assigned_rp_snapshot: None,
         }
     }
 
@@ -319,9 +360,13 @@ impl<'tcx> LocalBorrow<'tcx> {
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self.assigned_ref.ty(repacker).ty.kind() {
-            ty::TyKind::Ref(region, _, _) => {
-                RegionProjection::new((*region).into(), self.assigned_ref, repacker).unwrap()
-            }
+            ty::TyKind::Ref(region, _, _) => RegionProjection::new(
+                (*region).into(),
+                self.assigned_ref,
+                self.assigned_rp_snapshot,
+                repacker,
+            )
+            .unwrap(),
             other => unreachable!("{:?}", other),
         }
     }

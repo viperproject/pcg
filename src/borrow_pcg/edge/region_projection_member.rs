@@ -1,11 +1,11 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld}, latest::Latest, region_projection::RegionProjection
+        borrow_pcg_edge::LocalNode, edge_data::EdgeData, has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld}, latest::Latest, region_projection::RegionProjection
     },
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithRepacker, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck, Place, PlaceRepacker
+        display::DisplayWithRepacker, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, validity::HasValidityCheck, Place, PlaceRepacker, SnapshotLocation
     },
 };
 
@@ -21,6 +21,17 @@ pub struct RegionProjectionMember<'tcx> {
     region_projection: RegionProjection<'tcx>,
     place: MaybeRemotePlace<'tcx>,
     direction: RpMemberDirection,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for RegionProjectionMember<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        _projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        _location: SnapshotLocation,
+        _repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        todo!()
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for RegionProjectionMember<'tcx> {

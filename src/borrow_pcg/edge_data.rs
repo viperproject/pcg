@@ -85,6 +85,21 @@ macro_rules! edgedata_enum {
             }
         }
 
+        impl<$tcx> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjection<$tcx> for $enum_name<$tcx> {
+            fn label_region_projection(
+                &mut self,
+                projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+                location: $crate::utils::SnapshotLocation,
+                repacker: PlaceRepacker<'_, 'tcx>,
+            ) -> bool {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.label_region_projection(projection, location, repacker),
+                    )+
+                }
+            }
+        }
+
         impl<$tcx> HasValidityCheck<$tcx> for $enum_name<$tcx> {
             fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
                 match self {

@@ -266,6 +266,8 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
         weight: FxHashSet<E>,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) {
+        assert!(source.index() < self.inner.node_count());
+        assert!(target.index() < self.inner.node_count());
         if source != target {
             let edge_index = self.inner.find_edge(source, target);
             if let Some(index) = edge_index
@@ -338,7 +340,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        let should_merge_sccs;
+        let mut should_merge_sccs;
         if from.is_empty() {
             assert!(!to.is_empty());
             should_merge_sccs = self.join_nodes(to).performed_merge;
@@ -346,9 +348,16 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
             assert!(!from.is_empty());
             should_merge_sccs = self.join_nodes(from).performed_merge;
         } else {
-            let from_idx = self.join_nodes(from);
-            let to_idx = self.join_nodes(to);
-            should_merge_sccs = from_idx.performed_merge || to_idx.performed_merge;
+            let mut from_idx = self.join_nodes(from);
+            should_merge_sccs = from_idx.performed_merge;
+            let mut to_idx = self.join_nodes(to);
+            should_merge_sccs |= to_idx.performed_merge;
+            if should_merge_sccs {
+                self.merge_sccs(repacker);
+                from_idx.index = self.lookup(*from.iter().next().unwrap()).unwrap();
+                to_idx.index = self.lookup(*to.iter().next().unwrap()).unwrap();
+                should_merge_sccs = false;
+            }
             self.add_edge_via_indices(from_idx.index, to_idx.index, weight, repacker);
         }
         if should_merge_sccs {

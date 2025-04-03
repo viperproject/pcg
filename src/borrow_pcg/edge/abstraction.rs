@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BlockedNode,
-        has_pcs_elem::{default_make_place_old, MakePlaceOld},
+        has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
@@ -14,7 +14,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
-    utils::Place,
+    utils::{Place, SnapshotLocation},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
@@ -39,6 +39,16 @@ pub struct LoopAbstraction<'tcx> {
     pub(crate) block: BasicBlock,
 }
 
+impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        self.edge.label_region_projection(projection, location, repacker)
+    }
+}
 impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
     fn make_place_old(
         &mut self,
@@ -112,6 +122,18 @@ pub struct FunctionCallAbstraction<'tcx> {
     def_id: DefId,
     substs: GenericArgsRef<'tcx>,
     edge: AbstractionBlockEdge<'tcx>,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        self.edge
+            .label_region_projection(projection, location, repacker)
+    }
 }
 
 impl<'tcx> MakePlaceOld<'tcx> for FunctionCallAbstraction<'tcx> {
@@ -206,6 +228,24 @@ edgedata_enum!(
 pub struct AbstractionBlockEdge<'tcx> {
     pub(crate) inputs: SmallVec<[AbstractionInputTarget<'tcx>; 8]>,
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for input in self.inputs.iter_mut() {
+            changed |= input.label_region_projection(projection, location, repacker);
+        }
+        for output in self.outputs.iter_mut() {
+            changed |= output.label_region_projection(projection, location, repacker);
+        }
+        changed
+    }
 }
 
 impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
