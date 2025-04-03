@@ -8,7 +8,6 @@ use super::{
     coupling_graph_constructor::CGNode,
     edge::{
         borrow::RemoteBorrow, outlives::OutlivesEdge,
-        region_projection_member::RegionProjectionMember,
     },
     edge_data::EdgeData,
     graph::Conditioned,
@@ -450,7 +449,6 @@ edgedata_enum!(
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
     Outlives(OutlivesEdge<'tcx>),
-    RegionProjectionMember(RegionProjectionMember<'tcx>),
 );
 
 pub(crate) trait ToBorrowsEdge<'tcx> {

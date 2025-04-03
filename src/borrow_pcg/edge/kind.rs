@@ -5,7 +5,6 @@ use crate::utils::PlaceRepacker;
 
 use super::borrow::RemoteBorrow;
 use super::outlives::OutlivesEdge;
-use super::region_projection_member::RegionProjectionMember;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowPCGEdgeKind<'tcx> {
@@ -13,7 +12,6 @@ pub enum BorrowPCGEdgeKind<'tcx> {
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
     Outlives(OutlivesEdge<'tcx>),
-    RegionProjectionMember(RegionProjectionMember<'tcx>),
 }
 
 impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdgeKind<'tcx> {
