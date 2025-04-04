@@ -164,23 +164,13 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
                 let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());
                 let output_facts = bc.output_facts.clone();
                 (
-                    run_pcg_with(
-                        body.as_ref(),
-                        tcx,
-                        bc,
-                        item_dir.as_ref().map(|dir| dir.as_str()),
-                    ),
+                    run_pcg_with(body.as_ref(), tcx, bc, item_dir.as_deref()),
                     Some(output_facts),
                 )
             } else {
                 let bc = BorrowCheckerImpl::new(tcx, body.as_ref());
                 (
-                    run_pcg_with(
-                        body.as_ref(),
-                        tcx,
-                        bc,
-                        item_dir.as_ref().map(|dir| dir.as_str()),
-                    ),
+                    run_pcg_with(body.as_ref(), tcx, bc, item_dir.as_deref()),
                     None,
                 )
             };
