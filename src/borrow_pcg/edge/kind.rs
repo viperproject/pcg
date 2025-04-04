@@ -4,14 +4,14 @@ use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::PlaceRepacker;
 
 use super::borrow::RemoteBorrow;
-use super::outlives::OutlivesEdge;
+use super::outlives::BorrowFlowEdge;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BorrowPCGEdgeKind<'tcx> {
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
-    Outlives(OutlivesEdge<'tcx>),
+    BorrowFlow(BorrowFlowEdge<'tcx>),
 }
 
 impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdgeKind<'tcx> {

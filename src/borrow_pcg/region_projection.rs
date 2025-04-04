@@ -193,11 +193,11 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
-impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn label_projection(
         self,
         location: SnapshotLocation,
-    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    ) -> RegionProjection<'tcx, T> {
         RegionProjection {
             base: self.base,
             region_idx: self.region_idx,

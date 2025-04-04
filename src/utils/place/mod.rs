@@ -21,8 +21,8 @@ use crate::{
         data_structures::fx::FxHasher,
         index::IndexVec,
         middle::{
-            mir::{Body, Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
-            ty::{self, Ty, TyCtxt, TyKind},
+            mir::{Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
+            ty::{self, Ty, TyKind},
         },
         target::abi::VariantIdx,
     },
@@ -382,9 +382,9 @@ impl<'tcx> Place<'tcx> {
             .any(|(place, elem)| elem == ProjectionElem::Deref && !place.ty(repacker).ty.is_box())
     }
 
-    pub fn is_mut_ref(&self, body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
+    pub fn is_mut_ref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         matches!(
-            self.0.ty(body, tcx).ty.kind(),
+            self.0.ty(repacker.mir, repacker.tcx).ty.kind(),
             TyKind::Ref(_, _, Mutability::Mut)
         )
     }

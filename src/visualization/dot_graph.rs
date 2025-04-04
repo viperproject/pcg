@@ -1,17 +1,23 @@
 use std::collections::BTreeSet;
 use std::fmt::Display;
+use std::fs::File;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 type NodeId = String;
 
-pub(crate) struct DotGraph {
-    pub name: String,
-    pub nodes: Vec<DotNode>,
-    pub edges: Vec<DotEdge>,
+pub struct DotGraph {
+    pub(crate) name: String,
+    pub(crate) nodes: Vec<DotNode>,
+    pub(crate) edges: Vec<DotEdge>,
 }
 
 impl DotGraph {
+    pub fn write_to_file(self, path: &str) -> Result<(), std::io::Error> {
+        let mut file = File::create(path)?;
+        file.write_all(self.to_string().as_bytes())?;
+        Ok(())
+    }
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
         tracing::info!("{}", comment);
         let mut dot_process = Command::new("dot")
@@ -121,6 +127,20 @@ pub struct DotNode {
     pub tooltip: Option<DotStringAttr>,
 }
 
+impl DotNode {
+    pub(crate) fn simple(id: NodeId, label: String) -> Self {
+        Self {
+            id,
+            label: DotLabel::Text(label),
+            font_color: DotStringAttr("black".to_string()),
+            color: DotStringAttr("black".to_string()),
+            shape: DotStringAttr("rect".to_string()),
+            style: None,
+            penwidth: None,
+            tooltip: None,
+        }
+    }
+}
 trait DotAttr: Display {}
 
 pub struct DotStringAttr(pub String);

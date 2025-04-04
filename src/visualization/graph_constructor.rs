@@ -104,6 +104,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         &mut self,
         abstraction: &AbstractionType<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
+        edge_idx: usize
     ) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
@@ -130,6 +131,12 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             AbstractionType::Loop(loop_abstraction) => {
                 format!("loop at {:?}", loop_abstraction.location())
             }
+        };
+
+        let label = if input_nodes.len() > 1 || output_nodes.len() > 1 {
+            format!("{label} <{}>", edge_idx)
+        } else {
+            label
         };
 
         for input in &input_nodes {
@@ -209,8 +216,8 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
     pub(crate) fn construct_graph(mut self) -> Graph {
         let edges: Vec<MaterializedEdge<'tcx, 'graph>> =
             self.borrows_graph.materialized_edges(self.repacker);
-        for edge in edges {
-            self.draw_materialized_edge(edge);
+        for (edge_idx, edge) in edges.into_iter().enumerate() {
+            self.draw_materialized_edge(edge, edge_idx);
         }
         self.constructor.into_graph()
     }
@@ -362,12 +369,14 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
                 }
             }
         }
-        for edge in self
+        for (edge_idx, edge) in self
             .borrows_domain
             .graph()
             .materialized_edges(self.repacker)
+            .into_iter()
+            .enumerate()
         {
-            self.draw_materialized_edge(edge);
+            self.draw_materialized_edge(edge, edge_idx);
         }
 
         self.constructor.into_graph()

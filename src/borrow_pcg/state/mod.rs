@@ -17,7 +17,7 @@ use crate::{
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
-        outlives::OutlivesEdgeKind,
+        outlives::BorrowFlowEdgeKind,
     },
     pcg::place_capabilities::PlaceCapabilities,
 };
@@ -33,7 +33,7 @@ use crate::{
 };
 use crate::{
     borrow_pcg::{
-        action::executed_actions::ExecutedActions, edge::outlives::OutlivesEdge,
+        action::executed_actions::ExecutedActions, edge::outlives::BorrowFlowEdge,
         region_projection::RegionProjection,
     },
     pcg::PcgError,
@@ -99,7 +99,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 .apply_action(
                     BorrowPCGAction::add_edge(
                         BorrowPCGEdge::new(
-                            OutlivesEdge::new(
+                            BorrowFlowEdge::new(
                                 RegionProjection::new(
                                     region,
                                     RemotePlace::new(local).into(),
@@ -114,7 +114,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                     );
                                 }),
                                 region_projection,
-                                OutlivesEdgeKind::InitialBorrows,
+                                BorrowFlowEdgeKind::InitialBorrows,
                                 repacker,
                             )
                             .into(),

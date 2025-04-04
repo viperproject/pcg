@@ -16,13 +16,13 @@ use crate::{
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct OutlivesEdge<'tcx> {
+pub struct BorrowFlowEdge<'tcx> {
     long: RegionProjection<'tcx>,
     short: LocalRegionProjection<'tcx>,
-    pub(crate) kind: OutlivesEdgeKind,
+    pub(crate) kind: BorrowFlowEdgeKind,
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -35,7 +35,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> MakePlaceOld<'tcx> for BorrowFlowEdge<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
@@ -46,7 +46,7 @@ impl<'tcx> MakePlaceOld<'tcx> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for OutlivesEdge<'tcx> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut elems = self.long.pcg_elems();
         elems.extend(self.short.pcg_elems());
@@ -54,7 +54,7 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> DisplayWithRepacker<'tcx> for BorrowFlowEdge<'tcx> {
     fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",
@@ -64,7 +64,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> EdgeData<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
     fn blocks_node(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
@@ -78,7 +78,7 @@ impl<'tcx> EdgeData<'tcx> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
     fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
         self.long.check_validity(repacker)?;
         self.short.check_validity(repacker)?;
@@ -86,11 +86,11 @@ impl<'tcx> HasValidityCheck<'tcx> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> OutlivesEdge<'tcx> {
+impl<'tcx> BorrowFlowEdge<'tcx> {
     pub(crate) fn new(
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
-        kind: OutlivesEdgeKind,
+        kind: BorrowFlowEdgeKind,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
@@ -105,13 +105,13 @@ impl<'tcx> OutlivesEdge<'tcx> {
         self.short
     }
 
-    pub fn kind(&self) -> OutlivesEdgeKind {
+    pub fn kind(&self) -> BorrowFlowEdgeKind {
         self.kind
     }
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub enum OutlivesEdgeKind {
+pub enum BorrowFlowEdgeKind {
     /// Region projection edge resulting due to contracting a place. For
     /// example, if the type of `x.t` is `&'a mut T` and there is a borrow `x.t
     /// = &mut y`, and we need to contract to `x`, then we need to replace the
@@ -137,21 +137,21 @@ pub enum OutlivesEdgeKind {
     HavocRegion,
 }
 
-impl std::fmt::Display for OutlivesEdgeKind {
+impl std::fmt::Display for BorrowFlowEdgeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutlivesEdgeKind::Aggregate {
+            BorrowFlowEdgeKind::Aggregate {
                 field_idx,
                 target_rp_index,
             } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
-            OutlivesEdgeKind::ConstRef => write!(f, "ConstRef"),
-            OutlivesEdgeKind::BorrowOutlives { toplevel } => {
+            BorrowFlowEdgeKind::ConstRef => write!(f, "ConstRef"),
+            BorrowFlowEdgeKind::BorrowOutlives { toplevel } => {
                 write!(f, "BorrowOutlives({toplevel})")
             }
-            OutlivesEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
-            OutlivesEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
-            OutlivesEdgeKind::HavocRegion => write!(f, "HavocRegion"),
-            OutlivesEdgeKind::Move => write!(f, "Move"),
+            BorrowFlowEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
+            BorrowFlowEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
+            BorrowFlowEdgeKind::HavocRegion => write!(f, "HavocRegion"),
+            BorrowFlowEdgeKind::Move => write!(f, "Move"),
         }
     }
 }

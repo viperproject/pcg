@@ -6,11 +6,7 @@ use crate::{
         action::BorrowPCGAction,
         borrow_pcg_edge::BorrowPCGEdge,
         coupling_graph_constructor::BorrowCheckerInterface,
-        domain::{AbstractionInputTarget, AbstractionOutputTarget},
-        edge::{
-            abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
-            outlives::{OutlivesEdge, OutlivesEdgeKind},
-        },
+        edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, PCGRegion},
     },
@@ -51,23 +47,19 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             return Err(PcgError::unsupported(PCGUnsupportedError::ClosureCall));
         };
 
-        let mk_create_edge_action =
-            |input: AbstractionInputTarget<'tcx>, output: AbstractionOutputTarget<'tcx>| {
-                let edge = BorrowPCGEdge::new(
-                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                        location,
-                        *func_def_id,
-                        substs,
-                        AbstractionBlockEdge::new(
-                            vec![input].into_iter().collect(),
-                            vec![output].into_iter().collect(),
-                        ),
-                    ))
-                    .into(),
-                    PathConditions::AtBlock(location.block),
-                );
-                BorrowPCGAction::add_edge(edge, true)
-            };
+        let mk_create_edge_action = |input, output| {
+            let edge = BorrowPCGEdge::new(
+                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                    location,
+                    *func_def_id,
+                    substs,
+                    AbstractionBlockEdge::new(input, output),
+                ))
+                .into(),
+                PathConditions::AtBlock(location.block),
+            );
+            BorrowPCGAction::add_edge(edge, true)
+        };
 
         // The versions of the region projections for the function inputs just
         // before they were moved out, labelled with their last modification
@@ -104,8 +96,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 repacker: PlaceRepacker<'mir, 'tcx>,
             ) -> Option<&mut FxHashSet<LocalRegionProjection<'tcx>>> {
                 self.0.iter_mut().find(|set| {
-                    set.iter()
-                        .any(|rp| borrow_checker.same_region(rp.region(repacker), region))
+                    borrow_checker.same_region(region, set.iter().next().unwrap().region(repacker))
                 })
             }
 
@@ -161,34 +152,6 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             self.apply_action(create_edge_action);
         }
 
-        for coupled in coupled_region_projections.0.into_iter() {
-            if coupled.len() > 1 {
-                let coupled_lifetime_roots = self.state.frozen_graph().coupled_lifetime_roots(
-                    coupled,
-                    self.bc.as_ref(),
-                    self.repacker,
-                );
-                for (node, to_connect) in coupled_lifetime_roots.connections_to_create().iter() {
-                    for parent in to_connect.iter() {
-                        let action = BorrowPCGAction::add_edge(
-                            BorrowPCGEdge::new(
-                                OutlivesEdge::new(
-                                    *parent,
-                                    *node,
-                                    OutlivesEdgeKind::HavocRegion,
-                                    self.repacker,
-                                )
-                                .into(),
-                                PathConditions::AtBlock(location.block),
-                            ),
-                            true,
-                        );
-                        self.apply_action(action);
-                    }
-                }
-            }
-        }
-
         for arg in args.iter() {
             let input_place: utils::Place<'tcx> = match arg.place() {
                 Some(place) => place.into(),
@@ -208,7 +171,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     let input_rp = input_place
                         .region_projection(lifetime_idx, self.repacker)
                         .label_projection(location.into());
-                    self.apply_action(mk_create_edge_action(input_rp.into(), output));
+                    self.apply_action(mk_create_edge_action(
+                        std::iter::once(input_rp.into()).collect(),
+                        std::iter::once(output).collect(),
+                    ));
                 }
             }
         }

@@ -3,7 +3,7 @@ use derive_more::{Deref, DerefMut};
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::borrow_pcg::edge::outlives::OutlivesEdge;
+use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
@@ -32,14 +32,14 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         &self.0
     }
 
-    pub fn added_outlives_edges(&self) -> FxHashSet<Conditioned<OutlivesEdge<'tcx>>> {
+    pub fn added_outlives_edges(&self) -> FxHashSet<Conditioned<BorrowFlowEdge<'tcx>>> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
                 BorrowPCGActionKind::AddEdge {
                     edge:
                         BorrowPCGEdge {
-                            kind: BorrowPCGEdgeKind::Outlives(edge),
+                            kind: BorrowPCGEdgeKind::BorrowFlow(edge),
                             conditions,
                             ..
                         },
