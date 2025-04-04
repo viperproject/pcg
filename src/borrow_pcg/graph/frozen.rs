@@ -6,13 +6,10 @@ use itertools::Itertools;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
-        coupling_graph_constructor::BorrowCheckerInterface,
-        edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
         edge_data::EdgeData,
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, RegionProjection},
     },
-    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::TerminatorEdges,
@@ -294,78 +291,5 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
 
         true
-    }
-
-    pub(crate) fn coupled_lifetime_roots<'mir: 'graph>(
-        &mut self,
-        start_from: FxHashSet<LocalRegionProjection<'tcx>>,
-        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> CoupledRoots<'tcx> {
-        debug_assert!(start_from.len() > 1);
-        let region = start_from.iter().next().unwrap().region(repacker);
-        let mut stack = start_from
-            .into_iter()
-            .map(|rp| rp.to_local_node(repacker))
-            .collect::<Vec<_>>();
-        let mut result = CoupledRoots::default();
-        while let Some(node) = stack.pop() {
-            for edge in self.get_edges_blocked_by(node, repacker).iter() {
-                match edge.kind() {
-                    BorrowPCGEdgeKind::Borrow(_) => {}
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcgexpansion) => {
-                        stack.push(borrow_pcgexpansion.base());
-                    }
-                    BorrowPCGEdgeKind::Abstraction(_) => {}
-                    BorrowPCGEdgeKind::Outlives(outlives_edge) => match outlives_edge.kind {
-                        OutlivesEdgeKind::Aggregate { .. }
-                        | OutlivesEdgeKind::InitialBorrows
-                        | OutlivesEdgeKind::HavocRegion
-                        | OutlivesEdgeKind::Move
-                        | OutlivesEdgeKind::ConstRef => {
-                            if borrow_checker
-                                .same_region(outlives_edge.short().region(repacker), region)
-                            {
-                                result.insert(outlives_edge.short(), outlives_edge.long());
-                            }
-                        }
-                        OutlivesEdgeKind::BorrowOutlives { .. } => {
-                            stack.push(outlives_edge.long().try_to_local_node(repacker).unwrap());
-                        }
-                        OutlivesEdgeKind::CopySharedRef => {}
-                    },
-                }
-            }
-        }
-        result
-    }
-}
-
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub(crate) struct CoupledRoots<'tcx>(
-    FxHashMap<LocalRegionProjection<'tcx>, FxHashSet<RegionProjection<'tcx>>>,
-);
-
-impl<'tcx> CoupledRoots<'tcx> {
-    pub(crate) fn insert(
-        &mut self,
-        node: LocalRegionProjection<'tcx>,
-        parent: RegionProjection<'tcx>,
-    ) {
-        self.0.entry(node).or_default().insert(parent);
-    }
-
-    fn all_parents(&self) -> FxHashSet<RegionProjection<'tcx>> {
-        self.0.values().flatten().cloned().collect()
-    }
-
-    pub fn connections_to_create(
-        self,
-    ) -> FxHashMap<LocalRegionProjection<'tcx>, FxHashSet<RegionProjection<'tcx>>> {
-        let all_parents = self.all_parents();
-        self.0
-            .into_iter()
-            .map(|(node, parents)| (node, all_parents.difference(&parents).cloned().collect()))
-            .collect()
     }
 }

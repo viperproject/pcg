@@ -7,7 +7,7 @@ use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     coupling_graph_constructor::CGNode,
     edge::{
-        borrow::RemoteBorrow, outlives::OutlivesEdge,
+        borrow::RemoteBorrow, outlives::BorrowFlowEdge,
     },
     edge_data::EdgeData,
     graph::Conditioned,
@@ -448,7 +448,7 @@ edgedata_enum!(
     Borrow(BorrowEdge<'tcx>),
     BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
-    Outlives(OutlivesEdge<'tcx>),
+    BorrowFlow(BorrowFlowEdge<'tcx>),
 );
 
 pub(crate) trait ToBorrowsEdge<'tcx> {
@@ -482,11 +482,11 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
     }
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> ToBorrowsEdge<'tcx> for BorrowFlowEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::Outlives(self),
+            kind: BorrowPCGEdgeKind::BorrowFlow(self),
         }
     }
 }

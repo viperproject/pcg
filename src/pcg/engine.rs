@@ -23,9 +23,7 @@ use crate::{
     },
     free_pcs::{triple::TripleWalker, CapabilityLocals, RepackOp},
     rustc_interface::{
-        borrowck::{
-            self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-        },
+        borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
         index::{bit_set::BitSet, Idx, IndexVec},
         middle::{
@@ -50,9 +48,6 @@ use crate::{
     utils::PlaceRepacker,
 };
 
-#[rustversion::since(2024-10-03)]
-type OutputFacts = Box<PoloniusOutput>;
-
 #[rustversion::before(2024-10-03)]
 type OutputFacts = Rc<PoloniusOutput>;
 
@@ -65,7 +60,6 @@ pub struct BodyWithBorrowckFacts<'tcx> {
     pub region_inference_context: Rc<RegionInferenceContext<'tcx>>,
     pub location_table: Option<Rc<LocationTable>>,
     pub input_facts: Option<Box<PoloniusInput>>,
-    pub output_facts: Option<OutputFacts>,
 }
 
 impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
@@ -84,11 +78,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
         self.output_facts
             .clone()
             .map(|o| Box::new(o.as_ref().clone()))
-    }
-
-    #[rustversion::since(2024-10-03)]
-    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
-        self.output_facts.clone()
     }
 
     fn location_table(&self) -> &LocationTable {
@@ -126,7 +115,6 @@ impl<'tcx> BodyWithBorrowckFacts<'tcx> {
             region_inference_context: self.region_inference_context,
             input_facts: self.input_facts,
             location_table: self.location_table,
-            output_facts: self.output_facts,
         }
     }
 }
@@ -140,7 +128,6 @@ impl<'tcx> From<borrowck::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts
             region_inference_context: value.region_inference_context.into(),
             location_table: value.location_table.map(Rc::new),
             input_facts: value.input_facts,
-            output_facts: value.output_facts,
         }
     }
 }
@@ -414,19 +401,19 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     pub(crate) fn new(
         repacker: PlaceRepacker<'a, 'tcx>,
         borrow_checker: impl BorrowCheckerInterface<'a, 'tcx> + 'a,
-        debug_output_dir: Option<String>,
+        debug_output_dir: Option<&str>,
     ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
             if std::path::Path::new(&dir_path).exists() {
-                std::fs::remove_dir_all(&dir_path).expect("Failed to delete directory contents");
+                std::fs::remove_dir_all(dir_path).expect("Failed to delete directory contents");
             }
-            create_dir_all(&dir_path).expect("Failed to create directory for DOT files");
+            create_dir_all(dir_path).expect("Failed to create directory for DOT files");
             let dot_graphs = IndexVec::from_fn_n(
                 |_| Rc::new(RefCell::new(DotGraphs::new())),
                 repacker.body().basic_blocks.len(),
             );
             PCGEngineDebugData {
-                debug_output_dir: dir_path.clone(),
+                debug_output_dir: dir_path.to_string(),
                 dot_graphs,
             }
         });

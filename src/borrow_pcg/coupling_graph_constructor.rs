@@ -11,8 +11,9 @@ use super::{
 };
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
+    coupling,
     pcg::PCGNode,
-    coupling, pcg_validity_assert,
+    pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
     rustc_interface::middle::ty,

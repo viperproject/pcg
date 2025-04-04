@@ -1,4 +1,5 @@
 #![feature(rustc_private)]
+#![feature(let_chains)]
 
 #[cfg(feature = "memory_profiling")]
 #[cfg(not(target_env = "msvc"))]
@@ -20,8 +21,13 @@ use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowC
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use pcg::run_pcg_with;
 use pcg::utils::PlaceRepacker;
+use pcg::visualization::bc_facts_graph::{
+    region_inference_outlives, subset_anywhere, subset_at_location,
+};
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
+
+use pcg::rustc_interface::middle::mir::Location;
 
 #[rustversion::before(2024-11-09)]
 use pcg::rustc_interface::interface::Queries;
@@ -154,13 +160,74 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         let body = Rc::new(body);
         if should_check_body(&body) {
             let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
-            let mut output = if polonius {
+            let (mut output, output_facts) = if polonius {
                 let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());
-                run_pcg_with(body.as_ref(), tcx, bc, item_dir)
+                let output_facts = bc.output_facts.clone();
+                (
+                    run_pcg_with(
+                        body.as_ref(),
+                        tcx,
+                        bc,
+                        item_dir.as_ref().map(|dir| dir.as_str()),
+                    ),
+                    Some(output_facts),
+                )
             } else {
                 let bc = BorrowCheckerImpl::new(tcx, body.as_ref());
-                run_pcg_with(body.as_ref(), tcx, bc, item_dir)
+                (
+                    run_pcg_with(
+                        body.as_ref(),
+                        tcx,
+                        bc,
+                        item_dir.as_ref().map(|dir| dir.as_str()),
+                    ),
+                    None,
+                )
             };
+            if let Some(dir_path) = &item_dir {
+                if let Some(output_facts) = output_facts {
+                    for (block_index, data) in body.body.basic_blocks.iter_enumerated() {
+                        let num_stmts = data.statements.len();
+                        for stmt_index in 0..num_stmts + 1 {
+                            let location = Location {
+                                block: block_index,
+                                statement_index: stmt_index,
+                            };
+                            let start_dot_graph = subset_at_location(
+                                body.as_ref(),
+                                output_facts.as_ref(),
+                                location,
+                                true,
+                            );
+                            let start_file_path = format!(
+                                "{}/bc_facts_graph_{:?}_{}_start.dot",
+                                dir_path, block_index, stmt_index
+                            );
+                            start_dot_graph
+                                .write_to_file(start_file_path.as_str())
+                                .unwrap();
+                            let mid_dot_graph = subset_at_location(
+                                body.as_ref(),
+                                output_facts.as_ref(),
+                                location,
+                                false,
+                            );
+                            let mid_file_path = format!(
+                                "{}/bc_facts_graph_{:?}_{}_mid.dot",
+                                dir_path, block_index, stmt_index
+                            );
+                            mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
+                        }
+                    }
+                    let dot_graph = subset_anywhere(output_facts.as_ref());
+                    let file_path = format!("{}/bc_facts_graph_anywhere.dot", dir_path);
+                    dot_graph.write_to_file(file_path.as_str()).unwrap();
+                }
+
+                let region_inference_dot_graph = region_inference_outlives(body.as_ref());
+                let file_path = format!("{}/region_inference_outlives.dot", dir_path);
+                std::fs::write(file_path, region_inference_dot_graph).unwrap();
+            }
             if emit_pcg_annotations || check_pcg_annotations {
                 let mut debug_lines = Vec::new();
 

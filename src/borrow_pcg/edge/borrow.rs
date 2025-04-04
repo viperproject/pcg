@@ -81,16 +81,23 @@ pub struct RemoteBorrow<'tcx> {
     // We don't assume that it's still the dereference of the local of the remote place,
     // because that local could be moved and the assigned ref should be renamed accordingly.
     assigned_ref: MaybeOldPlace<'tcx>,
+
+    rp_snapshot_location: Option<SnapshotLocation>,
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
-        _projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        _location: SnapshotLocation,
-        _repacker: PlaceRepacker<'_, 'tcx>,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        false
+        if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
+            self.rp_snapshot_location = Some(location);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -128,13 +135,16 @@ impl<'tcx> RemoteBorrow<'tcx> {
         &self,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-        self.assigned_ref.base_region_projection(repacker).unwrap()
+        let rp = self.assigned_ref.base_region_projection(repacker).unwrap();
+        if let Some(location) = self.rp_snapshot_location {
+            rp.label_projection(location)
+        } else {
+            rp
+        }
     }
 
     pub(crate) fn is_mut(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        self.assigned_ref
-            .place()
-            .is_mut_ref(repacker.body(), repacker.tcx())
+        self.assigned_ref.place().is_mut_ref(repacker)
     }
 }
 
@@ -180,6 +190,7 @@ impl RemoteBorrow<'_> {
         Self {
             local,
             assigned_ref: local.into(),
+            rp_snapshot_location: None,
         }
     }
 }
@@ -308,11 +319,6 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
 
     fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
         let rp = self.assigned_region_projection(repacker);
-        // eprintln!(
-        //     "{} is blocked by {}",
-        //     self.blocked_place.to_short_string(repacker),
-        //     rp.to_short_string(repacker)
-        // );
         vec![LocalNode::RegionProjection(rp)].into_iter().collect()
     }
 }
@@ -371,16 +377,6 @@ impl<'tcx> LocalBorrow<'tcx> {
         }
     }
 }
-
-// impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowEdge<'tcx> {
-//     fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
-//         json!({
-//             "blocked_place": self.blocked_place.to_json(repacker),
-//             "assigned_place": self.assigned_ref.to_json(repacker),
-//             "is_mut": self.mutability == Mutability::Mut
-//         })
-//     }
-// }
 
 impl std::fmt::Display for BorrowEdge<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
-        edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
+        edge::{kind::BorrowPCGEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
         region_projection::RegionIdx,
     },
@@ -153,24 +153,33 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     let blocked = borrow_edge.blocked_place();
                     extend(blocked.into(), seen, &mut result, direct);
                 }
-                BorrowPCGEdgeKind::BorrowPCGExpansion(e) => match e.base {
-                    PCGNode::Place(_) => {}
-                    PCGNode::RegionProjection(region_projection) => {
-                        extend(
-                            region_projection.to_pcg_node(repacker),
-                            seen,
-                            &mut result,
-                            false,
-                        );
+                BorrowPCGEdgeKind::BorrowPCGExpansion(e) => {
+                    for node in e.blocked_nodes(repacker) {
+                        if let PCGNode::RegionProjection(p) = node {
+                            extend(
+                                p.to_pcg_node(repacker),
+                                seen,
+                                &mut result,
+                                e.is_deref(repacker),
+                            );
+                        }
                     }
-                },
+                }
                 BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
                     for input in abstraction_type.inputs() {
                         extend(input.to_pcg_node(repacker), seen, &mut result, false);
                     }
                 }
-                BorrowPCGEdgeKind::Outlives(outlives) => match &outlives.kind {
-                    OutlivesEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
+                BorrowPCGEdgeKind::BorrowFlow(outlives) => match &outlives.kind {
+                    BorrowFlowEdgeKind::Move => {
+                        extend(
+                            outlives.long().to_pcg_node(repacker),
+                            seen,
+                            &mut result,
+                            true,
+                        );
+                    }
+                    BorrowFlowEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
                     _ => {
                         extend(
                             outlives.long().to_pcg_node(repacker),
@@ -179,7 +188,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             false,
                         );
                     }
-                }
+                },
             }
         }
         result
@@ -246,7 +255,12 @@ fn test_aliases() {
             tcx,
         );
         // *_2 aliases _4 at bb3[1]
-        assert!(aliases.contains(&temp4));
+        assert!(
+            aliases.contains(&temp4),
+            "Aliases: {:?} does not contain {:?}",
+            aliases,
+            temp4
+        );
         assert!(aliases.contains(&x));
     });
 

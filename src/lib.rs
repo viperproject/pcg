@@ -26,9 +26,7 @@ use borrow_pcg::{
 use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
-    borrowck::{
-        self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-    },
+    borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
 };
@@ -210,7 +208,6 @@ pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
-    fn output_facts(&self) -> Option<Box<PoloniusOutput>>;
     fn location_table(&self) -> &LocationTable;
     fn input_facts(&self) -> &PoloniusInput;
 }
@@ -233,11 +230,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
             .map(|o| Box::new(o.as_ref().clone()))
     }
 
-    #[rustversion::since(2024-10-03)]
-    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
-        self.output_facts.clone()
-    }
-
     fn location_table(&self) -> &LocationTable {
         self.location_table.as_ref().unwrap()
     }
@@ -250,7 +242,7 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 pub fn run_pcg<'mir, 'tcx: 'mir>(
     mir: &'mir impl BodyAndBorrows<'tcx>,
     tcx: TyCtxt<'tcx>,
-    visualization_output_path: Option<String>,
+    visualization_output_path: Option<&str>,
 ) -> FpcsOutput<'mir, 'tcx> {
     let bc: BorrowCheckerImpl<'mir, 'tcx> = BorrowCheckerImpl::new(tcx, mir);
     run_pcg_with(mir, tcx, bc, visualization_output_path)
@@ -260,13 +252,13 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
     mir: &'mir T,
     tcx: TyCtxt<'tcx>,
     bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,
-    visualization_output_path: Option<String>,
+    visualization_output_path: Option<&str>,
 ) -> FpcsOutput<'mir, 'tcx> {
     let repacker = PlaceRepacker::new(mir.body(), tcx);
-    let engine = PcgEngine::new(repacker, bc, visualization_output_path.clone());
+    let engine = PcgEngine::new(repacker, bc, visualization_output_path);
     {
-        let mut record_pcs = RECORD_PCG.lock().unwrap();
-        *record_pcs = true;
+        let mut record_pcg = RECORD_PCG.lock().unwrap();
+        *record_pcg = true;
     }
     let analysis = compute_fixpoint(PCGAnalysis(engine), tcx, mir.body());
     {

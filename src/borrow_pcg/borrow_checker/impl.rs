@@ -22,7 +22,7 @@ use std::rc::Rc;
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
     repacker: PlaceRepacker<'mir, 'tcx>,
-    output_facts: Rc<PoloniusOutput>,
+    pub output_facts: Rc<PoloniusOutput>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
 }

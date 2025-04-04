@@ -25,7 +25,7 @@ use super::{
     action::{BorrowPCGAction, MakePlaceOldReason},
     borrow_pcg_edge::BorrowPCGEdge,
     coupling_graph_constructor::BorrowCheckerInterface,
-    edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
+    edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
     path_condition::PathConditions,
     region_projection::{PCGRegion, RegionIdx, RegionProjection},
     state::BorrowsState,
@@ -86,7 +86,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
         location: Location,
-        kind: impl Fn(PCGRegion) -> OutlivesEdgeKind,
+        kind: impl Fn(PCGRegion) -> BorrowFlowEdgeKind,
     ) {
         for target_proj in target.region_projections(self.repacker).into_iter() {
             if self.outlives(
@@ -95,7 +95,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
             ) {
                 self.apply_action(BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(
-                        OutlivesEdge::new(
+                        BorrowFlowEdge::new(
                             source_proj.into(),
                             target_proj.into(),
                             kind(target_proj.region(self.repacker)),

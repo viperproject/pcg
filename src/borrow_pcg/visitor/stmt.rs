@@ -3,7 +3,7 @@ use crate::{
     borrow_pcg::{
         action::{BorrowPCGAction, MakePlaceOldReason},
         borrow_pcg_edge::BorrowPCGEdge,
-        edge::outlives::{OutlivesEdge, OutlivesEdgeKind},
+        edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         path_condition::PathConditions,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::obtain::ObtainReason,
@@ -149,7 +149,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                 source_proj,
                                 target,
                                 location,
-                                |_| OutlivesEdgeKind::Aggregate {
+                                |_| BorrowFlowEdgeKind::Aggregate {
                                     field_idx,
                                     target_rp_index: source_rp_idx,
                                 },
@@ -164,7 +164,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         {
                             self.apply_action(BorrowPCGAction::add_edge(
                                 BorrowPCGEdge::new(
-                                    OutlivesEdge::new(
+                                    BorrowFlowEdge::new(
                                         RegionProjection::new(
                                             (*const_region).into(),
                                             MaybeRemoteRegionProjectionBase::Const(c.const_),
@@ -180,7 +180,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                                         )
                                         .unwrap()
                                         .into(),
-                                        OutlivesEdgeKind::ConstRef,
+                                        BorrowFlowEdgeKind::ConstRef,
                                         self.repacker,
                                     )
                                     .into(),
@@ -196,10 +196,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     let (from, kind) = if matches!(operand, Operand::Move(_)) {
                         (
                             MaybeOldPlace::new(from, Some(self.state.get_latest(from))),
-                            OutlivesEdgeKind::Move,
+                            BorrowFlowEdgeKind::Move,
                         )
                     } else {
-                        (from.into(), OutlivesEdgeKind::CopySharedRef)
+                        (from.into(), BorrowFlowEdgeKind::CopySharedRef)
                     };
                     for source_proj in from.region_projections(self.repacker).into_iter() {
                         self.connect_outliving_projections(source_proj, target, location, |_| kind);
@@ -231,7 +231,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                             source_proj.into(),
                             target,
                             location,
-                            |region| OutlivesEdgeKind::BorrowOutlives {
+                            |region| BorrowFlowEdgeKind::BorrowOutlives {
                                 toplevel: region == target_region,
                             },
                         );

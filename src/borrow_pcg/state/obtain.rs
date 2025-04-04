@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
@@ -15,7 +13,7 @@ use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{HasPlace, Place, PlaceRepacker};
+use crate::utils::{HasPlace, Place, PlaceRepacker, SnapshotLocation};
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we
@@ -206,17 +204,17 @@ impl<'tcx> BorrowsState<'tcx> {
             // that is handled by the owned PCG.
             if !target.is_owned(repacker) {
                 let place_expansion = PlaceExpansion::from_places(expansion.clone(), repacker);
-                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> = BorrowPCGExpansion::new(
-                    base.into(),
-                    place_expansion
-                        .elems()
-                        .into_iter()
-                        .map(|p| base.project_deeper(p, repacker))
-                        .collect::<Result<BTreeSet<_>, _>>()?
-                        .into_iter()
-                        .map(|p| p.into())
-                        .collect(),
-                );
+                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> =
+                    BorrowPCGExpansion::new(base.into(), place_expansion, location, repacker)?;
+
+                if base.is_mut_ref(repacker) {
+                    let place: MaybeOldPlace<'tcx> = base.into();
+                    self.label_region_projection(
+                        &place.base_region_projection(repacker).unwrap(),
+                        location.into(),
+                        repacker,
+                    );
+                }
 
                 let action = BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(
@@ -240,22 +238,13 @@ impl<'tcx> BorrowsState<'tcx> {
                     .collect::<Vec<_>>();
                 if !dest_places.is_empty() {
                     let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
-                    let expansion = PlaceExpansion::from_places(dest_places, repacker);
-                    let expansion_places: BTreeSet<LocalNode<'tcx>> = expansion
-                        .elems()
-                        .into_iter()
-                        .map(|p| rp.project_deeper(p, repacker))
-                        .collect::<Result<BTreeSet<_>, _>>()?
-                        .into_iter()
-                        .map(|p| p.into())
-                        .collect();
+                    let place_expansion = PlaceExpansion::from_places(dest_places, repacker);
+                    let expansion =
+                        BorrowPCGExpansion::new(rp.into(), place_expansion, location, repacker)?;
                     self.record_and_apply_action(
                         BorrowPCGAction::add_edge(
                             BorrowPCGEdge::new(
-                                BorrowPCGEdgeKind::BorrowPCGExpansion(BorrowPCGExpansion::new(
-                                    rp.into(),
-                                    expansion_places,
-                                )),
+                                BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
                                 PathConditions::new(location.block),
                             ),
                             for_exclusive,
@@ -264,6 +253,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         capabilities,
                         repacker,
                     )?;
+                    self.label_region_projection(&rp, SnapshotLocation::before(location), repacker);
                 }
             }
         }

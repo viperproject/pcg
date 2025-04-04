@@ -13,15 +13,16 @@ use super::{
     latest::Latest,
     region_projection::RegionProjection,
 };
-use crate::utils::{json::ToJsonWithRepacker, SnapshotLocation};
-use crate::utils::place::corrected::CorrectedPlace;
 use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::{json::ToJsonWithRepacker, SnapshotLocation};
+use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::FxHashSet,
+        hir::Mutability,
         middle::{
-            mir::{Local, PlaceElem},
+            mir::{Local, Location, PlaceElem},
             ty,
         },
         span::Symbol,
@@ -164,6 +165,10 @@ impl<'tcx> PlaceExpansion<'tcx> {
 pub struct BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
     pub(crate) expansion: Vec<P>,
+    /// The location the expansion was created. This is relevant if the
+    /// expansion is of the form x -> *x, since this will determine the label of
+    /// region projection.
+    location: SnapshotLocation,
     _marker: PhantomData<&'tcx ()>,
 }
 
@@ -174,7 +179,9 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
         location: SnapshotLocation,
         repacker: PlaceRepacker<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.base.label_region_projection(projection, location, repacker);
+        let mut changed = self
+            .base
+            .label_region_projection(projection, location, repacker);
         for p in &mut self.expansion {
             changed |= p.label_region_projection(projection, location, repacker);
         }
@@ -221,13 +228,8 @@ impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
         if self.base.to_pcg_node(repacker) == node {
             return true;
         }
-        if let BlockingNode::Place(p) = self.base
-            && let Some(base_projection) = p.base_region_projection(repacker)
-        {
-            let other: PCGNode<'tcx> = base_projection
-                .with_base(base_projection.base.into(), repacker)
-                .into();
-            other == node
+        if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
+            node == blocked_rp
         } else {
             false
         }
@@ -235,14 +237,8 @@ impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
 
     fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let mut base: FxHashSet<PCGNode<'tcx>> = vec![self.base.into()].into_iter().collect();
-        if let BlockingNode::Place(p) = self.base
-            && let Some(base_projection) = p.base_region_projection(repacker)
-        {
-            base.insert(
-                base_projection
-                    .with_base(base_projection.base.into(), repacker)
-                    .into(),
-            );
+        if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
+            base.insert(blocked_rp);
         }
         base
     }
@@ -259,6 +255,7 @@ impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>
     fn try_from(expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>) -> Result<Self, Self::Error> {
         Ok(BorrowPCGExpansion {
             base: expansion.base.try_into()?,
+            location: expansion.location,
             expansion: expansion
                 .expansion
                 .into_iter()
@@ -286,6 +283,34 @@ where
     }
 }
 
+impl<'tcx> BorrowPCGExpansion<'tcx> {
+    pub(crate) fn is_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+        if let BlockingNode::Place(p) = self.base {
+            p.place().is_ref(repacker)
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn deref_blocked_region_projection(
+        &self,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Option<PCGNode<'tcx>> {
+        if let BlockingNode::Place(p) = self.base
+            && let Some(base_projection) = p.base_region_projection(repacker)
+        {
+            let projection = base_projection.with_base(base_projection.base.into(), repacker);
+            let projection = match p.place().ref_mutability(repacker).unwrap() {
+                Mutability::Not => projection,
+                Mutability::Mut => projection.label_projection(self.location),
+            };
+            Some(projection.into())
+        } else {
+            None
+        }
+    }
+}
+
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     BorrowPCGExpansion<'tcx, P>
 {
@@ -297,13 +322,6 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         &self.expansion
     }
 
-    pub(crate) fn is_deref_of_borrow(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
-        match self.base.into() {
-            BlockingNode::Place(p) => p.ty(repacker).ty.is_ref(),
-            BlockingNode::RegionProjection(_) => false,
-        }
-    }
-
     pub(crate) fn is_owned_expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
         match self.base.into() {
             BlockingNode::Place(p) => p.is_owned(repacker),
@@ -311,15 +329,25 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         }
     }
 
-    pub(super) fn new(base: P, expansion: BTreeSet<P>) -> Self
+    pub(super) fn new(
+        base: P,
+        expansion: PlaceExpansion<'tcx>,
+        location: Location,
+        repacker: PlaceRepacker<'_, 'tcx>,
+    ) -> Result<Self, PcgError>
     where
-        P: Ord,
+        P: Ord + HasPlace<'tcx>,
     {
-        Self {
+        Ok(Self {
             base,
-            expansion: expansion.into_iter().collect(),
+            expansion: expansion
+                .elems()
+                .into_iter()
+                .map(|elem| base.project_deeper(elem, repacker))
+                .collect::<Result<Vec<_>, _>>()?,
+            location: location.into(),
             _marker: PhantomData,
-        }
+        })
     }
 }
 

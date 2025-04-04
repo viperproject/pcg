@@ -15,8 +15,9 @@ use crate::{
         borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef},
         graph::BorrowsGraph,
         latest::Latest,
+        region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::{successor_blocks, EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgSuccessor},
+    pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::PCGAnalysis,
@@ -354,7 +355,20 @@ impl<'tcx> PcgLocation<'tcx> {
             .graph()
             .aliases(place.with_inherent_region(repacker).into(), repacker)
             .into_iter()
-            .flat_map(|p| p.as_current_place())
+            .flat_map(|p| match p {
+                PCGNode::Place(p) => p.as_current_place(),
+                PCGNode::RegionProjection(p) => match p.base() {
+                    MaybeRemoteRegionProjectionBase::Place(p) => {
+                        let assoc_place = p.related_local_place();
+                        if assoc_place.is_ref(repacker) {
+                            Some(assoc_place.project_deref(repacker))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                },
+            })
             .map(|p| p.to_rust_place(repacker))
             .collect()
     }

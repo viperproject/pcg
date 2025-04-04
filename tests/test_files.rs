@@ -11,13 +11,18 @@ fn check_test_files() {
     // Find all numbered test files
     let test_dir = workspace_dir.join("test-files");
 
-    let test_files = common::get_test_files(&test_dir);
+    let mut test_files = common::get_test_files(&test_dir);
+
+    test_files.sort_by(|a, b| {
+        let a_lines = std::fs::read_to_string(a).unwrap().lines().count();
+        let b_lines = std::fs::read_to_string(b).unwrap().lines().count();
+        a_lines.cmp(&b_lines)
+    });
 
     test_files.par_iter().for_each(|test_file| {
         common::run_pcg_on_file(test_file);
     });
 
-    // test_files.iter().for_each(|test_file| {
-    //     common::run_pcg_on_file(test_file);
+    // test_files.iter().for_each(|test_file| { common::run_pcg_on_file(test_file);
     // });
 }
