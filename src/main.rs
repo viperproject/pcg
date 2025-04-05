@@ -20,7 +20,7 @@ use std::rc::Rc;
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use pcg::run_pcg_with;
-use pcg::utils::PlaceRepacker;
+use pcg::utils::CompilerCtxt;
 use pcg::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location,
 };
@@ -226,7 +226,11 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
                 }
                 for block in body.body.basic_blocks.indices() {
                     if let Ok(Some(state)) = output.get_all_for_bb(block) {
-                        for line in state.debug_lines(PlaceRepacker::new(&body.body, tcx)) {
+                        for line in state.debug_lines(CompilerCtxt::new(
+                            &body.body,
+                            tcx,
+                            &body.region_inference_context,
+                        )) {
                             debug_lines.push(line);
                         }
                     }

@@ -16,7 +16,7 @@ use itertools::Itertools;
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{PCGInternalError, PcgError},
-    utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, PlaceRepacker},
+    utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, CompilerCtxt},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -116,7 +116,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &self.expansions
     }
 
-    pub(crate) fn leaves(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<Place<'tcx>> {
+    pub(crate) fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
         if self.expansions.is_empty() {
             return vec![self.local.into()];
         }
@@ -141,7 +141,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     pub(crate) fn contains_expansion_to(
         &self,
         place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match place.last_projection() {
             Some((p, _)) => {
@@ -165,7 +165,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to: CorrectedPlace<'tcx>,
         for_cap: CapabilityKind,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         assert!(
             to.is_owned(repacker),
@@ -231,7 +231,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &mut self,
         to: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
         let expansions = self
             .expansions

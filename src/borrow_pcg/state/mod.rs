@@ -41,7 +41,7 @@ use crate::{
 };
 use crate::{
     free_pcs::CapabilityKind,
-    utils::{Place, PlaceRepacker, SnapshotLocation},
+    utils::{Place, CompilerCtxt, SnapshotLocation},
 };
 use crate::{pcg::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 
@@ -53,8 +53,8 @@ pub struct BorrowsState<'tcx> {
     graph: BorrowsGraph<'tcx>,
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut lines = Vec::new();
         lines.extend(self.graph.debug_lines(repacker));
         lines
@@ -62,7 +62,7 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.graph.check_validity(repacker)
     }
 }
@@ -72,7 +72,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         self.graph
             .mut_edges(|edge| edge.label_region_projection(projection, location, repacker));
@@ -81,7 +81,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         local: mir::Local,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         let local_decl = &repacker.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
@@ -132,7 +132,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn initialize_as_start_block(
         &mut self,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         for arg in repacker.body().args_iter() {
             self.introduce_initial_borrows(arg, capabilities, repacker);
@@ -147,7 +147,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         edge: &BorrowPCGEdge<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let removed = self.graph.remove(edge);
         if removed {
@@ -167,7 +167,7 @@ impl<'tcx> BorrowsState<'tcx> {
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
         let changed = self.apply_action(action.clone(), capabilities, repacker)?;
         if changed {
@@ -179,7 +179,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph.contains(node.into(), repacker)
     }
@@ -198,7 +198,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self_block: BasicBlock,
         other_block: BasicBlock,
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
         changed |= self
@@ -214,7 +214,7 @@ impl<'tcx> BorrowsState<'tcx> {
         edge: impl BorrowPCGEdgeLike<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
@@ -287,7 +287,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn get_place_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Option<MaybeOldPlace<'tcx>> {
         let edges = self.edges_blocking(place.into(), repacker);
         if edges.len() != 1 {
@@ -307,7 +307,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn edges_blocking<'slf, 'mir: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.graph.edges_blocking(node, repacker).collect()
     }
@@ -339,7 +339,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// reference-typed function argument in its postcondition.
     pub(super) fn pack_old_and_dead_leaves<'slf, 'mir>(
         &'slf mut self,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
@@ -349,7 +349,7 @@ impl<'tcx> BorrowsState<'tcx> {
         loop {
             fn go<'slf, 'mir: 'slf, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx>,
                 location: Location,
                 bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
@@ -436,7 +436,7 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         region: ty::Region<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         assert!(
             assigned_place.ty(repacker).ty.ref_mutability().is_some(),
@@ -504,7 +504,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph.make_place_old(place, &self.latest, repacker)
     }

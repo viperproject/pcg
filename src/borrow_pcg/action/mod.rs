@@ -10,7 +10,7 @@ use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithRepacker;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{HasPlace, Place, PlaceRepacker, SnapshotLocation};
+use crate::utils::{HasPlace, Place, CompilerCtxt, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
@@ -26,7 +26,7 @@ pub struct BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowPCGAction<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match &self.kind {
             BorrowPCGActionKind::AddEdge { edge, .. } => {
                 format!("Add Edge: {}", edge.to_short_string(repacker))
@@ -144,7 +144,7 @@ pub enum BorrowPCGActionKind<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPCGActionKind::Restore(restore_capability) => {
@@ -178,7 +178,7 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         self.kind.to_short_string(repacker).into()
     }
 }
@@ -189,7 +189,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         action: BorrowPCGAction<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPCGActionKind::Restore(restore) => {
@@ -229,7 +229,7 @@ impl<'tcx> BorrowsState<'tcx> {
         edge: BorrowPCGEdge<'tcx>,
         for_exclusive: bool,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = self.insert(edge.clone());
         Ok(match edge.kind {

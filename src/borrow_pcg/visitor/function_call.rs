@@ -8,7 +8,7 @@ use crate::{
         coupling_graph_constructor::BorrowCheckerInterface,
         edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, PCGRegion},
+        region_projection::{LocalRegionProjection, PcgRegion},
     },
     pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
@@ -18,7 +18,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{self, maybe_old::MaybeOldPlace, PlaceRepacker, PlaceSnapshot, SnapshotLocation},
+    utils::{self, maybe_old::MaybeOldPlace, CompilerCtxt, PlaceSnapshot, SnapshotLocation},
 };
 
 impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
@@ -73,7 +73,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     input_place,
                     self.state.get_latest(input_place),
                 ));
-                input_place.region_projections(self.repacker)
+                input_place.region_projections(self.ctxt)
             })
             .collect::<Vec<_>>();
 
@@ -81,7 +81,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             self.state.label_region_projection(
                 arg,
                 SnapshotLocation::before(location),
-                self.repacker,
+                self.ctxt,
             );
         }
 
@@ -91,9 +91,9 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         impl<'tcx> CoupledRegionProjections<'tcx> {
             fn find_matching<'mir>(
                 &mut self,
-                region: PCGRegion,
+                region: PcgRegion,
                 borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx>,
             ) -> Option<&mut FxHashSet<LocalRegionProjection<'tcx>>> {
                 self.0.iter_mut().find(|set| {
                     borrow_checker.same_region(region, set.iter().next().unwrap().region(repacker))
@@ -104,7 +104,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 &mut self,
                 projection: LocalRegionProjection<'tcx>,
                 borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx>,
             ) {
                 if let Some(set) =
                     self.find_matching(projection.region(repacker), borrow_checker, repacker)
@@ -119,7 +119,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         let mut coupled_region_projections = CoupledRegionProjections::default();
 
         for projection in arg_region_projections.iter() {
-            coupled_region_projections.insert(*projection, self.bc.as_ref(), self.repacker);
+            coupled_region_projections.insert(*projection, self.bc.as_ref(), self.ctxt);
         }
 
         for coupled in coupled_region_projections.iter() {
@@ -161,15 +161,15 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 input_place,
                 self.state.get_latest(input_place),
             ));
-            let ty = input_place.ty(self.repacker).ty;
+            let ty = input_place.ty(self.ctxt).ty;
             for (lifetime_idx, input_lifetime) in
-                extract_regions(ty, self.repacker).into_iter_enumerated()
+                extract_regions(ty, self.ctxt).into_iter_enumerated()
             {
                 for output in
                     self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
                 {
                     let input_rp = input_place
-                        .region_projection(lifetime_idx, self.repacker)
+                        .region_projection(lifetime_idx, self.ctxt)
                         .label_projection(location.into());
                     self.apply_action(mk_create_edge_action(
                         std::iter::once(input_rp.into()).collect(),

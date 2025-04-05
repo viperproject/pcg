@@ -8,7 +8,7 @@ use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::rustc_interface::middle::mir::BasicBlock;
 use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::PlaceRepacker;
+use crate::utils::CompilerCtxt;
 use crate::DebugLines;
 
 #[derive(Debug)]
@@ -45,7 +45,7 @@ impl<'tcx> PcgSuccessor<'tcx> {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessor<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "block": self.block().index(),
             "actions": self.actions.to_json(repacker),
@@ -53,8 +53,8 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessor<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for PcgSuccessor<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PcgSuccessor<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut result = Vec::new();
         result.push(format!("Block: {}", self.block().index()));
         result.extend(self.actions.iter().map(|a| a.debug_line(repacker)));

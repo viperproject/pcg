@@ -1,3 +1,4 @@
+use crate::borrow_pcg::region_projection::display_region_vid;
 use petgraph::graph::NodeIndex;
 
 use crate::rustc_interface::borrowck::PoloniusOutput;
@@ -80,7 +81,19 @@ pub fn region_inference_outlives<'tcx>(body: &impl BodyAndBorrows<'tcx>) -> Stri
         let endpoints = slf.edge_endpoints(ei).unwrap();
         reduced.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()])
     });
-    let scc_graph = scc_graph.map(|_, regions| format!("{:?}", regions), |_, _| "");
+    let scc_graph = scc_graph.map(
+        |_, regions| {
+            format!(
+                "[{}]",
+                regions
+                .iter()
+                    .map(|r| display_region_vid(*r, region_infer_ctxt))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        },
+        |_, _| "",
+    );
     petgraph::dot::Dot::new(&scc_graph).to_string()
 }
 

@@ -6,7 +6,7 @@ use crate::{
         path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::{Place, PlaceRepacker},
+    utils::{Place, CompilerCtxt},
 };
 
 use super::BorrowsGraph;
@@ -16,7 +16,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }

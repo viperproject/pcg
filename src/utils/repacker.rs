@@ -5,6 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use rustc_interface::{
+    borrowck::RegionInferenceContext,
     data_structures::fx::FxHashSet,
     index::{bit_set::BitSet, Idx},
     middle::{
@@ -19,8 +20,8 @@ use rustc_interface::{
 };
 
 use crate::{
-    borrow_pcg::region_projection::PCGRegion,
-    pcg::{PcgError, PCGUnsupportedError},
+    borrow_pcg::region_projection::PcgRegion,
+    pcg::{PCGUnsupportedError, PcgError},
     rustc_interface,
 };
 
@@ -93,16 +94,27 @@ impl ProjectionKind {
 }
 
 #[derive(Copy, Clone)]
-pub struct PlaceRepacker<'a, 'tcx: 'a> {
+pub struct CompilerCtxt<'a, 'tcx: 'a, T = &'a RegionInferenceContext<'tcx>> {
     pub(super) mir: &'a Body<'tcx>,
     pub(super) tcx: TyCtxt<'tcx>,
+    pub(crate) extra: T,
 }
 
-impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
-    pub fn new(mir: &'a Body<'tcx>, tcx: TyCtxt<'tcx>) -> Self {
-        Self { mir, tcx }
+impl<'a, 'tcx: 'a, T> CompilerCtxt<'a, 'tcx, T> {
+    pub fn new(mir: &'a Body<'tcx>, tcx: TyCtxt<'tcx>, extra: T) -> Self {
+        Self { mir, tcx, extra }
     }
 
+    pub fn body(self) -> &'a Body<'tcx> {
+        self.mir
+    }
+
+    pub fn tcx(self) -> TyCtxt<'tcx> {
+        self.tcx
+    }
+}
+
+impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
     pub(crate) fn is_arg(self, local: Local) -> bool {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
@@ -143,13 +155,6 @@ impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
         all
     }
 
-    pub fn body(self) -> &'a Body<'tcx> {
-        self.mir
-    }
-
-    pub fn tcx(self) -> TyCtxt<'tcx> {
-        self.tcx
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -180,7 +185,7 @@ impl<'tcx> DeepExpansion<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn to_rust_place(self, repacker: PlaceRepacker<'_, 'tcx>) -> MirPlace<'tcx> {
+    pub fn to_rust_place<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),
@@ -200,7 +205,7 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn expand(
         mut self,
         to: Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<DeepExpansion<'tcx>, PcgError> {
         assert!(
             self.is_prefix(to),
@@ -225,7 +230,7 @@ impl<'tcx> Place<'tcx> {
     pub fn expand_one_level(
         self,
         guide_place: Self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<ShallowExpansion<'tcx>, PcgError> {
         let index = self.projection.len();
         assert!(
@@ -316,7 +321,7 @@ impl<'tcx> Place<'tcx> {
     pub fn expand_field(
         self,
         without_field: Option<usize>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Vec<Self>, PcgError> {
         let mut places = Vec::new();
         let typ = self.ty(repacker);
@@ -405,19 +410,19 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn ty(self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceTy<'tcx> {
+    pub fn ty<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }
 
     #[allow(unused)]
-    pub(crate) fn get_ref_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
+    pub(crate) fn get_ref_region(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, ..) => Some((*region).into()),
             _ => None,
         }
     }
 
-    pub(crate) fn projects_shared_ref(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn projects_shared_ref(self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -433,7 +438,7 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn projects_ty(
         self,
         mut predicate: impl FnMut(PlaceTy<'tcx>) -> bool,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Option<Place<'tcx>> {
         self.projection_tys(repacker)
             .find(|(typ, _)| predicate(*typ))
@@ -445,7 +450,7 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn projection_tys(
         self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> impl Iterator<Item = (PlaceTy<'tcx>, &'tcx [PlaceElem<'tcx>])> {
         let mut typ = PlaceTy::from_ty(repacker.mir.local_decls()[self.local].ty);
         self.projection.iter().enumerate().map(move |(idx, elem)| {

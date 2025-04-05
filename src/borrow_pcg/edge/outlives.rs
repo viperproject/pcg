@@ -11,7 +11,7 @@ use crate::{
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
         display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place,
-        PlaceRepacker, SnapshotLocation,
+        CompilerCtxt, SnapshotLocation,
     },
 };
 
@@ -27,7 +27,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self.long.label_region_projection(projection, location, repacker);
         changed |= self.short.label_region_projection(projection, location, repacker);
@@ -40,7 +40,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowFlowEdge<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -55,7 +55,7 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowFlowEdge<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",
             self.long.to_short_string(repacker),
@@ -65,21 +65,31 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
-    fn blocks_node(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: PCGNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
 
-    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         std::iter::once(self.long.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<LocalNode<'tcx>> {
         std::iter::once(self.short.into()).collect()
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.long.check_validity(repacker)?;
         self.short.check_validity(repacker)?;
         Ok(())
@@ -91,7 +101,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
         kind: BorrowFlowEdgeKind,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
         Self { long, short, kind }

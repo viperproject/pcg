@@ -20,7 +20,7 @@ use derive_more::{Deref, DerefMut};
 use super::{engine::FpcsEngine, CapabilityKind};
 use crate::{
     free_pcs::{CapabilityLocal, CapabilityProjections},
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
 #[derive(Clone, Default)]
@@ -42,7 +42,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         &self,
         other: &Self,
         place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         self.data.as_ref().unwrap().bridge(
             other.data.as_ref().unwrap(),
@@ -54,7 +54,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
     pub fn initialize_as_start_block(
         &mut self,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         let always_live = repacker.always_live_locals();
         let return_local = RETURN_PLACE;

@@ -30,7 +30,7 @@ use crate::{
     },
     utils::{
         display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex, HasPlace, Place,
-        PlaceRepacker,
+        CompilerCtxt,
     },
 };
 
@@ -66,7 +66,7 @@ pub(crate) enum PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
-    fn check_validity(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -77,7 +77,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
         matches!(self, PlaceExpansion::Deref)
     }
 
-    pub(crate) fn from_places(places: Vec<Place<'tcx>>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub(crate) fn from_places(places: Vec<Place<'tcx>>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
         let mut constant_indices = BTreeSet::new();
 
@@ -177,7 +177,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self
             .base
@@ -194,7 +194,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self.base.make_place_old(place, latest, repacker);
         self.expansion.iter_mut().for_each(|p| {
@@ -205,7 +205,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {
 }
 
 impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{{{}}} -> {{{}}}",
             self.base.to_short_string(repacker),
@@ -218,13 +218,17 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx> {
-    fn check_validity(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
-    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: BlockedNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> bool {
         if self.base.to_pcg_node(repacker) == node {
             return true;
         }
@@ -235,7 +239,10 @@ impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
         }
     }
 
-    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         let mut base: FxHashSet<PCGNode<'tcx>> = vec![self.base.into()].into_iter().collect();
         if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
             base.insert(blocked_rp);
@@ -243,7 +250,10 @@ impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
         base
     }
 
-    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<LocalNode<'tcx>> {
         self.expansion.iter().copied().collect()
     }
 }
@@ -284,7 +294,7 @@ where
 }
 
 impl<'tcx> BorrowPCGExpansion<'tcx> {
-    pub(crate) fn is_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         if let BlockingNode::Place(p) = self.base {
             p.place().is_ref(repacker)
         } else {
@@ -292,9 +302,9 @@ impl<'tcx> BorrowPCGExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn deref_blocked_region_projection(
+    pub(crate) fn deref_blocked_region_projection<C: Copy>(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<PCGNode<'tcx>> {
         if let BlockingNode::Place(p) = self.base
             && let Some(base_projection) = p.base_region_projection(repacker)
@@ -322,7 +332,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         &self.expansion
     }
 
-    pub(crate) fn is_owned_expansion(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_owned_expansion(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match self.base.into() {
             BlockingNode::Place(p) => p.is_owned(repacker),
             BlockingNode::RegionProjection(_) => false,
@@ -333,7 +343,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         base: P,
         expansion: PlaceExpansion<'tcx>,
         location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Self, PcgError>
     where
         P: Ord + HasPlace<'tcx>,
@@ -352,7 +362,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGExpansion<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "base": self.base.to_json(repacker),
             "expansion": self.expansion.iter().map(|p| p.to_json(repacker)).collect::<Vec<_>>(),

@@ -7,7 +7,7 @@ use super::{
     edge::kind::BorrowPCGEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
-    region_projection::PCGRegion,
+    region_projection::PcgRegion,
 };
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
     rustc_interface::middle::ty,
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, CompilerCtxt},
 };
 use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 
@@ -33,7 +33,7 @@ use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         for t in self.0.iter() {
             t.check_validity(repacker)?;
         }
@@ -42,7 +42,7 @@ impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
 }
 
 impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{{{}}}",
             self.0
@@ -169,9 +169,9 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         !self.is_live(node, location)
     }
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
 
-    fn same_region(&self, reg1: PCGRegion, reg2: PCGRegion) -> bool {
+    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion) -> bool {
         self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
     }
 
@@ -228,7 +228,7 @@ impl<T> DebugRecursiveCallHistory<T> {
 }
 
 pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
-    repacker: PlaceRepacker<'mir, 'tcx>,
+    repacker: CompilerCtxt<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
     graph: AbstractionGraph<'tcx>,
@@ -260,7 +260,7 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
 }
 
 impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
-    pub(crate) fn new(repacker: PlaceRepacker<'mir, 'tcx>, block: BasicBlock) -> Self {
+    pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx>, block: BasicBlock) -> Self {
         Self {
             repacker,
             block,

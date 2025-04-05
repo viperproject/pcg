@@ -36,7 +36,7 @@ use utils::{
     env_feature_enabled,
     maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
-    Place, PlaceRepacker,
+    CompilerCtxt, Place,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -54,7 +54,7 @@ pub struct Weaken<'tcx> {
 }
 
 impl<'tcx> Weaken<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let to_str = match self.to {
             Some(to) => format!("{:?}", to),
             None => "None".to_string(),
@@ -105,7 +105,7 @@ pub struct RestoreCapability<'tcx> {
 }
 
 impl<'tcx> RestoreCapability<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "Restore {} to {:?}",
             self.place.to_short_string(repacker),
@@ -127,7 +127,7 @@ impl<'tcx> RestoreCapability<'tcx> {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "old": format!("{:?}", self.from),
@@ -136,8 +136,8 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGActions<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPCGActions<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.0
             .iter()
             .map(|action| action.debug_line(repacker))
@@ -179,7 +179,7 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
         })
@@ -187,7 +187,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> 
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
             "actions": self.actions.to_json(repacker),
@@ -247,7 +247,7 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
     bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,
     visualization_output_path: Option<&str>,
 ) -> FpcsOutput<'mir, 'tcx> {
-    let repacker = PlaceRepacker::new(mir.body(), tcx);
+    let repacker = CompilerCtxt::new(mir.body(), tcx, mir.region_inference_context());
     let engine = PcgEngine::new(repacker, bc, visualization_output_path);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
@@ -284,10 +284,10 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
         std::fs::write(&node_legend_file_path, node_legend_graph)
             .expect("Failed to write node legend");
-        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir.body())
+        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir)
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PlaceRepacker::new(mir.body(), tcx);
+        let rp = CompilerCtxt::new(mir.body(), tcx, mir.region_inference_context());
 
         // Iterate over each statement in the MIR
         for (block, _data) in mir.body().basic_blocks.iter_enumerated() {

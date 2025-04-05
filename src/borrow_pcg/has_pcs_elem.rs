@@ -2,7 +2,7 @@ use super::latest::Latest;
 use super::region_projection::RegionProjection;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::SnapshotLocation;
-use crate::utils::{validity::HasValidityCheck, Place, PlaceRepacker};
+use crate::utils::{validity::HasValidityCheck, Place, CompilerCtxt};
 use crate::validity_checks_enabled;
 
 pub(crate) trait HasPcgElems<T> {
@@ -14,7 +14,7 @@ pub(crate) trait LabelRegionProjection<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
 
@@ -23,7 +23,7 @@ pub(crate) trait MakePlaceOld<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn default_make_place_old<
     this: &mut T,
     place: Place<'tcx>,
     latest: &Latest<'tcx>,
-    repacker: PlaceRepacker<'_, 'tcx>,
+    repacker: CompilerCtxt<'_, 'tcx>,
 ) -> bool {
     let mut changed = false;
     for p in this.pcg_elems() {

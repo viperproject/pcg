@@ -2,11 +2,8 @@ use std::rc::Rc;
 
 use crate::{
     pcg::{AnalysisObject, EvalStmtPhase, Pcg, PcgError},
-    rustc_interface::middle::{
-        mir::{Body, Location},
-        ty::TyCtxt,
-    },
-    utils::visitor::FallableVisitor,
+    rustc_interface::middle::mir::Location,
+    utils::{visitor::FallableVisitor, CompilerCtxt},
 };
 
 use super::{
@@ -15,13 +12,12 @@ use super::{
 };
 
 pub struct BorrowsEngine<'mir, 'tcx> {
-    pub(crate) tcx: TyCtxt<'tcx>,
-    pub(crate) body: &'mir Body<'tcx>,
+    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
 impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
-    pub(crate) fn new(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> Self {
-        BorrowsEngine { tcx, body }
+    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
+        BorrowsEngine { ctxt }
     }
 }
 
