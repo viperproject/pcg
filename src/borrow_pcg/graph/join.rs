@@ -1,10 +1,10 @@
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef};
-use crate::borrow_pcg::coupling_graph_constructor::RegionProjectionAbstractionConstructor;
+use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
-use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::PlaceRepacker};
+use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::CompilerCtxt};
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::ToBorrowsEdge,
@@ -12,7 +12,7 @@ use crate::{
         latest::Latest,
         path_condition::PathConditions,
     },
-    combined_pcs::PCGNode,
+    pcg::PCGNode,
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::BasicBlock,
     utils::{
@@ -25,7 +25,11 @@ use crate::{
 use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn render_debug_graph(&self, repacker: PlaceRepacker<'_, 'tcx>, comment: &str) {
+    pub(crate) fn render_debug_graph(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx>,
+        comment: &str,
+    ) {
         if borrows_imgcat_debug() {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                 DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
@@ -40,7 +44,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> bool {
         // For performance reasons we don't check validity here.
@@ -134,10 +138,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
+    #[allow(dead_code)]
     fn transitively_blocking_edges<'graph, 'mir: 'graph>(
         &'graph self,
         node: PCGNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         let mut stack: Vec<BorrowPCGEdgeRef<'tcx, 'graph>> =
             self.edges_blocking(node, repacker).collect();
@@ -160,57 +165,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) {
-        let mut common_edges = self.common_edges(other);
-        let self_base_rp = RegionProjectionAbstractionConstructor::new(repacker, self_block)
-            .construct_region_projection_abstraction(self, borrow_checker);
-        let other_base_rp = RegionProjectionAbstractionConstructor::new(repacker, other_block)
-            .construct_region_projection_abstraction(other, borrow_checker);
-        for root in self_base_rp.roots() {
-            let mut stack = vec![root];
-            while let Some(node) = stack.pop() {
-                let children = self_base_rp.children(&node);
-                if children != other_base_rp.children(&node) {
-                    for pcg_node in node {
-                        for edge in self.transitively_blocking_edges(pcg_node.into(), repacker) {
-                            common_edges.remove(edge.kind());
-                        }
-                    }
-                }
-                for child in children {
-                    stack.push(child);
-                }
-            }
-        }
-        let mut without_common_self = self.clone();
-        let mut without_common_other = other.clone();
-        for edge in common_edges.iter() {
-            tracing::debug!("Removing common edge: {:?}", edge);
-            without_common_self.edges.remove(edge);
-            without_common_other.edges.remove(edge);
-        }
-        without_common_self.render_debug_graph(
-            repacker,
-            &format!("self graph (disjoint): {:?}", self_block),
-        );
-        without_common_other.render_debug_graph(
-            repacker,
-            &format!("other graph (disjoint): {:?}", other_block),
-        );
-
-        let self_coupling_graph = without_common_self.construct_region_projection_abstraction(
-            borrow_checker,
-            repacker,
-            self_block,
-        );
-
-        let other_coupling_graph = without_common_other.construct_region_projection_abstraction(
-            borrow_checker,
-            repacker,
-            other_block,
-        );
+        let self_coupling_graph = AbstractionGraphConstructor::new(repacker, self_block)
+            .construct_abstraction_graph(self, borrow_checker);
+        let other_coupling_graph = AbstractionGraphConstructor::new(repacker, other_block)
+            .construct_abstraction_graph(other, borrow_checker);
 
         if coupling_imgcat_debug() {
             self_coupling_graph
@@ -221,31 +182,41 @@ impl<'tcx> BorrowsGraph<'tcx> {
             );
         }
 
-        let mut result = self_coupling_graph;
+        let mut result = self_coupling_graph.clone();
         result.merge(&other_coupling_graph, repacker);
         if coupling_imgcat_debug() {
             result.render_with_imgcat(repacker, "merged coupling graph");
         }
-
+        let to_keep = self.common_edges(other);
         self.edges
-            .retain(|edge_kind, _| common_edges.contains(edge_kind));
+            .retain(|edge_kind, _| to_keep.contains(edge_kind));
 
-        for (blocked, assigned) in result.edges() {
-            let abstraction = LoopAbstraction::new(
-                AbstractionBlockEdge::new(
-                    blocked.clone().into_iter().collect(),
-                    assigned
-                        .clone()
-                        .into_iter()
-                        .map(|node| node.try_into().unwrap())
-                        .collect(),
-                ),
-                self_block,
-            )
-            .to_borrow_pcg_edge(PathConditions::new(self_block));
+        let other_coupling_edges = other_coupling_graph.edges().collect::<Vec<_>>();
+        let self_coupling_edges = self_coupling_graph.edges().collect::<Vec<_>>();
+        for tupl in result.edges() {
+            if self_coupling_edges.iter().all(|other| other != &tupl)
+                || other_coupling_edges.iter().all(|other| other != &tupl)
+            {
+                let (blocked, assigned, to_remove) = tupl;
+                let abstraction = LoopAbstraction::new(
+                    AbstractionBlockEdge::new(
+                        blocked.clone().into_iter().collect(),
+                        assigned
+                            .clone()
+                            .into_iter()
+                            .map(|node| node.try_into().unwrap())
+                            .collect(),
+                    ),
+                    self_block,
+                )
+                .to_borrow_pcg_edge(PathConditions::new(self_block));
 
-            self.insert(abstraction);
+                self.insert(abstraction);
+                self.edges
+                    .retain(|edge_kind, _| !to_remove.contains(edge_kind));
+            }
         }
+
         for coupled in result.roots() {
             for node in coupled {
                 if let PCGNode::RegionProjection(rp) = node {

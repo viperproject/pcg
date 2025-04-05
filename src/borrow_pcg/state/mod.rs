@@ -1,101 +1,160 @@
 use super::{
     action::BorrowPCGAction,
-    borrow_pcg_capabilities::BorrowPCGCapabilities,
     borrow_pcg_edge::{
         BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
     },
     coupling_graph_constructor::BorrowCheckerInterface,
+    edge::borrow::RemoteBorrow,
     graph::{frozen::FrozenGraphRef, BorrowsGraph},
+    has_pcs_elem::LabelRegionProjection,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
+    visitor::extract_regions,
 };
-use crate::borrow_pcg::edge::borrow::{BorrowEdge, LocalBorrow};
-use crate::{borrow_pcg::action::executed_actions::ExecutedActions, combined_pcs::PcgError};
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
+    borrow_pcg::edge::{
+        borrow::{BorrowEdge, LocalBorrow},
+        outlives::BorrowFlowEdgeKind,
+    },
+    pcg::place_capabilities::PlaceCapabilities,
+};
+use crate::{
     borrow_pcg::edge_data::EdgeData,
-    combined_pcs::PCGNode,
-    rustc_interface::{
-        data_structures::fx::FxHashSet,
-        middle::{
-            mir::{BasicBlock, BorrowKind, Location, MutBorrowKind},
-            ty::{self},
-        },
+    pcg::PCGNode,
+    rustc_interface::middle::{
+        mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
+        ty::{self},
     },
     utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
     validity_checks_enabled,
 };
-use crate::{combined_pcs::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
+use crate::{
+    borrow_pcg::{
+        action::executed_actions::ExecutedActions, edge::outlives::BorrowFlowEdge,
+        region_projection::RegionProjection,
+    },
+    pcg::PcgError,
+    utils::remote::RemotePlace,
+};
 use crate::{
     free_pcs::CapabilityKind,
-    utils::{Place, PlaceRepacker, SnapshotLocation},
+    utils::{Place, CompilerCtxt, SnapshotLocation},
 };
-use std::rc::Rc;
+use crate::{pcg::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
 
 pub(crate) mod obtain;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     graph: BorrowsGraph<'tcx>,
-    pub(crate) capabilities: Rc<BorrowPCGCapabilities<'tcx>>,
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsState<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut lines = Vec::new();
         lines.extend(self.graph.debug_lines(repacker));
-        lines.extend(self.capabilities.debug_lines(repacker));
         lines
     }
 }
 
-impl Eq for BorrowsState<'_> {}
-
-impl PartialEq for BorrowsState<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.latest == other.latest
-            && self.graph == other.graph
-            && self.capabilities == other.capabilities
-    }
-}
-
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.graph.check_validity(repacker)
     }
 }
 
-impl Default for BorrowsState<'_> {
-    fn default() -> Self {
-        Self {
-            latest: Latest::new(),
-            graph: BorrowsGraph::new(),
-            capabilities: Rc::new(BorrowPCGCapabilities::new()),
+impl<'tcx> BorrowsState<'tcx> {
+    pub(crate) fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.graph
+            .mut_edges(|edge| edge.label_region_projection(projection, location, repacker));
+    }
+    fn introduce_initial_borrows(
+        &mut self,
+        local: mir::Local,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) {
+        let local_decl = &repacker.body().local_decls[local];
+        let arg_place: Place<'tcx> = local.into();
+        if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
+            let _ = self.apply_action(
+                BorrowPCGAction::add_edge(RemoteBorrow::new(local).into(), true),
+                capabilities,
+                repacker,
+            );
+        }
+        for region in extract_regions(local_decl.ty, repacker) {
+            let region_projection =
+                RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
+            assert!(self
+                .apply_action(
+                    BorrowPCGAction::add_edge(
+                        BorrowPCGEdge::new(
+                            BorrowFlowEdge::new(
+                                RegionProjection::new(
+                                    region,
+                                    RemotePlace::new(local).into(),
+                                    None,
+                                    repacker,
+                                )
+                                .unwrap_or_else(|e| {
+                                    panic!(
+                                        "Failed to create region for remote place (for {local:?}).
+                                    Local ty: {:?}. Error: {:?}",
+                                        local_decl.ty, e
+                                    );
+                                }),
+                                region_projection,
+                                BorrowFlowEdgeKind::InitialBorrows,
+                                repacker,
+                            )
+                            .into(),
+                            PathConditions::AtBlock((Location::START).block),
+                        ),
+                        true,
+                    ),
+                    capabilities,
+                    repacker,
+                )
+                .unwrap());
         }
     }
-}
 
-impl<'tcx> BorrowsState<'tcx> {
-    pub fn capabilities(&self) -> &BorrowPCGCapabilities<'tcx> {
-        self.capabilities.as_ref()
+    pub(crate) fn initialize_as_start_block(
+        &mut self,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) {
+        for arg in repacker.body().args_iter() {
+            self.introduce_initial_borrows(arg, capabilities, repacker);
+        }
     }
+
     pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
         self.graph.insert(edge)
     }
+
     pub(super) fn remove(
         &mut self,
         edge: &BorrowPCGEdge<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let removed = self.graph.remove(edge);
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker) {
                     if let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
-                        let _ = self.remove_capability(place.into());
+                        let _ = capabilities.remove(place.into());
                     }
                 }
             }
@@ -107,9 +166,10 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let changed = self.apply_action(action.clone(), repacker)?;
+        let changed = self.apply_action(action.clone(), capabilities, repacker)?;
         if changed {
             actions.record(action);
         }
@@ -119,7 +179,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph.contains(node.into(), repacker)
     }
@@ -132,64 +192,19 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph().frozen_graph()
     }
 
-    pub(crate) fn get_capability(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(place)
-    }
-
-    /// Returns true iff the capability was changed.
-    pub(crate) fn set_capability(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        capability: CapabilityKind,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        assert!(!place.is_owned(repacker));
-        if self.get_capability(place) != Some(capability) {
-            Rc::<_>::make_mut(&mut self.capabilities).insert(place, capability);
-            true
-        } else {
-            false
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn remove_capability(&mut self, place: MaybeOldPlace<'tcx>) -> bool {
-        if self.get_capability(place).is_some() {
-            Rc::<_>::make_mut(&mut self.capabilities).remove(place);
-            true
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
         changed |= self
             .graph
             .join(&other.graph, self_block, other_block, repacker, bc);
         changed |= self.latest.join(&other.latest, self_block);
-        if other.capabilities != self.capabilities {
-            changed |= Rc::<_>::make_mut(&mut self.capabilities).join(&other.capabilities);
-        }
-        changed
-    }
-
-    #[must_use]
-    pub(crate) fn rename_place(
-        &mut self,
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = self.graph.rename_place(old, new, repacker);
-        changed |= Rc::<_>::make_mut(&mut self.capabilities).rename_place(old, new);
         changed
     }
 
@@ -197,26 +212,28 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         for place in edge.blocked_places(repacker) {
             if let Some(place) = place.as_current_place()
-                && self.get_capability(place.into()) != Some(CapabilityKind::Read)
+                && capabilities.get(place.into()) != Some(CapabilityKind::Read)
                 && place.has_location_dependent_value(repacker)
             {
                 self.record_and_apply_action(
                     BorrowPCGAction::set_latest(place, location, context),
                     &mut actions,
+                    capabilities,
                     repacker,
                 )?;
             }
         }
         let remove_edge_action =
             BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
-        self.record_and_apply_action(remove_edge_action, &mut actions, repacker)?;
+        self.record_and_apply_action(remove_edge_action, &mut actions, capabilities, repacker)?;
 
         let fg = self.graph().frozen_graph();
         let to_restore = edge
@@ -228,7 +245,7 @@ impl<'tcx> BorrowsState<'tcx> {
             if let Some(place) = node.as_maybe_old_place()
                 && !place.is_owned(repacker)
             {
-                let blocked_cap = self.get_capability(place);
+                let blocked_cap = capabilities.get(place);
 
                 let restore_cap = if place.place().projects_shared_ref(repacker) {
                     CapabilityKind::Read
@@ -240,6 +257,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     self.record_and_apply_action(
                         BorrowPCGAction::restore_capability(place, restore_cap),
                         &mut actions,
+                        capabilities,
                         repacker,
                     )?;
                 }
@@ -269,7 +287,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn get_place_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Option<MaybeOldPlace<'tcx>> {
         let edges = self.edges_blocking(place.into(), repacker);
         if edges.len() != 1 {
@@ -289,13 +307,9 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn edges_blocking<'slf, 'mir: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.graph.edges_blocking(node, repacker).collect()
-    }
-
-    pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        self.graph.roots(repacker)
     }
 
     pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
@@ -325,7 +339,8 @@ impl<'tcx> BorrowsState<'tcx> {
     /// reference-typed function argument in its postcondition.
     pub(super) fn pack_old_and_dead_leaves<'slf, 'mir>(
         &'slf mut self,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
@@ -334,7 +349,7 @@ impl<'tcx> BorrowsState<'tcx> {
         loop {
             fn go<'slf, 'mir: 'slf, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx>,
                 location: Location,
                 bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
@@ -400,6 +415,7 @@ impl<'tcx> BorrowsState<'tcx> {
             for edge in edges_to_trim {
                 actions.extend(self.remove_edge_and_set_latest(
                     edge,
+                    capabilities,
                     location,
                     repacker,
                     "Trim Old Leaves",
@@ -411,6 +427,7 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(
         &mut self,
         blocked_place: MaybeOldPlace<'tcx>,
@@ -418,7 +435,8 @@ impl<'tcx> BorrowsState<'tcx> {
         kind: BorrowKind,
         location: Location,
         region: ty::Region<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         assert!(
             assigned_place.ty(repacker).ty.ref_mutability().is_some(),
@@ -443,51 +461,42 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        if !rp.place().is_owned(repacker) {
-            self.set_capability(rp.place(), assigned_cap, repacker);
-        }
+        capabilities.insert(rp.place(), assigned_cap);
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge)
                 .to_borrow_pcg_edge(PathConditions::AtBlock(location.block))
         ));
 
-        // Update the capability of the blocked place, if necessary
-        if !blocked_place.is_owned(repacker) {
-            match kind {
-                BorrowKind::Mut {
-                    kind: MutBorrowKind::Default,
-                } => {
-                    let _ = self.remove_capability(blocked_place);
-                }
-                _ => {
-                    match self.get_capability(blocked_place) {
-                        Some(CapabilityKind::Exclusive) => {
-                            assert!(self.set_capability(
-                                blocked_place,
-                                CapabilityKind::Read,
-                                repacker
-                            ));
-                        }
-                        Some(CapabilityKind::Read) => {
-                            // Do nothing, this just adds another shared borrow
-                        }
-                        None => {
-                            // Some projections are currently incomplete (e.g. ConstantIndex)
-                            // therefore we don't expect a capability here. For more information
-                            // see the comment in `Place::expand_one_level`.
-                            // TODO: Make such projections complete
-                        }
-                        other => {
-                            if validity_checks_enabled() {
-                                unreachable!(
-                                    "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
-                                    location, blocked_place, other
-                                );
-                            }
+        match kind {
+            BorrowKind::Mut {
+                kind: MutBorrowKind::Default,
+            } => {
+                let _ = capabilities.remove(blocked_place);
+            }
+            _ => {
+                match capabilities.get(blocked_place) {
+                    Some(CapabilityKind::Exclusive) => {
+                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read,));
+                    }
+                    Some(CapabilityKind::Read) => {
+                        // Do nothing, this just adds another shared borrow
+                    }
+                    None => {
+                        // Some projections are currently incomplete (e.g. ConstantIndex)
+                        // therefore we don't expect a capability here. For more information
+                        // see the comment in `Place::expand_one_level`.
+                        // TODO: Make such projections complete
+                    }
+                    other => {
+                        if validity_checks_enabled() {
+                            unreachable!(
+                                "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
+                                location, blocked_place, other
+                            );
                         }
                     }
                 }
-            };
+            }
         }
     }
 
@@ -495,7 +504,7 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph.make_place_old(place, &self.latest, repacker)
     }

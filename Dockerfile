@@ -64,7 +64,7 @@ WORKDIR /usr/src/app
 RUN mkdir tmp && chmod 777 tmp
 
 # Copy built artifacts from previous stages
-COPY --from=rust-builder /usr/src/app/target/release/pcs_bin ./
+COPY --from=rust-builder /usr/src/app/target/release/pcg_bin ./
 COPY --from=rust-builder /usr/src/app/pcg-server/target/release/pcg-server ./
 COPY --from=rust-builder /usr/src/app/pcg-server/templates ./templates
 # Copy Rust runtime libraries

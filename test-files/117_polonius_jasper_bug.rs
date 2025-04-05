@@ -7,7 +7,8 @@ fn path_sensitive(b: bool) {
     } else {
       z = &mut x; y = &mut *z;
     }
-    // PCG: bb3[0] post_main: borrow: y = &mut  x under conditions bb1 -> bb3,
+    // PCG: bb3[0] post_operands: borrow: _7 at After(bb1[1]) = &mut  x under conditions bb1 -> bb3,
+    // PCG: bb3[0] post_operands: _7 at After(bb1[1])↓'?10 -> y↓'?8 under conditions bb1 -> bb3,
     *y = 1;
     x = 2;
 }

@@ -31,6 +31,16 @@ fn test_selected_crates() {
     // common::run_on_crate("serde_with", "3.12.0", true);
     // common::run_on_crate("tap", "1.0.1", false);
 
+    // common::run_on_crate(
+    //     "serde_json",
+    //     "1.0.140",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: true,
+    //     },
+    // );
+
     // We should test this consistently because it's a good loop test
     // common::run_on_crate(
     //     "tinytemplate",
@@ -52,15 +62,55 @@ fn test_selected_crates() {
     //     },
     // );
 
-    common::run_on_crate(
-        "syn",
-        "2.0.100",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Release,
-            validity_checks: true,
-        },
-    );
+    // common::run_on_crate(
+    //     "regex-syntax",
+    //     "0.8.5",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //     },
+    // );
+
+    // common::run_on_crate(
+    //     "crossbeam-deque",
+    //     "0.8.6",
+    //     None,
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: false,
+    //     },
+    // );
+
+    // common::run_on_crate(
+    //     "itertools",
+    //     "0.14.0",
+    //     None,
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: false,
+    //     },
+    // );
+
+    // common::run_on_crate(
+    //     "opentelemetry",
+    //     "0.28.0",
+    //     None,
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: false,
+    //     },
+    // );
+
+    // common::run_on_crate(
+    //     "syn",
+    //     "2.0.100",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: true,
+    //     },
+    // );
 
     // common::run_on_crate(
     //     "cfg-if",

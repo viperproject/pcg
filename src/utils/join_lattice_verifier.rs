@@ -1,4 +1,4 @@
-use super::{display::{DebugLines, DisplayDiff}, PlaceRepacker};
+use super::{display::{DebugLines, DisplayDiff}, CompilerCtxt};
 use crate::rustc_interface::middle::mir;
 
 /// `JoinLatticeVerifier` is used to detect correctness violations of the `join`
@@ -41,9 +41,9 @@ impl<T: Clone + PartialEq + std::fmt::Debug> JoinLatticeVerifier<T> {
     pub(crate) fn record_join_result<'mir, 'tcx>(
         &mut self,
         computation: JoinComputation<T>,
-        ctxt: PlaceRepacker<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) where
-        T: DebugLines<PlaceRepacker<'mir, 'tcx>> + HasBlock,
+        T: DebugLines<CompilerCtxt<'mir, 'tcx>> + HasBlock,
     {
         // Add nodes if they don't exist
         let lhs_idx = self.get_or_add_node(computation.lhs.clone());

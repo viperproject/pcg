@@ -109,7 +109,7 @@ export type BorrowPCGUnblockAction = {
   edge: BorrowPCGEdge;
 };
 
-export type BorrowPCGActions = string[];
+export type PcgActions = string[];
 
 export type PathData = {
   heap: Record<string, { value: string; ty: string; old: boolean }>;
@@ -118,14 +118,11 @@ export type PathData = {
 
 export type PCGStmtVisualizationData = {
   latest: Record<string, string>;
-  free_pcg_repacks_start: string[];
-  free_pcg_repacks_middle: string[];
-  borrow_actions: EvalStmtData<BorrowPCGActions>;
+  actions: EvalStmtData<PcgActions>;
 };
 
 export type PcgSuccessorVisualizationData = {
-  owned_ops: string[];
-  borrow_ops: string[];
+  actions: string[];
 };
 
 export type PcgProgramPointData = PCGStmtVisualizationData | PcgSuccessorVisualizationData;

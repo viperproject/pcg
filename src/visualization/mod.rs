@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+pub mod bc_facts_graph;
 pub mod dot_graph;
 pub mod drawer;
 pub mod graph_constructor;
@@ -14,9 +15,10 @@ mod node;
 
 use crate::{
     borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
-    free_pcs::{CapabilityKind, CapabilitySummary},
+    free_pcs::{CapabilityKind, CapabilityLocals},
+    pcg::place_capabilities::PlaceCapabilities,
     rustc_interface::middle::mir::Location,
-    utils::{Place, PlaceRepacker, SnapshotLocation},
+    utils::{Place, CompilerCtxt, SnapshotLocation},
 };
 use std::{
     collections::HashSet,
@@ -115,7 +117,10 @@ impl GraphNode {
                     tooltip: Some(DotStringAttr(ty.clone())),
                 }
             }
-            NodeType::RegionProjectionNode { label } => DotNode {
+            NodeType::RegionProjectionNode {
+                label,
+                base_ty: place_ty,
+            } => DotNode {
                 id: self.id.to_string(),
                 label: DotLabel::Text(label.clone()),
                 color: DotStringAttr("blue".to_string()),
@@ -123,7 +128,7 @@ impl GraphNode {
                 shape: DotStringAttr("octagon".to_string()),
                 style: None,
                 penwidth: None,
-                tooltip: None,
+                tooltip: Some(DotStringAttr(place_ty.clone())),
             },
         }
     }
@@ -140,6 +145,7 @@ enum NodeType {
     },
     RegionProjectionNode {
         label: String,
+        base_ty: String,
     },
 }
 
@@ -148,7 +154,7 @@ impl NodeType {
     pub(crate) fn label(&self) -> String {
         match self {
             NodeType::PlaceNode { label, .. } => label.clone(),
-            NodeType::RegionProjectionNode { label } => label.clone(),
+            NodeType::RegionProjectionNode { label, .. } => label.clone(),
         }
     }
 }
@@ -329,7 +335,7 @@ impl Graph {
 }
 
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
-    repacker: PlaceRepacker<'a, 'tcx>,
+    repacker: CompilerCtxt<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
     let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
@@ -341,12 +347,13 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
 }
 
 pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
-    repacker: PlaceRepacker<'a, 'tcx>,
-    summary: &CapabilitySummary<'tcx>,
+    repacker: CompilerCtxt<'a, 'tcx>,
+    summary: &CapabilityLocals<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
+    capabilities: &PlaceCapabilities<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain);
+    let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain, capabilities);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {}: {}", file_path, e);

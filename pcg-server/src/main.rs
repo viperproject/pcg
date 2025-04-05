@@ -129,8 +129,8 @@ async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, Strin
     debug!("Using absolute file path: {:?}", abs_file_path);
     debug!("Using absolute data dir: {:?}", abs_data_dir);
 
-    // Run pcs_bin with visualization flags
-    let output = Command::new("./pcs_bin")
+    // Run pcg_bin with visualization flags
+    let output = Command::new("./pcg_bin")
         .env("PCG_VISUALIZATION", "true")
         .env("PCG_VISUALIZATION_DATA_DIR", abs_data_dir.to_str().unwrap())
         .arg(abs_file_path)

@@ -2,38 +2,51 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::EdgeData,
-        has_pcs_elem::{default_make_place_old, HasPcgElems, MakePlaceOld},
+        has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection},
     },
-    combined_pcs::{PCGNode, PCGNodeLike},
+    pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
         display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place,
-        PlaceRepacker,
+        CompilerCtxt, SnapshotLocation,
     },
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct OutlivesEdge<'tcx> {
+pub struct BorrowFlowEdge<'tcx> {
     long: RegionProjection<'tcx>,
     short: LocalRegionProjection<'tcx>,
-    pub(crate) kind: OutlivesEdgeKind,
+    pub(crate) kind: BorrowFlowEdgeKind,
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for OutlivesEdge<'tcx> {
+impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.long.label_region_projection(projection, location, repacker);
+        changed |= self.short.label_region_projection(projection, location, repacker);
+        changed
+    }
+}
+
+impl<'tcx> MakePlaceOld<'tcx> for BorrowFlowEdge<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for OutlivesEdge<'tcx> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut elems = self.long.pcg_elems();
         elems.extend(self.short.pcg_elems());
@@ -41,8 +54,8 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for OutlivesEdge<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithRepacker<'tcx> for BorrowFlowEdge<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",
             self.long.to_short_string(repacker),
@@ -51,50 +64,64 @@ impl<'tcx> DisplayWithRepacker<'tcx> for OutlivesEdge<'tcx> {
     }
 }
 
-impl<'tcx> EdgeData<'tcx> for OutlivesEdge<'tcx> {
-    fn blocks_node(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: PCGNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
 
-    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         std::iter::once(self.long.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<LocalNode<'tcx>> {
         std::iter::once(self.short.into()).collect()
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for OutlivesEdge<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.long.check_validity(repacker)?;
         self.short.check_validity(repacker)?;
         Ok(())
     }
 }
 
-impl<'tcx> OutlivesEdge<'tcx> {
+impl<'tcx> BorrowFlowEdge<'tcx> {
     pub(crate) fn new(
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
-        kind: OutlivesEdgeKind,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        kind: BorrowFlowEdgeKind,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
         Self { long, short, kind }
     }
 
-    pub(crate) fn long(&self) -> RegionProjection<'tcx> {
+    pub fn long(&self) -> RegionProjection<'tcx> {
         self.long
     }
 
-    pub(crate) fn short(&self) -> LocalRegionProjection<'tcx> {
+    pub fn short(&self) -> LocalRegionProjection<'tcx> {
         self.short
+    }
+
+    pub fn kind(&self) -> BorrowFlowEdgeKind {
+        self.kind
     }
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub enum OutlivesEdgeKind {
+pub enum BorrowFlowEdgeKind {
     /// Region projection edge resulting due to contracting a place. For
     /// example, if the type of `x.t` is `&'a mut T` and there is a borrow `x.t
     /// = &mut y`, and we need to contract to `x`, then we need to replace the
@@ -116,23 +143,25 @@ pub enum OutlivesEdgeKind {
     },
     InitialBorrows,
     CopySharedRef,
-    HavocRegion
+    Move,
+    HavocRegion,
 }
 
-impl std::fmt::Display for OutlivesEdgeKind {
+impl std::fmt::Display for BorrowFlowEdgeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutlivesEdgeKind::Aggregate {
-                        field_idx,
-                        target_rp_index,
-                    } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
-            OutlivesEdgeKind::ConstRef => write!(f, "ConstRef"),
-            OutlivesEdgeKind::BorrowOutlives { toplevel } => {
-                        write!(f, "BorrowOutlives({toplevel})")
-                    }
-            OutlivesEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
-            OutlivesEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
-            OutlivesEdgeKind::HavocRegion => write!(f, "HavocRegion"),
+            BorrowFlowEdgeKind::Aggregate {
+                field_idx,
+                target_rp_index,
+            } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
+            BorrowFlowEdgeKind::ConstRef => write!(f, "ConstRef"),
+            BorrowFlowEdgeKind::BorrowOutlives { toplevel } => {
+                write!(f, "BorrowOutlives({toplevel})")
+            }
+            BorrowFlowEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
+            BorrowFlowEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
+            BorrowFlowEdgeKind::HavocRegion => write!(f, "HavocRegion"),
+            BorrowFlowEdgeKind::Move => write!(f, "Move"),
         }
     }
 }

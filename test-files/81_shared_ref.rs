@@ -11,7 +11,7 @@ fn main() {
     // PCG: bb0[4] post_main: x.b: R
     // PCG: bb0[4] post_main: x.a: R
     // PCG: bb0[4] post_main: x: R
-    // ~PCG: bb0[4] post_operands: Repacks Start: Collapse(_1, _1.0, R)
+    // ~PCG: bb0[4] pre_operands: Collapse(_1, _1.0, R)
     let z = &x;
 
     let a = z.b;

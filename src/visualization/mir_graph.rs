@@ -1,6 +1,7 @@
 use crate::{
     rustc_interface,
-    utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, CompilerCtxt, Place},
+    BodyAndBorrows,
 };
 use serde_derive::Serialize;
 use std::{
@@ -9,7 +10,7 @@ use std::{
 };
 
 use rustc_interface::middle::{
-    mir::{self, BinOp, Body, Local, Operand, Rvalue, Statement, TerminatorKind, UnwindAction},
+    mir::{self, BinOp, Local, Operand, Rvalue, Statement, TerminatorKind, UnwindAction},
     ty::TyCtxt,
 };
 
@@ -65,17 +66,17 @@ fn format_bin_op(op: &BinOp) -> String {
     }
 }
 
-fn format_local<'tcx>(local: &Local, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+fn format_local<'tcx>(local: &Local, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     let place: Place<'tcx> = (*local).into();
     place.to_short_string(repacker)
 }
 
-fn format_place<'tcx>(place: &mir::Place<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+fn format_place<'tcx>(place: &mir::Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     let place: Place<'tcx> = (*place).into();
     place.to_short_string(repacker)
 }
 
-fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     match operand {
         Operand::Copy(p) => format_place(p, repacker),
         Operand::Move(p) => format!("move {}", format_place(p, repacker)),
@@ -83,7 +84,7 @@ fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: PlaceRepacker<'_, 'tc
     }
 }
 
-fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     match rvalue {
         Rvalue::Use(operand) => format_operand(operand, repacker),
         Rvalue::Repeat(operand, c) => format!("repeat {} {}", format_operand(operand, repacker), c),
@@ -134,7 +135,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: PlaceRepacker<'_, 'tcx>)
 }
 fn format_terminator<'tcx>(
     terminator: &TerminatorKind<'tcx>,
-    repacker: PlaceRepacker<'_, 'tcx>,
+    repacker: CompilerCtxt<'_, 'tcx>,
 ) -> String {
     match terminator {
         TerminatorKind::Call {
@@ -160,7 +161,7 @@ fn format_terminator<'tcx>(
     }
 }
 
-fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     match &stmt.kind {
         mir::StatementKind::Assign(box (place, rvalue)) => {
             format!(
@@ -196,13 +197,13 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) 
     }
 }
 
-fn mk_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> MirGraph {
+fn mk_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &impl BodyAndBorrows<'tcx>) -> MirGraph {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
-    let repacker = PlaceRepacker::new(body, tcx);
+    let repacker = CompilerCtxt::new(body.body(), tcx, body.region_inference_context());
 
-    for (bb, data) in body.basic_blocks.iter_enumerated() {
+    for (bb, data) in body.body().basic_blocks.iter_enumerated() {
         let stmts = data
             .statements
             .iter()
@@ -346,7 +347,7 @@ fn mk_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> MirGraph {
 pub fn generate_json_from_mir<'tcx>(
     path: &str,
     tcx: TyCtxt<'tcx>,
-    body: &Body<'tcx>,
+    body: &impl BodyAndBorrows<'tcx>,
 ) -> io::Result<()> {
     let mir_graph = mk_mir_graph(tcx, body);
     let mut file = File::create(path)?;

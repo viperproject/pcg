@@ -5,7 +5,7 @@ import {
   BorrowAction,
   Reborrow,
   MaybeOldPlace,
-  BorrowPCGActions,
+  PcgActions,
   PlaceExpand,
   PCGNode,
   MaybeRemotePlace,
@@ -104,7 +104,7 @@ function PCGNodeDisplay({ node }: { node: PCGNode<MaybeRemotePlace> }) {
   return <span>{JSON.stringify(node)}</span>;
 }
 
-function BorrowsBridgeDisplay({ actions }: { actions: BorrowPCGActions }) {
+function PcgActionsDisplay({ actions }: { actions: PcgActions }) {
   return (
     <ul>
       {actions.map((action, index) => (
@@ -116,7 +116,7 @@ function BorrowsBridgeDisplay({ actions }: { actions: BorrowPCGActions }) {
 
 export default function PCGOps({ data }: { data: PcgProgramPointData }) {
   let content;
-  if ("free_pcg_repacks_start" in data) {
+  if ("latest" in data) {
     content = (
       <>
         {[
@@ -127,35 +127,17 @@ export default function PCGOps({ data }: { data: PcgProgramPointData }) {
         ].map((key) => (
           <div key={key}>
             <h5>{key}</h5>
-            <BorrowsBridgeDisplay actions={data.borrow_actions[key]} />
+            <PcgActionsDisplay actions={data.actions[key]} />
           </div>
         ))}
-        <h4>Repacks (Start)</h4>
-        <ul>
-          {data.free_pcg_repacks_start.map((repack, index) => (
-            <li key={`start-${index}`}>{repack}</li>
-          ))}
-        </ul>
-        <h4>Repacks (Middle)</h4>
-        <ul>
-          {data.free_pcg_repacks_middle.map((repack, index) => (
-            <li key={`mid-${index}`}>{repack}</li>
-          ))}
-        </ul>
       </>
     );
   } else {
     content = (
       <>
-        <h4>Owned Ops</h4>
+        <h4>Actions</h4>
         <ul>
-          {data.owned_ops.map((op, index) => <li key={`owned-${index}`}>{op}</li>)}
-        </ul>
-        <h4>Borrow Ops</h4>
-        <ul>
-          {data.borrow_ops.map((op, index) => (
-            <li key={`borrow-${index}`}>{op}</li>
-          ))}
+          {data.actions.map((op, index) => <li key={`action-${index}`}>{op}</li>)}
         </ul>
       </>
     );

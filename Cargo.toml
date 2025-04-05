@@ -1,5 +1,5 @@
 [package]
-name = "pcs"
+name = "pcg"
 version = "0.1.0"
 authors = ["Prusti Devs <prusti_developers@sympa.ethz.ch>"]
 edition = "2021"
@@ -57,5 +57,5 @@ chrono = "0.4"
 rustc_private = true
 
 [[bin]]
-name = "pcs_bin"
+name = "pcg_bin"
 path = "src/main.rs"

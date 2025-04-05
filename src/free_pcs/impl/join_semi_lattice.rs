@@ -4,81 +4,72 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::rc::Rc;
-
-use crate::{combined_pcs::PcgError, utils::incoming_states::IncomingStates};
+use crate::pcg::{place_capabilities::PlaceCapabilities, PcgError};
 use itertools::Itertools;
 
 use crate::{
-    combined_pcs::EvalStmtPhase,
     free_pcs::{
-        CapabilityLocal, CapabilityProjections, CapabilitySummary, FreePlaceCapabilitySummary,
+        CapabilityLocal, CapabilityLocals, CapabilityProjections, FreePlaceCapabilitySummary,
     },
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
-use crate::rustc_interface::middle::mir;
-
-impl FreePlaceCapabilitySummary<'_, '_> {
+impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
     pub(crate) fn join(
         &mut self,
         other: &Self,
-        self_block: mir::BasicBlock,
-        other_block: mir::BasicBlock,
+        self_place_capabilities: &mut PlaceCapabilities<'tcx>,
+        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let seen = self.data.incoming_states.contains(other_block);
-
-        if seen && other_block > self_block {
-            // It's a loop, but we've already joined it
-            return Ok(false);
-        }
-
-        if seen {
-            // It's another iteration, reset the entry state
-            self.data.incoming_states = IncomingStates::singleton(other_block);
-            if self.data.entry_state != other.data.states[EvalStmtPhase::PostMain] {
-                self.data.entry_state = other.data.states[EvalStmtPhase::PostMain].clone();
-                return Ok(true);
-            } else {
-                return Ok(false);
-            }
-        } else {
-            self.data.incoming_states.insert(other_block);
-        }
-
-        let entry_state = Rc::<_>::make_mut(&mut self.data.entry_state);
-        let other_state = other.data.unwrap(EvalStmtPhase::PostMain);
-        match entry_state.as_mut() {
-            Some(state) => state.join(other_state, self.repacker),
-            None => {
-                *entry_state = Some(other_state.clone());
-                Ok(true)
-            }
-        }
+        self.data.as_mut().unwrap().join(
+            other.data.as_ref().unwrap(),
+            self_place_capabilities,
+            other_place_capabilities,
+            repacker,
+        )
     }
 }
 
-pub(crate) trait RepackingJoinSemiLattice<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError>;
-}
-
-impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilitySummary<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
+impl<'tcx> CapabilityLocals<'tcx> {
+    pub(crate) fn join(
+        &mut self,
+        other: &Self,
+        self_place_capabilities: &mut PlaceCapabilities<'tcx>,
+        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
         let mut changed = false;
         for (l, to) in self.iter_enumerated_mut() {
-            let local_changed = to.join(&other[l], repacker)?;
+            let local_changed = to.join(
+                &other[l],
+                self_place_capabilities,
+                other_place_capabilities,
+                repacker,
+            )?;
             changed = changed || local_changed;
         }
         Ok(changed)
     }
 }
 
-impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocal<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
+impl<'tcx> CapabilityLocal<'tcx> {
+    pub(crate) fn join(
+        &mut self,
+        other: &Self,
+        self_place_capabilities: &mut PlaceCapabilities<'tcx>,
+        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
         match (&mut *self, other) {
             (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(false),
             (CapabilityLocal::Allocated(to_places), CapabilityLocal::Allocated(from_places)) => {
-                to_places.join(from_places, repacker)
+                to_places.join(
+                    from_places,
+                    self_place_capabilities,
+                    other_place_capabilities,
+                    repacker,
+                )
             }
             (CapabilityLocal::Allocated(..), CapabilityLocal::Unallocated) => {
                 *self = CapabilityLocal::Unallocated;
@@ -90,8 +81,14 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityLocal<'tcx> {
     }
 }
 
-impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
-    fn join(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<bool, PcgError> {
+impl<'tcx> CapabilityProjections<'tcx> {
+    pub(crate) fn join(
+        &mut self,
+        other: &Self,
+        self_place_capabilities: &mut PlaceCapabilities<'tcx>,
+        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
         let mut changed = false;
         'outer: loop {
             let expansions = self.expansions().clone();
@@ -103,7 +100,7 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                 if let Some(self_expansion) = expansions.get(place) {
                     if other_expansion != self_expansion {
                         tracing::debug!("collapse to {:?}", place);
-                        self.collapse(*place, repacker)?;
+                        self.collapse(*place, self_place_capabilities, repacker)?;
                         tracing::debug!("self: {:?}", self);
                         changed = true;
                         continue 'outer;
@@ -112,16 +109,16 @@ impl<'tcx> RepackingJoinSemiLattice<'tcx> for CapabilityProjections<'tcx> {
                     tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
                     tracing::debug!("other: {:?}", other);
                     self.insert_expansion(*place, other_expansion.clone());
-                    if let Some(cap) = other.get_capability(*place) {
-                        self.set_capability(*place, cap, repacker);
+                    if let Some(cap) = other_place_capabilities.get((*place).into()) {
+                        self_place_capabilities.insert((*place).into(), cap);
                     } else {
-                        self.remove_capability(*place);
+                        self_place_capabilities.remove((*place).into());
                     }
                     for place in place.expansion_places(other_expansion, repacker) {
-                        if let Some(cap) = other.get_capability(place) {
-                            self.set_capability(place, cap, repacker);
+                        if let Some(cap) = other_place_capabilities.get(place.into()) {
+                            self_place_capabilities.insert(place.into(), cap);
                         } else {
-                            self.remove_capability(place);
+                            self_place_capabilities.remove(place.into());
                         }
                     }
                     changed = true;

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import ReactDOMServer from "react-dom/server";
 import * as dagre from "@dagrejs/dagre";
 import * as Viz from "@viz-js/viz";
+import { fetchDotFile, openDotGraphInNewWindow } from "./dot_graph";
 
 import PCGOps from "./components/BorrowsAndActions";
 import {
@@ -17,7 +18,6 @@ import {
   DagreNode,
   PathData,
   PcgProgramPointData,
-  PCGStmtVisualizationData,
 } from "./types";
 import Edge from "./components/Edge";
 import SymbolicHeap from "./components/SymbolicHeap";
@@ -175,11 +175,6 @@ async function main() {
     const dagreEdges = useMemo(() => {
       return toDagreEdges(filteredEdges);
     }, [filteredEdges]);
-
-    const fetchDotFile = async (filePath: string) => {
-      const response = await fetch(filePath);
-      return await response.text();
-    };
 
     const openLegendWindow = async () => {
       try {
@@ -547,29 +542,58 @@ async function main() {
                   ? stmtIterations[stmtIterations.length - 1][1]
                   : stmtIterations[selected][1];
               const dotFilePath = `data/${selectedFunction}/${filename}`;
-              const dotData = await fetchDotFile(dotFilePath);
-              Viz.instance().then((viz) => {
-                const svgElement = viz.renderSVGElement(dotData);
-                const popup = window.open(
-                  "",
-                  `Dot Graph - ${filename}`,
-                  "width=800,height=600"
-                );
-                popup.document.head.innerHTML = `
-                  <style>
-                    body { margin: 0; }
-                    svg {
-                      width: 100vw;
-                      height: 100vh;
-                      display: block;
-                    }
-                  </style>
-                `;
-                popup.document.body.appendChild(svgElement);
-              });
+              openDotGraphInNewWindow(dotFilePath);
             }}
           >
             Open in New Window
+          </button>
+          <br />
+          <button
+            style={{ marginLeft: "10px" }}
+            onClick={async () => {
+              if (currentPoint.type == "stmt") {
+                const dotFilePath = `data/${selectedFunction}/bc_facts_graph_bb${currentPoint.block}_${currentPoint.stmt}_start.dot`;
+                openDotGraphInNewWindow(dotFilePath);
+              }
+            }}
+          >
+            Polonius Subset Graph (This Location [Start])
+          </button>
+          <br />
+          <button
+            style={{ marginLeft: "10px" }}
+            onClick={async () => {
+              if (currentPoint.type == "stmt") {
+                const dotFilePath = `data/${selectedFunction}/bc_facts_graph_bb${currentPoint.block}_${currentPoint.stmt}_mid.dot`;
+                openDotGraphInNewWindow(dotFilePath);
+              }
+            }}
+          >
+            Polonius Subset Graph (This Location [Mid])
+          </button>
+          <br />
+          <button
+            style={{ marginLeft: "10px" }}
+            onClick={async () => {
+              if (currentPoint.type == "stmt") {
+                const dotFilePath = `data/${selectedFunction}/bc_facts_graph_anywhere.dot`;
+                openDotGraphInNewWindow(dotFilePath);
+              }
+            }}
+          >
+            Polonius Subset Graph (Anywhere)
+          </button>
+          <br />
+          <button
+            style={{ marginLeft: "10px" }}
+            onClick={async () => {
+              if (currentPoint.type == "stmt") {
+                const dotFilePath = `data/${selectedFunction}/region_inference_outlives.dot`;
+                openDotGraphInNewWindow(dotFilePath);
+              }
+            }}
+          >
+            Region Inference Outlives Graph
           </button>
           <br />
           <label>
@@ -679,13 +703,17 @@ async function main() {
             </div>
           </>
         )}
-        {pcsGraphSelector && showPCGSelector && currentPoint.type === "stmt" && (
-          <PCGGraphSelector
-            iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
-            selected={selected}
-            onSelect={setSelected}
-          />
-        )}
+        {pcsGraphSelector &&
+          showPCGSelector &&
+          currentPoint.type === "stmt" && (
+            <PCGGraphSelector
+              iterations={iterations[currentPoint.stmt].flatMap(
+                (phases) => phases
+              )}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          )}
       </div>
     );
   };

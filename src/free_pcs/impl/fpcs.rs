@@ -4,151 +4,118 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::{
-    fmt::{Debug, Formatter, Result},
-    rc::Rc,
-};
+use std::fmt::{Debug, Formatter, Result};
 
-use crate::rustc_interface::{
-    index::{Idx, IndexVec},
-    middle::mir::{Local, RETURN_PLACE},
-    mir_dataflow::fmt::DebugWithContext,
+use crate::{
+    free_pcs::RepackOp,
+    pcg::{place_capabilities::PlaceCapabilities, PcgError},
+    rustc_interface::{
+        index::{Idx, IndexVec},
+        middle::mir::{self, Local, RETURN_PLACE},
+        mir_dataflow::fmt::DebugWithContext,
+    },
 };
 use derive_more::{Deref, DerefMut};
 
 use super::{engine::FpcsEngine, CapabilityKind};
 use crate::{
-    combined_pcs::{EvalStmtPhase, PcgError},
-    free_pcs::{CapabilityLocal, CapabilityProjections, RepackOp},
-    utils::{domain_data::DomainData, eval_stmt_data::EvalStmtData, PlaceRepacker},
+    free_pcs::{CapabilityLocal, CapabilityProjections},
+    utils::CompilerCtxt,
 };
 
-pub(crate) struct RepackOps<'tcx> {
-    pub(crate) start: Vec<RepackOp<'tcx>>,
-    pub(crate) middle: Vec<RepackOp<'tcx>>,
+#[derive(Clone, Default)]
+pub struct FreePlaceCapabilitySummary<'tcx> {
+    pub(crate) data: Option<CapabilityLocals<'tcx>>,
 }
 
-#[derive(Clone)]
-pub struct FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
-    pub(crate) data: DomainData<Option<CapabilitySummary<'tcx>>>,
-    pub(crate) actions: EvalStmtData<Vec<RepackOp<'tcx>>>,
-}
-impl<'a, 'tcx> FreePlaceCapabilitySummary<'a, 'tcx> {
-    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
-        Self {
-            repacker,
-            data: DomainData::default(),
-            actions: EvalStmtData::default(),
-        }
+impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+    #[cfg(test)]
+    pub(crate) fn locals(&self) -> &CapabilityLocals<'tcx> {
+        self.data.as_ref().unwrap()
     }
 
-    pub fn initialize_as_start_block(&mut self) {
-        let always_live = self.repacker.always_live_locals();
+    pub(crate) fn locals_mut(&mut self) -> &mut CapabilityLocals<'tcx> {
+        self.data.as_mut().unwrap()
+    }
+
+    pub(crate) fn bridge(
+        &self,
+        other: &Self,
+        place_capabilities: &PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        self.data.as_ref().unwrap().bridge(
+            other.data.as_ref().unwrap(),
+            place_capabilities,
+            repacker,
+        )
+    }
+
+    pub fn initialize_as_start_block(
+        &mut self,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) {
+        let always_live = repacker.always_live_locals();
         let return_local = RETURN_PLACE;
-        let last_arg = Local::new(self.repacker.body().arg_count);
+        let last_arg = Local::new(repacker.body().arg_count);
         let capability_summary = IndexVec::from_fn_n(
-            |local| {
+            |local: mir::Local| {
                 if local == return_local {
-                    // Return local is allocated but uninitialized
-                    CapabilityLocal::new(local, CapabilityKind::Write)
+                    capabilities.insert(local.into(), CapabilityKind::Write);
+                    CapabilityLocal::new(local)
                 } else if local <= last_arg {
-                    // Arguments are allocated and initialized
-                    CapabilityLocal::new(local, CapabilityKind::Exclusive)
+                    capabilities.insert(local.into(), CapabilityKind::Exclusive);
+                    CapabilityLocal::new(local)
                 } else if always_live.contains(local) {
-                    // Always live locals start allocated but uninitialized
-                    CapabilityLocal::new(local, CapabilityKind::Write)
+                    capabilities.insert(local.into(), CapabilityKind::Write);
+                    CapabilityLocal::new(local)
                 } else {
                     // Other locals are unallocated
                     CapabilityLocal::Unallocated
                 }
             },
-            self.repacker.local_count(),
+            repacker.local_count(),
         );
-        self.data.entry_state = Rc::new(Some(CapabilitySummary(capability_summary)));
-        self.data.states.0.post_main = self.data.entry_state.clone();
-    }
-
-    pub(crate) fn repack_ops(&self) -> std::result::Result<RepackOps<'tcx>, PcgError> {
-        let start = self.actions[EvalStmtPhase::PreOperands].clone();
-        let middle = self.actions[EvalStmtPhase::PreMain].clone();
-        Ok(RepackOps { start, middle })
+        self.data = Some(CapabilityLocals(capability_summary));
     }
 }
 
-impl PartialEq for FreePlaceCapabilitySummary<'_, '_> {
+impl PartialEq for FreePlaceCapabilitySummary<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.data.states[EvalStmtPhase::PostMain] == other.data.states[EvalStmtPhase::PostMain]
+        self.data == other.data
     }
 }
-impl Eq for FreePlaceCapabilitySummary<'_, '_> {}
+impl Eq for FreePlaceCapabilitySummary<'_> {}
 
-impl Debug for FreePlaceCapabilitySummary<'_, '_> {
+impl Debug for FreePlaceCapabilitySummary<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.data.states[EvalStmtPhase::PostMain].fmt(f)
+        self.data.fmt(f)
     }
 }
-impl<'a, 'tcx> DebugWithContext<FpcsEngine<'a, 'tcx>> for FreePlaceCapabilitySummary<'a, 'tcx> {
+impl<'tcx> DebugWithContext<FpcsEngine<'_, 'tcx>> for FreePlaceCapabilitySummary<'tcx> {
     fn fmt_diff_with(
         &self,
-        old: &Self,
-        _ctxt: &FpcsEngine<'a, 'tcx>,
-        f: &mut Formatter<'_>,
+        _old: &Self,
+        _ctxt: &FpcsEngine<'_, 'tcx>,
+        _f: &mut Formatter<'_>,
     ) -> Result {
-        let RepackOps { start, middle } = self.repack_ops().unwrap();
-        if !start.is_empty() {
-            writeln!(f, "{start:?}")?;
-        }
-        CapabilitySummaryCompare(
-            self.data.unwrap(EvalStmtPhase::PreOperands),
-            old.data.unwrap(EvalStmtPhase::PostMain),
-            "",
-        )
-        .fmt(f)?;
-        CapabilitySummaryCompare(
-            self.data.unwrap(EvalStmtPhase::PostOperands),
-            self.data.unwrap(EvalStmtPhase::PreOperands),
-            "ARGUMENTS:\n",
-        )
-        .fmt(f)?;
-        if !middle.is_empty() {
-            writeln!(f, "{middle:?}")?;
-        }
-        CapabilitySummaryCompare(
-            self.data.unwrap(EvalStmtPhase::PreMain),
-            self.data.unwrap(EvalStmtPhase::PostOperands),
-            "",
-        )
-        .fmt(f)?;
-        CapabilitySummaryCompare(
-            self.data.unwrap(EvalStmtPhase::PostMain),
-            self.data.unwrap(EvalStmtPhase::PreMain),
-            "STATEMENT:\n",
-        )
-        .fmt(f)?;
-        Ok(())
+        todo!()
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
 /// The free pcs of all locals
-pub struct CapabilitySummary<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
+pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 
-// impl Default for CapabilitySummary<'_> {
-//     fn default() -> Self {
-//         Self::empty()
-//     }
-// }
-
-impl Debug for CapabilitySummary<'_> {
+impl Debug for CapabilityLocals<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let v: Vec<_> = self.0.iter().filter(|c| !c.is_unallocated()).collect();
         v.fmt(f)
     }
 }
 
-impl<'tcx> CapabilitySummary<'tcx> {
-
+impl<'tcx> CapabilityLocals<'tcx> {
     pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
         self.0
             .iter_mut()
@@ -157,92 +124,14 @@ impl<'tcx> CapabilitySummary<'tcx> {
             .collect()
     }
 
-    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
-        self.0
-            .iter()
-            .map(|c| c.debug_lines(repacker))
-            .collect::<Vec<_>>()
-            .concat()
-    }
-
     pub fn default(local_count: usize) -> Self {
         Self(IndexVec::from_fn_n(
-            |i| {
-                CapabilityLocal::Allocated(CapabilityProjections::new(i, CapabilityKind::Exclusive))
-            },
+            |i| CapabilityLocal::Allocated(CapabilityProjections::new(i)),
             local_count,
         ))
     }
 
     pub fn empty() -> Self {
         Self(IndexVec::new())
-    }
-}
-
-struct CapabilitySummaryCompare<'a, 'tcx>(
-    &'a CapabilitySummary<'tcx>,
-    &'a CapabilitySummary<'tcx>,
-    &'a str,
-);
-impl Debug for CapabilitySummaryCompare<'_, '_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        if self.0 == self.1 {
-            return Ok(());
-        }
-        write!(f, "{}", self.2)?;
-        for (new, old) in self.0.iter().zip(self.1.iter()) {
-            let changed = match (new, old) {
-                (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => false,
-                (CapabilityLocal::Unallocated, CapabilityLocal::Allocated(a)) => {
-                    write!(f, "\u{001f}-{:?}", a.get_local())?;
-                    true
-                }
-                (CapabilityLocal::Allocated(a), CapabilityLocal::Unallocated) => {
-                    write!(f, "\u{001f}+{:?}", a.get_local())?;
-                    true
-                }
-                (CapabilityLocal::Allocated(_), CapabilityLocal::Allocated(_)) => {
-                    true
-                    // if new != old {
-                    //     let mut new_set = CapabilityProjections::empty();
-                    //     let mut old_set = CapabilityProjections::empty();
-                    //     for (&p, &nk) in new.iter() {
-                    //         match old.get(&p) {
-                    //             Some(&ok) if nk == ok => (),
-                    //             _ => {
-                    //                 new_set.insert(p, nk);
-                    //             }
-                    //         }
-                    //     }
-                    //     for (&p, &ok) in old.iter() {
-                    //         match new.get(&p) {
-                    //             Some(&nk) if nk == ok => (),
-                    //             _ => {
-                    //                 old_set.insert(p, ok);
-                    //             }
-                    //         }
-                    //     }
-                    //     if !old_set.is_empty() {
-                    //         write!(f, "\u{001f}-{old_set:?}")?
-                    //     }
-                    //     if !new_set.is_empty() {
-                    //         write!(f, "\u{001f}+{new_set:?}")?
-                    //     }
-                    //     true
-                    // } else {
-                    //     false
-                    // }
-                }
-            };
-            if changed {
-                write!(f, "</font><font color=\"black\">")?;
-                if f.alternate() {
-                    writeln!(f)?;
-                } else {
-                    write!(f, "\t")?;
-                }
-            }
-        }
-        Ok(())
     }
 }

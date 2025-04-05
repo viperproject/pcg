@@ -1,9 +1,9 @@
 use derive_more::{Deref, DerefMut};
 use crate::rustc_interface::middle::mir;
-use crate::utils::{Place, PlaceRepacker};
+use crate::utils::{Place, CompilerCtxt};
 
 impl<'tcx> CorrectedPlace<'tcx> {
-    pub fn new(place: Place<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub fn new(place: Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
         Self(place.with_inherent_region(repacker))
     }
 

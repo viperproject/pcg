@@ -33,7 +33,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                 date,
                 RunOnCrateOptions::RunPCG {
                     target: Target::Release,
-                    validity_checks: false,
+                    validity_checks: true,
                 },
             );
             println!("Finished: {i} ({})", krate.name);

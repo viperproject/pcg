@@ -15,5 +15,4 @@ mod bridge;
 
 pub use fpcs::*;
 pub use local::*;
-pub use bridge::*;
 pub use place::*;

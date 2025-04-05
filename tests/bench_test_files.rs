@@ -38,7 +38,7 @@ fn run_cachegrind(file_path: &Path) -> u64 {
     let output = Command::new("valgrind")
         .args([
             "--tool=cachegrind",
-            "target/release/pcs_bin",
+            "target/release/pcg_bin",
             file_path.to_str().unwrap(),
         ])
         .env(
@@ -83,8 +83,8 @@ fn format_results(results: &[(String, u64)]) -> String {
     output
 }
 
-#[cfg_attr(target_os = "macos", ignore)]
 #[test]
+#[ignore]
 fn benchmark_test_files() {
     // First build in release mode
     build_release();
