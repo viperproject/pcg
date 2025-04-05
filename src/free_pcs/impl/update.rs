@@ -16,7 +16,7 @@ use crate::{
     },
     utils::{
         corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
-        PlaceRepacker,
+        CompilerCtxt,
     },
 };
 
@@ -30,7 +30,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
     pub(crate) fn requires(
         &mut self,
         cond: Condition<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let ops = match cond {
@@ -74,7 +74,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         &self,
         pre: Condition<'tcx>,
         capabilities: &PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         match pre {
             Condition::RemoveCapability(_place) => {}
@@ -162,7 +162,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &self,
         to: Place<'tcx>,
         _for_cap: CapabilityKind,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Place<'tcx> {
         for place in to.iter_places(repacker).into_iter().rev() {
             if self.contains_expansion_to(place, repacker) {
@@ -177,7 +177,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &mut self,
         to: Place<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
         for_cap: CapabilityKind,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let nearest_owned_place = to.nearest_owned_place(repacker);

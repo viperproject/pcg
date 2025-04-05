@@ -2,7 +2,7 @@ extern crate polonius_engine;
 use polonius_engine::Output;
 
 use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use crate::borrow_pcg::region_projection::PCGRegion;
+use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
     BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext,
@@ -13,7 +13,7 @@ use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
 use crate::utils::maybe_remote::MaybeRemotePlace;
-use crate::utils::{HasPlace, PlaceRepacker};
+use crate::utils::{CompilerCtxt, HasPlace};
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
@@ -21,7 +21,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
-    repacker: PlaceRepacker<'mir, 'tcx>,
+    repacker: CompilerCtxt<'mir, 'tcx>,
     pub output_facts: Rc<PoloniusOutput>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -30,7 +30,7 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
 impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
     fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let location_table = body.location_table();
-        let repacker = PlaceRepacker::new(body.body(), tcx);
+        let repacker = CompilerCtxt::new(body.body(), tcx, body.region_inference_context());
         let output_facts = Output::compute(
             body.input_facts(),
             polonius_engine::Algorithm::DatafrogOpt,
@@ -61,19 +61,18 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
             }
         };
         regions.iter().any(|region| match region {
-            PCGRegion::RegionVid(region_vid) => self
+            PcgRegion::RegionVid(region_vid) => self
                 .output_facts
                 .origin_contains_loan_at(self.location_table.start_index(location))
                 .contains_key(&(*region_vid).into()),
-            PCGRegion::ReErased => todo!(),
-            PCGRegion::ReStatic => todo!(),
-            PCGRegion::ReBound(_, _) => todo!(),
-            PCGRegion::ReLateParam(_) => todo!(),
-            PCGRegion::PCGInternalErr => todo!(),
+            PcgRegion::ReErased => todo!(),
+            PcgRegion::ReStatic => todo!(),
+            PcgRegion::ReBound(_, _) => todo!(),
+            PcgRegion::ReLateParam(_) => todo!(),
         })
     }
 
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         outlives(self.region_cx, sup, sub)
     }
 
@@ -88,7 +87,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
 #[derive(Clone)]
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     #[allow(unused)]
-    repacker: PlaceRepacker<'mir, 'tcx>,
+    repacker: CompilerCtxt<'mir, 'tcx>,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -111,7 +110,7 @@ fn cursor_contains_local(
 
 impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
     fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
-        let repacker = PlaceRepacker::new(body.body(), tcx);
+        let repacker = CompilerCtxt::new(body.body(), tcx, body.region_inference_context());
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
@@ -125,7 +124,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
         }
     }
 
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         outlives(self.region_cx, sup, sub)
     }
 
@@ -166,10 +165,10 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
     }
 }
 
-fn outlives(region_cx: &RegionInferenceContext<'_>, sup: PCGRegion, sub: PCGRegion) -> bool {
+fn outlives(region_cx: &RegionInferenceContext<'_>, sup: PcgRegion, sub: PcgRegion) -> bool {
     match (sup, sub) {
-        (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => region_cx.eval_outlives(sup, sub),
-        (PCGRegion::ReStatic, _) => true,
+        (PcgRegion::RegionVid(sup), PcgRegion::RegionVid(sub)) => region_cx.eval_outlives(sup, sub),
+        (PcgRegion::ReStatic, _) => true,
         _ => false,
     }
 }

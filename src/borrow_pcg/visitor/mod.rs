@@ -27,7 +27,7 @@ use super::{
     coupling_graph_constructor::BorrowCheckerInterface,
     edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
     path_condition::PathConditions,
-    region_projection::{PCGRegion, RegionIdx, RegionProjection},
+    region_projection::{PcgRegion, RegionIdx, RegionProjection},
     state::BorrowsState,
 };
 use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
@@ -37,14 +37,14 @@ use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{
     free_pcs::CapabilityKind,
-    utils::{self, PlaceRepacker},
+    utils::{self, CompilerCtxt},
 };
 
 mod function_call;
 mod stmt;
 
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
-    pub(super) repacker: PlaceRepacker<'mir, 'tcx>,
+    pub(super) ctxt: CompilerCtxt<'mir, 'tcx>,
     pub(super) actions: BorrowPCGActions<'tcx>,
     state: &'state mut BorrowsState<'tcx>,
     capabilities: &'state mut PlaceCapabilities<'tcx>,
@@ -60,7 +60,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
         self.actions.push(action.clone());
         self.state
-            .apply_action(action, self.capabilities, self.repacker)
+            .apply_action(action, self.capabilities, self.ctxt)
             .unwrap()
     }
 
@@ -72,7 +72,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         phase: EvalStmtPhase,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
-            repacker: PlaceRepacker::new(engine.body, engine.tcx),
+            ctxt: engine.ctxt,
             actions: BorrowPCGActions::new(),
             state,
             capabilities,
@@ -86,20 +86,17 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
         location: Location,
-        kind: impl Fn(PCGRegion) -> BorrowFlowEdgeKind,
+        kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) {
-        for target_proj in target.region_projections(self.repacker).into_iter() {
-            if self.outlives(
-                source_proj.region(self.repacker),
-                target_proj.region(self.repacker),
-            ) {
+        for target_proj in target.region_projections(self.ctxt).into_iter() {
+            if self.outlives(source_proj.region(self.ctxt), target_proj.region(self.ctxt)) {
                 self.apply_action(BorrowPCGAction::add_edge(
                     BorrowPCGEdge::new(
                         BorrowFlowEdge::new(
                             source_proj.into(),
                             target_proj.into(),
-                            kind(target_proj.region(self.repacker)),
-                            self.repacker,
+                            kind(target_proj.region(self.ctxt)),
+                            self.ctxt,
                         )
                         .into(),
                         PathConditions::AtBlock(location.block),
@@ -110,24 +107,24 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         }
     }
 
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         self.bc.outlives(sup, sub)
     }
 
     fn projections_borrowing_from_input_lifetime(
         &self,
-        input_lifetime: PCGRegion,
+        input_lifetime: PcgRegion,
         output_place: utils::Place<'tcx>,
     ) -> Vec<AbstractionOutputTarget<'tcx>> {
         let mut result = vec![];
-        let output_ty = output_place.ty(self.repacker).ty;
+        let output_ty = output_place.ty(self.ctxt).ty;
         for (output_lifetime_idx, output_lifetime) in
-            extract_regions(output_ty, self.repacker).into_iter_enumerated()
+            extract_regions(output_ty, self.ctxt).into_iter_enumerated()
         {
             if self.outlives(input_lifetime, output_lifetime) {
                 result.push(
                     output_place
-                        .region_projection(output_lifetime_idx, self.repacker)
+                        .region_projection(output_lifetime_idx, self.ctxt)
                         .into(),
                 );
             }
@@ -139,7 +136,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 impl BorrowsVisitor<'_, '_, '_> {
     fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
         let actions = self.state.pack_old_and_dead_leaves(
-            self.repacker,
+            self.ctxt,
             self.capabilities,
             location,
             self.bc.as_ref(),
@@ -154,19 +151,19 @@ impl BorrowsVisitor<'_, '_, '_> {
             if self
                 .state
                 .graph()
-                .contains(borrow.deref_place(self.repacker), self.repacker)
+                .contains(borrow.deref_place(self.ctxt), self.ctxt)
             {
                 let upgrade_action = BorrowPCGAction::restore_capability(
-                    borrow.deref_place(self.repacker).place().into(),
+                    borrow.deref_place(self.ctxt).place().into(),
                     CapabilityKind::Exclusive,
                 );
                 self.apply_action(upgrade_action);
             }
-            if !blocked_place.is_owned(self.repacker) {
+            if !blocked_place.is_owned(self.ctxt) {
                 let actions = self.state.remove_read_permission_upwards(
                     blocked_place,
                     self.capabilities,
-                    self.repacker,
+                    self.ctxt,
                 )?;
                 self.record_actions(actions);
             }
@@ -192,7 +189,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     };
                     let place: utils::Place<'tcx> = (*place).into();
                     let expansion_actions = self.state.obtain(
-                        self.repacker,
+                        self.ctxt,
                         place,
                         self.capabilities,
                         location,
@@ -266,10 +263,10 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
             EvalStmtPhase::PreOperands => {
                 if let StatementKind::FakeRead(box (_, place)) = &statement.kind {
                     let place: utils::Place<'tcx> = (*place).into();
-                    if !place.is_owned(self.repacker) {
+                    if !place.is_owned(self.ctxt) {
                         let expansion_reason = ObtainReason::FakeRead;
                         let expansion_actions = self.state.obtain(
-                            self.repacker,
+                            self.ctxt,
                             place,
                             self.capabilities,
                             location,
@@ -296,7 +293,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         _context: mir::visit::PlaceContext,
         _location: mir::Location,
     ) -> Result<(), PcgError> {
-        if place.contains_unsafe_deref(self.repacker) {
+        if place.contains_unsafe_deref(self.ctxt) {
             return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
         }
         Ok(())
@@ -341,7 +338,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                     };
                     if this.phase == EvalStmtPhase::PreOperands {
                         let expansion_actions = this.state.obtain(
-                            this.repacker,
+                            this.ctxt,
                             place.into(),
                             this.capabilities,
                             location,
@@ -400,10 +397,10 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
 /// `['c, 'd]` respectively. This enables substitution of regions to handle
 /// moves in the PCG e.g for the statement `let x: T<'a, 'b> = move c: T<'c,
 /// 'd>`.
-pub(crate) fn extract_regions<'tcx>(
+pub(crate) fn extract_regions<'tcx, C: Copy>(
     ty: ty::Ty<'tcx>,
-    repacker: PlaceRepacker<'_, 'tcx>,
-) -> IndexVec<RegionIdx, PCGRegion> {
+    repacker: CompilerCtxt<'_, 'tcx, C>,
+) -> IndexVec<RegionIdx, PcgRegion> {
     let mut visitor = LifetimeExtractor {
         lifetimes: vec![],
         tcx: repacker.tcx(),
@@ -415,8 +412,8 @@ pub(crate) fn extract_regions<'tcx>(
 #[allow(unused)]
 pub(crate) fn extract_inner_regions<'tcx>(
     ty: ty::Ty<'tcx>,
-    repacker: PlaceRepacker<'_, 'tcx>,
-) -> IndexVec<RegionIdx, PCGRegion> {
+    repacker: CompilerCtxt<'_, 'tcx>,
+) -> IndexVec<RegionIdx, PcgRegion> {
     if let ty::TyKind::Ref(_, ty, _) = ty.kind() {
         extract_regions(*ty, repacker)
     } else {

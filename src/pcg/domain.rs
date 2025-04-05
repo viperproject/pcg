@@ -31,7 +31,7 @@ use crate::{
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
         validity::HasValidityCheck,
-        PlaceRepacker,
+        CompilerCtxt,
     },
     DebugLines, PCGAnalysis, RECORD_PCG,
 };
@@ -110,7 +110,10 @@ pub struct Pcg<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> std::result::Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> std::result::Result<(), String> {
         self.borrow.check_validity(repacker)
     }
 }
@@ -123,7 +126,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
     pub(crate) fn owned_requires(
         &mut self,
         cond: Condition<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         self.owned
             .locals_mut()
@@ -141,7 +144,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self_block: BasicBlock,
         other_block: BasicBlock,
         bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut res = self.owned.join(
             &other.owned,
@@ -161,12 +164,12 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         Ok(res)
     }
 
-    pub(crate) fn debug_lines(&self, repacker: PlaceRepacker<'mir, 'tcx>) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'mir, 'tcx>) -> Vec<String> {
         let mut result = self.borrow.debug_lines(repacker);
         result.extend(self.capabilities.debug_lines(repacker));
         result
     }
-    pub(crate) fn initialize_as_start_block(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+    pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
         self.owned
             .initialize_as_start_block(&mut self.capabilities, repacker);
         self.borrow
@@ -182,7 +185,7 @@ pub struct PcgDomainData<'tcx> {
 
 #[derive(Clone)]
 pub struct PcgDomain<'a, 'tcx> {
-    repacker: PlaceRepacker<'a, 'tcx>,
+    repacker: CompilerCtxt<'a, 'tcx>,
     bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx>, PcgError>,
@@ -477,7 +480,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     }
 
     pub(crate) fn new(
-        repacker: PlaceRepacker<'a, 'tcx>,
+        repacker: CompilerCtxt<'a, 'tcx>,
         bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,

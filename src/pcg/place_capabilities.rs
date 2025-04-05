@@ -6,15 +6,15 @@ use crate::{
     utils::{
         display::{DebugLines, DisplayWithRepacker},
         maybe_old::MaybeOldPlace,
-        Place, PlaceRepacker,
+        Place, CompilerCtxt,
     },
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for PlaceCapabilities<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
                 format!("{}: {:?}", node.to_short_string(repacker), capability)
@@ -36,7 +36,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn owned_capabilities<'mir: 'slf, 'slf>(
         &'slf mut self,
         local: mir::Local,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, &'slf mut CapabilityKind)> + 'slf {
         self.0.iter_mut().filter_map(move |(place, capability)| {
             if place.local() == local && place.is_owned(repacker) {

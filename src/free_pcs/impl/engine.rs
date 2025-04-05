@@ -9,14 +9,14 @@ use crate::free_pcs::RepackOp;
 use crate::pcg::Pcg;
 use crate::{
     pcg::{EvalStmtPhase, PcgError},
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
 use super::triple::TripleWalker;
 
 #[derive(Clone)]
 pub struct FpcsEngine<'a, 'tcx> {
-    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
 }
 
 impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {

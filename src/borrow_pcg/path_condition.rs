@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::{
     pcg_validity_assert,
     rustc_interface::middle::mir::{BasicBlock, START_BLOCK},
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
 use crate::utils::json::ToJsonWithRepacker;
@@ -153,7 +153,7 @@ pub enum PathConditions {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PathConditions {
-    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             PathConditions::AtBlock(b) => json!({
                 "type": "AtBlock",

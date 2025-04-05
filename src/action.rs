@@ -6,14 +6,14 @@ use crate::{
         unblock_graph::BorrowPCGUnblockAction,
     },
     free_pcs::RepackOp,
-    utils::{json::ToJsonWithRepacker, PlaceRepacker},
+    utils::{json::ToJsonWithRepacker, CompilerCtxt},
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, From, Default, Deref, DerefMut)]
 pub struct PcgActions<'tcx>(pub(crate) Vec<PcgAction<'tcx>>);
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PcgActions<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         self.0.iter().map(|a| a.to_json(repacker)).collect()
     }
 }
@@ -78,7 +78,7 @@ pub enum PcgAction<'tcx> {
 }
 
 impl<'tcx> PcgAction<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             PcgAction::Borrow(action) => action.debug_line(repacker),
             PcgAction::Owned(action) => action.debug_line(repacker),
@@ -87,7 +87,7 @@ impl<'tcx> PcgAction<'tcx> {
 }
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for PcgAction<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             PcgAction::Borrow(action) => action.to_json(repacker),
             PcgAction::Owned(action) => action.to_json(),

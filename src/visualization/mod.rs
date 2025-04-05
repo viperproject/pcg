@@ -14,7 +14,11 @@ pub mod mir_graph;
 mod node;
 
 use crate::{
-    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState}, free_pcs::{CapabilityKind, CapabilityLocals}, pcg::place_capabilities::PlaceCapabilities, rustc_interface::middle::mir::Location, utils::{Place, PlaceRepacker, SnapshotLocation}
+    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
+    free_pcs::{CapabilityKind, CapabilityLocals},
+    pcg::place_capabilities::PlaceCapabilities,
+    rustc_interface::middle::mir::Location,
+    utils::{Place, CompilerCtxt, SnapshotLocation},
 };
 use std::{
     collections::HashSet,
@@ -113,7 +117,10 @@ impl GraphNode {
                     tooltip: Some(DotStringAttr(ty.clone())),
                 }
             }
-            NodeType::RegionProjectionNode { label } => DotNode {
+            NodeType::RegionProjectionNode {
+                label,
+                base_ty: place_ty,
+            } => DotNode {
                 id: self.id.to_string(),
                 label: DotLabel::Text(label.clone()),
                 color: DotStringAttr("blue".to_string()),
@@ -121,7 +128,7 @@ impl GraphNode {
                 shape: DotStringAttr("octagon".to_string()),
                 style: None,
                 penwidth: None,
-                tooltip: None,
+                tooltip: Some(DotStringAttr(place_ty.clone())),
             },
         }
     }
@@ -138,6 +145,7 @@ enum NodeType {
     },
     RegionProjectionNode {
         label: String,
+        base_ty: String,
     },
 }
 
@@ -146,7 +154,7 @@ impl NodeType {
     pub(crate) fn label(&self) -> String {
         match self {
             NodeType::PlaceNode { label, .. } => label.clone(),
-            NodeType::RegionProjectionNode { label } => label.clone(),
+            NodeType::RegionProjectionNode { label, .. } => label.clone(),
         }
     }
 }
@@ -327,7 +335,7 @@ impl Graph {
 }
 
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
-    repacker: PlaceRepacker<'a, 'tcx>,
+    repacker: CompilerCtxt<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
     let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
@@ -339,7 +347,7 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
 }
 
 pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
-    repacker: PlaceRepacker<'a, 'tcx>,
+    repacker: CompilerCtxt<'a, 'tcx>,
     summary: &CapabilityLocals<'tcx>,
     borrows_domain: &BorrowsState<'tcx>,
     capabilities: &PlaceCapabilities<'tcx>,

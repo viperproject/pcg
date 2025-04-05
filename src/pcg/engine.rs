@@ -45,7 +45,7 @@ use super::{
 use crate::{
     borrow_pcg::engine::BorrowsEngine,
     free_pcs::{engine::FpcsEngine, CapabilityKind},
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
 #[derive(Clone)]
@@ -128,7 +128,7 @@ struct PCGEngineDebugData {
 }
 
 pub struct PcgEngine<'a, 'tcx: 'a> {
-    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
     pub(crate) borrow_checker: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
@@ -389,7 +389,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     }
 
     pub(crate) fn new(
-        repacker: PlaceRepacker<'a, 'tcx>,
+        repacker: CompilerCtxt<'a, 'tcx>,
         borrow_checker: impl BorrowCheckerInterface<'a, 'tcx> + 'a,
         debug_output_dir: Option<&str>,
     ) -> Self {
@@ -408,7 +408,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             }
         });
         let fpcs = FpcsEngine { repacker };
-        let borrows = BorrowsEngine::new(repacker.tcx(), repacker.body());
+        let borrows = BorrowsEngine::new(repacker);
         let mut reachable_blocks = BitSet::new_empty(repacker.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK);
         Self {

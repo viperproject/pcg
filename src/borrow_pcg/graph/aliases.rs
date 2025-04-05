@@ -7,7 +7,7 @@ use crate::{
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{display::DisplayWithRepacker, HasPlace, PlaceRepacker},
+    utils::{CompilerCtxt, HasPlace},
 };
 
 use super::BorrowsGraph;
@@ -29,7 +29,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn ancestor_edges<'graph, 'mir: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
@@ -48,10 +48,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         result
     }
-    pub(crate) fn aliases(
+    pub(crate) fn aliases<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut result: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
         result.insert(node.into());
@@ -68,16 +68,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn aliases_all_projections(
+    pub(crate) fn aliases_all_projections<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
-        for (place, proj) in node.iter_projections(repacker) {
-            for c in results.iter() {
-                tracing::debug!("{} {}", c.node.to_short_string(repacker), c.exact_alias);
-            }
+        for (place, proj) in node.iter_projections(ctxt) {
             results.insert(Alias {
                 node: place.into(),
                 exact_alias: true,
@@ -87,31 +84,37 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 if !alias.exact_alias {
                     continue;
                 }
-                let local_node = if let Some(local_node) = alias.node.try_to_local_node(repacker) {
+                let local_node = if let Some(local_node) = alias.node.try_to_local_node(ctxt) {
                     local_node
                 } else {
                     continue;
                 };
-                let local_node = if let Ok(n) = local_node.project_deeper(proj, repacker) {
+                let local_node = if let Ok(n) = local_node.project_deeper(proj, ctxt) {
                     n
                 } else {
                     continue;
                 };
                 results.extend(self.direct_aliases(
                     local_node,
-                    repacker,
+                    ctxt,
                     &mut FxHashSet::default(),
                     true,
                 ));
                 if let PCGNode::Place(p) = local_node
-                    && let Some(rp) = p.deref_to_rp(repacker)
+                    && let Some(rp) = p.deref_to_rp(ctxt)
                 {
-                    results.extend(self.direct_aliases(
-                        rp.to_local_node(repacker),
-                        repacker,
-                        &mut FxHashSet::default(),
-                        true,
-                    ));
+                    for node in self.nodes(ctxt) {
+                        if let Some(PCGNode::RegionProjection(p)) = node.try_to_local_node(ctxt) {
+                            if p.base() == rp.base() && p.region_idx == rp.region_idx {
+                                results.extend(self.direct_aliases(
+                                    p.to_local_node(ctxt),
+                                    ctxt,
+                                    &mut FxHashSet::default(),
+                                    true,
+                                ));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -119,10 +122,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     #[tracing::instrument(skip(self, repacker, seen, direct))]
-    fn direct_aliases(
+    fn direct_aliases<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
         seen: &mut FxHashSet<PCGNode<'tcx>>,
         direct: bool,
     ) -> FxHashSet<Alias<'tcx>> {
@@ -209,7 +212,7 @@ fn test_aliases() {
         .with_writer(std::io::stderr)
         .init();
 
-    use crate::{run_pcg, FpcsOutput};
+    use crate::{run_pcg, BodyAndBorrows, FpcsOutput};
 
     fn check_all_statements<'mir, 'tcx>(
         body: &'mir mir::Body<'tcx>,
@@ -251,7 +254,7 @@ fn test_aliases() {
         let temp: mir::Place<'_> = mir::Local::from(2_usize).into();
         let aliases = stmt.aliases(
             temp.project_deeper(&[mir::ProjectionElem::Deref], tcx),
-            &body.body,
+            &body.body(),
             tcx,
         );
         // *_2 aliases _4 at bb3[1]
@@ -283,8 +286,14 @@ fn test_aliases() {
         let w = placer.local("w").mk();
         let w_deref = w.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let x = placer.local("x").mk();
-        let aliases = stmt.aliases(w_deref, &body.body, tcx);
-        assert!(aliases.contains(&x));
+        let aliases = stmt.aliases(w_deref, body.body(), tcx);
+        // *w aliases x at bb0[12]
+        assert!(
+            aliases.contains(&x),
+            "Aliases: {:?} does not contain {:?}",
+            aliases,
+            x
+        );
     });
 
     // slice_write
@@ -305,12 +314,12 @@ fn test_aliases() {
         let y_deref = y.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let local3: mir::Place<'_> = mir::Local::from(3_usize).into();
         let local3_deref = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let aliases = stmt.aliases(y_deref, &body.body, tcx);
+        let aliases = stmt.aliases(y_deref, body.body(), tcx);
         assert!(aliases.contains(&local3_deref));
         assert!(pcg
             .results_for_all_blocks()
             .unwrap()
-            .all_place_aliases(y_deref, &body.body, tcx)
+            .all_place_aliases(y_deref, body.body(), tcx)
             .contains(&local3_deref));
     });
 
@@ -331,7 +340,7 @@ fn test_aliases() {
         let f_deref = f.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         let local3: mir::Place<'_> = mir::Local::from(3_usize).into();
         let local3_deref = local3.project_deeper(&[mir::ProjectionElem::Deref], tcx);
-        let aliases = stmt.aliases(local3_deref, &body.body, tcx);
+        let aliases = stmt.aliases(local3_deref, body.body(), tcx);
         assert!(aliases.contains(&f_deref));
         assert!(!aliases.contains(&f));
     });
@@ -489,9 +498,7 @@ fn main() {
 
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
-                !stmt
-                    .aliases(deref_temp_9, &body.body, tcx)
-                    .contains(&temp_19),
+                !stmt.aliases(deref_temp_9, &body.body, tcx).contains(&temp_19),
                 "Bad alias for {:?}",
                 location
             );

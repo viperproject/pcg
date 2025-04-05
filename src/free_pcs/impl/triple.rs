@@ -14,7 +14,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::{
     pcg::{PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
-    utils::{display::DisplayWithRepacker, Place, PlaceRepacker},
+    utils::{display::DisplayWithRepacker, Place, CompilerCtxt},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -48,7 +48,7 @@ impl<'tcx> Condition<'tcx> {
 
     fn exclusive<T: Into<Place<'tcx>>>(
         place: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Condition<'tcx> {
         let place = place.into();
         pcg_validity_assert!(
@@ -73,11 +73,11 @@ pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
     pub(crate) operand_triples: Vec<Triple<'tcx>>,
     /// Evaluate all other statements/terminators
     pub(crate) main_triples: Vec<Triple<'tcx>>,
-    pub(crate) repacker: PlaceRepacker<'a, 'tcx>,
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
 }
 
 impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
-    pub(crate) fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+    pub(crate) fn new(repacker: CompilerCtxt<'a, 'tcx>) -> Self {
         Self {
             operand_triples: Vec::new(),
             main_triples: Vec::new(),

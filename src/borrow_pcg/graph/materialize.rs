@@ -6,7 +6,7 @@ use crate::{
         edge::kind::BorrowPCGEdgeKind,
     },
     pcg::PCGNode,
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
 use super::BorrowsGraph;
@@ -31,7 +31,7 @@ pub(crate) enum MaterializedEdge<'tcx, 'graph> {
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn materialized_edges<'graph, 'mir>(
         &'graph self,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Vec<MaterializedEdge<'tcx, 'graph>> {
         let mut result = Vec::new();
         for edge in self.edges() {

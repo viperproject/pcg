@@ -8,7 +8,7 @@ use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::PlaceRepacker;
+use crate::utils::CompilerCtxt;
 use crate::{validity_checks_enabled, Weaken};
 
 use super::BorrowPCGActionKind;
@@ -17,7 +17,7 @@ use super::BorrowPCGActionKind;
 pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
 
 impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGActions<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         self.0
             .iter()
             .map(|a| a.to_json(repacker))

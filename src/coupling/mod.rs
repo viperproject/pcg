@@ -10,7 +10,7 @@ use crate::borrow_pcg::coupling_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithRepacker;
-use crate::utils::PlaceRepacker;
+use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::{pcg_validity_assert, validity_checks_enabled};
 
@@ -85,7 +85,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
         })
     }
 
-    fn to_dot(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_dot(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let arena = bumpalo::Bump::new();
         let to_render: petgraph::Graph<&str, ()> = self.inner.clone().map(
             |_, e| {
@@ -112,7 +112,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
         lines.join("\n")
     }
 
-    pub(crate) fn render_with_imgcat(&self, repacker: PlaceRepacker<'_, 'tcx>, msg: &str) {
+    pub(crate) fn render_with_imgcat(&self, repacker: CompilerCtxt<'_, 'tcx>, msg: &str) {
         let dot = self.to_dot(repacker);
         // let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_string());
         // let timestamp = std::time::SystemTime::now()
@@ -141,7 +141,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
     pub(crate) fn insert_endpoint(
         &mut self,
         endpoint: Coupled<N>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> petgraph::prelude::NodeIndex {
         let JoinNodesResult {
             index,
@@ -228,7 +228,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
 
     /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
     /// operation, the indices of the nodes may change.
-    fn merge_sccs(&mut self, repacker: PlaceRepacker<'_, 'tcx>) {
+    fn merge_sccs(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
         if self.is_acyclic() {
             return;
         }
@@ -264,7 +264,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
         source: NodeIndex,
         target: NodeIndex,
         weight: FxHashSet<E>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         assert!(source.index() < self.inner.node_count());
         assert!(target.index() < self.inner.node_count());
@@ -281,7 +281,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
         }
     }
 
-    pub(crate) fn merge(&mut self, other: &Self, repacker: PlaceRepacker<'_, 'tcx>) {
+    pub(crate) fn merge(&mut self, other: &Self, repacker: CompilerCtxt<'_, 'tcx>) {
         for (source, target, weight) in other.edges() {
             let JoinNodesResult {
                 index: mut source_idx,
@@ -321,7 +321,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + 
         from: &Coupled<N>,
         to: &Coupled<N>,
         weight: FxHashSet<E>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         tracing::debug!(
             "Adding edge {} -> {}",

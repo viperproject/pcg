@@ -34,15 +34,15 @@ use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::{env_feature_enabled, PlaceRepacker};
+use crate::utils::{env_feature_enabled, CompilerCtxt};
 
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashMap<BorrowPCGEdgeKind<'tcx>, PathConditions>,
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsGraph<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.edges()
             .map(|edge| edge.to_short_string(repacker).to_string())
             .collect()
@@ -50,7 +50,7 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         tracing::debug!(
             "Checking acyclicity of borrows graph ({} edges)",
             self.edges.len()
@@ -115,7 +115,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let node = node.into();
         self.edges().any(|edge| {
@@ -141,7 +141,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn base_rp_graph(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> AbstractionGraph<'tcx> {
         let mut graph: AbstractionGraph<'tcx> = AbstractionGraph::new();
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -151,7 +151,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         impl<'tcx> ExploreFrom<'tcx> {
-            pub fn new(current: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+            pub fn new(current: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
                 Self {
                     current,
                     connect: current.as_cg_node(repacker),
@@ -166,7 +166,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self.current
             }
 
-            pub fn extend(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+            pub fn extend(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
                 Self {
                     current: node,
                     connect: node.as_cg_node(repacker).or(self.connect),
@@ -262,7 +262,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         FrozenGraphRef::new(self)
     }
 
-    pub(crate) fn is_acyclic(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_acyclic<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         self.frozen_graph().is_acyclic(repacker)
     }
 
@@ -304,7 +304,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn is_leaf_edge<'graph, 'mir: 'graph>(
         &'graph self,
         edge: &impl BorrowPCGEdgeLike<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
         mut blocking_map: Option<&FrozenGraphRef<'graph, 'tcx>>,
     ) -> bool {
         let mut has_edge_blocking = |p: PCGNode<'tcx>| {
@@ -324,7 +324,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn leaf_edges_set<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
         frozen_graph: Option<&FrozenGraphRef<'slf, 'tcx>>,
     ) -> CachedLeafEdges<'slf, 'tcx> {
         let fg = match frozen_graph {
@@ -336,7 +336,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    pub(crate) fn nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
                 edge.blocked_nodes(repacker).into_iter().chain(
@@ -348,7 +351,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn roots(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    pub(crate) fn roots<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         let roots: FxHashSet<PCGNode<'tcx>> = self
             .nodes(repacker)
             .into_iter()
@@ -367,17 +373,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
         &self,
         blocked_node: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let blocked_node = blocked_node.into();
         self.edges()
             .any(|edge| edge.blocks_node(blocked_node, repacker))
     }
 
-    pub(crate) fn is_root<T: Into<PCGNode<'tcx>>>(
+    pub(crate) fn is_root<T: Into<PCGNode<'tcx>>, C: Copy>(
         &self,
         node: T,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node.into().as_local_node(repacker) {
             Some(node) => match node {
@@ -388,10 +394,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub(crate) fn has_edge_blocked_by(
+    pub(crate) fn has_edge_blocked_by<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         self.edges().any(|edge| edge.is_blocked_by(node, repacker))
     }
@@ -400,10 +406,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.len()
     }
 
-    pub fn edges_blocked_by<'graph, 'mir: 'graph>(
+    pub fn edges_blocked_by<'graph, 'mir: 'graph, C: Copy + 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
     ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
@@ -413,7 +419,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     fn construct_region_projection_abstraction<'mir>(
         &self,
         borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
         block: BasicBlock,
     ) -> AbstractionGraph<'tcx> {
         let constructor = AbstractionGraphConstructor::new(repacker, block);
@@ -424,7 +430,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     fn is_encapsulated_by_abstraction(
         &self,
         edge: &impl BorrowPCGEdgeLike<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         'outer: for abstraction in self.abstraction_edge_kinds() {
             for blocked in edge.blocked_nodes(repacker) {
@@ -451,19 +457,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub(crate) fn edges_blocking<'slf, 'mir: 'slf>(
+    pub(crate) fn edges_blocking<'slf, 'mir: 'slf, C: Copy + 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
     ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + 'slf {
         self.edges()
             .filter(move |edge| edge.blocks_node(node, repacker))
     }
 
-    pub(crate) fn edges_blocking_set<'slf, 'mir: 'slf>(
+    pub(crate) fn edges_blocking_set<'slf, 'mir: 'slf, C: Copy + 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
     ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.edges_blocking(node, repacker).collect()
     }
@@ -495,7 +501,7 @@ impl<T> Conditioned<T> {
 }
 
 impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Conditioned<T> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "conditions": self.conditions.to_json(repacker),
             "value": self.value.to_json(repacker)

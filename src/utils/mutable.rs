@@ -15,7 +15,7 @@ use rustc_interface::{
 
 use crate::rustc_interface;
 
-use super::{root_place::RootPlace, Place, PlaceRepacker};
+use super::{root_place::RootPlace, Place, CompilerCtxt};
 
 struct Upvar<'tcx> {
     pub(crate) place: CapturedPlace<'tcx>,
@@ -29,7 +29,7 @@ pub enum LocalMutationIsAllowed {
     No,
 }
 
-impl<'a, 'tcx: 'a> PlaceRepacker<'a, 'tcx> {
+impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
     fn upvars(self) -> Vec<Upvar<'tcx>> {
         let def = self.body().source.def_id().expect_local();
         self.tcx
@@ -54,7 +54,7 @@ impl<'tcx> Place<'tcx> {
     /// Returns `true` if the data in the place could be changed after its
     /// initial assignment. This function is used to determine if we need to
     /// track the location of the place in the [`Latest`] map.
-    pub(crate) fn has_location_dependent_value(self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn has_location_dependent_value(self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.is_mutable(LocalMutationIsAllowed::No, repacker)
             .is_ok()
     }
@@ -62,7 +62,7 @@ impl<'tcx> Place<'tcx> {
     pub fn is_mutable(
         self,
         is_local_mutation_allowed: LocalMutationIsAllowed,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<RootPlace<'tcx>, Self> {
         let upvars = repacker.upvars();
         self.is_mutable_helper(is_local_mutation_allowed, &upvars, repacker)
@@ -74,7 +74,7 @@ impl<'tcx> Place<'tcx> {
         self,
         is_local_mutation_allowed: LocalMutationIsAllowed,
         upvars: &[Upvar<'tcx>],
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<RootPlace<'tcx>, Self> {
         match self.last_projection() {
             None => {
@@ -224,7 +224,7 @@ impl<'tcx> Place<'tcx> {
     fn is_upvar_field_projection(
         self,
         upvars: &[Upvar<'tcx>],
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Option<FieldIdx> {
         let mut place_ref = *self;
         let mut by_ref = false;

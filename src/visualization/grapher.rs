@@ -8,7 +8,7 @@ use crate::{
     free_pcs::CapabilityKind,
     pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
-    utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, HasPlace, PlaceRepacker},
+    utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, HasPlace, CompilerCtxt},
 };
 
 use super::{graph_constructor::GraphConstructor, GraphEdge, NodeId};
@@ -39,7 +39,7 @@ pub(super) trait Grapher<'mir, 'tcx: 'mir> {
     }
 
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx>;
     fn draw_materialized_edge<'graph>(
         &mut self,
         edge: MaterializedEdge<'tcx, 'graph>,
