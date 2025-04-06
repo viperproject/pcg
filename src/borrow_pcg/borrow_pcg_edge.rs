@@ -25,7 +25,7 @@ use crate::{
     edgedata_enum,
     pcg::PCGNode,
     rustc_interface,
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, Place, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, Place, CompilerCtxt},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -129,7 +129,7 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithRepacker<'tcx> for T {
+impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithCompilerCtxt<'tcx> for T {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{} under conditions {}",

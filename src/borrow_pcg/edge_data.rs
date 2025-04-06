@@ -140,7 +140,7 @@ macro_rules! edgedata_enum {
             }
         }
 
-        impl<$tcx> DisplayWithRepacker<$tcx> for $enum_name<$tcx> {
+        impl<$tcx> DisplayWithCompilerCtxt<$tcx> for $enum_name<$tcx> {
             fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
                 match self {
                     $(

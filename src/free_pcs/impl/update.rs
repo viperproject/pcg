@@ -15,7 +15,7 @@ use crate::{
         middle::mir::RETURN_PLACE,
     },
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithRepacker, LocalMutationIsAllowed, Place,
+        corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, LocalMutationIsAllowed, Place,
         CompilerCtxt,
     },
 };

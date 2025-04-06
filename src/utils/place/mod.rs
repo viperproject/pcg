@@ -31,7 +31,7 @@ use crate::{
 #[cfg(feature = "debug_info")]
 use super::debug_info::DebugInfo;
 
-use super::{display::DisplayWithRepacker, validity::HasValidityCheck, CompilerCtxt};
+use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
 use crate::utils::json::ToJsonWithRepacker;
 use crate::{
     borrow_pcg::{

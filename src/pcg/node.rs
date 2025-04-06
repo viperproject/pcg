@@ -14,7 +14,7 @@ use crate::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -85,7 +85,7 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityC
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithRepacker<'tcx>
+impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
     for PCGNode<'tcx, T, U>
 {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
@@ -127,7 +127,7 @@ pub trait PCGNodeLike<'tcx>:
     + PartialEq
     + std::hash::Hash
     + HasValidityCheck<'tcx>
-    + DisplayWithRepacker<'tcx>
+    + DisplayWithCompilerCtxt<'tcx>
     + ToJsonWithRepacker<'tcx>
 {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx>;

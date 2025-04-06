@@ -45,11 +45,11 @@ impl PlaceDisplay<'_> {
     }
 }
 
-pub trait DisplayWithRepacker<'tcx> {
+pub trait DisplayWithCompilerCtxt<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String;
 }
 
-impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Vec<T> {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Vec<T> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let comma_sep = self
             .iter()
@@ -60,7 +60,7 @@ impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Vec<T> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for Place<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self.to_string(repacker) {
             PlaceDisplay::Temporary(p) => format!("{:?}", p),

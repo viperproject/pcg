@@ -23,6 +23,7 @@ fn check_test_files() {
         common::run_pcg_on_file(test_file);
     });
 
-    // test_files.iter().for_each(|test_file| { common::run_pcg_on_file(test_file);
+    // test_files.iter().for_each(|test_file| {
+    //     common::run_pcg_on_file(test_file);
     // });
 }

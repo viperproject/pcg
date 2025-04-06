@@ -10,7 +10,7 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithRepacker, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place,
         CompilerCtxt, SnapshotLocation,
     },
 };
@@ -54,7 +54,7 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for BorrowFlowEdge<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowFlowEdge<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",

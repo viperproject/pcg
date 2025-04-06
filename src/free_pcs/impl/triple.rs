@@ -14,7 +14,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::{
     pcg::{PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
-    utils::{display::DisplayWithRepacker, Place, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, Place, CompilerCtxt},
 };
 
 #[derive(Debug, Clone, Copy)]

@@ -4,7 +4,7 @@ use crate::{
     free_pcs::CapabilityKind,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
-        display::{DebugLines, DisplayWithRepacker},
+        display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         Place, CompilerCtxt,
     },

@@ -8,7 +8,7 @@ use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
     pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
     utils::{
-        display::DisplayWithRepacker, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
         SnapshotLocation,
     },
 };
@@ -30,7 +30,7 @@ pub(super) struct GraphConstructor<'mir, 'tcx> {
     region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
     nodes: Vec<GraphNode>,
     pub(super) edges: HashSet<GraphEdge>,
-    repacker: CompilerCtxt<'mir, 'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
 impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
@@ -41,7 +41,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             region_projection_nodes: IdLookup::new('r'),
             nodes: vec![],
             edges: HashSet::new(),
-            repacker,
+            ctxt: repacker,
         }
     }
 
@@ -67,13 +67,9 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             return id;
         }
         let id = self.region_projection_nodes.node_id(&projection);
-        let location = match projection.location {
-            Some(location) => format!(" at {:?}", location),
-            None => "".to_string(),
-        };
         let base_ty = match projection.place() {
             MaybeRemoteRegionProjectionBase::Place(p) => {
-                format!("{:?}", p.related_local_place().ty(self.repacker))
+                format!("{:?}", p.related_local_place().ty(self.ctxt).ty)
             }
             MaybeRemoteRegionProjectionBase::Const(c) => {
                 format!("{:?}", c.ty())
@@ -82,14 +78,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let node = GraphNode {
             id,
             node_type: NodeType::RegionProjectionNode {
-                label: format!(
-                    "{}↓{}{}",
-                    projection.place().to_short_string(self.repacker),
-                    projection
-                        .region(self.repacker)
-                        .to_short_string(self.repacker),
-                    location,
-                ),
+                label: projection.to_short_string(self.ctxt),
                 base_ty,
             },
         };
@@ -126,7 +115,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
 
         for output in abstraction.outputs() {
-            let output = output.with_base(output.base.into(), self.repacker);
+            let output = output.with_base(output.base.into(), self.ctxt);
             let output = self.insert_region_projection_node(output);
             output_nodes.insert(output);
         }
@@ -135,7 +124,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             AbstractionType::FunctionCall(fc) => {
                 format!(
                     "call {} at {:?}",
-                    self.repacker.tcx().def_path_str(fc.def_id()),
+                    self.ctxt.tcx().def_path_str(fc.def_id()),
                     fc.location()
                 )
             }
@@ -173,7 +162,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
                 capability: None,
-                ty: format!("{:?}", remote_place.ty(self.repacker)),
+                ty: format!("{:?}", remote_place.ty(self.ctxt)),
             },
         };
         self.insert_node(node);
@@ -191,10 +180,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
         let capability = capability_getter.get(place.into());
         let id = self.place_node_id(place, location);
-        let label = format!("{:?}", place.to_string(self.repacker));
-        let place_ty = place.ty(self.repacker);
+        let label = format!("{:?}", place.to_string(self.ctxt));
+        let place_ty = place.ty(self.ctxt);
         let node_type = NodeType::PlaceNode {
-            owned: place.is_owned(self.repacker),
+            owned: place.is_owned(self.ctxt),
             label,
             capability,
             location,

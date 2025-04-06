@@ -1,10 +1,10 @@
-use crate::borrow_pcg::region_projection::display_region_vid;
 use petgraph::graph::NodeIndex;
 
 use crate::rustc_interface::borrowck::PoloniusOutput;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir::Location;
-use crate::rustc_interface::middle::ty::RegionVid;
+use crate::rustc_interface::middle::ty::{RegionVid, TyCtxt};
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::BodyAndBorrows;
 
 use super::{
@@ -53,7 +53,10 @@ pub fn subset_anywhere(output_facts: &PoloniusOutput) -> DotGraph {
     graph
 }
 
-pub fn region_inference_outlives<'tcx>(body: &impl BodyAndBorrows<'tcx>) -> String {
+pub fn region_inference_outlives<'tcx>(
+    body: &impl BodyAndBorrows<'tcx>,
+    tcx: TyCtxt<'tcx>,
+) -> String {
     let mut graph = petgraph::Graph::new();
     let region_infer_ctxt = body.region_inference_context();
     let regions = region_infer_ctxt
@@ -86,8 +89,8 @@ pub fn region_inference_outlives<'tcx>(body: &impl BodyAndBorrows<'tcx>) -> Stri
             format!(
                 "[{}]",
                 regions
-                .iter()
-                    .map(|r| display_region_vid(*r, region_infer_ctxt))
+                    .iter()
+                    .map(|r| r.to_short_string(body.compiler_ctxt(tcx)))
                     .collect::<Vec<_>>()
                     .join(", ")
             )

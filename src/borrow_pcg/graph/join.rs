@@ -1,7 +1,6 @@
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::borrow_pcg::edge_data::EdgeData;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::CompilerCtxt};
@@ -13,7 +12,6 @@ use crate::{
         path_condition::PathConditions,
     },
     pcg::PCGNode,
-    rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::BasicBlock,
     utils::{
         display::DisplayDiff, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
@@ -25,11 +23,7 @@ use crate::{
 use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn render_debug_graph(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-        comment: &str,
-    ) {
+    pub(crate) fn render_debug_graph(&self, repacker: CompilerCtxt<'_, 'tcx>, comment: &str) {
         if borrows_imgcat_debug() {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                 DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
@@ -136,28 +130,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             );
         }
         changed
-    }
-
-    #[allow(dead_code)]
-    fn transitively_blocking_edges<'graph, 'mir: 'graph>(
-        &'graph self,
-        node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
-        let mut stack: Vec<BorrowPCGEdgeRef<'tcx, 'graph>> =
-            self.edges_blocking(node, repacker).collect();
-        let mut result = FxHashSet::default();
-        while let Some(edge) = stack.pop() {
-            result.insert(edge);
-            for blocking_node in edge.blocked_by_nodes(repacker) {
-                for edge in self.edges_blocking(blocking_node.into(), repacker) {
-                    if result.insert(edge) {
-                        stack.push(edge);
-                    }
-                }
-            }
-        }
-        result
     }
 
     fn join_loop<'mir>(

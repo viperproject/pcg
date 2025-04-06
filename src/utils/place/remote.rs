@@ -5,7 +5,7 @@ use crate::borrow_pcg::visitor::extract_regions;
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::{Place, CompilerCtxt};
@@ -21,7 +21,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for RemotePlace {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for RemotePlace {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemotePlace {
     fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!("Remote({:?})", self.local)
     }

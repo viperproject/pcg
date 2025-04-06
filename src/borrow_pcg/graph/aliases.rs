@@ -3,7 +3,6 @@ use crate::{
         borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
         edge::{kind::BorrowPCGEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
-        region_projection::RegionIdx,
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
@@ -11,13 +10,6 @@ use crate::{
 };
 
 use super::BorrowsGraph;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PCGNodeDiscriminant {
-    Place,
-    RegionProjection(RegionIdx),
-    Const,
-}
 
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct Alias<'tcx> {

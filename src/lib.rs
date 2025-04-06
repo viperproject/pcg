@@ -32,7 +32,7 @@ use rustc_interface::{
 };
 use serde_json::json;
 use utils::{
-    display::{DebugLines, DisplayWithRepacker},
+    display::{DebugLines, DisplayWithCompilerCtxt},
     env_feature_enabled,
     maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
@@ -210,6 +210,10 @@ pub trait BodyAndBorrows<'tcx> {
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
     fn location_table(&self) -> &LocationTable;
     fn input_facts(&self) -> &PoloniusInput;
+
+    fn compiler_ctxt(&self, tcx: TyCtxt<'tcx>) -> CompilerCtxt<'_, 'tcx> {
+        CompilerCtxt::new(self.body(), tcx, self.region_inference_context())
+    }
 }
 
 impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {

@@ -14,7 +14,7 @@ use crate::{
         middle::mir::{self, BasicBlock},
     },
     utils::{
-        display::{DebugLines, DisplayWithRepacker},
+        display::{DebugLines, DisplayWithCompilerCtxt},
         validity::HasValidityCheck,
     },
 };

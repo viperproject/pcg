@@ -214,7 +214,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
                     dot_graph.write_to_file(file_path.as_str()).unwrap();
                 }
 
-                let region_inference_dot_graph = region_inference_outlives(body.as_ref());
+                let region_inference_dot_graph = region_inference_outlives(body.as_ref(), tcx);
                 let file_path = format!("{}/region_inference_outlives.dot", dir_path);
                 std::fs::write(file_path, region_inference_dot_graph).unwrap();
             }

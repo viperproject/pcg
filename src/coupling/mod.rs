@@ -9,7 +9,7 @@ use std::hash::Hash;
 use crate::borrow_pcg::coupling_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::{pcg_validity_assert, validity_checks_enabled};
@@ -28,7 +28,7 @@ struct JoinNodesResult {
     performed_merge: bool,
 }
 
-impl<'tcx, N: Copy + Ord + Clone + DisplayWithRepacker<'tcx> + Hash, E: Clone + Eq + Hash>
+impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clone + Eq + Hash>
     DisjointSetGraph<N, E>
 {
     pub(crate) fn new() -> Self {
