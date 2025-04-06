@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import ReactDOMServer from "react-dom/server";
-import * as dagre from "@dagrejs/dagre";
 import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "./dot_graph";
 
@@ -32,35 +31,13 @@ import {
   getPCSIterations,
   PCSIterations,
 } from "./api";
-import { filterNodesAndEdges } from "./mir_graph";
+import { filterNodesAndEdges, layoutUnsizedNodes } from "./mir_graph";
 import { Selection, PCGGraphSelector } from "./components/PCSGraphSelector";
 import FunctionSelector from "./components/FunctionSelector";
 import PathSelector from "./components/PathSelector";
 import LegendButton from "./components/LegendButton";
-
-const layoutSizedNodes = (
-  nodes: DagreInputNode<BasicBlockData>[],
-  edges: any
-) => {
-  const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ ranksep: 100, rankdir: "TB", marginy: 100 });
-
-  edges.forEach((edge: any) => g.setEdge(edge.source, edge.target));
-  nodes.forEach((node) => g.setNode(node.id, node));
-
-  dagre.layout(g);
-
-  let height = g.graph().height;
-  if (!isFinite(height)) {
-    height = null;
-  }
-
-  return {
-    nodes: nodes as DagreNode<BasicBlockData>[],
-    edges,
-    height,
-  };
-};
+import { keydown } from "./effects";
+import BorrowCheckerGraphs from "./components/BorrowCheckerGraphs";
 
 function toDagreEdges(edges: MirGraphEdge[]): DagreEdge[] {
   return edges.map((edge, idx) => ({
@@ -70,32 +47,6 @@ function toDagreEdges(edges: MirGraphEdge[]): DagreEdge[] {
     data: { label: edge.label },
     type: "straight",
   }));
-}
-
-function layoutUnsizedNodes(
-  nodes: MirGraphNode[],
-  edges: { source: string; target: string }[]
-): {
-  nodes: DagreNode<BasicBlockData>[];
-  height: number;
-} {
-  const heightCalculatedNodes = nodes.map((node) => {
-    return {
-      id: node.id,
-      data: {
-        block: node.block,
-        stmts: node.stmts,
-        terminator: node.terminator,
-      },
-      height: computeTableHeight(node),
-      width: 300,
-    };
-  });
-  const g = layoutSizedNodes(heightCalculatedNodes, edges);
-  return {
-    nodes: g.nodes,
-    height: g.height,
-  };
 }
 
 async function main() {
@@ -294,76 +245,8 @@ async function main() {
 
     useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
-        if (
-          event.key === "ArrowUp" ||
-          event.key === "ArrowDown" ||
-          event.key === "j" ||
-          event.key === "k"
-        ) {
-          event.preventDefault(); // Prevent scrolling
-          const direction =
-            event.key === "ArrowUp" || event.key === "k" ? "up" : "down";
-
-          setCurrentPoint((prevPoint: CurrentPoint) => {
-            if (prevPoint.type === "terminator") {
-              return; // TODO
-            }
-            const currentNode = nodes.find(
-              (node) => node.block === prevPoint.block
-            );
-            if (!currentNode) return prevPoint;
-
-            const isSelectable = (node: { stmts: string[] }, idx: number) => {
-              return idx >= 0 && idx <= node.stmts.length;
-            };
-
-            const getNextStmtIdx = (
-              node: { stmts: string[] },
-              from: number
-            ) => {
-              const offset = direction === "up" ? -1 : 1;
-              let idx = from + offset;
-              if (isSelectable(node, idx)) {
-                return idx;
-              } else {
-                return null;
-              }
-            };
-
-            const nextStmtIdx = getNextStmtIdx(currentNode, prevPoint.stmt);
-            if (nextStmtIdx !== null) {
-              return { ...prevPoint, stmt: nextStmtIdx };
-            } else {
-              const currBlockIdx = filteredNodes.findIndex(
-                (node) => node.block === prevPoint.block
-              );
-              if (direction === "down") {
-                const nextBlockIdx = (currBlockIdx + 1) % filteredNodes.length;
-                const data = filteredNodes[nextBlockIdx];
-                return {
-                  type: "stmt",
-                  block: filteredNodes[nextBlockIdx].block,
-                  stmt: getNextStmtIdx(data, -1),
-                };
-              } else {
-                const nextBlockIdx =
-                  (currBlockIdx - 1 + filteredNodes.length) %
-                  filteredNodes.length;
-                const data = filteredNodes[nextBlockIdx];
-                return {
-                  type: "stmt",
-                  block: data.block,
-                  stmt: data.stmts.length,
-                };
-              }
-            }
-          });
-        } else if (event.key >= "0" && event.key <= "9") {
-          const newBlock = parseInt(event.key);
-          setCurrentPoint({ type: "stmt", block: newBlock, stmt: 0 });
-        }
+        keydown(event, nodes, filteredNodes, setCurrentPoint);
       };
-
       window.addEventListener("keydown", handleKeyDown);
       return () => {
         window.removeEventListener("keydown", handleKeyDown);
@@ -447,53 +330,10 @@ async function main() {
             Open in New Window
           </button>
           <br />
-          <button
-            style={{ marginLeft: "10px" }}
-            onClick={async () => {
-              if (currentPoint.type == "stmt") {
-                const dotFilePath = `data/${selectedFunction}/bc_facts_graph_bb${currentPoint.block}_${currentPoint.stmt}_start.dot`;
-                openDotGraphInNewWindow(dotFilePath);
-              }
-            }}
-          >
-            Polonius Subset Graph (This Location [Start])
-          </button>
-          <br />
-          <button
-            style={{ marginLeft: "10px" }}
-            onClick={async () => {
-              if (currentPoint.type == "stmt") {
-                const dotFilePath = `data/${selectedFunction}/bc_facts_graph_bb${currentPoint.block}_${currentPoint.stmt}_mid.dot`;
-                openDotGraphInNewWindow(dotFilePath);
-              }
-            }}
-          >
-            Polonius Subset Graph (This Location [Mid])
-          </button>
-          <br />
-          <button
-            style={{ marginLeft: "10px" }}
-            onClick={async () => {
-              if (currentPoint.type == "stmt") {
-                const dotFilePath = `data/${selectedFunction}/bc_facts_graph_anywhere.dot`;
-                openDotGraphInNewWindow(dotFilePath);
-              }
-            }}
-          >
-            Polonius Subset Graph (Anywhere)
-          </button>
-          <br />
-          <button
-            style={{ marginLeft: "10px" }}
-            onClick={async () => {
-              if (currentPoint.type == "stmt") {
-                const dotFilePath = `data/${selectedFunction}/region_inference_outlives.dot`;
-                openDotGraphInNewWindow(dotFilePath);
-              }
-            }}
-          >
-            Region Inference Outlives Graph
-          </button>
+          <BorrowCheckerGraphs
+            currentPoint={currentPoint}
+            selectedFunction={selectedFunction}
+          />
           <br />
           <label>
             <input
