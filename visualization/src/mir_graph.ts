@@ -1,5 +1,7 @@
 import { MirGraphEdge, MirGraphNode } from "./api";
-import { BasicBlockData, DagreEdge, DagreNode } from "./types";
+import { computeTableHeight } from "./components/BasicBlockTable";
+import { BasicBlockData, DagreEdge, DagreInputNode, DagreNode } from "./types";
+import * as dagre from "@dagrejs/dagre";
 
 export type FilterOptions = {
   showUnwindEdges: boolean;
@@ -37,4 +39,54 @@ export function filterNodesAndEdges(
   }
 
   return { filteredNodes, filteredEdges };
+}
+
+export function layoutSizedNodes(
+  nodes: DagreInputNode<BasicBlockData>[],
+  edges: any
+) {
+  const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ ranksep: 100, rankdir: "TB", marginy: 100 });
+
+  edges.forEach((edge: any) => g.setEdge(edge.source, edge.target));
+  nodes.forEach((node) => g.setNode(node.id, node));
+
+  dagre.layout(g);
+
+  let height = g.graph().height;
+  if (!isFinite(height)) {
+    height = null;
+  }
+
+  return {
+    nodes: nodes as DagreNode<BasicBlockData>[],
+    edges,
+    height,
+  };
+};
+
+export function layoutUnsizedNodes(
+  nodes: MirGraphNode[],
+  edges: { source: string; target: string }[]
+): {
+  nodes: DagreNode<BasicBlockData>[];
+  height: number;
+} {
+  const heightCalculatedNodes = nodes.map((node) => {
+    return {
+      id: node.id,
+      data: {
+        block: node.block,
+        stmts: node.stmts,
+        terminator: node.terminator,
+      },
+      height: computeTableHeight(node),
+      width: 300,
+    };
+  });
+  const g = layoutSizedNodes(heightCalculatedNodes, edges);
+  return {
+    nodes: g.nodes,
+    height: g.height,
+  };
 }
