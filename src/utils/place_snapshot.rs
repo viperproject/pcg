@@ -53,7 +53,7 @@ pub struct PlaceSnapshot<'tcx> {
     pub at: SnapshotLocation,
 }
 
-impl<'tcx> std::fmt::Display for SnapshotLocation {
+impl std::fmt::Display for SnapshotLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SnapshotLocation::After(loc) => write!(f, "after {:?}", loc),
