@@ -119,7 +119,7 @@ export const App: React.FC<AppProps> = ({
   }, [filteredEdges]);
 
   async function loadPCGDotGraph() {
-    const dotGraph = document.getElementById("dot-graph");
+    const dotGraph = document.getElementById("pcg-graph");
     if (!dotGraph) {
       console.error("Dot graph element not found");
       return;
@@ -143,7 +143,7 @@ export const App: React.FC<AppProps> = ({
   }
 
   useEffect(() => {
-    const graph = document.getElementById("dot-graph");
+    const graph = document.getElementById("pcg-graph");
     if (showPCG) {
       graph.style.display = "block";
     } else {
@@ -228,101 +228,108 @@ export const App: React.FC<AppProps> = ({
     ) : null;
 
   return (
-    <div style={{ position: "relative", minHeight: "100vh" }}>
-      <div>
-        <FunctionSelector
-          functions={functions}
-          selectedFunction={selectedFunction}
-          onChange={setSelectedFunction}
-        />
-        <br />
-        <PathSelector
-          paths={paths}
-          selectedPath={selectedPath}
-          setSelectedPath={setSelectedPath}
-          showPathBlocksOnly={showPathBlocksOnly}
-          setShowPathBlocksOnly={setShowPathBlocksOnly}
-        />
-        <label>
-          <input
-            type="checkbox"
-            checked={showPCG}
-            onChange={(e) => setShowPCG(e.target.checked)}
+    <>
+      <div style={{ position: "relative", minHeight: "100vh", flex: 1, width: "50%" }}>
+        <div>
+          <FunctionSelector
+            functions={functions}
+            selectedFunction={selectedFunction}
+            onChange={setSelectedFunction}
           />
-          Show PCG
-        </label>
-        <button
-          style={{ marginLeft: "10px" }}
-          onClick={async () => {
-            const dotFilePath = getPCGDotGraphFilename(
-              currentPoint,
-              selectedFunction,
-              selected,
-              iterations
-            );
-            if (dotFilePath) {
-              openDotGraphInNewWindow(dotFilePath);
-            }
-          }}
-        >
-          Open Current PCG in New Window
-        </button>
-        <br />
-        <BorrowCheckerGraphs
-          currentPoint={currentPoint}
-          selectedFunction={selectedFunction}
-        />
-        <br />
-        <label>
-          <input
-            type="checkbox"
-            checked={showPCGSelector}
-            onChange={(e) => setShowPCGSelector(e.target.checked)}
+          <br />
+          <PathSelector
+            paths={paths}
+            selectedPath={selectedPath}
+            setSelectedPath={setSelectedPath}
+            showPathBlocksOnly={showPathBlocksOnly}
+            setShowPathBlocksOnly={setShowPathBlocksOnly}
           />
-          Show PCG selector
-        </label>
-        <br />
-        <label>
-          <input
-            type="checkbox"
-            checked={showPCGOps}
-            onChange={(e) => setShowPCGOps(e.target.checked)}
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCG}
+              onChange={(e) => setShowPCG(e.target.checked)}
+            />
+            Show PCG
+          </label>
+          <button
+            style={{ marginLeft: "10px" }}
+            onClick={async () => {
+              const dotFilePath = getPCGDotGraphFilename(
+                currentPoint,
+                selectedFunction,
+                selected,
+                iterations
+              );
+              if (dotFilePath) {
+                openDotGraphInNewWindow(dotFilePath);
+              }
+            }}
+          >
+            Open Current PCG in New Window
+          </button>
+          <br />
+          <BorrowCheckerGraphs
+            currentPoint={currentPoint}
+            selectedFunction={selectedFunction}
           />
-          Show PCG operations
-        </label>
-        <LegendButton selectedFunction={selectedFunction} />
-      </div>
-      <MirGraph
-        nodes={dagreNodes}
-        edges={dagreEdges}
-        mirNodes={nodes}
-        currentPoint={currentPoint}
-        setCurrentPoint={setCurrentPoint}
-        height={layoutResult.height}
-        isBlockOnSelectedPath={isBlockOnSelectedPath}
-      />
-      {pcgProgramPointData && showPCGOps && (
-        <>
-          <PCGOps data={pcgProgramPointData} />
-          {"latest" in pcgProgramPointData && (
-            <LatestDisplay latest={pcgProgramPointData.latest} />
-          )}
-        </>
-      )}
-      {pathData && (
-        <div style={{ position: "absolute", top: "20px", right: "20px" }}>
-          <SymbolicHeap heap={pathData.heap} />
-          <PathConditions pcs={pathData.pcs} />
-          <Assertions assertions={assertions} />
+          <br />
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCGSelector}
+              onChange={(e) => setShowPCGSelector(e.target.checked)}
+            />
+            Show PCG selector
+          </label>
+          <br />
+          <label>
+            <input
+              type="checkbox"
+              checked={showPCGOps}
+              onChange={(e) => setShowPCGOps(e.target.checked)}
+            />
+            Show PCG operations
+          </label>
+          <LegendButton selectedFunction={selectedFunction} />
         </div>
-      )}
-      {pcsGraphSelector && showPCGSelector && currentPoint.type === "stmt" && (
-        <PCGGraphSelector
-          iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
-          selected={selected}
-          onSelect={setSelected}
+        <MirGraph
+          nodes={dagreNodes}
+          edges={dagreEdges}
+          mirNodes={nodes}
+          currentPoint={currentPoint}
+          setCurrentPoint={setCurrentPoint}
+          height={layoutResult.height}
+          isBlockOnSelectedPath={isBlockOnSelectedPath}
         />
-      )}
-    </div>
+        {pcgProgramPointData && showPCGOps && (
+          <>
+            <PCGOps data={pcgProgramPointData} />
+            {"latest" in pcgProgramPointData && (
+              <LatestDisplay latest={pcgProgramPointData.latest} />
+            )}
+          </>
+        )}
+        {pathData && (
+          <div style={{ position: "absolute", top: "20px", right: "20px" }}>
+            <SymbolicHeap heap={pathData.heap} />
+            <PathConditions pcs={pathData.pcs} />
+            <Assertions assertions={assertions} />
+          </div>
+        )}
+        {pcsGraphSelector &&
+          showPCGSelector &&
+          currentPoint.type === "stmt" && (
+            <PCGGraphSelector
+              iterations={iterations[currentPoint.stmt].flatMap(
+                (phases) => phases
+              )}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          )}
+      </div>
+      <div id="pcg-graph"></div>
+    </>
   );
 };
