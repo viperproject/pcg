@@ -6,7 +6,7 @@ use crate::rustc_interface::{
     data_structures::fx::FxHashMap,
     middle::{mir::BasicBlock, ty},
 };
-use crate::utils::display::{DebugLines, DisplayWithRepacker};
+use crate::utils::display::{DebugLines, DisplayWithCompilerCtxt};
 use crate::utils::{Place, CompilerCtxt, SnapshotLocation};
 
 use crate::utils::json::ToJsonWithRepacker;

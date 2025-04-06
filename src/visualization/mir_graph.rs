@@ -1,6 +1,6 @@
 use crate::{
     rustc_interface,
-    utils::{display::DisplayWithRepacker, CompilerCtxt, Place},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
     BodyAndBorrows,
 };
 use serde_derive::Serialize;

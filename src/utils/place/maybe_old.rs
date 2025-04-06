@@ -11,7 +11,7 @@ use crate::rustc_interface::index::{Idx, IndexVec};
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use crate::rustc_interface::middle::mir::PlaceElem;
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
@@ -182,14 +182,14 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let p = self.place().to_short_string(repacker);
         format!(
             "{}{}",
             p,
             if let Some(location) = self.location() {
-                format!(" at {:?}", location)
+                format!(" {}", location)
             } else {
                 "".to_string()
             }

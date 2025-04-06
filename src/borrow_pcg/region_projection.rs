@@ -23,13 +23,13 @@ use crate::{
             mir::{Const, Local, PlaceElem},
             ty::{self, DebruijnIndex, RegionVid},
         },
+        span::{source_map::get_source_map, FileNameDisplayPreference},
     },
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, HasPlace, Place},
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
 };
 
 use crate::rustc_interface::infer::infer::RegionVariableOrigin;
 
-use crate::rustc_interface::borrowck::RegionInferenceContext;
 use crate::rustc_interface::middle::ty::BoundRegionKind;
 
 /// A region occuring in region projections
@@ -42,23 +42,30 @@ pub enum PcgRegion {
     ReLateParam(ty::LateParamRegion),
 }
 
-#[rustversion::before(2024-12-14)]
-pub fn display_region_vid(region: RegionVid, _infer_ctxt: &RegionInferenceContext) -> String {
-    format!("{:?}", region)
-}
-
-#[rustversion::since(2024-12-14)]
-pub fn display_region_vid(region: RegionVid, infer_ctxt: &RegionInferenceContext) -> String {
-    match infer_ctxt.var_infos[region].origin {
-        RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
-            return format!("{} at {:?}", symbol, span);
-        }
-        RegionVariableOrigin::RegionParameterDefinition(_span, symbol) => {
-            return symbol.to_string();
-        }
-        _ => {}
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
+    #[rustversion::before(2024-12-14)]
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+        format!("{:?}", self)
     }
-    format!("{:?}", region)
+
+    #[rustversion::since(2024-12-14)]
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        match ctxt.extra.var_infos[*self].origin {
+            RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
+                let span_str = if let Some(source_map) = get_source_map() {
+                    source_map.span_to_string(span, FileNameDisplayPreference::Short)
+                } else {
+                    format!("{:?}", span)
+                };
+                return format!("{} at {}: {:?}", symbol, span_str, self);
+            }
+            RegionVariableOrigin::RegionParameterDefinition(_span, symbol) => {
+                return symbol.to_string();
+            }
+            _ => {}
+        }
+        format!("{:?}", self)
+    }
 }
 
 impl std::fmt::Display for PcgRegion {
@@ -68,11 +75,11 @@ impl std::fmt::Display for PcgRegion {
 }
 
 impl PcgRegion {
-    pub fn to_string(&self, infer_ctxt: Option<&RegionInferenceContext>) -> String {
+    pub fn to_string(&self, ctxt: Option<CompilerCtxt<'_, '_>>) -> String {
         match self {
             PcgRegion::RegionVid(vid) => {
-                if let Some(infer_ctxt) = infer_ctxt {
-                    display_region_vid(*vid, infer_ctxt)
+                if let Some(ctxt) = ctxt {
+                    vid.to_short_string(ctxt)
                 } else {
                     format!("{:?}", vid)
                 }
@@ -87,9 +94,9 @@ impl PcgRegion {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for PcgRegion {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PcgRegion {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        self.to_string(Some(repacker.extra))
+        self.to_string(Some(repacker))
     }
 }
 
@@ -162,7 +169,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.to_short_string(repacker),
@@ -311,7 +318,7 @@ pub trait RegionProjectionBaseLike<'tcx>:
     + Eq
     + PartialEq
     + ToJsonWithRepacker<'tcx>
-    + DisplayWithRepacker<'tcx>
+    + DisplayWithCompilerCtxt<'tcx>
 {
     fn regions<T: Copy>(
         &self,
@@ -321,14 +328,20 @@ pub trait RegionProjectionBaseLike<'tcx>:
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithRepacker<'tcx>
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
     for RegionProjection<'tcx, T>
 {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+        let location_part = if let Some(location) = self.location {
+            format!(" {}", location)
+        } else {
+            "".to_string()
+        };
         format!(
-            "{}↓{}",
+            "{}↓{}{}",
             self.base.to_short_string(repacker),
-            self.region(repacker)
+            self.region(repacker),
+            location_part
         )
     }
 }

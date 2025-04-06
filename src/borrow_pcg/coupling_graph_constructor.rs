@@ -17,7 +17,7 @@ use crate::{
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
     rustc_interface::middle::ty,
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 
@@ -41,7 +41,7 @@ impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
     }
 }
 
-impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T> {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Coupled<T> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{{{}}}",

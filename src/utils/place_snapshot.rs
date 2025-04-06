@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::display::DisplayWithRepacker;
+use super::display::DisplayWithCompilerCtxt;
 use super::{validity::HasValidityCheck, Place, CompilerCtxt};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
@@ -37,10 +37,7 @@ impl SnapshotLocation {
     }
 
     pub(crate) fn to_json(self) -> serde_json::Value {
-        match self {
-            SnapshotLocation::After(loc) => format!("after {:?}", loc).into(),
-            SnapshotLocation::Start(bb) => format!("start {:?}", bb).into(),
-        }
+        self.to_string().into()
     }
 }
 
@@ -54,6 +51,15 @@ impl From<Location> for SnapshotLocation {
 pub struct PlaceSnapshot<'tcx> {
     pub place: Place<'tcx>,
     pub at: SnapshotLocation,
+}
+
+impl<'tcx> std::fmt::Display for SnapshotLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SnapshotLocation::After(loc) => write!(f, "after {:?}", loc),
+            SnapshotLocation::Start(bb) => write!(f, "start {:?}", bb),
+        }
+    }
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
@@ -90,7 +96,7 @@ impl std::fmt::Display for PlaceSnapshot<'_> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for PlaceSnapshot<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!("{} at {:?}", self.place.to_short_string(repacker), self.at)
     }

@@ -29,7 +29,7 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithRepacker, validity::HasValidityCheck, ConstantIndex, HasPlace, Place,
+        display::DisplayWithCompilerCtxt, validity::HasValidityCheck, ConstantIndex, HasPlace, Place,
         CompilerCtxt,
     },
 };
@@ -204,7 +204,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGExpansion<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{{{}}} -> {{{}}}",

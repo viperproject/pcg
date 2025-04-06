@@ -15,7 +15,7 @@ use crate::{
         mir::{AggregateKind, BorrowKind, Location, Operand, Rvalue, Statement, StatementKind},
         ty::{self},
     },
-    utils::{self, display::DisplayWithRepacker, maybe_old::MaybeOldPlace},
+    utils::{self, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace},
 };
 
 impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {

@@ -25,7 +25,7 @@ use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::pcg::{LocalNodeLike, PCGNode};
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
@@ -81,7 +81,7 @@ impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LoopAbstraction<'tcx> {
     fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "Loop({:?}): {}",
@@ -183,7 +183,7 @@ impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for FunctionCallAbstraction<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
     fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!("FunctionCall({:?}, {:?})", self.def_id, self.substs)
     }
@@ -300,7 +300,7 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionBlockEdge<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionBlockEdge<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "[{}] -> [{}]",

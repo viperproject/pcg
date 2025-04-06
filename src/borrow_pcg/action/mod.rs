@@ -7,7 +7,7 @@ use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{HasPlace, Place, CompilerCtxt, SnapshotLocation};
@@ -143,7 +143,7 @@ pub enum BorrowPCGActionKind<'tcx> {
     },
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGActionKind<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),

@@ -16,7 +16,7 @@ use itertools::Itertools;
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{PCGInternalError, PcgError},
-    utils::{corrected::CorrectedPlace, display::DisplayWithRepacker, Place, CompilerCtxt},
+    utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, Place, CompilerCtxt},
 };
 
 #[derive(Clone, PartialEq, Eq)]

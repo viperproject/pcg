@@ -7,7 +7,7 @@ use crate::borrow_pcg::region_projection::{
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::{mir, ty};
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithRepacker;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
@@ -44,7 +44,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             MaybeRemotePlace::Local(p) => p.to_short_string(repacker),

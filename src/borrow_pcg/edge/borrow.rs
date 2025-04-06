@@ -20,7 +20,7 @@ use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::utils::display::DisplayWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
@@ -148,7 +148,7 @@ impl<'tcx> RemoteBorrow<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for RemoteBorrow<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemoteBorrow<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{} -> {}",
@@ -285,7 +285,7 @@ impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for LocalBorrow<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LocalBorrow<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "borrow: {} = &{} {}",
