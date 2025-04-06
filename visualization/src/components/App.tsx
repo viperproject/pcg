@@ -275,7 +275,7 @@ export const App: React.FC<AppProps> = ({
 
   return (
     <div style={{ display: "flex", width: "100%" }}>
-      <div style={{ position: "relative", minHeight: "100vh", flex: "none", width: leftPanelWidth }}>
+      <div style={{ position: "relative", minHeight: "100vh", flex: "none", width: leftPanelWidth, overflow: "auto" }}>
         <div>
           <FunctionSelector
             functions={functions}
@@ -401,7 +401,7 @@ export const App: React.FC<AppProps> = ({
         }}></div>
       </div>
 
-      <div id="pcg-graph" style={{ flex: 1 }}></div>
+      <div id="pcg-graph" style={{ flex: 1, overflow: "auto" }}></div>
     </div>
   );
 };
