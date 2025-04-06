@@ -33,21 +33,17 @@
         border: 1px solid black;
         padding: 4px;
       }
-      .graph-container {
+      #root {
         display: flex;
         width: 100%;
       }
-      #root {
-        flex: 1;
-        width: 50%;
-      }
-      #dot-graph {
+      #pcg-graph {
         flex: 1;
         width: 50%;
         border-left: 1px solid #ccc;
         padding-left: 10px;
       }
-      #dot-graph svg {
+      #pcg-graph svg {
         max-width: 100%;
         height: auto;
       }
@@ -57,9 +53,6 @@
     </style>
   </head>
   <body>
-    <div class="graph-container">
-      <div id="root"></div>
-      <div id="dot-graph"></div>
-    </div>
+    <div id="root"></div>
   </body>
 </html>
