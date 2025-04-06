@@ -35,6 +35,7 @@ import {
 import { filterNodesAndEdges } from "./mir_graph";
 import { Selection, PCGGraphSelector } from "./components/PCSGraphSelector";
 import FunctionSelector from "./components/FunctionSelector";
+import PathSelector from "./components/PathSelector";
 
 const layoutSizedNodes = (
   nodes: DagreInputNode<BasicBlockData>[],
@@ -461,32 +462,13 @@ async function main() {
             onChange={setSelectedFunction}
           />
           <br />
-          {paths.length > 0 && (
-            <>
-              <label htmlFor="path-select">Select Path:</label>
-              <select
-                id="path-select"
-                value={selectedPath}
-                onChange={(e) => setSelectedPath(parseInt(e.target.value))}
-              >
-                {paths.map((path, index) => (
-                  <option key={index} value={index}>
-                    {path.map((p) => `bb${p}`).join(" -> ")}
-                  </option>
-                ))}
-              </select>
-              <br />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={showPathBlocksOnly}
-                  onChange={(e) => setShowPathBlocksOnly(e.target.checked)}
-                />
-                Show path blocks only
-              </label>
-              <br />
-            </>
-          )}
+          <PathSelector
+            paths={paths}
+            selectedPath={selectedPath}
+            setSelectedPath={setSelectedPath}
+            showPathBlocksOnly={showPathBlocksOnly}
+            setShowPathBlocksOnly={setShowPathBlocksOnly}
+          />
           <label>
             <input
               type="checkbox"
