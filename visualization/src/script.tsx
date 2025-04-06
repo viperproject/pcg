@@ -6,10 +6,7 @@ import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "./dot_graph";
 
 import PCGOps from "./components/BorrowsAndActions";
-import {
-  computeTableHeight,
-  isStorageStmt,
-} from "./components/BasicBlockTable";
+import { computeTableHeight } from "./components/BasicBlockTable";
 import {
   BasicBlockData,
   CurrentPoint,
@@ -19,9 +16,7 @@ import {
   PathData,
   PcgProgramPointData,
 } from "./types";
-import Edge from "./components/Edge";
 import SymbolicHeap from "./components/SymbolicHeap";
-import BasicBlockNode from "./components/BasicBlockNode";
 import PathConditions from "./components/PathConditions";
 import MirGraph from "./components/MirGraph";
 import Assertions, { Assertion } from "./components/Assertions";
@@ -39,6 +34,7 @@ import {
 } from "./api";
 import { filterNodesAndEdges } from "./mir_graph";
 import { Selection, PCGGraphSelector } from "./components/PCSGraphSelector";
+import FunctionSelector from "./components/FunctionSelector";
 
 const layoutSizedNodes = (
   nodes: DagreInputNode<BasicBlockData>[],
@@ -76,7 +72,7 @@ function toDagreEdges(edges: MirGraphEdge[]): DagreEdge[] {
 
 function layoutUnsizedNodes(
   nodes: MirGraphNode[],
-  edges: { source: string; target: string }[],
+  edges: { source: string; target: string }[]
 ): {
   nodes: DagreNode<BasicBlockData>[];
   height: number;
@@ -149,9 +145,6 @@ async function main() {
     const [showPCG, setShowPCG] = useState(
       localStorage.getItem("showPCG") !== "false"
     );
-    const [showStorageStmts, setShowStorageStmts] = useState(
-      localStorage.getItem("showStorageStmts") !== "false"
-    );
     const [showPCGSelector, setShowPCGSelector] = useState(
       localStorage.getItem("showPCGSelector") !== "false"
     );
@@ -169,7 +162,7 @@ async function main() {
 
     const layoutResult = useMemo(() => {
       return layoutUnsizedNodes(filteredNodes, filteredEdges);
-    }, [filteredNodes, filteredEdges, showStorageStmts]);
+    }, [filteredNodes, filteredEdges]);
 
     const dagreNodes = layoutResult.nodes;
     const dagreEdges = useMemo(() => {
@@ -373,11 +366,7 @@ async function main() {
             if (!currentNode) return prevPoint;
 
             const isSelectable = (node: { stmts: string[] }, idx: number) => {
-              if (showStorageStmts || idx === node.stmts.length) {
-                return true;
-              } else {
-                return !isStorageStmt(node.stmts[idx]);
-              }
+              return idx >= 0 && idx <= node.stmts.length;
             };
 
             const getNextStmtIdx = (
@@ -386,17 +375,11 @@ async function main() {
             ) => {
               const offset = direction === "up" ? -1 : 1;
               let idx = from + offset;
-              while (idx >= 0 && idx <= node.stmts.length) {
-                if (isSelectable(node, idx)) {
-                  return idx;
-                } else {
-                  console.log(
-                    `${node.stmts[idx]}[${currentNode.block}:${idx}] is not selectable`
-                  );
-                }
-                idx += offset;
+              if (isSelectable(node, idx)) {
+                return idx;
+              } else {
+                return null;
               }
-              return null;
             };
 
             const nextStmtIdx = getNextStmtIdx(currentNode, prevPoint.stmt);
@@ -449,7 +432,6 @@ async function main() {
     addLocalStorageCallback("selectedPath", selectedPath);
     addLocalStorageCallback("showPathBlocksOnly", showPathBlocksOnly);
     addLocalStorageCallback("showPCG", showPCG);
-    addLocalStorageCallback("showStorageStmts", showStorageStmts);
     addLocalStorageCallback("showPCGSelector", showPCGSelector);
     addLocalStorageCallback("showPCGOps", showPCGOps);
 
@@ -473,23 +455,11 @@ async function main() {
     return (
       <div style={{ position: "relative", minHeight: "100vh" }}>
         <div>
-          <label htmlFor="function-select">Select Function:</label>
-          <select
-            id="function-select"
-            value={selectedFunction}
-            onChange={async (e) => {
-              const fn = e.target.value;
-              setSelectedFunction(fn);
-            }}
-          >
-            {Object.keys(functions)
-              .sort((a, b) => functions[a].localeCompare(functions[b]))
-              .map((func) => (
-                <option key={func} value={func}>
-                  {functions[func]}
-                </option>
-              ))}
-          </select>
+          <FunctionSelector
+            functions={functions}
+            selectedFunction={selectedFunction}
+            onChange={setSelectedFunction}
+          />
           <br />
           {paths.length > 0 && (
             <>
@@ -599,15 +569,6 @@ async function main() {
           <label>
             <input
               type="checkbox"
-              checked={showStorageStmts}
-              onChange={(e) => setShowStorageStmts(e.target.checked)}
-            />
-            Show storage statements
-          </label>
-          <br />
-          <label>
-            <input
-              type="checkbox"
               checked={showPCGSelector}
               onChange={(e) => setShowPCGSelector(e.target.checked)}
             />
@@ -638,7 +599,6 @@ async function main() {
           setCurrentPoint={setCurrentPoint}
           height={layoutResult.height}
           isBlockOnSelectedPath={isBlockOnSelectedPath}
-
         />
         {pcgProgramPointData && showPCGOps && (
           <>
