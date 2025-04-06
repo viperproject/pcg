@@ -23,6 +23,7 @@ import Edge from "./components/Edge";
 import SymbolicHeap from "./components/SymbolicHeap";
 import BasicBlockNode from "./components/BasicBlockNode";
 import PathConditions from "./components/PathConditions";
+import MirGraph from "./components/MirGraph";
 import Assertions, { Assertion } from "./components/Assertions";
 import {
   MirGraphEdge,
@@ -76,7 +77,6 @@ function toDagreEdges(edges: MirGraphEdge[]): DagreEdge[] {
 function layoutUnsizedNodes(
   nodes: MirGraphNode[],
   edges: { source: string; target: string }[],
-  showStorageStmts: boolean
 ): {
   nodes: DagreNode<BasicBlockData>[];
   height: number;
@@ -89,7 +89,7 @@ function layoutUnsizedNodes(
         stmts: node.stmts,
         terminator: node.terminator,
       },
-      height: computeTableHeight(node, showStorageStmts),
+      height: computeTableHeight(node),
       width: 300,
     };
   });
@@ -168,7 +168,7 @@ async function main() {
     });
 
     const layoutResult = useMemo(() => {
-      return layoutUnsizedNodes(filteredNodes, filteredEdges, showStorageStmts);
+      return layoutUnsizedNodes(filteredNodes, filteredEdges);
     }, [filteredNodes, filteredEdges, showStorageStmts]);
 
     const dagreNodes = layoutResult.nodes;
@@ -630,62 +630,16 @@ async function main() {
             Show Legend
           </button>
         </div>
-        <div
-          className="graph-container"
-          style={{ height: layoutResult.height + 100 }}
-        >
-          <div id="mir-graph">
-            {dagreNodes.map((node) => {
-              return (
-                <BasicBlockNode
-                  isOnSelectedPath={isBlockOnSelectedPath(node.data.block)}
-                  key={node.id}
-                  data={node.data}
-                  height={node.height}
-                  position={{
-                    x: node.x,
-                    y: node.y,
-                  }}
-                  currentPoint={currentPoint}
-                  setCurrentPoint={setCurrentPoint}
-                  showStorageStmts={showStorageStmts}
-                />
-              );
-            })}
-          </div>
-          <svg
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              pointerEvents: "none",
-            }}
-          >
-            {dagreEdges.map((edge) => (
-              <Edge
-                key={edge.id}
-                edge={edge}
-                nodes={dagreNodes}
-                selected={
-                  currentPoint.type == "terminator" &&
-                  currentPoint.block1 ==
-                    nodes.find((n) => n.id == edge.source)?.block &&
-                  currentPoint.block2 ==
-                    nodes.find((n) => n.id == edge.target)?.block
-                }
-                onSelect={() => {
-                  setCurrentPoint({
-                    type: "terminator",
-                    block1: nodes.find((n) => n.id == edge.source)?.block,
-                    block2: nodes.find((n) => n.id == edge.target)?.block,
-                  });
-                }}
-              />
-            ))}
-          </svg>
-        </div>
+        <MirGraph
+          nodes={dagreNodes}
+          edges={dagreEdges}
+          mirNodes={nodes}
+          currentPoint={currentPoint}
+          setCurrentPoint={setCurrentPoint}
+          height={layoutResult.height}
+          isBlockOnSelectedPath={isBlockOnSelectedPath}
+
+        />
         {pcgProgramPointData && showPCGOps && (
           <>
             <PCGOps data={pcgProgramPointData} />
