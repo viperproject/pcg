@@ -1,12 +1,85 @@
-import { MirGraphNode } from "./api";
-import { CurrentPoint } from "./types";
+import { getPathData, getPCSIterations, MirGraphNode, PCSIterations } from "./api";
+import { CurrentPoint, PathData } from "./types";
 
-export const keydown = (
+export function reloadIterations(
+  selectedFunction: string,
+  currentPoint: CurrentPoint,
+  setIterations: React.Dispatch<React.SetStateAction<PCSIterations>>
+) {
+  if (currentPoint.type != "stmt") {
+    setIterations([]);
+    return;
+  }
+  const fetchIterations = async () => {
+    const iterations = await getPCSIterations(
+      selectedFunction,
+      currentPoint.block
+    );
+    setIterations(iterations);
+  };
+
+  fetchIterations();
+}
+
+export async function reloadPathData(
+  selectedFunction: string,
+  selectedPath: number,
+  currentPoint: CurrentPoint,
+  paths: number[][],
+  setPathData: React.Dispatch<React.SetStateAction<PathData>>
+) {
+  if (paths.length === 0 || selectedPath >= paths.length) return;
+
+  const currentPath = paths[selectedPath];
+  const currentBlockIndex = currentPath.indexOf(
+    currentPoint.type === "stmt" ? currentPoint.block : currentPoint.block1
+  );
+
+  if (currentBlockIndex === -1) {
+    setPathData(null);
+    return;
+  }
+
+  const pathToCurrentBlock = currentPath.slice(0, currentBlockIndex + 1);
+
+  try {
+    const data: PathData = await getPathData(
+      selectedFunction,
+      pathToCurrentBlock,
+      currentPoint.type === "stmt"
+        ? {
+            stmt: currentPoint.stmt,
+          }
+        : {
+            terminator: currentPoint.block2,
+          }
+    );
+    setPathData(data);
+  } catch (error) {
+    console.error("Error fetching path data:", error);
+  }
+}
+
+export function addKeyDownListener(
+  nodes: MirGraphNode[],
+  filteredNodes: MirGraphNode[],
+  setCurrentPoint: React.Dispatch<React.SetStateAction<CurrentPoint>>
+) {
+  const handleKeyDown = (event: KeyboardEvent) => {
+    keydown(event, nodes, filteredNodes, setCurrentPoint);
+  };
+  window.addEventListener("keydown", handleKeyDown);
+  return () => {
+    window.removeEventListener("keydown", handleKeyDown);
+  };
+}
+
+function keydown(
   event: KeyboardEvent,
   nodes: MirGraphNode[],
   filteredNodes: MirGraphNode[],
   setCurrentPoint: React.Dispatch<React.SetStateAction<CurrentPoint>>
-) => {
+) {
   if (
     event.key === "ArrowUp" ||
     event.key === "ArrowDown" ||
@@ -69,4 +142,4 @@ export const keydown = (
     const newBlock = parseInt(event.key);
     setCurrentPoint({ type: "stmt", block: newBlock, stmt: 0 });
   }
-};
+}

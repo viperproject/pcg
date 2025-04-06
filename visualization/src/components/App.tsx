@@ -3,12 +3,7 @@ import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "../dot_graph";
 
 import PCGOps from "./BorrowsAndActions";
-import {
-  CurrentPoint,
-  DagreEdge,
-  PathData,
-  PcgProgramPointData,
-} from "../types";
+import { CurrentPoint, PathData, PcgProgramPointData } from "../types";
 import SymbolicHeap from "./SymbolicHeap";
 import PathConditions from "./PathConditions";
 import MirGraph from "./MirGraph";
@@ -20,25 +15,42 @@ import {
   getPathData,
   getPcgProgramPointData,
   getPaths,
-  getPCSIterations,
   PCSIterations,
 } from "../api";
-import { filterNodesAndEdges, layoutUnsizedNodes } from "../mir_graph";
+import {
+  filterNodesAndEdges,
+  layoutUnsizedNodes,
+  toDagreEdges,
+} from "../mir_graph";
 import { Selection, PCGGraphSelector } from "./PCSGraphSelector";
 import FunctionSelector from "./FunctionSelector";
 import PathSelector from "./PathSelector";
 import LegendButton from "./LegendButton";
-import { keydown } from "../effects";
+import {
+  addKeyDownListener,
+  reloadPathData,
+  reloadIterations,
+} from "../effects";
 import BorrowCheckerGraphs from "./BorrowCheckerGraphs";
+import { LatestDisplay } from "./LatestDisplay";
 
-function toDagreEdges(edges: MirGraphEdge[]): DagreEdge[] {
-  return edges.map((edge, idx) => ({
-    id: `${edge.source}-${edge.target}-${idx}`,
-    source: edge.source,
-    target: edge.target,
-    data: { label: edge.label },
-    type: "straight",
-  }));
+function getPCGDotGraphFilename(
+  currentPoint: CurrentPoint,
+  selectedFunction: string,
+  selected: number,
+  iterations: PCSIterations
+): string | null {
+  if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
+    return null;
+  }
+  const stmtIterations = iterations[currentPoint.stmt].flatMap(
+    (phases) => phases
+  );
+  const filename =
+    selected >= stmtIterations.length
+      ? stmtIterations[stmtIterations.length - 1][1]
+      : stmtIterations[selected][1];
+  return `data/${selectedFunction}/${filename}`;
 }
 
 interface AppProps {
@@ -72,8 +84,7 @@ export const App: React.FC<AppProps> = ({
   );
   const [selectedPath, setSelectedPath] = useState<number>(initialPath);
   const [paths, setPaths] = useState<number[][]>(initialPaths);
-  const [assertions, setAssertions] =
-    useState<Assertion[]>(initialAssertions);
+  const [assertions, setAssertions] = useState<Assertion[]>(initialAssertions);
   const [nodes, setNodes] = useState<MirGraphNode[]>([]);
   const [edges, setEdges] = useState<MirGraphEdge[]>([]);
   const [showPathBlocksOnly, setShowPathBlocksOnly] = useState(
@@ -107,33 +118,28 @@ export const App: React.FC<AppProps> = ({
     return toDagreEdges(filteredEdges);
   }, [filteredEdges]);
 
-  async function loadPCSDotGraph() {
+  async function loadPCGDotGraph() {
     const dotGraph = document.getElementById("dot-graph");
     if (!dotGraph) {
       console.error("Dot graph element not found");
       return;
     }
-    if (currentPoint.type !== "stmt") {
-      dotGraph.innerHTML = "";
-      return;
-    }
-    if (iterations.length <= currentPoint.stmt) {
-      return;
-    }
-    const stmtIterations = iterations[currentPoint.stmt].flatMap(
-      (phases) => phases
+    const dotFilePath = getPCGDotGraphFilename(
+      currentPoint,
+      selectedFunction,
+      selected,
+      iterations
     );
-    const filename =
-      selected >= stmtIterations.length
-        ? stmtIterations[stmtIterations.length - 1][1]
-        : stmtIterations[selected][1];
-    const dotFilePath = `data/${selectedFunction}/${filename}`;
-    const dotData = await fetchDotFile(dotFilePath);
-
-    Viz.instance().then(function (viz) {
+    if (!dotFilePath) {
       dotGraph.innerHTML = "";
-      dotGraph.appendChild(viz.renderSVGElement(dotData));
-    });
+    } else {
+      const dotData = await fetchDotFile(dotFilePath);
+
+      Viz.instance().then(function (viz) {
+        dotGraph.innerHTML = "";
+        dotGraph.appendChild(viz.renderSVGElement(dotData));
+      });
+    }
   }
 
   useEffect(() => {
@@ -146,7 +152,7 @@ export const App: React.FC<AppProps> = ({
   }, [showPCG]);
 
   useEffect(() => {
-    loadPCSDotGraph();
+    loadPCGDotGraph();
   }, [iterations, currentPoint, selectedFunction, selected]);
 
   useEffect(() => {
@@ -161,41 +167,6 @@ export const App: React.FC<AppProps> = ({
   }, [selectedFunction]);
 
   useEffect(() => {
-    const fetchPathData = async () => {
-      if (paths.length === 0 || selectedPath >= paths.length) return;
-
-      const currentPath = paths[selectedPath];
-      const currentBlockIndex = currentPath.indexOf(
-        currentPoint.type === "stmt"
-          ? currentPoint.block
-          : currentPoint.block1
-      );
-
-      if (currentBlockIndex === -1) {
-        setPathData(null);
-        return;
-      }
-
-      const pathToCurrentBlock = currentPath.slice(0, currentBlockIndex + 1);
-
-      try {
-        const data: PathData = await getPathData(
-          selectedFunction,
-          pathToCurrentBlock,
-          currentPoint.type === "stmt"
-            ? {
-                stmt: currentPoint.stmt,
-              }
-            : {
-                terminator: currentPoint.block2,
-              }
-        );
-        setPathData(data);
-      } catch (error) {
-        console.error("Error fetching path data:", error);
-      }
-    };
-
     const fetchPcgStmtVisualizationData = async () => {
       try {
         const pcgStmtVisualizationData = await getPcgProgramPointData(
@@ -208,34 +179,22 @@ export const App: React.FC<AppProps> = ({
       }
     };
 
-    fetchPathData();
+    reloadPathData(
+      selectedFunction,
+      selectedPath,
+      currentPoint,
+      paths,
+      setPathData
+    );
     fetchPcgStmtVisualizationData();
   }, [selectedFunction, selectedPath, currentPoint, paths]);
 
   useEffect(() => {
-    if (currentPoint.type != "stmt") {
-      setIterations([]);
-      return;
-    }
-    const fetchIterations = async () => {
-      const iterations = await getPCSIterations(
-        selectedFunction,
-        currentPoint.block
-      );
-      setIterations(iterations);
-    };
-
-    fetchIterations();
+    reloadIterations(selectedFunction, currentPoint, setIterations);
   }, [selectedFunction, currentPoint]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      keydown(event, nodes, filteredNodes, setCurrentPoint);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    addKeyDownListener(nodes, filteredNodes, setCurrentPoint);
   }, [nodes, showPathBlocksOnly]);
 
   function addLocalStorageCallback(key: string, value: any) {
@@ -295,24 +254,18 @@ export const App: React.FC<AppProps> = ({
         <button
           style={{ marginLeft: "10px" }}
           onClick={async () => {
-            if (
-              currentPoint.type !== "stmt" ||
-              iterations.length <= currentPoint.stmt
-            ) {
-              return;
-            }
-            const stmtIterations = iterations[currentPoint.stmt].flatMap(
-              (phases) => phases
+            const dotFilePath = getPCGDotGraphFilename(
+              currentPoint,
+              selectedFunction,
+              selected,
+              iterations
             );
-            const filename =
-              selected >= stmtIterations.length
-                ? stmtIterations[stmtIterations.length - 1][1]
-                : stmtIterations[selected][1];
-            const dotFilePath = `data/${selectedFunction}/${filename}`;
-            openDotGraphInNewWindow(dotFilePath);
+            if (dotFilePath) {
+              openDotGraphInNewWindow(dotFilePath);
+            }
           }}
         >
-          Open in New Window
+          Open Current PCG in New Window
         </button>
         <br />
         <BorrowCheckerGraphs
@@ -363,27 +316,13 @@ export const App: React.FC<AppProps> = ({
           <Assertions assertions={assertions} />
         </div>
       )}
-      {pcsGraphSelector &&
-        showPCGSelector &&
-        currentPoint.type === "stmt" && (
-          <PCGGraphSelector
-            iterations={iterations[currentPoint.stmt].flatMap(
-              (phases) => phases
-            )}
-            selected={selected}
-            onSelect={setSelected}
-          />
-        )}
+      {pcsGraphSelector && showPCGSelector && currentPoint.type === "stmt" && (
+        <PCGGraphSelector
+          iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
+          selected={selected}
+          onSelect={setSelected}
+        />
+      )}
     </div>
   );
 };
-
-function LatestDisplay({ latest }: { latest: Record<string, string> }) {
-  return (
-    <div>
-      {Object.entries(latest).map(([place, location]) => (
-        <div key={place}>{`${place} -> ${location}`}</div>
-      ))}
-    </div>
-  );
-}

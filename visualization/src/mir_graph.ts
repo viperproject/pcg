@@ -90,3 +90,13 @@ export function layoutUnsizedNodes(
     height: g.height,
   };
 }
+
+export function toDagreEdges(edges: MirGraphEdge[]): DagreEdge[] {
+  return edges.map((edge, idx) => ({
+    id: `${edge.source}-${edge.target}-${idx}`,
+    source: edge.source,
+    target: edge.target,
+    data: { label: edge.label },
+    type: "straight",
+  }));
+}
