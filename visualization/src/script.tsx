@@ -36,6 +36,7 @@ import { filterNodesAndEdges } from "./mir_graph";
 import { Selection, PCGGraphSelector } from "./components/PCSGraphSelector";
 import FunctionSelector from "./components/FunctionSelector";
 import PathSelector from "./components/PathSelector";
+import LegendButton from "./components/LegendButton";
 
 const layoutSizedNodes = (
   nodes: DagreInputNode<BasicBlockData>[],
@@ -169,60 +170,6 @@ async function main() {
     const dagreEdges = useMemo(() => {
       return toDagreEdges(filteredEdges);
     }, [filteredEdges]);
-
-    const openLegendWindow = async () => {
-      try {
-        const edgeLegendPath = `data/${selectedFunction}/edge_legend.dot`;
-        const nodeLegendPath = `data/${selectedFunction}/node_legend.dot`;
-        const [edgeLegendData, nodeLegendData] = await Promise.all([
-          fetchDotFile(edgeLegendPath),
-          fetchDotFile(nodeLegendPath),
-        ]);
-
-        Viz.instance().then((viz) => {
-          const edgeSvgElement = viz.renderSVGElement(edgeLegendData);
-          const nodeSvgElement = viz.renderSVGElement(nodeLegendData);
-
-          const popup = window.open(
-            "",
-            "Graph Legend",
-            "width=800,height=1000"
-          );
-          popup.document.head.innerHTML = `
-            <style>
-              body {
-                margin: 0;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                min-height: 100vh;
-                background: white;
-                padding: 20px;
-              }
-              .legend-container {
-                display: flex;
-                flex-direction: column;
-                gap: 20px;
-                max-width: 100%;
-              }
-              svg {
-                max-width: 100%;
-                height: auto;
-              }
-            </style>
-          `;
-          popup.document.title = "Graph Legend";
-
-          const container = popup.document.createElement("div");
-          container.className = "legend-container";
-          container.appendChild(edgeSvgElement);
-          container.appendChild(nodeSvgElement);
-          popup.document.body.appendChild(container);
-        });
-      } catch (error) {
-        console.warn("Failed to load legend:", error);
-      }
-    };
 
     async function loadPCSDotGraph() {
       const dotGraph = document.getElementById("dot-graph");
@@ -565,13 +512,7 @@ async function main() {
             />
             Show PCG operations
           </label>
-          <button
-            onClick={openLegendWindow}
-            className="control-button"
-            style={{ marginLeft: "10px" }}
-          >
-            Show Legend
-          </button>
+          <LegendButton selectedFunction={selectedFunction} />
         </div>
         <MirGraph
           nodes={dagreNodes}
@@ -591,13 +532,11 @@ async function main() {
           </>
         )}
         {pathData && (
-          <>
-            <div style={{ position: "absolute", top: "20px", right: "20px" }}>
-              <SymbolicHeap heap={pathData.heap} />
-              <PathConditions pcs={pathData.pcs} />
-              <Assertions assertions={assertions} />
-            </div>
-          </>
+          <div style={{ position: "absolute", top: "20px", right: "20px" }}>
+            <SymbolicHeap heap={pathData.heap} />
+            <PathConditions pcs={pathData.pcs} />
+            <Assertions assertions={assertions} />
+          </div>
         )}
         {pcsGraphSelector &&
           showPCGSelector &&
