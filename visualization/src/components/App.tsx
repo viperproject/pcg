@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "../dot_graph";
 
@@ -100,6 +100,13 @@ export const App: React.FC<AppProps> = ({
   const [showPCGOps, setShowPCGOps] = useState(
     localStorage.getItem("showPCGOps") !== "false"
   );
+
+  // State for panel resizing
+  const [leftPanelWidth, setLeftPanelWidth] = useState<string>(
+    localStorage.getItem("leftPanelWidth") || "50%"
+  );
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dividerRef = useRef<HTMLDivElement>(null);
 
   const { filteredNodes, filteredEdges } = filterNodesAndEdges(nodes, edges, {
     showUnwindEdges,
@@ -209,6 +216,7 @@ export const App: React.FC<AppProps> = ({
   addLocalStorageCallback("showPCG", showPCG);
   addLocalStorageCallback("showPCGSelector", showPCGSelector);
   addLocalStorageCallback("showPCGOps", showPCGOps);
+  addLocalStorageCallback("leftPanelWidth", leftPanelWidth);
 
   const isBlockOnSelectedPath = useCallback(
     (block: number) => {
@@ -227,9 +235,47 @@ export const App: React.FC<AppProps> = ({
       />
     ) : null;
 
+  // Divider drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    e.preventDefault();
+  };
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging) return;
+
+      const rootElement = document.getElementById('root');
+      if (!rootElement) return;
+
+      const rootRect = rootElement.getBoundingClientRect();
+      const newLeftWidth = ((e.clientX - rootRect.left) / rootRect.width) * 100;
+
+      // Enforce min/max constraints (e.g., 20% - 80%)
+      const clampedWidth = Math.min(Math.max(newLeftWidth, 20), 80);
+      setLeftPanelWidth(`${clampedWidth}%`);
+    },
+    [isDragging]
+  );
+
+  // Add and remove event listeners for dragging
+  useEffect(() => {
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [handleMouseMove, handleMouseUp]);
+
   return (
-    <>
-      <div style={{ position: "relative", minHeight: "100vh", flex: 1, width: "50%" }}>
+    <div style={{ display: "flex", width: "100%" }}>
+      <div style={{ position: "relative", minHeight: "100vh", flex: "none", width: leftPanelWidth }}>
         <div>
           <FunctionSelector
             functions={functions}
@@ -329,7 +375,33 @@ export const App: React.FC<AppProps> = ({
             />
           )}
       </div>
-      <div id="pcg-graph"></div>
-    </>
+
+      {/* Draggable divider */}
+      <div
+        ref={dividerRef}
+        style={{
+          width: "10px",
+          cursor: "col-resize",
+          background: "#ccc",
+          position: "relative",
+          zIndex: 100,
+          display: showPCG ? "block" : "none"
+        }}
+        onMouseDown={handleMouseDown}
+      >
+        <div style={{
+          position: "absolute",
+          top: "50%",
+          left: "2px",
+          width: "6px",
+          height: "30px",
+          background: "#999",
+          borderRadius: "3px",
+          transform: "translateY(-50%)"
+        }}></div>
+      </div>
+
+      <div id="pcg-graph" style={{ flex: 1 }}></div>
+    </div>
   );
 };
