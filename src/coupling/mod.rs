@@ -85,7 +85,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         })
     }
 
-    fn to_dot(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_dot(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         let arena = bumpalo::Bump::new();
         let to_render: petgraph::Graph<&str, ()> = self.inner.clone().map(
             |_, e| {
@@ -112,7 +112,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         lines.join("\n")
     }
 
-    pub(crate) fn render_with_imgcat(&self, repacker: CompilerCtxt<'_, 'tcx>, msg: &str) {
+    pub(crate) fn render_with_imgcat(&self, repacker: CompilerCtxt<'_, 'tcx,'_>, msg: &str) {
         let dot = self.to_dot(repacker);
         // let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_string());
         // let timestamp = std::time::SystemTime::now()
@@ -141,7 +141,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
     pub(crate) fn insert_endpoint(
         &mut self,
         endpoint: Coupled<N>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> petgraph::prelude::NodeIndex {
         let JoinNodesResult {
             index,
@@ -228,7 +228,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
 
     /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
     /// operation, the indices of the nodes may change.
-    fn merge_sccs(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
+    fn merge_sccs(&mut self, repacker: CompilerCtxt<'_, 'tcx,'_>) {
         if self.is_acyclic() {
             return;
         }
@@ -264,7 +264,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         source: NodeIndex,
         target: NodeIndex,
         weight: FxHashSet<E>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) {
         assert!(source.index() < self.inner.node_count());
         assert!(target.index() < self.inner.node_count());
@@ -281,7 +281,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         }
     }
 
-    pub(crate) fn merge(&mut self, other: &Self, repacker: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn merge(&mut self, other: &Self, repacker: CompilerCtxt<'_, 'tcx,'_>) {
         for (source, target, weight) in other.edges() {
             let JoinNodesResult {
                 index: mut source_idx,
@@ -321,7 +321,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         from: &Coupled<N>,
         to: &Coupled<N>,
         weight: FxHashSet<E>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) {
         tracing::debug!(
             "Adding edge {} -> {}",

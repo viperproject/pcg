@@ -5,7 +5,6 @@ use crate::{
     borrow_pcg::{
         action::BorrowPCGAction,
         borrow_pcg_edge::BorrowPCGEdge,
-        coupling_graph_constructor::BorrowCheckerInterface,
         edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, PcgRegion},
@@ -21,7 +20,7 @@ use crate::{
     utils::{self, maybe_old::MaybeOldPlace, CompilerCtxt, PlaceSnapshot, SnapshotLocation},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
     /// Constructs a function call abstraction, if necessary.
     pub(super) fn make_function_call_abstraction(
         &mut self,
@@ -78,11 +77,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             .collect::<Vec<_>>();
 
         for arg in arg_region_projections.iter() {
-            self.state.label_region_projection(
-                arg,
-                SnapshotLocation::before(location),
-                self.ctxt,
-            );
+            self.state
+                .label_region_projection(arg, SnapshotLocation::before(location), self.ctxt);
         }
 
         #[derive(Default, Deref)]
@@ -92,23 +88,21 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             fn find_matching<'mir>(
                 &mut self,
                 region: PcgRegion,
-                borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-                repacker: CompilerCtxt<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx, '_>,
             ) -> Option<&mut FxHashSet<LocalRegionProjection<'tcx>>> {
                 self.0.iter_mut().find(|set| {
-                    borrow_checker.same_region(region, set.iter().next().unwrap().region(repacker))
+                    repacker
+                        .bc
+                        .same_region(region, set.iter().next().unwrap().region(repacker))
                 })
             }
 
             fn insert<'mir>(
                 &mut self,
                 projection: LocalRegionProjection<'tcx>,
-                borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-                repacker: CompilerCtxt<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx, '_>,
             ) {
-                if let Some(set) =
-                    self.find_matching(projection.region(repacker), borrow_checker, repacker)
-                {
+                if let Some(set) = self.find_matching(projection.region(repacker), repacker) {
                     set.insert(projection);
                 } else {
                     self.0.push(vec![projection].into_iter().collect());
@@ -119,7 +113,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         let mut coupled_region_projections = CoupledRegionProjections::default();
 
         for projection in arg_region_projections.iter() {
-            coupled_region_projections.insert(*projection, self.bc.as_ref(), self.ctxt);
+            coupled_region_projections.insert(*projection, self.ctxt);
         }
 
         for coupled in coupled_region_projections.iter() {

@@ -16,7 +16,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }

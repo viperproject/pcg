@@ -48,7 +48,7 @@ impl<'tcx> Condition<'tcx> {
 
     fn exclusive<T: Into<Place<'tcx>>>(
         place: T,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Condition<'tcx> {
         let place = place.into();
         pcg_validity_assert!(
@@ -68,16 +68,16 @@ impl<'tcx> Condition<'tcx> {
     }
 }
 
-pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
+pub(crate) struct TripleWalker<'a, 'tcx: 'a, 'bc> {
     /// Evaluate all Operands/Rvalues
     pub(crate) operand_triples: Vec<Triple<'tcx>>,
     /// Evaluate all other statements/terminators
     pub(crate) main_triples: Vec<Triple<'tcx>>,
-    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx, 'bc>,
 }
 
-impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
-    pub(crate) fn new(repacker: CompilerCtxt<'a, 'tcx>) -> Self {
+impl<'a, 'tcx, 'bc> TripleWalker<'a, 'tcx, 'bc> {
+    pub(crate) fn new(repacker: CompilerCtxt<'a, 'tcx, 'bc>) -> Self {
         Self {
             operand_triples: Vec::new(),
             main_triples: Vec::new(),
@@ -85,7 +85,7 @@ impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
         }
     }
 }
-impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
+impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx, '_> {
     fn visit_operand_fallable(
         &mut self,
         operand: &mir::Operand<'tcx>,

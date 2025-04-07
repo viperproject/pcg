@@ -14,7 +14,7 @@ pub(crate) trait LabelRegionProjection<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool;
 }
 
@@ -23,7 +23,7 @@ pub(crate) trait MakePlaceOld<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool;
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn default_make_place_old<
     this: &mut T,
     place: Place<'tcx>,
     latest: &Latest<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
+    repacker: CompilerCtxt<'_, 'tcx,'_>,
 ) -> bool {
     let mut changed = false;
     for p in this.pcg_elems() {

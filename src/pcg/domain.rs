@@ -15,7 +15,7 @@ use std::{
 use crate::{
     action::PcgActions,
     borrow_pcg::{
-        coupling_graph_constructor::BorrowCheckerInterface, path_condition::PathCondition,
+        path_condition::PathCondition,
         state::BorrowsState,
     },
     free_pcs::{
@@ -112,7 +112,7 @@ pub struct Pcg<'tcx> {
 impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
     fn check_validity<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> std::result::Result<(), String> {
         self.borrow.check_validity(repacker)
     }
@@ -126,7 +126,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
     pub(crate) fn owned_requires(
         &mut self,
         cond: Condition<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, '_>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         self.owned
             .locals_mut()
@@ -137,14 +137,13 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self.owned.locals_mut().ensures(t, &mut self.capabilities);
     }
 
-    #[tracing::instrument(skip(self, other, bc, repacker))]
+    #[tracing::instrument(skip(self, other, repacker))]
     pub(crate) fn join(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, '_>,
     ) -> std::result::Result<bool, PcgError> {
         let mut res = self.owned.join(
             &other.owned,
@@ -159,17 +158,17 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         other.borrow.add_path_condition(pc);
         res |= self
             .borrow
-            .join(&other.borrow, self_block, other_block, bc, repacker);
+            .join(&other.borrow, self_block, other_block, repacker);
         res |= self.capabilities.join(&other.capabilities);
         Ok(res)
     }
 
-    pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'mir, 'tcx>) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'mir, 'tcx, '_>) -> Vec<String> {
         let mut result = self.borrow.debug_lines(repacker);
         result.extend(self.capabilities.debug_lines(repacker));
         result
     }
-    pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx, '_>) {
         self.owned
             .initialize_as_start_block(&mut self.capabilities, repacker);
         self.borrow
@@ -184,16 +183,15 @@ pub struct PcgDomainData<'tcx> {
 }
 
 #[derive(Clone)]
-pub struct PcgDomain<'a, 'tcx> {
-    repacker: CompilerCtxt<'a, 'tcx>,
-    bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
+pub struct PcgDomain<'a, 'tcx, 'bc> {
+    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
     pub(crate) reachable: bool,
 }
 
-impl Debug for PcgDomain<'_, '_> {
+impl Debug for PcgDomain<'_, '_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}", self.data)
     }
@@ -361,7 +359,7 @@ pub enum PCGUnsupportedError {
     ClosureCall,
 }
 
-impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx, 'bc> PcgDomain<'a, 'tcx, 'bc> {
     pub(crate) fn has_error(&self) -> bool {
         self.data.is_err()
     }
@@ -431,7 +429,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         )
     }
 
-    pub(crate) fn generate_dot_graph(&mut self, phase: DataflowStmtPhase, statement_index: usize) {
+    pub(crate) fn generate_dot_graph(&self, phase: DataflowStmtPhase, statement_index: usize) {
         if !*RECORD_PCG.lock().unwrap() {
             return;
         }
@@ -463,7 +461,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
                 )
             }
 
-            let pcg = match phase {
+            let pcg: &Pcg<'tcx> = match phase {
                 DataflowStmtPhase::EvalStmt(phase) => self.pcg(DomainDataIndex::Eval(phase)),
                 _ => self.pcg(DomainDataIndex::Initial),
             };
@@ -480,14 +478,12 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     }
 
     pub(crate) fn new(
-        repacker: CompilerCtxt<'a, 'tcx>,
-        bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
+        repacker: CompilerCtxt<'a, 'tcx, 'bc>,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
     ) -> Self {
         Self {
             repacker,
-            bc,
             block,
             data: Ok(PcgDomainData::default()),
             debug_data,
@@ -496,15 +492,15 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     }
 }
 
-impl Eq for PcgDomain<'_, '_> {}
+impl Eq for PcgDomain<'_, '_, '_> {}
 
-impl PartialEq for PcgDomain<'_, '_> {
+impl PartialEq for PcgDomain<'_, '_, '_> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl JoinSemiLattice for PcgDomain<'_, '_> {
+impl JoinSemiLattice for PcgDomain<'_, '_, '_> {
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;
@@ -556,7 +552,6 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
             other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
             self_block,
             other_block,
-            &*self.bc,
             self.repacker,
         ) {
             Ok(changed) => changed,
@@ -573,11 +568,13 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx, 'bc> DebugWithContext<PCGAnalysis<PcgEngine<'a, 'tcx, 'bc>>>
+    for PcgDomain<'a, 'tcx, 'bc>
+{
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &PCGAnalysis<PcgEngine<'a, 'tcx>>,
+        _ctxt: &PCGAnalysis<PcgEngine<'a, 'tcx, 'bc>>,
         _f: &mut Formatter<'_>,
     ) -> Result {
         todo!()

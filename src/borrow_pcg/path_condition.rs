@@ -153,7 +153,7 @@ pub enum PathConditions {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PathConditions {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         match self {
             PathConditions::AtBlock(b) => json!({
                 "type": "AtBlock",

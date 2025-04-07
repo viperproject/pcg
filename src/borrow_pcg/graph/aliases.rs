@@ -18,10 +18,10 @@ struct Alias<'tcx> {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph>(
+    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph, 'bc: 'graph, C: Copy>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
@@ -43,7 +43,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn aliases<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut result: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
         result.insert(node.into());
@@ -63,7 +63,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn aliases_all_projections<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(ctxt) {
@@ -117,7 +117,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     fn direct_aliases<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
         seen: &mut FxHashSet<PCGNode<'tcx>>,
         direct: bool,
     ) -> FxHashSet<Alias<'tcx>> {
@@ -195,6 +195,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 fn test_aliases() {
     use rustc_utils::test_utils::Placer;
 
+    use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
     use crate::free_pcs::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
     use crate::rustc_interface::span::Symbol;
@@ -204,11 +205,11 @@ fn test_aliases() {
         .with_writer(std::io::stderr)
         .init();
 
-    use crate::{run_pcg, BodyAndBorrows, FpcsOutput};
+    use crate::{run_pcg, BodyAndBorrows, PcgOutput};
 
-    fn check_all_statements<'mir, 'tcx>(
+    fn check_all_statements<'mir, 'tcx, 'bc>(
         body: &'mir mir::Body<'tcx>,
-        pcg: &mut FpcsOutput<'mir, 'tcx>,
+        pcg: &mut PcgOutput<'mir, 'tcx, 'bc>,
         f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {
@@ -237,7 +238,8 @@ fn test_aliases() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[1];
         let placer = Placer::new(tcx, &body.body);
@@ -271,7 +273,8 @@ fn test_aliases() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[12];
         let placer = Placer::new(tcx, &body.body);
@@ -298,7 +301,8 @@ fn test_aliases() {
         }
         "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(1usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[2];
         let placer = Placer::new(tcx, &body.body);
@@ -324,7 +328,8 @@ fn test_aliases() {
                 }
                 "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[2];
         let placer = Placer::new(tcx, &body.body);
@@ -357,7 +362,8 @@ fn main() {
 }
         "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(2usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[1];
         let init_z: mir::Place<'_> = mir::Local::from(5_usize).into();
@@ -401,7 +407,8 @@ fn main() {
     }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
         let stmt = &bb.statements[0];
         let init_z: mir::Place<'_> = mir::Local::from(5_usize).into();
@@ -435,7 +442,8 @@ fn main() {
     }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
         let x = placer.local("x").mk();
         check_all_statements(&body.body, &mut pcg, |_location, stmt| {
@@ -460,7 +468,8 @@ fn main() {
 }
 "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let temp: mir::Place<'_> = mir::Local::from(4_usize).into();
         let star_temp = temp.project_deeper(&[mir::ProjectionElem::Deref], tcx);
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
@@ -482,7 +491,8 @@ fn main() {
                 println!("Elapsed: {}s", elapsed.as_secs());
             }"#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let temp_9: mir::Place<'_> = mir::Local::from(9_usize).into();
         let deref_temp_9 = temp_9.project_deeper(&[mir::ProjectionElem::Deref], tcx);
 
@@ -490,7 +500,9 @@ fn main() {
 
         check_all_statements(&body.body, &mut pcg, |location, stmt| {
             assert!(
-                !stmt.aliases(deref_temp_9, &body.body, tcx).contains(&temp_19),
+                !stmt
+                    .aliases(deref_temp_9, &body.body, tcx)
+                    .contains(&temp_19),
                 "Bad alias for {:?}",
                 location
             );
@@ -509,7 +521,8 @@ fn main() {
       let e = foo(c, d);
     }"#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = bb0.statements.last().unwrap();
@@ -528,7 +541,8 @@ fn main() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[10];
@@ -546,7 +560,8 @@ fn main() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let stmt = &bb0.statements[11];
@@ -578,7 +593,8 @@ fn main() {
         }
     "#;
     rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-        let mut pcg = run_pcg(body, tcx, None);
+        let bc = BorrowCheckerImpl::new(tcx, body);
+        let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
         let bb0 = pcg.get_all_for_bb(START_BLOCK).unwrap().unwrap();
         let last_bg = &bb0.statements[13];

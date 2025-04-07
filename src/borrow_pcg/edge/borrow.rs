@@ -48,7 +48,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         let mut changed = false;
         if self.blocked_place.base_region_projection(repacker) == Some(*projection) {
@@ -68,7 +68,7 @@ impl<'tcx> MakePlaceOld<'tcx> for LocalBorrow<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -90,7 +90,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
             self.rp_snapshot_location = Some(location);
@@ -106,7 +106,7 @@ impl<'tcx> MakePlaceOld<'tcx> for RemoteBorrow<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -119,7 +119,7 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> RemoteBorrow<'tcx> {
-    pub(crate) fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> MaybeOldPlace<'tcx> {
         self.assigned_ref.project_deref(repacker)
     }
 
@@ -133,7 +133,7 @@ impl<'tcx> RemoteBorrow<'tcx> {
 
     pub(crate) fn assigned_region_projection<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         let rp = self.assigned_ref.base_region_projection(repacker).unwrap();
         if let Some(location) = self.rp_snapshot_location {
@@ -143,13 +143,13 @@ impl<'tcx> RemoteBorrow<'tcx> {
         }
     }
 
-    pub(crate) fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> bool {
         self.assigned_ref.place().is_mut_ref(repacker)
     }
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemoteBorrow<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "{} -> {}",
             self.blocked_place().to_short_string(repacker),
@@ -160,7 +160,10 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.assigned_ref.check_validity(repacker)
     }
 }
@@ -169,7 +172,7 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         if let BlockedNode::Place(MaybeRemotePlace::Remote(rp)) = node {
             self.blocked_place() == rp
@@ -180,14 +183,14 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
 
     fn blocked_nodes<C: Copy>(
         &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         vec![self.blocked_place().into()].into_iter().collect()
     }
 
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         vec![self.assigned_region_projection(repacker).into()]
             .into_iter()
@@ -225,7 +228,7 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> bool {
         match self {
             BorrowEdge::Local(borrow) => borrow.is_mut(),
             BorrowEdge::Remote(borrow) => borrow.is_mut(repacker),
@@ -248,7 +251,7 @@ impl<'tcx> BorrowEdge<'tcx> {
 
     pub(crate) fn assigned_region_projection(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self {
             BorrowEdge::Local(borrow) => borrow.assigned_region_projection(repacker),
@@ -263,7 +266,7 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> MaybeOldPlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.deref_place(repacker),
             BorrowEdge::Remote(borrow) => borrow.deref_place(repacker),
@@ -278,7 +281,10 @@ impl<'tcx> BorrowEdge<'tcx> {
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.blocked_place.check_validity(repacker)?;
         self.assigned_ref.check_validity(repacker)?;
         Ok(())
@@ -286,7 +292,7 @@ impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LocalBorrow<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "borrow: {} = &{} {}",
             self.assigned_ref.to_short_string(repacker),
@@ -310,7 +316,7 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         match node {
             PCGNode::Place(MaybeRemotePlace::Local(p)) => self.blocked_place == p,
@@ -321,7 +327,7 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
     fn is_blocked_by<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         match node {
             PCGNode::Place(_) => false,
@@ -333,14 +339,14 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
 
     fn blocked_nodes<C: Copy>(
         &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<BlockedNode<'tcx>> {
         vec![self.blocked_place.into()].into_iter().collect()
     }
 
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         let rp = self.assigned_region_projection(repacker);
         vec![LocalNode::RegionProjection(rp)].into_iter().collect()
@@ -354,7 +360,7 @@ impl<'tcx> LocalBorrow<'tcx> {
         kind: mir::BorrowKind,
         reservation_location: Location,
         region: ty::Region<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Self {
         assert!(assigned_place.ty(repacker).ty.ref_mutability().is_some());
         Self {
@@ -378,7 +384,7 @@ impl<'tcx> LocalBorrow<'tcx> {
 
     /// The deref of the assigned place of the borrow. For example, if the borrow is
     /// `let x = &mut y;`, then the deref place is `*x`.
-    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> MaybeOldPlace<'tcx> {
         self.assigned_ref.project_deref(repacker)
     }
 
@@ -387,7 +393,7 @@ impl<'tcx> LocalBorrow<'tcx> {
     /// region projection is `x↓'x`.
     pub(crate) fn assigned_region_projection<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         match self.assigned_ref.ty(repacker).ty.kind() {
             ty::TyKind::Ref(region, _, _) => RegionProjection::new(

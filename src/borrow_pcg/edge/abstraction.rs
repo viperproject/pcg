@@ -44,7 +44,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         self.edge.label_region_projection(projection, location, repacker)
     }
@@ -54,7 +54,7 @@ impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -63,26 +63,29 @@ impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     fn blocked_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         self.edge.blocked_nodes(repacker)
     }
 
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         self.edge.blocked_by_nodes(repacker)
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.edge.check_validity(repacker)
     }
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LoopAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "Loop({:?}): {}",
             self.block,
@@ -135,7 +138,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         self.edge
             .label_region_projection(projection, location, repacker)
@@ -147,7 +150,7 @@ impl<'tcx> MakePlaceOld<'tcx> for FunctionCallAbstraction<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -157,34 +160,37 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         self.edge.blocks_node(node, repacker)
     }
 
     fn blocked_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         self.edge.blocked_nodes(repacker)
     }
 
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         self.edge.blocked_by_nodes(repacker)
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.edge.check_validity(repacker)
     }
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!("FunctionCall({:?}, {:?})", self.def_id, self.substs)
     }
 }
@@ -251,7 +257,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         let mut changed = false;
         for input in self.inputs.iter_mut() {
@@ -268,7 +274,7 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         match node {
             PCGNode::Place(p) => self.inputs.contains(&p.into()),
@@ -284,14 +290,14 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
     }
     fn blocked_nodes<C: Copy>(
         &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs()
             .into_iter()
@@ -301,7 +307,7 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "[{}] -> [{}]",
             self.inputs
@@ -317,7 +323,10 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionBlockEdge<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         for input in self.inputs.iter() {
             input.check_validity(repacker)?;
         }

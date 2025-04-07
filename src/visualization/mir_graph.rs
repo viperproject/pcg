@@ -1,7 +1,6 @@
 use crate::{
     rustc_interface,
     utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
-    BodyAndBorrows,
 };
 use serde_derive::Serialize;
 use std::{
@@ -9,9 +8,8 @@ use std::{
     io::{self},
 };
 
-use rustc_interface::middle::{
-    mir::{self, BinOp, Local, Operand, Rvalue, Statement, TerminatorKind, UnwindAction},
-    ty::TyCtxt,
+use rustc_interface::middle::mir::{
+    self, BinOp, Local, Operand, Rvalue, Statement, TerminatorKind, UnwindAction,
 };
 
 #[derive(Serialize)]
@@ -66,17 +64,17 @@ fn format_bin_op(op: &BinOp) -> String {
     }
 }
 
-fn format_local<'tcx>(local: &Local, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+fn format_local<'tcx>(local: &Local, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
     let place: Place<'tcx> = (*local).into();
     place.to_short_string(repacker)
 }
 
-fn format_place<'tcx>(place: &mir::Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+fn format_place<'tcx>(place: &mir::Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
     let place: Place<'tcx> = (*place).into();
     place.to_short_string(repacker)
 }
 
-fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
     match operand {
         Operand::Copy(p) => format_place(p, repacker),
         Operand::Move(p) => format!("move {}", format_place(p, repacker)),
@@ -84,7 +82,7 @@ fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx
     }
 }
 
-fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
     match rvalue {
         Rvalue::Use(operand) => format_operand(operand, repacker),
         Rvalue::Repeat(operand, c) => format!("repeat {} {}", format_operand(operand, repacker), c),
@@ -135,7 +133,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) 
 }
 fn format_terminator<'tcx>(
     terminator: &TerminatorKind<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
+    repacker: CompilerCtxt<'_, 'tcx, '_>,
 ) -> String {
     match terminator {
         TerminatorKind::Call {
@@ -161,7 +159,7 @@ fn format_terminator<'tcx>(
     }
 }
 
-fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
     match &stmt.kind {
         mir::StatementKind::Assign(box (place, rvalue)) => {
             format!(
@@ -197,19 +195,14 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -
     }
 }
 
-fn mk_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &impl BodyAndBorrows<'tcx>) -> MirGraph {
+fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
-    let repacker = CompilerCtxt::new(body.body(), tcx, body.region_inference_context());
+    for (bb, data) in ctxt.body().basic_blocks.iter_enumerated() {
+        let stmts = data.statements.iter().map(|stmt| format_stmt(stmt, ctxt));
 
-    for (bb, data) in body.body().basic_blocks.iter_enumerated() {
-        let stmts = data
-            .statements
-            .iter()
-            .map(|stmt| format_stmt(stmt, repacker));
-
-        let terminator = format_terminator(&data.terminator().kind, repacker);
+        let terminator = format_terminator(&data.terminator().kind, ctxt);
 
         nodes.push(MirNode {
             id: format!("{:?}", bb),
@@ -344,12 +337,11 @@ fn mk_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &impl BodyAndBorrows<'tcx>) -> Mi
 
     MirGraph { nodes, edges }
 }
-pub fn generate_json_from_mir<'tcx>(
+pub(crate) fn generate_json_from_mir(
     path: &str,
-    tcx: TyCtxt<'tcx>,
-    body: &impl BodyAndBorrows<'tcx>,
+    ctxt: CompilerCtxt<'_, '_, '_>,
 ) -> io::Result<()> {
-    let mir_graph = mk_mir_graph(tcx, body);
+    let mir_graph = mk_mir_graph(ctxt);
     let mut file = File::create(path)?;
     serde_json::to_writer(&mut file, &mir_graph)?;
     Ok(())

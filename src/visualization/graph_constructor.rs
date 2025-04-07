@@ -24,17 +24,17 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
 use std::collections::{BTreeSet, HashSet};
 
-pub(super) struct GraphConstructor<'mir, 'tcx> {
+pub(super) struct GraphConstructor<'mir, 'tcx, 'bc> {
     remote_nodes: IdLookup<RemotePlace>,
     place_nodes: IdLookup<(Place<'tcx>, Option<SnapshotLocation>)>,
     region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
     nodes: Vec<GraphNode>,
     pub(super) edges: HashSet<GraphEdge>,
-    ctxt: CompilerCtxt<'mir, 'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
 }
 
-impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
-    fn new(repacker: CompilerCtxt<'a, 'tcx>) -> Self {
+impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
+    fn new(repacker: CompilerCtxt<'a, 'tcx, 'bc>) -> Self {
         Self {
             remote_nodes: IdLookup::new('a'),
             place_nodes: IdLookup::new('p'),
@@ -195,14 +195,19 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 }
 
-pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx, 'bc> {
     borrows_graph: &'graph BorrowsGraph<'tcx>,
-    constructor: GraphConstructor<'mir, 'tcx>,
-    repacker: CompilerCtxt<'mir, 'tcx>,
+    constructor: GraphConstructor<'mir, 'tcx, 'bc>,
+    repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
 }
 
-impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
-    pub fn new(borrows_graph: &'graph BorrowsGraph<'tcx>, ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
+impl<'graph, 'mir: 'graph, 'tcx: 'mir, 'bc: 'graph>
+    BorrowsGraphConstructor<'graph, 'mir, 'tcx, 'bc>
+{
+    pub fn new(
+        borrows_graph: &'graph BorrowsGraph<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
+    ) -> Self {
         Self {
             borrows_graph,
             constructor: GraphConstructor::new(ctxt),
@@ -220,12 +225,12 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
     }
 }
 
-pub(crate) struct PcgGraphConstructor<'a, 'tcx> {
-    summary: &'a CapabilityLocals<'tcx>,
-    borrows_domain: &'a BorrowsState<'tcx>,
-    capabilities: &'a PlaceCapabilities<'tcx>,
-    constructor: GraphConstructor<'a, 'tcx>,
-    repacker: CompilerCtxt<'a, 'tcx>,
+pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc> {
+    summary: &'pcg CapabilityLocals<'tcx>,
+    borrows_domain: &'pcg BorrowsState<'tcx>,
+    capabilities: &'pcg PlaceCapabilities<'tcx>,
+    constructor: GraphConstructor<'a, 'tcx, 'bc>,
+    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
@@ -246,8 +251,10 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
     }
 }
 
-impl<'a, 'tcx> Grapher<'a, 'tcx> for PcgGraphConstructor<'a, 'tcx> {
-    fn repacker(&self) -> CompilerCtxt<'a, 'tcx> {
+impl<'pcg, 'a, 'tcx, 'bc> Grapher<'pcg, 'a, 'tcx, 'bc>
+    for PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc>
+{
+    fn repacker(&self) -> CompilerCtxt<'a, 'tcx, 'bc> {
         self.repacker
     }
 
@@ -261,39 +268,39 @@ impl<'a, 'tcx> Grapher<'a, 'tcx> for PcgGraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
+    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx, 'bc> {
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'pcg {
         PCGCapabilityGetter {
             capabilities: self.capabilities,
         }
     }
 }
 
-impl<'graph, 'mir: 'graph, 'tcx: 'graph> Grapher<'mir, 'tcx>
-    for BorrowsGraphConstructor<'graph, 'mir, 'tcx>
+impl<'graph, 'mir: 'graph, 'tcx: 'graph, 'bc> Grapher<'graph, 'mir, 'tcx, 'bc>
+    for BorrowsGraphConstructor<'graph, 'mir, 'tcx, 'bc>
 {
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx> {
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, 'bc> {
         self.repacker
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx> {
+    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx, 'bc> {
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir {
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'graph {
         NullCapabilityGetter
     }
 }
 
-impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
+impl<'pcg, 'a, 'tcx, 'bc> PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc> {
     pub fn new(
-        summary: &'a CapabilityLocals<'tcx>,
-        repacker: CompilerCtxt<'a, 'tcx>,
-        borrows_domain: &'a BorrowsState<'tcx>,
-        capabilities: &'a PlaceCapabilities<'tcx>,
+        summary: &'pcg CapabilityLocals<'tcx>,
+        repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+        borrows_domain: &'pcg BorrowsState<'tcx>,
+        capabilities: &'pcg PlaceCapabilities<'tcx>,
     ) -> Self {
         Self {
             summary,
@@ -383,8 +390,8 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        run_pcg, utils::CompilerCtxt, visualization::graph_constructor::PcgGraphConstructor,
-        BodyAndBorrows,
+        borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::CompilerCtxt,
+        visualization::graph_constructor::PcgGraphConstructor,
     };
 
     // 26_ref_in_struct.rs
@@ -405,18 +412,15 @@ fn main() {
 }
 "#;
         rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-            let repacker = CompilerCtxt::new(&body.body, tcx, body.region_inference_context());
-            let mut pcg = run_pcg(body, tcx, None);
+            let bc = BorrowCheckerImpl::new(tcx, body);
+            let ctxt: CompilerCtxt<'_, '_, '_> = CompilerCtxt::new(&body.body, tcx, &bc);
+            let mut pcg = run_pcg(&body.body, tcx, &bc, None);
             let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
-            let graph = PcgGraphConstructor::new(
-                &pcg.owned.locals(),
-                repacker,
-                &pcg.borrow,
-                &pcg.capabilities,
-            )
-            .construct_graph();
+            let graph =
+                PcgGraphConstructor::new(&pcg.owned.locals(), ctxt, &pcg.borrow, &pcg.capabilities)
+                    .construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }

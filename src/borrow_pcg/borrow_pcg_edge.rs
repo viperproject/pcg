@@ -45,7 +45,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         self.kind.label_region_projection(projection, location, repacker)
     }
@@ -56,7 +56,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGEdge<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         self.kind.make_place_old(place, latest, repacker)
     }
@@ -77,13 +77,13 @@ pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
 
     /// true iff any of the blocked places can be mutated via the blocking places
-    fn is_shared_borrow(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    fn is_shared_borrow(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> bool {
         self.kind().is_shared_borrow(repacker)
     }
 
     fn blocked_places<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
         self.blocked_nodes(repacker)
             .into_iter()
@@ -124,13 +124,16 @@ impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
 }
 
 impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.kind().check_validity(repacker)
     }
 }
 
 impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithCompilerCtxt<'tcx> for T {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "{} under conditions {}",
             self.kind().to_short_string(repacker),
@@ -158,7 +161,7 @@ impl<'tcx> MakePlaceOld<'tcx> for LocalNode<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -229,7 +232,10 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         }
     }
 
-    fn iter_projections<T: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, T>) -> Vec<(Self, PlaceElem<'tcx>)> {
+    fn iter_projections<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Vec<(Self, PlaceElem<'tcx>)> {
         match self {
             LocalNode::Place(p) => p
                 .iter_projections(repacker)
@@ -244,10 +250,10 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
         }
     }
 
-    fn project_deeper<T: Copy>(
+    fn project_deeper<C: Copy>(
         &self,
         elem: mir::PlaceElem<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, T>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Result<Self, PcgError> {
         Ok(match self {
             LocalNode::Place(p) => LocalNode::Place(p.project_deeper(elem, repacker)?),
@@ -259,7 +265,10 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         Ok(())
     }
 }
@@ -308,7 +317,7 @@ impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn as_cg_node(self, repacker: CompilerCtxt<'_, 'tcx>) -> Option<CGNode<'tcx>> {
+    pub(crate) fn as_cg_node(self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Option<CGNode<'tcx>> {
         match self {
             // Places are allowed only if they are roots of the borrow graph
             PCGNode::Place(place) => match place {
@@ -326,14 +335,14 @@ impl<'tcx> PCGNode<'tcx> {
     }
     pub(crate) fn as_blocking_node(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Option<BlockingNode<'tcx>> {
         self.as_local_node(repacker)
     }
 
     pub(crate) fn as_local_node<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
@@ -419,14 +428,14 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
 impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         self.kind().blocked_by_nodes(repacker)
     }
 
     fn blocked_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> FxHashSet<BlockedNode<'tcx>> {
         self.kind().blocked_nodes(repacker)
     }
@@ -434,7 +443,7 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         self.kind().blocks_node(node, repacker)
     }
@@ -442,7 +451,7 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn is_blocked_by<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> bool {
         self.kind().is_blocked_by(node, repacker)
     }

@@ -15,15 +15,15 @@ use crate::{
 use super::triple::TripleWalker;
 
 #[derive(Clone)]
-pub struct FpcsEngine<'a, 'tcx> {
-    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
+pub struct FpcsEngine<'a, 'tcx, 'bc> {
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx, 'bc>,
 }
 
-impl<'a, 'tcx> FpcsEngine<'a, 'tcx> {
+impl<'a, 'tcx, 'bc> FpcsEngine<'a, 'tcx, 'bc> {
     pub(crate) fn analyze(
         &self,
         state: &mut Pcg<'tcx>,
-        tw: &TripleWalker<'a, 'tcx>,
+        tw: &TripleWalker<'a, 'tcx, 'bc>,
         phase: EvalStmtPhase,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];

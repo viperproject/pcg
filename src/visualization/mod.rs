@@ -335,8 +335,8 @@ impl Graph {
     }
 }
 
-pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
-    repacker: CompilerCtxt<'a, 'tcx>,
+pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
+    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
     let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
@@ -347,11 +347,11 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a>(
     Ok(String::from_utf8(buf).unwrap())
 }
 
-pub(crate) fn generate_dot_graph<'a, 'tcx: 'a>(
-    repacker: CompilerCtxt<'a, 'tcx>,
-    summary: &CapabilityLocals<'tcx>,
-    borrows_domain: &BorrowsState<'tcx>,
-    capabilities: &PlaceCapabilities<'tcx>,
+pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a, 'bc>(
+    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+    summary: &'pcg CapabilityLocals<'tcx>,
+    borrows_domain: &'pcg BorrowsState<'tcx>,
+    capabilities: &'pcg PlaceCapabilities<'tcx>,
     file_path: &str,
 ) -> io::Result<()> {
     let constructor = PcgGraphConstructor::new(summary, repacker, borrows_domain, capabilities);

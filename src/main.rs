@@ -15,15 +15,15 @@ pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0
 
 use std::fs::File;
 use std::io::Write;
-use std::rc::Rc;
 
+use derive_more::From;
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcg::{run_pcg_with, BodyAndBorrows};
 use pcg::utils::CompilerCtxt;
 use pcg::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location,
 };
+use pcg::{run_pcg, PcgOutput};
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
 
@@ -95,6 +95,186 @@ fn in_cargo_crate() -> bool {
     cargo_crate_name().is_some()
 }
 
+fn emit_borrowcheck_graphs(dir_path: &str, polonius: bool, ctxt: CompilerCtxt<'_, '_, '_>) {
+    if polonius {
+        for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
+            let num_stmts = data.statements.len();
+            for stmt_index in 0..num_stmts + 1 {
+                let location = Location {
+                    block: block_index,
+                    statement_index: stmt_index,
+                };
+                let start_dot_graph = subset_at_location(location, true, ctxt);
+                let start_file_path = format!(
+                    "{}/bc_facts_graph_{:?}_{}_start.dot",
+                    dir_path, block_index, stmt_index
+                );
+                start_dot_graph
+                    .write_to_file(start_file_path.as_str())
+                    .unwrap();
+                let mid_dot_graph = subset_at_location(location, false, ctxt);
+                let mid_file_path = format!(
+                    "{}/bc_facts_graph_{:?}_{}_mid.dot",
+                    dir_path, block_index, stmt_index
+                );
+                mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
+            }
+        }
+        let dot_graph = subset_anywhere(ctxt);
+        let file_path = format!("{}/bc_facts_graph_anywhere.dot", dir_path);
+        dot_graph.write_to_file(file_path.as_str()).unwrap();
+    }
+
+    let region_inference_dot_graph = region_inference_outlives(ctxt);
+    let file_path = format!("{}/region_inference_outlives.dot", dir_path);
+    std::fs::write(file_path, region_inference_dot_graph).unwrap();
+}
+
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, '_>) {
+    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
+    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
+
+    let ctxt = output.ctxt();
+
+    if emit_pcg_annotations || check_pcg_annotations {
+        let mut debug_lines = Vec::new();
+
+        if let Some(err) = output.first_error() {
+            debug_lines.push(format!("{:?}", err));
+        }
+        for block in ctxt.body().basic_blocks.indices() {
+            if let Ok(Some(state)) = output.get_all_for_bb(block) {
+                for line in state.debug_lines(ctxt) {
+                    debug_lines.push(line);
+                }
+            }
+        }
+        if emit_pcg_annotations {
+            for line in debug_lines.iter() {
+                eprintln!("// PCG: {}", line);
+            }
+        }
+        if check_pcg_annotations {
+            if let Ok(source) = ctxt
+                .tcx()
+                .sess
+                .source_map()
+                .span_to_snippet(ctxt.body().span)
+            {
+                let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
+                let expected_annotations = source
+                    .lines()
+                    .flat_map(|l| l.split("// PCG: ").nth(1))
+                    .map(|l| l.trim())
+                    .collect::<Vec<_>>();
+                let not_expected_annotations = source
+                    .lines()
+                    .flat_map(|l| l.split("// ~PCG: ").nth(1))
+                    .map(|l| l.trim())
+                    .collect::<Vec<_>>();
+                let missing_annotations = expected_annotations
+                    .iter()
+                    .filter(|a| !debug_lines_set.contains(**a))
+                    .collect::<Vec<_>>();
+                if !missing_annotations.is_empty() {
+                    panic!("Missing annotations: {:?}", missing_annotations);
+                }
+                for not_expected_annotation in not_expected_annotations {
+                    if debug_lines_set.contains(not_expected_annotation) {
+                        panic!("Unexpected annotation: {}", not_expected_annotation);
+                    }
+                }
+            } else {
+                tracing::warn!("No source for function: {}", item_name);
+            }
+        }
+    }
+}
+
+#[derive(From)]
+enum BorrowChecker<'mir, 'tcx> {
+    Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
+    Impl(BorrowCheckerImpl<'mir, 'tcx>),
+}
+impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowChecker<'mir, 'tcx> {
+    fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.is_live(node, location),
+            BorrowChecker::Impl(bc) => bc.is_live(node, location),
+        }
+    }
+
+    fn outlives(
+        &self,
+        sup: pcg::borrow_pcg::region_projection::PcgRegion,
+        sub: pcg::borrow_pcg::region_projection::PcgRegion,
+    ) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.outlives(sup, sub),
+            BorrowChecker::Impl(bc) => bc.outlives(sup, sub),
+        }
+    }
+
+    fn twophase_borrow_activations(
+        &self,
+        location: Location,
+    ) -> std::collections::BTreeSet<Location> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.twophase_borrow_activations(location),
+            BorrowChecker::Impl(bc) => bc.twophase_borrow_activations(location),
+        }
+    }
+
+    fn region_inference_ctxt(&self) -> &borrowck::RegionInferenceContext<'tcx> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.region_inference_ctxt(),
+            BorrowChecker::Impl(bc) => bc.region_inference_ctxt(),
+        }
+    }
+
+    fn location_table(&self) -> &borrowck::LocationTable {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.location_table(),
+            BorrowChecker::Impl(bc) => bc.location_table(),
+        }
+    }
+
+    fn polonius_output(&self) -> Option<&borrowck::PoloniusOutput> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.polonius_output(),
+            BorrowChecker::Impl(bc) => bc.polonius_output(),
+        }
+    }
+
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+        self
+    }
+}
+
+fn run_pcg_on_fn<'tcx>(
+    def_id: LocalDefId,
+    body: &BodyWithBorrowckFacts<'tcx>,
+    tcx: TyCtxt<'tcx>,
+    polonius: bool,
+    vis_dir: Option<&str>,
+) {
+    let bc = if polonius {
+        BorrowChecker::Polonius(PoloniusBorrowChecker::new(tcx, body))
+    } else {
+        BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
+    };
+    let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
+    let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
+    let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
+    let ctxt = output.ctxt();
+
+    if let Some(dir_path) = &item_dir {
+        emit_borrowcheck_graphs(dir_path, polonius, ctxt);
+    }
+
+    emit_and_check_annotations(item_name, &mut output);
+}
+
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
     if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
         // We're running in cargo, but not compiling the primary package
@@ -121,9 +301,6 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
     } else {
         None
     };
-
-    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
-    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 
     if let Some(path) = &vis_dir {
         if std::path::Path::new(path).exists() {
@@ -157,121 +334,8 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         tracing::debug!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
-        let body = Rc::new(body);
         if should_check_body(&body) {
-            let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
-            let (mut output, output_facts) = if polonius {
-                let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());
-                let output_facts = bc.output_facts.clone();
-                (
-                    run_pcg_with(body.as_ref(), tcx, bc, item_dir.as_deref()),
-                    Some(output_facts),
-                )
-            } else {
-                let bc = BorrowCheckerImpl::new(tcx, body.as_ref());
-                (
-                    run_pcg_with(body.as_ref(), tcx, bc, item_dir.as_deref()),
-                    None,
-                )
-            };
-            if let Some(dir_path) = &item_dir {
-                if let Some(output_facts) = output_facts {
-                    for (block_index, data) in body.body.basic_blocks.iter_enumerated() {
-                        let num_stmts = data.statements.len();
-                        for stmt_index in 0..num_stmts + 1 {
-                            let location = Location {
-                                block: block_index,
-                                statement_index: stmt_index,
-                            };
-                            let start_dot_graph = subset_at_location(
-                                body.as_ref(),
-                                output_facts.as_ref(),
-                                location,
-                                true,
-                                tcx
-                            );
-                            let start_file_path = format!(
-                                "{}/bc_facts_graph_{:?}_{}_start.dot",
-                                dir_path, block_index, stmt_index
-                            );
-                            start_dot_graph
-                                .write_to_file(start_file_path.as_str())
-                                .unwrap();
-                            let mid_dot_graph = subset_at_location(
-                                body.as_ref(),
-                                output_facts.as_ref(),
-                                location,
-                                false,
-                                tcx
-                            );
-                            let mid_file_path = format!(
-                                "{}/bc_facts_graph_{:?}_{}_mid.dot",
-                                dir_path, block_index, stmt_index
-                            );
-                            mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
-                        }
-                    }
-                    let dot_graph = subset_anywhere(output_facts.as_ref(), body.compiler_ctxt(tcx));
-                    let file_path = format!("{}/bc_facts_graph_anywhere.dot", dir_path);
-                    dot_graph.write_to_file(file_path.as_str()).unwrap();
-                }
-
-                let region_inference_dot_graph = region_inference_outlives(body.as_ref(), tcx);
-                let file_path = format!("{}/region_inference_outlives.dot", dir_path);
-                std::fs::write(file_path, region_inference_dot_graph).unwrap();
-            }
-            if emit_pcg_annotations || check_pcg_annotations {
-                let mut debug_lines = Vec::new();
-
-                if let Some(err) = output.first_error() {
-                    debug_lines.push(format!("{:?}", err));
-                }
-                for block in body.body.basic_blocks.indices() {
-                    if let Ok(Some(state)) = output.get_all_for_bb(block) {
-                        for line in state.debug_lines(CompilerCtxt::new(
-                            &body.body,
-                            tcx,
-                            &body.region_inference_context,
-                        )) {
-                            debug_lines.push(line);
-                        }
-                    }
-                }
-                if emit_pcg_annotations {
-                    for line in debug_lines.iter() {
-                        eprintln!("// PCG: {}", line);
-                    }
-                }
-                if check_pcg_annotations {
-                    if let Ok(source) = tcx.sess.source_map().span_to_snippet(body.body.span) {
-                        let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
-                        let expected_annotations = source
-                            .lines()
-                            .flat_map(|l| l.split("// PCG: ").nth(1))
-                            .map(|l| l.trim())
-                            .collect::<Vec<_>>();
-                        let not_expected_annotations = source
-                            .lines()
-                            .flat_map(|l| l.split("// ~PCG: ").nth(1))
-                            .map(|l| l.trim())
-                            .collect::<Vec<_>>();
-                        let missing_annotations = expected_annotations
-                            .iter()
-                            .filter(|a| !debug_lines_set.contains(**a))
-                            .collect::<Vec<_>>();
-                        if !missing_annotations.is_empty() {
-                            panic!("Missing annotations: {:?}", missing_annotations);
-                        }
-                        for not_expected_annotation in not_expected_annotations {
-                            if debug_lines_set.contains(not_expected_annotation) {
-                                panic!("Unexpected annotation: {}", not_expected_annotation);
-                            }
-                        }
-                    } else {
-                        tracing::warn!("No source for function: {}", item_name);
-                    }
-                }
-            }
+            run_pcg_on_fn(def_id, &body, tcx, polonius, vis_dir);
         }
         item_names.push(item_name);
     }
