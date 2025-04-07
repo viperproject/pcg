@@ -26,7 +26,7 @@ pub enum DomainDataIndex {
 pub struct DomainDataStates<T>(pub(crate) EvalStmtData<Rc<T>>);
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for DomainDataStates<T> {
-    fn check_validity<C: Copy>(&self, repacker: super::CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: super::CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
         self.0.check_validity(repacker)
     }
 }

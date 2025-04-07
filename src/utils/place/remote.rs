@@ -16,19 +16,19 @@ pub struct RemotePlace {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RemotePlace {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         todo!()
     }
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemotePlace {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!("Remote({:?})", self.local)
     }
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for RemotePlace {
-    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx> {
         self.into()
     }
 }
@@ -38,14 +38,14 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for RemotePlace {
         MaybeRemoteRegionProjectionBase::Place((*self).into())
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> IndexVec<RegionIdx, PcgRegion> {
         let place: Place<'_> = self.local.into();
         extract_regions(place.ty(repacker).ty, repacker)
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for RemotePlace {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
         Ok(())
     }
 }

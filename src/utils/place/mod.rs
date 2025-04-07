@@ -90,19 +90,19 @@ impl Ord for Place<'_> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Place<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
         serde_json::Value::String(self.to_short_string(repacker))
     }
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for Place<'tcx> {
-    fn to_local_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
+    fn to_local_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> LocalNode<'tcx> {
         LocalNode::Place(self.into())
     }
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for Place<'tcx> {
-    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx> {
         self.into()
     }
 }
@@ -112,7 +112,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for Place<'tcx> {
         (*self).into()
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> IndexVec<RegionIdx, PcgRegion> {
         extract_regions(self.ty(repacker).ty, repacker)
     }
 }
@@ -126,7 +126,7 @@ impl<'tcx> From<Place<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
 impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
     fn check_validity<C: Copy>(
         &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> std::result::Result<(), std::string::String> {
         Ok(())
     }
@@ -141,12 +141,12 @@ pub trait HasPlace<'tcx>: Sized {
     fn project_deeper<C: Copy>(
         &self,
         elem: PlaceElem<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> std::result::Result<Self, PcgError>;
 
-    fn iter_projections<T: Copy>(
+    fn iter_projections<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, T>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Vec<(Self, PlaceElem<'tcx>)>;
 }
 
@@ -161,7 +161,7 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
     fn project_deeper<C: Copy>(
         &self,
         elem: PlaceElem<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> std::result::Result<Self, PcgError> {
         self.project_deeper(elem, repacker)
             .map_err(PcgError::unsupported)
@@ -169,7 +169,7 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
 
     fn iter_projections<C: Copy>(
         &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Vec<(Self, PlaceElem<'tcx>)> {
         self.0
             .iter_projections()
@@ -202,7 +202,7 @@ impl<'tcx> Place<'tcx> {
     fn project_deeper<C: Copy>(
         &self,
         elem: PlaceElem<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> std::result::Result<Self, PCGUnsupportedError> {
         let base_ty = self.ty(repacker);
         if matches!(
@@ -243,7 +243,7 @@ impl<'tcx> Place<'tcx> {
         left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
     }
 
-    pub(crate) fn iter_places(self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<Self> {
+    pub(crate) fn iter_places(self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Vec<Self> {
         let mut places = self
             .iter_projections(repacker)
             .into_iter()
@@ -273,7 +273,7 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn expansion_places(
         self,
         expansion: &PlaceExpansion<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> Vec<Place<'tcx>> {
         let mut places = Vec::new();
         for elem in expansion.elems() {
@@ -284,7 +284,7 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn base_region_projection<C: Copy>(
         self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.ty_region(repacker)
             .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
@@ -294,7 +294,7 @@ impl<'tcx> Place<'tcx> {
         self.0.projection
     }
 
-    pub(crate) fn contains_unsafe_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn contains_unsafe_deref(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> bool {
         for (p, proj) in self.iter_projections(repacker) {
             if p.ty(repacker).ty.is_unsafe_ptr() && matches!(proj, PlaceElem::Deref) {
                 return true;
@@ -303,7 +303,10 @@ impl<'tcx> Place<'tcx> {
         false
     }
 
-    pub(crate) fn ty_region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {
+    pub(crate) fn ty_region<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Option<PcgRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
@@ -323,7 +326,7 @@ impl<'tcx> Place<'tcx> {
     /// This function converts the Place into a canonical form by re-projecting the place
     /// from its local, and using types derived from the root place as the types associated
     /// with Field region projections. For more details see [`Place::project_deeper`].
-    pub fn with_inherent_region<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Self {
+    pub fn with_inherent_region<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Self {
         let mut proj_iter = self.iter_projections(repacker).into_iter();
         let mut place = if let Some((place, elem)) = proj_iter.next() {
             place.project_deeper(elem, repacker).unwrap()
@@ -346,7 +349,7 @@ impl<'tcx> Place<'tcx> {
     pub fn region_projection(
         &self,
         idx: RegionIdx,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> RegionProjection<'tcx, Self> {
         self.region_projections(repacker)[idx]
     }
@@ -354,14 +357,14 @@ impl<'tcx> Place<'tcx> {
     #[tracing::instrument(skip(repacker))]
     pub(crate) fn regions<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> IndexVec<RegionIdx, PcgRegion> {
         extract_regions(self.ty(repacker).ty, repacker)
     }
 
-    pub(crate) fn region_projections(
+    pub(crate) fn region_projections<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty, repacker)
@@ -373,7 +376,7 @@ impl<'tcx> Place<'tcx> {
     pub fn projection_index(
         &self,
         region: PcgRegion,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> Option<RegionIdx> {
         extract_regions(self.ty(repacker).ty, repacker)
             .into_iter_enumerated()
@@ -381,29 +384,32 @@ impl<'tcx> Place<'tcx> {
             .map(|(idx, _)| idx)
     }
 
-    pub fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
+    pub fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> bool {
         !self
             .iter_projections(repacker)
             .into_iter()
             .any(|(place, elem)| elem == ProjectionElem::Deref && !place.ty(repacker).ty.is_box())
     }
 
-    pub fn is_mut_ref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub fn is_mut_ref(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> bool {
         matches!(
             self.0.ty(repacker.mir, repacker.tcx).ty.kind(),
             TyKind::Ref(_, _, Mutability::Mut)
         )
     }
 
-    pub fn is_ref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
+    pub fn is_ref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> bool {
         self.0.ty(repacker.mir, repacker.tcx).ty.is_ref()
     }
 
-    pub fn ref_mutability<T>(&self, repacker: CompilerCtxt<'_, 'tcx, T>) -> Option<Mutability> {
+    pub fn ref_mutability<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Option<Mutability> {
         self.0.ty(repacker.mir, repacker.tcx).ty.ref_mutability()
     }
 
-    pub fn project_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Self {
+    pub fn project_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Self {
         assert!(
             self.ty(repacker).ty.is_ref() || self.ty(repacker).ty.is_box(),
             "Expected ref or box, got {:?}",
@@ -572,7 +578,7 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub fn nearest_owned_place(self, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
+    pub fn nearest_owned_place(self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Self {
         if self.is_owned(repacker) {
             return self;
         }

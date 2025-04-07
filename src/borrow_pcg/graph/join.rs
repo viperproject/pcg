@@ -3,7 +3,7 @@ use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
-use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::CompilerCtxt};
+use crate::utils::CompilerCtxt;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::ToBorrowsEdge,
@@ -23,7 +23,7 @@ use crate::{
 use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn render_debug_graph(&self, repacker: CompilerCtxt<'_, 'tcx>, comment: &str) {
+    pub(crate) fn render_debug_graph(&self, repacker: CompilerCtxt<'_, 'tcx,'_>, comment: &str) {
         if borrows_imgcat_debug() {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
                 DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
@@ -38,8 +38,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, '_>,
     ) -> bool {
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
@@ -50,7 +49,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if repacker.is_back_edge(other_block, self_block) {
             self.render_debug_graph(repacker, &format!("Self graph: {:?}", self_block));
             other.render_debug_graph(repacker, &format!("Other graph: {:?}", other_block));
-            self.join_loop(other, self_block, other_block, repacker, bc);
+            self.join_loop(other, self_block, other_block, repacker);
             let result = *self != old_self;
             if borrows_imgcat_debug() {
                 if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
@@ -137,13 +136,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, '_>,
     ) {
         let self_coupling_graph = AbstractionGraphConstructor::new(repacker, self_block)
-            .construct_abstraction_graph(self, borrow_checker);
+            .construct_abstraction_graph(self, repacker.bc);
         let other_coupling_graph = AbstractionGraphConstructor::new(repacker, other_block)
-            .construct_abstraction_graph(other, borrow_checker);
+            .construct_abstraction_graph(other, repacker.bc);
 
         if coupling_imgcat_debug() {
             self_coupling_graph

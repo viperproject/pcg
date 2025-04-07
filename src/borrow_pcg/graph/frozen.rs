@@ -56,13 +56,13 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
     }
 
-    pub fn contains(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub fn contains(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx,'_>) -> bool {
         self.nodes(repacker).contains(&node)
     }
 
     pub fn nodes<'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
         {
             let nodes = self.nodes_cache.borrow();
@@ -75,9 +75,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.nodes_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub fn roots<'slf, C: Copy>(
+    pub fn roots<'slf, 'bc: 'graph, C: Copy>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, 'bc, C>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
         {
             let roots = self.roots_cache.borrow();
@@ -90,9 +90,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub fn leaf_edges<'slf, 'mir: 'graph>(
+    pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
     ) -> CachedLeafEdges<'graph, 'tcx> {
         {
             let edges = self.leaf_edges_cache.borrow();
@@ -105,19 +105,19 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         edges
     }
 
-    pub fn leaf_nodes<'slf, 'mir: 'graph>(
+    pub fn leaf_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = LocalNode<'tcx>> + use<'tcx, 'slf, 'mir> {
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
+    ) -> impl Iterator<Item = LocalNode<'tcx>> + use<'tcx, 'slf, 'mir, 'bc> {
         self.leaf_edges(repacker)
             .into_iter()
             .flat_map(move |edge| edge.blocked_by_nodes(repacker))
     }
 
-    pub fn get_edges_blocked_by<'mir: 'graph>(
+    pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph, C: Copy>(
         &mut self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
     ) -> &CachedBlockedEdges<'graph, 'tcx> {
         self.edges_blocked_by_cache
             .get_mut()
@@ -125,10 +125,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .or_insert_with(|| self.graph.edges_blocked_by(node, repacker).collect())
     }
 
-    pub fn get_edges_blocking<'slf, 'mir: 'graph, C: Copy + 'graph>(
+    pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph, C: Copy>(
         &'slf self,
         node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
     ) -> CachedBlockingEdges<'graph, 'tcx> {
         {
             let map = self.edges_blocking_cache.borrow();
@@ -143,10 +143,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         edges
     }
 
-    pub fn has_edge_blocking<'mir: 'graph>(
+    pub fn has_edge_blocking<'mir: 'graph, 'bc: 'graph>(
         &self,
         node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
     ) -> bool {
         {
             let map = self.edges_blocking_cache.borrow();
@@ -160,9 +160,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         result
     }
 
-    pub(super) fn is_acyclic<'mir: 'graph, C: Copy + 'graph>(
+    pub(super) fn is_acyclic<'mir: 'graph, 'bc: 'graph, C: Copy>(
         &mut self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
     ) -> bool {
         // The representation of an allowed path prefix, e.g. paths
         // with this representation definitely cannot reach a feasible cycle.
@@ -186,7 +186,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             ///
             /// Note that this check is very conservative right now (basically
             /// only checking some obvious cases)
-            fn is_feasible<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
+            fn is_feasible<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> bool {
                 let leaf_blocks = repacker
                     .body()
                     .basic_blocks
@@ -223,7 +223,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             fn try_push<C: Copy>(
                 mut self,
                 edge: BorrowPCGEdgeRef<'tcx, 'graph>,
-                repacker: CompilerCtxt<'_, 'tcx, C>,
+                repacker: CompilerCtxt<'_, 'tcx, '_, C>,
             ) -> PushResult<'tcx, 'graph> {
                 if self.0.iter().any(|e| *e == edge) {
                     PushResult::Cycle
@@ -249,10 +249,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 self.clone()
             }
 
-            fn leads_to_feasible_cycle<'mir: 'graph, C: Copy + 'graph>(
+            fn leads_to_feasible_cycle<'mir: 'graph, 'bc: 'graph, C: Copy>(
                 &self,
                 graph: &FrozenGraphRef<'graph, 'tcx>,
-                repacker: CompilerCtxt<'mir, 'tcx, C>,
+                repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
                 prefixes: &mut FxHashSet<AllowedPathPrefix<'tcx, 'graph>>,
             ) -> bool {
                 let path_prefix_repr = self.path_prefix_repr();

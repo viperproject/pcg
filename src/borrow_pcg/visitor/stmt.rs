@@ -18,7 +18,7 @@ use crate::{
     utils::{self, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_,'_> {
     pub(crate) fn stmt_pre_main(
         &mut self,
         statement: &Statement<'tcx>,
@@ -35,7 +35,6 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     self.ctxt,
                     self.capabilities,
                     location,
-                    self.bc.as_ref(),
                 )?;
                 self.record_actions(actions);
             }

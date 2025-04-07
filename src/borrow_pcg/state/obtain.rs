@@ -65,7 +65,7 @@ impl<'tcx> BorrowsState<'tcx> {
     #[tracing::instrument(skip(self, repacker, location, obtain_reason))]
     pub(crate) fn obtain(
         &mut self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
         place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
@@ -110,7 +110,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         // It's possible that `place` is not in the PCG, `expand_root` is the leaf
         // node from which place will be expanded to.
@@ -140,7 +140,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         self.record_and_apply_action(
@@ -157,7 +157,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         mut current: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
         while !current.is_owned(repacker)
@@ -185,7 +185,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         to_place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
         obtain_reason: ObtainReason,
         location: Location,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {

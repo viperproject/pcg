@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::{
     pcg::{AnalysisObject, EvalStmtPhase, Pcg, PcgError},
     rustc_interface::middle::mir::Location,
@@ -7,31 +5,29 @@ use crate::{
 };
 
 use super::{
-    action::actions::BorrowPCGActions, coupling_graph_constructor::BorrowCheckerInterface,
-    visitor::BorrowsVisitor,
+    action::actions::BorrowPCGActions, visitor::BorrowsVisitor,
 };
 
-pub struct BorrowsEngine<'mir, 'tcx> {
-    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
+pub struct BorrowsEngine<'mir, 'tcx, 'bc> {
+    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
 }
 
-impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
-    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
+impl<'mir, 'tcx, 'bc> BorrowsEngine<'mir, 'tcx, 'bc> {
+    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx, 'bc>) -> Self {
         BorrowsEngine { ctxt }
     }
 }
 
-impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
+impl<'tcx> BorrowsEngine<'_, 'tcx, '_> {
     pub(crate) fn analyze(
         &mut self,
         state: &mut Pcg<'tcx>,
-        bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
         object: AnalysisObject<'_, 'tcx>,
         phase: EvalStmtPhase,
         location: Location,
     ) -> Result<BorrowPCGActions<'tcx>, PcgError> {
         let mut bv =
-            BorrowsVisitor::new(self, &mut state.borrow, &mut state.capabilities, bc, phase);
+            BorrowsVisitor::new(self, &mut state.borrow, &mut state.capabilities, phase);
         match object {
             AnalysisObject::Statement(statement) => {
                 bv.visit_statement_fallable(statement, location)?;

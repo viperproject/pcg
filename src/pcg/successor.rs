@@ -45,7 +45,7 @@ impl<'tcx> PcgSuccessor<'tcx> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessor<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         json!({
             "block": self.block().index(),
             "actions": self.actions.to_json(repacker),
@@ -53,8 +53,8 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessor<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PcgSuccessor<'tcx> {
-    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx,'_>> for PcgSuccessor<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Vec<String> {
         let mut result = Vec::new();
         result.push(format!("Block: {}", self.block().index()));
         result.extend(self.actions.iter().map(|a| a.debug_line(repacker)));

@@ -20,7 +20,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
         other_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<bool, PcgError> {
         self.data.as_mut().unwrap().join(
             other.data.as_ref().unwrap(),
@@ -37,7 +37,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
         other_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
         for (l, to) in self.iter_enumerated_mut() {
@@ -59,7 +59,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
         other_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<bool, PcgError> {
         match (&mut *self, other) {
             (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(false),
@@ -87,7 +87,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
         other_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
         'outer: loop {

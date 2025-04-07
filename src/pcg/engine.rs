@@ -18,7 +18,6 @@ use crate::{
     borrow_pcg::{
         action::{actions::BorrowPCGActions, BorrowPCGActionKind},
         borrow_pcg_edge::BorrowPCGEdgeLike,
-        coupling_graph_constructor::BorrowCheckerInterface,
         graph::frozen::FrozenGraphRef,
     },
     free_pcs::{triple::TripleWalker, CapabilityLocals, RepackOp},
@@ -127,11 +126,10 @@ struct PCGEngineDebugData {
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
 }
 
-pub struct PcgEngine<'a, 'tcx: 'a> {
-    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
-    pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
-    pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
-    pub(crate) borrow_checker: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
+pub struct PcgEngine<'a, 'tcx: 'a, 'bc: 'a> {
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+    pub(crate) fpcs: FpcsEngine<'a, 'tcx, 'bc>,
+    pub(crate) borrows: BorrowsEngine<'a, 'tcx, 'bc>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
@@ -184,7 +182,7 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
     Terminator(&'mir Terminator<'tcx>),
 }
 
-impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
+impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -195,7 +193,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, 'bc>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -215,13 +213,12 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         &mut self,
         pcg: &mut Rc<Pcg<'tcx>>,
         object: AnalysisObject<'_, 'tcx>,
-        tw: &TripleWalker<'_, 'tcx>,
+        tw: &TripleWalker<'a, 'tcx,'bc>,
         location: Location,
     ) -> Result<PcgActions<'tcx>, PcgError> {
         let pre_main = Rc::<_>::make_mut(pcg);
         let pre_main_borrow_actions = self.borrows.analyze(
             pre_main,
-            self.borrow_checker.clone(),
             object,
             EvalStmtPhase::PreMain,
             location,
@@ -250,7 +247,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     #[tracing::instrument(skip(self, state, object))]
     fn analyze(
         &mut self,
-        state: &mut PcgDomain<'a, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx, 'bc>,
         object: AnalysisObject<'_, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -280,7 +277,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         // Handle initial borrow actions, mostly expiring borrows
         let initial_borrow_actions = self.borrows.analyze(
             pre_operands,
-            self.borrow_checker.clone(),
             object,
             EvalStmtPhase::PreOperands,
             location,
@@ -341,7 +337,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             self.borrows
                 .analyze(
                     post_operands,
-                    self.borrow_checker.clone(),
                     object,
                     EvalStmtPhase::PostOperands,
                     location,
@@ -370,7 +365,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             self.borrows
                 .analyze(
                     post_main,
-                    self.borrow_checker.clone(),
                     object,
                     EvalStmtPhase::PostMain,
                     location,
@@ -389,8 +383,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     }
 
     pub(crate) fn new(
-        repacker: CompilerCtxt<'a, 'tcx>,
-        borrow_checker: impl BorrowCheckerInterface<'a, 'tcx> + 'a,
+        repacker: CompilerCtxt<'a, 'tcx, 'bc>,
         debug_output_dir: Option<&str>,
     ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
@@ -419,13 +412,12 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             borrows,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
-            borrow_checker: Rc::new(borrow_checker),
         }
     }
 
     fn generate_dot_graph(
         &self,
-        state: &mut PcgDomain<'a, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx,'_>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
     ) {
@@ -535,8 +527,8 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
-    type Domain = PcgDomain<'a, 'tcx>;
+impl<'a, 'tcx,'bc> Analysis<'tcx> for PcgEngine<'a, 'tcx, 'bc> {
+    type Domain = PcgDomain<'a, 'tcx, 'bc>;
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {
@@ -554,7 +546,6 @@ impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
         };
         PcgDomain::new(
             self.repacker,
-            self.borrow_checker.clone(),
             block,
             debug_data,
         )
