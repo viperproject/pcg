@@ -33,7 +33,7 @@ use super::{
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::{env_feature_enabled, CompilerCtxt};
 
 #[derive(Clone, Debug, Default)]
@@ -500,7 +500,7 @@ impl<T> Conditioned<T> {
     }
 }
 
-impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for Conditioned<T> {
+impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for Conditioned<T> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "conditions": self.conditions.to_json(repacker),

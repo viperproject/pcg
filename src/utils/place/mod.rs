@@ -32,7 +32,7 @@ use crate::{
 use super::debug_info::DebugInfo;
 
 use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -89,7 +89,7 @@ impl Ord for Place<'_> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for Place<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Place<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         serde_json::Value::String(self.to_short_string(repacker))
     }

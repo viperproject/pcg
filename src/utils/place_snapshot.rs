@@ -6,7 +6,7 @@ use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::pcg::{PCGNode, PCGNodeLike};
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
     pcg::LocalNodeLike,
@@ -102,7 +102,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PlaceSnapshot<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),

@@ -12,7 +12,7 @@ use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use crate::rustc_interface::middle::mir::PlaceElem;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::{HasPlace, Place, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
@@ -81,7 +81,7 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeOldPlace::Current { place } => place.to_json(repacker),

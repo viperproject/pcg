@@ -7,7 +7,7 @@ use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::rustc_interface::middle::mir::BasicBlock;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::DebugLines;
 
@@ -44,7 +44,7 @@ impl<'tcx> PcgSuccessor<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessor<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessor<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "block": self.block().index(),

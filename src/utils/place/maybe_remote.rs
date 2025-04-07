@@ -8,7 +8,7 @@ use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::remote::RemotePlace;
 use crate::utils::{HasPlace, Place, CompilerCtxt, PlaceSnapshot};
@@ -53,7 +53,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemotePlace<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),

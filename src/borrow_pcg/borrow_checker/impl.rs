@@ -21,7 +21,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
-    repacker: CompilerCtxt<'mir, 'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx, ()>,
     pub output_facts: Rc<PoloniusOutput>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -30,30 +30,30 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
 impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
     fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let location_table = body.location_table();
-        let repacker = CompilerCtxt::new(body.body(), tcx, body.region_inference_context());
-        let output_facts = Output::compute(
+        let output_facts = Rc::new(Output::compute(
             body.input_facts(),
             polonius_engine::Algorithm::DatafrogOpt,
             true,
-        );
+        ));
+        let ctxt = CompilerCtxt::new(body.body(), tcx, ());
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
             location_table,
-            repacker,
-            output_facts: Rc::new(output_facts),
+            ctxt,
+            output_facts,
             region_cx,
             borrows,
         }
     }
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let regions: Vec<_> = match node {
-            PCGNode::Place(place) => place.regions(self.repacker).into_iter().collect(),
+            PCGNode::Place(place) => place.regions(self.ctxt).into_iter().collect(),
             PCGNode::RegionProjection(region_projection) => {
                 if let Some(place) = region_projection.base().as_local_place() {
                     let mut regions: Vec<_> =
-                        place.place().regions(self.repacker).into_iter().collect();
-                    regions.push(region_projection.region(self.repacker));
+                        place.place().regions(self.ctxt).into_iter().collect();
+                    regions.push(region_projection.region(self.ctxt));
                     regions
                 } else {
                     todo!()
@@ -86,8 +86,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
 
 #[derive(Clone)]
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
-    #[allow(unused)]
-    repacker: CompilerCtxt<'mir, 'tcx>,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -110,11 +108,9 @@ fn cursor_contains_local(
 
 impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
     fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
-        let repacker = CompilerCtxt::new(body.body(), tcx, body.region_inference_context());
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
-            repacker,
             cursor: Rc::new(RefCell::new(
                 compute_fixpoint(MaybeLiveLocals, tcx, body.body())
                     .into_results_cursor(body.body()),

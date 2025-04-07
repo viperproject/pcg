@@ -4,25 +4,24 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustc_interface::{
-    borrowck::RegionInferenceContext,
-    data_structures::fx::FxHashSet,
-    index::{bit_set::BitSet, Idx},
-    middle::{
-        mir::{
-            tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace,
-            PlaceElem, ProjectionElem,
+use crate::rustc_interface::{
+        borrowck::{PoloniusOutput, RegionInferenceContext},
+        data_structures::fx::FxHashSet,
+        index::{bit_set::BitSet, Idx},
+        middle::{
+            mir::{
+                tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
+                Place as MirPlace, PlaceElem, ProjectionElem,
+            },
+            ty::{TyCtxt, TyKind},
         },
-        ty::{TyCtxt, TyKind},
-    },
-    mir_dataflow,
-    target::abi::FieldIdx,
-};
+        mir_dataflow,
+        target::abi::FieldIdx,
+    };
 
 use crate::{
     borrow_pcg::region_projection::PcgRegion,
     pcg::{PCGUnsupportedError, PcgError},
-    rustc_interface,
 };
 
 use super::Place;
@@ -94,6 +93,14 @@ impl ProjectionKind {
 }
 
 #[derive(Copy, Clone)]
+pub struct CompilerExtra<'a, 'tcx> {
+    #[allow(unused)]
+    pub(crate) region_infer_ctxt: &'a RegionInferenceContext<'tcx>,
+    #[allow(unused)]
+    pub(crate) polonius_output: Option<&'a PoloniusOutput>,
+}
+
+#[derive(Copy, Clone)]
 pub struct CompilerCtxt<'a, 'tcx: 'a, T = &'a RegionInferenceContext<'tcx>> {
     pub(super) mir: &'a Body<'tcx>,
     pub(super) tcx: TyCtxt<'tcx>,
@@ -154,7 +161,6 @@ impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
         }
         all
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]

@@ -8,7 +8,7 @@ use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{HasPlace, Place, CompilerCtxt, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
@@ -177,7 +177,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGActionKind<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         self.kind.to_short_string(repacker).into()
     }

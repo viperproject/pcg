@@ -9,7 +9,7 @@ use super::{
     borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
 };
 use crate::pcg::{PCGInternalError, PcgError};
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
@@ -28,7 +28,7 @@ use crate::{
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
 };
 
-use crate::rustc_interface::infer::infer::RegionVariableOrigin;
+use crate::rustc_interface::infer::infer::{RegionVariableOrigin, NllRegionVariableOrigin};
 
 use crate::rustc_interface::middle::ty::BoundRegionKind;
 
@@ -50,21 +50,36 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
 
     #[rustversion::since(2024-12-14)]
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
-        match ctxt.extra.var_infos[*self].origin {
+        let origin = ctxt.extra.var_infos[*self].origin;
+        match origin {
             RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
                 let span_str = if let Some(source_map) = get_source_map() {
                     source_map.span_to_string(span, FileNameDisplayPreference::Short)
                 } else {
                     format!("{:?}", span)
                 };
-                return format!("{} at {}: {:?}", symbol, span_str, self);
+                format!("{} at {}: {:?}", symbol, span_str, self)
             }
             RegionVariableOrigin::RegionParameterDefinition(_span, symbol) => {
-                return symbol.to_string();
+                symbol.to_string()
             }
-            _ => {}
+
+            // `MiscVariable` is used as a placeholder for uncategorized, so we just
+            // display it as normal
+            RegionVariableOrigin::MiscVariable(_) => {
+                format!("{:?}", self)
+            }
+
+            // Most NLL region variables have this origin, so just display it as normal
+            RegionVariableOrigin::Nll(NllRegionVariableOrigin::Existential {
+                from_forall: false,
+            }) => {
+                format!("{:?}", self)
+            }
+            other => {
+                format!("{:?}: {:?}", other, self)
+            }
         }
-        format!("{:?}", self)
     }
 }
 
@@ -160,7 +175,7 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.to_json(repacker),
@@ -317,7 +332,7 @@ pub trait RegionProjectionBaseLike<'tcx>:
     + std::hash::Hash
     + Eq
     + PartialEq
-    + ToJsonWithRepacker<'tcx>
+    + ToJsonWithCompilerCtxt<'tcx>
     + DisplayWithCompilerCtxt<'tcx>
 {
     fn regions<T: Copy>(
@@ -340,19 +355,19 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
         format!(
             "{}↓{}{}",
             self.base.to_short_string(repacker),
-            self.region(repacker),
+            self.region(repacker).to_short_string(repacker),
             location_part
         )
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> ToJsonWithRepacker<'tcx>
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> ToJsonWithCompilerCtxt<'tcx>
     for RegionProjection<'tcx, T>
 {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.base.to_json(repacker),
-            "region": self.region(repacker).to_string(None),
+            "region": self.region(repacker).to_string(Some(repacker)),
         })
     }
 }

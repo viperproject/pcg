@@ -9,7 +9,7 @@ use crate::rustc_interface::{
 use crate::utils::display::{DebugLines, DisplayWithCompilerCtxt};
 use crate::utils::{Place, CompilerCtxt, SnapshotLocation};
 
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
@@ -23,7 +23,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Latest<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!(self
             .0
