@@ -202,14 +202,11 @@ pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
 }
 
 impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
-    pub fn new(
-        borrows_graph: &'graph BorrowsGraph<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> Self {
+    pub fn new(borrows_graph: &'graph BorrowsGraph<'tcx>, ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
         Self {
             borrows_graph,
-            constructor: GraphConstructor::new(repacker),
-            repacker,
+            constructor: GraphConstructor::new(ctxt),
+            repacker: ctxt,
         }
     }
 

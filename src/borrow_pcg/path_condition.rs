@@ -8,7 +8,7 @@ use crate::{
     utils::CompilerCtxt,
 };
 
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 #[derive(Copy, PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct PathCondition {
@@ -152,7 +152,7 @@ pub enum PathConditions {
     Paths(PCGraph),
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PathConditions {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PathConditions {
     fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             PathConditions::AtBlock(b) => json!({

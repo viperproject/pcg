@@ -108,7 +108,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     pub fn leaf_nodes<'slf, 'mir: 'graph>(
         &'slf self,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = LocalNode<'tcx>> + 'slf {
+    ) -> impl Iterator<Item = LocalNode<'tcx>> + use<'tcx, 'slf, 'mir> {
         self.leaf_edges(repacker)
             .into_iter()
             .flat_map(move |edge| edge.blocked_by_nodes(repacker))

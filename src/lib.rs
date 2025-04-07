@@ -8,6 +8,7 @@
 #![feature(box_patterns, hash_extract_if, extract_if)]
 #![feature(if_let_guard, let_chains)]
 #![feature(never_type)]
+#![feature(proc_macro_hygiene)]
 pub mod action;
 pub mod borrow_pcg;
 pub mod coupling;
@@ -40,7 +41,7 @@ use utils::{
 };
 use visualization::mir_graph::generate_json_from_mir;
 
-use utils::json::ToJsonWithRepacker;
+use utils::json::ToJsonWithCompilerCtxt;
 
 pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
@@ -126,7 +127,7 @@ impl<'tcx> RestoreCapability<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Weaken<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
@@ -178,7 +179,7 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
@@ -186,7 +187,7 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> 
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
@@ -251,8 +252,8 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
     bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,
     visualization_output_path: Option<&str>,
 ) -> FpcsOutput<'mir, 'tcx> {
-    let repacker = CompilerCtxt::new(mir.body(), tcx, mir.region_inference_context());
-    let engine = PcgEngine::new(repacker, bc, visualization_output_path);
+    let ctxt = CompilerCtxt::new(mir.body(), tcx, mir.region_inference_context());
+    let engine = PcgEngine::new(ctxt, bc, visualization_output_path);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = true;

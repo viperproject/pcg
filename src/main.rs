@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcg::run_pcg_with;
+use pcg::{run_pcg_with, BodyAndBorrows};
 use pcg::utils::CompilerCtxt;
 use pcg::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location,
@@ -188,6 +188,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
                                 output_facts.as_ref(),
                                 location,
                                 true,
+                                tcx
                             );
                             let start_file_path = format!(
                                 "{}/bc_facts_graph_{:?}_{}_start.dot",
@@ -201,6 +202,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
                                 output_facts.as_ref(),
                                 location,
                                 false,
+                                tcx
                             );
                             let mid_file_path = format!(
                                 "{}/bc_facts_graph_{:?}_{}_mid.dot",
@@ -209,7 +211,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
                             mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
                         }
                     }
-                    let dot_graph = subset_anywhere(output_facts.as_ref());
+                    let dot_graph = subset_anywhere(output_facts.as_ref(), body.compiler_ctxt(tcx));
                     let file_path = format!("{}/bc_facts_graph_anywhere.dot", dir_path);
                     dot_graph.write_to_file(file_path.as_str()).unwrap();
                 }

@@ -6,13 +6,13 @@ use crate::{
         unblock_graph::BorrowPCGUnblockAction,
     },
     free_pcs::RepackOp,
-    utils::{json::ToJsonWithRepacker, CompilerCtxt},
+    utils::{json::ToJsonWithCompilerCtxt, CompilerCtxt},
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, From, Default, Deref, DerefMut)]
 pub struct PcgActions<'tcx>(pub(crate) Vec<PcgAction<'tcx>>);
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PcgActions<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgActions<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         self.0.iter().map(|a| a.to_json(repacker)).collect()
     }
@@ -86,7 +86,7 @@ impl<'tcx> PcgAction<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PcgAction<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgAction<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             PcgAction::Borrow(action) => action.to_json(repacker),

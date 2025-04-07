@@ -6,7 +6,7 @@ use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::{Place, CompilerCtxt};
 
@@ -15,7 +15,7 @@ pub struct RemotePlace {
     pub(crate) local: mir::Local,
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for RemotePlace {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RemotePlace {
     fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         todo!()
     }

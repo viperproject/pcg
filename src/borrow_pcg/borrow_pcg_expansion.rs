@@ -14,7 +14,7 @@ use super::{
     region_projection::RegionProjection,
 };
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{json::ToJsonWithRepacker, SnapshotLocation};
+use crate::utils::{json::ToJsonWithCompilerCtxt, SnapshotLocation};
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
@@ -361,7 +361,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGExpansion<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "base": self.base.to_json(repacker),

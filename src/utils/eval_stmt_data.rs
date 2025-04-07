@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use serde_json::json;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::pcg::EvalStmtPhase;
 use crate::utils::CompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
@@ -14,7 +14,7 @@ pub struct EvalStmtData<T> {
     pub(crate) post_main: T,
 }
 
-impl<'tcx, T: ToJsonWithRepacker<'tcx>> ToJsonWithRepacker<'tcx> for EvalStmtData<T> {
+impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for EvalStmtData<T> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "pre_operands": self.pre_operands.to_json(repacker),

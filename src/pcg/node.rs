@@ -2,7 +2,7 @@ use crate::borrow_pcg::has_pcs_elem::{
     default_make_place_old, LabelRegionProjection, MakePlaceOld,
 };
 use crate::borrow_pcg::latest::Latest;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
@@ -96,7 +96,7 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithC
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithRepacker<'tcx>
+impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithCompilerCtxt<'tcx>
     for PCGNode<'tcx, T, U>
 {
     fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
@@ -128,7 +128,7 @@ pub trait PCGNodeLike<'tcx>:
     + std::hash::Hash
     + HasValidityCheck<'tcx>
     + DisplayWithCompilerCtxt<'tcx>
-    + ToJsonWithRepacker<'tcx>
+    + ToJsonWithCompilerCtxt<'tcx>
 {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx>;
 

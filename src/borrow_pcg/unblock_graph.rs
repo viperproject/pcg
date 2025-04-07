@@ -5,7 +5,7 @@ use crate::rustc_interface::middle::mir::BasicBlock;
 
 use super::borrow_pcg_edge::BorrowPCGEdgeLike;
 use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge};
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{edge_data::EdgeData, state::BorrowsState},
     utils::CompilerCtxt,
@@ -28,7 +28,7 @@ impl<'tcx> BorrowPCGUnblockAction<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGUnblockAction<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGUnblockAction<'tcx> {
     fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         serde_json::json!({
             "edge": format!("{:?}", self.edge)

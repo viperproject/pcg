@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#[rustversion::since(2024-12-14)]
 pub mod bc_facts_graph;
 pub mod dot_graph;
 pub mod drawer;
