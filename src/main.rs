@@ -1,5 +1,7 @@
 #![feature(rustc_private)]
 #![feature(let_chains)]
+#![feature(stmt_expr_attributes)]
+#![feature(proc_macro_hygiene)]
 
 #[cfg(feature = "memory_profiling")]
 #[cfg(not(target_env = "msvc"))]
@@ -20,9 +22,12 @@ use derive_more::From;
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use pcg::utils::CompilerCtxt;
+
+#[rustversion::since(2024-12-14)]
 use pcg::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location,
 };
+
 use pcg::{run_pcg, PcgOutput};
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
@@ -95,6 +100,7 @@ fn in_cargo_crate() -> bool {
     cargo_crate_name().is_some()
 }
 
+#[rustversion::since(2024-12-14)]
 fn emit_borrowcheck_graphs(dir_path: &str, polonius: bool, ctxt: CompilerCtxt<'_, '_, '_>) {
     if polonius {
         for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
@@ -268,6 +274,7 @@ fn run_pcg_on_fn<'tcx>(
     let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
     let ctxt = output.ctxt();
 
+    #[rustversion::since(2024-12-14)]
     if let Some(dir_path) = &item_dir {
         emit_borrowcheck_graphs(dir_path, polonius, ctxt);
     }
