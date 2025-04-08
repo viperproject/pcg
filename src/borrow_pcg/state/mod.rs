@@ -11,7 +11,8 @@ use super::{
     visitor::extract_regions,
 };
 use crate::{
-    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
+    borrow_pcg::edge::kind::BorrowPCGEdgeKind,
+    utils::{display::DisplayWithCompilerCtxt, place::maybe_remote::MaybeRemotePlace},
 };
 use crate::{
     borrow_pcg::edge::{
@@ -61,7 +62,10 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx, '_>> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.graph.check_validity(repacker)
     }
 }
@@ -346,13 +350,13 @@ impl<'tcx> BorrowsState<'tcx> {
         loop {
             fn go<'slf, 'mir: 'slf, 'bc: 'slf, 'tcx>(
                 slf: &'slf mut BorrowsState<'tcx>,
-                repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
+                ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
                 location: Location,
             ) -> Vec<BorrowPCGEdge<'tcx>> {
                 let fg = slf.graph.frozen_graph();
 
                 let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
-                    if p.is_old() {
+                    if matches!(p, PCGNode::Place(_)) && p.is_old() {
                         return true;
                     }
                     let place = match p {
@@ -360,44 +364,42 @@ impl<'tcx> BorrowsState<'tcx> {
                         PCGNode::RegionProjection(rp) => rp.place().place(),
                     };
 
-                    if place.projection.is_empty() && repacker.is_arg(place.local) {
+                    if place.projection.is_empty() && ctxt.is_arg(place.local) {
                         return false;
                     }
 
-                    if !place.projection.is_empty() && !fg.has_edge_blocking(place.into(), repacker)
-                    {
+                    if !place.projection.is_empty() && !fg.has_edge_blocking(place.into(), ctxt) {
                         return true;
                     }
 
-                    repacker.bc.is_dead(place.into(), location)
+                    let is_dead = ctxt.bc.is_dead(place.into(), location);
+                    if matches!(p, PCGNode::RegionProjection(_)) {
+                        tracing::info!("is_dead {} {:?}", p.to_short_string(ctxt), is_dead);
+                    }
+                    is_dead
                 };
 
-                let should_pack_edge =
-                    |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
-                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                            if expansion.expansion().iter().all(|node| {
-                                node.is_old() || repacker.bc.is_dead(node.place().into(), location)
-                            }) {
-                                true
-                            } else {
-                                expansion.expansion().iter().all(|node| {
-                                    expansion.base().place().is_prefix_exact(node.place())
-                                        && expansion.base().location() == node.location()
-                                })
-                            }
+                let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                        if expansion.expansion().iter().all(|node| {
+                            node.is_old() || ctxt.bc.is_dead(node.place().into(), location)
+                        }) {
+                            true
+                        } else {
+                            expansion.expansion().iter().all(|node| {
+                                expansion.base().place().is_prefix_exact(node.place())
+                                    && expansion.base().location() == node.location()
+                            })
                         }
-                        _ => edge
-                            .blocked_by_nodes(repacker)
-                            .iter()
-                            .all(|p| should_kill_node(*p, &fg)),
-                    };
+                    }
+                    _ => edge
+                        .blocked_by_nodes(ctxt)
+                        .iter()
+                        .all(|p| should_kill_node(*p, &fg)),
+                };
 
                 let mut edges_to_trim = Vec::new();
-                for edge in fg
-                    .leaf_edges(repacker)
-                    .into_iter()
-                    .map(|e| e.to_owned_edge())
-                {
+                for edge in fg.leaf_edges(ctxt).into_iter().map(|e| e.to_owned_edge()) {
                     if should_pack_edge(edge.kind()) {
                         edges_to_trim.push(edge);
                     }

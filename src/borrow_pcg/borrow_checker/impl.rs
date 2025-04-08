@@ -6,7 +6,7 @@ use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
     BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-    RegionInferenceContext,
+    RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::compute_fixpoint;
@@ -17,13 +17,14 @@ use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{CompilerCtxt, HasPlace};
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
     input_facts: &'mir PoloniusInput,
-    pub output_facts: Rc<PoloniusOutput>,
+    pub output_facts: PoloniusOutput,
     body: &'mir mir::Body<'tcx>,
     tcx: ty::TyCtxt<'tcx>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
@@ -36,11 +37,11 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
     }
     pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let location_table = body.location_table();
-        let output_facts = Rc::new(Output::compute(
+        let output_facts = Output::compute(
             body.input_facts(),
             polonius_engine::Algorithm::DatafrogOpt,
             true,
-        ));
+        );
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
@@ -52,6 +53,42 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
             region_cx,
             borrows,
         }
+    }
+    pub fn origin_live_on_entry(&self, location: RichLocation) -> Option<BTreeSet<ty::RegionVid>> {
+        let origins = match location {
+            RichLocation::Start(location) => self
+                .output_facts
+                .origin_live_on_entry
+                .get(&self.location_table.start_index(location))?,
+            RichLocation::Mid(location) => self
+                .output_facts
+                .origin_live_on_entry
+                .get(&self.location_table.mid_index(location))?,
+        };
+        Some(origins.into_iter().map(|r| (*r).into()).collect())
+    }
+
+    pub fn origin_contains_loan_at(
+        &self,
+        location: RichLocation,
+    ) -> Option<BTreeMap<ty::RegionVid, BTreeSet<BorrowIndex>>> {
+        let location_table = self.location_table();
+        let loans = match location {
+            RichLocation::Start(location) => self
+                .output_facts
+                .origin_contains_loan_at
+                .get(&location_table.start_index(location))?,
+            RichLocation::Mid(location) => self
+                .output_facts
+                .origin_contains_loan_at
+                .get(&location_table.mid_index(location))?,
+        };
+        Some(
+            loans
+                .into_iter()
+                .map(|(region, indices)| ((*region).into(), indices.clone()))
+                .collect(),
+        )
     }
 }
 

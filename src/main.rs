@@ -15,6 +15,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::Write;
 
@@ -38,13 +39,15 @@ use pcg::rustc_interface::middle::mir::Location;
 use pcg::rustc_interface::interface::Queries;
 
 use pcg::rustc_interface::{
-    borrowck,
+    borrowck::{self, BorrowIndex, RichLocation},
     data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config},
     middle::{
-        query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt, util::Providers,
+        query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
+        ty::{RegionVid, TyCtxt},
+        util::Providers,
     },
     session::Session,
 };
@@ -101,8 +104,12 @@ fn in_cargo_crate() -> bool {
 }
 
 #[rustversion::since(2024-12-14)]
-fn emit_borrowcheck_graphs(dir_path: &str, polonius: bool, ctxt: CompilerCtxt<'_, '_, '_>) {
-    if polonius {
+fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
+    dir_path: &str,
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc BorrowChecker<'a, 'tcx>>,
+) {
+    if let BorrowChecker::Polonius(bc) = ctxt.bc() {
+        let ctxt = CompilerCtxt::new(&ctxt.body(), ctxt.tcx(), bc);
         for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
             let num_stmts = data.statements.len();
             for stmt_index in 0..num_stmts + 1 {
@@ -124,6 +131,49 @@ fn emit_borrowcheck_graphs(dir_path: &str, polonius: bool, ctxt: CompilerCtxt<'_
                     dir_path, block_index, stmt_index
                 );
                 mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
+
+                let mut bc_facts_file = std::fs::File::create(format!(
+                    "{}/bc_facts_{:?}_{}.txt",
+                    dir_path, block_index, stmt_index
+                ))
+                .unwrap();
+
+                fn write_loans<'bc>(
+                    loans: BTreeMap<RegionVid, BTreeSet<BorrowIndex>>,
+                    loans_file: &mut std::fs::File,
+                    ctxt: CompilerCtxt<'_, '_, '_, &'bc PoloniusBorrowChecker<'_, '_>>,
+                ) {
+                    for (region, indices) in loans {
+                        writeln!(loans_file, "Region: {:?}", region).unwrap();
+                        for index in indices {
+                            writeln!(loans_file, "  {:?}", ctxt.bc().borrow_set()[index].region())
+                                .unwrap();
+                        }
+                    }
+                }
+
+                fn write_bc_facts<'bc>(
+                    location: RichLocation,
+                    bc_facts_file: &mut std::fs::File,
+                    ctxt: CompilerCtxt<'_, '_, '_, &'bc PoloniusBorrowChecker<'_, '_>>,
+                ) {
+                    let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
+                    writeln!(bc_facts_file, "{:?} Origin contains loan at:", location).unwrap();
+                    if let Some(origin_contains_loan_at) = origin_contains_loan_at {
+                        write_loans(origin_contains_loan_at, bc_facts_file, ctxt);
+                    }
+                    writeln!(bc_facts_file, "{:?} Origin live on entry:", location).unwrap();
+                    if let Some(origin_live_on_entry) = ctxt.bc().origin_live_on_entry(location) {
+                        for region in origin_live_on_entry {
+                            writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
+                        }
+                    }
+                }
+
+                let start_location = RichLocation::Start(location);
+                let mid_location = RichLocation::Mid(location);
+                write_bc_facts(start_location, &mut bc_facts_file, ctxt);
+                write_bc_facts(mid_location, &mut bc_facts_file, ctxt);
             }
         }
         let dot_graph = subset_anywhere(ctxt);
@@ -286,11 +336,11 @@ fn run_pcg_on_fn<'tcx>(
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
     let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
-    let ctxt = output.ctxt();
+    let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[rustversion::since(2024-12-14)]
     if let Some(dir_path) = &item_dir {
-        emit_borrowcheck_graphs(dir_path, polonius, ctxt);
+        emit_borrowcheck_graphs(dir_path, ctxt);
     }
 
     emit_and_check_annotations(item_name, &mut output);

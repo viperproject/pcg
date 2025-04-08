@@ -189,6 +189,9 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
 
     fn location_table(&self) -> &LocationTable;
 
+    /// If the borrow checker is based on Polonius, it can define this method to
+    /// expose its output facts. This is only used for debugging /
+    /// visualization.
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx>;
