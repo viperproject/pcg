@@ -150,8 +150,6 @@ pub fn subset_at_location<'a, 'tcx: 'a, 'bc>(
                 });
             }
         }
-    } else {
-        tracing::warn!("No subset found for location {:?}", location);
     }
     graph
 }

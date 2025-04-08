@@ -33,7 +33,7 @@ use crate::rustc_interface::infer::infer::{NllRegionVariableOrigin, RegionVariab
 use crate::rustc_interface::middle::ty::BoundRegionKind;
 
 /// A region occuring in region projections
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From)]
 pub enum PcgRegion {
     RegionVid(RegionVid),
     ReErased,

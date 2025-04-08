@@ -17,11 +17,12 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::borrowck::{
         BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-        RegionInferenceContext,
+        RegionInferenceContext, BorrowData,
     },
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
     rustc_interface::middle::ty::RegionVid,
+    rustc_interface::data_structures::fx::FxIndexMap,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
@@ -188,6 +189,16 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     #[rustversion::before(2024-12-14)]
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
         self.borrow_set()[borrow_index].region
+    }
+
+    #[rustversion::since(2024-12-14)]
+    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
+        self.borrow_set().location_map()
+    }
+
+    #[rustversion::before(2024-12-14)]
+    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
+        &self.borrow_set().location_map
     }
 
     fn input_facts(&self) -> &PoloniusInput;

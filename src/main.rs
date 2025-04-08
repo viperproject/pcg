@@ -168,6 +168,10 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                             writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
                         }
                     }
+                    writeln!(bc_facts_file, "{:?} Loans live at:", location).unwrap();
+                    for region in ctxt.bc().loans_live_at(location) {
+                        writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
+                    }
                 }
 
                 let start_location = RichLocation::Start(location);

@@ -59,6 +59,19 @@ export default function BorrowCheckerGraphs({
       >
         Region Inference Outlives Graph
       </button>
+      <br />
+      <button
+        style={{ marginLeft: "10px" }}
+        onClick={async () => {
+          if (currentPoint.type == "stmt") {
+            const path = `data/${selectedFunction}/bc_facts_bb${currentPoint.block}_${currentPoint.stmt}.txt`;
+            const text = await fetch(path).then((res) => res.text());
+            console.log(text);
+          }
+        }}
+      >
+        Show Polonius Output Facts
+      </button>
     </>
   );
 }
