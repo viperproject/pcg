@@ -19,10 +19,17 @@ struct MirGraph {
 }
 
 #[derive(Serialize)]
+struct MirStmt {
+    stmt: String,
+    loans_invalidated_start: Vec<String>,
+    loans_invalidated_mid: Vec<String>,
+}
+
+#[derive(Serialize)]
 struct MirNode {
     id: String,
     block: usize,
-    stmts: Vec<String>,
+    stmts: Vec<MirStmt>,
     terminator: String,
 }
 
@@ -200,7 +207,42 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
     let mut edges = Vec::new();
 
     for (bb, data) in ctxt.body().basic_blocks.iter_enumerated() {
-        let stmts = data.statements.iter().map(|stmt| format_stmt(stmt, ctxt));
+        let stmts = data.statements.iter().enumerate().map(|(idx, stmt)| {
+            let stmt = format_stmt(stmt, ctxt);
+            let bc = ctxt.bc;
+            let invalidated_at = &bc.input_facts().loan_invalidated_at;
+            let location = mir::Location {
+                block: bb,
+                statement_index: idx,
+            };
+            let loans_invalidated_start = invalidated_at
+                .iter()
+                .filter_map(|(point, idx)| {
+                    if *point == bc.location_table().start_index(location) {
+                        let borrow_region = bc.borrow_set()[*idx].region();
+                        Some(format!("{:?}", borrow_region))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let loans_invalidated_mid = invalidated_at
+                .iter()
+                .filter_map(|(point, idx)| {
+                    if *point == bc.location_table().mid_index(location) {
+                        let borrow_region = bc.borrow_set()[*idx].region();
+                        Some(format!("{:?}", borrow_region))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            MirStmt {
+                stmt,
+                loans_invalidated_start,
+                loans_invalidated_mid,
+            }
+        });
 
         let terminator = format_terminator(&data.terminator().kind, ctxt);
 
@@ -337,10 +379,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
 
     MirGraph { nodes, edges }
 }
-pub(crate) fn generate_json_from_mir(
-    path: &str,
-    ctxt: CompilerCtxt<'_, '_, '_>,
-) -> io::Result<()> {
+pub(crate) fn generate_json_from_mir(path: &str, ctxt: CompilerCtxt<'_, '_, '_>) -> io::Result<()> {
     let mir_graph = mk_mir_graph(ctxt);
     let mut file = File::create(path)?;
     serde_json::to_writer(&mut file, &mir_graph)?;

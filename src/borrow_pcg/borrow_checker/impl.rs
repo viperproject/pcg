@@ -5,7 +5,8 @@ use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
-    BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext,
+    BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
+    RegionInferenceContext,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::compute_fixpoint;
@@ -21,6 +22,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
+    input_facts: &'mir PoloniusInput,
     pub output_facts: Rc<PoloniusOutput>,
     body: &'mir mir::Body<'tcx>,
     tcx: ty::TyCtxt<'tcx>,
@@ -42,6 +44,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
+            input_facts: body.input_facts(),
             location_table,
             output_facts,
             body: body.body(),
@@ -105,10 +108,19 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
         self
     }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        self.borrows
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts
+    }
 }
 
 #[derive(Clone)]
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
+    input_facts: &'mir PoloniusInput,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -142,11 +154,15 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
             region_cx,
             borrows,
             location_table: body.location_table(),
+            input_facts: body.input_facts(),
         }
     }
 }
 
 impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts
+    }
 
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         outlives(self.region_cx, sup, sub)
@@ -202,6 +218,10 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
 
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
         self
+    }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        self.borrows
     }
 }
 

@@ -9,17 +9,19 @@ use super::{
     has_pcs_elem::HasPcgElems,
     region_projection::PcgRegion,
 };
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     coupling,
     pcg::PCGNode,
     pcg_validity_assert,
+    rustc_interface::borrowck::{
+        BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
+    },
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
-    rustc_interface::borrowck::{RegionInferenceContext,LocationTable, PoloniusOutput},
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 
 /// A collection of coupled PCG nodes. They will expire at the same time, and only one
 /// node in the set will be alive.
@@ -173,6 +175,10 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion) -> bool {
         self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
     }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+
+    fn input_facts(&self) -> &PoloniusInput;
 
     /// Returns the set of two-phase borrows that activate at `location`.
     /// Each borrow in the returned set is represented by the MIR location

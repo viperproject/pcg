@@ -7,6 +7,8 @@ use crate::{
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
     pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
+    rustc_interface::borrowck::BorrowIndex,
+    rustc_interface::middle::mir,
     utils::{
         display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
         SnapshotLocation,
@@ -31,10 +33,11 @@ pub(super) struct GraphConstructor<'mir, 'tcx, 'bc> {
     nodes: Vec<GraphNode>,
     pub(super) edges: HashSet<GraphEdge>,
     ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
+    location: mir::Location,
 }
 
 impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
-    fn new(repacker: CompilerCtxt<'a, 'tcx, 'bc>) -> Self {
+    fn new(repacker: CompilerCtxt<'a, 'tcx, 'bc>, location: mir::Location) -> Self {
         Self {
             remote_nodes: IdLookup::new('a'),
             place_nodes: IdLookup::new('p'),
@@ -42,6 +45,7 @@ impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
             nodes: vec![],
             edges: HashSet::new(),
             ctxt: repacker,
+            location,
         }
     }
 
@@ -75,11 +79,51 @@ impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
                 format!("{:?}", c.ty())
             }
         };
+        let loans = if let Some(output) = self.ctxt.bc.polonius_output()
+            && let Some(region_vid) = projection.region(self.ctxt).vid()
+        {
+            let region_vid = region_vid.into();
+            let render_loans = |loans: Option<&BTreeSet<BorrowIndex>>| {
+                if let Some(loans) = loans {
+                    format!(
+                        "{{{}}}",
+                        loans
+                            .iter()
+                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_set()[*l].region()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    "{}".to_string()
+                }
+            };
+            let loans_before = render_loans(
+                output
+                    .origin_contains_loan_at(
+                        self.ctxt.bc.location_table().start_index(self.location),
+                    )
+                    .get(&region_vid),
+            );
+            let loans_after = render_loans(
+                output
+                    .origin_contains_loan_at(self.ctxt.bc.location_table().mid_index(self.location))
+                    .get(&region_vid),
+            );
+            format!(
+                "Loans in {:?} - before: {}, mid: {}",
+                projection.region(self.ctxt),
+                loans_before,
+                loans_after
+            )
+        } else {
+            "".to_string()
+        };
         let node = GraphNode {
             id,
             node_type: NodeType::RegionProjectionNode {
                 label: projection.to_short_string(self.ctxt),
                 base_ty,
+                loans,
             },
         };
         self.insert_node(node);
@@ -207,10 +251,11 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir, 'bc: 'graph>
     pub fn new(
         borrows_graph: &'graph BorrowsGraph<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
+        location: mir::Location,
     ) -> Self {
         Self {
             borrows_graph,
-            constructor: GraphConstructor::new(ctxt),
+            constructor: GraphConstructor::new(ctxt, location),
             repacker: ctxt,
         }
     }
@@ -301,12 +346,13 @@ impl<'pcg, 'a, 'tcx, 'bc> PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc> {
         repacker: CompilerCtxt<'a, 'tcx, 'bc>,
         borrows_domain: &'pcg BorrowsState<'tcx>,
         capabilities: &'pcg PlaceCapabilities<'tcx>,
+        location: mir::Location,
     ) -> Self {
         Self {
             summary,
             borrows_domain,
             capabilities,
-            constructor: GraphConstructor::new(repacker),
+            constructor: GraphConstructor::new(repacker, location),
             repacker,
         }
     }
@@ -418,9 +464,14 @@ fn main() {
             let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
-            let graph =
-                PcgGraphConstructor::new(&pcg.owned.locals(), ctxt, &pcg.borrow, &pcg.capabilities)
-                    .construct_graph();
+            let graph = PcgGraphConstructor::new(
+                &pcg.owned.locals(),
+                ctxt,
+                &pcg.borrow,
+                &pcg.capabilities,
+                stmt.location,
+            )
+            .construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }

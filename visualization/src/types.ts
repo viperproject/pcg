@@ -1,3 +1,5 @@
+import { MirStmt } from "./api";
+
 export type CurrentPoint = {
   type: "stmt";
   block: number;
@@ -10,7 +12,7 @@ export type CurrentPoint = {
 
 export type BasicBlockData = {
   block: number;
-  stmts: string[];
+  stmts: MirStmt[];
   terminator: string;
 };
 

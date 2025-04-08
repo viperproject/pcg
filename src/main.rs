@@ -255,6 +255,20 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowChecker<'mir, 'tcx
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
         self
     }
+
+    fn borrow_set(&self) -> &borrowck::BorrowSet<'tcx> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.borrow_set(),
+            BorrowChecker::Impl(bc) => bc.borrow_set(),
+        }
+    }
+
+    fn input_facts(&self) -> &borrowck::PoloniusInput {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.input_facts(),
+            BorrowChecker::Impl(bc) => bc.input_facts(),
+        }
+    }
 }
 
 fn run_pcg_on_fn<'tcx>(
