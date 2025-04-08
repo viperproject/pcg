@@ -10,6 +10,7 @@
 #![feature(never_type)]
 #![feature(proc_macro_hygiene)]
 #![feature(anonymous_lifetime_in_impl_trait)]
+#![feature(stmt_expr_attributes)]
 pub mod action;
 pub mod borrow_pcg;
 pub mod coupling;
