@@ -105,7 +105,7 @@ impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
                         "{{{}}}",
                         loans
                             .iter()
-                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_set()[*l].region))
+                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_index_to_region(*l)))
                             .collect::<Vec<_>>()
                             .join(", ")
                     )

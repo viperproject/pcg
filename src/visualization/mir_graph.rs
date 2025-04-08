@@ -219,10 +219,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
                 .iter()
                 .filter_map(|(point, idx)| {
                     if *point == bc.location_table().start_index(location) {
-                        #[rustversion::since(2024-12-14)]
-                        let borrow_region = bc.borrow_set()[*idx].region();
-                        #[rustversion::before(2024-12-14)]
-                        let borrow_region = bc.borrow_set()[*idx].region;
+                        let borrow_region = bc.borrow_index_to_region(*idx);
                         Some(format!("{:?}", borrow_region))
                     } else {
                         None
@@ -233,10 +230,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
                 .iter()
                 .filter_map(|(point, idx)| {
                     if *point == bc.location_table().mid_index(location) {
-                        #[rustversion::since(2024-12-14)]
-                        let borrow_region = bc.borrow_set()[*idx].region();
-                        #[rustversion::before(2024-12-14)]
-                        let borrow_region = bc.borrow_set()[*idx].region;
+                        let borrow_region = bc.borrow_index_to_region(*idx);
                         Some(format!("{:?}", borrow_region))
                     } else {
                         None
