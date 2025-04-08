@@ -70,7 +70,7 @@ export default function BorrowCheckerGraphs({
           }
         }}
       >
-        Show Polonius Output Facts
+        Log Polonius Output Facts To Console
       </button>
     </>
   );
