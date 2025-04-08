@@ -109,7 +109,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc BorrowChecker<'a, 'tcx>>,
 ) {
     if let BorrowChecker::Polonius(bc) = ctxt.bc() {
-        let ctxt = CompilerCtxt::new(&ctxt.body(), ctxt.tcx(), bc);
+        let ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), bc);
         for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
             let num_stmts = data.statements.len();
             for stmt_index in 0..num_stmts + 1 {
@@ -138,10 +138,10 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                 ))
                 .unwrap();
 
-                fn write_loans<'bc>(
+                fn write_loans(
                     loans: BTreeMap<RegionVid, BTreeSet<BorrowIndex>>,
                     loans_file: &mut std::fs::File,
-                    ctxt: CompilerCtxt<'_, '_, '_, &'bc PoloniusBorrowChecker<'_, '_>>,
+                    ctxt: CompilerCtxt<'_, '_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {:?}", region).unwrap();
@@ -152,10 +152,10 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     }
                 }
 
-                fn write_bc_facts<'bc>(
+                fn write_bc_facts(
                     location: RichLocation,
                     bc_facts_file: &mut std::fs::File,
-                    ctxt: CompilerCtxt<'_, '_, '_, &'bc PoloniusBorrowChecker<'_, '_>>,
+                    ctxt: CompilerCtxt<'_, '_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
                     writeln!(bc_facts_file, "{:?} Origin contains loan at:", location).unwrap();
