@@ -65,7 +65,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
                 .origin_live_on_entry
                 .get(&self.location_table.mid_index(location))?,
         };
-        Some(origins.into_iter().map(|r| (*r).into()).collect())
+        Some(origins.iter().map(|r| (*r).into()).collect())
     }
 
     pub fn origin_contains_loan_at(
@@ -85,7 +85,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
         };
         Some(
             loans
-                .into_iter()
+                .iter()
                 .map(|(region, indices)| ((*region).into(), indices.clone()))
                 .collect(),
         )
