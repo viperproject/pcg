@@ -1,4 +1,4 @@
-import { getPathData, getPCSIterations, MirGraphNode, PCSIterations } from "./api";
+import { getPathData, getPCSIterations, MirGraphNode, MirStmt, PCSIterations } from "./api";
 import { CurrentPoint, PathData } from "./types";
 
 export function reloadIterations(
@@ -97,11 +97,11 @@ function keydown(
       const currentNode = nodes.find((node) => node.block === prevPoint.block);
       if (!currentNode) return prevPoint;
 
-      const isSelectable = (node: { stmts: string[] }, idx: number) => {
+      const isSelectable = (node: { stmts: MirStmt[] }, idx: number) => {
         return idx >= 0 && idx <= node.stmts.length;
       };
 
-      const getNextStmtIdx = (node: { stmts: string[] }, from: number) => {
+      const getNextStmtIdx = (node: { stmts: MirStmt[] }, from: number) => {
         const offset = direction === "up" ? -1 : 1;
         let idx = from + offset;
         if (isSelectable(node, idx)) {

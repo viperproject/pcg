@@ -23,7 +23,7 @@ use crate::{
         RepackOp,
     },
     rustc_interface::{
-        middle::mir::BasicBlock,
+        middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
     utils::{
@@ -471,6 +471,10 @@ impl<'a, 'tcx, 'bc> PcgDomain<'a, 'tcx, 'bc> {
                 pcg.owned.data.as_ref().unwrap(),
                 &pcg.borrow,
                 &pcg.capabilities,
+                mir::Location {
+                    block: self.block(),
+                    statement_index,
+                },
                 &filename,
             )
             .unwrap();

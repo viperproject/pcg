@@ -105,6 +105,13 @@ impl PcgRegion {
             PcgRegion::ReLateParam(_) => todo!(),
         }
     }
+
+    pub(crate) fn vid(&self) -> Option<RegionVid> {
+        match self {
+            PcgRegion::RegionVid(vid) => Some(*vid),
+            _ => None,
+        }
+    }
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PcgRegion {

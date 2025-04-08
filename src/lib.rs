@@ -9,6 +9,7 @@
 #![feature(if_let_guard, let_chains)]
 #![feature(never_type)]
 #![feature(proc_macro_hygiene)]
+#![feature(anonymous_lifetime_in_impl_trait)]
 pub mod action;
 pub mod borrow_pcg;
 pub mod coupling;
@@ -193,8 +194,13 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
-    fn from(location: &'a PcgLocation<'tcx>) -> Self {
+impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
+    fn new<'mir>(
+        location: &'a PcgLocation<'tcx>,
+    ) -> Self
+    where
+        'tcx: 'mir,
+    {
         Self {
             latest: &location.states[EvalStmtPhase::PostMain].borrow.latest,
             actions: &location.actions,
@@ -290,7 +296,7 @@ pub fn run_pcg<'mir, 'tcx: 'mir, 'bc, BC: BorrowCheckerInterface<'mir, 'tcx> + ?
                 if validity_checks_enabled() {
                     statement.assert_validity(ctxt);
                 }
-                let data = PCGStmtVisualizationData::from(statement);
+                let data = PCGStmtVisualizationData::new(statement);
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",
                     &dir_path,

@@ -37,6 +37,7 @@ export default function BasicBlockTable({
           </td>
         </tr>
         {data.stmts.map((stmt, i) => {
+          const tooltip = `Loans invalidated at start: ${stmt.loans_invalidated_start.join(", ")}\nLoans invalidated at mid: ${stmt.loans_invalidated_mid.join(", ")}`;
           return (
             <tr
               className={
@@ -54,10 +55,11 @@ export default function BasicBlockTable({
                   stmt: i,
                 })
               }
+              title={tooltip}
             >
               <td>{i}</td>
               <td>
-                <code>{stmt}</code>
+                <code>{stmt.stmt}</code>
               </td>
             </tr>
           );
