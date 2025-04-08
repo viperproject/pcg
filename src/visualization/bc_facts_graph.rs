@@ -1,11 +1,15 @@
 use petgraph::graph::NodeIndex;
 
-use crate::rustc_interface::borrowck::PoloniusRegionVid;
+use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir::Location;
 use crate::rustc_interface::middle::ty::RegionVid;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
+use crate::{
+    borrow_pcg::borrow_checker::r#impl::PoloniusBorrowChecker,
+    rustc_interface::borrowck::PoloniusRegionVid,
+};
 
 use super::{
     dot_graph::{DotEdge, DotGraph, DotNode, EdgeDirection, EdgeOptions},
@@ -19,22 +23,33 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PoloniusRegionVid {
     }
 }
 
-fn get_id<'tcx, T: Clone + Eq + DisplayWithCompilerCtxt<'tcx>>(
+fn get_id<
+    'a,
+    'tcx: 'a,
+    'bc,
+    T: Clone + Eq + DisplayWithCompilerCtxt<'tcx>,
+    BC: BorrowCheckerInterface<'a, 'tcx> + ?Sized,
+>(
     elem: &T,
     nodes: &mut IdLookup<T>,
     graph_nodes: &mut Vec<DotNode>,
-    ctxt: CompilerCtxt<'_, 'tcx, '_>,
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc BC>,
 ) -> String {
     if let Some(id) = nodes.existing_id(elem) {
         id.to_string()
     } else {
         let id = nodes.node_id(elem);
-        graph_nodes.push(DotNode::simple(id.to_string(), elem.to_short_string(ctxt)));
+        graph_nodes.push(DotNode::simple(
+            id.to_string(),
+            elem.to_short_string(ctxt.as_dyn()),
+        ));
         id.to_string()
     }
 }
 
-pub fn subset_anywhere(ctxt: CompilerCtxt<'_, '_, '_>) -> DotGraph {
+pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
+) -> DotGraph {
     tracing::info!("Generating BC facts graph");
     let mut graph = DotGraph {
         nodes: vec![],
@@ -42,7 +57,7 @@ pub fn subset_anywhere(ctxt: CompilerCtxt<'_, '_, '_>) -> DotGraph {
         name: "bcfacts".to_string(),
     };
     let mut nodes = IdLookup::new('n');
-    for loc in ctxt.bc.polonius_output().unwrap().subset.values() {
+    for loc in ctxt.bc.output_facts.subset.values() {
         for (sup, subs) in loc {
             let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt);
             for sub in subs {
@@ -61,7 +76,9 @@ pub fn subset_anywhere(ctxt: CompilerCtxt<'_, '_, '_>) -> DotGraph {
     graph
 }
 
-pub fn region_inference_outlives(ctxt: CompilerCtxt<'_, '_, '_>) -> String {
+pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc, T: BorrowCheckerInterface<'a, 'tcx> + ?Sized>(
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc T>,
+) -> String {
     let mut graph = petgraph::Graph::new();
     let region_infer_ctxt = ctxt.bc.region_inference_ctxt();
     let regions = region_infer_ctxt
@@ -95,7 +112,7 @@ pub fn region_inference_outlives(ctxt: CompilerCtxt<'_, '_, '_>) -> String {
                 "[{}]",
                 regions
                     .iter()
-                    .map(|r| r.to_short_string(ctxt))
+                    .map(|r| r.to_short_string(ctxt.as_dyn()))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -105,10 +122,10 @@ pub fn region_inference_outlives(ctxt: CompilerCtxt<'_, '_, '_>) -> String {
     petgraph::dot::Dot::new(&scc_graph).to_string()
 }
 
-pub fn subset_at_location(
+pub fn subset_at_location<'a, 'tcx: 'a, 'bc>(
     location: Location,
     start: bool,
-    ctxt: CompilerCtxt<'_, '_, '_>,
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
 ) -> DotGraph {
     let mut graph = DotGraph {
         nodes: vec![],
@@ -121,15 +138,9 @@ pub fn subset_at_location(
     } else {
         ctxt.bc.location_table().mid_index(location)
     };
-    if let Some(subset) = ctxt
-        .bc
-        .polonius_output()
-        .unwrap()
-        .subset
-        .get(&location_index)
-    {
+    if let Some(subset) = ctxt.bc.output_facts.subset.get(&location_index) {
         for (sup, subs) in subset {
-            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt);
+            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
             for sub in subs {
                 let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt);
                 graph.edges.push(DotEdge {

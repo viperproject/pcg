@@ -112,6 +112,19 @@ pub struct CompilerCtxt<'a, 'tcx, 'bc, T = &'bc dyn BorrowCheckerInterface<'a, '
     _marker: std::marker::PhantomData<&'bc ()>,
 }
 
+impl<'a, 'tcx, 'bc, T: BorrowCheckerInterface<'a, 'tcx> + ?Sized>
+    CompilerCtxt<'a, 'tcx, 'bc, &'bc T>
+{
+    pub fn as_dyn(self) -> CompilerCtxt<'a, 'tcx, 'bc> {
+        CompilerCtxt {
+            mir: self.mir,
+            tcx: self.tcx,
+            bc: self.bc.as_dyn(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, '_, T> {
     pub fn new(mir: &'a Body<'tcx>, tcx: TyCtxt<'tcx>, bc: T) -> Self {
         Self {
@@ -128,6 +141,13 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, '_, T> {
 
     pub fn tcx(self) -> TyCtxt<'tcx> {
         self.tcx
+    }
+
+    pub fn bc(&self) -> T
+    where
+        T: Copy,
+    {
+        self.bc
     }
 }
 
@@ -201,7 +221,10 @@ impl<'tcx> DeepExpansion<'tcx> {
 }
 
 impl<'tcx, 'bc> Place<'tcx> {
-    pub fn to_rust_place<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, 'bc, C>) -> MirPlace<'tcx> {
+    pub fn to_rust_place<C: Copy>(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx, 'bc, C>,
+    ) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),
