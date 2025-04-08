@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     borrow_pcg::edge::kind::BorrowPCGEdgeKind,
-    utils::{display::DisplayWithCompilerCtxt, place::maybe_remote::MaybeRemotePlace},
+    utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     borrow_pcg::edge::{
@@ -372,11 +372,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         return true;
                     }
 
-                    let is_dead = ctxt.bc.is_dead(place.into(), location);
-                    if matches!(p, PCGNode::RegionProjection(_)) {
-                        tracing::info!("is_dead {} {:?}", p.to_short_string(ctxt), is_dead);
-                    }
-                    is_dead
+                    ctxt.bc.is_dead(place.into(), location)
                 };
 
                 let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {

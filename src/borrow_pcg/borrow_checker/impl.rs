@@ -5,8 +5,8 @@ use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
-    BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-    RegionInferenceContext, RichLocation,
+    calculate_borrows_out_of_scope_at_location, BorrowData, BorrowIndex, BorrowSet, LocationTable,
+    PoloniusInput, PoloniusOutput, RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::compute_fixpoint;
@@ -68,6 +68,21 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
         Some(origins.iter().map(|r| (*r).into()).collect())
     }
 
+    pub fn loans_live_at(&self, location: RichLocation) -> BTreeSet<ty::RegionVid> {
+        let loans = match location {
+            RichLocation::Start(location) => self
+                .output_facts
+                .loans_in_scope_at(self.location_table.start_index(location)),
+            RichLocation::Mid(location) => self
+                .output_facts
+                .loans_in_scope_at(self.location_table.mid_index(location)),
+        };
+        loans
+            .iter()
+            .map(|r| self.borrow_index_to_region(*r))
+            .collect()
+    }
+
     pub fn origin_contains_loan_at(
         &self,
         location: RichLocation,
@@ -107,11 +122,23 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
                 }
             }
         };
+        let live_loans = self
+            .output_facts
+            .loans_in_scope_at(self.location_table.start_index(location));
+
+        let live_origins: BTreeSet<ty::RegionVid> = self
+            .output_facts
+            .origins_live_at(self.location_table.start_index(location))
+            .iter()
+            .map(|r| (*r).into())
+            .collect::<BTreeSet<_>>();
         regions.iter().any(|region| match region {
-            PcgRegion::RegionVid(region_vid) => self
-                .output_facts
-                .origin_contains_loan_at(self.location_table.start_index(location))
-                .contains_key(&(*region_vid).into()),
+            PcgRegion::RegionVid(region_vid) => live_loans.iter().any(|loan| {
+                live_origins.contains(region_vid)
+                    || self
+                        .region_cx
+                        .eval_outlives(*region_vid, self.borrow_index_to_region(*loan))
+            }),
             PcgRegion::ReErased => todo!(),
             PcgRegion::ReStatic => todo!(),
             PcgRegion::ReBound(_, _) => todo!(),
@@ -159,9 +186,12 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+    out_of_scope_borrows: FxIndexMap<Location, Vec<BorrowIndex>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
     location_table: &'mir LocationTable,
+    body: &'mir mir::Body<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
 }
 #[rustversion::before(2024-12-14)]
 fn cursor_contains_local(
@@ -184,6 +214,8 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
+            body: body.body(),
+            tcx,
             cursor: Rc::new(RefCell::new(
                 compute_fixpoint(MaybeLiveLocals, tcx, body.body())
                     .into_results_cursor(body.body()),
@@ -192,7 +224,16 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
             borrows,
             location_table: body.location_table(),
             input_facts: body.input_facts(),
+            out_of_scope_borrows: calculate_borrows_out_of_scope_at_location(
+                body.body(),
+                region_cx,
+                borrows,
+            ),
         }
+    }
+
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, '_> {
+        CompilerCtxt::new(self.body, self.tcx, self)
     }
 }
 
@@ -231,7 +272,32 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
         };
         let mut cursor = self.cursor.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
-        cursor_contains_local(cursor, local)
+        if cursor_contains_local(cursor, local) {
+            return true;
+        }
+        if let PCGNode::RegionProjection(region_projection) = node {
+            let out_of_scope_borrows = self
+                .out_of_scope_borrows
+                .get(&location)
+                .cloned()
+                .unwrap_or_default();
+            let out_of_scope_borrow_regions = out_of_scope_borrows
+                .iter()
+                .map(|idx| self.borrow_index_to_region(*idx))
+                .collect::<BTreeSet<_>>();
+            let in_scope_borrows = self
+                .location_map()
+                .values()
+                .filter(|borrow| !out_of_scope_borrow_regions.contains(&get_region(borrow)))
+                .collect::<Vec<_>>();
+            let region = region_projection.region(self.ctxt());
+            for borrow in in_scope_borrows {
+                if self.outlives(region, get_region(borrow).into()) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn twophase_borrow_activations(
@@ -308,3 +374,15 @@ fn get_activation_map<'a, 'tcx>(
 ) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
     &borrows.activation_map
 }
+
+#[rustversion::since(2024-12-14)]
+fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
+    borrow.region()
+}
+
+#[rustversion::before(2024-12-14)]
+fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
+    borrow.region
+}
+
+
