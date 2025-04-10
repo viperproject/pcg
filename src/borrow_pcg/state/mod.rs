@@ -372,7 +372,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         return true;
                     }
 
-                    ctxt.bc.is_dead(place.into(), location)
+                    ctxt.bc.is_dead(p.into(), location)
                 };
 
                 let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {

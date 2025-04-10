@@ -353,8 +353,8 @@ impl Eq for AbstractionBlockEdge<'_> {}
 
 impl<'tcx> AbstractionBlockEdge<'tcx> {
     pub(crate) fn new(
-        inputs: BTreeSet<AbstractionInputTarget<'tcx>>,
-        outputs: BTreeSet<AbstractionOutputTarget<'tcx>>,
+        inputs: Vec<AbstractionInputTarget<'tcx>>,
+        outputs: Vec<AbstractionOutputTarget<'tcx>>,
     ) -> Self {
         Self {
             inputs: inputs.into_iter().collect(),

@@ -192,10 +192,11 @@ pub(crate) enum GraphEdge {
         target: NodeId,
         path_conditions: String,
     },
-    Block {
+    BorrowFlow {
         source: NodeId,
         target: NodeId,
         kind: String,
+        regions_equal: bool,
     },
     Coupled {
         source: NodeId,
@@ -263,17 +264,26 @@ impl GraphEdge {
                     .with_label(label.clone())
                     .with_penwidth(3.0),
             },
-            GraphEdge::Block {
+            GraphEdge::BorrowFlow {
                 source,
                 target,
                 kind,
-            } => DotEdge {
-                from: source.to_string(),
-                to: target.to_string(),
-                options: EdgeOptions::directed(EdgeDirection::Forward)
+                regions_equal,
+            } => {
+                let options = EdgeOptions::directed(EdgeDirection::Forward)
                     .with_label(kind.clone())
-                    .with_color("purple".to_string()),
-            },
+                    .with_color("purple".to_string());
+                let options = if !*regions_equal {
+                    options.with_style("dashed".to_string())
+                } else {
+                    options.with_penwidth(2.0)
+                };
+                DotEdge {
+                    from: source.to_string(),
+                    to: target.to_string(),
+                    options,
+                }
+            }
             GraphEdge::Coupled {
                 source,
                 target,

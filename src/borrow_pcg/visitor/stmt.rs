@@ -18,7 +18,7 @@ use crate::{
     utils::{self, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_,'_> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
     pub(crate) fn stmt_pre_main(
         &mut self,
         statement: &Statement<'tcx>,
@@ -31,20 +31,16 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,'_> {
                     place,
                     MakePlaceOldReason::StorageDead,
                 ));
-                let actions = self.state.pack_old_and_dead_leaves(
-                    self.ctxt,
-                    self.capabilities,
-                    location,
-                )?;
+                let actions =
+                    self.state
+                        .pack_old_and_dead_leaves(self.ctxt, self.capabilities, location)?;
                 self.record_actions(actions);
             }
             StatementKind::Assign(box (target, _)) => {
                 let target: utils::Place<'tcx> = (*target).into();
                 // Any references to target should be made old because it
                 // will be overwritten in the assignment.
-                if target.is_ref(self.ctxt)
-                    && self.state.graph().contains(target, self.ctxt)
-                {
+                if target.is_ref(self.ctxt) && self.state.graph().contains(target, self.ctxt) {
                     self.apply_action(BorrowPCGAction::make_place_old(
                         (*target).into(),
                         MakePlaceOldReason::ReAssign,
@@ -92,7 +88,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,'_> {
                             ));
                         }
                     } else {
-                        panic!(
+                        pcg_validity_assert!(
+                            false,
                             "No capability found for {}",
                             target.to_short_string(self.ctxt)
                         );
@@ -158,8 +155,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,'_> {
                 }
                 Rvalue::Use(Operand::Constant(box c)) => {
                     if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind() {
-                        if let ty::TyKind::Ref(target_region, _, _) =
-                            target.ty(self.ctxt).ty.kind()
+                        if let ty::TyKind::Ref(target_region, _, _) = target.ty(self.ctxt).ty.kind()
                         {
                             self.apply_action(BorrowPCGAction::add_edge(
                                 BorrowPCGEdge::new(
@@ -224,14 +220,17 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,'_> {
                         self.capabilities,
                         self.ctxt,
                     );
-                    let target_region = target.ty_region(self.ctxt).unwrap();
                     for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
+                        let source_region = source_proj.region(self.ctxt);
                         self.connect_outliving_projections(
                             source_proj.into(),
                             target,
                             location,
-                            |region| BorrowFlowEdgeKind::BorrowOutlives {
-                                toplevel: region == target_region,
+                            |region| {
+                                let same_region = self.ctxt.bc.same_region(source_region, region);
+                                BorrowFlowEdgeKind::BorrowOutlives {
+                                    regions_equal: same_region,
+                                }
                             },
                         );
                         if kind.mutability().is_mut() {

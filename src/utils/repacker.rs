@@ -17,6 +17,7 @@ use crate::{
             },
             ty::{TyCtxt, TyKind},
         },
+        span::SpanSnippetError,
         target::abi::FieldIdx,
     },
 };
@@ -32,9 +33,9 @@ use super::Place;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProjectionKind {
-    Ref(Mutability),
-    RawPtr(Mutability),
-    Box,
+    DerefRef(Mutability),
+    DerefRawPtr(Mutability),
+    DerefBox,
     Field(FieldIdx),
     ConstantIndex(ConstantIndex),
     Other,
@@ -77,7 +78,7 @@ impl<'tcx> ShallowExpansion<'tcx> {
 
 impl ProjectionKind {
     pub(crate) fn is_box(self) -> bool {
-        matches!(self, ProjectionKind::Box)
+        matches!(self, ProjectionKind::DerefBox)
     }
 
     pub(crate) fn insert_target_into_expansion<'tcx>(
@@ -149,6 +150,7 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, '_, T> {
     {
         self.bc
     }
+
 }
 
 impl CompilerCtxt<'_, '_, '_> {
@@ -329,9 +331,9 @@ impl<'tcx, 'bc> Place<'tcx> {
             ProjectionElem::Deref => {
                 let typ = self.ty(repacker);
                 let kind = match typ.ty.kind() {
-                    TyKind::Ref(_, _, mutbl) => ProjectionKind::Ref(*mutbl),
-                    TyKind::RawPtr(_, mutbl) => ProjectionKind::RawPtr(*mutbl),
-                    _ if typ.ty.is_box() => ProjectionKind::Box,
+                    TyKind::Ref(_, _, mutbl) => ProjectionKind::DerefRef(*mutbl),
+                    TyKind::RawPtr(_, mutbl) => ProjectionKind::DerefRawPtr(*mutbl),
+                    _ if typ.ty.is_box() => ProjectionKind::DerefBox,
                     _ => unreachable!(),
                 };
                 (Vec::new(), kind)

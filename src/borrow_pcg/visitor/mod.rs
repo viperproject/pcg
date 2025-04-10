@@ -115,7 +115,7 @@ impl<'tcx, 'mir, 'state, 'bc> BorrowsVisitor<'tcx, 'mir, 'state, 'bc> {
         for (output_lifetime_idx, output_lifetime) in
             extract_regions(output_ty, self.ctxt).into_iter_enumerated()
         {
-            if self.outlives(input_lifetime, output_lifetime) {
+            if self.ctxt.bc.outlives(input_lifetime, output_lifetime) {
                 result.push(
                     output_place
                         .region_projection(output_lifetime_idx, self.ctxt)
@@ -129,11 +129,9 @@ impl<'tcx, 'mir, 'state, 'bc> BorrowsVisitor<'tcx, 'mir, 'state, 'bc> {
 
 impl BorrowsVisitor<'_, '_, '_, '_> {
     fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
-        let actions = self.state.pack_old_and_dead_leaves(
-            self.ctxt,
-            self.capabilities,
-            location,
-        )?;
+        let actions =
+            self.state
+                .pack_old_and_dead_leaves(self.ctxt, self.capabilities, location)?;
         self.record_actions(actions);
         for created_location in self.ctxt.bc.twophase_borrow_activations(location) {
             let borrow = match self.state.graph().borrow_created_at(created_location) {

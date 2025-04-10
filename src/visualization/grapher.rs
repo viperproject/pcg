@@ -1,14 +1,14 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BorrowPCGEdgeLike,
-        edge::kind::BorrowPCGEdgeKind,
+        edge::{kind::BorrowPCGEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
     free_pcs::CapabilityKind,
     pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
-    utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, HasPlace, CompilerCtxt},
+    utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, CompilerCtxt, HasPlace},
 };
 
 use super::{graph_constructor::GraphConstructor, GraphEdge, NodeId};
@@ -43,9 +43,8 @@ pub(super) trait Grapher<'state, 'mir: 'bc, 'tcx: 'mir, 'bc> {
     fn draw_materialized_edge<'graph>(
         &mut self,
         edge: MaterializedEdge<'tcx, 'graph>,
-        edge_idx: usize
-    )
-    where
+        edge_idx: usize,
+    ) where
         'mir: 'graph,
     {
         match edge {
@@ -71,7 +70,7 @@ pub(super) trait Grapher<'state, 'mir: 'bc, 'tcx: 'mir, 'bc> {
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
-        edge_idx: usize
+        edge_idx: usize,
     ) {
         match edge.kind() {
             BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => {
@@ -117,10 +116,11 @@ pub(super) trait Grapher<'state, 'mir: 'bc, 'tcx: 'mir, 'bc> {
             BorrowPCGEdgeKind::BorrowFlow(member) => {
                 let input_node = self.insert_pcg_node(member.long().into());
                 let output_node = self.insert_pcg_node(member.short().to_pcg_node(self.repacker()));
-                self.constructor().edges.insert(GraphEdge::Block {
+                self.constructor().edges.insert(GraphEdge::BorrowFlow {
                     source: input_node,
                     target: output_node,
                     kind: format!("{}", member.kind),
+                    regions_equal: matches!(member.kind(), BorrowFlowEdgeKind::BorrowOutlives { regions_equal, .. } if regions_equal),
                 });
             }
         }
