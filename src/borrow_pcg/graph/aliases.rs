@@ -174,7 +174,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             true,
                         );
                     }
-                    BorrowFlowEdgeKind::BorrowOutlives { toplevel } if !toplevel || direct => {}
+                    BorrowFlowEdgeKind::BorrowOutlives { regions_equal }
+                        if !regions_equal || direct => {}
                     _ => {
                         extend(
                             outlives.long().to_pcg_node(repacker),

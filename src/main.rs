@@ -45,11 +45,13 @@ use pcg::rustc_interface::{
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config},
     middle::{
+        mir::Body,
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
         ty::{RegionVid, TyCtxt},
         util::Providers,
     },
     session::Session,
+    span::SpanSnippetError,
 };
 use pcg::{pcg::BodyWithBorrowckFacts, utils::env_feature_enabled};
 
@@ -215,20 +217,15 @@ fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, 
             }
         }
         if check_pcg_annotations {
-            if let Ok(source) = ctxt
-                .tcx()
-                .sess
-                .source_map()
-                .span_to_snippet(ctxt.body().span)
-            {
+            if let Ok(source) = source_lines(ctxt.tcx(), &ctxt.body()) {
                 let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
                 let expected_annotations = source
-                    .lines()
+                    .iter()
                     .flat_map(|l| l.split("// PCG: ").nth(1))
                     .map(|l| l.trim())
                     .collect::<Vec<_>>();
                 let not_expected_annotations = source
-                    .lines()
+                    .iter()
                     .flat_map(|l| l.split("// ~PCG: ").nth(1))
                     .map(|l| l.trim())
                     .collect::<Vec<_>>();
@@ -325,6 +322,13 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowChecker<'mir, 'tcx
     }
 }
 
+fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnippetError> {
+    let source_map = tcx.sess.source_map();
+    let span = mir.span;
+    let lines = source_map.span_to_snippet(span)?;
+    Ok(lines.lines().map(|l| l.to_string()).collect())
+}
+
 fn run_pcg_on_fn<'tcx>(
     def_id: LocalDefId,
     body: &BodyWithBorrowckFacts<'tcx>,
@@ -332,8 +336,19 @@ fn run_pcg_on_fn<'tcx>(
     polonius: bool,
     vis_dir: Option<&str>,
 ) {
+    let region_debug_name_overrides = if let Some(vis_dir) = vis_dir
+        && let Ok(lines) = source_lines(tcx, &body.body)
+    {
+        BTreeMap::new()
+    } else {
+        BTreeMap::new()
+    };
     let bc = if polonius {
-        BorrowChecker::Polonius(PoloniusBorrowChecker::new(tcx, body))
+        BorrowChecker::Polonius(PoloniusBorrowChecker::new(
+            tcx,
+            body,
+            region_debug_name_overrides,
+        ))
     } else {
         BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
     };

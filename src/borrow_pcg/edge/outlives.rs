@@ -10,8 +10,8 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck, Place,
-        CompilerCtxt, SnapshotLocation,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
+        CompilerCtxt, Place, SnapshotLocation,
     },
 };
 
@@ -27,10 +27,14 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         location: SnapshotLocation,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> bool {
-        let mut changed = self.long.label_region_projection(projection, location, repacker);
-        changed |= self.short.label_region_projection(projection, location, repacker);
+        let mut changed = self
+            .long
+            .label_region_projection(projection, location, repacker);
+        changed |= self
+            .short
+            .label_region_projection(projection, location, repacker);
         changed
     }
 }
@@ -40,7 +44,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowFlowEdge<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -55,7 +59,7 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowFlowEdge<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
         format!(
             "{} -> {}",
             self.long.to_short_string(repacker),
@@ -104,7 +108,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
         kind: BorrowFlowEdgeKind,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
         Self { long, short, kind }
@@ -140,9 +144,9 @@ pub enum BorrowFlowEdgeKind {
     /// For a borrow `let x: &'x T<'b> = &y`, where y is of typ T<'a>, an edge generated
     /// for `{y|'a} -> {x|'b}` of this kind is created if 'a outlives 'b.
     ///
-    /// `toplevel` is true for edges to x↓'x, false otherwise.
+    /// `lifetimes_equal` is true if the lifetimes are equal, false otherwise.
     BorrowOutlives {
-        toplevel: bool,
+        regions_equal: bool,
     },
     InitialBorrows,
     CopySharedRef,
@@ -158,8 +162,12 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
                 target_rp_index,
             } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
             BorrowFlowEdgeKind::ConstRef => write!(f, "ConstRef"),
-            BorrowFlowEdgeKind::BorrowOutlives { toplevel } => {
-                write!(f, "BorrowOutlives({toplevel})")
+            BorrowFlowEdgeKind::BorrowOutlives { regions_equal: lifetimes_equal } => {
+                if *lifetimes_equal {
+                    write!(f, "equals")
+                } else {
+                    write!(f, "outlives")
+                }
             }
             BorrowFlowEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
             BorrowFlowEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),

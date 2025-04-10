@@ -9,7 +9,7 @@ use super::{
     has_pcs_elem::HasPcgElems,
     region_projection::PcgRegion,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{utils::place::maybe_old::MaybeOldPlace, visualization::bc_facts_graph::RegionPrettyPrinter};
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     coupling,
@@ -199,6 +199,10 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     #[rustversion::before(2024-12-14)]
     fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
         &self.borrow_set().location_map
+    }
+
+    fn override_region_debug_string(&self, region: RegionVid) -> Option<&str> {
+        None
     }
 
     fn input_facts(&self) -> &PoloniusInput;

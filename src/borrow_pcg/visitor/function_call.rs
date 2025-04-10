@@ -1,5 +1,3 @@
-use derive_more::Deref;
-
 use super::{extract_regions, BorrowsVisitor};
 use crate::{
     borrow_pcg::{
@@ -7,7 +5,6 @@ use crate::{
         borrow_pcg_edge::BorrowPCGEdge,
         edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, PcgRegion},
     },
     pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
@@ -17,7 +14,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{self, maybe_old::MaybeOldPlace, CompilerCtxt, PlaceSnapshot, SnapshotLocation},
+    utils::{self, maybe_old::MaybeOldPlace, PlaceSnapshot, SnapshotLocation},
 };
 
 impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
@@ -81,69 +78,27 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
                 .label_region_projection(arg, SnapshotLocation::before(location), self.ctxt);
         }
 
-        #[derive(Default, Deref)]
-        struct CoupledRegionProjections<'tcx>(Vec<FxHashSet<LocalRegionProjection<'tcx>>>);
+        let regions = arg_region_projections
+            .iter()
+            .map(|rp| rp.region(self.ctxt))
+            .collect::<FxHashSet<_>>();
 
-        impl<'tcx> CoupledRegionProjections<'tcx> {
-            fn find_matching<'mir>(
-                &mut self,
-                region: PcgRegion,
-                repacker: CompilerCtxt<'mir, 'tcx, '_>,
-            ) -> Option<&mut FxHashSet<LocalRegionProjection<'tcx>>> {
-                self.0.iter_mut().find(|set| {
-                    repacker
-                        .bc
-                        .same_region(region, set.iter().next().unwrap().region(repacker))
+        for region in regions.iter() {
+            let inputs = arg_region_projections
+                .iter()
+                .filter(|rp| self.ctxt.bc.same_region(*region, rp.region(self.ctxt)))
+                .map(|rp| {
+                    (*rp)
+                        .label_projection(SnapshotLocation::before(location))
+                        .into()
                 })
-            }
-
-            fn insert<'mir>(
-                &mut self,
-                projection: LocalRegionProjection<'tcx>,
-                repacker: CompilerCtxt<'mir, 'tcx, '_>,
-            ) {
-                if let Some(set) = self.find_matching(projection.region(repacker), repacker) {
-                    set.insert(projection);
-                } else {
-                    self.0.push(vec![projection].into_iter().collect());
-                }
-            }
-        }
-
-        let mut coupled_region_projections = CoupledRegionProjections::default();
-
-        for projection in arg_region_projections.iter() {
-            coupled_region_projections.insert(*projection, self.ctxt);
-        }
-
-        for coupled in coupled_region_projections.iter() {
-            let create_edge_action = BorrowPCGAction::add_edge(
-                BorrowPCGEdge::new(
-                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                        location,
-                        *func_def_id,
-                        substs,
-                        AbstractionBlockEdge::new(
-                            coupled
-                                .iter()
-                                .map(|rp| {
-                                    rp.label_projection(SnapshotLocation::before(location))
-                                        .into()
-                                })
-                                .collect(),
-                            coupled
-                                .clone()
-                                .into_iter()
-                                .map(|rp| rp.label_projection(location.into()))
-                                .collect(),
-                        ),
-                    ))
-                    .into(),
-                    PathConditions::AtBlock(location.block),
-                ),
-                true,
-            );
-            self.apply_action(create_edge_action);
+                .collect::<Vec<_>>();
+            let outputs = arg_region_projections
+                .iter()
+                .filter(|rp| self.ctxt.bc.same_region(*region, rp.region(self.ctxt)))
+                .map(|rp| (*rp).label_projection(SnapshotLocation::After(location)))
+                .collect::<Vec<_>>();
+            self.apply_action(mk_create_edge_action(inputs, outputs));
         }
 
         for arg in args.iter() {
@@ -159,9 +114,10 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
             for (lifetime_idx, input_lifetime) in
                 extract_regions(ty, self.ctxt).into_iter_enumerated()
             {
-                for output in
-                    self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
-                {
+                for output in self.projections_borrowing_from_input_lifetime(
+                    input_lifetime,
+                    destination
+                ) {
                     let input_rp = input_place
                         .region_projection(lifetime_idx, self.ctxt)
                         .label_projection(location.into());

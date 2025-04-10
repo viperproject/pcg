@@ -14,7 +14,8 @@ use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
 use crate::utils::maybe_remote::MaybeRemotePlace;
-use crate::utils::{CompilerCtxt, HasPlace};
+use crate::utils::CompilerCtxt;
+use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,13 +30,18 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     tcx: ty::TyCtxt<'tcx>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
+    pretty_printer: RegionPrettyPrinter,
 }
 
 impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, '_> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
-    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
+    pub fn new<T: BodyAndBorrows<'tcx>>(
+        tcx: ty::TyCtxt<'tcx>,
+        body: &'mir T,
+        debug_region_name_overrides: BTreeMap<ty::RegionVid, String>,
+    ) -> Self {
         let location_table = body.location_table();
         let output_facts = Output::compute(
             body.input_facts(),
@@ -44,6 +50,10 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
         );
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
+        let mut pretty_printer = RegionPrettyPrinter::new(region_cx);
+        for (region, name) in debug_region_name_overrides {
+            pretty_printer.insert(region, name);
+        }
         Self {
             input_facts: body.input_facts(),
             location_table,
@@ -52,6 +62,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
             tcx,
             region_cx,
             borrows,
+            pretty_printer: RegionPrettyPrinter::new(region_cx),
         }
     }
     pub fn origin_live_on_entry(&self, location: RichLocation) -> Option<BTreeSet<ty::RegionVid>> {
@@ -108,18 +119,14 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
 }
 
 impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
+    fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
+        self.pretty_printer.lookup(region).map(|s| s.as_str())
+    }
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let regions: Vec<_> = match node {
             PCGNode::Place(place) => place.regions(self.ctxt()).into_iter().collect(),
             PCGNode::RegionProjection(region_projection) => {
-                if let Some(place) = region_projection.base().as_local_place() {
-                    let mut regions: Vec<_> =
-                        place.place().regions(self.ctxt()).into_iter().collect();
-                    regions.push(region_projection.region(self.ctxt()));
-                    regions
-                } else {
-                    todo!()
-                }
+                vec![region_projection.region(self.ctxt())]
             }
         };
         let live_loans = self
@@ -134,10 +141,16 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
             .collect::<BTreeSet<_>>();
         regions.iter().any(|region| match region {
             PcgRegion::RegionVid(region_vid) => live_loans.iter().any(|loan| {
-                live_origins.contains(region_vid)
-                    || self
-                        .region_cx
-                        .eval_outlives(*region_vid, self.borrow_index_to_region(*loan))
+                if live_origins.contains(region_vid) {
+                    return true;
+                }
+                if self
+                    .region_cx
+                    .eval_outlives(*region_vid, self.borrow_index_to_region(*loan))
+                {
+                    return true;
+                }
+                false
             }),
             PcgRegion::ReErased => todo!(),
             PcgRegion::ReStatic => todo!(),
@@ -384,5 +397,3 @@ fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
 fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
     borrow.region
 }
-
-

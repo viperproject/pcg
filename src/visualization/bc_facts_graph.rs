@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use petgraph::graph::NodeIndex;
 
 use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
@@ -8,7 +10,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::{
     borrow_pcg::borrow_checker::r#impl::PoloniusBorrowChecker,
-    rustc_interface::borrowck::PoloniusRegionVid,
+    rustc_interface::borrowck::{PoloniusRegionVid, RegionInferenceContext},
 };
 
 use super::{
@@ -76,11 +78,47 @@ pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
     graph
 }
 
-pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc, T: BorrowCheckerInterface<'a, 'tcx> + ?Sized>(
-    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc T>,
-) -> String {
+#[derive(Clone)]
+pub(crate) struct RegionPrettyPrinter {
+    sccs: Vec<BTreeSet<RegionVid>>,
+    region_to_string: BTreeMap<usize, String>,
+}
+
+impl RegionPrettyPrinter {
+    pub(crate) fn new(region_infer_ctxt: &RegionInferenceContext<'_>) -> Self {
+        let scc_graph = compute_region_sccs(region_infer_ctxt);
+        let sccs = scc_graph
+            .node_weights()
+            .into_iter()
+            .map(|r| r.clone().into_iter().collect())
+            .collect();
+        RegionPrettyPrinter {
+            sccs,
+            region_to_string: BTreeMap::new(),
+        }
+    }
+
+    fn index(&self, region: RegionVid) -> usize {
+        self.sccs
+            .iter()
+            .position(|scc| scc.contains(&region))
+            .unwrap()
+    }
+
+    pub(crate) fn insert(&mut self, region: RegionVid, string: String) {
+        let scc = self.index(region);
+        assert!(self.region_to_string.insert(scc, string).is_none());
+    }
+
+    pub(crate) fn lookup(&self, region: RegionVid) -> Option<&String> {
+        self.region_to_string.get(&self.index(region))
+    }
+}
+
+fn compute_region_sccs(
+    region_infer_ctxt: &RegionInferenceContext<'_>,
+) -> petgraph::Graph<Vec<RegionVid>, ()> {
     let mut graph = petgraph::Graph::new();
-    let region_infer_ctxt = ctxt.bc.region_inference_ctxt();
     let regions = region_infer_ctxt
         .var_infos
         .iter_enumerated()
@@ -106,6 +144,17 @@ pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc, T: BorrowCheckerInterface<'a
         let endpoints = slf.edge_endpoints(ei).unwrap();
         reduced.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()])
     });
+    scc_graph
+}
+pub fn region_inference_outlives<
+    'a,
+    'tcx: 'a,
+    'bc,
+    T: BorrowCheckerInterface<'a, 'tcx> + ?Sized,
+>(
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc T>,
+) -> String {
+    let scc_graph = compute_region_sccs(ctxt.bc.region_inference_ctxt());
     let scc_graph = scc_graph.map(
         |_, regions| {
             format!(

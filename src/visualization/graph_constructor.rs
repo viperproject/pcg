@@ -183,7 +183,7 @@ impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
         let label = match abstraction {
             AbstractionType::FunctionCall(fc) => {
                 format!(
-                    "call {} at {:?}",
+                    "{} at {:?}",
                     self.ctxt.tcx().def_path_str(fc.def_id()),
                     fc.location()
                 )
@@ -193,19 +193,29 @@ impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
             }
         };
 
-        let label = if input_nodes.len() > 1 || output_nodes.len() > 1 {
-            format!("{label} <{}>", edge_idx)
+        let use_label = input_nodes.len() > 1 || output_nodes.len() > 1;
+
+        let hyperedge_id = format!("<{}>", edge_idx);
+
+        let first_edge_label = if use_label {
+            format!("{label} {}", hyperedge_id)
         } else {
             label
         };
 
+        let mut first = true;
         for input in &input_nodes {
             for output in &output_nodes {
                 self.edges.insert(GraphEdge::Abstract {
                     blocked: *input,
                     blocking: *output,
-                    label: label.clone(),
+                    label: if first {
+                        first_edge_label.clone()
+                    } else {
+                        hyperedge_id.clone()
+                    },
                 });
+                first = false
             }
         }
     }
