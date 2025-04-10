@@ -323,7 +323,7 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
 impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx>
     for PcgGraphConstructor<'pcg, 'a, 'tcx>
 {
-    fn repacker(&self) -> CompilerCtxt<'a, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
         self.repacker
     }
 
@@ -351,7 +351,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx>
 impl<'graph, 'mir: 'graph, 'tcx: 'mir> Grapher<'graph, 'mir, 'tcx>
     for BorrowsGraphConstructor<'graph, 'mir, 'tcx>
 {
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
         self.repacker
     }
 

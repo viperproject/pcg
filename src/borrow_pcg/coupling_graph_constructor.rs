@@ -9,7 +9,7 @@ use super::{
     has_pcs_elem::HasPcgElems,
     region_projection::PcgRegion,
 };
-use crate::{utils::place::maybe_old::MaybeOldPlace, visualization::bc_facts_graph::RegionPrettyPrinter};
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     coupling,

@@ -106,23 +106,12 @@ impl RegionPrettyPrinter {
     }
 
     pub(crate) fn insert(&mut self, region: RegionVid, string: String) {
-        tracing::info!(
-            "Inserting region debug name override: {:?} -> {}",
-            region,
-            string
-        );
         let scc = self.index(region);
         assert!(self.region_to_string.insert(scc, string).is_none());
     }
 
     pub(crate) fn lookup(&self, region: RegionVid) -> Option<&String> {
-        let result = self.region_to_string.get(&self.index(region));
-        tracing::info!(
-            "Looking up region debug name override: {:?} -> {:?}",
-            region,
-            result
-        );
-        result
+        self.region_to_string.get(&self.index(region))
     }
 }
 

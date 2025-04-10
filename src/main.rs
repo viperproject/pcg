@@ -393,10 +393,6 @@ fn run_pcg_on_fn<'tcx>(
     } else {
         BTreeMap::new()
     };
-    tracing::info!(
-        "Region debug name overrides: {:?}",
-        region_debug_name_overrides
-    );
     let bc = if polonius {
         BorrowChecker::Polonius(PoloniusBorrowChecker::new(
             tcx,
