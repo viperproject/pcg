@@ -17,7 +17,7 @@ use super::BorrowPCGActionKind;
 pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGActions<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         self.0
             .iter()
             .map(|a| a.to_json(repacker))

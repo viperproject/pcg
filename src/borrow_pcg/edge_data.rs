@@ -10,20 +10,20 @@ pub trait EdgeData<'tcx> {
     /// of nodes B are obtained from these nodes.
     fn blocked_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<PCGNode<'tcx>>;
 
     /// For an edge A -> B, this returns the set of nodes B. In general, these nodes
     /// obtain their capabilities from the nodes A.
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<LocalNode<'tcx>>;
 
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         self.blocked_nodes(repacker).contains(&node)
     }
@@ -31,7 +31,7 @@ pub trait EdgeData<'tcx> {
     fn is_blocked_by<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         self.blocked_by_nodes(repacker).contains(&node)
     }
@@ -46,7 +46,7 @@ macro_rules! edgedata_enum {
         impl<$tcx> $crate::borrow_pcg::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
             fn blocked_nodes<C: Copy>(
                 &self,
-                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+                repacker: CompilerCtxt<'_, $tcx, C>,
             ) -> FxHashSet<PCGNode<'tcx>> {
                 match self {
                     $(
@@ -57,7 +57,7 @@ macro_rules! edgedata_enum {
 
             fn blocked_by_nodes<C: Copy>(
                 &self,
-                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+                repacker: CompilerCtxt<'_, $tcx, C>,
             ) -> FxHashSet<$crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> {
                 match self {
                     $(
@@ -69,7 +69,7 @@ macro_rules! edgedata_enum {
             fn blocks_node<C: Copy>(
                 &self,
                 node: BlockedNode<'tcx>,
-                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+                repacker: CompilerCtxt<'_, $tcx, C>,
             ) -> bool {
                 match self {
                     $(
@@ -81,7 +81,7 @@ macro_rules! edgedata_enum {
             fn is_blocked_by<C: Copy>(
                 &self,
                 node: LocalNode<'tcx>,
-                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+                repacker: CompilerCtxt<'_, $tcx, C>,
             ) -> bool {
                 match self {
                     $(
@@ -105,7 +105,7 @@ macro_rules! edgedata_enum {
                 &mut self,
                 place: $crate::utils::Place<'tcx>,
                 latest: &$crate::borrow_pcg::latest::Latest<'tcx>,
-                repacker: CompilerCtxt<'_, 'tcx,'_>,
+                repacker: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
@@ -120,7 +120,7 @@ macro_rules! edgedata_enum {
                 &mut self,
                 projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
                 location: $crate::utils::SnapshotLocation,
-                repacker: CompilerCtxt<'_, 'tcx,'_>,
+                repacker: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
@@ -133,7 +133,7 @@ macro_rules! edgedata_enum {
         impl<$tcx> HasValidityCheck<$tcx> for $enum_name<$tcx> {
             fn check_validity<C: Copy>(
                 &self,
-                repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+                repacker: CompilerCtxt<'_, 'tcx, C>,
             ) -> Result<(), String> {
                 match self {
                     $(
@@ -144,7 +144,7 @@ macro_rules! edgedata_enum {
         }
 
         impl<$tcx> DisplayWithCompilerCtxt<$tcx> for $enum_name<$tcx> {
-            fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
+            fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.to_short_string(repacker),

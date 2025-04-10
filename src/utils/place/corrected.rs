@@ -3,7 +3,7 @@ use crate::rustc_interface::middle::mir;
 use crate::utils::{Place, CompilerCtxt};
 
 impl<'tcx> CorrectedPlace<'tcx> {
-    pub fn new(place: Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Self {
+    pub fn new(place: Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
         Self(place.with_inherent_region(repacker))
     }
 

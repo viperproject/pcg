@@ -41,14 +41,14 @@ use crate::{
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx: 'mir, 'bc> {
-    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx, 'bc>>>,
+pub struct FreePcsAnalysis<'mir, 'tcx: 'mir> {
+    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, 'bc> FreePcsAnalysis<'mir, 'tcx, 'bc> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx, 'bc>>>) -> Self {
+impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
+    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -70,7 +70,7 @@ impl<'mir, 'tcx, 'bc> FreePcsAnalysis<'mir, 'tcx, 'bc> {
         self.ctxt().body()
     }
 
-    pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, 'bc> {
+    pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
         self.cursor.analysis().0.repacker
     }
 
@@ -181,7 +181,7 @@ impl<'mir, 'tcx, 'bc> FreePcsAnalysis<'mir, 'tcx, 'bc> {
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PcgEngine<'mir, 'tcx, 'bc> {
+    fn analysis(&self) -> &PcgEngine<'mir, 'tcx> {
         &self.cursor.results().analysis.0
     }
 
@@ -261,7 +261,7 @@ pub struct PcgBasicBlock<'tcx> {
 }
 
 impl<'tcx> PcgBasicBlock<'tcx> {
-    pub fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Vec<String> {
+    pub fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut result = Vec::new();
         for stmt in self.statements.iter() {
             for phase in EvalStmtPhase::phases() {
@@ -288,14 +288,14 @@ pub struct PcgLocation<'tcx> {
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx,'_>> for Vec<RepackOp<'tcx>> {
-    fn debug_lines(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
+    fn debug_lines(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.iter().map(|r| format!("{:?}", r)).collect()
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         // TODO
         self.states.check_validity(repacker)
     }
@@ -312,7 +312,7 @@ impl<'tcx> PcgLocation<'tcx> {
     pub fn ancestor_edges<'slf, 'mir: 'slf, 'bc: 'slf, C: Copy>(
         &'slf self,
         place: Place<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
         let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
         let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);
@@ -360,7 +360,7 @@ impl<'tcx> PcgLocation<'tcx> {
     pub(crate) fn debug_lines(
         &self,
         phase: EvalStmtPhase,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<String> {
         let mut result = self.states[phase].debug_lines(repacker);
         for action in self.actions[phase].0.iter() {

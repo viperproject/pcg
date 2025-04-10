@@ -106,33 +106,30 @@ pub struct CompilerExtra<'a, 'tcx> {
 }
 
 #[derive(Copy, Clone)]
-pub struct CompilerCtxt<'a, 'tcx, 'bc, T = &'bc dyn BorrowCheckerInterface<'a, 'tcx>> {
+pub struct CompilerCtxt<'a, 'tcx, T = &'a dyn BorrowCheckerInterface<'tcx>> {
     pub(super) mir: &'a Body<'tcx>,
     pub(super) tcx: TyCtxt<'tcx>,
     pub(crate) bc: T,
-    _marker: std::marker::PhantomData<&'bc ()>,
 }
 
-impl<'a, 'tcx, 'bc, T: BorrowCheckerInterface<'a, 'tcx> + ?Sized>
-    CompilerCtxt<'a, 'tcx, 'bc, &'bc T>
+impl<'a, 'tcx, T: BorrowCheckerInterface<'tcx> + ?Sized>
+    CompilerCtxt<'a, 'tcx, &'a T>
 {
-    pub fn as_dyn(self) -> CompilerCtxt<'a, 'tcx, 'bc> {
+    pub fn as_dyn(self) -> CompilerCtxt<'a, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>> {
         CompilerCtxt {
             mir: self.mir,
             tcx: self.tcx,
             bc: self.bc.as_dyn(),
-            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, '_, T> {
+impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
     pub fn new(mir: &'a Body<'tcx>, tcx: TyCtxt<'tcx>, bc: T) -> Self {
         Self {
             mir,
             tcx,
             bc,
-            _marker: std::marker::PhantomData,
         }
     }
 
@@ -153,7 +150,7 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, '_, T> {
 
 }
 
-impl CompilerCtxt<'_, '_, '_> {
+impl CompilerCtxt<'_, '_> {
     pub(crate) fn is_arg(self, local: Local) -> bool {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
@@ -225,7 +222,7 @@ impl<'tcx> DeepExpansion<'tcx> {
 impl<'tcx, 'bc> Place<'tcx> {
     pub fn to_rust_place<C: Copy>(
         self,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
@@ -242,11 +239,10 @@ impl<'tcx, 'bc> Place<'tcx> {
     /// subtracting `{x.f.g.h}` from it, which results into (`{x.f, x.f.g}`, `{x.g, x.h,
     /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The result contains the chain of
     /// places that were expanded along with the target to of each expansion.
-    #[allow(clippy::type_complexity)]
     pub(crate) fn expand(
         mut self,
         to: Self,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<DeepExpansion<'tcx>, PcgError> {
         assert!(
             self.is_prefix(to),
@@ -271,7 +267,7 @@ impl<'tcx, 'bc> Place<'tcx> {
     pub fn expand_one_level(
         self,
         guide_place: Self,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<ShallowExpansion<'tcx>, PcgError> {
         let index = self.projection.len();
         assert!(
@@ -362,7 +358,7 @@ impl<'tcx, 'bc> Place<'tcx> {
     pub fn expand_field(
         self,
         without_field: Option<usize>,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Vec<Self>, PcgError> {
         let mut places = Vec::new();
         let typ = self.ty(repacker);
@@ -451,14 +447,14 @@ impl<'tcx, 'bc> Place<'tcx> {
 }
 
 impl<'tcx, 'bc> Place<'tcx> {
-    pub fn ty<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, 'bc, C>) -> PlaceTy<'tcx> {
+    pub fn ty<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }
 
     #[allow(unused)]
     pub(crate) fn get_ref_region(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Option<PcgRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, ..) => Some((*region).into()),
@@ -466,7 +462,7 @@ impl<'tcx, 'bc> Place<'tcx> {
         }
     }
 
-    pub(crate) fn projects_shared_ref(self, repacker: CompilerCtxt<'_, 'tcx, 'bc>) -> bool {
+    pub(crate) fn projects_shared_ref(self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -482,7 +478,7 @@ impl<'tcx, 'bc> Place<'tcx> {
     pub(crate) fn projects_ty(
         self,
         mut predicate: impl FnMut(PlaceTy<'tcx>) -> bool,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Option<Place<'tcx>> {
         self.projection_tys(repacker)
             .find(|(typ, _)| predicate(*typ))
@@ -494,7 +490,7 @@ impl<'tcx, 'bc> Place<'tcx> {
 
     pub(crate) fn projection_tys(
         self,
-        repacker: CompilerCtxt<'_, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> impl Iterator<Item = (PlaceTy<'tcx>, &'tcx [PlaceElem<'tcx>])> {
         let mut typ = PlaceTy::from_ty(repacker.mir.local_decls()[self.local].ty);
         self.projection.iter().enumerate().map(move |(idx, elem)| {

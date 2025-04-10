@@ -348,7 +348,7 @@ impl Graph {
 }
 
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
-    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+    repacker: CompilerCtxt<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
     location: Location,
 ) -> io::Result<String> {
@@ -361,7 +361,7 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
 }
 
 pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a, 'bc>(
-    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+    repacker: CompilerCtxt<'a, 'tcx>,
     summary: &'pcg CapabilityLocals<'tcx>,
     borrows_domain: &'pcg BorrowsState<'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,

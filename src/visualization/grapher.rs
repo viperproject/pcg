@@ -17,7 +17,7 @@ pub(super) trait CapabilityGetter<'tcx> {
     fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind>;
 }
 
-pub(super) trait Grapher<'state, 'mir: 'bc, 'tcx: 'mir, 'bc> {
+pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'state;
     fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
         let capability_getter = self.capability_getter();
@@ -38,8 +38,8 @@ pub(super) trait Grapher<'state, 'mir: 'bc, 'tcx: 'mir, 'bc> {
         }
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx, 'bc>;
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, 'bc>;
+    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx>;
     fn draw_materialized_edge<'graph>(
         &mut self,
         edge: MaterializedEdge<'tcx, 'graph>,

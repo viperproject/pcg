@@ -17,7 +17,7 @@ use crate::{
     utils::{self, maybe_old::MaybeOldPlace, PlaceSnapshot, SnapshotLocation},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_,> {
     /// Constructs a function call abstraction, if necessary.
     pub(super) fn make_function_call_abstraction(
         &mut self,

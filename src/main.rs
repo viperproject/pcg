@@ -108,7 +108,7 @@ fn in_cargo_crate() -> bool {
 #[rustversion::since(2024-12-14)]
 fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     dir_path: &str,
-    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc BorrowChecker<'a, 'tcx>>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc BorrowChecker<'a, 'tcx>>,
 ) {
     if let BorrowChecker::Polonius(bc) = ctxt.bc() {
         let ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), bc);
@@ -143,7 +143,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                 fn write_loans(
                     loans: BTreeMap<RegionVid, BTreeSet<BorrowIndex>>,
                     loans_file: &mut std::fs::File,
-                    ctxt: CompilerCtxt<'_, '_, '_, &PoloniusBorrowChecker<'_, '_>>,
+                    ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {:?}", region).unwrap();
@@ -157,7 +157,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                 fn write_bc_facts(
                     location: RichLocation,
                     bc_facts_file: &mut std::fs::File,
-                    ctxt: CompilerCtxt<'_, '_, '_, &PoloniusBorrowChecker<'_, '_>>,
+                    ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
                     writeln!(bc_facts_file, "{:?} Origin contains loan at:", location).unwrap();
@@ -192,7 +192,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     std::fs::write(file_path, region_inference_dot_graph).unwrap();
 }
 
-fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, '_>) {
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 
@@ -253,7 +253,7 @@ enum BorrowChecker<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
-impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowChecker<'mir, 'tcx> {
+impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'mir, 'tcx> {
     fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location) -> bool {
         match self {
             BorrowChecker::Polonius(bc) => bc.is_live(node, location),
@@ -303,7 +303,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowChecker<'mir, 'tcx
         }
     }
 
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
         self
     }
 

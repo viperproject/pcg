@@ -14,8 +14,8 @@ use crate::utils::json::ToJsonWithCompilerCtxt;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx,'_>> for Latest<'tcx> {
-    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Latest<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.0
             .iter()
             .map(|(p, l)| format!("{} -> {:?}", p.to_short_string(repacker), l))
@@ -24,7 +24,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx,'_>> for Latest<'tcx> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!(self
             .0
             .iter()

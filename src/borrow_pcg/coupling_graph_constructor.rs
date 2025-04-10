@@ -40,7 +40,7 @@ pub struct Coupled<T>(SmallVec<[T; 4]>);
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
     fn check_validity<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Result<(), String> {
         for t in self.0.iter() {
             t.check_validity(repacker)?;
@@ -50,7 +50,7 @@ impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
 }
 
 impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Coupled<T> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{{{}}}",
             self.0
@@ -167,7 +167,7 @@ impl CGNode<'_> {
     }
 }
 
-pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
+pub trait BorrowCheckerInterface<'tcx> {
     /// Returns true if the node is live *before* `location`.
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
@@ -221,7 +221,7 @@ pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
     /// visualization.
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx>;
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
 }
 
 /// Records a history of actions for debugging purpose;
@@ -270,8 +270,8 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx, 'bc> {
-    repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
+pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
+    repacker: CompilerCtxt<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
     graph: AbstractionGraph<'tcx>,
@@ -302,8 +302,8 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx, 'bc> AbstractionGraphConstructor<'mir, 'tcx, 'bc> {
-    pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx, 'bc>, block: BasicBlock) -> Self {
+impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
+    pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx>, block: BasicBlock) -> Self {
         Self {
             repacker,
             block,
@@ -317,7 +317,7 @@ impl<'mir, 'tcx, 'bc> AbstractionGraphConstructor<'mir, 'tcx, 'bc> {
         bottom_connect: &'a Coupled<CGNode<'tcx>>,
         upper_candidate: &'a Coupled<CGNode<'tcx>>,
         mut weight: FxHashSet<BorrowPCGEdgeKind<'tcx>>,
-        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
         history.add(AddEdgeHistory {
@@ -375,7 +375,7 @@ impl<'mir, 'tcx, 'bc> AbstractionGraphConstructor<'mir, 'tcx, 'bc> {
     pub(crate) fn construct_abstraction_graph(
         mut self,
         bg: &BorrowsGraph<'tcx>,
-        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
     ) -> AbstractionGraph<'tcx> {
         tracing::debug!("Construct coupling graph start");
         let full_graph = bg.base_rp_graph(self.repacker);

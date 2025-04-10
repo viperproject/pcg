@@ -88,7 +88,7 @@ impl Display for RepackOp<'_> {
 
 impl<'tcx> RepackOp<'tcx> {
 
-    pub(crate) fn debug_line(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
+    pub(crate) fn debug_line(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!("{self:?}")
     }
 
@@ -100,7 +100,7 @@ impl<'tcx> RepackOp<'tcx> {
         from: Place<'tcx>,
         to: Place<'tcx>,
         for_cap: CapabilityKind,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(
             to.is_owned(repacker),

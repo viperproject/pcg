@@ -5,10 +5,10 @@ use super::CompilerCtxt;
 pub trait HasValidityCheck<'tcx> {
     fn check_validity<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Result<(), String>;
 
-    fn assert_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) {
+    fn assert_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) {
         if validity_checks_enabled()
             && let Err(e) = self.check_validity(repacker)
         {
@@ -16,7 +16,7 @@ pub trait HasValidityCheck<'tcx> {
         }
     }
 
-    fn is_valid<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> bool {
+    fn is_valid<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         self.check_validity(repacker).is_ok()
     }
 }

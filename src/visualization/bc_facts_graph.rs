@@ -19,7 +19,7 @@ use super::{
 };
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PoloniusRegionVid {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, '_>) -> String {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         let region: RegionVid = (*self).into();
         region.to_short_string(ctxt)
     }
@@ -30,12 +30,12 @@ fn get_id<
     'tcx: 'a,
     'bc,
     T: Clone + Eq + DisplayWithCompilerCtxt<'tcx>,
-    BC: BorrowCheckerInterface<'a, 'tcx> + ?Sized,
+    BC: BorrowCheckerInterface<'tcx> + ?Sized,
 >(
     elem: &T,
     nodes: &mut IdLookup<T>,
     graph_nodes: &mut Vec<DotNode>,
-    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc BC>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc BC>,
 ) -> String {
     if let Some(id) = nodes.existing_id(elem) {
         id.to_string()
@@ -50,7 +50,7 @@ fn get_id<
 }
 
 pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
-    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
 ) -> DotGraph {
     tracing::info!("Generating BC facts graph");
     let mut graph = DotGraph {
@@ -150,9 +150,9 @@ pub fn region_inference_outlives<
     'a,
     'tcx: 'a,
     'bc,
-    T: BorrowCheckerInterface<'a, 'tcx> + ?Sized,
+    T: BorrowCheckerInterface<'tcx> + ?Sized,
 >(
-    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc T>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc T>,
 ) -> String {
     let scc_graph = compute_region_sccs(ctxt.bc.region_inference_ctxt());
     let scc_graph = scc_graph.map(
@@ -174,7 +174,7 @@ pub fn region_inference_outlives<
 pub fn subset_at_location<'a, 'tcx: 'a, 'bc>(
     location: Location,
     start: bool,
-    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
 ) -> DotGraph {
     let mut graph = DotGraph {
         nodes: vec![],
