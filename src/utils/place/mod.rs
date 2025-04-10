@@ -354,12 +354,12 @@ impl<'tcx> Place<'tcx> {
         self.region_projections(repacker)[idx]
     }
 
-    #[tracing::instrument(skip(repacker))]
-    pub(crate) fn regions<C: Copy>(
+    #[tracing::instrument(skip(ctxt))]
+    pub fn regions<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, PcgRegion> {
-        extract_regions(self.ty(repacker).ty, repacker)
+        extract_regions(self.ty(ctxt).ty, ctxt)
     }
 
     pub(crate) fn region_projections<C: Copy>(

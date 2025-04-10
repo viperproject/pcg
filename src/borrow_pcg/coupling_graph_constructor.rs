@@ -201,9 +201,7 @@ pub trait BorrowCheckerInterface<'tcx> {
         &self.borrow_set().location_map
     }
 
-    fn override_region_debug_string(&self, region: RegionVid) -> Option<&str> {
-        None
-    }
+    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
 
     fn input_facts(&self) -> &PoloniusInput;
 

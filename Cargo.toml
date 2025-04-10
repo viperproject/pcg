@@ -44,11 +44,11 @@ tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_mall
 axum = { version = "0.7", features = ["multipart"], optional = true }
 tokio = { version = "1.0", features = ["full", "rt-multi-thread"], optional = true }
 jemalloc_pprof = { version = "0.6", optional = true }
+rustc_utils = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"]}
 
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking"] }
 toml = "0.7"
-rustc_utils = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"]}
 rayon = "1.8"
 chrono = "0.4"
 

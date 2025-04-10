@@ -106,12 +106,23 @@ impl RegionPrettyPrinter {
     }
 
     pub(crate) fn insert(&mut self, region: RegionVid, string: String) {
+        tracing::info!(
+            "Inserting region debug name override: {:?} -> {}",
+            region,
+            string
+        );
         let scc = self.index(region);
         assert!(self.region_to_string.insert(scc, string).is_none());
     }
 
     pub(crate) fn lookup(&self, region: RegionVid) -> Option<&String> {
-        self.region_to_string.get(&self.index(region))
+        let result = self.region_to_string.get(&self.index(region));
+        tracing::info!(
+            "Looking up region debug name override: {:?} -> {:?}",
+            region,
+            result
+        );
+        result
     }
 }
 
@@ -146,12 +157,7 @@ fn compute_region_sccs(
     });
     scc_graph
 }
-pub fn region_inference_outlives<
-    'a,
-    'tcx: 'a,
-    'bc,
-    T: BorrowCheckerInterface<'tcx> + ?Sized,
->(
+pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc, T: BorrowCheckerInterface<'tcx> + ?Sized>(
     ctxt: CompilerCtxt<'a, 'tcx, &'bc T>,
 ) -> String {
     let scc_graph = compute_region_sccs(ctxt.bc.region_inference_ctxt());
