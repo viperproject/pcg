@@ -33,7 +33,7 @@ use crate::rustc_interface::infer::infer::{NllRegionVariableOrigin, RegionVariab
 use crate::rustc_interface::middle::ty::BoundRegionKind;
 
 /// A region occuring in region projections
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, From)]
 pub enum PcgRegion {
     RegionVid(RegionVid),
     ReErased,
@@ -50,6 +50,10 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
 
     #[rustversion::since(2024-12-14)]
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        if let Some(string) = ctxt.bc.override_region_debug_string(*self) {
+            tracing::info!("DONE Using region debug name override: {:?} -> {}", self, string);
+            return string.to_string();
+        }
         let origin = ctxt.bc.region_inference_ctxt().var_infos[*self].origin;
         match origin {
             RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
@@ -106,7 +110,7 @@ impl PcgRegion {
         }
     }
 
-    pub(crate) fn vid(&self) -> Option<RegionVid> {
+    pub fn vid(&self) -> Option<RegionVid> {
         match self {
             PcgRegion::RegionVid(vid) => Some(*vid),
             _ => None,
@@ -144,7 +148,7 @@ impl<'tcx> From<ty::Region<'tcx>> for PcgRegion {
 /// For example is `a` has type `A<'t>` and `b` has type `B<'u>`,
 /// an assignment e.g. `b = move a` will have region projections from `b`
 /// to `u`
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
 pub struct RegionIdx(usize);
 
 impl Idx for RegionIdx {
@@ -203,7 +207,10 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
         *self
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.regions(repacker),
             MaybeRemoteRegionProjectionBase::Const(c) => extract_regions(c.ty(), repacker),
@@ -337,7 +344,10 @@ pub trait RegionProjectionBaseLike<'tcx>:
     + ToJsonWithCompilerCtxt<'tcx>
     + DisplayWithCompilerCtxt<'tcx>
 {
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion>;
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion>;
 
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
 }
@@ -604,10 +614,7 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
 pub(crate) type LocalRegionProjection<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LocalRegionProjection<'tcx> {
-    pub fn to_region_projection(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx> {
+    pub fn to_region_projection(&self, repacker: CompilerCtxt<'_, 'tcx>) -> RegionProjection<'tcx> {
         self.with_base(self.base.into(), repacker)
     }
 }

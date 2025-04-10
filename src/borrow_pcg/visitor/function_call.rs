@@ -6,11 +6,11 @@ use crate::{
         edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
     },
-    pcg::{PCGUnsupportedError, PcgError},
+    pcg::PcgError,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
-            mir::{Const, Location, Operand},
+            mir::{Location, Operand},
             ty::{self},
         },
     },
@@ -34,13 +34,11 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,> {
         {
             return Ok(());
         }
-        let (func_def_id, substs) = if let Operand::Constant(box c) = func
-            && let Const::Val(_, ty) = c.const_
-            && let ty::TyKind::FnDef(def_id, substs) = ty.kind()
-        {
+        let func_ty = func.ty(self.ctxt.body(), self.ctxt.tcx());
+        let (func_def_id, substs) = if let ty::TyKind::FnDef(def_id, substs) = func_ty.kind() {
             (def_id, substs)
         } else {
-            return Err(PcgError::unsupported(PCGUnsupportedError::ClosureCall));
+            panic!("Expected a function definition");
         };
 
         let mk_create_edge_action = |input, output| {

@@ -356,7 +356,6 @@ pub enum PCGUnsupportedError {
     ExpansionOfAliasType,
     IndexingNonIndexableType,
     InlineAssembly,
-    ClosureCall,
 }
 
 impl<'a, 'tcx, 'bc> PcgDomain<'a, 'tcx> {

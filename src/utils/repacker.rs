@@ -17,7 +17,6 @@ use crate::{
             },
             ty::{TyCtxt, TyKind},
         },
-        span::SpanSnippetError,
         target::abi::FieldIdx,
     },
 };

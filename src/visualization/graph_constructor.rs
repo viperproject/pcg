@@ -126,8 +126,8 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                     .get(&region_vid),
             );
             format!(
-                "Loans in {:?} - before: {}, mid: {}",
-                projection.region(self.ctxt),
+                "Loans in {} - before: {}, mid: {}",
+                projection.region(self.ctxt).to_short_string(self.ctxt),
                 loans_before,
                 loans_after
             )

@@ -22,7 +22,7 @@ use std::io::Write;
 use derive_more::From;
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcg::utils::CompilerCtxt;
+use pcg::utils::{CompilerCtxt, Place};
 
 #[rustversion::since(2024-12-14)]
 use pcg::visualization::bc_facts_graph::{
@@ -30,6 +30,7 @@ use pcg::visualization::bc_facts_graph::{
 };
 
 use pcg::{run_pcg, PcgOutput};
+use rustc_utils::test_utils::Placer;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
 
@@ -46,6 +47,7 @@ use pcg::rustc_interface::{
     interface::{interface::Compiler, Config},
     middle::{
         mir::Body,
+        mir::Local,
         query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
         ty::{RegionVid, TyCtxt},
         util::Providers,
@@ -320,6 +322,13 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'mir, 'tcx> {
             BorrowChecker::Impl(bc) => bc.input_facts(),
         }
     }
+
+    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.override_region_debug_string(_region),
+            BorrowChecker::Impl(bc) => bc.override_region_debug_string(_region),
+        }
+    }
 }
 
 fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnippetError> {
@@ -329,6 +338,43 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
     Ok(lines.lines().map(|l| l.to_string()).collect())
 }
 
+struct LifetimeRenderAnnotation {
+    var: String,
+    region_idx: usize,
+    display_as: String,
+}
+
+impl LifetimeRenderAnnotation {
+    fn get_place<'tcx>(&self, tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> Place<'tcx> {
+        if self.var.starts_with('_')
+            && let Ok(idx) = self.var.split_at(1).1.parse::<usize>()
+        {
+            let local: Local = idx.into();
+            local.into()
+        } else {
+            let placer = Placer::new(tcx, body);
+            placer.local(self.var.as_str()).mk().into()
+        }
+    }
+
+    fn to_pair<'tcx>(&self, tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> (RegionVid, String) {
+        let place = self.get_place(tcx, body);
+        let region = place.regions(CompilerCtxt::new(body, tcx, ()))[self.region_idx.into()];
+        (region.vid().unwrap(), self.display_as.clone())
+    }
+}
+
+impl From<&str> for LifetimeRenderAnnotation {
+    fn from(s: &str) -> Self {
+        let parts = s.split(" ").collect::<Vec<_>>();
+        Self {
+            var: parts[0].to_string(),
+            region_idx: parts[1].parse().unwrap(),
+            display_as: parts[2].to_string(),
+        }
+    }
+}
+
 fn run_pcg_on_fn<'tcx>(
     def_id: LocalDefId,
     body: &BodyWithBorrowckFacts<'tcx>,
@@ -336,13 +382,21 @@ fn run_pcg_on_fn<'tcx>(
     polonius: bool,
     vis_dir: Option<&str>,
 ) {
-    let region_debug_name_overrides = if let Some(vis_dir) = vis_dir
+    let region_debug_name_overrides = if vis_dir.is_some()
         && let Ok(lines) = source_lines(tcx, &body.body)
     {
-        BTreeMap::new()
+        lines
+            .iter()
+            .flat_map(|l| l.split("PCG_LIFETIME_DISPLAY: ").nth(1))
+            .map(|l| LifetimeRenderAnnotation::from(l).to_pair(tcx, &body.body))
+            .collect::<_>()
     } else {
         BTreeMap::new()
     };
+    tracing::info!(
+        "Region debug name overrides: {:?}",
+        region_debug_name_overrides
+    );
     let bc = if polonius {
         BorrowChecker::Polonius(PoloniusBorrowChecker::new(
             tcx,
