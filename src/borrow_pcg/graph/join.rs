@@ -25,7 +25,7 @@ use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
         location: mir::Location,
         comment: &str,
     ) {
@@ -43,7 +43,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx, '_>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
@@ -168,7 +168,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx, '_>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) {
         let self_coupling_graph = AbstractionGraphConstructor::new(repacker, self_block)
             .construct_abstraction_graph(self, repacker.bc);

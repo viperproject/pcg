@@ -13,8 +13,8 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx, '_>> for PlaceCapabilities<'tcx> {
-    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
                 format!("{}: {:?}", node.to_short_string(repacker), capability)
@@ -36,7 +36,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn owned_capabilities<'mir: 'slf, 'slf, 'bc: 'slf>(
         &'slf mut self,
         local: mir::Local,
-        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir>
     {
         self.0.iter_mut().filter_map(move |(place, capability)| {

@@ -69,11 +69,11 @@
 // }
 
 // pub trait ConstEval<'tcx> {
-//     fn eval(self, rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx>;
+//     fn eval(self, rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx>;
 // }
 
 // // impl<'tcx> ConstEval<'tcx> for Constant<'tcx> {
-// //     fn eval(self, rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx> {
+// //     fn eval(self, rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx> {
 // //         let param_env = rp.tcx().param_env(rp.body().source.def_id());
 // //         let eval = self.literal.eval(rp.tcx(), param_env, None);
 // //         assert!(!(self.literal.try_to_scalar().is_some() && eval.is_err()));
@@ -85,11 +85,11 @@
 // // }
 
 // pub trait ConstEvalTy<'tcx> {
-//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx>;
+//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx>;
 // }
 
 // impl<'tcx> ConstEvalTy<'tcx> for ConstValue<'tcx> {
-//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx> {
+//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx> {
 //         println!("const {self:?}, ty: {ty:?}");
 //         match self {
 //             ConstValue::Scalar(scalar) => scalar.eval(ty, rp),
@@ -112,7 +112,7 @@
 // }
 
 // impl<'tcx> ConstEvalTy<'tcx> for Scalar {
-//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx> {
+//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx> {
 //         println!("scalar {self:?}, ty: {ty:?}");
 //         match self {
 //             Scalar::Int(bytes) => bytes.eval(ty, rp),
@@ -141,7 +141,7 @@
 // }
 
 // impl<'tcx> ConstEvalTy<'tcx> for ScalarInt {
-//     fn eval(self, ty: Ty<'tcx>, _rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx> {
+//     fn eval(self, ty: Ty<'tcx>, _rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx> {
 //         let kind = match ty.kind() {
 //             TyKind::Bool => EcKind::Bool(self.try_to_bool().unwrap()),
 //             TyKind::Int(_) => EcKind::Int(self.try_to_int(self.size()).unwrap()),
@@ -160,7 +160,7 @@
 // }
 
 // impl<'tcx> ConstEvalTy<'tcx> for ConstAllocation<'tcx> {
-//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx,'_>) -> EvaluatedConst<'tcx> {
+//     fn eval(self, ty: Ty<'tcx>, rp: CompilerCtxt<'_, 'tcx>) -> EvaluatedConst<'tcx> {
 //         let range = alloc_range(Size::ZERO, self.inner().size());
 //         eval_range(self, range, ty, rp)
 //     }
@@ -170,7 +170,7 @@
 //     ca: ConstAllocation<'tcx>,
 //     range: AllocRange,
 //     ty: Ty<'tcx>,
-//     rp: CompilerCtxt<'_, 'tcx,'_>,
+//     rp: CompilerCtxt<'_, 'tcx>,
 // ) -> EvaluatedConst<'tcx> {
 //     println!("ca {ca:?}, ty: {ty:?}, range: {range:?}");
 //     match ty.kind() {
@@ -351,7 +351,7 @@
 
 // fn layout_of<'tcx>(
 //     ty: Ty<'tcx>,
-//     rp: CompilerCtxt<'_, 'tcx,'_>,
+//     rp: CompilerCtxt<'_, 'tcx>,
 // ) -> Result<TyAndLayout<'tcx>, &'tcx LayoutError<'tcx>> {
 //     let peat = ParamEnvAnd {
 //         param_env: ParamEnv::reveal_all(),
@@ -360,7 +360,7 @@
 //     rp.tcx().layout_of(peat)
 // }
 
-// struct RevealAllEnv<'a, 'tcx>(CompilerCtxt<'a, 'tcx, '_>);
+// struct RevealAllEnv<'a, 'tcx>(CompilerCtxt<'a, 'tcx>);
 // impl HasDataLayout for RevealAllEnv<'_, '_> {
 //     fn data_layout(&self) -> &TargetDataLayout {
 //         self.0.tcx.data_layout()
@@ -376,8 +376,8 @@
 //         ParamEnv::reveal_all()
 //     }
 // }
-// impl<'a, 'tcx> From<CompilerCtxt<'a, 'tcx, '_>> for RevealAllEnv<'a, 'tcx> {
-//     fn from(rp: CompilerCtxt<'a, 'tcx, '_>) -> Self {
+// impl<'a, 'tcx> From<CompilerCtxt<'a, 'tcx>> for RevealAllEnv<'a, 'tcx> {
+//     fn from(rp: CompilerCtxt<'a, 'tcx>) -> Self {
 //         Self(rp)
 //     }
 // }

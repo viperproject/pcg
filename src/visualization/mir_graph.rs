@@ -71,17 +71,17 @@ fn format_bin_op(op: &BinOp) -> String {
     }
 }
 
-fn format_local<'tcx>(local: &Local, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+fn format_local<'tcx>(local: &Local, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     let place: Place<'tcx> = (*local).into();
     place.to_short_string(repacker)
 }
 
-fn format_place<'tcx>(place: &mir::Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+fn format_place<'tcx>(place: &mir::Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     let place: Place<'tcx> = (*place).into();
     place.to_short_string(repacker)
 }
 
-fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     match operand {
         Operand::Copy(p) => format_place(p, repacker),
         Operand::Move(p) => format!("move {}", format_place(p, repacker)),
@@ -89,7 +89,7 @@ fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx
     }
 }
 
-fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     match rvalue {
         Rvalue::Use(operand) => format_operand(operand, repacker),
         Rvalue::Repeat(operand, c) => format!("repeat {} {}", format_operand(operand, repacker), c),
@@ -140,7 +140,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '
 }
 fn format_terminator<'tcx>(
     terminator: &TerminatorKind<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx, '_>,
+    repacker: CompilerCtxt<'_, 'tcx>,
 ) -> String {
     match terminator {
         TerminatorKind::Call {
@@ -166,7 +166,7 @@ fn format_terminator<'tcx>(
     }
 }
 
-fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
     match &stmt.kind {
         mir::StatementKind::Assign(box (place, rvalue)) => {
             format!(
@@ -202,7 +202,7 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx, '_
     }
 }
 
-fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
+fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
@@ -379,7 +379,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_, '_>) -> MirGraph {
 
     MirGraph { nodes, edges }
 }
-pub(crate) fn generate_json_from_mir(path: &str, ctxt: CompilerCtxt<'_, '_, '_>) -> io::Result<()> {
+pub(crate) fn generate_json_from_mir(path: &str, ctxt: CompilerCtxt<'_, '_>) -> io::Result<()> {
     let mir_graph = mk_mir_graph(ctxt);
     let mut file = File::create(path)?;
     serde_json::to_writer(&mut file, &mir_graph)?;

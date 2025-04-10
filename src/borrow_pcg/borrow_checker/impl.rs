@@ -34,7 +34,7 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
 }
 
 impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
-    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, '_> {
+    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
     pub fn new<T: BodyAndBorrows<'tcx>>(
@@ -118,7 +118,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
+impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
     }
@@ -182,7 +182,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
         Some(&self.output_facts)
     }
 
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
         self
     }
 
@@ -245,12 +245,12 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
         }
     }
 
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, '_> {
-        CompilerCtxt::new(self.body, self.tcx, self)
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, ()> {
+        CompilerCtxt::new(self.body, self.tcx, ())
     }
 }
 
-impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
     fn input_facts(&self) -> &PoloniusInput {
         self.input_facts
     }
@@ -332,7 +332,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
         None
     }
 
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
         self
     }
 

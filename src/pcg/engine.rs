@@ -126,10 +126,10 @@ struct PCGEngineDebugData {
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
 }
 
-pub struct PcgEngine<'a, 'tcx: 'a, 'bc: 'a> {
-    pub(crate) repacker: CompilerCtxt<'a, 'tcx, 'bc>,
-    pub(crate) fpcs: FpcsEngine<'a, 'tcx, 'bc>,
-    pub(crate) borrows: BorrowsEngine<'a, 'tcx, 'bc>,
+pub struct PcgEngine<'a, 'tcx: 'a> {
+    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
+    pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
+    pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
@@ -182,7 +182,7 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
     Terminator(&'mir Terminator<'tcx>),
 }
 
-impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
+impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -193,7 +193,7 @@ impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, 'bc>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -213,7 +213,7 @@ impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
         &mut self,
         pcg: &mut Rc<Pcg<'tcx>>,
         object: AnalysisObject<'_, 'tcx>,
-        tw: &TripleWalker<'a, 'tcx,'bc>,
+        tw: &TripleWalker<'a, 'tcx>,
         location: Location,
     ) -> Result<PcgActions<'tcx>, PcgError> {
         let pre_main = Rc::<_>::make_mut(pcg);
@@ -247,7 +247,7 @@ impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
     #[tracing::instrument(skip(self, state, object))]
     fn analyze(
         &mut self,
-        state: &mut PcgDomain<'a, 'tcx, 'bc>,
+        state: &mut PcgDomain<'a, 'tcx>,
         object: AnalysisObject<'_, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -383,7 +383,7 @@ impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
     }
 
     pub(crate) fn new(
-        repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+        repacker: CompilerCtxt<'a, 'tcx>,
         debug_output_dir: Option<&str>,
     ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
@@ -417,7 +417,7 @@ impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
 
     fn generate_dot_graph(
         &self,
-        state: &mut PcgDomain<'a, 'tcx,'_>,
+        state: &mut PcgDomain<'a, 'tcx>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
     ) {
@@ -527,8 +527,8 @@ impl<'a, 'tcx: 'a, 'bc> PcgEngine<'a, 'tcx, 'bc> {
     }
 }
 
-impl<'a, 'tcx,'bc> Analysis<'tcx> for PcgEngine<'a, 'tcx, 'bc> {
-    type Domain = PcgDomain<'a, 'tcx, 'bc>;
+impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
+    type Domain = PcgDomain<'a, 'tcx>;
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {

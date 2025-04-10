@@ -21,7 +21,7 @@ impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdgeKind<'tcx> {
 }
 
 impl<'tcx> BorrowPCGEdgeKind<'tcx> {
-    pub(crate) fn is_shared_borrow(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> bool {
+    pub(crate) fn is_shared_borrow(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(repacker),
             _ => false,

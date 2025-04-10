@@ -21,7 +21,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn ancestor_edges<'graph, 'mir: 'graph, 'bc: 'graph, C: Copy>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
@@ -43,7 +43,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn aliases<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut result: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
         result.insert(node.into());
@@ -63,7 +63,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn aliases_all_projections<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, '_, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(ctxt) {
@@ -117,7 +117,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     fn direct_aliases<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
         seen: &mut FxHashSet<PCGNode<'tcx>>,
         direct: bool,
     ) -> FxHashSet<Alias<'tcx>> {
@@ -208,9 +208,9 @@ fn test_aliases() {
 
     use crate::{run_pcg, BodyAndBorrows, PcgOutput};
 
-    fn check_all_statements<'mir, 'tcx, 'bc>(
+    fn check_all_statements<'mir, 'tcx>(
         body: &'mir mir::Body<'tcx>,
-        pcg: &mut PcgOutput<'mir, 'tcx, 'bc>,
+        pcg: &mut PcgOutput<'mir, 'tcx>,
         f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {

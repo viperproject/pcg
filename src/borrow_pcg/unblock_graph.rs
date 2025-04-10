@@ -29,7 +29,7 @@ impl<'tcx> BorrowPCGUnblockAction<'tcx> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGUnblockAction<'tcx> {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         serde_json::json!({
             "edge": format!("{:?}", self.edge)
         })
@@ -52,7 +52,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     pub fn for_node(
         node: impl Into<BlockedNode<'tcx>>,
         state: &BorrowsState<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         let mut ug = Self::new();
         ug.unblock_node(node.into(), state, repacker);
@@ -74,7 +74,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     /// implementation and should be reported.
     pub fn actions(
         self,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Vec<BorrowPCGUnblockAction<'tcx>>, PCGInternalError> {
         let mut edges = self.edges;
         let mut actions = vec![];
@@ -112,7 +112,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
         borrows: &BorrowsState<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         if self.add_dependency(edge.clone().to_owned_edge()) {
             for blocking_node in edge.blocked_by_nodes(repacker) {
@@ -126,7 +126,7 @@ impl<'tcx> UnblockGraph<'tcx> {
         &mut self,
         node: BlockedNode<'tcx>,
         borrows: &BorrowsState<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         for edge in borrows.edges_blocking(node, repacker) {
             self.kill_edge(edge, borrows, repacker);

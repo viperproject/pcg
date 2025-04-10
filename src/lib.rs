@@ -42,7 +42,7 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithCompilerCtxt;
 
-pub type PcgOutput<'mir, 'tcx, 'bc> = free_pcs::FreePcsAnalysis<'mir, 'tcx, 'bc>;
+pub type PcgOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -54,7 +54,7 @@ pub struct Weaken<'tcx> {
 }
 
 impl<'tcx> Weaken<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let to_str = match self.to {
             Some(to) => format!("{:?}", to),
             None => "None".to_string(),
@@ -105,7 +105,7 @@ pub struct RestoreCapability<'tcx> {
 }
 
 impl<'tcx> RestoreCapability<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "Restore {} to {:?}",
             self.place.to_short_string(repacker),
@@ -127,7 +127,7 @@ impl<'tcx> RestoreCapability<'tcx> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Weaken<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "old": format!("{:?}", self.from),
@@ -136,8 +136,8 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Weaken<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx, '_>> for BorrowPCGActions<'tcx> {
-    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPCGActions<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.0
             .iter()
             .map(|action| action.debug_line(repacker))
@@ -179,7 +179,7 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
         })
@@ -187,7 +187,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 't
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
             "actions": self.actions.to_json(repacker),
@@ -196,9 +196,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
 }
 
 impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
-    fn new<'mir>(
-        location: &'a PcgLocation<'tcx>,
-    ) -> Self
+    fn new<'mir>(location: &'a PcgLocation<'tcx>) -> Self
     where
         'tcx: 'mir,
     {
@@ -237,13 +235,13 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-pub fn run_pcg<'mir, 'tcx: 'mir, 'bc, BC: BorrowCheckerInterface<'mir, 'tcx> + ?Sized>(
-    body: &'mir Body<'tcx>,
+pub fn run_pcg<'a, 'tcx: 'a, BC: BorrowCheckerInterface<'tcx> + ?Sized>(
+    body: &'a Body<'tcx>,
     tcx: TyCtxt<'tcx>,
-    bc: &'bc BC,
+    bc: &'a BC,
     visualization_output_path: Option<&str>,
-) -> PcgOutput<'mir, 'tcx, 'bc> {
-    let ctxt: CompilerCtxt<'mir, 'tcx, 'bc> = CompilerCtxt::new(body, tcx, bc.as_dyn());
+) -> PcgOutput<'a, 'tcx> {
+    let ctxt: CompilerCtxt<'a, 'tcx> = CompilerCtxt::new(body, tcx, bc.as_dyn());
     let engine = PcgEngine::new(ctxt, visualization_output_path);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();

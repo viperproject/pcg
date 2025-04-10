@@ -8,17 +8,17 @@ use super::{
     action::actions::BorrowPCGActions, visitor::BorrowsVisitor,
 };
 
-pub struct BorrowsEngine<'mir, 'tcx, 'bc> {
-    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
+pub struct BorrowsEngine<'mir, 'tcx> {
+    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
-impl<'mir, 'tcx, 'bc> BorrowsEngine<'mir, 'tcx, 'bc> {
-    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx, 'bc>) -> Self {
+impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
+    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
         BorrowsEngine { ctxt }
     }
 }
 
-impl<'tcx> BorrowsEngine<'_, 'tcx, '_> {
+impl<'tcx> BorrowsEngine<'_, 'tcx> {
     pub(crate) fn analyze(
         &mut self,
         state: &mut Pcg<'tcx>,

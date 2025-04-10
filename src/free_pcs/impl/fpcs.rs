@@ -42,7 +42,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         &self,
         other: &Self,
         place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, '_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         self.data.as_ref().unwrap().bridge(
             other.data.as_ref().unwrap(),
@@ -54,7 +54,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
     pub fn initialize_as_start_block(
         &mut self,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, '_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         let always_live = repacker.always_live_locals();
         let return_local = RETURN_PLACE;
@@ -93,11 +93,11 @@ impl Debug for FreePlaceCapabilitySummary<'_> {
         self.data.fmt(f)
     }
 }
-impl<'tcx> DebugWithContext<FpcsEngine<'_, 'tcx, '_>> for FreePlaceCapabilitySummary<'tcx> {
+impl<'tcx> DebugWithContext<FpcsEngine<'_, 'tcx>> for FreePlaceCapabilitySummary<'tcx> {
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &FpcsEngine<'_, 'tcx, '_>,
+        _ctxt: &FpcsEngine<'_, 'tcx>,
         _f: &mut Formatter<'_>,
     ) -> Result {
         todo!()

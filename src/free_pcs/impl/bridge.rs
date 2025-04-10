@@ -22,7 +22,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         &self,
         other: &Self,
         place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         if self.len() != other.len() {
             return Err(PcgError::internal(format!(
@@ -45,7 +45,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
         &self,
         other: &Self,
         place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut place_capabilities = place_capabilities.clone();
         match (self, other) {
@@ -90,7 +90,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &self,
         other: &Self,
         self_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx,'_>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut repacks = vec![];
         let mut from = self.clone();

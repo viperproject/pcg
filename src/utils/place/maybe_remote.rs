@@ -23,7 +23,7 @@ pub enum MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.to_pcg_node(repacker),
             MaybeRemotePlace::Remote(rp) => rp.to_pcg_node(repacker),
@@ -41,14 +41,14 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemotePlace<'tcx> {
 
     fn regions<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, PcgRegion> {
         self.related_local_place().regions(repacker)
     }
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             MaybeRemotePlace::Local(p) => p.to_short_string(repacker),
             MaybeRemotePlace::Remote(rp) => format!("{}", rp),
@@ -57,7 +57,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
             MaybeRemotePlace::Remote(rp) => format!("{}", rp).into(),
@@ -101,7 +101,7 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
 
     pub(crate) fn regions<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, PcgRegion> {
         self.related_local_place().regions(repacker)
     }
@@ -121,7 +121,7 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         }
     }
 
-    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
+    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
             MaybeRemotePlace::Remote(_) => todo!(),
@@ -156,7 +156,7 @@ impl RemotePlace {
         self.local
     }
 
-    pub(crate) fn ty<'tcx>(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> ty::Ty<'tcx> {
+    pub(crate) fn ty<'tcx>(&self, repacker: CompilerCtxt<'_, 'tcx>) -> ty::Ty<'tcx> {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
             ty::TyKind::Ref(_, ty, _) => *ty,

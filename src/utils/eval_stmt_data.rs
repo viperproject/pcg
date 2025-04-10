@@ -15,7 +15,7 @@ pub struct EvalStmtData<T> {
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for EvalStmtData<T> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "pre_operands": self.pre_operands.to_json(repacker),
             "post_operands": self.post_operands.to_json(repacker),
@@ -37,7 +37,7 @@ impl<T: Default> Default for EvalStmtData<T> {
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<Rc<T>> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.pre_operands.check_validity(repacker)?;
         self.post_operands.check_validity(repacker)?;
         self.pre_main.check_validity(repacker)?;
