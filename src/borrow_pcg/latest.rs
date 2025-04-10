@@ -6,16 +6,16 @@ use crate::rustc_interface::{
     data_structures::fx::FxHashMap,
     middle::{mir::BasicBlock, ty},
 };
-use crate::utils::display::{DebugLines, DisplayWithRepacker};
-use crate::utils::{Place, PlaceRepacker, SnapshotLocation};
+use crate::utils::display::{DebugLines, DisplayWithCompilerCtxt};
+use crate::utils::{Place, CompilerCtxt, SnapshotLocation};
 
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Latest<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx,'_>> for Latest<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Vec<String> {
         self.0
             .iter()
             .map(|(p, l)| format!("{} -> {:?}", p.to_short_string(repacker), l))
@@ -23,8 +23,8 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for Latest<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for Latest<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         json!(self
             .0
             .iter()

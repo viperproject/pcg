@@ -22,7 +22,7 @@ use rustc_interface::{
 
 use crate::rustc_interface;
 
-use super::{Place, PlaceRepacker};
+use super::{Place, CompilerCtxt};
 
 #[derive(Clone)]
 pub enum PlaceDisplay<'tcx> {
@@ -45,12 +45,12 @@ impl PlaceDisplay<'_> {
     }
 }
 
-pub trait DisplayWithRepacker<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String;
+pub trait DisplayWithCompilerCtxt<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String;
 }
 
-impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Vec<T> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Vec<T> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         let comma_sep = self
             .iter()
             .map(|t| t.to_short_string(repacker))
@@ -60,8 +60,8 @@ impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Vec<T> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for Place<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         match self.to_string(repacker) {
             PlaceDisplay::Temporary(p) => format!("{:?}", p),
             PlaceDisplay::User(_p, s) => s,
@@ -70,11 +70,11 @@ impl<'tcx> DisplayWithRepacker<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub(crate) fn to_json(self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub(crate) fn to_json(self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         serde_json::Value::String(self.to_short_string(repacker))
     }
 
-    pub fn to_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceDisplay<'tcx> {
+    pub fn to_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> PlaceDisplay<'tcx> {
         // Get the local's debug name from the Body's VarDebugInfo
         let local_name = if self.local == RETURN_PLACE {
             Cow::Borrowed("RETURN")

@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BlockedNode,
-        has_pcs_elem::{default_make_place_old, MakePlaceOld},
+        has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
@@ -14,7 +14,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
-    utils::Place,
+    utils::{Place, SnapshotLocation},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
@@ -24,11 +24,11 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::combined_pcs::{LocalNodeLike, PCGNode};
-use crate::utils::display::DisplayWithRepacker;
+use crate::pcg::{LocalNodeLike, PCGNode};
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::PlaceRepacker;
+use crate::utils::CompilerCtxt;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use std::collections::BTreeSet;
@@ -39,34 +39,53 @@ pub struct LoopAbstraction<'tcx> {
     pub(crate) block: BasicBlock,
 }
 
+impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
+    ) -> bool {
+        self.edge.label_region_projection(projection, location, repacker)
+    }
+}
 impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
 }
 
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
-    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<LocalNode<'tcx>> {
         self.edge.blocked_by_nodes(repacker)
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.edge.check_validity(repacker)
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for LoopAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LoopAbstraction<'tcx> {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "Loop({:?}): {}",
             self.block,
@@ -114,39 +133,64 @@ pub struct FunctionCallAbstraction<'tcx> {
     edge: AbstractionBlockEdge<'tcx>,
 }
 
+impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
+    ) -> bool {
+        self.edge
+            .label_region_projection(projection, location, repacker)
+    }
+}
+
 impl<'tcx> MakePlaceOld<'tcx> for FunctionCallAbstraction<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
 }
 
 impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: BlockedNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> bool {
         self.edge.blocks_node(node, repacker)
     }
 
-    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<LocalNode<'tcx>> {
         self.edge.blocked_by_nodes(repacker)
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         self.edge.check_validity(repacker)
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!("FunctionCall({:?}, {:?})", self.def_id, self.substs)
     }
 }
@@ -208,8 +252,30 @@ pub struct AbstractionBlockEdge<'tcx> {
     outputs: Vec<AbstractionOutputTarget<'tcx>>,
 }
 
+impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
+    ) -> bool {
+        let mut changed = false;
+        for input in self.inputs.iter_mut() {
+            changed |= input.label_region_projection(projection, location, repacker);
+        }
+        for output in self.outputs.iter_mut() {
+            changed |= output.label_region_projection(projection, location, repacker);
+        }
+        changed
+    }
+}
+
 impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: BlockedNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> bool {
         match node {
             PCGNode::Place(p) => self.inputs.contains(&p.into()),
             PCGNode::RegionProjection(region_projection) => match region_projection.base {
@@ -222,11 +288,17 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
             },
         }
     }
-    fn blocked_nodes(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs()
             .into_iter()
             .map(|o| o.to_local_node(repacker))
@@ -234,8 +306,8 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionBlockEdge<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!(
             "[{}] -> [{}]",
             self.inputs
@@ -251,7 +323,10 @@ impl<'tcx> DisplayWithRepacker<'tcx> for AbstractionBlockEdge<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         for input in self.inputs.iter() {
             input.check_validity(repacker)?;
         }

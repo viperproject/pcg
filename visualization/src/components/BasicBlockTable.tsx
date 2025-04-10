@@ -7,7 +7,6 @@ interface BasicBlockTableProps {
   currentPoint: CurrentPoint;
   setCurrentPoint: (point: CurrentPoint) => void;
   isOnSelectedPath: boolean;
-  showStorageStmts: boolean;
 }
 
 export function isStorageStmt(stmt: string) {
@@ -19,7 +18,6 @@ export default function BasicBlockTable({
   currentPoint,
   setCurrentPoint,
   isOnSelectedPath,
-  showStorageStmts,
 }: BasicBlockTableProps) {
   return (
     <table
@@ -39,9 +37,7 @@ export default function BasicBlockTable({
           </td>
         </tr>
         {data.stmts.map((stmt, i) => {
-          if (!showStorageStmts && isStorageStmt(stmt)) {
-            return null;
-          }
+          const tooltip = `Loans invalidated at start: ${stmt.loans_invalidated_start.join(", ")}\nLoans invalidated at mid: ${stmt.loans_invalidated_mid.join(", ")}`;
           return (
             <tr
               className={
@@ -59,10 +55,11 @@ export default function BasicBlockTable({
                   stmt: i,
                 })
               }
+              title={tooltip}
             >
               <td>{i}</td>
               <td>
-                <code>{stmt}</code>
+                <code>{stmt.stmt}</code>
               </td>
             </tr>
           );
@@ -95,7 +92,6 @@ export default function BasicBlockTable({
 
 export function computeTableHeight(
   data: BasicBlockData,
-  showStorageStmts: boolean
 ): number {
   const container = document.createElement("div");
   container.innerHTML = ReactDOMServer.renderToString(
@@ -108,7 +104,6 @@ export function computeTableHeight(
         terminator: data.terminator,
       },
       setCurrentPoint: () => {},
-      showStorageStmts,
     })
   );
   document.body.appendChild(container);

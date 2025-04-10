@@ -1,10 +1,16 @@
 import { Assertion } from "./components/Assertions";
 import { CurrentPoint, PcgProgramPointData, PCGStmtVisualizationData } from "./types";
 
+export type MirStmt = {
+  stmt: string;
+  loans_invalidated_start: string[];
+  loans_invalidated_mid: string[];
+};
+
 export type MirGraphNode = {
   id: string;
   block: number;
-  stmts: string[];
+  stmts: MirStmt[];
   terminator: string;
 };
 

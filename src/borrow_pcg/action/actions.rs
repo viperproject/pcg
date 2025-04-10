@@ -3,12 +3,12 @@ use derive_more::{Deref, DerefMut};
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::borrow_pcg::edge::outlives::OutlivesEdge;
+use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
-use crate::utils::json::ToJsonWithRepacker;
-use crate::utils::PlaceRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
+use crate::utils::CompilerCtxt;
 use crate::{validity_checks_enabled, Weaken};
 
 use super::BorrowPCGActionKind;
@@ -16,8 +16,8 @@ use super::BorrowPCGActionKind;
 #[derive(Clone, Deref, DerefMut, Debug, Default)]
 pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGActions<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGActions<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         self.0
             .iter()
             .map(|a| a.to_json(repacker))
@@ -32,14 +32,14 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         &self.0
     }
 
-    pub fn added_outlives_edges(&self) -> FxHashSet<Conditioned<OutlivesEdge<'tcx>>> {
+    pub fn added_outlives_edges(&self) -> FxHashSet<Conditioned<BorrowFlowEdge<'tcx>>> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
                 BorrowPCGActionKind::AddEdge {
                     edge:
                         BorrowPCGEdge {
-                            kind: BorrowPCGEdgeKind::Outlives(edge),
+                            kind: BorrowPCGEdgeKind::BorrowFlow(edge),
                             conditions,
                             ..
                         },
@@ -72,10 +72,6 @@ impl<'tcx> BorrowPCGActions<'tcx> {
 }
 
 impl<'tcx> BorrowPCGActions<'tcx> {
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &BorrowPCGAction<'tcx>> {
-        self.0.iter()
-    }
-
     pub(crate) fn new() -> Self {
         Self(vec![])
     }

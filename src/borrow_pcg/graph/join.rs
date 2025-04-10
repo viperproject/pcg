@@ -1,10 +1,9 @@
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::borrow_pcg::edge_data::EdgeData;
+use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
-use crate::{borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface, utils::PlaceRepacker};
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::ToBorrowsEdge,
@@ -12,9 +11,8 @@ use crate::{
         latest::Latest,
         path_condition::PathConditions,
     },
-    combined_pcs::PCGNode,
-    rustc_interface::data_structures::fx::FxHashSet,
-    rustc_interface::middle::mir::BasicBlock,
+    pcg::PCGNode,
+    rustc_interface::middle::mir::{self, BasicBlock},
     utils::{
         display::DisplayDiff, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
         validity::HasValidityCheck, PlaceSnapshot, SnapshotLocation,
@@ -25,9 +23,14 @@ use crate::{
 use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn render_debug_graph(&self, repacker: PlaceRepacker<'_, 'tcx>, comment: &str) {
+    pub(crate) fn render_debug_graph(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
+        location: mir::Location,
+        comment: &str,
+    ) {
         if borrows_imgcat_debug() {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, location) {
                 DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {}", e);
                 });
@@ -40,8 +43,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-        bc: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, '_>,
     ) -> bool {
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
@@ -49,13 +51,33 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // }
         let old_self = self.clone();
 
+        let self_location = mir::Location {
+            block: self_block,
+            statement_index: 0,
+        };
+        let other_location = mir::Location {
+            block: other_block,
+            statement_index: 0,
+        };
         if repacker.is_back_edge(other_block, self_block) {
-            self.render_debug_graph(repacker, &format!("Self graph: {:?}", self_block));
-            other.render_debug_graph(repacker, &format!("Other graph: {:?}", other_block));
-            self.join_loop(other, self_block, other_block, repacker, bc);
+            self.render_debug_graph(
+                repacker,
+                self_location,
+                &format!("Self graph: {:?}", self_block),
+            );
+            other.render_debug_graph(
+                repacker,
+                other_location,
+                &format!("Other graph: {:?}", other_block),
+            );
+            self.join_loop(other, self_block, other_block, repacker);
             let result = *self != old_self;
             if borrows_imgcat_debug() {
-                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+                if let Ok(dot_graph) = generate_borrows_dot_graph(
+                    repacker,
+                    self,
+                    self_location,
+                ) {
                     DotGraph::render_with_imgcat(
                         &dot_graph,
                         &format!("After join (loop, changed={:?}):", result),
@@ -93,7 +115,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let changed = old_self != *self;
 
         if borrows_imgcat_debug() {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(
+                repacker,
+                self,
+                mir::Location {
+                    block: self_block,
+                    statement_index: 0,
+                },
+            ) {
                 DotGraph::render_with_imgcat(
                     &dot_graph,
                     &format!("After join: (changed={:?})", changed),
@@ -109,19 +138,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         // For performance reasons we only check validity here if we are also producing debug graphs
         if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(repacker) {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
                     |e| {
                         eprintln!("Error rendering self graph: {}", e);
                     },
                 );
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, &old_self) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, &old_self, self_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering old self graph: {}", e);
                 });
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other, other_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {}", e);
                 });
@@ -134,41 +163,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    #[allow(dead_code)]
-    fn transitively_blocking_edges<'graph, 'mir: 'graph>(
-        &'graph self,
-        node: PCGNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
-        let mut stack: Vec<BorrowPCGEdgeRef<'tcx, 'graph>> =
-            self.edges_blocking(node, repacker).collect();
-        let mut result = FxHashSet::default();
-        while let Some(edge) = stack.pop() {
-            result.insert(edge);
-            for blocking_node in edge.blocked_by_nodes(repacker) {
-                for edge in self.edges_blocking(blocking_node.into(), repacker) {
-                    if result.insert(edge) {
-                        stack.push(edge);
-                    }
-                }
-            }
-        }
-        result
-    }
-
     fn join_loop<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, '_>,
     ) {
         let self_coupling_graph = AbstractionGraphConstructor::new(repacker, self_block)
-            .construct_abstraction_graph(self, borrow_checker);
-        let other_coupling_graph =
-            AbstractionGraphConstructor::new(repacker, other_block)
-                .construct_abstraction_graph(other, borrow_checker);
+            .construct_abstraction_graph(self, repacker.bc);
+        let other_coupling_graph = AbstractionGraphConstructor::new(repacker, other_block)
+            .construct_abstraction_graph(other, repacker.bc);
 
         if coupling_imgcat_debug() {
             self_coupling_graph

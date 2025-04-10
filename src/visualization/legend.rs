@@ -115,6 +115,8 @@ fn write_node_legend<T: Write>(out: &mut T) -> io::Result<()> {
         id: NodeId('r', 0),
         node_type: NodeType::RegionProjectionNode {
             label: "rx↓'rx".to_string(),
+            base_ty: "&'rx mut i32".to_string(),
+            loans: "".to_string(),
         },
     };
 

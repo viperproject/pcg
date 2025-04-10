@@ -1,15 +1,15 @@
 use serde_json::json;
 
-use super::display::DisplayWithRepacker;
-use super::{validity::HasValidityCheck, Place, PlaceRepacker};
+use super::display::DisplayWithCompilerCtxt;
+use super::{validity::HasValidityCheck, Place, CompilerCtxt};
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjectionBaseLike,
+    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::combined_pcs::{PCGNode, PCGNodeLike};
-use crate::utils::json::ToJsonWithRepacker;
+use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
-    combined_pcs::LocalNodeLike,
+    pcg::LocalNodeLike,
     rustc_interface::{
         index::IndexVec,
         middle::mir::{BasicBlock, Location},
@@ -27,11 +27,17 @@ impl SnapshotLocation {
         SnapshotLocation::After(Location::START)
     }
 
-    pub(crate) fn to_json(self) -> serde_json::Value {
-        match self {
-            SnapshotLocation::After(loc) => format!("after {:?}", loc).into(),
-            SnapshotLocation::Start(bb) => format!("start {:?}", bb).into(),
+    pub(crate) fn before(mut loc: Location) -> Self {
+        if loc.statement_index == 0 {
+            SnapshotLocation::Start(loc.block)
+        } else {
+            loc.statement_index -= 1;
+            SnapshotLocation::After(loc)
         }
+    }
+
+    pub(crate) fn to_json(self) -> serde_json::Value {
+        self.to_string().into()
     }
 }
 
@@ -47,8 +53,17 @@ pub struct PlaceSnapshot<'tcx> {
     pub at: SnapshotLocation,
 }
 
+impl std::fmt::Display for SnapshotLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SnapshotLocation::After(loc) => write!(f, "after {:?}", loc),
+            SnapshotLocation::Start(bb) => write!(f, "start {:?}", bb),
+        }
+    }
+}
+
 impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> IndexVec<RegionIdx, PcgRegion> {
         self.place.regions(repacker)
     }
 
@@ -58,19 +73,19 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx> {
         self.to_local_node(repacker).into()
     }
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_local_node(self, _repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
+    fn to_local_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> LocalNode<'tcx> {
         LocalNode::Place(self.into())
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
         self.place.check_validity(repacker)
     }
 }
@@ -81,14 +96,14 @@ impl std::fmt::Display for PlaceSnapshot<'_> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         format!("{} at {:?}", self.place.to_short_string(repacker), self.at)
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "at": self.at.to_json(),
@@ -106,7 +121,7 @@ impl<'tcx> PlaceSnapshot<'tcx> {
 
     pub(crate) fn with_inherent_region(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> PlaceSnapshot<'tcx> {
         PlaceSnapshot {
             place: self.place.with_inherent_region(repacker),

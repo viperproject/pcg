@@ -5,17 +5,11 @@ use crate::{
     borrow_pcg::{
         action::BorrowPCGAction,
         borrow_pcg_edge::BorrowPCGEdge,
-        coupling_graph_constructor::BorrowCheckerInterface,
-        domain::{AbstractionInputTarget, AbstractionOutputTarget},
-        edge::{
-            abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
-            coupling::FunctionCallRegionCoupling,
-            outlives::{OutlivesEdge, OutlivesEdgeKind},
-        },
+        edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, PCGRegion},
+        region_projection::{LocalRegionProjection, PcgRegion},
     },
-    combined_pcs::{PCGUnsupportedError, PcgError},
+    pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         middle::{
@@ -23,10 +17,10 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{self, maybe_old::MaybeOldPlace, PlaceRepacker, PlaceSnapshot},
+    utils::{self, maybe_old::MaybeOldPlace, CompilerCtxt, PlaceSnapshot, SnapshotLocation},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_, '_> {
     /// Constructs a function call abstraction, if necessary.
     pub(super) fn make_function_call_abstraction(
         &mut self,
@@ -52,23 +46,19 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             return Err(PcgError::unsupported(PCGUnsupportedError::ClosureCall));
         };
 
-        let mk_create_edge_action =
-            |input: AbstractionInputTarget<'tcx>, output: AbstractionOutputTarget<'tcx>| {
-                let edge = BorrowPCGEdge::new(
-                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                        location,
-                        *func_def_id,
-                        substs,
-                        AbstractionBlockEdge::new(
-                            vec![input].into_iter().collect(),
-                            vec![output].into_iter().collect(),
-                        ),
-                    ))
-                    .into(),
-                    PathConditions::AtBlock(location.block),
-                );
-                BorrowPCGAction::add_edge(edge, true)
-            };
+        let mk_create_edge_action = |input, output| {
+            let edge = BorrowPCGEdge::new(
+                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                    location,
+                    *func_def_id,
+                    substs,
+                    AbstractionBlockEdge::new(input, output),
+                ))
+                .into(),
+                PathConditions::AtBlock(location.block),
+            );
+            BorrowPCGAction::add_edge(edge, true)
+        };
 
         // The versions of the region projections for the function inputs just
         // before they were moved out, labelled with their last modification
@@ -82,9 +72,14 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                     input_place,
                     self.state.get_latest(input_place),
                 ));
-                input_place.region_projections(self.repacker)
+                input_place.region_projections(self.ctxt)
             })
             .collect::<Vec<_>>();
+
+        for arg in arg_region_projections.iter() {
+            self.state
+                .label_region_projection(arg, SnapshotLocation::before(location), self.ctxt);
+        }
 
         #[derive(Default, Deref)]
         struct CoupledRegionProjections<'tcx>(Vec<FxHashSet<LocalRegionProjection<'tcx>>>);
@@ -92,25 +87,22 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         impl<'tcx> CoupledRegionProjections<'tcx> {
             fn find_matching<'mir>(
                 &mut self,
-                region: PCGRegion,
-                borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                region: PcgRegion,
+                repacker: CompilerCtxt<'mir, 'tcx, '_>,
             ) -> Option<&mut FxHashSet<LocalRegionProjection<'tcx>>> {
                 self.0.iter_mut().find(|set| {
-                    set.iter()
-                        .any(|rp| borrow_checker.same_region(rp.region(repacker), region))
+                    repacker
+                        .bc
+                        .same_region(region, set.iter().next().unwrap().region(repacker))
                 })
             }
 
             fn insert<'mir>(
                 &mut self,
                 projection: LocalRegionProjection<'tcx>,
-                borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx, '_>,
             ) {
-                if let Some(set) =
-                    self.find_matching(projection.region(repacker), borrow_checker, repacker)
-                {
+                if let Some(set) = self.find_matching(projection.region(repacker), repacker) {
                     set.insert(projection);
                 } else {
                     self.0.push(vec![projection].into_iter().collect());
@@ -121,19 +113,31 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         let mut coupled_region_projections = CoupledRegionProjections::default();
 
         for projection in arg_region_projections.iter() {
-            coupled_region_projections.insert(*projection, self.bc.as_ref(), self.repacker);
+            coupled_region_projections.insert(*projection, self.ctxt);
         }
 
         for coupled in coupled_region_projections.iter() {
             let create_edge_action = BorrowPCGAction::add_edge(
                 BorrowPCGEdge::new(
-                    FunctionCallRegionCoupling::new(
-                        coupled.clone(),
-                        coupled
-                            .iter()
-                            .map(|rp| rp.labelled(location.into()))
-                            .collect(),
-                    )
+                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                        location,
+                        *func_def_id,
+                        substs,
+                        AbstractionBlockEdge::new(
+                            coupled
+                                .iter()
+                                .map(|rp| {
+                                    rp.label_projection(SnapshotLocation::before(location))
+                                        .into()
+                                })
+                                .collect(),
+                            coupled
+                                .clone()
+                                .into_iter()
+                                .map(|rp| rp.label_projection(location.into()))
+                                .collect(),
+                        ),
+                    ))
                     .into(),
                     PathConditions::AtBlock(location.block),
                 ),
@@ -142,49 +146,29 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             self.apply_action(create_edge_action);
         }
 
-        for coupled in coupled_region_projections.0.into_iter() {
-            if coupled.len() > 1 {
-                let coupled_lifetime_roots = self.state.frozen_graph().coupled_lifetime_roots(
-                    coupled,
-                    self.bc.as_ref(),
-                    self.repacker,
-                );
-                for (node, to_connect) in coupled_lifetime_roots.connections_to_create().iter() {
-                    for parent in to_connect.iter() {
-                        let action = BorrowPCGAction::add_edge(
-                            BorrowPCGEdge::new(
-                                OutlivesEdge::new(
-                                    *parent,
-                                    *node,
-                                    OutlivesEdgeKind::HavocRegion,
-                                    self.repacker,
-                                )
-                                .into(),
-                                PathConditions::AtBlock(location.block),
-                            ),
-                            true,
-                        );
-                        self.apply_action(action);
-                    }
-                }
-            }
-        }
-
         for arg in args.iter() {
             let input_place: utils::Place<'tcx> = match arg.place() {
                 Some(place) => place.into(),
                 None => continue,
             };
-            let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(input_place, location));
-            let ty = input_place.ty(self.repacker).ty;
+            let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                input_place,
+                self.state.get_latest(input_place),
+            ));
+            let ty = input_place.ty(self.ctxt).ty;
             for (lifetime_idx, input_lifetime) in
-                extract_regions(ty, self.repacker).into_iter_enumerated()
+                extract_regions(ty, self.ctxt).into_iter_enumerated()
             {
                 for output in
                     self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
                 {
-                    let input_rp = input_place.region_projection(lifetime_idx, self.repacker);
-                    self.apply_action(mk_create_edge_action(input_rp.into(), output));
+                    let input_rp = input_place
+                        .region_projection(lifetime_idx, self.ctxt)
+                        .label_projection(location.into());
+                    self.apply_action(mk_create_edge_action(
+                        std::iter::once(input_rp.into()).collect(),
+                        std::iter::once(output).collect(),
+                    ));
                 }
             }
         }

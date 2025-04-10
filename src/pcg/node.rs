@@ -1,6 +1,9 @@
-use crate::borrow_pcg::has_pcs_elem::{default_make_place_old, MakePlaceOld};
+use crate::borrow_pcg::has_pcs_elem::{
+    default_make_place_old, LabelRegionProjection, MakePlaceOld,
+};
 use crate::borrow_pcg::latest::Latest;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::json::ToJsonWithCompilerCtxt;
+use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{Place, SnapshotLocation};
@@ -11,7 +14,7 @@ use crate::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -20,12 +23,29 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
     RegionProjection(RegionProjection<'tcx, U>),
 }
 
+impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
+    for PCGNode<'tcx, T, U>
+{
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        location: SnapshotLocation,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
+    ) -> bool {
+        if let PCGNode::RegionProjection(this_projection) = self {
+            this_projection.label_region_projection(projection, location, repacker)
+        } else {
+            false
+        }
+    }
+}
+
 impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         default_make_place_old(self, place, latest, repacker)
     }
@@ -46,7 +66,7 @@ impl<'tcx, U> From<RegionProjection<'tcx, U>> for PCGNode<'tcx, MaybeRemotePlace
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx> {
         match self {
             PCGNode::Place(p) => p.to_pcg_node(repacker),
             PCGNode::RegionProjection(rp) => rp.to_pcg_node(repacker),
@@ -57,7 +77,7 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> PCGNodeLike<
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
         match self {
             PCGNode::Place(p) => p.check_validity(repacker),
             PCGNode::RegionProjection(rp) => rp.check_validity(repacker),
@@ -65,10 +85,10 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityC
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithRepacker<'tcx>
+impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         match self {
             PCGNode::Place(p) => p.to_short_string(repacker),
             PCGNode::RegionProjection(rp) => rp.to_short_string(repacker),
@@ -76,10 +96,10 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithR
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithRepacker<'tcx>
+impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithCompilerCtxt<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn to_json(&self, _repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         todo!()
     }
 }
@@ -107,12 +127,15 @@ pub trait PCGNodeLike<'tcx>:
     + PartialEq
     + std::hash::Hash
     + HasValidityCheck<'tcx>
-    + DisplayWithRepacker<'tcx>
-    + ToJsonWithRepacker<'tcx>
+    + DisplayWithCompilerCtxt<'tcx>
+    + ToJsonWithCompilerCtxt<'tcx>
 {
-    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx>;
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx>;
 
-    fn try_to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
+    fn try_to_local_node<C: Copy>(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Option<LocalNode<'tcx>> {
         match self.to_pcg_node(repacker) {
             PCGNode::Place(p) => match p {
                 MaybeRemotePlace::Local(maybe_old_place) => {
@@ -137,7 +160,10 @@ pub trait PCGNodeLike<'tcx>:
 }
 
 pub(crate) trait LocalNodeLike<'tcx> {
-    fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx>;
+    fn to_local_node<C: Copy>(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> LocalNode<'tcx>;
 }
 
 impl From<RemotePlace> for PCGNode<'_> {

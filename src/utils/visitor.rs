@@ -1,4 +1,4 @@
-use crate::combined_pcs::PcgError;
+use crate::pcg::PcgError;
 use crate::rustc_interface::middle::mir::{
     self,
     visit::{self},

@@ -6,18 +6,15 @@ use itertools::Itertools;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
-        coupling_graph_constructor::BorrowCheckerInterface,
-        edge::{kind::BorrowPCGEdgeKind, outlives::OutlivesEdgeKind},
         edge_data::EdgeData,
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, RegionProjection},
     },
-    combined_pcs::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::TerminatorEdges,
     },
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
 };
 
 use super::BorrowsGraph;
@@ -59,13 +56,13 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
     }
 
-    pub fn contains(&self, node: PCGNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub fn contains(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx,'_>) -> bool {
         self.nodes(repacker).contains(&node)
     }
 
     pub fn nodes<'slf>(
         &'slf self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
         {
             let nodes = self.nodes_cache.borrow();
@@ -78,9 +75,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.nodes_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub fn roots<'slf>(
+    pub fn roots<'slf, 'bc: 'graph, C: Copy>(
         &'slf self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, 'bc, C>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
         {
             let roots = self.roots_cache.borrow();
@@ -93,9 +90,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub fn leaf_edges<'slf, 'mir: 'graph>(
+    pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
     ) -> CachedLeafEdges<'graph, 'tcx> {
         {
             let edges = self.leaf_edges_cache.borrow();
@@ -108,19 +105,19 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         edges
     }
 
-    pub fn leaf_nodes<'slf, 'mir: 'graph>(
+    pub fn leaf_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> impl Iterator<Item = LocalNode<'tcx>> + 'slf {
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
+    ) -> impl Iterator<Item = LocalNode<'tcx>> + use<'tcx, 'slf, 'mir, 'bc> {
         self.leaf_edges(repacker)
             .into_iter()
             .flat_map(move |edge| edge.blocked_by_nodes(repacker))
     }
 
-    pub fn get_edges_blocked_by<'mir: 'graph>(
+    pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph, C: Copy>(
         &mut self,
         node: LocalNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
     ) -> &CachedBlockedEdges<'graph, 'tcx> {
         self.edges_blocked_by_cache
             .get_mut()
@@ -128,10 +125,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .or_insert_with(|| self.graph.edges_blocked_by(node, repacker).collect())
     }
 
-    pub fn get_edges_blocking<'slf, 'mir: 'graph>(
+    pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph, C: Copy>(
         &'slf self,
         node: PCGNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
     ) -> CachedBlockingEdges<'graph, 'tcx> {
         {
             let map = self.edges_blocking_cache.borrow();
@@ -146,10 +143,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         edges
     }
 
-    pub fn has_edge_blocking<'mir: 'graph>(
+    pub fn has_edge_blocking<'mir: 'graph, 'bc: 'graph>(
         &self,
         node: PCGNode<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
     ) -> bool {
         {
             let map = self.edges_blocking_cache.borrow();
@@ -163,7 +160,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         result
     }
 
-    pub(super) fn is_acyclic<'mir: 'graph>(&mut self, repacker: PlaceRepacker<'mir, 'tcx>) -> bool {
+    pub(super) fn is_acyclic<'mir: 'graph, 'bc: 'graph, C: Copy>(
+        &mut self,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
+    ) -> bool {
         // The representation of an allowed path prefix, e.g. paths
         // with this representation definitely cannot reach a feasible cycle.
         type AllowedPathPrefix<'tcx, 'graph> = Path<'tcx, 'graph>;
@@ -186,7 +186,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             ///
             /// Note that this check is very conservative right now (basically
             /// only checking some obvious cases)
-            fn is_feasible(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+            fn is_feasible<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> bool {
                 let leaf_blocks = repacker
                     .body()
                     .basic_blocks
@@ -220,10 +220,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 true
             }
 
-            fn try_push(
+            fn try_push<C: Copy>(
                 mut self,
                 edge: BorrowPCGEdgeRef<'tcx, 'graph>,
-                repacker: PlaceRepacker<'_, 'tcx>,
+                repacker: CompilerCtxt<'_, 'tcx, '_, C>,
             ) -> PushResult<'tcx, 'graph> {
                 if self.0.iter().any(|e| *e == edge) {
                     PushResult::Cycle
@@ -249,10 +249,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 self.clone()
             }
 
-            fn leads_to_feasible_cycle<'mir: 'graph>(
+            fn leads_to_feasible_cycle<'mir: 'graph, 'bc: 'graph, C: Copy>(
                 &self,
                 graph: &FrozenGraphRef<'graph, 'tcx>,
-                repacker: PlaceRepacker<'mir, 'tcx>,
+                repacker: CompilerCtxt<'mir, 'tcx, 'bc, C>,
                 prefixes: &mut FxHashSet<AllowedPathPrefix<'tcx, 'graph>>,
             ) -> bool {
                 let path_prefix_repr = self.path_prefix_repr();
@@ -294,79 +294,5 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
 
         true
-    }
-
-    pub(crate) fn coupled_lifetime_roots<'mir: 'graph>(
-        &mut self,
-        start_from: FxHashSet<LocalRegionProjection<'tcx>>,
-        borrow_checker: &dyn BorrowCheckerInterface<'mir, 'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
-    ) -> CoupledRoots<'tcx> {
-        debug_assert!(start_from.len() > 1);
-        let region = start_from.iter().next().unwrap().region(repacker);
-        let mut stack = start_from
-            .into_iter()
-            .map(|rp| rp.to_local_node(repacker))
-            .collect::<Vec<_>>();
-        let mut result = CoupledRoots::default();
-        while let Some(node) = stack.pop() {
-            for edge in self.get_edges_blocked_by(node, repacker).iter() {
-                match edge.kind() {
-                    BorrowPCGEdgeKind::Borrow(_) => {}
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcgexpansion) => {
-                        stack.push(borrow_pcgexpansion.base());
-                    }
-                    BorrowPCGEdgeKind::Abstraction(_) => {}
-                    BorrowPCGEdgeKind::Outlives(outlives_edge) => match outlives_edge.kind {
-                        OutlivesEdgeKind::Aggregate { .. }
-                        | OutlivesEdgeKind::InitialBorrows
-                        | OutlivesEdgeKind::HavocRegion
-                        | OutlivesEdgeKind::ConstRef => {
-                            if borrow_checker
-                                .same_region(outlives_edge.short().region(repacker), region)
-                            {
-                                result.insert(outlives_edge.short(), outlives_edge.long());
-                            }
-                        }
-                        OutlivesEdgeKind::BorrowOutlives { .. } => {
-                            stack.push(outlives_edge.long().try_to_local_node(repacker).unwrap());
-                        }
-                        OutlivesEdgeKind::CopySharedRef => {}
-                    },
-                    BorrowPCGEdgeKind::RegionProjectionMember(..) => todo!(),
-                    BorrowPCGEdgeKind::FunctionCallRegionCoupling(..) => todo!(),
-                }
-            }
-        }
-        result
-    }
-}
-
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub(crate) struct CoupledRoots<'tcx>(
-    FxHashMap<LocalRegionProjection<'tcx>, FxHashSet<RegionProjection<'tcx>>>,
-);
-
-impl<'tcx> CoupledRoots<'tcx> {
-    pub(crate) fn insert(
-        &mut self,
-        node: LocalRegionProjection<'tcx>,
-        parent: RegionProjection<'tcx>,
-    ) {
-        self.0.entry(node).or_default().insert(parent);
-    }
-
-    fn all_parents(&self) -> FxHashSet<RegionProjection<'tcx>> {
-        self.0.values().flatten().cloned().collect()
-    }
-
-    pub fn connections_to_create(
-        self,
-    ) -> FxHashMap<LocalRegionProjection<'tcx>, FxHashSet<RegionProjection<'tcx>>> {
-        let all_parents = self.all_parents();
-        self.0
-            .into_iter()
-            .map(|(node, parents)| (node, all_parents.difference(&parents).cloned().collect()))
-            .collect()
     }
 }

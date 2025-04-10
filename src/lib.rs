@@ -8,41 +8,41 @@
 #![feature(box_patterns, hash_extract_if, extract_if)]
 #![feature(if_let_guard, let_chains)]
 #![feature(never_type)]
+#![feature(proc_macro_hygiene)]
+#![feature(anonymous_lifetime_in_impl_trait)]
+#![feature(stmt_expr_attributes)]
+pub mod action;
 pub mod borrow_pcg;
-pub mod combined_pcs;
 pub mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
+pub mod pcg;
 pub mod rustc_interface;
 pub mod utils;
 pub mod visualization;
 
-use borrow_pcg::{
-    borrow_checker::r#impl::BorrowCheckerImpl, coupling_graph_constructor::BorrowCheckerInterface,
-    latest::Latest,
-};
-use combined_pcs::{PCGEngine, PcgSuccessor};
-use free_pcs::{CapabilityKind, PcgLocation, RepackOp};
+use action::PcgActions;
+use borrow_pcg::{coupling_graph_constructor::BorrowCheckerInterface, latest::Latest};
+use free_pcs::{CapabilityKind, PcgLocation};
+use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
-    borrowck::{
-        self, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-    },
+    borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, PCGAnalysis},
     middle::{mir::Body, ty::TyCtxt},
 };
 use serde_json::json;
 use utils::{
-    display::{DebugLines, DisplayWithRepacker},
+    display::{DebugLines, DisplayWithCompilerCtxt},
     env_feature_enabled,
     maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
-    Place, PlaceRepacker,
+    CompilerCtxt, Place,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
-use utils::json::ToJsonWithRepacker;
+use utils::json::ToJsonWithCompilerCtxt;
 
-pub type FpcsOutput<'mir, 'tcx> = free_pcs::FreePcsAnalysis<'mir, 'tcx>;
+pub type PcgOutput<'mir, 'tcx, 'bc> = free_pcs::FreePcsAnalysis<'mir, 'tcx, 'bc>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -54,7 +54,7 @@ pub struct Weaken<'tcx> {
 }
 
 impl<'tcx> Weaken<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
         let to_str = match self.to {
             Some(to) => format!("{:?}", to),
             None => "None".to_string(),
@@ -105,7 +105,7 @@ pub struct RestoreCapability<'tcx> {
 }
 
 impl<'tcx> RestoreCapability<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
         format!(
             "Restore {} to {:?}",
             self.place.to_short_string(repacker),
@@ -126,8 +126,8 @@ impl<'tcx> RestoreCapability<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Weaken<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "old": format!("{:?}", self.from),
@@ -136,8 +136,8 @@ impl<'tcx> ToJsonWithRepacker<'tcx> for Weaken<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for BorrowPCGActions<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx, '_>> for BorrowPCGActions<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Vec<String> {
         self.0
             .iter()
             .map(|action| action.debug_line(repacker))
@@ -163,52 +163,48 @@ lazy_static::lazy_static! {
 struct PCGStmtVisualizationData<'a, 'tcx> {
     /// The value of the "latest" map at the end of the statement.
     latest: &'a Latest<'tcx>,
-    free_pcg_repacks_start: &'a Vec<RepackOp<'tcx>>,
-    free_pcg_repacks_middle: &'a Vec<RepackOp<'tcx>>,
-    borrow_actions: &'a EvalStmtData<BorrowPCGActions<'tcx>>,
+    actions: &'a EvalStmtData<PcgActions<'tcx>>,
 }
 
 struct PcgSuccessorVisualizationData<'a, 'tcx> {
-    owned_ops: &'a [RepackOp<'tcx>],
-    borrow_ops: &'a BorrowPCGActions<'tcx>,
+    actions: &'a PcgActions<'tcx>,
 }
 
 impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
     fn from(successor: &'a PcgSuccessor<'tcx>) -> Self {
         Self {
-            owned_ops: successor.owned_ops(),
-            borrow_ops: successor.borrow_ops(),
+            actions: &successor.actions,
         }
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
         json!({
-            "owned_ops": self.owned_ops.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "borrow_ops": self.borrow_ops.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
+            "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
         })
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
-            "free_pcg_repacks_start": self.free_pcg_repacks_start.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "free_pcg_repacks_middle": self.free_pcg_repacks_middle.iter().map(|r| r.to_json()).collect::<Vec<_>>(),
-            "borrow_actions": self.borrow_actions.to_json(repacker),
+            "actions": self.actions.to_json(repacker),
         })
     }
 }
 
-impl<'a, 'tcx> From<&'a PcgLocation<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
-    fn from(location: &'a PcgLocation<'tcx>) -> Self {
+impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
+    fn new<'mir>(
+        location: &'a PcgLocation<'tcx>,
+    ) -> Self
+    where
+        'tcx: 'mir,
+    {
         Self {
-            latest: &location.borrows.post_main.latest,
-            free_pcg_repacks_start: &location.repacks_start,
-            free_pcg_repacks_middle: &location.repacks_middle,
-            borrow_actions: &location.borrow_pcg_actions,
+            latest: &location.states[EvalStmtPhase::PostMain].borrow.latest,
+            actions: &location.actions,
         }
     }
 }
@@ -217,7 +213,6 @@ pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
     fn region_inference_context(&self) -> &RegionInferenceContext<'tcx>;
-    fn output_facts(&self) -> Option<Box<PoloniusOutput>>;
     fn location_table(&self) -> &LocationTable;
     fn input_facts(&self) -> &PoloniusInput;
 }
@@ -233,16 +228,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
         &self.region_inference_context
     }
 
-    #[rustversion::before(2024-10-03)]
-    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
-        self.output_facts.clone().map(|o| Box::new(o.as_ref().clone()))
-    }
-
-    #[rustversion::since(2024-10-03)]
-    fn output_facts(&self) -> Option<Box<PoloniusOutput>> {
-        self.output_facts.clone()
-    }
-
     fn location_table(&self) -> &LocationTable {
         self.location_table.as_ref().unwrap()
     }
@@ -252,34 +237,25 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-pub fn run_pcg<'mir, 'tcx: 'mir>(
-    mir: &'mir impl BodyAndBorrows<'tcx>,
+pub fn run_pcg<'mir, 'tcx: 'mir, 'bc, BC: BorrowCheckerInterface<'mir, 'tcx> + ?Sized>(
+    body: &'mir Body<'tcx>,
     tcx: TyCtxt<'tcx>,
-    visualization_output_path: Option<String>,
-) -> FpcsOutput<'mir, 'tcx> {
-    let bc: BorrowCheckerImpl<'mir, 'tcx> = BorrowCheckerImpl::new(tcx, mir);
-    run_pcg_with(mir, tcx, bc, visualization_output_path)
-}
-
-pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
-    mir: &'mir T,
-    tcx: TyCtxt<'tcx>,
-    bc: impl BorrowCheckerInterface<'mir, 'tcx> + 'mir,
-    visualization_output_path: Option<String>,
-) -> FpcsOutput<'mir, 'tcx> {
-    let repacker = PlaceRepacker::new(mir.body(), tcx);
-    let engine = PCGEngine::new(repacker, bc, visualization_output_path.clone());
+    bc: &'bc BC,
+    visualization_output_path: Option<&str>,
+) -> PcgOutput<'mir, 'tcx, 'bc> {
+    let ctxt: CompilerCtxt<'mir, 'tcx, 'bc> = CompilerCtxt::new(body, tcx, bc.as_dyn());
+    let engine = PcgEngine::new(ctxt, visualization_output_path);
     {
-        let mut record_pcs = RECORD_PCG.lock().unwrap();
-        *record_pcs = true;
+        let mut record_pcg = RECORD_PCG.lock().unwrap();
+        *record_pcg = true;
     }
-    let analysis = compute_fixpoint(PCGAnalysis(engine), tcx, mir.body());
+    let analysis = compute_fixpoint(PCGAnalysis(engine), tcx, body);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = false;
     }
     if let Some(dir_path) = &visualization_output_path {
-        for block in mir.body().basic_blocks.indices() {
+        for block in body.basic_blocks.indices() {
             let state = analysis.entry_set_for_block(block);
             assert!(state.block() == block);
             let block_iterations_json_file =
@@ -291,8 +267,7 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
                 .write_json_file(&block_iterations_json_file);
         }
     }
-    let mut fpcs_analysis =
-        free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(mir.body()));
+    let mut fpcs_analysis = free_pcs::FreePcsAnalysis::new(analysis.into_results_cursor(body));
 
     if let Some(dir_path) = visualization_output_path {
         let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
@@ -304,13 +279,11 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
         std::fs::write(&node_legend_file_path, node_legend_graph)
             .expect("Failed to write node legend");
-        generate_json_from_mir(&format!("{}/mir.json", dir_path), tcx, mir.body())
+        generate_json_from_mir(&format!("{}/mir.json", dir_path), ctxt)
             .expect("Failed to generate JSON from MIR");
 
-        let rp = PlaceRepacker::new(mir.body(), tcx);
-
         // Iterate over each statement in the MIR
-        for (block, _data) in mir.body().basic_blocks.iter_enumerated() {
+        for (block, _data) in body.basic_blocks.iter_enumerated() {
             let pcs_block_option = if let Ok(opt) = fpcs_analysis.get_all_for_bb(block) {
                 opt
             } else {
@@ -322,16 +295,16 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
             let pcs_block = pcs_block_option.unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
-                    statement.assert_validity(rp);
+                    statement.assert_validity(ctxt);
                 }
-                let data = PCGStmtVisualizationData::from(statement);
+                let data = PCGStmtVisualizationData::new(statement);
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",
                     &dir_path,
                     block.index(),
                     statement_index
                 );
-                let pcg_data_json = data.to_json(rp);
+                let pcg_data_json = data.to_json(ctxt);
                 std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
                     .expect("Failed to write pcg data to JSON file");
             }
@@ -343,7 +316,7 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
                     block.index(),
                     succ.block().index()
                 );
-                let pcg_data_json = data.to_json(rp);
+                let pcg_data_json = data.to_json(ctxt);
                 std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
                     .expect("Failed to write pcg data to JSON file");
             }
@@ -355,9 +328,28 @@ pub fn run_pcg_with<'mir, 'tcx: 'mir, T: BodyAndBorrows<'tcx>>(
 
 #[macro_export]
 macro_rules! pcg_validity_assert {
-    ($($arg:tt)*) => {
+    ($cond:expr) => {
         if $crate::validity_checks_enabled() {
-            assert!($($arg)*);
+            if $crate::validity_checks_warn_only() {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                if !$cond {
+                    tracing::error!("assertion failed: {}", stringify!($cond));
+                }
+            } else {
+                assert!($cond);
+            }
+        }
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        if $crate::validity_checks_enabled() {
+            if $crate::validity_checks_warn_only() {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                if !$cond {
+                    tracing::error!($($arg)*);
+                }
+            } else {
+                assert!($cond, $($arg)*);
+            }
         }
     };
 }
@@ -375,4 +367,8 @@ macro_rules! pcg_validity_warn {
 
 pub(crate) fn validity_checks_enabled() -> bool {
     env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
+}
+
+pub(crate) fn validity_checks_warn_only() -> bool {
+    env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false)
 }

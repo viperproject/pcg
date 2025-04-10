@@ -11,7 +11,7 @@ use rustc_interface::middle::mir::Local;
 use crate::{
     free_pcs::CapabilityKind,
     pcg_validity_assert, rustc_interface,
-    utils::{Place, PlaceRepacker},
+    utils::{Place, CompilerCtxt},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,6 +87,11 @@ impl Display for RepackOp<'_> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
+
+    pub(crate) fn debug_line(&self, _repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
+        format!("{self:?}")
+    }
+
     pub(crate) fn to_json(self) -> serde_json::Value {
         serde_json::Value::String(format!("{self:?}"))
     }
@@ -95,7 +100,7 @@ impl<'tcx> RepackOp<'tcx> {
         from: Place<'tcx>,
         to: Place<'tcx>,
         for_cap: CapabilityKind,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Self {
         pcg_validity_assert!(
             to.is_owned(repacker),

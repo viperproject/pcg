@@ -31,6 +31,16 @@ fn test_selected_crates() {
     // common::run_on_crate("serde_with", "3.12.0", true);
     // common::run_on_crate("tap", "1.0.1", false);
 
+    // common::run_on_crate(
+    //     "serde_json",
+    //     "1.0.140",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: true,
+    //     },
+    // );
+
     // We should test this consistently because it's a good loop test
     // common::run_on_crate(
     //     "tinytemplate",
@@ -55,10 +65,10 @@ fn test_selected_crates() {
     // common::run_on_crate(
     //     "regex-syntax",
     //     "0.8.5",
-    //     None,
+    //     Some("2025-03-13"),
     //     common::RunOnCrateOptions::RunPCG {
     //         target: common::Target::Debug,
-    //         validity_checks: false,
+    //         validity_checks: true,
     //     },
     // );
 

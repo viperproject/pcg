@@ -1,12 +1,12 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BorrowPCGEdge,
-        has_pcs_elem::{HasPcgElems, MakePlaceOld},
+        has_pcs_elem::MakePlaceOld,
         latest::Latest,
         path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::{validity::HasValidityCheck, Place, PlaceRepacker},
+    utils::{Place, CompilerCtxt},
 };
 
 use super::BorrowsGraph;
@@ -16,12 +16,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         place: Place<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> bool {
         self.mut_edges(|edge| edge.make_place_old(place, latest, repacker))
     }
 
-    fn mut_edges<'slf>(
+    pub(crate) fn mut_edges<'slf>(
         &'slf mut self,
         mut f: impl FnMut(&mut BorrowPCGEdge<'tcx>) -> bool,
     ) -> bool {
@@ -57,25 +57,5 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
         self.mut_edge_conditions(|conditions| conditions.insert(pc))
-    }
-
-    pub(crate) fn mut_pcs_elems<'slf, T: 'tcx>(
-        &'slf mut self,
-        mut f: impl FnMut(&mut T) -> bool,
-        repacker: PlaceRepacker<'_, 'tcx>,
-    ) -> bool
-    where
-        BorrowPCGEdge<'tcx>: HasPcgElems<T>,
-    {
-        self.mut_edges(|edge| {
-            let mut changed = false;
-            for rp in edge.pcg_elems() {
-                if f(rp) {
-                    changed = true;
-                }
-            }
-            edge.assert_validity(repacker);
-            changed
-        })
     }
 }

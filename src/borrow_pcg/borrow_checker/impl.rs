@@ -2,10 +2,11 @@ extern crate polonius_engine;
 use polonius_engine::Output;
 
 use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use crate::borrow_pcg::region_projection::PCGRegion;
-use crate::combined_pcs::PCGNode;
+use crate::borrow_pcg::region_projection::PcgRegion;
+use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
-    BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput, RegionInferenceContext,
+    calculate_borrows_out_of_scope_at_location, BorrowData, BorrowIndex, BorrowSet, LocationTable,
+    PoloniusInput, PoloniusOutput, RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::compute_fixpoint;
@@ -13,24 +14,29 @@ use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
 use crate::utils::maybe_remote::MaybeRemotePlace;
-use crate::utils::{HasPlace, PlaceRepacker};
+use crate::utils::{CompilerCtxt, HasPlace};
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
-    repacker: PlaceRepacker<'mir, 'tcx>,
-    output_facts: Rc<PoloniusOutput>,
+    input_facts: &'mir PoloniusInput,
+    pub output_facts: PoloniusOutput,
+    body: &'mir mir::Body<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
 }
 
-impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
-    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
+impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, '_> {
+        CompilerCtxt::new(self.body, self.tcx, self)
+    }
+    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let location_table = body.location_table();
-        let repacker = PlaceRepacker::new(body.body(), tcx);
         let output_facts = Output::compute(
             body.input_facts(),
             polonius_engine::Algorithm::DatafrogOpt,
@@ -39,41 +45,108 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
+            input_facts: body.input_facts(),
             location_table,
-            repacker,
-            output_facts: Rc::new(output_facts),
+            output_facts,
+            body: body.body(),
+            tcx,
             region_cx,
             borrows,
         }
     }
+    pub fn origin_live_on_entry(&self, location: RichLocation) -> Option<BTreeSet<ty::RegionVid>> {
+        let origins = match location {
+            RichLocation::Start(location) => self
+                .output_facts
+                .origin_live_on_entry
+                .get(&self.location_table.start_index(location))?,
+            RichLocation::Mid(location) => self
+                .output_facts
+                .origin_live_on_entry
+                .get(&self.location_table.mid_index(location))?,
+        };
+        Some(origins.iter().map(|r| (*r).into()).collect())
+    }
+
+    pub fn loans_live_at(&self, location: RichLocation) -> BTreeSet<ty::RegionVid> {
+        let loans = match location {
+            RichLocation::Start(location) => self
+                .output_facts
+                .loans_in_scope_at(self.location_table.start_index(location)),
+            RichLocation::Mid(location) => self
+                .output_facts
+                .loans_in_scope_at(self.location_table.mid_index(location)),
+        };
+        loans
+            .iter()
+            .map(|r| self.borrow_index_to_region(*r))
+            .collect()
+    }
+
+    pub fn origin_contains_loan_at(
+        &self,
+        location: RichLocation,
+    ) -> Option<BTreeMap<ty::RegionVid, BTreeSet<BorrowIndex>>> {
+        let location_table = self.location_table();
+        let loans = match location {
+            RichLocation::Start(location) => self
+                .output_facts
+                .origin_contains_loan_at
+                .get(&location_table.start_index(location))?,
+            RichLocation::Mid(location) => self
+                .output_facts
+                .origin_contains_loan_at
+                .get(&location_table.mid_index(location))?,
+        };
+        Some(
+            loans
+                .iter()
+                .map(|(region, indices)| ((*region).into(), indices.clone()))
+                .collect(),
+        )
+    }
+}
+
+impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let regions: Vec<_> = match node {
-            PCGNode::Place(place) => place.regions(self.repacker).into_iter().collect(),
+            PCGNode::Place(place) => place.regions(self.ctxt()).into_iter().collect(),
             PCGNode::RegionProjection(region_projection) => {
                 if let Some(place) = region_projection.base().as_local_place() {
                     let mut regions: Vec<_> =
-                        place.place().regions(self.repacker).into_iter().collect();
-                    regions.push(region_projection.region(self.repacker));
+                        place.place().regions(self.ctxt()).into_iter().collect();
+                    regions.push(region_projection.region(self.ctxt()));
                     regions
                 } else {
                     todo!()
                 }
             }
         };
+        let live_loans = self
+            .output_facts
+            .loans_in_scope_at(self.location_table.start_index(location));
+
+        let live_origins: BTreeSet<ty::RegionVid> = self
+            .output_facts
+            .origins_live_at(self.location_table.start_index(location))
+            .iter()
+            .map(|r| (*r).into())
+            .collect::<BTreeSet<_>>();
         regions.iter().any(|region| match region {
-            PCGRegion::RegionVid(region_vid) => self
-                .output_facts
-                .origin_contains_loan_at(self.location_table.start_index(location))
-                .contains_key(&(*region_vid).into()),
-            PCGRegion::ReErased => todo!(),
-            PCGRegion::ReStatic => todo!(),
-            PCGRegion::ReBound(_, _) => todo!(),
-            PCGRegion::ReLateParam(_) => todo!(),
-            PCGRegion::PCGInternalErr => todo!(),
+            PcgRegion::RegionVid(region_vid) => live_loans.iter().any(|loan| {
+                live_origins.contains(region_vid)
+                    || self
+                        .region_cx
+                        .eval_outlives(*region_vid, self.borrow_index_to_region(*loan))
+            }),
+            PcgRegion::ReErased => todo!(),
+            PcgRegion::ReStatic => todo!(),
+            PcgRegion::ReBound(_, _) => todo!(),
+            PcgRegion::ReLateParam(_) => todo!(),
         })
     }
 
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         outlives(self.region_cx, sup, sub)
     }
 
@@ -83,15 +156,42 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'mir, 'tcx> for PoloniusBorrowChec
     ) -> std::collections::BTreeSet<Location> {
         twophase_borrow_activations(location, self.borrows)
     }
+
+    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx> {
+        self.region_cx
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        self.location_table
+    }
+
+    fn polonius_output(&self) -> Option<&PoloniusOutput> {
+        Some(&self.output_facts)
+    }
+
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+        self
+    }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        self.borrows
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts
+    }
 }
 
 #[derive(Clone)]
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
-    #[allow(unused)]
-    repacker: PlaceRepacker<'mir, 'tcx>,
+    input_facts: &'mir PoloniusInput,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+    out_of_scope_borrows: FxIndexMap<Location, Vec<BorrowIndex>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
+    location_table: &'mir LocationTable,
+    body: &'mir mir::Body<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
 }
 #[rustversion::before(2024-12-14)]
 fn cursor_contains_local(
@@ -109,23 +209,40 @@ fn cursor_contains_local(
     cursor.get().contains(local)
 }
 
-impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
-    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
-        let repacker = PlaceRepacker::new(body.body(), tcx);
+impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
+    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
-            repacker,
+            body: body.body(),
+            tcx,
             cursor: Rc::new(RefCell::new(
                 compute_fixpoint(MaybeLiveLocals, tcx, body.body())
                     .into_results_cursor(body.body()),
             )),
             region_cx,
             borrows,
+            location_table: body.location_table(),
+            input_facts: body.input_facts(),
+            out_of_scope_borrows: calculate_borrows_out_of_scope_at_location(
+                body.body(),
+                region_cx,
+                borrows,
+            ),
         }
     }
 
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool {
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, '_> {
+        CompilerCtxt::new(self.body, self.tcx, self)
+    }
+}
+
+impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+    fn input_facts(&self) -> &PoloniusInput {
+        self.input_facts
+    }
+
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         outlives(self.region_cx, sup, sub)
     }
 
@@ -155,7 +272,32 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
         };
         let mut cursor = self.cursor.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
-        cursor_contains_local(cursor, local)
+        if cursor_contains_local(cursor, local) {
+            return true;
+        }
+        if let PCGNode::RegionProjection(region_projection) = node {
+            let out_of_scope_borrows = self
+                .out_of_scope_borrows
+                .get(&location)
+                .cloned()
+                .unwrap_or_default();
+            let out_of_scope_borrow_regions = out_of_scope_borrows
+                .iter()
+                .map(|idx| self.borrow_index_to_region(*idx))
+                .collect::<BTreeSet<_>>();
+            let in_scope_borrows = self
+                .location_map()
+                .values()
+                .filter(|borrow| !out_of_scope_borrow_regions.contains(&get_region(borrow)))
+                .collect::<Vec<_>>();
+            let region = region_projection.region(self.ctxt());
+            for borrow in in_scope_borrows {
+                if self.outlives(region, get_region(borrow).into()) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn twophase_borrow_activations(
@@ -164,12 +306,32 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowCheckerImpl<'mir, 
     ) -> std::collections::BTreeSet<Location> {
         twophase_borrow_activations(location, self.borrows)
     }
+
+    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx> {
+        self.region_cx
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        self.location_table
+    }
+
+    fn polonius_output(&self) -> Option<&PoloniusOutput> {
+        None
+    }
+
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+        self
+    }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        self.borrows
+    }
 }
 
-fn outlives(region_cx: &RegionInferenceContext<'_>, sup: PCGRegion, sub: PCGRegion) -> bool {
+fn outlives(region_cx: &RegionInferenceContext<'_>, sup: PcgRegion, sub: PcgRegion) -> bool {
     match (sup, sub) {
-        (PCGRegion::RegionVid(sup), PCGRegion::RegionVid(sub)) => region_cx.eval_outlives(sup, sub),
-        (PCGRegion::ReStatic, _) => true,
+        (PcgRegion::RegionVid(sup), PcgRegion::RegionVid(sub)) => region_cx.eval_outlives(sup, sub),
+        (PcgRegion::ReStatic, _) => true,
         _ => false,
     }
 }
@@ -212,3 +374,15 @@ fn get_activation_map<'a, 'tcx>(
 ) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
     &borrows.activation_map
 }
+
+#[rustversion::since(2024-12-14)]
+fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
+    borrow.region()
+}
+
+#[rustversion::before(2024-12-14)]
+fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
+    borrow.region
+}
+
+

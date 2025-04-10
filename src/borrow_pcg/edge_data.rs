@@ -1,6 +1,6 @@
-use crate::combined_pcs::PCGNode;
+use crate::pcg::PCGNode;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
-use crate::utils::PlaceRepacker;
+use crate::utils::CompilerCtxt;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
@@ -8,17 +8,31 @@ use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 pub trait EdgeData<'tcx> {
     /// For an edge A -> B, this returns the set of nodes A. In general, the capabilities
     /// of nodes B are obtained from these nodes.
-    fn blocked_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>>;
+    fn blocked_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<PCGNode<'tcx>>;
 
     /// For an edge A -> B, this returns the set of nodes B. In general, these nodes
     /// obtain their capabilities from the nodes A.
-    fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, 'tcx>) -> FxHashSet<LocalNode<'tcx>>;
+    fn blocked_by_nodes<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> FxHashSet<LocalNode<'tcx>>;
 
-    fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: BlockedNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> bool {
         self.blocked_nodes(repacker).contains(&node)
     }
 
-    fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    fn is_blocked_by<C: Copy>(
+        &self,
+        node: LocalNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> bool {
         self.blocked_by_nodes(repacker).contains(&node)
     }
 }
@@ -30,7 +44,10 @@ macro_rules! edgedata_enum {
         $( $variant_name:ident($inner_type:ty) ),+ $(,)?
     ) => {
         impl<$tcx> $crate::borrow_pcg::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
-            fn blocked_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<PCGNode<'tcx>> {
+            fn blocked_nodes<C: Copy>(
+                &self,
+                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+            ) -> FxHashSet<PCGNode<'tcx>> {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_nodes(repacker),
@@ -38,7 +55,10 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn blocked_by_nodes(&self, repacker: PlaceRepacker<'_, $tcx>) -> FxHashSet<$crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> {
+            fn blocked_by_nodes<C: Copy>(
+                &self,
+                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+            ) -> FxHashSet<$crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_by_nodes(repacker),
@@ -46,14 +66,24 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn blocks_node(&self, node: BlockedNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool { match self {
+            fn blocks_node<C: Copy>(
+                &self,
+                node: BlockedNode<'tcx>,
+                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+            ) -> bool {
+                match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocks_node(node, repacker),
                     )+
                 }
             }
 
-            fn is_blocked_by(&self, node: LocalNode<'tcx>, repacker: PlaceRepacker<'_, 'tcx>) -> bool { match self {
+            fn is_blocked_by<C: Copy>(
+                &self,
+                node: LocalNode<'tcx>,
+                repacker: CompilerCtxt<'_, $tcx, '_, C>,
+            ) -> bool {
+                match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.is_blocked_by(node, repacker),
                     )+
@@ -75,7 +105,7 @@ macro_rules! edgedata_enum {
                 &mut self,
                 place: $crate::utils::Place<'tcx>,
                 latest: &$crate::borrow_pcg::latest::Latest<'tcx>,
-                repacker: PlaceRepacker<'_, 'tcx>,
+                repacker: CompilerCtxt<'_, 'tcx,'_>,
             ) -> bool {
                 match self {
                     $(
@@ -85,8 +115,26 @@ macro_rules! edgedata_enum {
             }
         }
 
+        impl<$tcx> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjection<$tcx> for $enum_name<$tcx> {
+            fn label_region_projection(
+                &mut self,
+                projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+                location: $crate::utils::SnapshotLocation,
+                repacker: CompilerCtxt<'_, 'tcx,'_>,
+            ) -> bool {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.label_region_projection(projection, location, repacker),
+                    )+
+                }
+            }
+        }
+
         impl<$tcx> HasValidityCheck<$tcx> for $enum_name<$tcx> {
-            fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+            fn check_validity<C: Copy>(
+                &self,
+                repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+            ) -> Result<(), String> {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.check_validity(repacker),
@@ -95,8 +143,8 @@ macro_rules! edgedata_enum {
             }
         }
 
-        impl<$tcx> DisplayWithRepacker<$tcx> for $enum_name<$tcx> {
-            fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+        impl<$tcx> DisplayWithCompilerCtxt<$tcx> for $enum_name<$tcx> {
+            fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.to_short_string(repacker),

@@ -7,18 +7,24 @@ use super::{
     edge::kind::BorrowPCGEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
-    region_projection::PCGRegion,
+    region_projection::PcgRegion,
 };
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
-    combined_pcs::PCGNode,
-    coupling, pcg_validity_assert,
+    coupling,
+    pcg::PCGNode,
+    pcg_validity_assert,
+    rustc_interface::borrowck::{
+        BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
+        RegionInferenceContext, BorrowData,
+    },
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
-    rustc_interface::middle::ty,
-    utils::{display::DisplayWithRepacker, validity::HasValidityCheck, PlaceRepacker},
+    rustc_interface::middle::ty::RegionVid,
+    rustc_interface::data_structures::fx::FxIndexMap,
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
-use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 
 /// A collection of coupled PCG nodes. They will expire at the same time, and only one
 /// node in the set will be alive.
@@ -32,7 +38,10 @@ use crate::{utils::place::maybe_old::MaybeOldPlace, BodyAndBorrows};
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Result<(), String> {
         for t in self.0.iter() {
             t.check_validity(repacker)?;
         }
@@ -40,8 +49,8 @@ impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
     }
 }
 
-impl<'tcx, T: DisplayWithRepacker<'tcx>> DisplayWithRepacker<'tcx> for Coupled<T> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Coupled<T> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
         format!(
             "{{{}}}",
             self.0
@@ -159,25 +168,56 @@ impl CGNode<'_> {
 }
 
 pub trait BorrowCheckerInterface<'mir, 'tcx: 'mir> {
-    fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self
-    where
-        Self: Sized;
-
     /// Returns true if the node is live *before* `location`.
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         !self.is_live(node, location)
     }
-    fn outlives(&self, sup: PCGRegion, sub: PCGRegion) -> bool;
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
 
-    fn same_region(&self, reg1: PCGRegion, reg2: PCGRegion) -> bool {
+    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion) -> bool {
         self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
     }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+
+    #[rustversion::since(2024-12-14)]
+    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
+        self.borrow_set()[borrow_index].region()
+    }
+
+    #[rustversion::before(2024-12-14)]
+    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
+        self.borrow_set()[borrow_index].region
+    }
+
+    #[rustversion::since(2024-12-14)]
+    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
+        self.borrow_set().location_map()
+    }
+
+    #[rustversion::before(2024-12-14)]
+    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
+        &self.borrow_set().location_map
+    }
+
+    fn input_facts(&self) -> &PoloniusInput;
 
     /// Returns the set of two-phase borrows that activate at `location`.
     /// Each borrow in the returned set is represented by the MIR location
     /// that it was created at.
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
+
+    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx>;
+
+    fn location_table(&self) -> &LocationTable;
+
+    /// If the borrow checker is based on Polonius, it can define this method to
+    /// expose its output facts. This is only used for debugging /
+    /// visualization.
+    fn polonius_output(&self) -> Option<&PoloniusOutput>;
+
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx>;
 }
 
 /// Records a history of actions for debugging purpose;
@@ -226,8 +266,8 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
-    repacker: PlaceRepacker<'mir, 'tcx>,
+pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx, 'bc> {
+    repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
     #[allow(unused)]
     block: BasicBlock,
     graph: AbstractionGraph<'tcx>,
@@ -258,8 +298,8 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
-    pub(crate) fn new(repacker: PlaceRepacker<'mir, 'tcx>, block: BasicBlock) -> Self {
+impl<'mir, 'tcx, 'bc> AbstractionGraphConstructor<'mir, 'tcx, 'bc> {
+    pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx, 'bc>, block: BasicBlock) -> Self {
         Self {
             repacker,
             block,

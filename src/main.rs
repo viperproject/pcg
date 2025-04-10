@@ -1,4 +1,7 @@
 #![feature(rustc_private)]
+#![feature(let_chains)]
+#![feature(stmt_expr_attributes)]
+#![feature(proc_macro_hygiene)]
 
 #[cfg(feature = "memory_profiling")]
 #[cfg(not(target_env = "msvc"))]
@@ -12,32 +15,43 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::Write;
-use std::rc::Rc;
 
+use derive_more::From;
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcg::run_pcg_with;
-use pcg::utils::PlaceRepacker;
+use pcg::utils::CompilerCtxt;
+
+#[rustversion::since(2024-12-14)]
+use pcg::visualization::bc_facts_graph::{
+    region_inference_outlives, subset_anywhere, subset_at_location,
+};
+
+use pcg::{run_pcg, PcgOutput};
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
+
+use pcg::rustc_interface::middle::mir::Location;
 
 #[rustversion::before(2024-11-09)]
 use pcg::rustc_interface::interface::Queries;
 
 use pcg::rustc_interface::{
-    borrowck,
+    borrowck::{self, BorrowIndex, RichLocation},
     data_structures::fx::{FxHashMap, FxHashSet},
     driver::{self, Compilation},
     hir::{self, def_id::LocalDefId},
     interface::{interface::Compiler, Config},
     middle::{
-        query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt, util::Providers,
+        query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
+        ty::{RegionVid, TyCtxt},
+        util::Providers,
     },
     session::Session,
 };
-use pcg::{combined_pcs::BodyWithBorrowckFacts, utils::env_feature_enabled};
+use pcg::{pcg::BodyWithBorrowckFacts, utils::env_feature_enabled};
 
 struct PcsCallbacks;
 
@@ -89,6 +103,253 @@ fn in_cargo_crate() -> bool {
     cargo_crate_name().is_some()
 }
 
+#[rustversion::since(2024-12-14)]
+fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
+    dir_path: &str,
+    ctxt: CompilerCtxt<'a, 'tcx, 'bc, &'bc BorrowChecker<'a, 'tcx>>,
+) {
+    if let BorrowChecker::Polonius(bc) = ctxt.bc() {
+        let ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), bc);
+        for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
+            let num_stmts = data.statements.len();
+            for stmt_index in 0..num_stmts + 1 {
+                let location = Location {
+                    block: block_index,
+                    statement_index: stmt_index,
+                };
+                let start_dot_graph = subset_at_location(location, true, ctxt);
+                let start_file_path = format!(
+                    "{}/bc_facts_graph_{:?}_{}_start.dot",
+                    dir_path, block_index, stmt_index
+                );
+                start_dot_graph
+                    .write_to_file(start_file_path.as_str())
+                    .unwrap();
+                let mid_dot_graph = subset_at_location(location, false, ctxt);
+                let mid_file_path = format!(
+                    "{}/bc_facts_graph_{:?}_{}_mid.dot",
+                    dir_path, block_index, stmt_index
+                );
+                mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
+
+                let mut bc_facts_file = std::fs::File::create(format!(
+                    "{}/bc_facts_{:?}_{}.txt",
+                    dir_path, block_index, stmt_index
+                ))
+                .unwrap();
+
+                fn write_loans(
+                    loans: BTreeMap<RegionVid, BTreeSet<BorrowIndex>>,
+                    loans_file: &mut std::fs::File,
+                    ctxt: CompilerCtxt<'_, '_, '_, &PoloniusBorrowChecker<'_, '_>>,
+                ) {
+                    for (region, indices) in loans {
+                        writeln!(loans_file, "Region: {:?}", region).unwrap();
+                        for index in indices {
+                            writeln!(loans_file, "  {:?}", ctxt.bc().borrow_set()[index].region())
+                                .unwrap();
+                        }
+                    }
+                }
+
+                fn write_bc_facts(
+                    location: RichLocation,
+                    bc_facts_file: &mut std::fs::File,
+                    ctxt: CompilerCtxt<'_, '_, '_, &PoloniusBorrowChecker<'_, '_>>,
+                ) {
+                    let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
+                    writeln!(bc_facts_file, "{:?} Origin contains loan at:", location).unwrap();
+                    if let Some(origin_contains_loan_at) = origin_contains_loan_at {
+                        write_loans(origin_contains_loan_at, bc_facts_file, ctxt);
+                    }
+                    writeln!(bc_facts_file, "{:?} Origin live on entry:", location).unwrap();
+                    if let Some(origin_live_on_entry) = ctxt.bc().origin_live_on_entry(location) {
+                        for region in origin_live_on_entry {
+                            writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
+                        }
+                    }
+                    writeln!(bc_facts_file, "{:?} Loans live at:", location).unwrap();
+                    for region in ctxt.bc().loans_live_at(location) {
+                        writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
+                    }
+                }
+
+                let start_location = RichLocation::Start(location);
+                let mid_location = RichLocation::Mid(location);
+                write_bc_facts(start_location, &mut bc_facts_file, ctxt);
+                write_bc_facts(mid_location, &mut bc_facts_file, ctxt);
+            }
+        }
+        let dot_graph = subset_anywhere(ctxt);
+        let file_path = format!("{}/bc_facts_graph_anywhere.dot", dir_path);
+        dot_graph.write_to_file(file_path.as_str()).unwrap();
+    }
+
+    let region_inference_dot_graph = region_inference_outlives(ctxt);
+    let file_path = format!("{}/region_inference_outlives.dot", dir_path);
+    std::fs::write(file_path, region_inference_dot_graph).unwrap();
+}
+
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, '_>) {
+    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
+    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
+
+    let ctxt = output.ctxt();
+
+    if emit_pcg_annotations || check_pcg_annotations {
+        let mut debug_lines = Vec::new();
+
+        if let Some(err) = output.first_error() {
+            debug_lines.push(format!("{:?}", err));
+        }
+        for block in ctxt.body().basic_blocks.indices() {
+            if let Ok(Some(state)) = output.get_all_for_bb(block) {
+                for line in state.debug_lines(ctxt) {
+                    debug_lines.push(line);
+                }
+            }
+        }
+        if emit_pcg_annotations {
+            for line in debug_lines.iter() {
+                eprintln!("// PCG: {}", line);
+            }
+        }
+        if check_pcg_annotations {
+            if let Ok(source) = ctxt
+                .tcx()
+                .sess
+                .source_map()
+                .span_to_snippet(ctxt.body().span)
+            {
+                let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
+                let expected_annotations = source
+                    .lines()
+                    .flat_map(|l| l.split("// PCG: ").nth(1))
+                    .map(|l| l.trim())
+                    .collect::<Vec<_>>();
+                let not_expected_annotations = source
+                    .lines()
+                    .flat_map(|l| l.split("// ~PCG: ").nth(1))
+                    .map(|l| l.trim())
+                    .collect::<Vec<_>>();
+                let missing_annotations = expected_annotations
+                    .iter()
+                    .filter(|a| !debug_lines_set.contains(**a))
+                    .collect::<Vec<_>>();
+                if !missing_annotations.is_empty() {
+                    panic!("Missing annotations: {:?}", missing_annotations);
+                }
+                for not_expected_annotation in not_expected_annotations {
+                    if debug_lines_set.contains(not_expected_annotation) {
+                        panic!("Unexpected annotation: {}", not_expected_annotation);
+                    }
+                }
+            } else {
+                tracing::warn!("No source for function: {}", item_name);
+            }
+        }
+    }
+}
+
+#[derive(From)]
+enum BorrowChecker<'mir, 'tcx> {
+    Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
+    Impl(BorrowCheckerImpl<'mir, 'tcx>),
+}
+impl<'mir, 'tcx> BorrowCheckerInterface<'mir, 'tcx> for BorrowChecker<'mir, 'tcx> {
+    fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.is_live(node, location),
+            BorrowChecker::Impl(bc) => bc.is_live(node, location),
+        }
+    }
+
+    fn outlives(
+        &self,
+        sup: pcg::borrow_pcg::region_projection::PcgRegion,
+        sub: pcg::borrow_pcg::region_projection::PcgRegion,
+    ) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.outlives(sup, sub),
+            BorrowChecker::Impl(bc) => bc.outlives(sup, sub),
+        }
+    }
+
+    fn twophase_borrow_activations(
+        &self,
+        location: Location,
+    ) -> std::collections::BTreeSet<Location> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.twophase_borrow_activations(location),
+            BorrowChecker::Impl(bc) => bc.twophase_borrow_activations(location),
+        }
+    }
+
+    fn region_inference_ctxt(&self) -> &borrowck::RegionInferenceContext<'tcx> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.region_inference_ctxt(),
+            BorrowChecker::Impl(bc) => bc.region_inference_ctxt(),
+        }
+    }
+
+    fn location_table(&self) -> &borrowck::LocationTable {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.location_table(),
+            BorrowChecker::Impl(bc) => bc.location_table(),
+        }
+    }
+
+    fn polonius_output(&self) -> Option<&borrowck::PoloniusOutput> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.polonius_output(),
+            BorrowChecker::Impl(bc) => bc.polonius_output(),
+        }
+    }
+
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'mir, 'tcx> {
+        self
+    }
+
+    fn borrow_set(&self) -> &borrowck::BorrowSet<'tcx> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.borrow_set(),
+            BorrowChecker::Impl(bc) => bc.borrow_set(),
+        }
+    }
+
+    fn input_facts(&self) -> &borrowck::PoloniusInput {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.input_facts(),
+            BorrowChecker::Impl(bc) => bc.input_facts(),
+        }
+    }
+}
+
+fn run_pcg_on_fn<'tcx>(
+    def_id: LocalDefId,
+    body: &BodyWithBorrowckFacts<'tcx>,
+    tcx: TyCtxt<'tcx>,
+    polonius: bool,
+    vis_dir: Option<&str>,
+) {
+    let bc = if polonius {
+        BorrowChecker::Polonius(PoloniusBorrowChecker::new(tcx, body))
+    } else {
+        BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
+    };
+    let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
+    let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
+    let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
+    let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
+
+    #[rustversion::since(2024-12-14)]
+    if let Some(dir_path) = &item_dir {
+        emit_borrowcheck_graphs(dir_path, ctxt);
+    }
+
+    emit_and_check_annotations(item_name, &mut output);
+}
+
 fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
     if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
         // We're running in cargo, but not compiling the primary package
@@ -115,9 +376,6 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
     } else {
         None
     };
-
-    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
-    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 
     if let Some(path) = &vis_dir {
         if std::path::Path::new(path).exists() {
@@ -151,64 +409,8 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         tracing::debug!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
-        let body = Rc::new(body);
         if should_check_body(&body) {
-            let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
-            let mut output = if polonius {
-                let bc = PoloniusBorrowChecker::new(tcx, body.as_ref());
-                run_pcg_with(body.as_ref(), tcx, bc, item_dir)
-            } else {
-                let bc = BorrowCheckerImpl::new(tcx, body.as_ref());
-                run_pcg_with(body.as_ref(), tcx, bc, item_dir)
-            };
-            if emit_pcg_annotations || check_pcg_annotations {
-                let mut debug_lines = Vec::new();
-
-                if let Some(err) = output.first_error() {
-                    debug_lines.push(format!("{:?}", err));
-                }
-                for block in body.body.basic_blocks.indices() {
-                    if let Ok(Some(state)) = output.get_all_for_bb(block) {
-                        for line in state.debug_lines(PlaceRepacker::new(&body.body, tcx)) {
-                            debug_lines.push(line);
-                        }
-                    }
-                }
-                if emit_pcg_annotations {
-                    for line in debug_lines.iter() {
-                        eprintln!("// PCG: {}", line);
-                    }
-                }
-                if check_pcg_annotations {
-                    if let Ok(source) = tcx.sess.source_map().span_to_snippet(body.body.span) {
-                        let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
-                        let expected_annotations = source
-                            .lines()
-                            .flat_map(|l| l.split("// PCG: ").nth(1))
-                            .map(|l| l.trim())
-                            .collect::<Vec<_>>();
-                        let not_expected_annotations = source
-                            .lines()
-                            .flat_map(|l| l.split("// ~PCG: ").nth(1))
-                            .map(|l| l.trim())
-                            .collect::<Vec<_>>();
-                        let missing_annotations = expected_annotations
-                            .iter()
-                            .filter(|a| !debug_lines_set.contains(**a))
-                            .collect::<Vec<_>>();
-                        if !missing_annotations.is_empty() {
-                            panic!("Missing annotations: {:?}", missing_annotations);
-                        }
-                        for not_expected_annotation in not_expected_annotations {
-                            if debug_lines_set.contains(not_expected_annotation) {
-                                panic!("Unexpected annotation: {}", not_expected_annotation);
-                            }
-                        }
-                    } else {
-                        tracing::warn!("No source for function: {}", item_name);
-                    }
-                }
-            }
+            run_pcg_on_fn(def_id, &body, tcx, polonius, vis_dir);
         }
         item_names.push(item_name);
     }

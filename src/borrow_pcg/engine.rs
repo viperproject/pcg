@@ -1,43 +1,33 @@
-use std::rc::Rc;
-
 use crate::{
-    combined_pcs::{AnalysisObject, EvalStmtPhase, PcgError},
-    rustc_interface::middle::{
-        mir::{Body, Location},
-        ty::TyCtxt,
-    },
-    utils::visitor::FallableVisitor,
+    pcg::{AnalysisObject, EvalStmtPhase, Pcg, PcgError},
+    rustc_interface::middle::mir::Location,
+    utils::{visitor::FallableVisitor, CompilerCtxt},
 };
 
 use super::{
-    action::actions::BorrowPCGActions,
-    coupling_graph_constructor::BorrowCheckerInterface,
-    state::BorrowsState,
-    visitor::BorrowsVisitor,
+    action::actions::BorrowPCGActions, visitor::BorrowsVisitor,
 };
-use crate::utils::eval_stmt_data::EvalStmtData;
 
-pub struct BorrowsEngine<'mir, 'tcx> {
-    pub(crate) tcx: TyCtxt<'tcx>,
-    pub(crate) body: &'mir Body<'tcx>,
+pub struct BorrowsEngine<'mir, 'tcx, 'bc> {
+    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
 }
 
-impl<'mir, 'tcx> BorrowsEngine<'mir, 'tcx> {
-    pub(crate) fn new(tcx: TyCtxt<'tcx>, body: &'mir Body<'tcx>) -> Self {
-        BorrowsEngine { tcx, body }
+impl<'mir, 'tcx, 'bc> BorrowsEngine<'mir, 'tcx, 'bc> {
+    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx, 'bc>) -> Self {
+        BorrowsEngine { ctxt }
     }
 }
 
-impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
+impl<'tcx> BorrowsEngine<'_, 'tcx, '_> {
     pub(crate) fn analyze(
         &mut self,
-        state: &mut BorrowsState<'tcx>,
-        bc: Rc<dyn BorrowCheckerInterface<'a, 'tcx> + 'a>,
+        state: &mut Pcg<'tcx>,
         object: AnalysisObject<'_, 'tcx>,
         phase: EvalStmtPhase,
         location: Location,
     ) -> Result<BorrowPCGActions<'tcx>, PcgError> {
-        let mut bv = BorrowsVisitor::new(self, state, bc, phase);
+        let mut bv =
+            BorrowsVisitor::new(self, &mut state.borrow, &mut state.capabilities, phase);
         match object {
             AnalysisObject::Statement(statement) => {
                 bv.visit_statement_fallable(statement, location)?;
@@ -48,13 +38,4 @@ impl<'a, 'tcx> BorrowsEngine<'a, 'tcx> {
         }
         Ok(bv.actions)
     }
-}
-
-pub(crate) type BorrowsStates<'tcx> = EvalStmtData<Rc<BorrowsState<'tcx>>>;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum DataflowPhase {
-    Init,
-    Join,
-    Transfer,
 }

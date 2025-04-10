@@ -3,13 +3,14 @@ use tracing::instrument;
 use super::borrow_pcg_edge::BorrowPCGEdge;
 use super::edge::kind::BorrowPCGEdgeKind;
 use super::state::BorrowsState;
-use crate::combined_pcs::PcgError;
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::place_capabilities::PlaceCapabilities;
+use crate::pcg::PcgError;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
-use crate::utils::display::DisplayWithRepacker;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{HasPlace, Place, PlaceRepacker, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
@@ -25,7 +26,7 @@ pub struct BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowPCGAction<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
         match &self.kind {
             BorrowPCGActionKind::AddEdge { edge, .. } => {
                 format!("Add Edge: {}", edge.to_short_string(repacker))
@@ -35,7 +36,11 @@ impl<'tcx> BorrowPCGAction<'tcx> {
                 restore_capability.debug_line(repacker)
             }
             BorrowPCGActionKind::MakePlaceOld(place, reason) => {
-                format!("Make {} an old place ({:?})", place.to_short_string(repacker), reason)
+                format!(
+                    "Make {} an old place ({:?})",
+                    place.to_short_string(repacker),
+                    reason
+                )
             }
             BorrowPCGActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
@@ -44,9 +49,6 @@ impl<'tcx> BorrowPCGAction<'tcx> {
             ),
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
-            }
-            BorrowPCGActionKind::RenamePlace { old, new } => {
-                format!("Rename {:?} to {:?}", old, new)
             }
         }
     }
@@ -72,13 +74,6 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     ) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::Weaken(Weaken::new(place, from, to)),
-            debug_context: None,
-        }
-    }
-
-    pub(super) fn rename_place(old: MaybeOldPlace<'tcx>, new: MaybeOldPlace<'tcx>) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::RenamePlace { old, new },
             debug_context: None,
         }
     }
@@ -146,21 +141,21 @@ pub enum BorrowPCGActionKind<'tcx> {
         edge: BorrowPCGEdge<'tcx>,
         for_exclusive: bool,
     },
-    RenamePlace {
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-    },
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGActionKind<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> String {
         match self {
             BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPCGActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
             }
             BorrowPCGActionKind::MakePlaceOld(place, reason) => {
-                format!("Make {} an old place ({:?})", place.to_short_string(repacker), reason)
+                format!(
+                    "Make {} an old place ({:?})",
+                    place.to_short_string(repacker),
+                    reason
+                )
             }
             BorrowPCGActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
@@ -169,9 +164,6 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
             ),
             BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
-            }
-            BorrowPCGActionKind::RenamePlace { old, new } => {
-                format!("Rename {:?} to {:?}", old, new)
             }
             BorrowPCGActionKind::AddEdge {
                 edge,
@@ -185,8 +177,8 @@ impl<'tcx> DisplayWithRepacker<'tcx> for BorrowPCGActionKind<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for BorrowPCGAction<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
         self.kind.to_short_string(repacker).into()
     }
 }
@@ -196,16 +188,17 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPCGActionKind::Restore(restore) => {
                 let restore_place: MaybeOldPlace<'tcx> = restore.place();
-                if let Some(cap) = self.get_capability(restore_place) {
+                if let Some(cap) = capabilities.get(restore_place) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
                 if !restore_place.is_owned(repacker)
-                    && !self.set_capability(restore_place, restore.capability(), repacker)
+                    && !capabilities.insert(restore_place, restore.capability())
                 {
                     panic!("Capability should have been updated")
                 }
@@ -213,21 +206,20 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             BorrowPCGActionKind::Weaken(weaken) => {
                 let weaken_place: MaybeOldPlace<'tcx> = weaken.place().into();
-                assert_eq!(self.get_capability(weaken_place), Some(weaken.from));
+                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
                 match weaken.to {
-                    Some(to) => assert!(self.set_capability(weaken_place, to, repacker)),
-                    None => assert!(self.remove_capability(weaken_place)),
+                    Some(to) => assert!(capabilities.insert(weaken_place, to)),
+                    None => assert!(capabilities.remove(weaken_place).is_some()),
                 }
                 true
             }
             BorrowPCGActionKind::MakePlaceOld(place, _) => self.make_place_old(place, repacker),
             BorrowPCGActionKind::SetLatest(place, location) => self.set_latest(place, location),
-            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, repacker),
+            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, repacker),
             BorrowPCGActionKind::AddEdge {
                 edge,
                 for_exclusive,
-            } => self.handle_add_edge(edge, for_exclusive, repacker)?,
-            BorrowPCGActionKind::RenamePlace { old, new } => self.rename_place(old, new, repacker),
+            } => self.handle_add_edge(edge, for_exclusive, capabilities, repacker)?,
         };
         Ok(result)
     }
@@ -236,7 +228,8 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         edge: BorrowPCGEdge<'tcx>,
         for_exclusive: bool,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_>,
     ) -> Result<bool, PcgError> {
         let mut changed = self.insert(edge.clone());
         Ok(match edge.kind {
@@ -251,7 +244,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         }
                     } else if !for_exclusive {
                         CapabilityKind::Read
-                    } else if let Some(capability) = self.get_capability(base.place().into()) {
+                    } else if let Some(capability) = capabilities.get(base.place().into()) {
                         capability
                     } else {
                         return Ok(true);
@@ -259,23 +252,16 @@ impl<'tcx> BorrowsState<'tcx> {
 
                     if !base.place().is_owned(repacker) {
                         if for_exclusive {
-                            changed |= self.remove_capability(base.place().into());
+                            changed |= capabilities.remove(base.place().into()).is_some();
                         } else {
-                            changed |= self.set_capability(
-                                base.place().into(),
-                                CapabilityKind::Read,
-                                repacker,
-                            );
+                            changed |=
+                                capabilities.insert(base.place().into(), CapabilityKind::Read);
                         }
                     }
 
                     for p in expansion.expansion.iter() {
                         if !p.place().is_owned(repacker) {
-                            changed |= self.set_capability(
-                                p.place().into(),
-                                expanded_capability,
-                                repacker,
-                            );
+                            changed |= capabilities.insert(p.place().into(), expanded_capability);
                         }
                     }
                 }

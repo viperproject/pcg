@@ -2,23 +2,19 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::CapabilityKind,
-    rustc_interface::data_structures::fx::FxHashMap,
+    rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
-        display::{DebugLines, DisplayWithRepacker},
+        display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
-        PlaceRepacker,
+        CompilerCtxt, Place,
     },
 };
 
-/// Tracks the capabilities of places in the borrow PCG. We don't store this
-/// information in the borrows graph directly to facilitate simpler logic for
-/// joins (in particular, to identify when capabilities to a place in the PCG
-/// need to be weakened).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PlaceCapabilities<'tcx>(pub(crate)FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
 
-impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for PlaceCapabilities<'tcx> {
-    fn debug_lines(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<String> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx, '_>> for PlaceCapabilities<'tcx> {
+    fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
                 format!("{}: {:?}", node.to_short_string(repacker), capability)
@@ -29,33 +25,35 @@ impl<'tcx> DebugLines<PlaceRepacker<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
-    pub(crate) fn new() -> Self {
-        Self(Default::default())
+    pub(crate) fn get_longest_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
+        self.iter()
+            .flat_map(|(p, _)| p.try_into())
+            .filter(|p: &Place| p.is_prefix(to))
+            .max_by_key(|p| p.projection.len())
+            .unwrap_or(to.local.into())
     }
 
-    pub(crate) fn rename_place(
-        &mut self,
-        old: MaybeOldPlace<'tcx>,
-        new: MaybeOldPlace<'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        self.0 = self
-            .0
-            .clone()
-            .into_iter()
-            .map(|(mut place, capability)| {
-                if place == old {
-                    place = new;
-                    changed = true;
-                }
-                (place, capability)
-            })
-            .collect();
-        changed
+    pub(crate) fn owned_capabilities<'mir: 'slf, 'slf, 'bc: 'slf>(
+        &'slf mut self,
+        local: mir::Local,
+        repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
+    ) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir>
+    {
+        self.0.iter_mut().filter_map(move |(place, capability)| {
+            if place.local() == local && place.is_owned(repacker) {
+                Some((*place, capability))
+            } else {
+                None
+            }
+        })
     }
 
     /// Returns true iff the capability was changed.
-    pub(crate) fn insert(&mut self, place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> bool {
+    pub(crate) fn insert(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        capability: CapabilityKind,
+    ) -> bool {
         self.0.insert(place, capability) != Some(capability)
     }
 

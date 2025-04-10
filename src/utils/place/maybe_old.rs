@@ -2,20 +2,20 @@ use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PCGRegion, RegionIdx, RegionProjection,
+    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::combined_pcs::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
+use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::index::{Idx, IndexVec};
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use crate::rustc_interface::middle::mir::PlaceElem;
-use crate::utils::display::DisplayWithRepacker;
-use crate::utils::json::ToJsonWithRepacker;
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::{HasPlace, Place, PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{HasPlace, Place, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 use derive_more::{From, TryInto};
 use serde_json::json;
 
@@ -26,7 +26,7 @@ pub enum MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_local_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> LocalNode<'tcx> {
+    fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> LocalNode<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.to_local_node(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.to_local_node(repacker),
@@ -42,7 +42,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn regions(&self, repacker: PlaceRepacker<'_, 'tcx>) -> IndexVec<RegionIdx, PCGRegion> {
+    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> IndexVec<RegionIdx, PcgRegion> {
         match self {
             MaybeOldPlace::Current { place } => place.regions(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.place.regions(repacker),
@@ -51,7 +51,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_pcg_node(self, repacker: PlaceRepacker<'_, 'tcx>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PCGNode<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.to_pcg_node(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.to_pcg_node(repacker),
@@ -73,7 +73,7 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
-    fn check_validity(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> Result<(), String> {
         match self {
             MaybeOldPlace::Current { place } => place.check_validity(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.check_validity(repacker),
@@ -81,8 +81,8 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         match self {
             MaybeOldPlace::Current { place } => place.to_json(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.to_json(repacker),
@@ -149,10 +149,10 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn project_deeper(
+    fn project_deeper<C: Copy>(
         &self,
         elem: PlaceElem<'tcx>,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Result<Self, PcgError> {
         let mut cloned = *self;
         *cloned.place_mut() = self
@@ -162,7 +162,10 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         Ok(cloned)
     }
 
-    fn iter_projections(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Vec<(Self, PlaceElem<'tcx>)> {
+    fn iter_projections<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
+    ) -> Vec<(Self, PlaceElem<'tcx>)> {
         match self {
             MaybeOldPlace::Current { place } => place
                 .iter_projections(repacker)
@@ -179,14 +182,14 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithRepacker<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_short_string(&self, repacker: PlaceRepacker<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> String {
         let p = self.place().to_short_string(repacker);
         format!(
             "{}{}",
             p,
             if let Some(location) = self.location() {
-                format!(" at {:?}", location)
+                format!(" {}", location)
             } else {
                 "".to_string()
             }
@@ -203,10 +206,6 @@ impl MaybeHasLocation for MaybeOldPlace<'_> {
     }
 }
 impl<'tcx> MaybeOldPlace<'tcx> {
-    pub(crate) fn with_location(self, location: SnapshotLocation) -> Self {
-        MaybeOldPlace::new(self.place(), Some(location))
-    }
-
     pub fn is_old(&self) -> bool {
         matches!(self, MaybeOldPlace::OldPlace(_))
     }
@@ -215,9 +214,9 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().projection
     }
 
-    pub(crate) fn deref_to_rp(
+    pub(crate) fn deref_to_rp<C: Copy>(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Option<RegionProjection<'tcx, Self>> {
         if let Some((place, PlaceElem::Deref)) = self.last_projection() {
             place.base_region_projection(repacker)
@@ -226,16 +225,16 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub(crate) fn base_region_projection(
+    pub(crate) fn base_region_projection<C: Copy>(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, '_, C>,
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.place()
             .base_region_projection(repacker)
             .map(|rp| rp.with_base(*self, repacker))
     }
 
-    pub(crate) fn is_owned(&self, repacker: PlaceRepacker<'_, 'tcx>) -> bool {
+    pub(crate) fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> bool {
         self.place().is_owned(repacker)
     }
 
@@ -243,7 +242,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().local
     }
 
-    pub(crate) fn ty_region(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Option<PCGRegion> {
+    pub(crate) fn ty_region(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> Option<PcgRegion> {
         self.place().ty_region(repacker)
     }
 
@@ -259,7 +258,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
 
     pub(crate) fn with_inherent_region(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> MaybeOldPlace<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
@@ -270,7 +269,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     pub(crate) fn region_projection(
         &self,
         idx: RegionIdx,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> RegionProjection<'tcx, Self> {
         let region_projections = self.region_projections(repacker);
         if idx.index() < region_projections.len() {
@@ -287,12 +286,12 @@ impl<'tcx> MaybeOldPlace<'tcx> {
 
     pub(crate) fn region_projections(
         &self,
-        repacker: PlaceRepacker<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx,'_>,
     ) -> Vec<RegionProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty, repacker)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, repacker).unwrap())
+            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
             .collect()
     }
 
@@ -304,11 +303,11 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         }
     }
 
-    pub fn ty(&self, repacker: PlaceRepacker<'_, 'tcx>) -> PlaceTy<'tcx> {
+    pub fn ty<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, '_, C>) -> PlaceTy<'tcx> {
         self.place().ty(repacker)
     }
 
-    pub(crate) fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn project_deref(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> MaybeOldPlace<'tcx> {
         MaybeOldPlace::new(self.place().project_deref(repacker), self.location())
     }
 
@@ -316,7 +315,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         matches!(self, MaybeOldPlace::Current { .. })
     }
 
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx,'_>) -> serde_json::Value {
         json!({
             "place": self.place().to_json(repacker),
             "at": self.location().map(|loc| format!("{:?}", loc)),

@@ -2,13 +2,15 @@ use crate::{
     borrow_pcg::{
         coupling_graph_constructor::CGNode,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
-        region_projection::RegionProjection,
+        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowsState,
     },
-    combined_pcs::MaybeHasLocation,
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilitySummary},
+    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
+    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
+    rustc_interface::borrowck::BorrowIndex,
+    rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithRepacker, HasPlace, Place, PlaceRepacker, PlaceSnapshot,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
         SnapshotLocation,
     },
 };
@@ -24,24 +26,26 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
 use std::collections::{BTreeSet, HashSet};
 
-pub(super) struct GraphConstructor<'mir, 'tcx> {
+pub(super) struct GraphConstructor<'mir, 'tcx, 'bc> {
     remote_nodes: IdLookup<RemotePlace>,
     place_nodes: IdLookup<(Place<'tcx>, Option<SnapshotLocation>)>,
     region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
     nodes: Vec<GraphNode>,
     pub(super) edges: HashSet<GraphEdge>,
-    repacker: PlaceRepacker<'mir, 'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
+    location: mir::Location,
 }
 
-impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
-    fn new(repacker: PlaceRepacker<'a, 'tcx>) -> Self {
+impl<'a, 'tcx, 'bc> GraphConstructor<'a, 'tcx, 'bc> {
+    fn new(repacker: CompilerCtxt<'a, 'tcx, 'bc>, location: mir::Location) -> Self {
         Self {
             remote_nodes: IdLookup::new('a'),
             place_nodes: IdLookup::new('p'),
             region_projection_nodes: IdLookup::new('r'),
             nodes: vec![],
             edges: HashSet::new(),
-            repacker,
+            ctxt: repacker,
+            location,
         }
     }
 
@@ -67,14 +71,75 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             return id;
         }
         let id = self.region_projection_nodes.node_id(&projection);
+        let base_ty = match projection.place() {
+            MaybeRemoteRegionProjectionBase::Place(p) => {
+                format!("{:?}", p.related_local_place().ty(self.ctxt).ty)
+            }
+            MaybeRemoteRegionProjectionBase::Const(c) => {
+                format!("{:?}", c.ty())
+            }
+        };
+        let loans = if let Some(output) = self.ctxt.bc.polonius_output()
+            && let Some(region_vid) = projection.region(self.ctxt).vid()
+        {
+            let region_vid = region_vid.into();
+            #[rustversion::since(2024-12-14)]
+            let render_loans = |loans: Option<&BTreeSet<BorrowIndex>>| {
+                if let Some(loans) = loans {
+                    format!(
+                        "{{{}}}",
+                        loans
+                            .iter()
+                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_set()[*l].region()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    "{}".to_string()
+                }
+            };
+            #[rustversion::before(2024-12-14)]
+            let render_loans = |loans: Option<&BTreeSet<BorrowIndex>>| {
+                if let Some(loans) = loans {
+                    format!(
+                        "{{{}}}",
+                        loans
+                            .iter()
+                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_index_to_region(*l)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    "{}".to_string()
+                }
+            };
+            let loans_before = render_loans(
+                output
+                    .origin_contains_loan_at(
+                        self.ctxt.bc.location_table().start_index(self.location),
+                    )
+                    .get(&region_vid),
+            );
+            let loans_after = render_loans(
+                output
+                    .origin_contains_loan_at(self.ctxt.bc.location_table().mid_index(self.location))
+                    .get(&region_vid),
+            );
+            format!(
+                "Loans in {:?} - before: {}, mid: {}",
+                projection.region(self.ctxt),
+                loans_before,
+                loans_after
+            )
+        } else {
+            "".to_string()
+        };
         let node = GraphNode {
             id,
             node_type: NodeType::RegionProjectionNode {
-                label: format!(
-                    "{}↓{}",
-                    projection.place().to_short_string(self.repacker),
-                    projection.region(self.repacker),
-                ),
+                label: projection.to_short_string(self.ctxt),
+                base_ty,
+                loans,
             },
         };
         self.insert_node(node);
@@ -99,6 +164,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         &mut self,
         abstraction: &AbstractionType<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
+        edge_idx: usize,
     ) {
         let mut input_nodes = BTreeSet::new();
         let mut output_nodes = BTreeSet::new();
@@ -109,7 +175,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
 
         for output in abstraction.outputs() {
-            let output = output.with_base(output.base.into(), self.repacker);
+            let output = output.with_base(output.base.into(), self.ctxt);
             let output = self.insert_region_projection_node(output);
             output_nodes.insert(output);
         }
@@ -118,13 +184,19 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             AbstractionType::FunctionCall(fc) => {
                 format!(
                     "call {} at {:?}",
-                    self.repacker.tcx().def_path_str(fc.def_id()),
+                    self.ctxt.tcx().def_path_str(fc.def_id()),
                     fc.location()
                 )
             }
             AbstractionType::Loop(loop_abstraction) => {
                 format!("loop at {:?}", loop_abstraction.location())
             }
+        };
+
+        let label = if input_nodes.len() > 1 || output_nodes.len() > 1 {
+            format!("{label} <{}>", edge_idx)
+        } else {
+            label
         };
 
         for input in &input_nodes {
@@ -150,7 +222,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 label: format!("Target of input {:?}", remote_place.assigned_local()),
                 location: None,
                 capability: None,
-                ty: format!("{:?}", remote_place.ty(self.repacker)),
+                ty: format!("{:?}", remote_place.ty(self.ctxt)),
             },
         };
         self.insert_node(node);
@@ -168,10 +240,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
         let capability = capability_getter.get(place.into());
         let id = self.place_node_id(place, location);
-        let label = format!("{:?}", place.to_string(self.repacker));
-        let place_ty = place.ty(self.repacker);
+        let label = format!("{:?}", place.to_string(self.ctxt));
+        let place_ty = place.ty(self.ctxt);
         let node_type = NodeType::PlaceNode {
-            owned: place.is_owned(self.repacker),
+            owned: place.is_owned(self.ctxt),
             label,
             capability,
             location,
@@ -183,57 +255,52 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 }
 
-pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx, 'bc> {
     borrows_graph: &'graph BorrowsGraph<'tcx>,
-    constructor: GraphConstructor<'mir, 'tcx>,
-    repacker: PlaceRepacker<'mir, 'tcx>,
+    constructor: GraphConstructor<'mir, 'tcx, 'bc>,
+    repacker: CompilerCtxt<'mir, 'tcx, 'bc>,
 }
 
-impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+impl<'graph, 'mir: 'graph, 'tcx: 'mir, 'bc: 'graph>
+    BorrowsGraphConstructor<'graph, 'mir, 'tcx, 'bc>
+{
     pub fn new(
         borrows_graph: &'graph BorrowsGraph<'tcx>,
-        repacker: PlaceRepacker<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx, 'bc>,
+        location: mir::Location,
     ) -> Self {
         Self {
             borrows_graph,
-            constructor: GraphConstructor::new(repacker),
-            repacker,
+            constructor: GraphConstructor::new(ctxt, location),
+            repacker: ctxt,
         }
     }
 
     pub(crate) fn construct_graph(mut self) -> Graph {
         let edges: Vec<MaterializedEdge<'tcx, 'graph>> =
             self.borrows_graph.materialized_edges(self.repacker);
-        for edge in edges {
-            self.draw_materialized_edge(edge);
+        for (edge_idx, edge) in edges.into_iter().enumerate() {
+            self.draw_materialized_edge(edge, edge_idx);
         }
         self.constructor.into_graph()
     }
 }
 
-pub(crate) struct PcgGraphConstructor<'a, 'tcx> {
-    summary: &'a CapabilitySummary<'tcx>,
-    borrows_domain: &'a BorrowsState<'tcx>,
-    constructor: GraphConstructor<'a, 'tcx>,
-    repacker: PlaceRepacker<'a, 'tcx>,
+pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc> {
+    summary: &'pcg CapabilityLocals<'tcx>,
+    borrows_domain: &'pcg BorrowsState<'tcx>,
+    capabilities: &'pcg PlaceCapabilities<'tcx>,
+    constructor: GraphConstructor<'a, 'tcx, 'bc>,
+    repacker: CompilerCtxt<'a, 'tcx, 'bc>,
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
-    summary: &'a CapabilitySummary<'tcx>,
-    borrows_domain: &'a BorrowsState<'tcx>,
+    capabilities: &'a PlaceCapabilities<'tcx>,
 }
 
 impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
-    fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
-        if let Some(cap) = self.borrows_domain.get_capability(node) {
-            return Some(cap);
-        }
-        let alloc = self.summary.get(node.place().local)?;
-        if let CapabilityLocal::Allocated(projections) = alloc {
-            projections.get_capability(node.place())
-        } else {
-            None
-        }
+    fn get(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+        self.capabilities.get(place)
     }
 }
 
@@ -245,8 +312,10 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
     }
 }
 
-impl<'a, 'tcx> Grapher<'a, 'tcx> for PcgGraphConstructor<'a, 'tcx> {
-    fn repacker(&self) -> PlaceRepacker<'a, 'tcx> {
+impl<'pcg, 'a, 'tcx, 'bc> Grapher<'pcg, 'a, 'tcx, 'bc>
+    for PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc>
+{
+    fn repacker(&self) -> CompilerCtxt<'a, 'tcx, 'bc> {
         self.repacker
     }
 
@@ -260,44 +329,46 @@ impl<'a, 'tcx> Grapher<'a, 'tcx> for PcgGraphConstructor<'a, 'tcx> {
         }
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
+    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx, 'bc> {
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'a {
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'pcg {
         PCGCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
+            capabilities: self.capabilities,
         }
     }
 }
 
-impl<'graph, 'mir: 'graph, 'tcx: 'graph> Grapher<'mir, 'tcx>
-    for BorrowsGraphConstructor<'graph, 'mir, 'tcx>
+impl<'graph, 'mir: 'graph, 'tcx: 'graph, 'bc> Grapher<'graph, 'mir, 'tcx, 'bc>
+    for BorrowsGraphConstructor<'graph, 'mir, 'tcx, 'bc>
 {
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, 'bc> {
         self.repacker
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx> {
+    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx, 'bc> {
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'mir {
+    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'graph {
         NullCapabilityGetter
     }
 }
 
-impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
+impl<'pcg, 'a, 'tcx, 'bc> PcgGraphConstructor<'pcg, 'a, 'tcx, 'bc> {
     pub fn new(
-        summary: &'a CapabilitySummary<'tcx>,
-        repacker: PlaceRepacker<'a, 'tcx>,
-        borrows_domain: &'a BorrowsState<'tcx>,
+        summary: &'pcg CapabilityLocals<'tcx>,
+        repacker: CompilerCtxt<'a, 'tcx, 'bc>,
+        borrows_domain: &'pcg BorrowsState<'tcx>,
+        capabilities: &'pcg PlaceCapabilities<'tcx>,
+        location: mir::Location,
     ) -> Self {
         Self {
             summary,
             borrows_domain,
-            constructor: GraphConstructor::new(repacker),
+            capabilities,
+            constructor: GraphConstructor::new(repacker, location),
             repacker,
         }
     }
@@ -333,16 +404,14 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
 
     fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
         let capability_getter = &PCGCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
+            capabilities: self.capabilities,
         };
         self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
     }
 
     pub fn construct_graph(mut self) -> Graph {
         let capability_getter = &PCGCapabilityGetter {
-            summary: self.summary,
-            borrows_domain: self.borrows_domain,
+            capabilities: self.capabilities,
         };
         for (local, capability) in self.summary.iter_enumerated() {
             match capability {
@@ -366,12 +435,14 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
                 }
             }
         }
-        for edge in self
+        for (edge_idx, edge) in self
             .borrows_domain
             .graph()
             .materialized_edges(self.repacker)
+            .into_iter()
+            .enumerate()
         {
-            self.draw_materialized_edge(edge);
+            self.draw_materialized_edge(edge, edge_idx);
         }
 
         self.constructor.into_graph()
@@ -381,7 +452,7 @@ impl<'a, 'tcx> PcgGraphConstructor<'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        run_pcg, utils::PlaceRepacker,
+        borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::CompilerCtxt,
         visualization::graph_constructor::PcgGraphConstructor,
     };
 
@@ -403,13 +474,20 @@ fn main() {
 }
 "#;
         rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-            let repacker = PlaceRepacker::new(&body.body, tcx);
-            let mut pcg = run_pcg(body, tcx, None);
+            let bc = BorrowCheckerImpl::new(tcx, body);
+            let ctxt: CompilerCtxt<'_, '_, '_> = CompilerCtxt::new(&body.body, tcx, &bc);
+            let mut pcg = run_pcg(&body.body, tcx, &bc, None);
             let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
             let stmt = &bb.statements[22];
-            let graph =
-                PcgGraphConstructor::new(&stmt.states.post_main, repacker, &stmt.borrows.post_main)
-                    .construct_graph();
+            let pcg = &stmt.states.0.post_main;
+            let graph = PcgGraphConstructor::new(
+                &pcg.owned.locals(),
+                ctxt,
+                &pcg.borrow,
+                &pcg.capabilities,
+                stmt.location,
+            )
+            .construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }
