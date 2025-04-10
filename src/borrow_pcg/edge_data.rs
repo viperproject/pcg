@@ -8,32 +8,29 @@ use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 pub trait EdgeData<'tcx> {
     /// For an edge A -> B, this returns the set of nodes A. In general, the capabilities
     /// of nodes B are obtained from these nodes.
-    fn blocked_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>>;
+    fn blocked_nodes<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> FxHashSet<PCGNode<'tcx>>;
 
     /// For an edge A -> B, this returns the set of nodes B. In general, these nodes
     /// obtain their capabilities from the nodes A.
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<LocalNode<'tcx>>;
 
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
-        self.blocked_nodes(repacker).contains(&node)
+        self.blocked_nodes(ctxt).contains(&node)
     }
 
     fn is_blocked_by<C: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
-        self.blocked_by_nodes(repacker).contains(&node)
+        self.blocked_by_nodes(ctxt).contains(&node)
     }
 }
 

@@ -51,7 +51,6 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
     #[rustversion::since(2024-12-14)]
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         if let Some(string) = ctxt.bc.override_region_debug_string(*self) {
-            tracing::info!("DONE Using region debug name override: {:?} -> {}", self, string);
             return string.to_string();
         }
         let origin = ctxt.bc.region_inference_ctxt().var_infos[*self].origin;

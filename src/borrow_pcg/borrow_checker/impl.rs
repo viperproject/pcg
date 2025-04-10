@@ -52,11 +52,6 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
         let borrows = body.borrow_set();
         let mut pretty_printer = RegionPrettyPrinter::new(region_cx);
         for (region, name) in debug_region_name_overrides {
-            tracing::info!(
-                "Inserting region debug name override: {:?} -> {}",
-                region,
-                name
-            );
             pretty_printer.insert(region, name);
         }
         Self {
@@ -346,7 +341,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
     }
 
     fn override_region_debug_string(&self, _region: ty::RegionVid) -> Option<&str> {
-       None
+        None
     }
 }
 

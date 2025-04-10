@@ -11,8 +11,7 @@ use super::{
     visitor::extract_regions,
 };
 use crate::{
-    borrow_pcg::edge::kind::BorrowPCGEdgeKind,
-    utils::place::maybe_remote::MaybeRemotePlace,
+    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     borrow_pcg::edge::{
@@ -62,10 +61,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.graph.check_validity(repacker)
     }
 }
@@ -210,46 +206,46 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-    #[tracing::instrument(skip(self, edge, location, repacker))]
+    #[tracing::instrument(skip(self, edge, location, ctxt))]
     pub(super) fn remove_edge_and_set_latest(
         &mut self,
         edge: impl BorrowPCGEdgeLike<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         location: Location,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
         context: &str,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
         let mut actions = ExecutedActions::new();
-        for place in edge.blocked_places(repacker) {
+        for place in edge.blocked_places(ctxt) {
             if let Some(place) = place.as_current_place()
                 && capabilities.get(place.into()) != Some(CapabilityKind::Read)
-                && place.has_location_dependent_value(repacker)
+                && place.has_location_dependent_value(ctxt)
             {
                 self.record_and_apply_action(
                     BorrowPCGAction::set_latest(place, location, context),
                     &mut actions,
                     capabilities,
-                    repacker,
+                    ctxt,
                 )?;
             }
         }
         let remove_edge_action =
             BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
-        self.record_and_apply_action(remove_edge_action, &mut actions, capabilities, repacker)?;
+        self.record_and_apply_action(remove_edge_action, &mut actions, capabilities, ctxt)?;
 
         let fg = self.graph().frozen_graph();
-        let to_restore = edge
-            .blocked_nodes(repacker)
+        let blocked_nodes = edge.blocked_nodes(ctxt);
+        let to_restore = blocked_nodes
             .into_iter()
-            .filter(|node| !fg.has_edge_blocking(*node, repacker))
+            .filter(|node| !fg.has_edge_blocking(*node, ctxt))
             .collect::<Vec<_>>();
         for node in to_restore {
             if let Some(place) = node.as_maybe_old_place()
-                && !place.is_owned(repacker)
+                && !place.is_owned(ctxt)
             {
                 let blocked_cap = capabilities.get(place);
 
-                let restore_cap = if place.place().projects_shared_ref(repacker) {
+                let restore_cap = if place.place().projects_shared_ref(ctxt) {
                     CapabilityKind::Read
                 } else {
                     CapabilityKind::Exclusive
@@ -260,7 +256,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         BorrowPCGAction::restore_capability(place, restore_cap),
                         &mut actions,
                         capabilities,
-                        repacker,
+                        ctxt,
                     )?;
                 }
             }

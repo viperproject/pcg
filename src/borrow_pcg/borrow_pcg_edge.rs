@@ -7,7 +7,7 @@ use super::{
     borrow_pcg_expansion::BorrowPCGExpansion,
     coupling_graph_constructor::CGNode,
     edge::{
-        borrow::RemoteBorrow, outlives::BorrowFlowEdge,
+        borrow::RemoteBorrow, outlives::BorrowFlowEdge
     },
     edge_data::EdgeData,
     graph::Conditioned,

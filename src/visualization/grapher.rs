@@ -39,7 +39,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     }
 
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx>;
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx>;
     fn draw_materialized_edge<'graph>(
         &mut self,
         edge: MaterializedEdge<'tcx, 'graph>,
@@ -74,9 +74,9 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     ) {
         match edge.kind() {
             BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => {
-                for blocked in deref_expansion.blocked_nodes(self.repacker()) {
+                for blocked in deref_expansion.blocked_nodes(self.ctxt()) {
                     let blocked_graph_node = self.insert_pcg_node(blocked);
-                    for blocking in deref_expansion.blocked_by_nodes(self.repacker()) {
+                    for blocking in deref_expansion.blocked_by_nodes(self.ctxt()) {
                         let blocking_graph_node = self.insert_pcg_node(blocking.into());
                         self.constructor().edges.insert(GraphEdge::DerefExpansion {
                             source: blocked_graph_node,
@@ -89,8 +89,8 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
             BorrowPCGEdgeKind::Borrow(borrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(borrow.blocked_place());
                 let assigned_region_projection = borrow
-                    .assigned_region_projection(self.repacker())
-                    .to_region_projection(self.repacker());
+                    .assigned_region_projection(self.ctxt())
+                    .to_region_projection(self.ctxt());
                 let assigned_rp_node = self
                     .constructor()
                     .insert_region_projection_node(assigned_region_projection);
@@ -115,13 +115,13 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
             }
             BorrowPCGEdgeKind::BorrowFlow(member) => {
                 let input_node = self.insert_pcg_node(member.long().into());
-                let output_node = self.insert_pcg_node(member.short().to_pcg_node(self.repacker()));
+                let output_node = self.insert_pcg_node(member.short().to_pcg_node(self.ctxt()));
                 self.constructor().edges.insert(GraphEdge::BorrowFlow {
-                    source: input_node,
-                    target: output_node,
-                    kind: format!("{}", member.kind),
-                    regions_equal: matches!(member.kind(), BorrowFlowEdgeKind::BorrowOutlives { regions_equal, .. } if regions_equal),
-                });
+                            source: input_node,
+                            target: output_node,
+                            kind: format!("{}", member.kind),
+                            regions_equal: matches!(member.kind(), BorrowFlowEdgeKind::BorrowOutlives { regions_equal, .. } if regions_equal),
+                        });
             }
         }
     }

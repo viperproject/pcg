@@ -203,6 +203,10 @@ pub(crate) enum GraphEdge {
         target: NodeId,
         directed: bool,
     },
+    Collapsed {
+        source: NodeId,
+        target: NodeId,
+    },
 }
 
 impl GraphEdge {
@@ -302,6 +306,14 @@ impl GraphEdge {
                         .with_style("dashed".to_string()),
                 }
             }
+            GraphEdge::Collapsed { source, target } => DotEdge {
+                from: source.to_string(),
+                to: target.to_string(),
+                options: EdgeOptions::directed(EdgeDirection::Forward)
+                    .with_color("red".to_string())
+                    .with_label("collapsed".to_string())
+                    .with_style("dashed".to_string()),
+            },
         }
     }
 }
