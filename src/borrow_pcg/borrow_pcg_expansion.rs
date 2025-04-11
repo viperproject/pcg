@@ -11,7 +11,7 @@ use super::{
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, LabelRegionProjection, MakePlaceOld},
     latest::Latest,
-    region_projection::RegionProjection,
+    region_projection::{RegionProjection, RegionProjectionLabel},
 };
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{json::ToJsonWithCompilerCtxt, SnapshotLocation};
@@ -179,14 +179,14 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self
             .base
-            .label_region_projection(projection, location, repacker);
+            .label_region_projection(projection, label, repacker);
         for p in &mut self.expansion {
-            changed |= p.label_region_projection(projection, location, repacker);
+            changed |= p.label_region_projection(projection, label, repacker);
         }
         changed
     }
@@ -318,7 +318,7 @@ impl<'tcx> BorrowPCGExpansion<'tcx> {
             let projection = base_projection.with_base(base_projection.base.into(), repacker);
             let projection = match p.place().ref_mutability(repacker).unwrap() {
                 Mutability::Not => projection,
-                Mutability::Mut => projection.label_projection(self.location),
+                Mutability::Mut => projection.label_projection(self.location.into()),
             };
             Some(projection.into())
         } else {

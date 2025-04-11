@@ -14,7 +14,7 @@ use super::{
     has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection},
+    region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel},
 };
 use crate::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::SnapshotLocation};
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -44,10 +44,10 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.kind.label_region_projection(projection, location, repacker)
+        self.kind.label_region_projection(projection, label, repacker)
     }
 }
 

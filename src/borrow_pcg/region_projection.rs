@@ -20,7 +20,7 @@ use crate::{
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::{
-            mir::{Const, Local, PlaceElem},
+            mir::{Const, Local, PlaceElem, self},
             ty::{
                 self, DebruijnIndex, RegionVid, TyKind, TypeSuperVisitable, TypeVisitable,
                 TypeVisitor,
@@ -227,12 +227,23 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
+pub(crate) enum RegionProjectionLabel {
+    Location(SnapshotLocation),
+    Placeholder,
+}
+
+impl<'tcx> From<mir::Location> for RegionProjectionLabel {
+    fn from(location: mir::Location) -> Self {
+        RegionProjectionLabel::Location(location.into())
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
-    pub(crate) location: Option<SnapshotLocation>,
-    pub(crate) is_placeholder: bool,
+    pub(crate) label: Option<RegionProjectionLabel>,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -241,8 +252,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> 
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
-            location: rp.location,
-            is_placeholder: rp.is_placeholder,
+            label: rp.label,
             phantom: PhantomData,
         }
     }
@@ -264,11 +274,11 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if self.region_idx == projection.region_idx && self.base == projection.base.into() {
-            self.location = Some(location);
+            self.label = Some(label);
             true
         } else {
             false
@@ -283,8 +293,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
         RegionProjection {
             base: value.base.into(),
             region_idx: value.region_idx,
-            location: value.location,
-            is_placeholder: value.is_placeholder,
+            label: value.label,
             phantom: PhantomData,
         }
     }
@@ -340,12 +349,14 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn label_projection(self, location: SnapshotLocation) -> RegionProjection<'tcx, T> {
+    pub(crate) fn label_projection(
+        self,
+        label: RegionProjectionLabel,
+    ) -> RegionProjection<'tcx, T> {
         RegionProjection {
             base: self.base,
             region_idx: self.region_idx,
-            location: Some(location),
-            is_placeholder: self.is_placeholder,
+            label: Some(label),
             phantom: PhantomData,
         }
     }
@@ -355,8 +366,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjec
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
-            location: rp.location,
-            is_placeholder: rp.is_placeholder,
+            label: rp.label,
             phantom: PhantomData,
         }
     }
@@ -369,8 +379,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemot
             MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
                 base: p,
                 region_idx: rp.region_idx,
-                location: rp.location,
-                is_placeholder: rp.is_placeholder,
+                label: rp.label,
                 phantom: PhantomData,
             }),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
@@ -385,8 +394,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
             MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
                 base: p.try_into()?,
                 region_idx: rp.region_idx,
-                location: rp.location,
-                is_placeholder: rp.is_placeholder,
+                label: rp.label,
                 phantom: PhantomData,
             }),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
@@ -435,16 +443,16 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
     for RegionProjection<'tcx, T>
 {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        let location_part = if let Some(location) = self.location {
-            format!(" {}", location)
-        } else {
-            "".to_string()
+        let label_part = match self.label {
+            Some(RegionProjectionLabel::Location(location)) => format!(" {}", location),
+            Some(RegionProjectionLabel::Placeholder) => " FUTURE".to_string(),
+            _ => "".to_string(),
         };
         format!(
             "{}↓{}{}",
             self.base.to_short_string(repacker),
             self.region(repacker).to_short_string(repacker),
-            location_part
+            label_part
         )
     }
 }
@@ -473,8 +481,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
-            location: rp.location,
-            is_placeholder: rp.is_placeholder,
+            label: rp.label,
             phantom: PhantomData,
         }
     }
@@ -504,8 +511,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
         Ok(RegionProjection {
             base: rp.base.try_into()?,
             region_idx: rp.region_idx,
-            location: rp.location,
-            is_placeholder: rp.is_placeholder,
+            label: rp.label,
             phantom: PhantomData,
         })
     }
@@ -522,8 +528,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for RegionProjectio
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
-            location: rp.location,
-            is_placeholder: rp.is_placeholder,
+            label: rp.label,
             phantom: PhantomData,
         }
     }
@@ -536,8 +541,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
         RegionProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
-            location: rp.location,
-            is_placeholder: rp.is_placeholder,
+            label: rp.label,
             phantom: PhantomData,
         }
     }
@@ -565,7 +569,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
         RegionProjection::new(
             self.region(repacker),
             self.base.project_deeper(elem, repacker)?,
-            self.location,
+            self.label,
             repacker,
         )
         .map_err(|e| e.into())
@@ -581,7 +585,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
             .into_iter()
             .map(move |(base, elem)| {
                 (
-                    RegionProjection::new(self.region(repacker), base, self.location, repacker)
+                    RegionProjection::new(self.region(repacker), base, self.label, repacker)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "Error iter projections for {:?}: {:?}. Place ty: {:?}",
@@ -616,7 +620,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn new<C: Copy>(
         region: PcgRegion,
         base: T,
-        location: Option<SnapshotLocation>,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Result<Self, PCGInternalError> {
         let region_idx = base
@@ -636,8 +640,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         let result = Self {
             base,
             region_idx,
-            location,
-            is_placeholder: false,
+            label,
             phantom: PhantomData,
         };
         if validity_checks_enabled() {
@@ -675,8 +678,7 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         let result = RegionProjection {
             base,
             region_idx: self.region_idx,
-            location: self.location,
-            is_placeholder: self.is_placeholder,
+            label: self.label,
             phantom: PhantomData,
         };
         result.assert_validity(repacker);

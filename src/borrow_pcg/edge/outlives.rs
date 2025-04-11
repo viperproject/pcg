@@ -4,7 +4,7 @@ use crate::{
         edge_data::EdgeData,
         has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
-        region_projection::{LocalRegionProjection, RegionProjection},
+        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
@@ -26,15 +26,15 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self
             .long
-            .label_region_projection(projection, location, repacker);
+            .label_region_projection(projection, label, repacker);
         changed |= self
             .short
-            .label_region_projection(projection, location, repacker);
+            .label_region_projection(projection, label, repacker);
         changed
     }
 }

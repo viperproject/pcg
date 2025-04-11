@@ -2,6 +2,7 @@ use crate::{
     borrow_pcg::{
         has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
+        region_projection::RegionProjectionLabel,
     },
     edgedata_enum,
     pcg::PCGNode,
@@ -39,24 +40,24 @@ pub struct LocalBorrow<'tcx> {
 
     pub region: ty::Region<'tcx>,
 
-    blocked_rp_snapshot: Option<SnapshotLocation>,
-    assigned_rp_snapshot: Option<SnapshotLocation>,
+    blocked_rp_snapshot: Option<RegionProjectionLabel>,
+    assigned_rp_snapshot: Option<RegionProjectionLabel>,
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         if self.blocked_place.base_region_projection(repacker) == Some(*projection) {
-            self.blocked_rp_snapshot = Some(location);
+            self.blocked_rp_snapshot = Some(label);
             changed = true;
         }
         if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
-            self.assigned_rp_snapshot = Some(location);
+            self.assigned_rp_snapshot = Some(label);
             changed = true;
         }
         changed
@@ -82,18 +83,18 @@ pub struct RemoteBorrow<'tcx> {
     // because that local could be moved and the assigned ref should be renamed accordingly.
     assigned_ref: MaybeOldPlace<'tcx>,
 
-    rp_snapshot_location: Option<SnapshotLocation>,
+    rp_snapshot_location: Option<RegionProjectionLabel>,
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
-            self.rp_snapshot_location = Some(location);
+            self.rp_snapshot_location = Some(label);
             true
         } else {
             false
@@ -160,10 +161,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.assigned_ref.check_validity(repacker)
     }
 }
@@ -281,10 +279,7 @@ impl<'tcx> BorrowEdge<'tcx> {
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.blocked_place.check_validity(repacker)?;
         self.assigned_ref.check_validity(repacker)?;
         Ok(())
