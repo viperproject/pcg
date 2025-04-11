@@ -46,7 +46,8 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
         location: SnapshotLocation,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edge.label_region_projection(projection, location, repacker)
+        self.edge
+            .label_region_projection(projection, location, repacker)
     }
 }
 impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
@@ -76,10 +77,7 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.edge.check_validity(repacker)
     }
 }
@@ -181,10 +179,7 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.edge.check_validity(repacker)
     }
 }
@@ -249,7 +244,7 @@ edgedata_enum!(
 #[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
     pub(crate) inputs: SmallVec<[AbstractionInputTarget<'tcx>; 8]>,
-    outputs: Vec<AbstractionOutputTarget<'tcx>>,
+    outputs: SmallVec<[AbstractionOutputTarget<'tcx>; 8]>,
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
@@ -323,10 +318,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionBlockEdge<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         for input in self.inputs.iter() {
             input.check_validity(repacker)?;
         }
@@ -362,12 +354,12 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
         }
     }
 
-    pub fn outputs(&self) -> BTreeSet<AbstractionOutputTarget<'tcx>> {
-        self.outputs.clone().into_iter().collect()
+    pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
+        self.outputs.to_vec()
     }
 
-    pub fn inputs(&self) -> BTreeSet<AbstractionInputTarget<'tcx>> {
-        self.inputs.clone().into_iter().collect()
+    pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
+        self.inputs.to_vec()
     }
 }
 
@@ -396,11 +388,11 @@ impl<'tcx> AbstractionType<'tcx> {
         }
     }
 
-    pub fn inputs(&self) -> BTreeSet<AbstractionInputTarget<'tcx>> {
+    pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
         self.edge().inputs()
     }
 
-    pub fn outputs(&self) -> BTreeSet<AbstractionOutputTarget<'tcx>> {
+    pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
         self.edge().outputs()
     }
 

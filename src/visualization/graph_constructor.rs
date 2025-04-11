@@ -166,18 +166,18 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         capabilities: &impl CapabilityGetter<'tcx>,
         edge_idx: usize,
     ) {
-        let mut input_nodes = BTreeSet::new();
-        let mut output_nodes = BTreeSet::new();
+        let mut input_nodes = vec![];
+        let mut output_nodes = vec![];
 
         for input in abstraction.inputs() {
             let input = self.insert_cg_node(input, capabilities);
-            input_nodes.insert(input);
+            input_nodes.push(input);
         }
 
         for output in abstraction.outputs() {
             let output = output.with_base(output.base.into(), self.ctxt);
             let output = self.insert_region_projection_node(output);
-            output_nodes.insert(output);
+            output_nodes.push(output);
         }
 
         let label = match abstraction {
@@ -204,6 +204,22 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         };
 
         let mut first = true;
+
+        // for i in 0..input_nodes.len() - 1{
+        //     self.edges.insert(GraphEdge::HyperedgeSameEndpoint {
+        //         source: input_nodes[i],
+        //         target: input_nodes[i + 1],
+        //         label: hyperedge_id.clone(),
+        //     });
+        // }
+        // for i in 0..output_nodes.len() - 1 {
+        //     self.edges.insert(GraphEdge::HyperedgeSameEndpoint {
+        //         source: output_nodes[i],
+        //         target: output_nodes[i + 1],
+        //         label: hyperedge_id.clone(),
+        //     });
+        // }
+
         for input in &input_nodes {
             for output in &output_nodes {
                 self.edges.insert(GraphEdge::Abstract {

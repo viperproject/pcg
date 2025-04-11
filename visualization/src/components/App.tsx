@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "../dot_graph";
 
@@ -201,7 +207,7 @@ export const App: React.FC<AppProps> = ({
   }, [selectedFunction, currentPoint]);
 
   useEffect(() => {
-    addKeyDownListener(nodes, filteredNodes, setCurrentPoint);
+    return addKeyDownListener(nodes, filteredNodes, setCurrentPoint);
   }, [nodes, showPathBlocksOnly]);
 
   function addLocalStorageCallback(key: string, value: any) {
@@ -249,7 +255,7 @@ export const App: React.FC<AppProps> = ({
     (e: MouseEvent) => {
       if (!isDragging) return;
 
-      const rootElement = document.getElementById('root');
+      const rootElement = document.getElementById("root");
       if (!rootElement) return;
 
       const rootRect = rootElement.getBoundingClientRect();
@@ -264,18 +270,26 @@ export const App: React.FC<AppProps> = ({
 
   // Add and remove event listeners for dragging
   useEffect(() => {
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [handleMouseMove, handleMouseUp]);
 
   return (
     <div style={{ display: "flex", width: "100%" }}>
-      <div style={{ position: "relative", minHeight: "100vh", flex: "none", width: leftPanelWidth, overflow: "auto" }}>
+      <div
+        style={{
+          position: "relative",
+          minHeight: "100vh",
+          flex: "none",
+          width: leftPanelWidth,
+          overflow: "auto",
+        }}
+      >
         <div>
           <FunctionSelector
             functions={functions}
@@ -385,20 +399,22 @@ export const App: React.FC<AppProps> = ({
           background: "#ccc",
           position: "relative",
           zIndex: 100,
-          display: showPCG ? "block" : "none"
+          display: showPCG ? "block" : "none",
         }}
         onMouseDown={handleMouseDown}
       >
-        <div style={{
-          position: "absolute",
-          top: "50%",
-          left: "2px",
-          width: "6px",
-          height: "30px",
-          background: "#999",
-          borderRadius: "3px",
-          transform: "translateY(-50%)"
-        }}></div>
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "2px",
+            width: "6px",
+            height: "30px",
+            background: "#999",
+            borderRadius: "3px",
+            transform: "translateY(-50%)",
+          }}
+        ></div>
       </div>
 
       <div id="pcg-graph" style={{ flex: 1, overflow: "auto" }}></div>

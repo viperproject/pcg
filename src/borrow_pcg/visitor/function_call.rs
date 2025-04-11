@@ -17,7 +17,7 @@ use crate::{
     utils::{self, maybe_old::MaybeOldPlace, PlaceSnapshot, SnapshotLocation},
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_,> {
+impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
     /// Constructs a function call abstraction, if necessary.
     pub(super) fn make_function_call_abstraction(
         &mut self,
@@ -72,8 +72,13 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,> {
             .collect::<Vec<_>>();
 
         for arg in arg_region_projections.iter() {
-            self.state
-                .label_region_projection(arg, SnapshotLocation::before(location), self.ctxt);
+            if arg.is_nested_in_local_ty(self.ctxt) {
+                self.state.label_region_projection(
+                    arg,
+                    SnapshotLocation::before(location),
+                    self.ctxt,
+                );
+            }
         }
 
         let regions = arg_region_projections
@@ -86,17 +91,26 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,> {
                 .iter()
                 .filter(|rp| self.ctxt.bc.same_region(*region, rp.region(self.ctxt)))
                 .map(|rp| {
-                    (*rp)
-                        .label_projection(SnapshotLocation::before(location))
-                        .into()
+                    if rp.is_nested_in_local_ty(self.ctxt) {
+                        (*rp)
+                            .label_projection(SnapshotLocation::before(location))
+                            .into()
+                    } else {
+                        (*rp).into()
+                    }
                 })
                 .collect::<Vec<_>>();
             let outputs = arg_region_projections
                 .iter()
-                .filter(|rp| self.ctxt.bc.same_region(*region, rp.region(self.ctxt)))
+                .filter(|rp| {
+                    rp.is_nested_in_local_ty(self.ctxt)
+                        && self.ctxt.bc.same_region(*region, rp.region(self.ctxt))
+                })
                 .map(|rp| (*rp).label_projection(SnapshotLocation::After(location)))
                 .collect::<Vec<_>>();
-            self.apply_action(mk_create_edge_action(inputs, outputs));
+            if !inputs.is_empty() && !outputs.is_empty() {
+                self.apply_action(mk_create_edge_action(inputs, outputs));
+            }
         }
 
         for arg in args.iter() {
@@ -112,10 +126,9 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_,> {
             for (lifetime_idx, input_lifetime) in
                 extract_regions(ty, self.ctxt).into_iter_enumerated()
             {
-                for output in self.projections_borrowing_from_input_lifetime(
-                    input_lifetime,
-                    destination
-                ) {
+                for output in
+                    self.projections_borrowing_from_input_lifetime(input_lifetime, destination)
+                {
                     let input_rp = input_place
                         .region_projection(lifetime_idx, self.ctxt)
                         .label_projection(location.into());

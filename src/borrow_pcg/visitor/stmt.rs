@@ -218,7 +218,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         );
                     }
                 }
-                Rvalue::Ref(region, kind, blocked_place) => {
+                Rvalue::Ref(borrow_region, kind, blocked_place) => {
                     let blocked_place: utils::Place<'tcx> = (*blocked_place).into();
                     let blocked_place = blocked_place.with_inherent_region(self.ctxt);
                     if !target.ty(self.ctxt).ty.is_ref() {
@@ -234,24 +234,37 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         target,
                         *kind,
                         location,
-                        *region,
+                        *borrow_region,
                         self.capabilities,
                         self.ctxt,
                     );
                     for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
                         let source_region = source_proj.region(self.ctxt);
-                        self.connect_outliving_projections(
-                            source_proj.into(),
-                            target,
-                            location,
-                            |region| {
-                                let same_region = self.ctxt.bc.same_region(source_region, region);
-                                BorrowFlowEdgeKind::BorrowOutlives {
-                                    regions_equal: same_region,
+                        let mut source_proj_could_mutate = false;
+                        for target_proj in target.region_projections(self.ctxt).into_iter() {
+                            let target_region = target_proj.region(self.ctxt);
+                            if self.ctxt.bc.outlives(source_region, target_region) {
+                                let regions_equal =
+                                    self.ctxt.bc.same_region(source_region, target_region);
+                                if regions_equal {
+                                    source_proj_could_mutate = source_proj.is_nested_in_local_ty(self.ctxt);
                                 }
-                            },
-                        );
-                        if kind.mutability().is_mut() {
+                                self.apply_action(BorrowPCGAction::add_edge(
+                                    BorrowPCGEdge::new(
+                                        BorrowFlowEdge::new(
+                                            source_proj.into(),
+                                            target_proj.into(),
+                                            BorrowFlowEdgeKind::BorrowOutlives { regions_equal },
+                                            self.ctxt,
+                                        )
+                                        .into(),
+                                        PathConditions::AtBlock(location.block),
+                                    ),
+                                    true,
+                                ));
+                            }
+                        }
+                        if kind.mutability().is_mut() && source_proj_could_mutate {
                             self.state.label_region_projection(
                                 &source_proj.into(),
                                 location.into(),

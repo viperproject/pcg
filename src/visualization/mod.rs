@@ -197,10 +197,10 @@ pub(crate) enum GraphEdge {
         target: NodeId,
         kind: BorrowFlowEdgeKind,
     },
-    Coupled {
+    HyperedgeSameEndpoint {
         source: NodeId,
         target: NodeId,
-        directed: bool,
+        label: String,
     },
 }
 
@@ -287,22 +287,17 @@ impl GraphEdge {
                     options,
                 }
             }
-            GraphEdge::Coupled {
+            GraphEdge::HyperedgeSameEndpoint {
                 source,
                 target,
-                directed,
+                label,
             } => {
-                let edge_options = if *directed {
-                    EdgeOptions::directed(EdgeDirection::Forward)
-                } else {
-                    EdgeOptions::undirected().with_weight(2.0)
-                };
                 DotEdge {
                     from: source.to_string(),
                     to: target.to_string(),
-                    options: edge_options
-                        .with_color("red".to_string())
-                        .with_style("dashed".to_string()),
+                    options: EdgeOptions::undirected()
+                        .with_style("dashed".to_string())
+                        .with_label(label.clone()),
                 }
             }
         }

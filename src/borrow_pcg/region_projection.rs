@@ -21,7 +21,10 @@ use crate::{
         index::{Idx, IndexVec},
         middle::{
             mir::{Const, Local, PlaceElem},
-            ty::{self, DebruijnIndex, RegionVid},
+            ty::{
+                self, DebruijnIndex, RegionVid, TyKind, TypeSuperVisitable, TypeVisitable,
+                TypeVisitor,
+            },
         },
         span::{source_map::get_source_map, FileNameDisplayPreference},
     },
@@ -229,7 +232,20 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
     pub(crate) location: Option<SnapshotLocation>,
+    pub(crate) is_placeholder: bool,
     phantom: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> {
+    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        RegionProjection {
+            base: rp.base.into(),
+            region_idx: rp.region_idx,
+            location: rp.location,
+            is_placeholder: rp.is_placeholder,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
@@ -268,8 +284,58 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
             base: value.base.into(),
             region_idx: value.region_idx,
             location: value.location,
+            is_placeholder: value.is_placeholder,
             phantom: PhantomData,
         }
+    }
+}
+
+struct IsNestedChecker<'mir, 'tcx> {
+    ctxt: CompilerCtxt<'mir, 'tcx>,
+    target: PcgRegion,
+    found: bool,
+}
+
+impl<'mir, 'tcx> IsNestedChecker<'mir, 'tcx> {
+    fn new(ctxt: CompilerCtxt<'mir, 'tcx>, target: PcgRegion) -> Self {
+        Self {
+            ctxt,
+            target,
+            found: false,
+        }
+    }
+}
+
+impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx> {
+    fn visit_ty(&mut self, t: ty::Ty<'tcx>) {
+        if self.found {
+            return;
+        }
+
+        match t.kind() {
+            TyKind::RawPtr(ty, mutbl) | TyKind::Ref(_, ty, mutbl) if mutbl.is_mut() => {
+                if extract_regions(*ty, self.ctxt)
+                    .iter()
+                    .any(|r| self.target == *r)
+                {
+                    self.found = true;
+                }
+            }
+            _ => {
+                t.super_visit_with(self);
+            }
+        }
+    }
+}
+
+impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<'tcx, T> {
+    // Returns true iff the region is nested under another reference, w.r.t the local
+    // of the place of this region projection
+    pub(crate) fn is_nested_in_local_ty(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        let mut checker = IsNestedChecker::new(ctxt, self.region(ctxt));
+        let local_place: Place<'tcx> = self.base.place().local.into();
+        local_place.ty(ctxt).visit_with(&mut checker);
+        checker.found
     }
 }
 
@@ -279,6 +345,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             base: self.base,
             region_idx: self.region_idx,
             location: Some(location),
+            is_placeholder: self.is_placeholder,
             phantom: PhantomData,
         }
     }
@@ -289,6 +356,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjec
             base: rp.base.into(),
             region_idx: rp.region_idx,
             location: rp.location,
+            is_placeholder: rp.is_placeholder,
             phantom: PhantomData,
         }
     }
@@ -302,6 +370,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemot
                 base: p,
                 region_idx: rp.region_idx,
                 location: rp.location,
+                is_placeholder: rp.is_placeholder,
                 phantom: PhantomData,
             }),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
@@ -317,6 +386,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
                 base: p.try_into()?,
                 region_idx: rp.region_idx,
                 location: rp.location,
+                is_placeholder: rp.is_placeholder,
                 phantom: PhantomData,
             }),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
@@ -404,6 +474,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
             base: rp.base.into(),
             region_idx: rp.region_idx,
             location: rp.location,
+            is_placeholder: rp.is_placeholder,
             phantom: PhantomData,
         }
     }
@@ -434,6 +505,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
             base: rp.base.try_into()?,
             region_idx: rp.region_idx,
             location: rp.location,
+            is_placeholder: rp.is_placeholder,
             phantom: PhantomData,
         })
     }
@@ -451,6 +523,7 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for RegionProjectio
             base: rp.base.into(),
             region_idx: rp.region_idx,
             location: rp.location,
+            is_placeholder: rp.is_placeholder,
             phantom: PhantomData,
         }
     }
@@ -464,6 +537,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
             base: rp.base.into(),
             region_idx: rp.region_idx,
             location: rp.location,
+            is_placeholder: rp.is_placeholder,
             phantom: PhantomData,
         }
     }
@@ -563,6 +637,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             base,
             region_idx,
             location,
+            is_placeholder: false,
             phantom: PhantomData,
         };
         if validity_checks_enabled() {
@@ -601,6 +676,7 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
             base,
             region_idx: self.region_idx,
             location: self.location,
+            is_placeholder: self.is_placeholder,
             phantom: PhantomData,
         };
         result.assert_validity(repacker);
