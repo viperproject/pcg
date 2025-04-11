@@ -68,8 +68,10 @@ export function addKeyDownListener(
   const handleKeyDown = (event: KeyboardEvent) => {
     keydown(event, nodes, filteredNodes, setCurrentPoint);
   };
+  console.log("add keydown listener");
   window.addEventListener("keydown", handleKeyDown);
   return () => {
+    console.log("removing keydown listener");
     window.removeEventListener("keydown", handleKeyDown);
   };
 }
