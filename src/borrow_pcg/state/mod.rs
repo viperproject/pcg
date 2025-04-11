@@ -261,6 +261,21 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
+        if let BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) = edge.kind() {
+            for node in expansion.expansion() {
+                for to_redirect in self
+                    .graph
+                    .edges_blocked_by(*node, ctxt)
+                    .map(|e| e.kind.clone())
+                    .collect::<Vec<_>>()
+                {
+                    // TODO: Due to a bug ignore other expansions to this place for now
+                    if !matches!(to_redirect, BorrowPCGEdgeKind::BorrowPCGExpansion(_)) {
+                        self.graph.redirect_edge(to_redirect, *node, expansion.base)
+                    }
+                }
+            }
+        }
         Ok(actions)
     }
 
@@ -360,7 +375,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         PCGNode::RegionProjection(rp) => rp.place().place(),
                     };
 
-                    if place.projection.is_empty() && ctxt.is_arg(place.local) {
+                    if ctxt.is_arg(place.local) {
                         return false;
                     }
 

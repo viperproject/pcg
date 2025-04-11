@@ -1,3 +1,4 @@
+use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
@@ -25,6 +26,13 @@ impl<'tcx> BorrowPCGEdgeKind<'tcx> {
         match self {
             BorrowPCGEdgeKind::Borrow(reborrow) => !reborrow.is_mut(repacker),
             _ => false,
+        }
+    }
+
+    pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+        match self {
+            BorrowPCGEdgeKind::BorrowFlow(edge) => edge.redirect(from, to),
+            other => panic!("Cannot redirect this edge kind: {:?}", other),
         }
     }
 }

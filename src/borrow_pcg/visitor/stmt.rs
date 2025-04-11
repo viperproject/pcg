@@ -197,7 +197,25 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         (from.into(), BorrowFlowEdgeKind::CopySharedRef)
                     };
                     for source_proj in from.region_projections(self.ctxt).into_iter() {
-                        self.connect_outliving_projections(source_proj, target, location, |_| kind);
+                        let ctxt = self.ctxt;
+                        self.connect_outliving_projections(
+                            source_proj,
+                            target,
+                            location,
+                            |region| {
+                                if matches!(kind, BorrowFlowEdgeKind::Move) {
+                                    if ctxt.bc.same_region(source_proj.region(ctxt), region) {
+                                        BorrowFlowEdgeKind::Move
+                                    } else {
+                                        BorrowFlowEdgeKind::BorrowOutlives {
+                                            regions_equal: false,
+                                        }
+                                    }
+                                } else {
+                                    kind
+                                }
+                            },
+                        );
                     }
                 }
                 Rvalue::Ref(region, kind, blocked_place) => {

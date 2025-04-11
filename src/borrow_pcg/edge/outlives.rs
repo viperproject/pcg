@@ -10,15 +10,15 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
-        CompilerCtxt, Place, SnapshotLocation,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
+        validity::HasValidityCheck, CompilerCtxt, Place, SnapshotLocation,
     },
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowFlowEdge<'tcx> {
     long: RegionProjection<'tcx>,
-    short: LocalRegionProjection<'tcx>,
+    short: MaybeRedirected<LocalRegionProjection<'tcx>>,
     pub(crate) kind: BorrowFlowEdgeKind,
 }
 
@@ -88,15 +88,12 @@ impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
         &self,
         _repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
-        std::iter::once(self.short.into()).collect()
+        std::iter::once(self.short.effective().into()).collect()
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.long.check_validity(repacker)?;
         self.short.check_validity(repacker)?;
         Ok(())
@@ -104,6 +101,12 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
+    pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+        if let PCGNode::RegionProjection(rp) = from {
+            self.short.redirect(rp.into(), to.try_into().unwrap());
+        }
+    }
+
     pub(crate) fn new(
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
@@ -111,7 +114,11 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
-        Self { long, short, kind }
+        Self {
+            long,
+            short: short.into(),
+            kind,
+        }
     }
 
     pub fn long(&self) -> RegionProjection<'tcx> {
@@ -119,7 +126,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
     }
 
     pub fn short(&self) -> LocalRegionProjection<'tcx> {
-        self.short
+        self.short.effective()
     }
 
     pub fn kind(&self) -> BorrowFlowEdgeKind {
@@ -162,7 +169,9 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
                 target_rp_index,
             } => write!(f, "Aggregate({field_idx}, {target_rp_index})"),
             BorrowFlowEdgeKind::ConstRef => write!(f, "ConstRef"),
-            BorrowFlowEdgeKind::BorrowOutlives { regions_equal: lifetimes_equal } => {
+            BorrowFlowEdgeKind::BorrowOutlives {
+                regions_equal: lifetimes_equal,
+            } => {
                 if *lifetimes_equal {
                     write!(f, "equals")
                 } else {

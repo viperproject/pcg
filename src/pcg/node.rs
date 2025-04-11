@@ -1,3 +1,5 @@
+use derive_more::TryInto;
+
 use crate::borrow_pcg::has_pcs_elem::{
     default_make_place_old, LabelRegionProjection, MakePlaceOld,
 };

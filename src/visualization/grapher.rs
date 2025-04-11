@@ -119,8 +119,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                 self.constructor().edges.insert(GraphEdge::BorrowFlow {
                             source: input_node,
                             target: output_node,
-                            kind: format!("{}", member.kind),
-                            regions_equal: matches!(member.kind(), BorrowFlowEdgeKind::BorrowOutlives { regions_equal, .. } if regions_equal),
+                            kind: member.kind
                         });
             }
         }
