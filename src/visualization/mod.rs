@@ -15,7 +15,7 @@ pub mod mir_graph;
 mod node;
 
 use crate::{
-    borrow_pcg::{graph::BorrowsGraph, state::BorrowsState},
+    borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph, state::BorrowsState},
     free_pcs::{CapabilityKind, CapabilityLocals},
     pcg::place_capabilities::PlaceCapabilities,
     rustc_interface::middle::mir::Location,
@@ -195,17 +195,12 @@ pub(crate) enum GraphEdge {
     BorrowFlow {
         source: NodeId,
         target: NodeId,
-        kind: String,
-        regions_equal: bool,
+        kind: BorrowFlowEdgeKind,
     },
     Coupled {
         source: NodeId,
         target: NodeId,
         directed: bool,
-    },
-    Collapsed {
-        source: NodeId,
-        target: NodeId,
     },
 }
 
@@ -272,15 +267,19 @@ impl GraphEdge {
                 source,
                 target,
                 kind,
-                regions_equal,
             } => {
                 let options = EdgeOptions::directed(EdgeDirection::Forward)
-                    .with_label(kind.clone())
+                    .with_label(format!("{}", kind))
                     .with_color("purple".to_string());
-                let options = if !*regions_equal {
-                    options.with_style("dashed".to_string())
-                } else {
-                    options.with_penwidth(2.0)
+                let options = match kind {
+                    BorrowFlowEdgeKind::BorrowOutlives { regions_equal } => {
+                        if *regions_equal {
+                            options.with_penwidth(2.0)
+                        } else {
+                            options.with_style("dashed".to_string())
+                        }
+                    }
+                    _ => options,
                 };
                 DotEdge {
                     from: source.to_string(),
@@ -306,14 +305,6 @@ impl GraphEdge {
                         .with_style("dashed".to_string()),
                 }
             }
-            GraphEdge::Collapsed { source, target } => DotEdge {
-                from: source.to_string(),
-                to: target.to_string(),
-                options: EdgeOptions::directed(EdgeDirection::Forward)
-                    .with_color("red".to_string())
-                    .with_label("collapsed".to_string())
-                    .with_style("dashed".to_string()),
-            },
         }
     }
 }

@@ -7,6 +7,10 @@ fn f<'a, 'b, 'c>(
     // std::mem::swap(**x, *y);
     *y = z;
     *x = y;
+
+    // PCG_LIFETIME_DISPLAY: x 0 'a
+    // PCG_LIFETIME_DISPLAY: y 0 'b
+    // PCG_LIFETIME_DISPLAY: z 0 'c
 }
 
 fn main() {

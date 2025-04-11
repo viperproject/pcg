@@ -232,6 +232,16 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
+    type Error = ();
+    fn try_from(node: PCGNode<'tcx, T, P>) -> Result<Self, Self::Error> {
+        match node {
+            PCGNode::RegionProjection(rp) => Ok(rp),
+            _ => Err(()),
+        }
+    }
+}
+
 impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
     for RegionProjection<'tcx, P>
 {

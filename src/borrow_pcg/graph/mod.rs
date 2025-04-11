@@ -113,6 +113,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
+    pub(crate) fn redirect_edge(&mut self, mut edge: BorrowPCGEdgeKind<'tcx>, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+        let conditions = self.edges.remove(&edge).unwrap();
+        edge.redirect(from, to);
+        self.insert(BorrowPCGEdge::new(edge, conditions));
+    }
+
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
