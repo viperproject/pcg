@@ -3,7 +3,7 @@ use crate::{
         borrow_pcg_edge::BlockedNode,
         has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
-        region_projection::MaybeRemoteRegionProjectionBase,
+        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
     edgedata_enum,
     rustc_interface::{
@@ -43,11 +43,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge
-            .label_region_projection(projection, location, repacker)
+            .label_region_projection(projection, label, repacker)
     }
 }
 impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
@@ -135,11 +135,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge
-            .label_region_projection(projection, location, repacker)
+            .label_region_projection(projection, label, repacker)
     }
 }
 
@@ -251,15 +251,15 @@ impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for input in self.inputs.iter_mut() {
-            changed |= input.label_region_projection(projection, location, repacker);
+            changed |= input.label_region_projection(projection, label, repacker);
         }
         for output in self.outputs.iter_mut() {
-            changed |= output.label_region_projection(projection, location, repacker);
+            changed |= output.label_region_projection(projection, label, repacker);
         }
         changed
     }

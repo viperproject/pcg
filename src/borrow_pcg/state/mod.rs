@@ -74,7 +74,7 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         self.graph
-            .mut_edges(|edge| edge.label_region_projection(projection, location, repacker));
+            .mut_edges(|edge| edge.label_region_projection(projection, location.into(), repacker));
     }
     fn introduce_initial_borrows(
         &mut self,

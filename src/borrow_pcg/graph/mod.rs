@@ -4,7 +4,7 @@ pub mod join;
 pub(crate) mod materialize;
 mod mutate;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::{
     borrow_pcg::coupling_graph_constructor::AbstractionGraph,
@@ -15,7 +15,9 @@ use crate::{
     },
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
+        maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
+        HasPlace,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -27,6 +29,7 @@ use super::{
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
+    region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
@@ -48,10 +51,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         tracing::debug!(
             "Checking acyclicity of borrows graph ({} edges)",
             self.edges.len()
@@ -113,7 +113,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
-    pub(crate) fn redirect_edge(&mut self, mut edge: BorrowPCGEdgeKind<'tcx>, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+    pub(crate) fn redirect_edge(
+        &mut self,
+        mut edge: BorrowPCGEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+    ) {
         let conditions = self.edges.remove(&edge).unwrap();
         edge.redirect(from, to);
         self.insert(BorrowPCGEdge::new(edge, conditions));
@@ -146,10 +151,51 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .map(|(kind, conditions)| BorrowPCGEdgeRef { kind, conditions })
     }
 
-    pub(crate) fn base_rp_graph(
+    pub(crate) fn region_projections_blocked_by(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> AbstractionGraph<'tcx> {
+        from: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> FxHashSet<RegionProjection<'tcx>> {
+        let mut result = FxHashSet::default();
+        for edge in self.edges_blocked_by(from, ctxt) {
+            for node in edge.blocked_nodes(ctxt) {
+                if let PCGNode::RegionProjection(rp) = node {
+                    result.insert(rp);
+                }
+            }
+        }
+        result
+    }
+
+    pub(crate) fn identify_placeholder_target(
+        &self,
+        from: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> FxHashSet<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        let mut result = FxHashSet::default();
+        let mut blocking: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
+            .region_projections_blocked_by(from.into(), ctxt)
+            .into_iter()
+            .flat_map(|rp| rp.try_into())
+            .collect();
+        while let Some(node) = blocking.pop() {
+            println!("node: {:?}", node);
+            let place = node.base().place();
+            if place.is_deref() {
+                let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
+                    .region_projections_blocked_by(node.into(), ctxt)
+                    .into_iter()
+                    .flat_map(|rp| rp.try_into())
+                    .collect();
+                blocking.extend(to_add);
+            } else {
+                result.insert(node);
+            }
+        }
+        result
+    }
+
+    pub(crate) fn base_rp_graph(&self, repacker: CompilerCtxt<'_, 'tcx>) -> AbstractionGraph<'tcx> {
         let mut graph: AbstractionGraph<'tcx> = AbstractionGraph::new();
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         struct ExploreFrom<'tcx> {
@@ -173,11 +219,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self.current
             }
 
-            pub fn extend(
-                &self,
-                node: PCGNode<'tcx>,
-                repacker: CompilerCtxt<'_, 'tcx>,
-            ) -> Self {
+            pub fn extend(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
                 Self {
                     current: node,
                     connect: node.as_cg_node(repacker).or(self.connect),
@@ -421,7 +463,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx, C>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc, C> {
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc, C>
+    {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
     }

@@ -1,6 +1,6 @@
 use crate::borrow_pcg::{
     has_pcs_elem::{HasPcgElems, LabelRegionProjection},
-    region_projection::RegionProjection,
+    region_projection::{RegionProjection, RegionProjectionLabel},
 };
 
 use super::{
@@ -51,14 +51,14 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: RegionProjectionLabel,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self
             .original
-            .label_region_projection(projection, location, repacker);
+            .label_region_projection(projection, label, repacker);
         if let Some(r) = &mut self.redirected {
-            changed |= r.label_region_projection(projection, location, repacker);
+            changed |= r.label_region_projection(projection, label, repacker);
         }
         self.collapse_if_equal();
         changed
