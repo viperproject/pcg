@@ -48,16 +48,16 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         if self.blocked_place.base_region_projection(repacker) == Some(*projection) {
-            self.blocked_rp_snapshot = Some(label);
+            self.blocked_rp_snapshot = label;
             changed = true;
         }
         if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
-            self.assigned_rp_snapshot = Some(label);
+            self.assigned_rp_snapshot = label;
             changed = true;
         }
         changed
@@ -90,11 +90,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
-            self.rp_snapshot_location = Some(label);
+            self.rp_snapshot_location = label;
             true
         } else {
             false

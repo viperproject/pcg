@@ -77,7 +77,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             if arg.is_nested_in_local_ty(self.ctxt) {
                 self.state.label_region_projection(
                     arg,
-                    SnapshotLocation::before(location).into(),
+                    Some(SnapshotLocation::before(location).into()),
                     self.ctxt,
                 );
                 labelled_rps

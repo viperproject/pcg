@@ -274,11 +274,11 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if self.region_idx == projection.region_idx && self.base == projection.base.into() {
-            self.label = Some(label);
+        if self.region_idx == projection.region_idx && self.base == projection.base.into() && self.label == projection.label {
+            self.label = label;
             true
         } else {
             false

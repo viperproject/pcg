@@ -267,7 +267,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         if kind.mutability().is_mut() && source_proj_could_mutate {
                             self.state.label_region_projection(
                                 &source_proj.into(),
-                                location.into(),
+                                Some(location.into()),
                                 self.ctxt,
                             );
                         }

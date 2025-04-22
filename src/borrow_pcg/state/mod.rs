@@ -8,6 +8,7 @@ use super::{
     has_pcs_elem::LabelRegionProjection,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
+    region_projection::RegionProjectionLabel,
     visitor::extract_regions,
 };
 use crate::{
@@ -70,11 +71,11 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        location: SnapshotLocation,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         self.graph
-            .mut_edges(|edge| edge.label_region_projection(projection, location.into(), repacker));
+            .mut_edges(|edge| edge.label_region_projection(projection, label, repacker));
     }
     fn introduce_initial_borrows(
         &mut self,
@@ -262,6 +263,12 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
         if let BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) = edge.kind() {
+            if let LocalNode::Place(place) = expansion.base() {
+                for mut region_projection in place.region_projections(ctxt) {
+                    region_projection.label = Some(RegionProjectionLabel::Placeholder);
+                    self.label_region_projection(&region_projection, None, ctxt);
+                }
+            }
             for node in expansion.expansion() {
                 for to_redirect in self
                     .graph

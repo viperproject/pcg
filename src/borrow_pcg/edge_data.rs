@@ -116,7 +116,7 @@ macro_rules! edgedata_enum {
             fn label_region_projection(
                 &mut self,
                 projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-                location: $crate::borrow_pcg::region_projection::RegionProjectionLabel,
+                location: Option<$crate::borrow_pcg::region_projection::RegionProjectionLabel>,
                 repacker: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {

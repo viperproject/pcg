@@ -179,7 +179,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|rp| rp.try_into())
             .collect();
         while let Some(node) = blocking.pop() {
-            println!("node: {:?}", node);
             let place = node.base().place();
             if place.is_deref() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self

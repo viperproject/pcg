@@ -16,7 +16,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel},
 };
-use crate::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::SnapshotLocation};
+use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
@@ -44,7 +44,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.kind.label_region_projection(projection, label, repacker)
