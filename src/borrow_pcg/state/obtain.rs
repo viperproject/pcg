@@ -220,7 +220,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     let place: MaybeOldPlace<'tcx> = base.into();
                     self.label_region_projection(
                         &place.base_region_projection(ctxt).unwrap(),
-                        location.into(),
+                        Some(location.into()),
                         ctxt,
                     );
                 }
@@ -262,7 +262,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         capabilities,
                         ctxt,
                     )?;
-                    self.label_region_projection(&rp, SnapshotLocation::before(location), ctxt);
+                    self.label_region_projection(&rp, Some(SnapshotLocation::before(location).into()), ctxt);
                 }
             }
         }

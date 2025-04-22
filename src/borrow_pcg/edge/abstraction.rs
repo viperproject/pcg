@@ -14,7 +14,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
-    utils::{Place, SnapshotLocation},
+    utils::Place,
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
@@ -31,7 +31,6 @@ use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use std::collections::BTreeSet;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
@@ -43,7 +42,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge
@@ -135,7 +134,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge
@@ -251,7 +250,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;

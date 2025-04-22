@@ -32,7 +32,7 @@ impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if let PCGNode::RegionProjection(this_projection) = self {

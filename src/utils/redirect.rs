@@ -5,7 +5,7 @@ use crate::borrow_pcg::{
 
 use super::{
     display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
-    CompilerCtxt, SnapshotLocation,
+    CompilerCtxt,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -51,7 +51,7 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self

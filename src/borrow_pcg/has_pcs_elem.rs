@@ -1,7 +1,6 @@
 use super::latest::Latest;
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::SnapshotLocation;
 use crate::utils::{validity::HasValidityCheck, Place, CompilerCtxt};
 use crate::validity_checks_enabled;
 
@@ -13,7 +12,7 @@ pub(crate) trait LabelRegionProjection<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: RegionProjectionLabel,
+        label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
