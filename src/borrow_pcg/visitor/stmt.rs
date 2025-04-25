@@ -216,21 +216,24 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 } else {
                     (from.into(), BorrowFlowEdgeKind::CopySharedRef)
                 };
-                for source_proj in from.region_projections(self.ctxt).into_iter() {
-                    let ctxt = self.ctxt;
-                    self.connect_outliving_projections(source_proj, target, location, |region| {
-                        if matches!(kind, BorrowFlowEdgeKind::Move) {
-                            if ctxt.bc.same_region(source_proj.region(ctxt), region) {
-                                BorrowFlowEdgeKind::Move
-                            } else {
-                                BorrowFlowEdgeKind::BorrowOutlives {
-                                    regions_equal: false,
-                                }
-                            }
-                        } else {
-                            kind
-                        }
-                    });
+                for (source_proj, target_proj) in from
+                    .region_projections(self.ctxt)
+                    .into_iter()
+                    .zip(target.region_projections(self.ctxt).into_iter())
+                {
+                    self.apply_action(BorrowPCGAction::add_edge(
+                        BorrowPCGEdge::new(
+                            BorrowFlowEdge::new(
+                                source_proj.into(),
+                                target_proj.into(),
+                                kind,
+                                self.ctxt,
+                            )
+                            .into(),
+                            PathConditions::AtBlock(location.block),
+                        ),
+                        true,
+                    ));
                 }
             }
             Rvalue::Ref(borrow_region, kind, blocked_place) => {

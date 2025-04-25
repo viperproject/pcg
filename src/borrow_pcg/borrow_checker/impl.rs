@@ -15,11 +15,12 @@ use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::CompilerCtxt;
-use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+#[cfg(feature = "visualization")]
+use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
@@ -30,6 +31,7 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     tcx: ty::TyCtxt<'tcx>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
+    #[cfg(feature = "visualization")]
     pretty_printer: RegionPrettyPrinter,
 }
 
@@ -37,6 +39,8 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'_, 'tcx> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
+
+    #[cfg(feature = "visualization")]
     pub fn new<T: BodyAndBorrows<'tcx>>(
         tcx: ty::TyCtxt<'tcx>,
         body: &'mir T,
@@ -65,6 +69,28 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
             pretty_printer,
         }
     }
+
+    #[cfg(not(feature = "visualization"))]
+    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
+        let location_table = body.location_table();
+        let output_facts = Output::compute(
+            body.input_facts(),
+            polonius_engine::Algorithm::DatafrogOpt,
+            true,
+        );
+        let region_cx = body.region_inference_context();
+        let borrows = body.borrow_set();
+        Self {
+            input_facts: body.input_facts(),
+            location_table,
+            output_facts,
+            body: body.body(),
+            tcx,
+            region_cx,
+            borrows,
+        }
+    }
+
     pub fn origin_live_on_entry(&self, location: RichLocation) -> Option<BTreeSet<ty::RegionVid>> {
         let origins = match location {
             RichLocation::Start(location) => self
@@ -119,8 +145,13 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
 }
 
 impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
+    #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
+    }
+    #[cfg(not(feature = "visualization"))]
+    fn override_region_debug_string(&self, _region: ty::RegionVid) -> Option<&str> {
+        None
     }
     fn is_live(&self, node: PCGNode<'tcx>, location: Location, _is_leaf: bool) -> bool {
         let regions: Vec<_> = match node {
