@@ -28,7 +28,7 @@ struct JoinNodesResult {
     performed_merge: bool,
 }
 
-impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clone + Eq + Hash>
+impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clone + Eq + Hash + DisplayWithCompilerCtxt<'tcx>>
     DisjointSetGraph<N, E>
 {
     pub(crate) fn new() -> Self {
@@ -323,10 +323,11 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         weight: FxHashSet<E>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
-        tracing::debug!(
-            "Adding edge {} -> {}",
+        tracing::info!(
+            "Adding edge {} -> {} with weight {:?}",
             from.to_short_string(repacker),
-            to.to_short_string(repacker)
+            to.to_short_string(repacker),
+            weight.iter().map(|e| e.to_short_string(repacker)).collect::<Vec<_>>()
         );
         pcg_validity_assert!(
             self.is_acyclic(),

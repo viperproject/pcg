@@ -127,7 +127,7 @@ struct PCGEngineDebugData {
 }
 
 pub struct PcgEngine<'a, 'tcx: 'a> {
-    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
+    pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
@@ -309,7 +309,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             .map(|a| a.into()),
         );
 
-        let mut tw = TripleWalker::new(self.repacker);
+        let mut tw = TripleWalker::new(self.ctxt);
         match object {
             AnalysisObject::Statement(statement) => {
                 tw.visit_statement_fallable(statement, location)?;
@@ -407,7 +407,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
-            repacker,
+            ctxt: repacker,
             fpcs,
             borrows,
             debug_data,
@@ -435,7 +435,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         for action in borrow_actions.0.iter() {
             match &action.kind {
                 BorrowPCGActionKind::MakePlaceOld(place, _) => {
-                    if place.is_owned(self.repacker)
+                    if place.is_owned(self.ctxt)
                         && capabilities.get((*place).into()) != Some(CapabilityKind::Write)
                     {
                         // A bit of an annoying hack: if the place has *no* capability (or read cap), then it's borrowed.
@@ -449,12 +449,12 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
                 }
                 BorrowPCGActionKind::RemoveEdge(edge) => {
                     for place in edge
-                        .blocked_places(self.repacker)
+                        .blocked_places(self.ctxt)
                         .iter()
                         .flat_map(|p| p.as_current_place())
                     {
-                        if place.is_owned(self.repacker)
-                            && !borrows.contains(place.into(), self.repacker)
+                        if place.is_owned(self.ctxt)
+                            && !borrows.contains(place.into(), self.ctxt)
                         {
                             // It's possible that the place isn't allocated because
                             // it was already StorageDead'd. In this case it
@@ -476,11 +476,11 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         borrows: &FrozenGraphRef<'_, 'tcx>,
     ) {
         for caps in owned_state.capability_projections_mut() {
-            let leaves = caps.leaves(self.repacker);
+            let leaves = caps.leaves(self.ctxt);
 
             for place in leaves {
                 if capabilities.get(place.into()) == Some(CapabilityKind::Read)
-                    && !borrows.contains(place.into(), self.repacker)
+                    && !borrows.contains(place.into(), self.ctxt)
                 {
                     capabilities.insert(place.into(), CapabilityKind::Exclusive);
                 }
@@ -504,16 +504,16 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
                 .sorted_by_key(|(p, _)| p.projection.len())
                 .collect::<Vec<_>>();
             while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, self.repacker);
+                let expansion_places = base.expansion_places(&expansion, self.ctxt);
                 if expansion_places
                     .iter()
-                    .all(|p| !borrows.contains((*p).into(), self.repacker))
+                    .all(|p| !borrows.contains((*p).into(), self.ctxt))
                     && let Some(candidate_cap) = capabilities.get(expansion_places[0].into())
                     && expansion_places
                         .iter()
                         .all(|p| capabilities.get((*p).into()) == Some(candidate_cap))
                 {
-                    ops.extend(caps.collapse(base, capabilities, self.repacker).unwrap());
+                    ops.extend(caps.collapse(base, capabilities, self.ctxt).unwrap());
                 }
             }
         }
@@ -545,7 +545,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
             (None, None)
         };
         PcgDomain::new(
-            self.repacker,
+            self.ctxt,
             block,
             debug_data,
         )
@@ -555,7 +555,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
         self.curr_block.set(START_BLOCK);
         state
             .pcg_mut(DomainDataIndex::Initial)
-            .initialize_as_start_block(self.repacker);
+            .initialize_as_start_block(self.ctxt);
         state.reachable = true;
     }
 

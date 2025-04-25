@@ -152,6 +152,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                                 for_exclusive: true,
                             }
                             .into(),
+                            self.ctxt(),
                         );
                     }
                 }

@@ -13,6 +13,24 @@ fn f<'a, 'b, 'c>(
     // PCG_LIFETIME_DISPLAY: z 0 'c
 }
 
+// fn caller() {
+//     let mut a = 1;
+//     let mut b = 2;
+//     let mut c = 3;
+//     let mut ra = &mut a;
+//     let mut rb = &mut b;
+//     let mut rc = &mut c;
+//     let mut rra = &mut ra;
+//     let mut rrb = &mut rb;
+//     let mut rrra = &mut rra;
+
+//     f(rrra, rrb, rc);
+
+//     ***rrra = 1;
+//     **rrb = 1;
+//     *rc = 4;
+// }
+
 fn main() {
     let mut a = 1;
     let mut b = 2;

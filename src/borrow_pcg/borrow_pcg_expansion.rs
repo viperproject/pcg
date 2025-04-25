@@ -29,8 +29,8 @@ use crate::{
         target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
-        display::DisplayWithCompilerCtxt, validity::HasValidityCheck, ConstantIndex, HasPlace, Place,
-        CompilerCtxt,
+        display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, ConstantIndex,
+        HasPlace, Place,
     },
 };
 
@@ -66,10 +66,7 @@ pub(crate) enum PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -168,11 +165,23 @@ impl<'tcx> PlaceExpansion<'tcx> {
 pub struct BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
     pub(crate) expansion: Vec<P>,
-    /// The location the expansion was created. This is relevant if the
-    /// expansion is of the form x -> *x, since this will determine the label of
-    /// region projection.
-    location: SnapshotLocation,
+    /// If this expansion is a deref, this is the label associated with the
+    /// region projection. This label must be None if:
+    /// - The place of `base` is not a mutable reference, or
+    /// - `expansion` does not contain any region projections, or
+    /// - this deref is for a shared borrow / read access
+    deref_blocked_region_projection_label: Option<RegionProjectionLabel>,
     _marker: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx> BorrowPCGExpansion<'tcx> {
+    fn is_mutable_deref_of_place_with_nested_region_projections(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let place = self.base.place();
+        place.is_mut_ref(ctxt) && place.contains_mutable_region_projections(ctxt)
+    }
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
@@ -187,6 +196,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
             .label_region_projection(projection, label, repacker);
         for p in &mut self.expansion {
             changed |= p.label_region_projection(projection, label, repacker);
+        }
+        if self.is_mutable_deref_of_place_with_nested_region_projections(repacker) {
+            if projection.label == self.deref_blocked_region_projection_label {
+                self.deref_blocked_region_projection_label = label;
+            }
         }
         changed
     }
@@ -221,10 +235,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGExpansion<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -271,7 +282,7 @@ impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>
     fn try_from(expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>) -> Result<Self, Self::Error> {
         Ok(BorrowPCGExpansion {
             base: expansion.base.try_into()?,
-            location: expansion.location,
+            deref_blocked_region_projection_label: expansion.deref_blocked_region_projection_label,
             expansion: expansion
                 .expansion
                 .into_iter()
@@ -315,11 +326,8 @@ impl<'tcx> BorrowPCGExpansion<'tcx> {
         if let BlockingNode::Place(p) = self.base
             && let Some(base_projection) = p.base_region_projection(repacker)
         {
-            let projection = base_projection.with_base(base_projection.base.into(), repacker);
-            let projection = match p.place().ref_mutability(repacker).unwrap() {
-                Mutability::Not => projection,
-                Mutability::Mut => projection.label_projection(self.location.into()),
-            };
+            let mut projection = base_projection.with_base(base_projection.base.into(), repacker);
+            projection.label = self.deref_blocked_region_projection_label;
             Some(projection.into())
         } else {
             None
@@ -349,19 +357,28 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         base: P,
         expansion: PlaceExpansion<'tcx>,
         location: Location,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        for_exclusive: bool,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Self, PcgError>
     where
         P: Ord + HasPlace<'tcx>,
     {
+        let deref_blocked_region_projection_label = if for_exclusive
+            && base.place().is_mut_ref(ctxt)
+            && base.place().contains_mutable_region_projections(ctxt)
+        {
+            Some(location.into())
+        } else {
+            None
+        };
         Ok(Self {
             base,
             expansion: expansion
                 .elems()
                 .into_iter()
-                .map(|elem| base.project_deeper(elem, repacker))
+                .map(|elem| base.project_deeper(elem, ctxt))
                 .collect::<Result<Vec<_>, _>>()?,
-            location: location.into(),
+            deref_blocked_region_projection_label,
             _marker: PhantomData,
         })
     }

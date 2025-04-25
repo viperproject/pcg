@@ -1,6 +1,7 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -73,11 +74,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.join_loop(other, self_block, other_block, repacker);
             let result = *self != old_self;
             if borrows_imgcat_debug() {
-                if let Ok(dot_graph) = generate_borrows_dot_graph(
-                    repacker,
-                    self,
-                    self_location,
-                ) {
+                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
                     DotGraph::render_with_imgcat(
                         &dot_graph,
                         &format!("After join (loop, changed={:?}):", result),
@@ -193,12 +190,24 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges
             .retain(|edge_kind, _| to_keep.contains(edge_kind));
 
+        if borrows_imgcat_debug() {
+            self.render_debug_graph(
+                repacker,
+                mir::Location {
+                    block: self_block,
+                    statement_index: 0,
+                },
+                "after removal of common edges",
+            );
+        }
+
         let other_coupling_edges = other_coupling_graph.edges().collect::<Vec<_>>();
         let self_coupling_edges = self_coupling_graph.edges().collect::<Vec<_>>();
         for tupl in result.edges() {
             if self_coupling_edges.iter().all(|other| other != &tupl)
                 || other_coupling_edges.iter().all(|other| other != &tupl)
             {
+                // This edge is missing from one of the graphs
                 let (blocked, assigned, to_remove) = tupl;
                 let abstraction = LoopAbstraction::new(
                     AbstractionBlockEdge::new(
@@ -212,11 +221,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     self_block,
                 )
                 .to_borrow_pcg_edge(PathConditions::new(self_block));
+                tracing::info!(
+                    "Insert abstraction {}",
+                    abstraction.to_short_string(repacker)
+                );
+                for edge in to_remove.iter() {
+                    tracing::info!("To remove {}", edge.to_short_string(repacker));
+                }
 
                 self.insert(abstraction);
                 self.edges
                     .retain(|edge_kind, _| !to_remove.contains(edge_kind));
             }
+        }
+        if borrows_imgcat_debug() {
+            self.render_debug_graph(
+                repacker,
+                mir::Location {
+                    block: self_block,
+                    statement_index: 0,
+                },
+                "done",
+            );
         }
 
         for coupled in result.roots() {

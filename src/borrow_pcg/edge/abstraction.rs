@@ -347,6 +347,8 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
         inputs: Vec<AbstractionInputTarget<'tcx>>,
         outputs: Vec<AbstractionOutputTarget<'tcx>>,
     ) -> Self {
+        assert!(inputs.len() > 0);
+        assert!(outputs.len() > 0);
         Self {
             inputs: inputs.into_iter().collect(),
             outputs: outputs.into_iter().collect(),
