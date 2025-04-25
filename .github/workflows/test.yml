@@ -40,7 +40,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build using Rust Nightly 2024-09-15
-      run: cp rust-toolchain-2024-09-15 rust-toolchain && cargo build
+      run: cp rust-toolchain-2024-09-15 rust-toolchain && cargo build --no-default-features
 
   # bench_test_files:
   #   runs-on: ubuntu-latest
