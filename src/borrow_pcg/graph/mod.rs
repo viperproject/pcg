@@ -4,7 +4,7 @@ pub mod join;
 pub(crate) mod materialize;
 mod mutate;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use crate::{
     borrow_pcg::coupling_graph_constructor::AbstractionGraph,
@@ -29,7 +29,7 @@ use super::{
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
-    region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
+    region_projection::RegionProjection,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;

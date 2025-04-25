@@ -11,7 +11,7 @@ use crate::{
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
-        validity::HasValidityCheck, CompilerCtxt, Place, SnapshotLocation,
+        validity::HasValidityCheck, CompilerCtxt, Place,
     },
 };
 
@@ -103,7 +103,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 impl<'tcx> BorrowFlowEdge<'tcx> {
     pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
         if let PCGNode::RegionProjection(rp) = from {
-            self.short.redirect(rp.into(), to.try_into().unwrap());
+            self.short.redirect(rp, to.try_into().unwrap());
         }
     }
 

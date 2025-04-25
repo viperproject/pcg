@@ -267,11 +267,6 @@ impl EdgeOptions {
         self.tooltip = Some(tooltip);
         self
     }
-
-    pub fn with_weight(mut self, weight: f64) -> Self {
-        self.weight = Some(weight.to_string());
-        self
-    }
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Ord)]

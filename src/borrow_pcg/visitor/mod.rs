@@ -27,7 +27,7 @@ use super::{
     region_projection::{PcgRegion, RegionIdx, RegionProjection},
     state::BorrowsState,
 };
-use super::{domain::AbstractionOutputTarget, engine::BorrowsEngine};
+use super::engine::BorrowsEngine;
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::state::obtain::ObtainReason;
@@ -103,27 +103,6 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
 
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
         self.ctxt.bc.outlives(sup, sub)
-    }
-
-    fn projections_borrowing_from_input_lifetime(
-        &self,
-        input_lifetime: PcgRegion,
-        output_place: utils::Place<'tcx>,
-    ) -> Vec<AbstractionOutputTarget<'tcx>> {
-        let mut result = vec![];
-        let output_ty = output_place.ty(self.ctxt).ty;
-        for (output_lifetime_idx, output_lifetime) in
-            extract_regions(output_ty, self.ctxt).into_iter_enumerated()
-        {
-            if self.ctxt.bc.outlives(input_lifetime, output_lifetime) {
-                result.push(
-                    output_place
-                        .region_projection(output_lifetime_idx, self.ctxt)
-                        .into(),
-                );
-            }
-        }
-        result
     }
 }
 

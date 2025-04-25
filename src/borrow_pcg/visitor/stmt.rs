@@ -111,7 +111,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                         if should_remove {
                             let actions = self.state.remove_edge_and_set_latest(
                                 edge,
-                                &mut self.capabilities,
+                                self.capabilities,
                                 location,
                                 self.ctxt,
                                 "Assign",

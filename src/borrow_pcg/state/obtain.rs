@@ -13,7 +13,6 @@ use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
@@ -255,11 +254,6 @@ impl<'tcx> BorrowsState<'tcx> {
                     .collect::<Vec<_>>();
                 if !dest_places.is_empty() {
                     let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
-                    tracing::info!(
-                        "Expanding region projection {} ({:?})",
-                        rp.to_short_string(ctxt),
-                        obtain_reason
-                    );
                     let place_expansion = PlaceExpansion::from_places(dest_places, ctxt);
                     let expansion = BorrowPCGExpansion::new(
                         rp.into(),
@@ -281,7 +275,6 @@ impl<'tcx> BorrowsState<'tcx> {
                         ctxt,
                     )?;
                     if base.is_mut_ref(ctxt) && for_exclusive {
-                        tracing::info!("Labeling region projection {}", rp.to_short_string(ctxt));
                         self.label_region_projection(
                             &rp,
                             Some(SnapshotLocation::before(location).into()),

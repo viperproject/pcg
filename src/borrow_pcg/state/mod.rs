@@ -358,7 +358,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// arguments. At least for now this interferes with the implementation in
     /// the Prusti purified encoding for accessing the final value of a
     /// reference-typed function argument in its postcondition.
-    pub(super) fn pack_old_and_dead_leaves<'slf, 'mir, 'bc>(
+    pub(super) fn pack_old_and_dead_leaves<'slf, 'mir>(
         &'slf mut self,
         repacker: CompilerCtxt<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,

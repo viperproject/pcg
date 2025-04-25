@@ -506,7 +506,7 @@ fn main() {
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
             let graph = PcgGraphConstructor::new(
-                &pcg.owned.locals(),
+                pcg.owned.locals(),
                 ctxt,
                 &pcg.borrow,
                 &pcg.capabilities,

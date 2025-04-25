@@ -14,13 +14,12 @@ use super::{
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{json::ToJsonWithCompilerCtxt, SnapshotLocation};
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::FxHashSet,
-        hir::Mutability,
         middle::{
             mir::{Local, Location, PlaceElem},
             ty,
@@ -197,10 +196,8 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
         for p in &mut self.expansion {
             changed |= p.label_region_projection(projection, label, repacker);
         }
-        if self.is_mutable_deref_of_place_with_nested_region_projections(repacker) {
-            if projection.label == self.deref_blocked_region_projection_label {
-                self.deref_blocked_region_projection_label = label;
-            }
+        if self.is_mutable_deref_of_place_with_nested_region_projections(repacker) && projection.label == self.deref_blocked_region_projection_label {
+            self.deref_blocked_region_projection_label = label;
         }
         changed
     }

@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BorrowPCGEdgeLike,
-        edge::{kind::BorrowPCGEdgeKind, outlives::BorrowFlowEdgeKind},
+        edge::kind::BorrowPCGEdgeKind,
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },

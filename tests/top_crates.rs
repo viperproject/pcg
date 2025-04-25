@@ -29,7 +29,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
             println!("Starting: {i} ({})", krate.name);
             run_on_crate(
                 &krate.name,
-                &version,
+                version,
                 date,
                 RunOnCrateOptions::RunPCG {
                     target: Target::Release,
@@ -97,7 +97,7 @@ fn get_cache_path(date: &str) -> PathBuf {
 }
 
 fn read_from_cache(cache_path: &Path) -> Option<Vec<Crate>> {
-    if let Ok(file) = std::fs::File::open(&cache_path) {
+    if let Ok(file) = std::fs::File::open(cache_path) {
         return Some(serde_json::from_reader::<_, Vec<Crate>>(file).unwrap());
     }
     None
@@ -117,8 +117,8 @@ fn write_to_cache(cache_path: PathBuf, crates: &[Crate]) {
 impl Crates {
     pub fn top(n: usize, date: Option<&str>) -> Crates {
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let date = date.unwrap_or_else(|| today.as_str());
-        let cache_path = get_cache_path(&date);
+        let date = date.unwrap_or(today.as_str());
+        let cache_path = get_cache_path(date);
         let crates = read_from_cache(&cache_path).unwrap_or_else(|| {
             assert_eq!(
                 date,

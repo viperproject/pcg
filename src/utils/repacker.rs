@@ -218,7 +218,7 @@ impl<'tcx> DeepExpansion<'tcx> {
     }
 }
 
-impl<'tcx, 'bc> Place<'tcx> {
+impl<'tcx> Place<'tcx> {
     pub fn to_rust_place<C: Copy>(
         self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -445,7 +445,7 @@ impl<'tcx, 'bc> Place<'tcx> {
     }
 }
 
-impl<'tcx, 'bc> Place<'tcx> {
+impl<'tcx> Place<'tcx> {
     pub fn ty<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
         (*self).ty(repacker.mir, repacker.tcx)
     }

@@ -14,7 +14,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace, Place, SnapshotLocation},
+    utils::{remote::RemotePlace, HasPlace, Place},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
