@@ -233,7 +233,7 @@ pub(crate) enum RegionProjectionLabel {
     Placeholder,
 }
 
-impl<'tcx> From<mir::Location> for RegionProjectionLabel {
+impl From<mir::Location> for RegionProjectionLabel {
     fn from(location: mir::Location) -> Self {
         RegionProjectionLabel::Location(location.into())
     }

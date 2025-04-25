@@ -65,7 +65,7 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
     }
 }
 
-impl<'tcx, E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {
+impl<E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {
     fn pcg_elems(&mut self) -> Vec<&mut E> {
         let mut elems = self.original.pcg_elems();
         if let Some(r) = &mut self.redirected {
@@ -78,9 +78,9 @@ impl<'tcx, E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {
 impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for MaybeRedirected<T> {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         if let Some(r) = &self.redirected {
-            format!("{}", r.to_short_string(ctxt))
+            r.to_short_string(ctxt).to_string()
         } else {
-            format!("{}", self.original.to_short_string(ctxt))
+            self.original.to_short_string(ctxt).to_string()
         }
     }
 }

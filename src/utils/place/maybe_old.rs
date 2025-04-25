@@ -7,7 +7,7 @@ use crate::borrow_pcg::region_projection::{
 };
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
-use crate::rustc_interface::index::{Idx, IndexVec};
+use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use crate::rustc_interface::middle::mir::PlaceElem;
@@ -263,24 +263,6 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         match self {
             MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.with_inherent_region(repacker).into(),
-        }
-    }
-
-    pub(crate) fn region_projection(
-        &self,
-        idx: RegionIdx,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Self> {
-        let region_projections = self.region_projections(repacker);
-        if idx.index() < region_projections.len() {
-            region_projections[idx.index()]
-        } else {
-            panic!(
-                "Region projection index {:?} out of bounds for place {:?}, ty: {:?}",
-                idx,
-                self,
-                self.ty(repacker)
-            );
         }
     }
 

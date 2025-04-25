@@ -13,7 +13,6 @@ use crate::rustc_interface::dataflow::compute_fixpoint;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::CompilerCtxt;
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
@@ -251,7 +250,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
+impl BorrowCheckerImpl<'_, '_> {
     fn local_is_live_before(&self, local: mir::Local, mut location: Location) -> bool {
         // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
         // the statement at `location`. Therefore we need to decrement the statement
@@ -270,7 +269,7 @@ impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> {
+impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     fn input_facts(&self) -> &PoloniusInput {
         self.input_facts
     }
@@ -319,11 +318,6 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
             let region = region_projection.region(self.ctxt());
             for borrow in in_scope_borrows {
                 if self.outlives(region, get_region(borrow).into()) {
-                    tracing::info!(
-                        "RP live: {} (outlives {})",
-                        region_projection.to_short_string(self.ctxt()),
-                        borrow
-                    );
                     return true;
                 }
             }

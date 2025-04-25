@@ -323,12 +323,6 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         weight: FxHashSet<E>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
-        tracing::info!(
-            "Adding edge {} -> {} with weight {:?}",
-            from.to_short_string(repacker),
-            to.to_short_string(repacker),
-            weight.iter().map(|e| e.to_short_string(repacker)).collect::<Vec<_>>()
-        );
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles before adding edge"

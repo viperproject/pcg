@@ -17,7 +17,7 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::borrowck::{
         BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-        RegionInferenceContext, RichLocation,
+        RegionInferenceContext
     },
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::data_structures::fx::FxIndexMap,

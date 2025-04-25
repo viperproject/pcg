@@ -219,7 +219,7 @@ fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>)
             }
         }
         if check_pcg_annotations {
-            if let Ok(source) = source_lines(ctxt.tcx(), &ctxt.body()) {
+            if let Ok(source) = source_lines(ctxt.tcx(), ctxt.body()) {
                 let debug_lines_set: FxHashSet<_> = debug_lines.into_iter().collect();
                 let expected_annotations = source
                     .iter()
@@ -255,7 +255,7 @@ enum BorrowChecker<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
-impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'mir, 'tcx> {
+impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
         match self {
             BorrowChecker::Polonius(bc) => bc.is_live(node, location, is_leaf),

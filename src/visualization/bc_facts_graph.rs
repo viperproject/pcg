@@ -89,7 +89,6 @@ impl RegionPrettyPrinter {
         let scc_graph = compute_region_sccs(region_infer_ctxt);
         let sccs = scc_graph
             .node_weights()
-            .into_iter()
             .map(|r| r.clone().into_iter().collect())
             .collect();
         RegionPrettyPrinter {

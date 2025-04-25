@@ -358,7 +358,7 @@ pub enum PCGUnsupportedError {
     InlineAssembly,
 }
 
-impl<'a, 'tcx, 'bc> PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     pub(crate) fn has_error(&self) -> bool {
         self.data.is_err()
     }

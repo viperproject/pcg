@@ -249,7 +249,7 @@ fn test_aliases() {
         let temp: mir::Place<'_> = mir::Local::from(2_usize).into();
         let aliases = stmt.aliases(
             temp.project_deeper(&[mir::ProjectionElem::Deref], tcx),
-            &body.body(),
+            body.body(),
             tcx,
         );
         // *_2 aliases _4 at bb3[1]

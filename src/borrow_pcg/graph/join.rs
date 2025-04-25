@@ -1,7 +1,6 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -221,13 +220,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     self_block,
                 )
                 .to_borrow_pcg_edge(PathConditions::new(self_block));
-                tracing::info!(
-                    "Insert abstraction {}",
-                    abstraction.to_short_string(repacker)
-                );
-                for edge in to_remove.iter() {
-                    tracing::info!("To remove {}", edge.to_short_string(repacker));
-                }
 
                 self.insert(abstraction);
                 self.edges

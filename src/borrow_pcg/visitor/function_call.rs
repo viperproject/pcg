@@ -92,7 +92,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             .flat_map(|rp| {
                 self.state
                     .graph()
-                    .identify_placeholder_target((*rp).into(), self.ctxt)
+                    .identify_placeholder_target(*rp, self.ctxt)
             })
             .collect::<FxHashSet<_>>();
 
@@ -120,7 +120,6 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 .copied()
                 .filter(|rp| self.ctxt.bc.same_region(*this_region, rp.region(self.ctxt)))
                 .map(|mut rp| {
-                    tracing::info!("labeling placeholder: {:?}", rp);
                     rp.label = Some(RegionProjectionLabel::Placeholder);
                     rp
                 })
