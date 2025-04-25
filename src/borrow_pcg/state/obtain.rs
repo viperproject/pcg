@@ -13,6 +13,7 @@ use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
@@ -63,7 +64,6 @@ impl<'tcx> BorrowsState<'tcx> {
     /// capability.
     ///
     /// This also handles corresponding region projections of the place.
-    #[tracing::instrument(skip(self, repacker, location, obtain_reason))]
     pub(crate) fn obtain(
         &mut self,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -205,8 +205,13 @@ impl<'tcx> BorrowsState<'tcx> {
             // that is handled by the owned PCG.
             if !target.is_owned(ctxt) {
                 let place_expansion = PlaceExpansion::from_places(expansion.clone(), ctxt);
-                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> =
-                    BorrowPCGExpansion::new(base.into(), place_expansion, location, ctxt)?;
+                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> = BorrowPCGExpansion::new(
+                    base.into(),
+                    place_expansion,
+                    location,
+                    for_exclusive,
+                    ctxt,
+                )?;
 
                 if expansion
                     .blocked_by_nodes(ctxt)
@@ -216,7 +221,10 @@ impl<'tcx> BorrowsState<'tcx> {
                     continue;
                 }
 
-                if base.is_mut_ref(ctxt) {
+                if base.is_mut_ref(ctxt)
+                    && base.contains_mutable_region_projections(ctxt)
+                    && for_exclusive
+                {
                     let place: MaybeOldPlace<'tcx> = base.into();
                     self.label_region_projection(
                         &place.base_region_projection(ctxt).unwrap(),
@@ -247,9 +255,19 @@ impl<'tcx> BorrowsState<'tcx> {
                     .collect::<Vec<_>>();
                 if !dest_places.is_empty() {
                     let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
+                    tracing::info!(
+                        "Expanding region projection {} ({:?})",
+                        rp.to_short_string(ctxt),
+                        obtain_reason
+                    );
                     let place_expansion = PlaceExpansion::from_places(dest_places, ctxt);
-                    let expansion =
-                        BorrowPCGExpansion::new(rp.into(), place_expansion, location, ctxt)?;
+                    let expansion = BorrowPCGExpansion::new(
+                        rp.into(),
+                        place_expansion,
+                        location,
+                        for_exclusive,
+                        ctxt,
+                    )?;
                     self.record_and_apply_action(
                         BorrowPCGAction::add_edge(
                             BorrowPCGEdge::new(
@@ -262,7 +280,14 @@ impl<'tcx> BorrowsState<'tcx> {
                         capabilities,
                         ctxt,
                     )?;
-                    self.label_region_projection(&rp, Some(SnapshotLocation::before(location).into()), ctxt);
+                    if base.is_mut_ref(ctxt) && for_exclusive {
+                        tracing::info!("Labeling region projection {}", rp.to_short_string(ctxt));
+                        self.label_region_projection(
+                            &rp,
+                            Some(SnapshotLocation::before(location).into()),
+                            ctxt,
+                        );
+                    }
                 }
             }
         }

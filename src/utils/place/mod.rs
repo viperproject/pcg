@@ -112,7 +112,10 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for Place<'tcx> {
         (*self).into()
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         extract_regions(self.ty(repacker).ty, repacker)
     }
 }
@@ -398,8 +401,17 @@ impl<'tcx> Place<'tcx> {
         )
     }
 
-    pub fn is_ref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        self.0.ty(repacker.mir, repacker.tcx).ty.is_ref()
+    pub fn is_ref<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
+        self.0.ty(ctxt.mir, ctxt.tcx).ty.is_ref()
+    }
+
+    pub(crate) fn contains_mutable_region_projections<C: Copy>(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> bool {
+        self.region_projections(ctxt)
+            .iter()
+            .any(|rp| rp.is_nested_in_local_ty(ctxt))
     }
 
     pub fn ref_mutability<C: Copy>(

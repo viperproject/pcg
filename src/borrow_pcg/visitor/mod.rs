@@ -54,7 +54,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
-        self.actions.push(action.clone());
+        self.actions.push(action.clone(), self.ctxt);
         self.state
             .apply_action(action, self.capabilities, self.ctxt)
             .unwrap()
@@ -157,6 +157,17 @@ impl BorrowsVisitor<'_, '_, '_> {
                     self.ctxt,
                 )?;
                 self.record_actions(actions);
+            }
+            for place in blocked_place.iter_places(self.ctxt) {
+                for rp in place.region_projections(self.ctxt).into_iter() {
+                    if rp.is_nested_in_local_ty(self.ctxt) {
+                        self.state.label_region_projection(
+                            &rp.into(),
+                            Some(location.into()),
+                            self.ctxt,
+                        );
+                    }
+                }
             }
         }
         Ok(())

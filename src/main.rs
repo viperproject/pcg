@@ -256,10 +256,10 @@ enum BorrowChecker<'mir, 'tcx> {
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
 impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'mir, 'tcx> {
-    fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location) -> bool {
+    fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
         match self {
-            BorrowChecker::Polonius(bc) => bc.is_live(node, location),
-            BorrowChecker::Impl(bc) => bc.is_live(node, location),
+            BorrowChecker::Polonius(bc) => bc.is_live(node, location, is_leaf),
+            BorrowChecker::Impl(bc) => bc.is_live(node, location, is_leaf),
         }
     }
 

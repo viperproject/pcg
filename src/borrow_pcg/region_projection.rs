@@ -20,7 +20,7 @@ use crate::{
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::{
-            mir::{Const, Local, PlaceElem, self},
+            mir::{self, Const, Local, PlaceElem},
             ty::{
                 self, DebruijnIndex, RegionVid, TyKind, TypeSuperVisitable, TypeVisitable,
                 TypeVisitor,
@@ -277,7 +277,10 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         label: Option<RegionProjectionLabel>,
         _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if self.region_idx == projection.region_idx && self.base == projection.base.into() && self.label == projection.label {
+        if self.region_idx == projection.region_idx
+            && self.base == projection.base.into()
+            && self.label == projection.label
+        {
             self.label = label;
             true
         } else {
@@ -299,14 +302,14 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
-struct IsNestedChecker<'mir, 'tcx> {
-    ctxt: CompilerCtxt<'mir, 'tcx>,
+struct IsNestedChecker<'mir, 'tcx, C: Copy> {
+    ctxt: CompilerCtxt<'mir, 'tcx, C>,
     target: PcgRegion,
     found: bool,
 }
 
-impl<'mir, 'tcx> IsNestedChecker<'mir, 'tcx> {
-    fn new(ctxt: CompilerCtxt<'mir, 'tcx>, target: PcgRegion) -> Self {
+impl<'mir, 'tcx, C: Copy> IsNestedChecker<'mir, 'tcx, C> {
+    fn new(ctxt: CompilerCtxt<'mir, 'tcx, C>, target: PcgRegion) -> Self {
         Self {
             ctxt,
             target,
@@ -315,7 +318,7 @@ impl<'mir, 'tcx> IsNestedChecker<'mir, 'tcx> {
     }
 }
 
-impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx> {
+impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx, C> {
     fn visit_ty(&mut self, t: ty::Ty<'tcx>) {
         if self.found {
             return;
@@ -340,7 +343,7 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx> {
 impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<'tcx, T> {
     // Returns true iff the region is nested under another reference, w.r.t the local
     // of the place of this region projection
-    pub(crate) fn is_nested_in_local_ty(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_nested_in_local_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
         let mut checker = IsNestedChecker::new(ctxt, self.region(ctxt));
         let local_place: Place<'tcx> = self.base.place().local.into();
         local_place.ty(ctxt).visit_with(&mut checker);

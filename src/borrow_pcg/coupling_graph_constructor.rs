@@ -16,13 +16,13 @@ use crate::{
     pcg::PCGNode,
     pcg_validity_assert,
     rustc_interface::borrowck::{
-        BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-        RegionInferenceContext, BorrowData,
+        BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
+        RegionInferenceContext, RichLocation,
     },
     rustc_interface::data_structures::fx::FxHashSet,
+    rustc_interface::data_structures::fx::FxIndexMap,
     rustc_interface::middle::mir::{BasicBlock, Location},
     rustc_interface::middle::ty::RegionVid,
-    rustc_interface::data_structures::fx::FxIndexMap,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
@@ -38,10 +38,7 @@ use crate::{
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         for t in self.0.iter() {
             t.check_validity(repacker)?;
         }
@@ -168,10 +165,15 @@ impl CGNode<'_> {
 }
 
 pub trait BorrowCheckerInterface<'tcx> {
-    /// Returns true if the node is live *before* `location`.
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
-    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
-        !self.is_live(node, location)
+    /// Returns true if the node is live *before* `location`. `is_leaf` should
+    /// be set to true if the node is a leaf node at this point: in this case,
+    /// we can approximate using liveness information of the place (if the place
+    /// is not live, then the node is definitely not live).
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool;
+
+    /// See [`BorrowCheckerInterface::is_live`].
+    fn is_dead(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
+        !self.is_live(node, location, is_leaf)
     }
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
 
@@ -199,6 +201,19 @@ pub trait BorrowCheckerInterface<'tcx> {
     #[rustversion::before(2024-12-14)]
     fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
         &self.borrow_set().location_map
+    }
+
+    fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {
+        let location_indices = [
+            self.location_table().start_index(location),
+            self.location_table().mid_index(location),
+        ];
+        self.input_facts()
+            .loan_killed_at
+            .iter()
+            .filter(|(_, point)| location_indices.contains(point))
+            .map(|(loan, _)| self.borrow_index_to_region(*loan))
+            .collect()
     }
 
     fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
@@ -314,7 +329,7 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
         bg: &AbstractionGraph<'tcx>,
         bottom_connect: &'a Coupled<CGNode<'tcx>>,
         upper_candidate: &'a Coupled<CGNode<'tcx>>,
-        mut weight: FxHashSet<BorrowPCGEdgeKind<'tcx>>,
+        incoming_weight: FxHashSet<BorrowPCGEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
@@ -325,6 +340,7 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
         let upper_candidate = upper_candidate.clone();
         let endpoints = bg.parents(&upper_candidate);
         for (coupled, edge_weight) in endpoints {
+            let mut weight = incoming_weight.clone();
             weight.extend(edge_weight);
             pcg_validity_assert!(
                 coupled != upper_candidate,
@@ -339,6 +355,7 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
                             block: self.block,
                             statement_index: 0,
                         },
+                        false // TODO: Maybe actually check if this is a leaf
                     );
                     is_live && !n.is_old()
                 });

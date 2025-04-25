@@ -13,6 +13,7 @@ use crate::rustc_interface::dataflow::compute_fixpoint;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::CompilerCtxt;
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
@@ -122,7 +123,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
     }
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location, _is_leaf: bool) -> bool {
         let regions: Vec<_> = match node {
             PCGNode::Place(place) => place.regions(self.ctxt()).into_iter().collect(),
             PCGNode::RegionProjection(region_projection) => {
@@ -245,8 +246,27 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
         }
     }
 
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, ()> {
-        CompilerCtxt::new(self.body, self.tcx, ())
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &dyn BorrowCheckerInterface<'tcx>> {
+        CompilerCtxt::new(self.body, self.tcx, self)
+    }
+}
+
+impl<'mir, 'tcx> BorrowCheckerImpl<'mir, 'tcx> {
+    fn local_is_live_before(&self, local: mir::Local, mut location: Location) -> bool {
+        // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
+        // the statement at `location`. Therefore we need to decrement the statement
+        // index by 1 to get the liveness at the end of the previous statement.
+        // If this is the first statement of the block, we conservatively assume it's live,
+        // perhaps this could be addressed in some way?
+        if location.statement_index > 0 {
+            location.statement_index -= 1;
+        } else {
+            return true;
+        }
+
+        let mut cursor = self.cursor.as_ref().borrow_mut();
+        cursor.seek_before_primary_effect(location);
+        cursor_contains_local(cursor, local)
     }
 }
 
@@ -259,17 +279,7 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
         outlives(self.region_cx, sup, sub)
     }
 
-    fn is_live(&self, node: PCGNode<'tcx>, mut location: Location) -> bool {
-        // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
-        // the statement at `location`. Therefore we need to decrement the statement
-        // index by 1 to get the liveness at the end of the previous statement.
-        // If this is the first statement of the block, we just say it's live,
-        // perhaps this could be addressed in some way?
-        if location.statement_index > 0 {
-            location.statement_index -= 1;
-        } else {
-            return true;
-        }
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
         let local = match node {
             PCGNode::RegionProjection(rp) => {
                 if let Some(local) = rp.local() {
@@ -283,11 +293,14 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
                 return true;
             }
         };
-        let mut cursor = self.cursor.as_ref().borrow_mut();
-        cursor.seek_before_primary_effect(location);
-        if cursor_contains_local(cursor, local) {
+        let place_is_live = self.local_is_live_before(local, location);
+        if place_is_live {
             return true;
+        } else if is_leaf {
+            // Place is not live, and its a leaf, so the node is not live
+            return false;
         }
+
         if let PCGNode::RegionProjection(region_projection) = node {
             let out_of_scope_borrows = self
                 .out_of_scope_borrows
@@ -306,6 +319,11 @@ impl<'mir, 'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'mir, 'tcx> 
             let region = region_projection.region(self.ctxt());
             for borrow in in_scope_borrows {
                 if self.outlives(region, get_region(borrow).into()) {
+                    tracing::info!(
+                        "RP live: {} (outlives {})",
+                        region_projection.to_short_string(self.ctxt()),
+                        borrow
+                    );
                     return true;
                 }
             }

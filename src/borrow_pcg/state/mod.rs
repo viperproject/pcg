@@ -167,11 +167,11 @@ impl<'tcx> BorrowsState<'tcx> {
         action: BorrowPCGAction<'tcx>,
         actions: &mut ExecutedActions<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let changed = self.apply_action(action.clone(), capabilities, repacker)?;
+        let changed = self.apply_action(action.clone(), capabilities, ctxt)?;
         if changed {
-            actions.record(action);
+            actions.record(action, ctxt);
         }
         Ok(())
     }
@@ -265,6 +265,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if let BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) = edge.kind() {
             if let LocalNode::Place(place) = expansion.base() {
                 for mut region_projection in place.region_projections(ctxt) {
+                    // Remove Placeholder label from the region projection
                     region_projection.label = Some(RegionProjectionLabel::Placeholder);
                     self.label_region_projection(&region_projection, None, ctxt);
                 }
@@ -374,29 +375,31 @@ impl<'tcx> BorrowsState<'tcx> {
                 let fg = slf.graph.frozen_graph();
 
                 let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
-                    if matches!(p, PCGNode::Place(_)) && p.is_old() {
+                    let place = match p {
+                        PCGNode::Place(p) => p,
+                        PCGNode::RegionProjection(rp) => rp.place(),
+                    };
+                    if place.is_old() {
                         return true;
                     }
-                    let place = match p {
-                        PCGNode::Place(p) => p.place(),
-                        PCGNode::RegionProjection(rp) => rp.place().place(),
-                    };
 
-                    if ctxt.is_arg(place.local) {
+                    if ctxt.is_arg(place.local()) {
                         return false;
                     }
 
-                    if !place.projection.is_empty() && !fg.has_edge_blocking(place.into(), ctxt) {
+                    if !place.place().projection.is_empty()
+                        && !fg.has_edge_blocking(place.into(), ctxt)
+                    {
                         return true;
                     }
 
-                    ctxt.bc.is_dead(p.into(), location)
+                    ctxt.bc.is_dead(p.into(), location, true) // Definitely a leaf by this point
                 };
 
                 let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
                     BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                         if expansion.expansion().iter().all(|node| {
-                            node.is_old() || ctxt.bc.is_dead(node.place().into(), location)
+                            node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
                         }) {
                             true
                         } else {
