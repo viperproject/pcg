@@ -25,6 +25,12 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
+        self.get(place.into())
+            .map(|c| c == CapabilityKind::Exclusive)
+            .unwrap_or(false)
+    }
+
     pub(crate) fn get_longest_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
         self.iter()
             .flat_map(|(p, _)| p.try_into())

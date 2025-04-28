@@ -40,7 +40,7 @@ use crate::{
 /// storing the place elements in a `Vec` could lead to different representations
 /// for the same expansion, e.g. `{*x.f.a, *x.f.b}` and `{*x.f.b, *x.f.a}`.
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub(crate) enum PlaceExpansion<'tcx> {
+pub enum PlaceExpansion<'tcx> {
     /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
     /// Note that for region projections, not every field of the base type may
     /// be included. For example consider the following:
