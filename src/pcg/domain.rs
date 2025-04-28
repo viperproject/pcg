@@ -119,6 +119,14 @@ impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
+    pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {
+        &self.capabilities
+    }
+
+    pub fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'tcx> {
+        &self.owned
+    }
+
     pub fn borrow_pcg(&self) -> &BorrowsState<'tcx> {
         &self.borrow
     }

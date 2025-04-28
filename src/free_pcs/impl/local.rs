@@ -116,7 +116,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         &self.expansions
     }
 
-    pub(crate) fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
+    pub fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
         if self.expansions.is_empty() {
             return vec![self.local.into()];
         }

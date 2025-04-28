@@ -29,8 +29,7 @@ pub struct FreePlaceCapabilitySummary<'tcx> {
 }
 
 impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
-    #[cfg(test)]
-    pub(crate) fn locals(&self) -> &CapabilityLocals<'tcx> {
+    pub fn locals(&self) -> &CapabilityLocals<'tcx> {
         self.data.as_ref().unwrap()
     }
 
