@@ -72,7 +72,6 @@ impl<'tcx> BorrowsState<'tcx> {
         location: Location,
         obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        tracing::info!("obtain: {:?}", place);
         let mut actions = ExecutedActions::new();
         if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
             actions.extend(self.upgrade_closest_root_to_exclusive(
@@ -198,7 +197,6 @@ impl<'tcx> BorrowsState<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let target = expansion.target_place;
-        tracing::info!("expand_place_one_level: {:?}", target);
 
         // We don't introduce an expansion if the place is owned, because
         // that is handled by the owned PCG.

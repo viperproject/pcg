@@ -16,9 +16,12 @@ fn main() {
     let mut rv1 = &mut v1;
     let mut rv2 = &mut v2;
     let mut rv3 = &mut v3;
-    let mut list1 = List { head: rv1, tail: None};
+    let mut list1: List<&mut i32> = List { head: rv1, tail: None};
+    // PCG_LIFETIME_DISPLAY: list1 0 'a
     let mut list2 = List { head: rv2, tail: None};
+    // PCG_LIFETIME_DISPLAY: list2 0 'b
     let mut list3 = List { head: rv3, tail: None};
+    // PCG_LIFETIME_DISPLAY: list3 0 'c
     while true {
         let h1 = list1.head;
         let h2 = list2.head;

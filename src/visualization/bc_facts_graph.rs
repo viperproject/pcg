@@ -52,7 +52,6 @@ fn get_id<
 pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
     ctxt: CompilerCtxt<'a, 'tcx, &'bc PoloniusBorrowChecker<'a, 'tcx>>,
 ) -> DotGraph {
-    tracing::info!("Generating BC facts graph");
     let mut graph = DotGraph {
         nodes: vec![],
         edges: vec![],

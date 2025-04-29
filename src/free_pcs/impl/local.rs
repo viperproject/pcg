@@ -176,8 +176,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
             *to
         );
 
-        tracing::debug!("Expanding from {:?} to {:?} for {:?}", from, *to, for_cap);
-
         let from_cap = if let Some(cap) = capabilities.get(from.into()) {
             cap
         } else {

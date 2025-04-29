@@ -208,22 +208,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         assert!(state.is_initialized());
     }
 
-    #[tracing::instrument(skip(self, pcg, object, tw, location))]
-    fn analyze_pre_main(
-        &mut self,
-        pcg: &mut Rc<Pcg<'tcx>>,
-        object: AnalysisObject<'_, 'tcx>,
-        tw: &TripleWalker<'a, 'tcx>,
-        location: Location,
-    ) -> Result<PcgActions<'tcx>, PcgError> {
-        let pre_main = Rc::<_>::make_mut(pcg);
-
-        let visitor = CombinedVisitor::new(pre_main, self.ctxt, tw, EvalStmtPhase::PreMain);
-        let actions = visitor.apply(object, location)?;
-        Ok(actions)
-    }
-
-    #[tracing::instrument(skip(self, state, object))]
+    #[tracing::instrument(skip(self, state, object, location))]
     fn analyze(
         &mut self,
         state: &mut PcgDomain<'a, 'tcx>,
@@ -251,7 +236,6 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             pcg.entry_state = pcg.states.0.post_main.clone();
         }
         pcg.states.0.pre_operands = pcg.entry_state.clone();
-        let pre_operands = Rc::<_>::make_mut(&mut pcg.states.0.pre_operands);
 
         let mut tw = TripleWalker::new(self.ctxt);
         match object {
@@ -263,36 +247,14 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             }
         }
 
-        let visitor =
-            CombinedVisitor::new(pre_operands, self.ctxt, &tw, EvalStmtPhase::PreOperands);
-        pcg_data.actions.pre_operands = visitor.apply(object, location)?.into();
-
-        pcg.states.0.post_operands = pcg.states.0.pre_operands.clone();
-        let post_operands = Rc::<_>::make_mut(&mut pcg.states.0.post_operands);
-        pcg_data.actions.post_operands = self
-            .fpcs
-            .analyze(post_operands, &tw, EvalStmtPhase::PostOperands)?
-            .into();
-
-        pcg_data.actions.post_operands.extend(self.borrows.analyze(
-            post_operands,
-            object,
-            EvalStmtPhase::PostOperands,
-            location,
-        )?);
-
-        // Begin by handling borrow pre_main actions
-
-        pcg.states.0.pre_main = pcg.states.0.post_operands.clone();
-
-        pcg_data.actions.pre_main =
-            self.analyze_pre_main(&mut pcg.states.0.pre_main, object, &tw, location)?;
-
-        pcg.states.0.post_main = pcg.states.0.pre_main.clone();
-
-        let post_main = Rc::<_>::make_mut(&mut pcg.states.0.post_main);
-        let visitor = CombinedVisitor::new(post_main, self.ctxt, &tw, EvalStmtPhase::PostMain);
-        pcg_data.actions.post_main = visitor.apply(object, location)?.into();
+        for phase in EvalStmtPhase::phases() {
+            let curr = Rc::<_>::make_mut(&mut pcg.states.0[phase]);
+            pcg_data.actions[phase] =
+                CombinedVisitor::visit(curr, self.ctxt, &tw, phase, object, location)?;
+            if let Some(next_phase) = phase.next() {
+                pcg.states.0[next_phase] = pcg.states.0[phase].clone();
+            }
+        }
 
         self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
         self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);

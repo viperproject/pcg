@@ -293,7 +293,7 @@ impl<'tcx> BorrowsState<'tcx> {
             repacker,
         );
         let rp = borrow_edge.assigned_region_projection(repacker);
-        capabilities.insert(rp.place(), assigned_cap);
+        // capabilities.insert(rp.place(), assigned_cap);
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge)
                 .to_borrow_pcg_edge(PathConditions::AtBlock(location.block))
@@ -308,7 +308,7 @@ impl<'tcx> BorrowsState<'tcx> {
             _ => {
                 match capabilities.get(blocked_place) {
                     Some(CapabilityKind::Exclusive) => {
-                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read,));
+                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read));
                     }
                     Some(CapabilityKind::Read) => {
                         // Do nothing, this just adds another shared borrow
