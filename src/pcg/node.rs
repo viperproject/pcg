@@ -64,6 +64,18 @@ impl<'tcx, U> From<RegionProjection<'tcx, U>> for PCGNode<'tcx, MaybeRemotePlace
     }
 }
 
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for PCGNode<'tcx> {
+    fn from(value: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        PCGNode::RegionProjection(value.into())
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
+    fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
+        PCGNode::RegionProjection(value.into())
+    }
+}
+
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx>
     for PCGNode<'tcx, T, U>
 {
@@ -161,10 +173,7 @@ pub trait PCGNodeLike<'tcx>:
 }
 
 pub(crate) trait LocalNodeLike<'tcx> {
-    fn to_local_node<C: Copy>(
-        self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> LocalNode<'tcx>;
+    fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx>;
 }
 
 impl From<RemotePlace> for PCGNode<'_> {

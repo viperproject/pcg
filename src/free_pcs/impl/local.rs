@@ -55,6 +55,9 @@ impl<'tcx> CapabilityLocal<'tcx> {
     pub fn is_unallocated(&self) -> bool {
         matches!(self, Self::Unallocated)
     }
+    pub(crate) fn is_allocated(&self) -> bool {
+        matches!(self, Self::Allocated(_))
+    }
 }
 
 pub trait CheckValidityOnExpiry {

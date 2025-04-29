@@ -363,7 +363,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if let Some(blocking_map) = blocking_map.as_mut() {
                 blocking_map.has_edge_blocking(p, repacker)
             } else {
-                self.has_edge_blocking(p, repacker)
+                !self.is_leaf(p, repacker)
             }
         };
         for n in edge.blocked_by_nodes(repacker) {
@@ -415,20 +415,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         roots
     }
 
-    /// Returns true iff any edge in the graph blocks `blocked_node`
-    ///
-    /// Complexity: O(E)
-    ///
-    /// If you need to call this function multiple times, you can get better
-    /// performance using [`FrozenGraphRef`], (c.f.
-    /// [`BorrowsGraph::edges_blocking_map`]).
-    pub(crate) fn has_edge_blocking<T: Into<BlockedNode<'tcx>>>(
+    pub(crate) fn is_leaf<T: Into<BlockedNode<'tcx>>>(
         &self,
         blocked_node: T,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let blocked_node = blocked_node.into();
-        self.edges()
+        !self
+            .edges()
             .any(|edge| edge.blocks_node(blocked_node, repacker))
     }
 

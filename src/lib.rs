@@ -104,6 +104,14 @@ pub struct RestoreCapability<'tcx> {
     capability: CapabilityKind,
 }
 
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RestoreCapability<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+        json!({
+            "place": self.place.to_json(repacker),
+            "capability": format!("{:?}", self.capability),
+        })
+    }
+}
 impl<'tcx> RestoreCapability<'tcx> {
     pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(

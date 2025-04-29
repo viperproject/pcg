@@ -107,8 +107,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
             })
             .collect::<Vec<_>>();
 
-        let disjoin_lifetime_sets = get_disjoint_lifetime_sets(&arg_region_projections, self.ctxt);
-        for ls in disjoin_lifetime_sets.iter() {
+        let disjoint_lifetime_sets = get_disjoint_lifetime_sets(&arg_region_projections, self.ctxt);
+        for ls in disjoint_lifetime_sets.iter() {
             let this_region = ls.iter().next().unwrap();
             let inputs = source_arg_projections
                 .iter()

@@ -7,14 +7,14 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
-use crate::free_pcs::CapabilityKind;
+use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary};
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasPlace, Place, ShallowExpansion, SnapshotLocation};
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we
@@ -68,9 +68,11 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
         place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &FreePlaceCapabilitySummary<'tcx>,
         location: Location,
         obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
+        tracing::info!("obtain: {:?}", place);
         let mut actions = ExecutedActions::new();
         if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
             actions.extend(self.upgrade_closest_root_to_exclusive(
@@ -81,8 +83,14 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts =
-                self.expand_to(place, capabilities, repacker, obtain_reason, location)?;
+            let extra_acts = self.expand_to(
+                place,
+                capabilities,
+                owned,
+                repacker,
+                obtain_reason,
+                location,
+            )?;
             actions.extend(extra_acts);
         }
         if !place.is_owned(repacker) {
@@ -178,6 +186,64 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(actions)
     }
 
+    fn expand_place_one_level(
+        &mut self,
+        base: Place<'tcx>,
+        expansion: &ShallowExpansion<'tcx>,
+        location: Location,
+        for_exclusive: bool,
+        actions: &mut ExecutedActions<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &FreePlaceCapabilitySummary<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        let target = expansion.target_place;
+        tracing::info!("expand_place_one_level: {:?}", target);
+
+        // We don't introduce an expansion if the place is owned, because
+        // that is handled by the owned PCG.
+        if !target.is_owned(ctxt) {
+            let place_expansion = PlaceExpansion::from_places(expansion.expansion().clone(), ctxt);
+            let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> = BorrowPCGExpansion::new(
+                base.into(),
+                place_expansion,
+                location,
+                for_exclusive,
+                ctxt,
+            )?;
+
+            if expansion
+                .blocked_by_nodes(ctxt)
+                .iter()
+                .all(|node| self.contains(*node, ctxt))
+            {
+                return Ok(false);
+            }
+
+            if base.is_mut_ref(ctxt)
+                && base.contains_mutable_region_projections(ctxt)
+                && for_exclusive
+            {
+                let place: MaybeOldPlace<'tcx> = base.into();
+                self.label_region_projection(
+                    &place.base_region_projection(ctxt).unwrap(),
+                    Some(location.into()),
+                    ctxt,
+                );
+            }
+
+            let action = BorrowPCGAction::add_edge(
+                BorrowPCGEdge::new(
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                    PathConditions::new(location.block),
+                ),
+                for_exclusive,
+            );
+            self.record_and_apply_action(action, actions, capabilities, ctxt)?;
+        }
+        Ok(true)
+    }
+
     /// Inserts edges to ensure that the borrow PCG is expanded to at least
     /// `to_place`. We assume that any unblock operations have already been
     /// performed.
@@ -185,6 +251,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         to_place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &FreePlaceCapabilitySummary<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
         obtain_reason: ObtainReason,
         location: Location,
@@ -194,92 +261,58 @@ impl<'tcx> BorrowsState<'tcx> {
         let mut actions = ExecutedActions::new();
 
         for (base, _) in to_place.iter_projections(ctxt) {
-            let base: Place<'tcx> = base;
             let base = base.with_inherent_region(ctxt);
-            let expand_result = base.expand_one_level(to_place, ctxt)?;
-            let expansion = expand_result.expansion();
-            let target = expand_result.target_place;
-
-            // We don't introduce an expansion if the place is owned, because
-            // that is handled by the owned PCG.
-            if !target.is_owned(ctxt) {
-                let place_expansion = PlaceExpansion::from_places(expansion.clone(), ctxt);
-                let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> = BorrowPCGExpansion::new(
-                    base.into(),
-                    place_expansion,
-                    location,
-                    for_exclusive,
-                    ctxt,
-                )?;
-
-                if expansion
-                    .blocked_by_nodes(ctxt)
-                    .iter()
-                    .all(|node| self.contains(*node, ctxt))
-                {
-                    continue;
-                }
-
-                if base.is_mut_ref(ctxt)
-                    && base.contains_mutable_region_projections(ctxt)
-                    && for_exclusive
-                {
-                    let place: MaybeOldPlace<'tcx> = base.into();
-                    self.label_region_projection(
-                        &place.base_region_projection(ctxt).unwrap(),
-                        Some(location.into()),
-                        ctxt,
-                    );
-                }
-
-                let action = BorrowPCGAction::add_edge(
-                    BorrowPCGEdge::new(
-                        BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
-                        PathConditions::new(location.block),
-                    ),
-                    for_exclusive,
-                );
-                self.record_and_apply_action(action, &mut actions, capabilities, ctxt)?;
-            }
-
-            for rp in base.region_projections(ctxt) {
-                let dest_places = expansion
-                    .iter()
-                    .filter(|e| {
-                        e.region_projections(ctxt)
-                            .into_iter()
-                            .any(|child_rp| rp.region(ctxt) == child_rp.region(ctxt))
-                    })
-                    .copied()
-                    .collect::<Vec<_>>();
-                if !dest_places.is_empty() {
-                    let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
-                    let place_expansion = PlaceExpansion::from_places(dest_places, ctxt);
-                    let expansion = BorrowPCGExpansion::new(
-                        rp.into(),
-                        place_expansion,
-                        location,
-                        for_exclusive,
-                        ctxt,
-                    )?;
-                    self.record_and_apply_action(
-                        BorrowPCGAction::add_edge(
-                            BorrowPCGEdge::new(
-                                BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
-                                PathConditions::new(location.block),
-                            ),
+            let expansion = base.expand_one_level(to_place, ctxt)?;
+            if self.expand_place_one_level(
+                base,
+                &expansion,
+                location,
+                for_exclusive,
+                &mut actions,
+                capabilities,
+                owned,
+                ctxt,
+            )? {
+                for rp in base.region_projections(ctxt) {
+                    let dest_places = expansion
+                        .expansion()
+                        .iter()
+                        .filter(|e| {
+                            e.region_projections(ctxt)
+                                .into_iter()
+                                .any(|child_rp| rp.region(ctxt) == child_rp.region(ctxt))
+                        })
+                        .copied()
+                        .collect::<Vec<_>>();
+                    if !dest_places.is_empty() {
+                        let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
+                        let place_expansion = PlaceExpansion::from_places(dest_places, ctxt);
+                        let expansion = BorrowPCGExpansion::new(
+                            rp.into(),
+                            place_expansion,
+                            location,
                             for_exclusive,
-                        ),
-                        &mut actions,
-                        capabilities,
-                        ctxt,
-                    )?;
-                    if base.is_mut_ref(ctxt) && for_exclusive {
-                        self.label_region_projection(
-                            &rp,
-                            Some(SnapshotLocation::before(location).into()),
                             ctxt,
-                        );
+                        )?;
+                        self.record_and_apply_action(
+                            BorrowPCGAction::add_edge(
+                                BorrowPCGEdge::new(
+                                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                                    PathConditions::new(location.block),
+                                ),
+                                for_exclusive,
+                            ),
+                            &mut actions,
+                            capabilities,
+                            ctxt,
+                        )?;
+                        if base.is_mut_ref(ctxt) && for_exclusive {
+                            self.label_region_projection(
+                                &rp,
+                                Some(SnapshotLocation::before(location).into()),
+                                ctxt,
+                            );
+                        }
                     }
                 }
             }

@@ -57,7 +57,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         &self.kind
     }
 
-    pub(super) fn restore_capability(
+    pub(crate) fn restore_capability(
         place: MaybeOldPlace<'tcx>,
         capability: CapabilityKind,
     ) -> Self {
@@ -67,7 +67,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn weaken(
+    pub(crate) fn weaken(
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
@@ -78,7 +78,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn set_latest(
+    pub(crate) fn set_latest(
         place: Place<'tcx>,
         location: Location,
         context: impl Into<String>,
@@ -89,14 +89,14 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn remove_edge(edge: BorrowPCGEdge<'tcx>, context: impl Into<String>) -> Self {
+    pub(crate) fn remove_edge(edge: BorrowPCGEdge<'tcx>, context: impl Into<String>) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::RemoveEdge(edge),
             debug_context: Some(context.into()),
         }
     }
 
-    pub(super) fn add_edge(edge: BorrowPCGEdge<'tcx>, for_exclusive: bool) -> Self {
+    pub(crate) fn add_edge(edge: BorrowPCGEdge<'tcx>, for_exclusive: bool) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::AddEdge {
                 edge,
@@ -106,7 +106,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(super) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
+    pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
         BorrowPCGAction {
             kind: BorrowPCGActionKind::MakePlaceOld(place, reason),
             debug_context: None,
