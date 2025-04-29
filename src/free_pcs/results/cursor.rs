@@ -71,7 +71,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 
     pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
-        self.cursor.analysis().0.borrows.ctxt
+        self.cursor.analysis().0.ctxt
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
