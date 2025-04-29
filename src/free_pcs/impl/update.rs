@@ -7,16 +7,14 @@
 use std::cmp::Ordering;
 
 use crate::{
+    action::PcgActions,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
-    pcg::{place_capabilities::PlaceCapabilities, PcgError},
+    pcg::{place_capabilities::PlaceCapabilities, PCGUnsupportedError, PcgError},
     pcg_validity_assert,
-    rustc_interface::{
-        ast::Mutability,
-        middle::mir::RETURN_PLACE,
-    },
+    rustc_interface::{ast::Mutability, middle::mir::RETURN_PLACE},
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, LocalMutationIsAllowed, Place,
-        CompilerCtxt,
+        corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt,
+        LocalMutationIsAllowed, Place,
     },
 };
 
@@ -32,22 +30,24 @@ impl<'tcx> CapabilityLocals<'tcx> {
         cond: Condition<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
+    ) -> Result<PcgActions<'tcx>, PcgError> {
         let ops = match cond {
             Condition::RemoveCapability(place) => {
                 place_capabilities.remove(place.into());
-                vec![]
+                PcgActions::default()
             }
-            Condition::Unalloc(_) => vec![],
+            Condition::Unalloc(_) => PcgActions::default(),
             Condition::AllocateOrDeallocate(local) => {
                 self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
                 place_capabilities.insert(local.into(), CapabilityKind::Write);
-                vec![]
+                PcgActions::default()
             }
             Condition::Capability(place, cap) => {
+                if place.contains_unsafe_deref(repacker) {
+                    return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+                }
                 let nearest_owned_place = place.nearest_owned_place(repacker);
                 let cp = self[nearest_owned_place.local].get_allocated_mut();
-                tracing::debug!("Repack to {nearest_owned_place:?} for {place:?} in {cp:?}");
                 let result = cp.repack(place, place_capabilities, repacker, cap)?;
                 if nearest_owned_place != place {
                     match nearest_owned_place.ref_mutability(repacker) {
@@ -63,7 +63,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 }
                 result
             }
-            Condition::Return => vec![],
+            Condition::Return => PcgActions::default(),
         };
         self.check_pre_satisfied(cond, place_capabilities, repacker);
         Ok(ops)
@@ -108,16 +108,15 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 }
                 if place.is_owned(repacker) {
                     if let Some(current_cap) = capabilities.get(place.into()) {
-                        if matches!(
-                            current_cap.partial_cmp(&required_cap),
-                            Some(Ordering::Less) | None
-                        ) {
-                            tracing::error!(
+                        pcg_validity_assert!(
+                            matches!(
+                                current_cap.partial_cmp(&required_cap),
+                                Some(Ordering::Equal) | Some(Ordering::Greater)
+                            ),
                             "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
-                        );
-                        }
+                        )
                     } else {
-                        tracing::error!("No capability for {place:?}");
+                        pcg_validity_assert!(false, "No capability for {place:?}");
                     }
                 }
             }
@@ -172,41 +171,63 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to.local.into()
     }
 
-    #[tracing::instrument(skip(self, repacker))]
+    fn get_longest_prefix(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Place<'tcx> {
+        let mut current = place;
+        while !self.contains_expansion_to(current, ctxt) {
+            current = current.parent_place().unwrap();
+        }
+        current
+    }
+
+    #[tracing::instrument(skip(self, ctxt))]
     fn repack(
         &mut self,
         to: Place<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
         for_cap: CapabilityKind,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
-        let nearest_owned_place = to.nearest_owned_place(repacker);
-        let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, repacker);
+    ) -> Result<PcgActions<'tcx>, PcgError> {
+        let nearest_owned_place = to.nearest_owned_place(ctxt);
+        let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, ctxt);
         tracing::debug!("Collapse to: {collapse_to:?} for {to:?}");
-        let mut result = self.collapse(collapse_to, place_capabilities, repacker)?;
+        let mut result = if for_cap != CapabilityKind::Read {
+            self.collapse(collapse_to, place_capabilities, ctxt)?
+        } else {
+            vec![]
+        };
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");
-        let prefix = place_capabilities.get_longest_prefix(nearest_owned_place);
-        if prefix != nearest_owned_place
-            && !self.contains_expansion_to(nearest_owned_place, repacker)
-        {
+        let prefix = self.get_longest_prefix(nearest_owned_place, ctxt);
+        if prefix != nearest_owned_place && !self.contains_expansion_to(nearest_owned_place, ctxt) {
             result.extend(self.expand(
                 prefix,
-                CorrectedPlace::new(nearest_owned_place, repacker),
+                CorrectedPlace::new(nearest_owned_place, ctxt),
                 for_cap,
                 place_capabilities,
-                repacker,
+                ctxt,
             )?);
         }
+        // TODO: Handle upgrading to read properly by ensuring that the node is a leaf
+        // and removing read perms from the parents
+        if (for_cap == CapabilityKind::Exclusive || for_cap == CapabilityKind::Write)
+            && place_capabilities.get(to.into()) == Some(CapabilityKind::Read)
+        {
+            place_capabilities.insert(to.into(), CapabilityKind::Exclusive);
+        }
         if to != nearest_owned_place {
-            match nearest_owned_place.ref_mutability(repacker) {
+            match nearest_owned_place.ref_mutability(ctxt) {
                 Some(Mutability::Mut) => {
                     place_capabilities.remove(nearest_owned_place.into());
                 }
                 Some(Mutability::Not) => {
                     place_capabilities.insert(nearest_owned_place.into(), CapabilityKind::Read);
                 }
-                None => unreachable!(),
+                None => panic!(
+                    "Repack {}: No mutability for {}: {:?}",
+                    to.to_short_string(ctxt),
+                    nearest_owned_place.to_short_string(ctxt),
+                    nearest_owned_place.ty(ctxt)
+                ),
             }
         } else {
             let current_capability = match place_capabilities.get(to.into()) {
@@ -215,7 +236,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     // The loan for this place has just expired.
                     // TODO: Make interaction between borrow and owned PCG more robust.
                     place_capabilities.insert(to.into(), for_cap);
-                    return Ok(result);
+                    return Ok(result.into());
                     // let err_msg =
                     //     format!("Place {} has no capability", to.to_short_string(repacker));
                     // tracing::error!("{err_msg}");
@@ -229,6 +250,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         }
         tracing::debug!("Result: {result:?}");
         tracing::debug!("Self: {self:?}");
-        Ok(result)
+        Ok(result.into())
     }
 }

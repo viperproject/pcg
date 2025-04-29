@@ -14,6 +14,7 @@ impl<T, F: Fn() -> T> Lazy<T, F> {
         // SAFETY: We just checked that the pointer is not null. Since it's
         // not null, it must have been fully initialized by 'get' at some
         // point.
+        // PCG: PcgError { kind: Unsupported(DerefUnsafePtr), context: [] }
         Some(unsafe { &*ptr })
     }
 }

@@ -210,6 +210,7 @@ impl<'pcg, 'mir, 'tcx> CombinedVisitor<'pcg, 'mir, 'tcx> {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     fn assign_post_main(
         &mut self,
         target: utils::Place<'tcx>,
@@ -219,11 +220,9 @@ impl<'pcg, 'mir, 'tcx> CombinedVisitor<'pcg, 'mir, 'tcx> {
         self.record_and_apply_action(
             BorrowPCGAction::set_latest(target, location, "Target of Assignment").into(),
         )?;
-        if !target.is_owned(self.ctxt) {
-            self.pcg
-                .capabilities
-                .insert(target.into(), CapabilityKind::Exclusive);
-        }
+        self.pcg
+            .capabilities
+            .insert(target.into(), CapabilityKind::Exclusive);
         match rvalue {
             Rvalue::Aggregate(
                 box (mir::AggregateKind::Adt(..)
@@ -388,6 +387,44 @@ impl<'pcg, 'mir, 'tcx> CombinedVisitor<'pcg, 'mir, 'tcx> {
             _ => {}
         }
         Ok(())
+    }
+
+    fn regain_exclusive_capabilities_from_read_leafs(&mut self) {
+        let frozen_graph = self.pcg.borrow.graph().frozen_graph();
+        for caps in self
+            .pcg
+            .owned
+            .data
+            .as_mut()
+            .unwrap()
+            .capability_projections_mut()
+        {
+            let leaves = caps.leaves(self.ctxt);
+
+            for place in leaves {
+                if self.pcg.capabilities.get(place.into()) == Some(CapabilityKind::Read)
+                    && !frozen_graph.contains(place.into(), self.ctxt)
+                {
+                    self.pcg
+                        .capabilities
+                        .insert(place.into(), CapabilityKind::Exclusive);
+                }
+            }
+        }
+    }
+
+    #[tracing::instrument(skip(pcg, ctxt, tw, analysis_object, location))]
+    pub(crate) fn visit(
+        pcg: &'pcg mut Pcg<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+        tw: &'pcg TripleWalker<'mir, 'tcx>,
+        phase: EvalStmtPhase,
+        analysis_object: AnalysisObject<'_, 'tcx>,
+        location: Location,
+    ) -> Result<PcgActions<'tcx>, PcgError> {
+        let visitor = Self::new(pcg, ctxt, tw, phase);
+        let actions = visitor.apply(analysis_object, location)?;
+        Ok(actions)
     }
 
     pub(crate) fn new(
@@ -611,9 +648,12 @@ impl<'tcx> FallableVisitor<'tcx> for CombinedVisitor<'_, '_, 'tcx> {
     fn visit_place_fallable(
         &mut self,
         place: utils::Place<'tcx>,
-        context: mir::visit::PlaceContext,
-        location: Location,
+        _context: mir::visit::PlaceContext,
+        _location: Location,
     ) -> Result<(), PcgError> {
+        if place.contains_unsafe_deref(self.ctxt) {
+            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+        }
         Ok(())
     }
 
@@ -682,9 +722,8 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
             EvalStmtPhase::PreOperands => {
                 self.perform_borrow_initial_pre_operand_actions(location)?;
                 for triple in self.tw.operand_triples.iter() {
-                    tracing::info!("pre_operands: {:?}", triple);
                     self.actions
-                        .extend(self.pcg.owned_requires(triple.pre(), self.ctxt)?.into());
+                        .extend(self.pcg.requires(triple.pre(), self.ctxt)?.into());
                 }
             }
             EvalStmtPhase::PostOperands => {
@@ -692,17 +731,12 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
                     self.pcg.owned_ensures(*triple);
                 }
             }
-            EvalStmtPhase::PreMain => {
-                for triple in self.tw.main_triples.iter() {
-                    self.actions
-                        .extend(self.pcg.owned_requires(triple.pre(), self.ctxt)?.into());
-                }
-            }
             EvalStmtPhase::PostMain => {
                 for triple in self.tw.main_triples.iter() {
                     self.pcg.owned_ensures(*triple)
                 }
             }
+            _ => {}
         }
         match object {
             AnalysisObject::Statement(statement) => {
@@ -711,6 +745,15 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
             AnalysisObject::Terminator(terminator) => {
                 self.visit_terminator_fallable(terminator, location)?
             }
+        }
+        match self.phase {
+            EvalStmtPhase::PreMain => {
+                for triple in self.tw.main_triples.iter() {
+                    self.actions
+                        .extend(self.pcg.requires(triple.pre(), self.ctxt)?.into());
+                }
+            }
+            _ => {}
         }
         Ok(self.actions)
     }
@@ -804,6 +847,7 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
         self.actions.extend(actions.actions());
     }
 
+    #[tracing::instrument(skip(self))]
     fn record_and_apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         let result = match &action {
             PcgAction::Borrow(action) => self.pcg.borrow.apply_action(

@@ -13,6 +13,7 @@ struct Buffer {
 
 impl Buffer {
     pub fn format<I: Integer>(&mut self, i: I) -> &str {
+        // PCG: PcgError { kind: Unsupported(DerefUnsafePtr), context: [] }
         let string = i.write(unsafe {
             &mut *(&mut self.bytes as *mut [MaybeUninit<u8>; 1024]
                 as *mut [MaybeUninit<u8>; 1024])

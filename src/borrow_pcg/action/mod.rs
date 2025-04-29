@@ -197,9 +197,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 if let Some(cap) = capabilities.get(restore_place) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
-                if !restore_place.is_owned(repacker)
-                    && !capabilities.insert(restore_place, restore.capability())
-                {
+                if !capabilities.insert(restore_place, restore.capability()) {
                     panic!("Capability should have been updated")
                 }
                 true
@@ -224,6 +222,7 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(result)
     }
 
+    #[tracing::instrument(skip(self, capabilities, repacker))]
     fn handle_add_edge(
         &mut self,
         edge: BorrowPCGEdge<'tcx>,

@@ -14,10 +14,7 @@ use std::{
 
 use crate::{
     action::PcgActions,
-    borrow_pcg::{
-        path_condition::PathCondition,
-        state::BorrowsState,
-    },
+    borrow_pcg::{path_condition::PathCondition, state::BorrowsState},
     free_pcs::{
         triple::{Condition, Triple},
         RepackOp,
@@ -60,6 +57,15 @@ impl EvalStmtPhase {
             EvalStmtPhase::PreMain,
             EvalStmtPhase::PostMain,
         ]
+    }
+
+    pub(crate) fn next(&self) -> Option<EvalStmtPhase> {
+        match self {
+            EvalStmtPhase::PreOperands => Some(EvalStmtPhase::PostOperands),
+            EvalStmtPhase::PostOperands => Some(EvalStmtPhase::PreMain),
+            EvalStmtPhase::PreMain => Some(EvalStmtPhase::PostMain),
+            EvalStmtPhase::PostMain => None,
+        }
     }
 }
 
@@ -131,11 +137,11 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn owned_requires(
+    pub(crate) fn requires(
         &mut self,
         cond: Condition<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+    ) -> std::result::Result<PcgActions<'tcx>, PcgError> {
         self.owned
             .locals_mut()
             .requires(cond, repacker, &mut self.capabilities)
@@ -579,9 +585,7 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PcgEngine<'a, 'tcx>>>
-    for PcgDomain<'a, 'tcx>
-{
+impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
         _old: &Self,
