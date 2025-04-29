@@ -5,8 +5,11 @@ use crate::{
         action::{actions::BorrowPCGActions, BorrowPCGAction, BorrowPCGActionKind},
         unblock_graph::BorrowPCGUnblockAction,
     },
-    free_pcs::RepackOp,
-    utils::{json::ToJsonWithCompilerCtxt, CompilerCtxt},
+    free_pcs::{CapabilityKind, RepackOp},
+    utils::{
+        json::ToJsonWithCompilerCtxt, maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace, Place,
+    },
+    RestoreCapability,
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, From, Default, Deref, DerefMut)]
@@ -20,7 +23,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgActions<'tcx> {
 
 impl<'tcx> From<BorrowPCGActions<'tcx>> for PcgActions<'tcx> {
     fn from(actions: BorrowPCGActions<'tcx>) -> Self {
-       PcgActions(actions.0.into_iter().map(|a| a.into()).collect::<Vec<_>>())
+        PcgActions(actions.0.into_iter().map(|a| a.into()).collect::<Vec<_>>())
     }
 }
 
@@ -31,6 +34,10 @@ impl<'tcx> From<Vec<RepackOp<'tcx>>> for PcgActions<'tcx> {
 }
 
 impl<'tcx> PcgActions<'tcx> {
+    pub(crate) fn extend(&mut self, actions: PcgActions<'tcx>) {
+        self.0.extend(actions.0);
+    }
+
     pub fn borrow_pcg_actions(&self) -> BorrowPCGActions<'tcx> {
         BorrowPCGActions(
             self.0
@@ -78,6 +85,21 @@ pub enum PcgAction<'tcx> {
 }
 
 impl<'tcx> PcgAction<'tcx> {
+    pub(crate) fn restore_capability(
+        place: MaybeOldPlace<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Self {
+        if place.is_owned(ctxt) {
+            PcgAction::Owned(RepackOp::RegainLoanedCapability(place.place(), capability))
+        } else {
+            PcgAction::Borrow(
+                BorrowPCGActionKind::Restore(RestoreCapability::new(place.into(), capability))
+                    .into(),
+            )
+        }
+    }
+
     pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             PcgAction::Borrow(action) => action.debug_line(repacker),

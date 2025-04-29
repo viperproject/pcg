@@ -14,6 +14,7 @@ use crate::{
         middle::mir::{self, Local, RETURN_PLACE},
         mir_dataflow::fmt::DebugWithContext,
     },
+    utils::Place,
 };
 use derive_more::{Deref, DerefMut};
 
@@ -115,6 +116,11 @@ impl Debug for CapabilityLocals<'_> {
 }
 
 impl<'tcx> CapabilityLocals<'tcx> {
+    pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
+        let cap_local = &self[place.local];
+        cap_local.is_allocated() && cap_local.get_allocated().contains_expansion_from(place)
+    }
+
     pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
         self.0
             .iter_mut()

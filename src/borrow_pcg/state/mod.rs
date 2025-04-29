@@ -50,7 +50,7 @@ pub(crate) mod obtain;
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
-    graph: BorrowsGraph<'tcx>,
+    pub(crate) graph: BorrowsGraph<'tcx>,
 }
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
@@ -207,85 +207,6 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-    #[tracing::instrument(skip(self, edge, location, ctxt))]
-    pub(super) fn remove_edge_and_set_latest(
-        &mut self,
-        edge: impl BorrowPCGEdgeLike<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        location: Location,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-        context: &str,
-    ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        let mut actions = ExecutedActions::new();
-        for place in edge.blocked_places(ctxt) {
-            if let Some(place) = place.as_current_place()
-                && capabilities.get(place.into()) != Some(CapabilityKind::Read)
-                && place.has_location_dependent_value(ctxt)
-            {
-                self.record_and_apply_action(
-                    BorrowPCGAction::set_latest(place, location, context),
-                    &mut actions,
-                    capabilities,
-                    ctxt,
-                )?;
-            }
-        }
-        let remove_edge_action =
-            BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
-        self.record_and_apply_action(remove_edge_action, &mut actions, capabilities, ctxt)?;
-
-        let fg = self.graph().frozen_graph();
-        let blocked_nodes = edge.blocked_nodes(ctxt);
-        let to_restore = blocked_nodes
-            .into_iter()
-            .filter(|node| !fg.has_edge_blocking(*node, ctxt))
-            .collect::<Vec<_>>();
-        for node in to_restore {
-            if let Some(place) = node.as_maybe_old_place()
-                && !place.is_owned(ctxt)
-            {
-                let blocked_cap = capabilities.get(place);
-
-                let restore_cap = if place.place().projects_shared_ref(ctxt) {
-                    CapabilityKind::Read
-                } else {
-                    CapabilityKind::Exclusive
-                };
-
-                if blocked_cap.is_none_or(|bc| bc < restore_cap) {
-                    self.record_and_apply_action(
-                        BorrowPCGAction::restore_capability(place, restore_cap),
-                        &mut actions,
-                        capabilities,
-                        ctxt,
-                    )?;
-                }
-            }
-        }
-        if let BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) = edge.kind() {
-            if let LocalNode::Place(place) = expansion.base() {
-                for mut region_projection in place.region_projections(ctxt) {
-                    // Remove Placeholder label from the region projection
-                    region_projection.label = Some(RegionProjectionLabel::Placeholder);
-                    self.label_region_projection(&region_projection, None, ctxt);
-                }
-            }
-            for node in expansion.expansion() {
-                for to_redirect in self
-                    .graph
-                    .edges_blocked_by(*node, ctxt)
-                    .map(|e| e.kind.clone())
-                    .collect::<Vec<_>>()
-                {
-                    // TODO: Due to a bug ignore other expansions to this place for now
-                    if !matches!(to_redirect, BorrowPCGEdgeKind::BorrowPCGExpansion(_)) {
-                        self.graph.redirect_edge(to_redirect, *node, expansion.base)
-                    }
-                }
-            }
-        }
-        Ok(actions)
-    }
 
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
         self.graph.add_path_condition(pc)
@@ -337,110 +258,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-    /// Removes leaves that are old or dead (based on the borrow checker). This
-    /// function should called prior to evaluating the effect of the statement
-    /// at `location`.
-    ///
-    /// Note that the liveness calculation is performed based on what happened
-    /// at the end of the *previous* statement.
-    ///
-    /// For example when evaluating:
-    /// ```text
-    /// bb0[1]: let x = &mut y;
-    /// bb0[2]: *x = 2;
-    /// bb0[3]: ... // x is dead
-    /// ```
-    /// we do not remove the `*x -> y` edge until `bb0[3]`.
-    /// This ensures that the edge appears in the graph at the end of `bb0[2]`
-    /// (rather than never at all).
-    ///
-    /// Additional caveat: we do not remove dead places that are function
-    /// arguments. At least for now this interferes with the implementation in
-    /// the Prusti purified encoding for accessing the final value of a
-    /// reference-typed function argument in its postcondition.
-    pub(super) fn pack_old_and_dead_leaves<'slf, 'mir>(
-        &'slf mut self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        location: Location,
-    ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        let mut actions = ExecutedActions::new();
-        let mut num_edges_prev = self.graph.num_edges();
-        loop {
-            fn go<'slf, 'mir: 'slf, 'bc: 'slf, 'tcx>(
-                slf: &'slf mut BorrowsState<'tcx>,
-                ctxt: CompilerCtxt<'mir, 'tcx>,
-                location: Location,
-            ) -> Vec<BorrowPCGEdge<'tcx>> {
-                let fg = slf.graph.frozen_graph();
-
-                let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
-                    let place = match p {
-                        PCGNode::Place(p) => p,
-                        PCGNode::RegionProjection(rp) => rp.place(),
-                    };
-                    if place.is_old() {
-                        return true;
-                    }
-
-                    if ctxt.is_arg(place.local()) {
-                        return false;
-                    }
-
-                    if !place.place().projection.is_empty()
-                        && !fg.has_edge_blocking(place.into(), ctxt)
-                    {
-                        return true;
-                    }
-
-                    ctxt.bc.is_dead(p.into(), location, true) // Definitely a leaf by this point
-                };
-
-                let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                        if expansion.expansion().iter().all(|node| {
-                            node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
-                        }) {
-                            true
-                        } else {
-                            expansion.expansion().iter().all(|node| {
-                                expansion.base().place().is_prefix_exact(node.place())
-                                    && expansion.base().location() == node.location()
-                            })
-                        }
-                    }
-                    _ => edge
-                        .blocked_by_nodes(ctxt)
-                        .iter()
-                        .all(|p| should_kill_node(*p, &fg)),
-                };
-
-                let mut edges_to_trim = Vec::new();
-                for edge in fg.leaf_edges(ctxt).into_iter().map(|e| e.to_owned_edge()) {
-                    if should_pack_edge(edge.kind()) {
-                        edges_to_trim.push(edge);
-                    }
-                }
-                edges_to_trim
-            }
-            let edges_to_trim = go(self, repacker, location);
-            if edges_to_trim.is_empty() {
-                break Ok(actions);
-            }
-            for edge in edges_to_trim {
-                actions.extend(self.remove_edge_and_set_latest(
-                    edge,
-                    capabilities,
-                    location,
-                    repacker,
-                    "Trim Old Leaves",
-                )?);
-            }
-            let new_num_edges = self.graph.num_edges();
-            assert!(new_num_edges <= num_edges_prev);
-            num_edges_prev = new_num_edges;
-        }
-    }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(

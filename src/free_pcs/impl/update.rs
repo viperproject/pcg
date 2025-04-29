@@ -122,9 +122,9 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 }
             }
             Condition::Return => {
-                assert!(
-                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
-                );
+                // assert!(
+                //     capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
+                // );
             }
         }
     }

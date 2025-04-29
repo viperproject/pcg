@@ -1,4 +1,6 @@
 use crate::{
+    action::PcgActions,
+    free_pcs::FreePlaceCapabilitySummary,
     pcg::{place_capabilities::PlaceCapabilities, EvalStmtPhase},
     utils::{visitor::FallableVisitor, HasPlace},
 };
@@ -19,6 +21,7 @@ use crate::{
     utils::Place,
 };
 
+use super::engine::BorrowsEngine;
 use super::{
     action::{BorrowPCGAction, MakePlaceOldReason},
     borrow_pcg_edge::BorrowPCGEdge,
@@ -27,7 +30,6 @@ use super::{
     region_projection::{PcgRegion, RegionIdx, RegionProjection},
     state::BorrowsState,
 };
-use super::engine::BorrowsEngine;
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::state::obtain::ObtainReason;
@@ -42,9 +44,10 @@ mod stmt;
 
 pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
     pub(super) ctxt: CompilerCtxt<'mir, 'tcx>,
-    pub(super) actions: BorrowPCGActions<'tcx>,
+    pub(super) actions: PcgActions<'tcx>,
     state: &'state mut BorrowsState<'tcx>,
     capabilities: &'state mut PlaceCapabilities<'tcx>,
+    owned: &'state FreePlaceCapabilitySummary<'tcx>,
     phase: EvalStmtPhase,
 }
 
@@ -54,7 +57,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
-        self.actions.push(action.clone(), self.ctxt);
+        self.actions.push(action.clone().into());
         self.state
             .apply_action(action, self.capabilities, self.ctxt)
             .unwrap()
@@ -64,13 +67,15 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
         engine: &BorrowsEngine<'mir, 'tcx>,
         state: &'state mut BorrowsState<'tcx>,
         capabilities: &'state mut PlaceCapabilities<'tcx>,
+        owned: &'state FreePlaceCapabilitySummary<'tcx>,
         phase: EvalStmtPhase,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
             ctxt: engine.ctxt,
-            actions: BorrowPCGActions::new(),
+            actions: PcgActions::default(),
             state,
             capabilities,
+            owned,
             phase,
         }
     }
@@ -106,52 +111,7 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 }
 
-impl BorrowsVisitor<'_, '_, '_> {
-    fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
-        let actions =
-            self.state
-                .pack_old_and_dead_leaves(self.ctxt, self.capabilities, location)?;
-        self.record_actions(actions);
-        for created_location in self.ctxt.bc.twophase_borrow_activations(location) {
-            let borrow = match self.state.graph().borrow_created_at(created_location) {
-                Some(borrow) => borrow,
-                None => continue,
-            };
-            let blocked_place = borrow.blocked_place.place();
-            if self
-                .state
-                .graph()
-                .contains(borrow.deref_place(self.ctxt), self.ctxt)
-            {
-                let upgrade_action = BorrowPCGAction::restore_capability(
-                    borrow.deref_place(self.ctxt).place().into(),
-                    CapabilityKind::Exclusive,
-                );
-                self.apply_action(upgrade_action);
-            }
-            if !blocked_place.is_owned(self.ctxt) {
-                let actions = self.state.remove_read_permission_upwards(
-                    blocked_place,
-                    self.capabilities,
-                    self.ctxt,
-                )?;
-                self.record_actions(actions);
-            }
-            for place in blocked_place.iter_places(self.ctxt) {
-                for rp in place.region_projections(self.ctxt).into_iter() {
-                    if rp.is_nested_in_local_ty(self.ctxt) {
-                        self.state.label_region_projection(
-                            &rp.into(),
-                            Some(location.into()),
-                            self.ctxt,
-                        );
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-}
+impl BorrowsVisitor<'_, '_, '_> {}
 
 impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
     fn visit_operand_fallable(
@@ -159,38 +119,6 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         operand: &Operand<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.super_operand_fallable(operand, location)?;
-        match self.phase {
-            EvalStmtPhase::PreOperands => match operand {
-                Operand::Copy(place) | Operand::Move(place) => {
-                    let expansion_reason = if matches!(operand, Operand::Copy(..)) {
-                        ObtainReason::CopyOperand
-                    } else {
-                        ObtainReason::MoveOperand
-                    };
-                    let place: utils::Place<'tcx> = (*place).into();
-                    let expansion_actions = self.state.obtain(
-                        self.ctxt,
-                        place,
-                        self.capabilities,
-                        location,
-                        expansion_reason,
-                    )?;
-                    self.record_actions(expansion_actions);
-                }
-                _ => {}
-            },
-            EvalStmtPhase::PostMain => {
-                if let Operand::Move(place) = operand {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    self.apply_action(BorrowPCGAction::make_place_old(
-                        place,
-                        MakePlaceOldReason::MoveOut,
-                    ));
-                }
-            }
-            _ => {}
-        }
         Ok(())
     }
 
@@ -200,9 +128,6 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if self.phase == EvalStmtPhase::PreOperands {
-            self.perform_base_pre_operand_actions(location)?;
-        }
         self.super_terminator_fallable(terminator, location)?;
         if self.phase == EvalStmtPhase::PostMain
             && let TerminatorKind::Call {
@@ -234,10 +159,6 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if self.phase == EvalStmtPhase::PreOperands {
-            self.perform_base_pre_operand_actions(location)?;
-        }
-
         self.super_statement_fallable(statement, location)?;
 
         match self.phase {
@@ -250,6 +171,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                             self.ctxt,
                             place,
                             self.capabilities,
+                            self.owned,
                             location,
                             expansion_reason,
                         )?;
@@ -258,10 +180,9 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                 }
             }
             EvalStmtPhase::PreMain => {
-                self.stmt_pre_main(statement, location)?;
+                unreachable!()
             }
             EvalStmtPhase::PostMain => {
-                self.stmt_post_main(statement, location)?;
             }
             _ => {}
         }
@@ -322,6 +243,7 @@ impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
                             this.ctxt,
                             place.into(),
                             this.capabilities,
+                            this.owned,
                             location,
                             expansion_reason,
                         )?;

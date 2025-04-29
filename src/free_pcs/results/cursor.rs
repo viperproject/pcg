@@ -158,7 +158,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                 }
 
                 let mut actions: PcgActions<'tcx> = owned_bridge.into();
-                actions.extend(borrow_actions.0.into_iter().map(|a| a.into()));
+                actions.extend(borrow_actions.into());
 
                 Ok(PcgSuccessor::new(
                     succ,

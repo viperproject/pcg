@@ -13,8 +13,8 @@ use super::{
     latest::Latest,
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::json::ToJsonWithCompilerCtxt;
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
@@ -196,7 +196,9 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
         for p in &mut self.expansion {
             changed |= p.label_region_projection(projection, label, repacker);
         }
-        if self.is_mutable_deref_of_place_with_nested_region_projections(repacker) && projection.label == self.deref_blocked_region_projection_label {
+        if self.is_mutable_deref_of_place_with_nested_region_projections(repacker)
+            && projection.label == self.deref_blocked_region_projection_label
+        {
             self.deref_blocked_region_projection_label = label;
         }
         changed
@@ -321,9 +323,8 @@ impl<'tcx> BorrowPCGExpansion<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<PCGNode<'tcx>> {
         if let BlockingNode::Place(p) = self.base
-            && let Some(base_projection) = p.base_region_projection(repacker)
+            && let Some(mut projection) = p.base_region_projection(repacker)
         {
-            let mut projection = base_projection.with_base(base_projection.base.into(), repacker);
             projection.label = self.deref_blocked_region_projection_label;
             Some(projection.into())
         } else {

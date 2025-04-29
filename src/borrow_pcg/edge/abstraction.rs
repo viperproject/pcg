@@ -184,8 +184,13 @@ impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!("FunctionCall({:?}, {:?})", self.def_id, self.substs)
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        format!(
+            "call {} at {:?}: {}",
+            ctxt.tcx().def_path_str(self.def_id),
+            self.location,
+            self.edge.to_short_string(ctxt)
+        )
     }
 }
 
