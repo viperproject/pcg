@@ -16,7 +16,7 @@ use itertools::Itertools;
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{PCGInternalError, PcgError},
-    utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, Place, CompilerCtxt},
+    utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -54,9 +54,6 @@ impl<'tcx> CapabilityLocal<'tcx> {
     }
     pub fn is_unallocated(&self) -> bool {
         matches!(self, Self::Unallocated)
-    }
-    pub(crate) fn is_allocated(&self) -> bool {
-        matches!(self, Self::Allocated(_))
     }
 }
 
@@ -185,15 +182,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
         };
         let expansion = from.expand(*to, repacker)?;
 
-        // Update permission of `from` place
-        let projection_path_perm = if for_cap.is_read() {
-            Some(CapabilityKind::Read)
-        } else {
-            None
-        };
-
         for place in expansion.other_expansions() {
-            capabilities.insert(place.into(), for_cap);
+            capabilities.insert(
+                place.into(),
+                if for_cap.is_read() { for_cap } else { from_cap },
+            );
         }
 
         let mut ops = Vec::new();
@@ -203,8 +196,8 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 expansion.base_place(),
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
-            if let Some(perm) = projection_path_perm {
-                capabilities.insert(expansion.base_place().into(), perm);
+            if for_cap.is_read() {
+                capabilities.insert(expansion.base_place().into(), for_cap);
             } else {
                 capabilities.remove(expansion.base_place().into());
             }
@@ -231,6 +224,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
     pub(crate) fn collapse(
         &mut self,
         to: Place<'tcx>,
+        _for_cap: Option<CapabilityKind>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {

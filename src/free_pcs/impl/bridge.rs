@@ -67,7 +67,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
                 }
                 if cps.contains_expansion_from(local.into()) {
                     let packs = cps
-                        .collapse(local.into(), &mut place_capabilities, repacker)
+                        .collapse(local.into(), None, &mut place_capabilities, repacker)
                         .unwrap();
                     repacks.extend(packs);
                 };
@@ -106,7 +106,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 if let Some(other_expansion) = other_expansions.get(&place) {
                     if other_expansion != &expansion {
                         let collapse_repacks =
-                            from.collapse(place, &mut self_place_capabilities, repacker)?;
+                            from.collapse(place, None, &mut self_place_capabilities, repacker)?;
                         repacks.extend(collapse_repacks);
                         let expand_to = place.expansion_places(other_expansion, repacker)[0];
                         repacks.extend(from.expand(
@@ -119,7 +119,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                         continue;
                     }
                 } else {
-                    repacks.extend(from.collapse(place, &mut self_place_capabilities, repacker)?);
+                    repacks.extend(from.collapse(place, None, &mut self_place_capabilities, repacker)?);
                     continue 'outer;
                 }
             }
