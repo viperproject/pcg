@@ -2,7 +2,7 @@ use crate::{
     action::PcgActions,
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{place_capabilities::PlaceCapabilities, EvalStmtPhase},
-    utils::{visitor::FallableVisitor, HasPlace},
+    utils::visitor::FallableVisitor,
 };
 use tracing::instrument;
 
@@ -23,21 +23,17 @@ use crate::{
 
 use super::engine::BorrowsEngine;
 use super::{
-    action::{BorrowPCGAction, MakePlaceOldReason},
+    action::BorrowPCGAction,
     borrow_pcg_edge::BorrowPCGEdge,
     edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
     path_condition::PathConditions,
     region_projection::{PcgRegion, RegionIdx, RegionProjection},
     state::BorrowsState,
 };
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::state::obtain::ObtainReason;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::{
-    free_pcs::CapabilityKind,
-    utils::{self, CompilerCtxt},
-};
+use crate::utils::{self, CompilerCtxt};
 
 mod function_call;
 mod stmt;

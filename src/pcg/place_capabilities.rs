@@ -31,14 +31,6 @@ impl<'tcx> PlaceCapabilities<'tcx> {
             .unwrap_or(false)
     }
 
-    pub(crate) fn get_longest_prefix(&self, to: Place<'tcx>) -> Place<'tcx> {
-        self.iter()
-            .flat_map(|(p, _)| p.try_into())
-            .filter(|p: &Place| p.is_prefix(to))
-            .max_by_key(|p| p.projection.len())
-            .unwrap_or(to.local.into())
-    }
-
     pub(crate) fn owned_capabilities<'mir: 'slf, 'slf, 'bc: 'slf>(
         &'slf mut self,
         local: mir::Local,

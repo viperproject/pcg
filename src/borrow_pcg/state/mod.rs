@@ -1,19 +1,17 @@
 use super::{
     action::BorrowPCGAction,
     borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode, ToBorrowsEdge,
+        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, ToBorrowsEdge,
     },
     edge::borrow::RemoteBorrow,
-    graph::{frozen::FrozenGraphRef, BorrowsGraph},
+    graph::BorrowsGraph,
     has_pcs_elem::LabelRegionProjection,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::RegionProjectionLabel,
     visitor::extract_regions,
 };
-use crate::{
-    borrow_pcg::edge::kind::BorrowPCGEdgeKind, utils::place::maybe_remote::MaybeRemotePlace,
-};
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -28,7 +26,7 @@ use crate::{
         mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
         ty::{self},
     },
-    utils::{display::DebugLines, validity::HasValidityCheck, HasPlace},
+    utils::{display::DebugLines, validity::HasValidityCheck},
     validity_checks_enabled,
 };
 use crate::{
@@ -43,7 +41,7 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
-use crate::{pcg::MaybeHasLocation, utils::place::maybe_old::MaybeOldPlace};
+use crate::utils::place::maybe_old::MaybeOldPlace;
 
 pub(crate) mod obtain;
 
@@ -186,10 +184,6 @@ impl<'tcx> BorrowsState<'tcx> {
 
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
-    }
-
-    pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
-        self.graph().frozen_graph()
     }
 
     pub(crate) fn join<'mir>(

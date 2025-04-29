@@ -1,9 +1,10 @@
+use derive_more::From;
+
 use crate::action::PcgActions;
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::utils::CompilerCtxt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub(crate) struct ExecutedActions<'tcx> {
     actions: PcgActions<'tcx>,
 }

@@ -15,10 +15,7 @@ use std::{
 use crate::{
     action::PcgActions,
     borrow_pcg::{path_condition::PathCondition, state::BorrowsState},
-    free_pcs::{
-        triple::{Condition, Triple},
-        RepackOp,
-    },
+    free_pcs::triple::{Condition, Triple},
     rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
