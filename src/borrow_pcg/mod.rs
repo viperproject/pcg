@@ -9,7 +9,6 @@ pub mod visitor;
 pub mod coupling_graph_constructor;
 pub mod edge;
 pub mod edge_data;
-pub mod engine;
 pub mod has_pcs_elem;
 pub mod latest;
 pub mod path_condition;

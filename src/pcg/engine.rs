@@ -40,7 +40,6 @@ use super::{
     DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase, PCGDebugData, PcgError,
 };
 use crate::{
-    borrow_pcg::engine::BorrowsEngine,
     free_pcs::engine::FpcsEngine,
     utils::CompilerCtxt,
 };
@@ -127,7 +126,6 @@ struct PCGEngineDebugData {
 pub struct PcgEngine<'a, 'tcx: 'a> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
-    pub(crate) borrows: BorrowsEngine<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
@@ -278,7 +276,6 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             }
         });
         let fpcs = FpcsEngine { repacker };
-        let borrows = BorrowsEngine::new(repacker);
         let mut reachable_blocks = BitSet::new_empty(repacker.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK);
         Self {
@@ -286,7 +283,6 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             reachable_blocks,
             ctxt: repacker,
             fpcs,
-            borrows,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
         }
@@ -301,37 +297,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         state.generate_dot_graph(phase.into(), statement_index);
     }
 
-    #[must_use]
-    fn collapse_owned_places(
-        &self,
-        owned_state: &mut CapabilityLocals<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        borrows: &FrozenGraphRef<'_, 'tcx>,
-    ) -> Vec<RepackOp<'tcx>> {
-        let mut ops = vec![];
-        for caps in owned_state.capability_projections_mut() {
-            let mut expansions = caps
-                .expansions()
-                .clone()
-                .into_iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
-                .collect::<Vec<_>>();
-            while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, self.ctxt);
-                if expansion_places
-                    .iter()
-                    .all(|p| !borrows.contains((*p).into(), self.ctxt))
-                    && let Some(candidate_cap) = capabilities.get(expansion_places[0].into())
-                    && expansion_places
-                        .iter()
-                        .all(|p| capabilities.get((*p).into()) == Some(candidate_cap))
-                {
-                    ops.extend(caps.collapse(base, capabilities, self.ctxt).unwrap());
-                }
-            }
-        }
-        ops
-    }
+
 
     fn record_error_if_first(&mut self, error: &PcgError) {
         if self.first_error.error().is_none() {

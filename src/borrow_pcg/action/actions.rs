@@ -76,25 +76,9 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         Self(vec![])
     }
 
-    pub(crate) fn first(&self) -> Option<&BorrowPCGAction<'tcx>> {
-        self.0.first()
-    }
 
     pub(crate) fn last(&self) -> Option<&BorrowPCGAction<'tcx>> {
         self.0.last()
-    }
-
-    pub(crate) fn extend(&mut self, actions: BorrowPCGActions<'tcx>) {
-        if validity_checks_enabled() {
-            if let (Some(a), Some(b)) = (self.last(), actions.first()) {
-                assert_ne!(
-                a, b,
-                "The last action ({:#?}) is the same as the first action in the list to extend with.",
-                a,
-            )
-            }
-        }
-        self.0.extend(actions.0);
     }
 
     pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) {

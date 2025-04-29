@@ -21,7 +21,6 @@ use crate::{
     utils::Place,
 };
 
-use super::engine::BorrowsEngine;
 use super::{
     action::BorrowPCGAction,
     borrow_pcg_edge::BorrowPCGEdge,
@@ -60,14 +59,14 @@ impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
     }
 
     pub(super) fn new(
-        engine: &BorrowsEngine<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
         state: &'state mut BorrowsState<'tcx>,
         capabilities: &'state mut PlaceCapabilities<'tcx>,
         owned: &'state FreePlaceCapabilitySummary<'tcx>,
         phase: EvalStmtPhase,
     ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
         BorrowsVisitor {
-            ctxt: engine.ctxt,
+            ctxt,
             actions: PcgActions::default(),
             state,
             capabilities,
