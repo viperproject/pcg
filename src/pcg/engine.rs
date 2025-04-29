@@ -11,14 +11,14 @@ use std::{
 };
 
 use derive_more::From;
-use itertools::Itertools;
 
+use super::{
+    visitor::PcgVisitor, domain::PcgDomain, DataflowStmtPhase, DotGraphs, ErrorState,
+    EvalStmtPhase, PCGDebugData, PcgError,
+};
+use crate::utils::CompilerCtxt;
 use crate::{
-    borrow_pcg::{
-        borrow_pcg_edge::BorrowPCGEdgeLike,
-        graph::frozen::FrozenGraphRef,
-    },
-    free_pcs::{triple::TripleWalker, CapabilityLocals, RepackOp},
+    free_pcs::triple::TripleWalker,
     rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
@@ -33,15 +33,6 @@ use crate::{
     },
     utils::{domain_data::DomainDataIndex, visitor::FallableVisitor},
     BodyAndBorrows,
-};
-
-use super::{
-    combined::CombinedVisitor, domain::PcgDomain, place_capabilities::PlaceCapabilities,
-    DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase, PCGDebugData, PcgError,
-};
-use crate::{
-    free_pcs::engine::FpcsEngine,
-    utils::CompilerCtxt,
 };
 
 #[derive(Clone)]
@@ -125,7 +116,6 @@ struct PCGEngineDebugData {
 
 pub struct PcgEngine<'a, 'tcx: 'a> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
-    pub(crate) fpcs: FpcsEngine<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<BasicBlock>,
@@ -246,7 +236,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         for phase in EvalStmtPhase::phases() {
             let curr = Rc::<_>::make_mut(&mut pcg.states.0[phase]);
             pcg_data.actions[phase] =
-                CombinedVisitor::visit(curr, self.ctxt, &tw, phase, object, location)?;
+                PcgVisitor::visit(curr, self.ctxt, &tw, phase, object, location)?;
             if let Some(next_phase) = phase.next() {
                 pcg.states.0[next_phase] = pcg.states.0[phase].clone();
             }
@@ -275,14 +265,12 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
                 dot_graphs,
             }
         });
-        let fpcs = FpcsEngine { repacker };
         let mut reachable_blocks = BitSet::new_empty(repacker.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK);
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
             ctxt: repacker,
-            fpcs,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
         }
@@ -296,8 +284,6 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
     ) {
         state.generate_dot_graph(phase.into(), statement_index);
     }
-
-
 
     fn record_error_if_first(&mut self, error: &PcgError) {
         if self.first_error.error().is_none() {

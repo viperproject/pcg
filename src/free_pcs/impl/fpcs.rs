@@ -12,13 +12,11 @@ use crate::{
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
-        mir_dataflow::fmt::DebugWithContext,
-    },
-    utils::Place,
+    }
 };
 use derive_more::{Deref, DerefMut};
 
-use super::{engine::FpcsEngine, CapabilityKind};
+use super::CapabilityKind;
 use crate::{
     free_pcs::{CapabilityLocal, CapabilityProjections},
     utils::CompilerCtxt,
@@ -93,17 +91,6 @@ impl Debug for FreePlaceCapabilitySummary<'_> {
         self.data.fmt(f)
     }
 }
-impl<'tcx> DebugWithContext<FpcsEngine<'_, 'tcx>> for FreePlaceCapabilitySummary<'tcx> {
-    fn fmt_diff_with(
-        &self,
-        _old: &Self,
-        _ctxt: &FpcsEngine<'_, 'tcx>,
-        _f: &mut Formatter<'_>,
-    ) -> Result {
-        todo!()
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
 /// The free pcs of all locals
 pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
@@ -116,11 +103,6 @@ impl Debug for CapabilityLocals<'_> {
 }
 
 impl<'tcx> CapabilityLocals<'tcx> {
-    pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
-        let cap_local = &self[place.local];
-        cap_local.is_allocated() && cap_local.get_allocated().contains_expansion_from(place)
-    }
-
     pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
         self.0
             .iter_mut()

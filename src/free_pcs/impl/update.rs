@@ -190,10 +190,16 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let nearest_owned_place = to.nearest_owned_place(ctxt);
         let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, ctxt);
         tracing::debug!("Collapse to: {collapse_to:?} for {to:?}");
-        let mut result = if for_cap != CapabilityKind::Read {
-            self.collapse(collapse_to, place_capabilities, ctxt)?
-        } else {
+        let curr_cap = place_capabilities.get(collapse_to.into());
+        let mut result = if let Some(curr_cap) = curr_cap && curr_cap >= for_cap {
             vec![]
+        } else {
+            self.collapse(
+                collapse_to,
+                Some(for_cap),
+                place_capabilities,
+                ctxt,
+            )?
         };
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");

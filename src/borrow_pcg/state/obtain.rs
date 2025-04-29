@@ -7,7 +7,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::borrow_pcg::state::BorrowsState;
-use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary};
+use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
@@ -68,7 +68,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
         place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &FreePlaceCapabilitySummary<'tcx>,
         location: Location,
         obtain_reason: ObtainReason,
     ) -> Result<ExecutedActions<'tcx>, PcgError> {
@@ -85,7 +84,6 @@ impl<'tcx> BorrowsState<'tcx> {
             let extra_acts = self.expand_to(
                 place,
                 capabilities,
-                owned,
                 repacker,
                 obtain_reason,
                 location,
@@ -185,6 +183,7 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(actions)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn expand_place_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -193,7 +192,6 @@ impl<'tcx> BorrowsState<'tcx> {
         for_exclusive: bool,
         actions: &mut ExecutedActions<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &FreePlaceCapabilitySummary<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let target = expansion.target_place;
@@ -249,7 +247,6 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         to_place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &FreePlaceCapabilitySummary<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
         obtain_reason: ObtainReason,
         location: Location,
@@ -268,7 +265,6 @@ impl<'tcx> BorrowsState<'tcx> {
                 for_exclusive,
                 &mut actions,
                 capabilities,
-                owned,
                 ctxt,
             )? {
                 for rp in base.region_projections(ctxt) {

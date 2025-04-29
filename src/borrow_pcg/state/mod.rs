@@ -1,8 +1,6 @@
 use super::{
     action::BorrowPCGAction,
-    borrow_pcg_edge::{
-        BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, ToBorrowsEdge,
-    },
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeRef, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
     has_pcs_elem::LabelRegionProjection,
@@ -11,6 +9,7 @@ use super::{
     region_projection::RegionProjectionLabel,
     visitor::extract_regions,
 };
+use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     borrow_pcg::edge::{
@@ -41,7 +40,6 @@ use crate::{
     free_pcs::CapabilityKind,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 
 pub(crate) mod obtain;
 
@@ -201,7 +199,6 @@ impl<'tcx> BorrowsState<'tcx> {
         changed
     }
 
-
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
         self.graph.add_path_condition(pc)
     }
@@ -252,7 +249,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.latest.get(place)
     }
 
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(
         &mut self,
@@ -272,12 +268,6 @@ impl<'tcx> BorrowsState<'tcx> {
             assigned_place,
             assigned_place.ty(repacker).ty
         );
-        let assigned_cap = match kind {
-            BorrowKind::Mut {
-                kind: MutBorrowKind::Default,
-            } => CapabilityKind::Exclusive,
-            _ => CapabilityKind::Read,
-        };
         let borrow_edge = LocalBorrow::new(
             blocked_place,
             assigned_place.into(),
@@ -286,7 +276,6 @@ impl<'tcx> BorrowsState<'tcx> {
             region,
             repacker,
         );
-        let rp = borrow_edge.assigned_region_projection(repacker);
         // capabilities.insert(rp.place(), assigned_cap);
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge)

@@ -5,7 +5,6 @@ use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
 };
-use crate::borrow_pcg::visitor::extract_regions;
 use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -15,6 +14,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
+use crate::borrow_pcg::visitor::extract_regions;
 use crate::utils::{HasPlace, Place, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 use derive_more::{From, TryInto};
 use serde_json::json;

@@ -1,27 +1,26 @@
-use super::BorrowsVisitor;
-use crate::{
-    borrow_pcg::{
-        action::BorrowPCGAction,
-        borrow_pcg_edge::BorrowPCGEdge,
-        edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
-        path_condition::PathConditions,
-        region_projection::{
-            PcgRegion, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
-        },
-    },
-    pcg::PcgError,
-    rustc_interface::{
-        data_structures::fx::FxHashSet,
-        middle::{
-            mir::{Location, Operand},
-            ty::{self},
-        },
-    },
-    utils::{self, maybe_old::MaybeOldPlace, CompilerCtxt, PlaceSnapshot, SnapshotLocation},
+use super::PcgVisitor;
+use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
+use crate::borrow_pcg::edge::abstraction::{
+    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
+};
+use crate::borrow_pcg::path_condition::PathConditions;
+use crate::borrow_pcg::region_projection::{
+    PcgRegion, RegionProjection, RegionProjectionBaseLike,
+    RegionProjectionLabel,
+};
+use crate::rustc_interface::middle::mir::{
+    Location, Operand,
 };
 
-impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
-    /// Constructs a function call abstraction, if necessary.
+use crate::rustc_interface::data_structures::fx::FxHashSet;
+use crate::rustc_interface::middle::ty::{self};
+use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::{self, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
+
+use super::PcgError;
+
+impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(super) fn make_function_call_abstraction(
         &mut self,
         func: &Operand<'tcx>,
@@ -31,7 +30,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
     ) -> Result<(), PcgError> {
         // This is just a performance optimization
         if self
-            .state
+            .pcg
+            .borrow
             .graph()
             .has_function_call_abstraction_at(location)
         {
@@ -68,7 +68,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 let input_place: utils::Place<'tcx> = mir_place.into();
                 let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                     input_place,
-                    self.state.get_latest(input_place),
+                    self.pcg.borrow.get_latest(input_place),
                 ));
                 input_place.region_projections(self.ctxt)
             })
@@ -77,7 +77,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         let mut labelled_rps = FxHashSet::default();
         for arg in arg_region_projections.iter() {
             if arg.is_nested_in_local_ty(self.ctxt) {
-                self.state.label_region_projection(
+                self.pcg.borrow.label_region_projection(
                     arg,
                     Some(SnapshotLocation::before(location).into()),
                     self.ctxt,
@@ -90,7 +90,8 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
         let placeholder_targets = labelled_rps
             .iter()
             .flat_map(|rp| {
-                self.state
+                self.pcg
+                    .borrow
                     .graph()
                     .identify_placeholder_target(*rp, self.ctxt)
             })
@@ -132,7 +133,7 @@ impl<'tcx> BorrowsVisitor<'tcx, '_, '_> {
                 .collect();
             outputs.extend(result_projections);
             if !inputs.is_empty() && !outputs.is_empty() {
-                self.apply_action(mk_create_edge_action(inputs, outputs));
+                self.record_and_apply_action(mk_create_edge_action(inputs, outputs).into())?;
             }
         }
         Ok(())

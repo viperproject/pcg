@@ -100,7 +100,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 if let Some(self_expansion) = expansions.get(place) {
                     if other_expansion != self_expansion {
                         tracing::debug!("collapse to {:?}", place);
-                        self.collapse(*place, self_place_capabilities, repacker)?;
+                        self.collapse(*place, None, self_place_capabilities, repacker)?;
                         tracing::debug!("self: {:?}", self);
                         changed = true;
                         continue 'outer;
