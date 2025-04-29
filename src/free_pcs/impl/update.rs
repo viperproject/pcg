@@ -11,7 +11,7 @@ use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
     pcg::{place_capabilities::PlaceCapabilities, PCGUnsupportedError, PcgError},
     pcg_validity_assert,
-    rustc_interface::{ast::Mutability, middle::mir::RETURN_PLACE},
+    rustc_interface::ast::Mutability,
     utils::{
         corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt,
         LocalMutationIsAllowed, Place,

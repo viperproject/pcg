@@ -14,9 +14,7 @@ use derive_more::From;
 use itertools::Itertools;
 
 use crate::{
-    action::PcgActions,
     borrow_pcg::{
-        action::{actions::BorrowPCGActions, BorrowPCGActionKind},
         borrow_pcg_edge::BorrowPCGEdgeLike,
         graph::frozen::FrozenGraphRef,
     },
@@ -39,11 +37,11 @@ use crate::{
 
 use super::{
     combined::CombinedVisitor, domain::PcgDomain, place_capabilities::PlaceCapabilities,
-    DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase, PCGDebugData, Pcg, PcgError,
+    DataflowStmtPhase, DotGraphs, ErrorState, EvalStmtPhase, PCGDebugData, PcgError,
 };
 use crate::{
     borrow_pcg::engine::BorrowsEngine,
-    free_pcs::{engine::FpcsEngine, CapabilityKind},
+    free_pcs::engine::FpcsEngine,
     utils::CompilerCtxt,
 };
 
@@ -301,25 +299,6 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         statement_index: usize,
     ) {
         state.generate_dot_graph(phase.into(), statement_index);
-    }
-
-    fn regain_exclusive_capabilities_from_read_leafs(
-        &self,
-        owned_state: &mut CapabilityLocals<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        borrows: &FrozenGraphRef<'_, 'tcx>,
-    ) {
-        for caps in owned_state.capability_projections_mut() {
-            let leaves = caps.leaves(self.ctxt);
-
-            for place in leaves {
-                if capabilities.get(place.into()) == Some(CapabilityKind::Read)
-                    && !borrows.contains(place.into(), self.ctxt)
-                {
-                    capabilities.insert(place.into(), CapabilityKind::Exclusive);
-                }
-            }
-        }
     }
 
     #[must_use]

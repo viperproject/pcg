@@ -1,5 +1,4 @@
-use std::rc::Rc;
-
+use itertools::Itertools;
 use tracing::instrument;
 
 use crate::action::PcgAction;
@@ -27,16 +26,16 @@ use crate::rustc_interface::middle::mir::{
     self, Location, Operand, Rvalue, Statement, StatementKind, Terminator,
 };
 
+use crate::action::PcgActions;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
-use crate::rustc_interface::middle::ty::{self, BorrowKind};
+use crate::rustc_interface::middle::ty::{self};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, CompilerCtxt, HasPlace, Place, PlaceSnapshot, SnapshotLocation};
-use crate::{action::PcgActions, borrow_pcg::engine::BorrowsEngine};
 
-use super::{AnalysisObject, EvalStmtPhase, PCGUnsupportedError, Pcg, PcgEngine, PcgError};
+use super::{AnalysisObject, EvalStmtPhase, PCGUnsupportedError, Pcg, PcgError};
 
 pub(crate) struct CombinedVisitor<'pcg, 'mir, 'tcx> {
     pcg: &'pcg mut Pcg<'tcx>,
@@ -389,30 +388,6 @@ impl<'pcg, 'mir, 'tcx> CombinedVisitor<'pcg, 'mir, 'tcx> {
         Ok(())
     }
 
-    fn regain_exclusive_capabilities_from_read_leafs(&mut self) {
-        let frozen_graph = self.pcg.borrow.graph().frozen_graph();
-        for caps in self
-            .pcg
-            .owned
-            .data
-            .as_mut()
-            .unwrap()
-            .capability_projections_mut()
-        {
-            let leaves = caps.leaves(self.ctxt);
-
-            for place in leaves {
-                if self.pcg.capabilities.get(place.into()) == Some(CapabilityKind::Read)
-                    && !frozen_graph.contains(place.into(), self.ctxt)
-                {
-                    self.pcg
-                        .capabilities
-                        .insert(place.into(), CapabilityKind::Exclusive);
-                }
-            }
-        }
-    }
-
     #[tracing::instrument(skip(pcg, ctxt, tw, analysis_object, location))]
     pub(crate) fn visit(
         pcg: &'pcg mut Pcg<'tcx>,
@@ -425,6 +400,44 @@ impl<'pcg, 'mir, 'tcx> CombinedVisitor<'pcg, 'mir, 'tcx> {
         let visitor = Self::new(pcg, ctxt, tw, phase);
         let actions = visitor.apply(analysis_object, location)?;
         Ok(actions)
+    }
+
+    fn collapse_owned_places(&mut self) {
+        let mut actions = PcgActions::default();
+        for caps in self
+            .pcg
+            .owned
+            .data
+            .as_mut()
+            .unwrap()
+            .capability_projections_mut()
+        {
+            let mut expansions = caps
+                .expansions()
+                .clone()
+                .into_iter()
+                .sorted_by_key(|(p, _)| p.projection.len())
+                .collect::<Vec<_>>();
+            while let Some((base, expansion)) = expansions.pop() {
+                let expansion_places = base.expansion_places(&expansion, self.ctxt);
+                if expansion_places
+                    .iter()
+                    .all(|p| !self.pcg.borrow.graph().contains(*p, self.ctxt))
+                    && let Some(candidate_cap) =
+                        self.pcg.capabilities.get(expansion_places[0].into())
+                    && expansion_places
+                        .iter()
+                        .all(|p| self.pcg.capabilities.get((*p).into()) == Some(candidate_cap))
+                {
+                    actions.extend(
+                        caps.collapse(base, &mut self.pcg.capabilities, self.ctxt)
+                            .unwrap()
+                            .into(),
+                    );
+                }
+            }
+        }
+        self.record_actions(actions.into());
     }
 
     pub(crate) fn new(
@@ -721,9 +734,10 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
         match self.phase {
             EvalStmtPhase::PreOperands => {
                 self.perform_borrow_initial_pre_operand_actions(location)?;
+                self.collapse_owned_places();
                 for triple in self.tw.operand_triples.iter() {
                     self.actions
-                        .extend(self.pcg.requires(triple.pre(), self.ctxt)?.into());
+                        .extend(self.pcg.requires(triple.pre(), self.ctxt)?);
                 }
             }
             EvalStmtPhase::PostOperands => {
@@ -746,14 +760,11 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
                 self.visit_terminator_fallable(terminator, location)?
             }
         }
-        match self.phase {
-            EvalStmtPhase::PreMain => {
-                for triple in self.tw.main_triples.iter() {
-                    self.actions
-                        .extend(self.pcg.requires(triple.pre(), self.ctxt)?.into());
-                }
+        if self.phase == EvalStmtPhase::PreMain {
+            for triple in self.tw.main_triples.iter() {
+                self.actions
+                    .extend(self.pcg.requires(triple.pre(), self.ctxt)?);
             }
-            _ => {}
         }
         Ok(self.actions)
     }
@@ -786,7 +797,7 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
             .collect::<Vec<_>>();
         for node in to_restore {
             if let Some(place) = node.as_maybe_old_place() {
-                let blocked_cap = self.pcg.capabilities.get(place.into());
+                let blocked_cap = self.pcg.capabilities.get(place);
 
                 let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
                     CapabilityKind::Read
@@ -804,19 +815,14 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
             }
         }
         for blocked_place in edge.blocked_places(self.ctxt) {
-            match blocked_place {
-                MaybeRemotePlace::Local(place) => {
-                    for mut region_projection in place.region_projections(self.ctxt) {
-                        // Remove Placeholder label from the region projection
-                        region_projection.label = Some(RegionProjectionLabel::Placeholder);
-                        self.pcg.borrow.label_region_projection(
-                            &region_projection,
-                            None,
-                            self.ctxt,
-                        );
-                    }
+            if let MaybeRemotePlace::Local(place) = blocked_place {
+                for mut region_projection in place.region_projections(self.ctxt) {
+                    // Remove Placeholder label from the region projection
+                    region_projection.label = Some(RegionProjectionLabel::Placeholder);
+                    self.pcg
+                        .borrow
+                        .label_region_projection(&region_projection, None, self.ctxt);
                 }
-                _ => {}
             }
         }
 
@@ -868,7 +874,7 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
                     .insert((*place).into(), *capability_kind),
             },
         };
-        self.actions.push(action.into());
+        self.actions.push(action);
         Ok(result)
     }
 
@@ -893,8 +899,8 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
     /// arguments. At least for now this interferes with the implementation in
     /// the Prusti purified encoding for accessing the final value of a
     /// reference-typed function argument in its postcondition.
-    pub(crate) fn pack_old_and_dead_borrow_leaves<'slf, 'mir>(
-        &'slf mut self,
+    pub(crate) fn pack_old_and_dead_borrow_leaves<'mir>(
+        &mut self,
         location: Location,
     ) -> Result<(), PcgError> {
         let mut num_edges_prev = self.pcg.borrow.graph().num_edges();
@@ -955,7 +961,7 @@ impl<'tcx> CombinedVisitor<'_, '_, 'tcx> {
                 }
                 edges_to_trim
             }
-            let edges_to_trim = go(&mut self.pcg, self.ctxt, location);
+            let edges_to_trim = go(self.pcg, self.ctxt, location);
             if edges_to_trim.is_empty() {
                 break Ok(());
             }

@@ -2,7 +2,7 @@ use crate::{
     action::PcgActions, pcg::{AnalysisObject, EvalStmtPhase, Pcg, PcgError}, rustc_interface::middle::mir::Location, utils::{visitor::FallableVisitor, CompilerCtxt}
 };
 
-use super::{action::actions::BorrowPCGActions, visitor::BorrowsVisitor};
+use super::visitor::BorrowsVisitor;
 
 pub struct BorrowsEngine<'mir, 'tcx> {
     pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
