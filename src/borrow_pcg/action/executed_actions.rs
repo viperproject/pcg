@@ -20,10 +20,6 @@ impl<'tcx> ExecutedActions<'tcx> {
         self.actions.push(action.into());
     }
 
-    pub(crate) fn extend(&mut self, actions: ExecutedActions<'tcx>) {
-        self.actions.extend(actions.actions);
-    }
-
     pub(crate) fn actions(self) -> PcgActions<'tcx> {
         self.actions
     }
