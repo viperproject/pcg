@@ -2,7 +2,7 @@ use derive_more::{Deref, DerefMut};
 
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
@@ -39,7 +39,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
                 BorrowPCGActionKind::AddEdge {
                     edge:
                         BorrowPCGEdge {
-                            kind: BorrowPCGEdgeKind::BorrowFlow(edge),
+                            kind: BorrowPcgEdgeKind::BorrowFlow(edge),
                             conditions,
                             ..
                         },

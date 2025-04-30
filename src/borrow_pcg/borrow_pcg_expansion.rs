@@ -161,7 +161,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
 /// (e.g. {x↓'a} -> {x.f↓'a, x.g↓'a}) where the expanded part is in the Borrow
 /// PCG.
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub struct BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
+pub struct BorrowPcgExpansion<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
     pub(crate) expansion: Vec<P>,
     /// If this expansion is a deref, this is the label associated with the
@@ -173,7 +173,7 @@ pub struct BorrowPCGExpansion<'tcx, P = LocalNode<'tcx>> {
     _marker: PhantomData<&'tcx ()>,
 }
 
-impl<'tcx> BorrowPCGExpansion<'tcx> {
+impl<'tcx> BorrowPcgExpansion<'tcx> {
     fn is_mutable_deref_of_place_with_nested_region_projections(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx>,
@@ -183,7 +183,7 @@ impl<'tcx> BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -205,7 +205,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> MakePlaceOld<'tcx> for BorrowPcgExpansion<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
@@ -220,7 +220,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgExpansion<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "{{{}}} -> {{{}}}",
@@ -233,13 +233,13 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx> {
     fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
 
-impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
@@ -274,12 +274,12 @@ impl<'tcx> EdgeData<'tcx> for BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>
-    for BorrowPCGExpansion<'tcx, MaybeOldPlace<'tcx>>
+impl<'tcx> TryFrom<BorrowPcgExpansion<'tcx, LocalNode<'tcx>>>
+    for BorrowPcgExpansion<'tcx, MaybeOldPlace<'tcx>>
 {
     type Error = ();
-    fn try_from(expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>>) -> Result<Self, Self::Error> {
-        Ok(BorrowPCGExpansion {
+    fn try_from(expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>>) -> Result<Self, Self::Error> {
+        Ok(BorrowPcgExpansion {
             base: expansion.base.try_into()?,
             deref_blocked_region_projection_label: expansion.deref_blocked_region_projection_label,
             expansion: expansion
@@ -292,7 +292,7 @@ impl<'tcx> TryFrom<BorrowPCGExpansion<'tcx, LocalNode<'tcx>>>
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowPcgExpansion<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut elems = self.base.pcg_elems();
         elems.extend(self.expansion.iter_mut().flat_map(|p| p.pcg_elems()));
@@ -300,16 +300,16 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowPCGExpansion<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, T>> for BorrowPCGExpansion<'tcx>
+impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, T>> for BorrowPcgExpansion<'tcx>
 where
-    BorrowPCGExpansion<'tcx>: HasPcgElems<T>,
+    BorrowPcgExpansion<'tcx>: HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
         vec![]
     }
 }
 
-impl<'tcx> BorrowPCGExpansion<'tcx> {
+impl<'tcx> BorrowPcgExpansion<'tcx> {
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         if let BlockingNode::Place(p) = self.base {
             p.place().is_ref(repacker)
@@ -334,7 +334,7 @@ impl<'tcx> BorrowPCGExpansion<'tcx> {
 }
 
 impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
-    BorrowPCGExpansion<'tcx, P>
+    BorrowPcgExpansion<'tcx, P>
 {
     pub fn base(&self) -> P {
         self.base
@@ -351,7 +351,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         }
     }
 
-    pub(super) fn new(
+    pub(crate) fn new(
         base: P,
         expansion: PlaceExpansion<'tcx>,
         location: Location,
@@ -382,7 +382,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGExpansion<'tcx> {
+impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPcgExpansion<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "base": self.base.to_json(repacker),

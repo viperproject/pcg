@@ -1,6 +1,6 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -100,7 +100,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .map(|edge| edge.to_owned_edge())
             .collect::<Vec<_>>()
         {
-            if let BorrowPCGEdgeKind::Abstraction(_) = edge.kind() {
+            if let BorrowPcgEdgeKind::Abstraction(_) = edge.kind() {
                 continue;
             }
             if self.is_encapsulated_by_abstraction(&edge, repacker) {

@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
-        edge::{kind::BorrowPCGEdgeKind, outlives::BorrowFlowEdgeKind},
+        edge::{kind::BorrowPcgEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
@@ -144,11 +144,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for edge in self.edges_blocked_by(node, repacker) {
             match edge.kind {
-                BorrowPCGEdgeKind::Borrow(borrow_edge) => {
+                BorrowPcgEdgeKind::Borrow(borrow_edge) => {
                     let blocked = borrow_edge.blocked_place();
                     extend(blocked.into(), seen, &mut result, direct);
                 }
-                BorrowPCGEdgeKind::BorrowPCGExpansion(e) => {
+                BorrowPcgEdgeKind::BorrowPcgExpansion(e) => {
                     for node in e.blocked_nodes(repacker) {
                         if let PCGNode::RegionProjection(p) = node {
                             extend(
@@ -160,12 +160,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         }
                     }
                 }
-                BorrowPCGEdgeKind::Abstraction(abstraction_type) => {
+                BorrowPcgEdgeKind::Abstraction(abstraction_type) => {
                     for input in abstraction_type.inputs() {
                         extend(input.to_pcg_node(repacker), seen, &mut result, false);
                     }
                 }
-                BorrowPCGEdgeKind::BorrowFlow(outlives) => match &outlives.kind {
+                BorrowPcgEdgeKind::BorrowFlow(outlives) => match &outlives.kind {
                     BorrowFlowEdgeKind::Move => {
                         extend(
                             outlives.long().to_pcg_node(repacker),
