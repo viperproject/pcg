@@ -1,5 +1,4 @@
 use crate::action::PcgAction;
-use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
@@ -187,7 +186,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         match self.phase {
             EvalStmtPhase::PreOperands => {
                 self.perform_borrow_initial_pre_operand_actions(location)?;
-                self.collapse_owned_places();
+                self.collapse_owned_places()?;
                 for triple in self.tw.operand_triples.iter() {
                     self.require_triple(*triple, location)?;
                 }
@@ -297,10 +296,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
         Ok(())
-    }
-
-    fn record_actions(&mut self, actions: ExecutedActions<'tcx>) {
-        self.actions.extend(actions.actions());
     }
 
     #[tracing::instrument(skip(self))]
