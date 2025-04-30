@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BorrowPCGEdgeLike,
-        edge::kind::BorrowPCGEdgeKind,
+        edge::kind::BorrowPcgEdgeKind,
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
@@ -73,7 +73,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
         edge_idx: usize,
     ) {
         match edge.kind() {
-            BorrowPCGEdgeKind::BorrowPCGExpansion(deref_expansion) => {
+            BorrowPcgEdgeKind::BorrowPcgExpansion(deref_expansion) => {
                 for blocked in deref_expansion.blocked_nodes(self.ctxt()) {
                     let blocked_graph_node = self.insert_pcg_node(blocked);
                     for blocking in deref_expansion.blocked_by_nodes(self.ctxt()) {
@@ -86,7 +86,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                     }
                 }
             }
-            BorrowPCGEdgeKind::Borrow(borrow) => {
+            BorrowPcgEdgeKind::Borrow(borrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(borrow.blocked_place());
                 let assigned_region_projection = borrow
                     .assigned_region_projection(self.ctxt())
@@ -109,11 +109,11 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                     kind,
                 });
             }
-            BorrowPCGEdgeKind::Abstraction(abstraction) => {
+            BorrowPcgEdgeKind::Abstraction(abstraction) => {
                 self.constructor()
                     .insert_abstraction(abstraction, capabilities, edge_idx);
             }
-            BorrowPCGEdgeKind::BorrowFlow(member) => {
+            BorrowPcgEdgeKind::BorrowFlow(member) => {
                 let input_node = self.insert_pcg_node(member.long().into());
                 let output_node = self.insert_pcg_node(member.short().to_pcg_node(self.ctxt()));
                 self.constructor().edges.insert(GraphEdge::BorrowFlow {

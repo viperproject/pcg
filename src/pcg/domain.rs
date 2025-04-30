@@ -15,7 +15,7 @@ use std::{
 use crate::{
     action::PcgActions,
     borrow_pcg::{path_condition::PathCondition, state::BorrowsState},
-    free_pcs::triple::{Condition, Triple},
+    pcg::triple::Triple,
     rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
@@ -132,16 +132,6 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
 
     pub fn borrow_pcg(&self) -> &BorrowsState<'tcx> {
         &self.borrow
-    }
-
-    pub(crate) fn requires(
-        &mut self,
-        cond: Condition<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> std::result::Result<PcgActions<'tcx>, PcgError> {
-        self.owned
-            .locals_mut()
-            .requires(cond, repacker, &mut self.capabilities)
     }
 
     pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>) {

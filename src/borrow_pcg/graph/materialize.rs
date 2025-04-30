@@ -3,7 +3,7 @@ use derive_more::From;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef},
-        edge::kind::BorrowPCGEdgeKind,
+        edge::kind::BorrowPcgEdgeKind,
     },
     pcg::PCGNode,
     utils::CompilerCtxt,
@@ -36,7 +36,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut result = Vec::new();
         for edge in self.edges() {
             result.push(edge.into());
-            if let BorrowPCGEdgeKind::Borrow(edge) = edge.kind() {
+            if let BorrowPcgEdgeKind::Borrow(edge) = edge.kind() {
                 if self.contains(edge.deref_place(repacker), repacker) {
                     result.push(MaterializedEdge::Synthetic(SyntheticEdge::Alias(
                         AliasEdge {

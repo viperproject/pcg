@@ -33,13 +33,13 @@ use super::{
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::{env_feature_enabled, CompilerCtxt};
 
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
-    edges: FxHashMap<BorrowPCGEdgeKind<'tcx>, PathConditions>,
+    edges: FxHashMap<BorrowPcgEdgeKind<'tcx>, PathConditions>,
 }
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
@@ -83,7 +83,7 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn borrow_created_at(&self, location: mir::Location) -> Option<&LocalBorrow<'tcx>> {
         for edge in self.edges() {
-            if let BorrowPCGEdgeKind::Borrow(BorrowEdge::Local(borrow)) = edge.kind {
+            if let BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) = edge.kind {
                 if borrow.reserve_location() == location {
                     return Some(borrow);
                 }
@@ -92,7 +92,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         None
     }
 
-    pub(crate) fn common_edges(&self, other: &Self) -> FxHashSet<BorrowPCGEdgeKind<'tcx>> {
+    pub(crate) fn common_edges(&self, other: &Self) -> FxHashSet<BorrowPcgEdgeKind<'tcx>> {
         let mut common_edges = FxHashSet::default();
         for (edge_kind, _) in self.edges.iter() {
             if other.edges.contains_key(edge_kind) {
@@ -104,7 +104,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {
         for edge in self.edges() {
-            if let BorrowPCGEdgeKind::Abstraction(abstraction) = edge.kind() {
+            if let BorrowPcgEdgeKind::Abstraction(abstraction) = edge.kind() {
                 if abstraction.is_function_call() && abstraction.location() == location {
                     return true;
                 }
@@ -115,7 +115,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn redirect_edge(
         &mut self,
-        mut edge: BorrowPCGEdgeKind<'tcx>,
+        mut edge: BorrowPcgEdgeKind<'tcx>,
         from: LocalNode<'tcx>,
         to: LocalNode<'tcx>,
     ) {
@@ -257,7 +257,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), repacker);
             for edge in edges_blocking {
                 match edge.kind() {
-                    BorrowPCGEdgeKind::Abstraction(abstraction_edge) => {
+                    BorrowPcgEdgeKind::Abstraction(abstraction_edge) => {
                         let inputs = abstraction_edge
                             .inputs()
                             .into_iter()
@@ -276,7 +276,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             repacker,
                         );
                     }
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(e)
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(e)
                         if e.is_owned_expansion(repacker)
                             && ef
                                 .current()
@@ -322,7 +322,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'slf self,
     ) -> impl Iterator<Item = &'slf AbstractionType<'tcx>> + 'slf {
         self.edges().filter_map(|edge| match edge.kind {
-            BorrowPCGEdgeKind::Abstraction(abstraction) => Some(abstraction),
+            BorrowPcgEdgeKind::Abstraction(abstraction) => Some(abstraction),
             _ => None,
         })
     }
@@ -331,7 +331,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'slf self,
     ) -> impl Iterator<Item = Conditioned<&'slf AbstractionType<'tcx>>> + 'slf {
         self.edges().filter_map(|edge| match edge.kind {
-            BorrowPCGEdgeKind::Abstraction(abstraction) => Some(Conditioned {
+            BorrowPcgEdgeKind::Abstraction(abstraction) => Some(Conditioned {
                 conditions: edge.conditions().clone(),
                 value: abstraction,
             }),
@@ -341,7 +341,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
         self.edges().filter_map(|edge| match &edge.kind() {
-            BorrowPCGEdgeKind::Borrow(reborrow) => Some(Conditioned {
+            BorrowPcgEdgeKind::Borrow(reborrow) => Some(Conditioned {
                 conditions: edge.conditions().clone(),
                 value: reborrow.clone(),
             }),

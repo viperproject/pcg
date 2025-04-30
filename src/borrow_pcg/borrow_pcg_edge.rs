@@ -4,7 +4,7 @@ use rustc_interface::{
 };
 
 use super::{
-    borrow_pcg_expansion::BorrowPCGExpansion,
+    borrow_pcg_expansion::BorrowPcgExpansion,
     coupling_graph_constructor::CGNode,
     edge::{
         borrow::RemoteBorrow, outlives::BorrowFlowEdge
@@ -16,7 +16,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel},
 };
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
@@ -30,14 +30,14 @@ use crate::{
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPCGEdgeRef<'tcx, 'graph> {
-    pub(crate) kind: &'graph BorrowPCGEdgeKind<'tcx>,
+    pub(crate) kind: &'graph BorrowPcgEdgeKind<'tcx>,
     pub(crate) conditions: &'graph PathConditions,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPCGEdge<'tcx> {
     pub(crate) conditions: PathConditions,
-    pub(crate) kind: BorrowPCGEdgeKind<'tcx>,
+    pub(crate) kind: BorrowPcgEdgeKind<'tcx>,
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
@@ -72,7 +72,7 @@ impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdge<'tcx> {
 }
 
 pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
-    fn kind(&self) -> &BorrowPCGEdgeKind<'tcx>;
+    fn kind(&self) -> &BorrowPcgEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
     fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
 
@@ -93,7 +93,7 @@ pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
 }
 
 impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
-    fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
+    fn kind(&self) -> &BorrowPcgEdgeKind<'tcx> {
         &self.kind
     }
 
@@ -107,7 +107,7 @@ impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
 }
 
 impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
-    fn kind(&self) -> &'graph BorrowPCGEdgeKind<'tcx> {
+    fn kind(&self) -> &'graph BorrowPcgEdgeKind<'tcx> {
         self.kind
     }
 
@@ -416,11 +416,11 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
         self.conditions.valid_for_path(path)
     }
 
-    pub fn kind(&self) -> &BorrowPCGEdgeKind<'tcx> {
+    pub fn kind(&self) -> &BorrowPcgEdgeKind<'tcx> {
         &self.kind
     }
 
-    pub(crate) fn new(kind: BorrowPCGEdgeKind<'tcx>, conditions: PathConditions) -> Self {
+    pub(crate) fn new(kind: BorrowPcgEdgeKind<'tcx>, conditions: PathConditions) -> Self {
         Self { conditions, kind }
     }
 }
@@ -459,7 +459,7 @@ impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
 
 impl<'tcx, T> HasPcgElems<T> for BorrowPCGEdge<'tcx>
 where
-    BorrowPCGEdgeKind<'tcx>: HasPcgElems<T>,
+    BorrowPcgEdgeKind<'tcx>: HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut T> {
         self.kind.pcg_elems()
@@ -467,9 +467,9 @@ where
 }
 
 edgedata_enum!(
-    BorrowPCGEdgeKind<'tcx>,
+    BorrowPcgEdgeKind<'tcx>,
     Borrow(BorrowEdge<'tcx>),
-    BorrowPCGExpansion(BorrowPCGExpansion<'tcx>),
+    BorrowPcgExpansion(BorrowPcgExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
     BorrowFlow(BorrowFlowEdge<'tcx>),
 );
@@ -478,11 +478,11 @@ pub(crate) trait ToBorrowsEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
 }
 
-impl<'tcx> ToBorrowsEdge<'tcx> for BorrowPCGExpansion<'tcx, LocalNode<'tcx>> {
+impl<'tcx> ToBorrowsEdge<'tcx> for BorrowPcgExpansion<'tcx, LocalNode<'tcx>> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::BorrowPCGExpansion(self),
+            kind: BorrowPcgEdgeKind::BorrowPcgExpansion(self),
         }
     }
 }
@@ -491,7 +491,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionType<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::Abstraction(self),
+            kind: BorrowPcgEdgeKind::Abstraction(self),
         }
     }
 }
@@ -500,7 +500,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::Borrow(self),
+            kind: BorrowPcgEdgeKind::Borrow(self),
         }
     }
 }
@@ -509,7 +509,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowFlowEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
         BorrowPCGEdge {
             conditions,
-            kind: BorrowPCGEdgeKind::BorrowFlow(self),
+            kind: BorrowPcgEdgeKind::BorrowFlow(self),
         }
     }
 }

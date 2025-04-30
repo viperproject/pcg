@@ -9,7 +9,11 @@ use std::cmp::Ordering;
 use crate::{
     action::PcgActions,
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
-    pcg::{place_capabilities::PlaceCapabilities, PCGUnsupportedError, PcgError},
+    pcg::{
+        place_capabilities::PlaceCapabilities,
+        triple::{PlaceCondition, Triple},
+        PCGUnsupportedError, PcgError,
+    },
     pcg_validity_assert,
     rustc_interface::ast::Mutability,
     utils::{
@@ -18,74 +22,71 @@ use crate::{
     },
 };
 
-use super::{
-    triple::{Condition, Triple},
-    CapabilityLocals,
-};
+use super::CapabilityLocals;
 
 impl<'tcx> CapabilityLocals<'tcx> {
-    #[tracing::instrument(skip(self, repacker, place_capabilities))]
-    pub(crate) fn requires(
-        &mut self,
-        cond: Condition<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-        place_capabilities: &mut PlaceCapabilities<'tcx>,
-    ) -> Result<PcgActions<'tcx>, PcgError> {
-        let ops = match cond {
-            Condition::RemoveCapability(place) => {
-                place_capabilities.remove(place.into());
-                PcgActions::default()
-            }
-            Condition::Unalloc(_) => PcgActions::default(),
-            Condition::AllocateOrDeallocate(local) => {
-                self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
-                place_capabilities.insert(local.into(), CapabilityKind::Write);
-                PcgActions::default()
-            }
-            Condition::Capability(place, cap) => {
-                if place.contains_unsafe_deref(repacker) {
-                    return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
-                }
-                let nearest_owned_place = place.nearest_owned_place(repacker);
-                let cp = self[nearest_owned_place.local].get_allocated_mut();
-                let result = cp.repack(place, place_capabilities, repacker, cap)?;
-                if nearest_owned_place != place {
-                    match nearest_owned_place.ref_mutability(repacker) {
-                        Some(Mutability::Mut) => {
-                            place_capabilities.remove(nearest_owned_place.into());
-                        }
-                        Some(Mutability::Not) => {
-                            place_capabilities
-                                .insert(nearest_owned_place.into(), CapabilityKind::Read);
-                        }
-                        None => unreachable!(),
-                    }
-                }
-                result
-            }
-            Condition::Return => PcgActions::default(),
-        };
-        self.check_pre_satisfied(cond, place_capabilities, repacker);
-        Ok(ops)
-    }
+    // #[tracing::instrument(skip(self, repacker, place_capabilities))]
+    // pub(crate) fn requires(
+    //     &mut self,
+    //     cond: PlaceCondition<'tcx>,
+    //     repacker: CompilerCtxt<'_, 'tcx>,
+    //     place_capabilities: &mut PlaceCapabilities<'tcx>,
+    // ) -> Result<PcgActions<'tcx>, PcgError> {
+    //     let ops = match cond {
+    //         PlaceCondition::RemoveCapability(place) => {
+    //             place_capabilities.remove(place.into());
+    //             PcgActions::default()
+    //         }
+    //         PlaceCondition::Unalloc(_) => PcgActions::default(),
+    //         PlaceCondition::AllocateOrDeallocate(local) => {
+    //             self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
+    //             place_capabilities.insert(local.into(), CapabilityKind::Write);
+    //             PcgActions::default()
+    //         }
+    //         PlaceCondition::Capability(place, cap) => {
+    //             if place.contains_unsafe_deref(repacker) {
+    //                 return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+    //             }
+    //             let nearest_owned_place = place.nearest_owned_place(repacker);
+    //             let cp = self[nearest_owned_place.local].get_allocated_mut();
+    //             let result = cp.repack(place, place_capabilities, repacker, cap)?;
+    //             if nearest_owned_place != place {
+    //                 match nearest_owned_place.ref_mutability(repacker) {
+    //                     Some(Mutability::Mut) => {
+    //                         place_capabilities.remove(nearest_owned_place.into());
+    //                     }
+    //                     Some(Mutability::Not) => {
+    //                         place_capabilities
+    //                             .insert(nearest_owned_place.into(), CapabilityKind::Read);
+    //                     }
+    //                     None => unreachable!(),
+    //                 }
+    //             }
+    //             result
+    //         }
+    //         PlaceCondition::Return => PcgActions::default(),
+    //     };
+    //     self.check_pre_satisfied(cond, place_capabilities, repacker);
+    //     Ok(ops)
+    // }
 
     #[tracing::instrument(skip(self, capabilities, repacker))]
     fn check_pre_satisfied(
         &self,
-        pre: Condition<'tcx>,
+        pre: PlaceCondition<'tcx>,
         capabilities: &PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         match pre {
-            Condition::RemoveCapability(_place) => {}
-            Condition::Unalloc(local) => {
+            PlaceCondition::RemoveCapability(_place) => {}
+            PlaceCondition::Unalloc(local) => {
                 assert!(
                     self[local].is_unallocated(),
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
             }
-            Condition::AllocateOrDeallocate(_local) => {}
-            Condition::Capability(place, required_cap) => {
+            PlaceCondition::AllocateOrDeallocate(_local) => {}
+            PlaceCondition::Capability(place, required_cap) => {
                 match required_cap {
                     CapabilityKind::Read => {
                         // TODO
@@ -120,7 +121,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     }
                 }
             }
-            Condition::Return => {
+            PlaceCondition::Return => {
                 // assert!(
                 //     capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
                 // );
@@ -137,18 +138,18 @@ impl<'tcx> CapabilityLocals<'tcx> {
             return;
         };
         match post {
-            Condition::Return => unreachable!(),
-            Condition::RemoveCapability(place) => {
+            PlaceCondition::Return => unreachable!(),
+            PlaceCondition::RemoveCapability(place) => {
                 place_capabilities.remove(place.into());
             }
-            Condition::Unalloc(local) => {
+            PlaceCondition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;
             }
-            Condition::AllocateOrDeallocate(local) => {
+            PlaceCondition::AllocateOrDeallocate(local) => {
                 self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
                 place_capabilities.insert(local.into(), CapabilityKind::Write);
             }
-            Condition::Capability(place, cap) => {
+            PlaceCondition::Capability(place, cap) => {
                 place_capabilities.insert(place.into(), cap);
             }
         }
@@ -179,7 +180,6 @@ impl<'tcx> CapabilityProjections<'tcx> {
         current
     }
 
-    #[tracing::instrument(skip(self, ctxt))]
     fn repack(
         &mut self,
         to: Place<'tcx>,
@@ -191,15 +191,12 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, ctxt);
         tracing::debug!("Collapse to: {collapse_to:?} for {to:?}");
         let curr_cap = place_capabilities.get(collapse_to.into());
-        let mut result = if let Some(curr_cap) = curr_cap && curr_cap >= for_cap {
+        let mut result = if let Some(curr_cap) = curr_cap
+            && curr_cap >= for_cap
+        {
             vec![]
         } else {
-            self.collapse(
-                collapse_to,
-                Some(for_cap),
-                place_capabilities,
-                ctxt,
-            )?
+            self.collapse(collapse_to, Some(for_cap), place_capabilities, ctxt)?
         };
         tracing::debug!("Post collapse result: {result:?}");
         tracing::debug!("Post collapse self: {self:?}");

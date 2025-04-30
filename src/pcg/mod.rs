@@ -9,8 +9,9 @@ mod domain;
 mod node;
 mod successor;
 
-pub(crate) mod visitor;
 pub(crate) mod place_capabilities;
+pub(crate) mod triple;
+pub(crate) mod visitor;
 
 pub use engine::*;
 pub use domain::*;
