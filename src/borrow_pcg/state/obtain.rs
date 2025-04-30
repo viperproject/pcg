@@ -10,7 +10,6 @@ use crate::borrow_pcg::state::BorrowsState;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
-use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -59,129 +58,8 @@ pub(crate) enum ObtainReason {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    /// Ensures that the place is expanded to the given place, with a certain
-    /// capability.
-    ///
-    /// This also handles corresponding region projections of the place.
-    pub(crate) fn obtain(
-        &mut self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-        place: Place<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        location: Location,
-        obtain_reason: ObtainReason,
-    ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        let mut actions = ExecutedActions::new();
-        if obtain_reason.min_post_obtain_capability() != CapabilityKind::Read {
-            actions.extend(self.upgrade_closest_root_to_exclusive(
-                place,
-                capabilities,
-                repacker,
-            )?);
-        }
 
-        if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(
-                place,
-                capabilities,
-                repacker,
-                obtain_reason,
-                location,
-            )?;
-            actions.extend(extra_acts);
-        }
-        if !place.is_owned(repacker) {
-            pcg_validity_assert!(
-                capabilities.get(place.into()).is_some(),
-                "{:?}: Place {:?} does not have a capability after obtain {:?}",
-                location,
-                place,
-                obtain_reason
-            );
-            pcg_validity_assert!(
-                capabilities.get(place.into()).unwrap()
-                    >= obtain_reason.min_post_obtain_capability(),
-                "{:?} Capability {:?} for {:?} is not greater than {:?}",
-                location,
-                capabilities.get(place.into()).unwrap(),
-                place,
-                obtain_reason.min_post_obtain_capability()
-            );
-        }
-        Ok(actions)
-    }
 
-    pub(crate) fn upgrade_closest_root_to_exclusive(
-        &mut self,
-        place: Place<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        // It's possible that `place` is not in the PCG, `expand_root` is the leaf
-        // node from which place will be expanded to.
-
-        let mut expand_root = place;
-        while capabilities.get(expand_root.into()).is_none() {
-            if expand_root.is_owned(repacker) {
-                return Ok(ExecutedActions::new());
-            }
-            expand_root = expand_root.parent_place().unwrap();
-        }
-
-        // The expand_root may have capability read only. We upgrade it to
-        // Exclusive, then we change all Read permissions from `expand_root`'s
-        // parents to be None instead to ensure they are no longer accessible.
-
-        if !expand_root.is_owned(repacker)
-            && capabilities.get(expand_root.into()) == Some(CapabilityKind::Read)
-        {
-            self.upgrade_read_to_exclusive(expand_root, capabilities, repacker)
-        } else {
-            Ok(ExecutedActions::new())
-        }
-    }
-
-    pub(crate) fn upgrade_read_to_exclusive(
-        &mut self,
-        place: Place<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        let mut actions = ExecutedActions::new();
-        self.record_and_apply_action(
-            BorrowPCGAction::restore_capability(place.into(), CapabilityKind::Exclusive),
-            &mut actions,
-            capabilities,
-            repacker,
-        )?;
-        actions.extend(self.remove_read_permission_upwards(place, capabilities, repacker)?);
-        Ok(actions)
-    }
-
-    pub(crate) fn remove_read_permission_upwards(
-        &mut self,
-        mut current: Place<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<ExecutedActions<'tcx>, PcgError> {
-        let mut actions = ExecutedActions::new();
-        while !current.is_owned(repacker)
-            && capabilities.get(current.into()) == Some(CapabilityKind::Read)
-        {
-            self.record_and_apply_action(
-                BorrowPCGAction::weaken(current, CapabilityKind::Read, None),
-                &mut actions,
-                capabilities,
-                repacker,
-            )?;
-            let parent = match current.parent_place() {
-                Some(parent) => parent,
-                None => break,
-            };
-            current = parent;
-        }
-        Ok(actions)
-    }
 
     #[allow(clippy::too_many_arguments)]
     fn expand_place_one_level(
@@ -243,7 +121,7 @@ impl<'tcx> BorrowsState<'tcx> {
     /// Inserts edges to ensure that the borrow PCG is expanded to at least
     /// `to_place`. We assume that any unblock operations have already been
     /// performed.
-    fn expand_to(
+    pub(crate) fn expand_to(
         &mut self,
         to_place: Place<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,

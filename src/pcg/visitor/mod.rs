@@ -31,6 +31,7 @@ use super::{AnalysisObject, EvalStmtPhase, PCGUnsupportedError, Pcg, PcgError};
 
 mod assign;
 mod function_call;
+mod obtain;
 
 pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
     pcg: &'pcg mut Pcg<'tcx>,
@@ -174,14 +175,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                     let place: utils::Place<'tcx> = (*place).into();
                     if !place.is_owned(self.ctxt) {
                         let expansion_reason = ObtainReason::FakeRead;
-                        let expansion_actions = self.pcg.borrow.obtain(
-                            self.ctxt,
-                            place,
-                            &mut self.pcg.capabilities,
-                            location,
-                            expansion_reason,
-                        )?;
-                        self.record_actions(expansion_actions);
+                        self.obtain(place, location, expansion_reason)?;
                     }
                 }
             }
@@ -225,14 +219,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                             }
                         }
                         let obtain_reason = ObtainReason::AssignTarget;
-                        let obtain_actions = self.pcg.borrow.obtain(
-                            self.ctxt,
-                            target,
-                            &mut self.pcg.capabilities,
-                            location,
-                            obtain_reason,
-                        )?;
-                        self.actions.extend(obtain_actions.actions());
+                        self.obtain(target, location, obtain_reason)?;
 
                         if !target.is_owned(self.ctxt) {
                             if let Some(target_cap) = self.pcg.capabilities.get(target.into()) {
@@ -307,14 +294,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                         ObtainReason::MoveOperand
                     };
                     let place: utils::Place<'tcx> = (*place).into();
-                    let expansion_actions = self.pcg.borrow.obtain(
-                        self.ctxt,
-                        place,
-                        &mut self.pcg.capabilities,
-                        location,
-                        expansion_reason,
-                    )?;
-                    self.record_actions(expansion_actions);
+                    self.obtain(place, location, expansion_reason)?;
                 }
                 _ => {}
             },
@@ -410,14 +390,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                         _ => ObtainReason::RValueSimpleRead,
                     };
                     if this.phase == EvalStmtPhase::PreOperands {
-                        let expansion_actions = this.pcg.borrow.obtain(
-                            this.ctxt,
-                            place.into(),
-                            &mut this.pcg.capabilities,
-                            location,
-                            expansion_reason,
-                        )?;
-                        this.record_actions(expansion_actions);
+                        this.obtain(place.into(), location, expansion_reason)?;
                     }
                 }
             }
@@ -694,12 +667,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.record_and_apply_action(upgrade_action.into())?;
             }
             if !blocked_place.is_owned(self.ctxt) {
-                let actions = self.pcg.borrow.remove_read_permission_upwards(
-                    blocked_place,
-                    &mut self.pcg.capabilities,
-                    self.ctxt,
-                )?;
-                self.actions.extend(actions.actions());
+                self.remove_read_permission_upwards(blocked_place)?;
             }
             for place in blocked_place.iter_places(self.ctxt) {
                 for rp in place.region_projections(self.ctxt).into_iter() {
