@@ -30,18 +30,15 @@ use crate::{
 };
 use crate::{
     borrow_pcg::{
-        action::executed_actions::ExecutedActions, edge::outlives::BorrowFlowEdge,
+        edge::outlives::BorrowFlowEdge,
         region_projection::RegionProjection,
     },
-    pcg::PcgError,
     utils::remote::RemotePlace,
 };
 use crate::{
     free_pcs::CapabilityKind,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
-
-pub(crate) mod obtain;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BorrowsState<'tcx> {
@@ -156,28 +153,6 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
         removed
-    }
-
-    pub(crate) fn record_and_apply_action(
-        &mut self,
-        action: BorrowPCGAction<'tcx>,
-        actions: &mut ExecutedActions<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<(), PcgError> {
-        let changed = self.apply_action(action.clone(), capabilities, ctxt)?;
-        if changed {
-            actions.record(action, ctxt);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
-        &self,
-        node: T,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.contains(node.into(), repacker)
     }
 
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {

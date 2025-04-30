@@ -97,22 +97,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let capability_projs = self.pcg.owned.locals_mut()[base.local].get_allocated_mut();
             if capability_projs.contains_expansion_from(base) {
                 return Ok(false);
-            } else {
-                if expansion.kind.is_box() && capability.is_shallow_exclusive() {
-                    self.record_and_apply_action(
-                        RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place)
-                            .into(),
-                    )?;
-                } else {
-                    self.record_and_apply_action(
-                        RepackOp::Expand(
-                            expansion.base_place(),
-                            expansion.target_place,
-                            capability,
-                        )
+            } else if expansion.kind.is_box() && capability.is_shallow_exclusive() {
+                self.record_and_apply_action(
+                    RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place)
                         .into(),
-                    )?;
-                }
+                )?;
+            } else {
+                self.record_and_apply_action(
+                    RepackOp::Expand(
+                        expansion.base_place(),
+                        expansion.target_place,
+                        capability,
+                    )
+                    .into(),
+                )?;
             }
         } else {
             let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(

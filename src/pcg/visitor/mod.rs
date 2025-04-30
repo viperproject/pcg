@@ -15,7 +15,7 @@ use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, CompilerCtxt, HasPlace, Place, ShallowExpansion};
+use crate::utils::{self, CompilerCtxt, HasPlace, Place};
 
 use super::{AnalysisObject, EvalStmtPhase, PCGUnsupportedError, Pcg, PcgError};
 
@@ -114,16 +114,13 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         self.super_operand_fallable(operand, location)?;
-        match self.phase {
-            EvalStmtPhase::PostMain => {
-                if let Operand::Move(place) = operand {
-                    let place: utils::Place<'tcx> = (*place).into();
-                    self.record_and_apply_action(
-                        BorrowPCGAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
-                    )?;
-                }
+        if self.phase == EvalStmtPhase::PostMain {
+            if let Operand::Move(place) = operand {
+                let place: utils::Place<'tcx> = (*place).into();
+                self.record_and_apply_action(
+                    BorrowPCGAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
+                )?;
             }
-            _ => {}
         }
         Ok(())
     }
@@ -373,7 +370,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         self.pcg
                             .capabilities
                             .insert((*base_place).into(), retained_cap);
-                        capability_projections.expansions.remove(&base_place);
+                        capability_projections.expansions.remove(base_place);
                         true
                     }
                     _ => unreachable!(),

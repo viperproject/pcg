@@ -9,7 +9,7 @@ use crate::{
 
 use super::PcgVisitor;
 
-impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     #[tracing::instrument(skip(self, location))]
     pub(crate) fn require_triple(
         &mut self,

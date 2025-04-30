@@ -13,7 +13,7 @@ use crate::utils::{self};
 
 use super::{EvalStmtPhase, PcgError};
 
-impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn perform_statement_actions(
         &mut self,
         statement: &Statement<'tcx>,
