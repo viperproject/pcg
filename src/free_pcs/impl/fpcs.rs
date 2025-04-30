@@ -13,7 +13,6 @@ use crate::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
     },
-    utils::Place,
 };
 use derive_more::{Deref, DerefMut};
 
@@ -35,12 +34,6 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
 
     pub(crate) fn locals_mut(&mut self) -> &mut CapabilityLocals<'tcx> {
         self.data.as_mut().unwrap()
-    }
-
-    pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
-        self.locals()[place.local]
-            .get_allocated()
-            .contains_expansion_from(place)
     }
 
     pub(crate) fn bridge(

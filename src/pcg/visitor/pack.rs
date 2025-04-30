@@ -12,7 +12,7 @@ use crate::rustc_interface::middle::mir::Location;
 use crate::utils::{CompilerCtxt, HasPlace};
 use super::{Pcg, PcgError};
 
-impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+impl PcgVisitor<'_, '_, '_> {
     /// Removes leaves that are old or dead (based on the borrow checker). This
     /// function should called prior to evaluating the effect of the statement
     /// at `location`.

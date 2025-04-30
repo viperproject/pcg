@@ -7,18 +7,15 @@
 use std::cmp::Ordering;
 
 use crate::{
-    action::PcgActions,
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections, RepackOp},
+    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     pcg::{
         place_capabilities::PlaceCapabilities,
         triple::{PlaceCondition, Triple},
-        PCGUnsupportedError, PcgError,
     },
     pcg_validity_assert,
-    rustc_interface::ast::Mutability,
     utils::{
-        corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt,
-        LocalMutationIsAllowed, Place,
+        display::DisplayWithCompilerCtxt, CompilerCtxt,
+        LocalMutationIsAllowed,
     },
 };
 
@@ -153,106 +150,5 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 place_capabilities.insert(place.into(), cap);
             }
         }
-    }
-}
-
-impl<'tcx> CapabilityProjections<'tcx> {
-    // TODO: Check that this is correct w.r.t capabilities
-    pub(crate) fn place_to_collapse_to(
-        &self,
-        to: Place<'tcx>,
-        _for_cap: CapabilityKind,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Place<'tcx> {
-        for place in to.iter_places(repacker).into_iter().rev() {
-            if self.contains_expansion_to(place, repacker) {
-                return place;
-            }
-        }
-        to.local.into()
-    }
-
-    fn get_longest_prefix(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Place<'tcx> {
-        let mut current = place;
-        while !self.contains_expansion_to(current, ctxt) {
-            current = current.parent_place().unwrap();
-        }
-        current
-    }
-
-    fn repack(
-        &mut self,
-        to: Place<'tcx>,
-        place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-        for_cap: CapabilityKind,
-    ) -> Result<PcgActions<'tcx>, PcgError> {
-        let nearest_owned_place = to.nearest_owned_place(ctxt);
-        let collapse_to = self.place_to_collapse_to(nearest_owned_place, for_cap, ctxt);
-        tracing::debug!("Collapse to: {collapse_to:?} for {to:?}");
-        let curr_cap = place_capabilities.get(collapse_to.into());
-        let mut result = if let Some(curr_cap) = curr_cap
-            && curr_cap >= for_cap
-        {
-            vec![]
-        } else {
-            self.collapse(collapse_to, Some(for_cap), place_capabilities, ctxt)?
-        };
-        tracing::debug!("Post collapse result: {result:?}");
-        tracing::debug!("Post collapse self: {self:?}");
-        let prefix = self.get_longest_prefix(nearest_owned_place, ctxt);
-        if prefix != nearest_owned_place && !self.contains_expansion_to(nearest_owned_place, ctxt) {
-            result.extend(self.expand(
-                prefix,
-                CorrectedPlace::new(nearest_owned_place, ctxt),
-                for_cap,
-                place_capabilities,
-                ctxt,
-            )?);
-        }
-        // TODO: Handle upgrading to read properly by ensuring that the node is a leaf
-        // and removing read perms from the parents
-        if (for_cap == CapabilityKind::Exclusive || for_cap == CapabilityKind::Write)
-            && place_capabilities.get(to.into()) == Some(CapabilityKind::Read)
-        {
-            place_capabilities.insert(to.into(), CapabilityKind::Exclusive);
-        }
-        if to != nearest_owned_place {
-            match nearest_owned_place.ref_mutability(ctxt) {
-                Some(Mutability::Mut) => {
-                    place_capabilities.remove(nearest_owned_place.into());
-                }
-                Some(Mutability::Not) => {
-                    place_capabilities.insert(nearest_owned_place.into(), CapabilityKind::Read);
-                }
-                None => panic!(
-                    "Repack {}: No mutability for {}: {:?}",
-                    to.to_short_string(ctxt),
-                    nearest_owned_place.to_short_string(ctxt),
-                    nearest_owned_place.ty(ctxt)
-                ),
-            }
-        } else {
-            let current_capability = match place_capabilities.get(to.into()) {
-                Some(cap) => cap,
-                None => {
-                    // The loan for this place has just expired.
-                    // TODO: Make interaction between borrow and owned PCG more robust.
-                    place_capabilities.insert(to.into(), for_cap);
-                    return Ok(result.into());
-                    // let err_msg =
-                    //     format!("Place {} has no capability", to.to_short_string(repacker));
-                    // tracing::error!("{err_msg}");
-                    // panic!("{err_msg}");
-                }
-            };
-            if current_capability == CapabilityKind::Exclusive && for_cap == CapabilityKind::Write {
-                result.push(RepackOp::Weaken(to, current_capability, for_cap));
-                place_capabilities.insert(to.into(), for_cap);
-            }
-        }
-        tracing::debug!("Result: {result:?}");
-        tracing::debug!("Self: {self:?}");
-        Ok(result.into())
     }
 }
