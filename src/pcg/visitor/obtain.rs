@@ -209,7 +209,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    fn collapse(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> Result<(), PcgError> {
+    pub(crate) fn collapse(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> Result<(), PcgError> {
         let capability_projs = self.pcg.owned.locals_mut()[place.local].get_allocated_mut();
         let expansions = capability_projs
             .expansions

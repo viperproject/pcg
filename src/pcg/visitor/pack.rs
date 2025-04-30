@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use super::PcgVisitor;
-use crate::action::PcgActions;
+use super::{Pcg, PcgError};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
@@ -10,7 +10,6 @@ use crate::free_pcs::CapabilityKind;
 use crate::pcg::{MaybeHasLocation, PCGNode};
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::{CompilerCtxt, HasPlace};
-use super::{Pcg, PcgError};
 
 impl PcgVisitor<'_, '_, '_> {
     /// Removes leaves that are old or dead (based on the borrow checker). This
@@ -109,15 +108,14 @@ impl PcgVisitor<'_, '_, '_> {
         }
     }
 
-    pub(crate) fn collapse_owned_places(&mut self) {
-        let mut actions = PcgActions::default();
+    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
         for caps in self
             .pcg
             .owned
             .data
-            .as_mut()
+            .clone()
             .unwrap()
-            .capability_projections_mut()
+            .capability_projections()
         {
             let mut expansions = caps
                 .expansions()
@@ -136,11 +134,7 @@ impl PcgVisitor<'_, '_, '_> {
                         .iter()
                         .all(|p| self.pcg.capabilities.get((*p).into()) == Some(candidate_cap))
                 {
-                    actions.extend(
-                        caps.collapse(base, None, &mut self.pcg.capabilities, self.ctxt)
-                            .unwrap()
-                            .into(),
-                    );
+                    self.collapse(base, candidate_cap)?;
                     if base.projection.is_empty()
                         && self.pcg.capabilities.get(base.into()) == Some(CapabilityKind::Read)
                     {
@@ -151,6 +145,6 @@ impl PcgVisitor<'_, '_, '_> {
                 }
             }
         }
-        self.record_actions(actions.into());
+        Ok(())
     }
 }
