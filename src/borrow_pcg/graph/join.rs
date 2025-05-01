@@ -210,7 +210,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 let (blocked, assigned, to_remove) = tupl;
                 let abstraction = LoopAbstraction::new(
                     AbstractionBlockEdge::new(
-                        blocked.clone().into_iter().collect(),
+                        blocked.clone().into_iter().map(|node| *node).collect(),
                         assigned
                             .clone()
                             .into_iter()
@@ -239,7 +239,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for coupled in result.roots() {
             for node in coupled {
-                if let PCGNode::RegionProjection(rp) = node {
+                if let PCGNode::RegionProjection(rp) = *node {
                     if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = rp.place() {
                         let mut old_rp = rp;
                         old_rp.base =

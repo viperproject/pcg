@@ -25,7 +25,7 @@ use serde_json::json;
 
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
-    coupling_graph_constructor::{AbstractionGraphConstructor, BorrowCheckerInterface, CGNode},
+    coupling_graph_constructor::{AbstractionGraphConstructor, BorrowCheckerInterface, AbstractionGraphNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -199,18 +199,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         struct ExploreFrom<'tcx> {
             current: PCGNode<'tcx>,
-            connect: Option<CGNode<'tcx>>,
+            connect: Option<AbstractionGraphNode<'tcx>>,
         }
 
         impl<'tcx> ExploreFrom<'tcx> {
             pub fn new(current: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
                 Self {
                     current,
-                    connect: current.as_cg_node(repacker),
+                    connect: current.as_abstraction_graph_node(repacker),
                 }
             }
 
-            pub fn connect(&self) -> Option<CGNode<'tcx>> {
+            pub fn connect(&self) -> Option<AbstractionGraphNode<'tcx>> {
                 self.connect
             }
 
@@ -221,7 +221,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             pub fn extend(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
                 Self {
                     current: node,
-                    connect: node.as_cg_node(repacker).or(self.connect),
+                    connect: node.as_abstraction_graph_node(repacker).or(self.connect),
                 }
             }
         }
@@ -261,6 +261,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let inputs = abstraction_edge
                             .inputs()
                             .into_iter()
+                            .map(|node| node.into())
                             .collect::<Vec<_>>()
                             .into();
                         let outputs = abstraction_edge

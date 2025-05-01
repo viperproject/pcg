@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use derive_more::{Deref, DerefMut, From};
 use smallvec::SmallVec;
 
 use super::{
@@ -17,7 +18,7 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::borrowck::{
         BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-        RegionInferenceContext
+        RegionInferenceContext,
     },
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::data_structures::fx::FxIndexMap,
@@ -59,9 +60,9 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for C
     }
 }
 
-// pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
+// pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
 pub(crate) type AbstractionGraph<'tcx> =
-    coupling::DisjointSetGraph<CGNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
+    coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
 
 impl<T: Clone> Coupled<T> {
     pub fn size(&self) -> usize {
@@ -130,36 +131,45 @@ impl<T: Ord> From<Vec<T>> for Coupled<T> {
     }
 }
 
-pub type CGNode<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
+#[derive(From, Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
+pub(crate) struct AbstractionGraphNode<'tcx>(
+    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
+);
 
-impl<'tcx> From<AbstractionOutputTarget<'tcx>> for CGNode<'tcx> {
+impl<'tcx, T> HasPcgElems<T> for AbstractionGraphNode<'tcx>
+where
+    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
+{
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
+        self.0.pcg_elems()
+    }
+}
+
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionGraphNode<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+        self.0.to_short_string(repacker)
+    }
+}
+
+impl<'tcx> From<AbstractionOutputTarget<'tcx>> for AbstractionGraphNode<'tcx> {
     fn from(target: AbstractionOutputTarget<'tcx>) -> Self {
-        CGNode::RegionProjection(target.into())
+        AbstractionGraphNode(PCGNode::RegionProjection(target.into()))
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for CGNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            CGNode::Place(p) => p.pcg_elems(),
-            CGNode::RegionProjection(rp) => rp.base.pcg_elems(),
+impl<'tcx> From<AbstractionGraphNode<'tcx>> for PCGNode<'tcx> {
+    fn from(node: AbstractionGraphNode<'tcx>) -> Self {
+        match node.0 {
+            PCGNode::Place(p) => p.into(),
+            PCGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
         }
     }
 }
-
-impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
-    fn from(node: CGNode<'tcx>) -> Self {
-        match node {
-            CGNode::Place(p) => p.into(),
-            CGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
-        }
-    }
-}
-impl CGNode<'_> {
+impl AbstractionGraphNode<'_> {
     pub(crate) fn is_old(&self) -> bool {
-        match self {
-            CGNode::Place(p) => p.is_old(),
-            CGNode::RegionProjection(rp) => rp.base().is_old(),
+        match self.0 {
+            PCGNode::Place(p) => p.is_old(),
+            PCGNode::RegionProjection(rp) => rp.base().is_old(),
         }
     }
 }
@@ -292,8 +302,8 @@ pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
 
 #[derive(Clone, Eq, PartialEq)]
 struct AddEdgeHistory<'a, 'tcx> {
-    bottom_connect: &'a Coupled<CGNode<'tcx>>,
-    upper_candidate: &'a Coupled<CGNode<'tcx>>,
+    bottom_connect: &'a Coupled<AbstractionGraphNode<'tcx>>,
+    upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
 }
 
 impl std::fmt::Display for AddEdgeHistory<'_, '_> {
@@ -327,8 +337,8 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
     fn add_edges_from<'a>(
         &mut self,
         bg: &AbstractionGraph<'tcx>,
-        bottom_connect: &'a Coupled<CGNode<'tcx>>,
-        upper_candidate: &'a Coupled<CGNode<'tcx>>,
+        bottom_connect: &'a Coupled<AbstractionGraphNode<'tcx>>,
+        upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
         incoming_weight: FxHashSet<BorrowPcgEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
@@ -355,7 +365,7 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
                             block: self.block,
                             statement_index: 0,
                         },
-                        false // TODO: Maybe actually check if this is a leaf
+                        false, // TODO: Maybe actually check if this is a leaf
                     );
                     is_live && !n.is_old()
                 });

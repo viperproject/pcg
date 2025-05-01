@@ -1,3 +1,4 @@
+use crate::borrow_pcg::domain::AbstractionInputTarget;
 use crate::borrow_pcg::has_pcs_elem::{
     default_make_place_old, LabelRegionProjection, MakePlaceOld,
 };
@@ -22,6 +23,15 @@ use crate::{
 pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjectionBase<'tcx>> {
     Place(T),
     RegionProjection(RegionProjection<'tcx, U>),
+}
+
+impl<'tcx> From<AbstractionInputTarget<'tcx>> for PCGNode<'tcx> {
+    fn from(target: AbstractionInputTarget<'tcx>) -> Self {
+        match target {
+            AbstractionInputTarget::Place(p) => PCGNode::Place(p.into()),
+            AbstractionInputTarget::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
+        }
+    }
 }
 
 impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>

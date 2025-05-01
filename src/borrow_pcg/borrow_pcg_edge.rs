@@ -5,16 +5,17 @@ use rustc_interface::{
 
 use super::{
     borrow_pcg_expansion::BorrowPcgExpansion,
-    coupling_graph_constructor::CGNode,
-    edge::{
-        borrow::RemoteBorrow, outlives::BorrowFlowEdge
-    },
+    coupling_graph_constructor::AbstractionGraphNode,
+    edge::{borrow::RemoteBorrow, outlives::BorrowFlowEdge},
     edge_data::EdgeData,
     graph::Conditioned,
     has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_projection::{LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel},
+    region_projection::{
+        LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
+        RegionProjectionLabel,
+    },
 };
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -25,7 +26,7 @@ use crate::{
     edgedata_enum,
     pcg::PCGNode,
     rustc_interface,
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, Place, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, Place},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -47,7 +48,8 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.kind.label_region_projection(projection, label, repacker)
+        self.kind
+            .label_region_projection(projection, label, repacker)
     }
 }
 
@@ -124,10 +126,7 @@ impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
 }
 
 impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.kind().check_validity(repacker)
     }
 }
@@ -265,10 +264,7 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -317,20 +313,28 @@ impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn as_cg_node(self, repacker: CompilerCtxt<'_, 'tcx>) -> Option<CGNode<'tcx>> {
+    pub(crate) fn as_abstraction_graph_node(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<AbstractionGraphNode<'tcx>> {
         match self {
             // Places are allowed only if they are roots of the borrow graph
             PCGNode::Place(place) => match place {
                 MaybeRemotePlace::Local(maybe_old_place) => {
                     if maybe_old_place.is_owned(repacker) {
-                        Some(CGNode::Place(place))
+                        Some(PCGNode::Place(place).into())
                     } else {
                         None
                     }
                 }
-                MaybeRemotePlace::Remote(remote_place) => Some(CGNode::Place(remote_place.into())),
+                MaybeRemotePlace::Remote(remote_place) => {
+                    Some(PCGNode::Place(remote_place.into()).into())
+                }
             },
-            PCGNode::RegionProjection(rp) => Some(CGNode::RegionProjection(rp.try_into().ok()?)),
+            PCGNode::RegionProjection(rp) => {
+                let rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>> = rp.try_into().ok()?;
+                Some(PCGNode::RegionProjection(rp).into())
+            }
         }
     }
     pub(crate) fn as_blocking_node(

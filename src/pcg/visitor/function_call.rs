@@ -1,6 +1,7 @@
 use super::PcgVisitor;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
+use crate::borrow_pcg::domain::AbstractionInputTarget;
 use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
 };
@@ -111,7 +112,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let disjoint_lifetime_sets = get_disjoint_lifetime_sets(&arg_region_projections, self.ctxt);
         for ls in disjoint_lifetime_sets.iter() {
             let this_region = ls.iter().next().unwrap();
-            let inputs = source_arg_projections
+            let inputs: Vec<AbstractionInputTarget<'tcx>> = source_arg_projections
                 .iter()
                 .filter(|rp| self.ctxt.bc.outlives(rp.region(self.ctxt), *this_region))
                 .map(|rp| (*rp).into())

@@ -369,6 +369,14 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
     }
 }
 
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for AbstractionInputTarget<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            AbstractionInputTarget::Place(p) => p.pcg_elems(),
+            AbstractionInputTarget::RegionProjection(rp) => rp.base.pcg_elems(),
+        }
+    }
+}
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
         let mut result = vec![];

@@ -1,14 +1,14 @@
 use crate::{
     borrow_pcg::{
-        coupling_graph_constructor::CGNode,
+        coupling_graph_constructor::AbstractionGraphNode,
+        domain::AbstractionInputTarget,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowsState,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
     pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
-    rustc_interface::borrowck::BorrowIndex,
-    rustc_interface::middle::mir,
+    rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
         display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
         SnapshotLocation,
@@ -146,17 +146,21 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
-    pub(super) fn insert_cg_node(
+    pub(super) fn insert_abstraction_input_target(
         &mut self,
-        node: CGNode<'tcx>,
+        node: AbstractionInputTarget<'tcx>,
         capability: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
         match node {
-            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp.into()),
-            CGNode::Place(MaybeRemotePlace::Local(place)) => {
+            AbstractionInputTarget::RegionProjection(rp) => {
+                self.insert_region_projection_node(rp.into())
+            }
+            AbstractionInputTarget::Place(MaybeRemotePlace::Local(place)) => {
                 self.insert_place_node(place.place(), place.location(), capability)
             }
-            CGNode::Place(MaybeRemotePlace::Remote(place)) => self.insert_remote_node(place),
+            AbstractionInputTarget::Place(MaybeRemotePlace::Remote(place)) => {
+                self.insert_remote_node(place)
+            }
         }
     }
 
@@ -170,7 +174,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let mut output_nodes = vec![];
 
         for input in abstraction.inputs() {
-            let input = self.insert_cg_node(input, capabilities);
+            let input = self.insert_abstraction_input_target(input, capabilities);
             input_nodes.push(input);
         }
 
@@ -336,9 +340,7 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
     }
 }
 
-impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx>
-    for PcgGraphConstructor<'pcg, 'a, 'tcx>
-{
+impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg, 'a, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
         self.repacker
     }
@@ -433,8 +435,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
     }
 
-    pub fn construct_graph(mut self) -> Graph
-    {
+    pub fn construct_graph(mut self) -> Graph {
         let capability_getter = &PCGCapabilityGetter {
             capabilities: self.capabilities,
         };
