@@ -7,7 +7,8 @@ use crate::borrow_pcg::edge::abstraction::{
 };
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{
-    PcgRegion, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
+    HasRegionProjections, PcgRegion, RegionProjection, RegionProjectionBaseLike,
+    RegionProjectionLabel,
 };
 use crate::rustc_interface::middle::mir::{Location, Operand};
 

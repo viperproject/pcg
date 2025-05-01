@@ -14,7 +14,10 @@ use std::{
 use derive_more::{Deref, DerefMut};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    borrow_pcg::{
+        borrow_pcg_expansion::PlaceExpansion,
+        region_projection::{HasRegionProjections, HasRegions},
+    },
     pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
         ast::Mutability,
@@ -110,13 +113,6 @@ impl<'tcx> PCGNodeLike<'tcx> for Place<'tcx> {
 impl<'tcx> RegionProjectionBaseLike<'tcx> for Place<'tcx> {
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         (*self).into()
-    }
-
-    fn regions<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, PcgRegion> {
-        extract_regions(self.ty(repacker).ty, repacker)
     }
 }
 
@@ -262,6 +258,60 @@ impl<'tcx> Place<'tcx> {
     }
 }
 
+impl<'tcx> HasRegions<'tcx> for Place<'tcx> {
+    #[tracing::instrument(skip(ctxt))]
+    fn regions<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+        extract_regions(self.ty(ctxt).ty, ctxt)
+    }
+}
+
+impl<'tcx> HasRegionProjections<'tcx> for Place<'tcx> {
+    fn base_region_projection<C: Copy>(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<RegionProjection<'tcx, Self>> {
+        self.ty_region(repacker)
+            .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
+    }
+
+    fn ty_region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {
+        match self.ty(repacker).ty.kind() {
+            TyKind::Ref(region, _, _) => Some((*region).into()),
+            _ => None,
+        }
+    }
+
+    fn region_projection(
+        &self,
+        idx: RegionIdx,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> RegionProjection<'tcx, Self> {
+        self.region_projections(repacker)[idx]
+    }
+
+    fn region_projections<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+        let place = self.with_inherent_region(repacker);
+        extract_regions(place.ty(repacker).ty, repacker)
+            .iter()
+            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
+            .collect()
+    }
+
+    fn projection_index(
+        &self,
+        region: PcgRegion,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<RegionIdx> {
+        extract_regions(self.ty(repacker).ty, repacker)
+            .into_iter_enumerated()
+            .find(|(_, r)| *r == region)
+            .map(|(idx, _)| idx)
+    }
+}
+
 impl<'tcx> Place<'tcx> {
     #[cfg(feature = "debug_info")]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
@@ -285,14 +335,6 @@ impl<'tcx> Place<'tcx> {
         places
     }
 
-    pub(crate) fn base_region_projection<C: Copy>(
-        self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
-        self.ty_region(repacker)
-            .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
-    }
-
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
         self.0.projection
     }
@@ -310,16 +352,6 @@ impl<'tcx> Place<'tcx> {
             }
         }
         false
-    }
-
-    pub(crate) fn ty_region<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<PcgRegion> {
-        match self.ty(repacker).ty.kind() {
-            TyKind::Ref(region, _, _) => Some((*region).into()),
-            _ => None,
-        }
     }
 
     pub fn prefix_place(&self) -> Option<Place<'tcx>> {
@@ -353,44 +385,6 @@ impl<'tcx> Place<'tcx> {
             }
         }
         place
-    }
-
-    pub fn region_projection(
-        &self,
-        idx: RegionIdx,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Self> {
-        self.region_projections(repacker)[idx]
-    }
-
-    #[tracing::instrument(skip(ctxt))]
-    pub fn regions<C: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, PcgRegion> {
-        extract_regions(self.ty(ctxt).ty, ctxt)
-    }
-
-    pub(crate) fn region_projections<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
-        let place = self.with_inherent_region(repacker);
-        extract_regions(place.ty(repacker).ty, repacker)
-            .iter()
-            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
-            .collect()
-    }
-
-    pub fn projection_index(
-        &self,
-        region: PcgRegion,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<RegionIdx> {
-        extract_regions(self.ty(repacker).ty, repacker)
-            .into_iter_enumerated()
-            .find(|(_, r)| *r == region)
-            .map(|(idx, _)| idx)
     }
 
     pub fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
@@ -815,3 +809,59 @@ impl From<PlaceOrdering> for Option<Ordering> {
         }
     }
 }
+
+impl<'tcx> HasRegions<'tcx> for Ty<'tcx> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
+        extract_regions(*self, repacker)
+    }
+}
+
+// impl<'tcx> HasRegionProjections<'tcx> for Ty<'tcx> {
+//     fn ty_region<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {
+//         match self.kind() {
+//             TyKind::Ref(region, _, _) => Some((*region).into()),
+//             _ => None,
+//         }
+//     }
+
+//     fn base_region_projection<C: Copy>(
+//         self,
+//         repacker: CompilerCtxt<'_, 'tcx, C>,
+//     ) -> Option<RegionProjection<'tcx, Self>> {
+//         self.ty_region(repacker)
+//             .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
+//     }
+
+//     fn region_projection(
+//         &self,
+//         idx: RegionIdx,
+//         repacker: CompilerCtxt<'_, 'tcx>,
+//     ) -> RegionProjection<'tcx, Self> {
+//         self.region_projections(repacker)[idx]
+//     }
+
+//     fn region_projections<C: Copy>(
+//         &self,
+//         repacker: CompilerCtxt<'_, 'tcx, C>,
+//     ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+//         extract_regions(*self, repacker)
+//             .iter()
+//             //.map(|region| RegionProjection::new(*region, *self, None, repacker).unwrap())
+//             .map(|region| RegionProjection::new(*region, *self, None, repacker).unwrap())
+//             .collect()
+//     }
+
+//     fn projection_index(
+//         &self,
+//         region: PcgRegion,
+//         repacker: CompilerCtxt<'_, 'tcx>,
+//     ) -> Option<RegionIdx> {
+//         extract_regions(*self, repacker)
+//             .into_iter_enumerated()
+//             .find(|(_, r)| *r == region)
+//             .map(|(idx, _)| idx)
+//     }
+// }

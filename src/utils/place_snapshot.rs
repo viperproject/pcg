@@ -1,9 +1,9 @@
 use serde_json::json;
 
 use super::display::DisplayWithCompilerCtxt;
-use super::{validity::HasValidityCheck, Place, CompilerCtxt};
+use super::{validity::HasValidityCheck, CompilerCtxt, Place};
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
+    HasRegions, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -62,11 +62,16 @@ impl std::fmt::Display for SnapshotLocation {
     }
 }
 
-impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+impl<'tcx> HasRegions<'tcx> for PlaceSnapshot<'tcx> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         self.place.regions(repacker)
     }
+}
 
+impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         MaybeRemoteRegionProjectionBase::Place((*self).into())
     }
