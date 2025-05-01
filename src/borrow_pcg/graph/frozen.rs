@@ -1,6 +1,6 @@
 use std::cell::{Ref, RefCell};
 
-use derive_more::IntoIterator;
+use derive_more::{Deref, IntoIterator};
 use itertools::Itertools;
 
 use crate::{
@@ -19,16 +19,12 @@ use crate::{
 
 use super::BorrowsGraph;
 
-#[derive(Clone, IntoIterator)]
+#[derive(Deref, Clone, IntoIterator)]
 pub struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPCGEdgeRef<'tcx, 'graph>>);
 
 impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
     fn new(edges: Vec<BorrowPCGEdgeRef<'tcx, 'graph>>) -> Self {
         Self(edges)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 }
 

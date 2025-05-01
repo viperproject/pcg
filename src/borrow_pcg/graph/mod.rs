@@ -5,24 +5,26 @@ pub(crate) mod materialize;
 mod mutate;
 
 use crate::{
-    borrow_checker::BorrowCheckerInterface, borrow_pcg::abstraction_graph_constructor::AbstractionGraph, pcg::PCGNode, rustc_interface::{
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::abstraction_graph_constructor::AbstractionGraph,
+    pcg::PCGNode,
+    rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self, BasicBlock},
-    }, utils::{
+    },
+    utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
         HasPlace,
-    }
+    },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
 use serde_json::json;
 
 use super::{
+    abstraction_graph_constructor::{AbstractionGraphConstructor, AbstractionGraphNode},
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
-    abstraction_graph_constructor::{
-        AbstractionGraphConstructor, AbstractionGraphNode,
-    },
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -250,6 +252,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         while let Some(ef) = queue.pop() {
             let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), ctxt);
+            tracing::info!(
+                "Edges blocking:{} {:?}",
+                ef.current().to_short_string(ctxt),
+                edges_blocking.len()
+            );
             for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPcgEdgeKind::Abstraction(abstraction_edge) => {

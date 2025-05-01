@@ -36,6 +36,24 @@ use crate::{
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
+impl<T: Copy + Eq> Coupled<T> {
+    pub(crate) fn empty() -> Self {
+        Self(SmallVec::new())
+    }
+
+    pub(crate) fn insert(&mut self, item: T) {
+        if !self.0.contains(&item) {
+            self.0.push(item);
+        }
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) {
+        for item in other.0.iter() {
+            self.insert(*item);
+        }
+    }
+}
+
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
     fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         for t in self.0.iter() {
@@ -116,17 +134,16 @@ impl<'tcx> AbstractionGraph<'tcx> {
         for (source, target, weight) in other.edges() {
             let JoinNodesResult {
                 index: mut source_idx,
+                ..
+            } = self.join_nodes(&source, ctxt);
+            let JoinNodesResult {
+                index: target_idx,
                 performed_merge,
-            } = self.join_nodes(&source);
+            } = self.join_nodes(&target, ctxt);
             if performed_merge {
-                self.merge_sccs(ctxt);
-            }
-            let target_idx = self.join_nodes(&target);
-            if target_idx.performed_merge {
-                self.merge_sccs(ctxt);
                 source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
             }
-            let _ = self.add_edge_via_indices(source_idx, target_idx.index, weight, ctxt);
+            let _ = self.add_edge_via_indices(source_idx, target_idx, weight, ctxt);
         }
 
         'top: loop {
@@ -137,11 +154,11 @@ impl<'tcx> AbstractionGraph<'tcx> {
                     }
                     let blocked_data = self.inner.node_weight(blocked).unwrap();
                     let blocking_data = self.inner.node_weight(blocking).unwrap();
-                    if let Some(blocked_region) = blocked_data.region_repr(ctxt)
-                        && let Some(blocking_region) = blocking_data.region_repr(ctxt)
-                        && !blocking_data.is_remote()
+                    if let Some(blocked_region) = blocked_data.nodes.region_repr(ctxt)
+                        && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
+                        && !blocking_data.nodes.is_remote()
                         && ctxt.bc.outlives(blocked_region, blocking_region)
-                        && !ctxt.bc.outlives(blocking_region, blocked_region)
+                        && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
                     {
                         tracing::debug!(
                             "Adding edge {} -> {} because of outlives",
@@ -213,14 +230,6 @@ impl<T: Ord> Coupled<T> {
 
     pub fn contains(&self, item: &T) -> bool {
         self.0.contains(item)
-    }
-
-    pub(crate) fn merge(&mut self, other: Self) {
-        for item in other.0 {
-            if !self.0.contains(&item) {
-                self.0.push(item);
-            }
-        }
     }
 }
 
