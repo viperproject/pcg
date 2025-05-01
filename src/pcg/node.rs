@@ -28,7 +28,7 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 impl<'tcx> From<AbstractionInputTarget<'tcx>> for PCGNode<'tcx> {
     fn from(target: AbstractionInputTarget<'tcx>) -> Self {
         match target {
-            AbstractionInputTarget::Place(p) => PCGNode::Place(p.into()),
+            AbstractionInputTarget::Place(p) => PCGNode::Place(p),
             AbstractionInputTarget::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
         }
     }

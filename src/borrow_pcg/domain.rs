@@ -9,7 +9,7 @@ pub type AbstractionInputTarget<'tcx> =
 
 impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionInputTarget<'tcx> {
     fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        PCGNode::RegionProjection(value.into()).into()
+        PCGNode::RegionProjection(value.into())
     }
 }
 
