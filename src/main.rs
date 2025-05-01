@@ -29,8 +29,8 @@ use pcg::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location,
 };
 
-use pcg::{run_pcg, PcgOutput};
 use pcg::visualization::bc_facts_graph::RegionPrettyPrinter;
+use pcg::{run_pcg, PcgOutput};
 use rustc_utils::test_utils::Placer;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
@@ -393,9 +393,7 @@ fn run_pcg_on_fn<'tcx>(
     polonius: bool,
     vis_dir: Option<&str>,
 ) {
-    let region_debug_name_overrides = if vis_dir.is_some()
-        && let Ok(lines) = source_lines(tcx, &body.body)
-    {
+    let region_debug_name_overrides = if let Ok(lines) = source_lines(tcx, &body.body) {
         lines
             .iter()
             .flat_map(|l| l.split("PCG_LIFETIME_DISPLAY: ").nth(1))

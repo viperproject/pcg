@@ -1,5 +1,5 @@
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
@@ -11,9 +11,7 @@ use crate::{
         path_condition::PathConditions,
     },
     rustc_interface::middle::mir::{self, BasicBlock},
-    utils::{
-        display::DisplayDiff, validity::HasValidityCheck,
-    },
+    utils::{display::DisplayDiff, validity::HasValidityCheck},
     validity_checks_enabled,
 };
 
@@ -161,34 +159,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
-        let self_coupling_graph = AbstractionGraphConstructor::new(repacker, self_block)
-            .construct_abstraction_graph(self, repacker.bc);
-        let other_coupling_graph = AbstractionGraphConstructor::new(repacker, other_block)
-            .construct_abstraction_graph(other, repacker.bc);
+        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, self_block)
+            .construct_abstraction_graph(self, ctxt.bc);
+        let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, other_block)
+            .construct_abstraction_graph(other, ctxt.bc);
 
         if coupling_imgcat_debug() {
-            self_coupling_graph
-                .render_with_imgcat(repacker, &format!("self coupling graph: {:?}", self_block));
-            other_coupling_graph.render_with_imgcat(
-                repacker,
-                &format!("other coupling graph: {:?}", other_block),
-            );
+            self_abstraction_graph
+                .render_with_imgcat(ctxt, &format!("self coupling graph: {:?}", self_block));
+            other_coupling_graph
+                .render_with_imgcat(ctxt, &format!("other coupling graph: {:?}", other_block));
         }
 
-        let mut result = self_coupling_graph.clone();
-        result.merge(&other_coupling_graph, repacker);
-        if coupling_imgcat_debug() {
-            result.render_with_imgcat(repacker, "merged coupling graph");
-        }
         let to_keep = self.common_edges(other);
         self.edges
             .retain(|edge_kind, _| to_keep.contains(edge_kind));
 
         if borrows_imgcat_debug() {
             self.render_debug_graph(
-                repacker,
+                ctxt,
                 mir::Location {
                     block: self_block,
                     statement_index: 0,
@@ -197,8 +188,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
             );
         }
 
+        let mut result = self_abstraction_graph.clone();
+        result.merge(&other_coupling_graph, ctxt);
+        if coupling_imgcat_debug() {
+            result.render_with_imgcat(ctxt, "merged coupling graph");
+        }
         let other_coupling_edges = other_coupling_graph.edges().collect::<Vec<_>>();
-        let self_coupling_edges = self_coupling_graph.edges().collect::<Vec<_>>();
+        let self_coupling_edges = self_abstraction_graph.edges().collect::<Vec<_>>();
         for tupl in result.edges() {
             if self_coupling_edges.iter().all(|other| other != &tupl)
                 || other_coupling_edges.iter().all(|other| other != &tupl)
@@ -211,7 +207,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         assigned
                             .clone()
                             .into_iter()
-                            .map(|node| node.try_into().unwrap())
+                            .map(|node| {
+                                node.try_into().unwrap_or_else(|_e| {
+                                    panic!("Failed to convert node {:?} to node index", node);
+                                })
+                            })
                             .collect(),
                     ),
                     self_block,
@@ -225,7 +225,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         if borrows_imgcat_debug() {
             self.render_debug_graph(
-                repacker,
+                ctxt,
                 mir::Location {
                     block: self_block,
                     statement_index: 0,

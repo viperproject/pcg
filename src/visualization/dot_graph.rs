@@ -19,7 +19,7 @@ impl DotGraph {
         Ok(())
     }
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
-        tracing::info!("{}", comment);
+        tracing::debug!("{}", comment);
         let mut dot_process = Command::new("dot")
             .args(["-Tpng"])
             .stdin(Stdio::piped())

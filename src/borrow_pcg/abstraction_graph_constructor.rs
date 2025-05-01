@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use derive_more::{Deref, DerefMut, From};
+use petgraph::algo::has_path_connecting;
 use smallvec::SmallVec;
 
 use super::{
@@ -8,9 +9,13 @@ use super::{
     edge::kind::BorrowPcgEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
-    region_projection::RegionProjectionLabel,
+    region_projection::{PcgRegion, RegionProjectionLabel},
 };
-use crate::{borrow_checker::BorrowCheckerInterface, utils::place::maybe_remote::MaybeRemotePlace};
+use crate::{
+    borrow_checker::BorrowCheckerInterface,
+    coupling::{AddEdgeResult, JoinNodesResult},
+    utils::place::maybe_remote::MaybeRemotePlace,
+};
 use crate::{
     coupling,
     pcg::PCGNode,
@@ -56,6 +61,117 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for C
 // pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
 pub(crate) type AbstractionGraph<'tcx> =
     coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
+
+impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
+    pub(crate) fn region_repr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
+        self.iter().find_map(|n| match n.0 {
+            PCGNode::RegionProjection(rp) => Some(rp.region(ctxt)),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn is_remote(&self) -> bool {
+        self.iter().any(|n| match n.0 {
+            PCGNode::Place(p) => p.is_remote(),
+            PCGNode::RegionProjection(rp) => rp.base().is_remote(),
+        })
+    }
+}
+
+impl<'tcx> AbstractionGraph<'tcx> {
+    pub(crate) fn transitive_reduction(
+        &mut self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> FxHashSet<BorrowPcgEdgeKind<'tcx>> {
+        pcg_validity_assert!(
+            self.is_acyclic(),
+            "Graph contains cycles after SCC computation"
+        );
+
+        let toposort = petgraph::algo::toposort(&self.inner, None).unwrap();
+        let (g, revmap) =
+            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner, &toposort);
+
+        let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure::<_, u32>(&g);
+        let mut removed_edges = FxHashSet::default();
+        self.inner.retain_edges(|slf, ei| {
+            let endpoints = slf.edge_endpoints(ei).unwrap();
+            let should_keep =
+                tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()]);
+            if !should_keep {
+                let from_node = slf.node_weight(endpoints.0).unwrap();
+                let to_node = slf.node_weight(endpoints.1).unwrap();
+                tracing::debug!(
+                    "Removing edge {} -> {} because of transitive reduction",
+                    from_node.to_short_string(ctxt),
+                    to_node.to_short_string(ctxt)
+                );
+                removed_edges.extend(slf.edge_weight(ei).unwrap().clone());
+            }
+            should_keep
+        });
+        removed_edges
+    }
+    pub(crate) fn merge(&mut self, other: &Self, ctxt: CompilerCtxt<'_, 'tcx>) {
+        for (source, target, weight) in other.edges() {
+            let JoinNodesResult {
+                index: mut source_idx,
+                performed_merge,
+            } = self.join_nodes(&source);
+            if performed_merge {
+                self.merge_sccs(ctxt);
+            }
+            let target_idx = self.join_nodes(&target);
+            if target_idx.performed_merge {
+                self.merge_sccs(ctxt);
+                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
+            }
+            let _ = self.add_edge_via_indices(source_idx, target_idx.index, weight, ctxt);
+        }
+
+        'top: loop {
+            for blocked in self.inner.node_indices() {
+                for blocking in self.inner.node_indices() {
+                    if has_path_connecting(&self.inner, blocked, blocking, None) {
+                        continue;
+                    }
+                    let blocked_data = self.inner.node_weight(blocked).unwrap();
+                    let blocking_data = self.inner.node_weight(blocking).unwrap();
+                    if let Some(blocked_region) = blocked_data.region_repr(ctxt)
+                        && let Some(blocking_region) = blocking_data.region_repr(ctxt)
+                        && !blocking_data.is_remote()
+                        && ctxt.bc.outlives(blocked_region, blocking_region)
+                        && !ctxt.bc.outlives(blocking_region, blocked_region)
+                    {
+                        tracing::debug!(
+                            "Adding edge {} -> {} because of outlives",
+                            blocked_data.to_short_string(ctxt),
+                            blocking_data.to_short_string(ctxt)
+                        );
+                        match self.add_edge_via_indices(blocked, blocking, Default::default(), ctxt)
+                        {
+                            AddEdgeResult::DidNotMergeNodes => {
+                                let edges = self.transitive_reduction(ctxt);
+                                self.inner.update_edge(blocked, blocking, edges);
+                                if coupling_imgcat_debug() {
+                                    self.render_with_imgcat(ctxt, "Post add");
+                                }
+                            }
+                            AddEdgeResult::MergedNodes => {
+                                if coupling_imgcat_debug() {
+                                    self.render_with_imgcat(ctxt, "Post add");
+                                }
+                                continue 'top;
+                            }
+                        }
+                    }
+                }
+            }
+            pcg_validity_assert!(self.is_acyclic(), "Resulting graph contains cycles");
+            return;
+        }
+    }
+}
 
 impl<T: Clone> Coupled<T> {
     pub fn size(&self) -> usize {
@@ -168,7 +284,6 @@ impl AbstractionGraphNode<'_> {
         }
     }
 }
-
 
 /// Records a history of actions for debugging purpose;
 /// used to detect infinite recursion
