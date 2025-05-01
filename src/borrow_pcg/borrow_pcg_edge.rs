@@ -5,7 +5,7 @@ use rustc_interface::{
 
 use super::{
     borrow_pcg_expansion::BorrowPcgExpansion,
-    coupling_graph_constructor::AbstractionGraphNode,
+    abstraction_graph_constructor::AbstractionGraphNode,
     edge::{borrow::RemoteBorrow, outlives::BorrowFlowEdge},
     edge_data::EdgeData,
     graph::Conditioned,

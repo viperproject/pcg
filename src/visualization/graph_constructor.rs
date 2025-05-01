@@ -1,6 +1,5 @@
 use crate::{
     borrow_pcg::{
-        coupling_graph_constructor::AbstractionGraphNode,
         domain::AbstractionInputTarget,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
@@ -478,7 +477,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::CompilerCtxt,
+        borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::CompilerCtxt,
         visualization::graph_constructor::PcgGraphConstructor,
     };
 

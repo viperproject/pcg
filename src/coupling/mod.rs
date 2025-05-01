@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
-use crate::borrow_pcg::coupling_graph_constructor::Coupled;
+use crate::borrow_pcg::abstraction_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;

@@ -4,29 +4,24 @@ pub mod join;
 pub(crate) mod materialize;
 mod mutate;
 
-use std::collections::HashSet;
-
 use crate::{
-    borrow_pcg::coupling_graph_constructor::AbstractionGraph,
-    pcg::PCGNode,
-    rustc_interface::{
+    borrow_checker::BorrowCheckerInterface, borrow_pcg::abstraction_graph_constructor::AbstractionGraph, pcg::PCGNode, rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self, BasicBlock},
-    },
-    utils::{
+    }, utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
         HasPlace,
-    },
+    }
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
 use serde_json::json;
 
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
-    coupling_graph_constructor::{
-        AbstractionGraphConstructor, AbstractionGraphNode, BorrowCheckerInterface,
+    abstraction_graph_constructor::{
+        AbstractionGraphConstructor, AbstractionGraphNode,
     },
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
@@ -245,7 +240,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        let mut seen = HashSet::new();
         let frozen_graph = FrozenGraphRef::new(self);
 
         let mut queue = vec![];
@@ -255,10 +249,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         while let Some(ef) = queue.pop() {
-            // if seen.contains(&ef) {
-            //     continue;
-            // }
-            seen.insert(ef);
             let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), ctxt);
             for edge in edges_blocking {
                 match edge.kind() {

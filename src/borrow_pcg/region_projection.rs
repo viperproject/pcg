@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
-    borrow_pcg_edge::LocalNode, coupling_graph_constructor::AbstractionGraphNode, visitor::extract_regions,
+    borrow_pcg_edge::LocalNode, abstraction_graph_constructor::AbstractionGraphNode, visitor::extract_regions,
 };
 use crate::pcg::{PCGInternalError, PcgError};
 use crate::utils::json::ToJsonWithCompilerCtxt;

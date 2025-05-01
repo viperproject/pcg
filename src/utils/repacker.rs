@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface,
+    borrow_checker::BorrowCheckerInterface,
     rustc_interface::{
         borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,

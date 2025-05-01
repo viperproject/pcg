@@ -196,7 +196,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 fn test_aliases() {
     use rustc_utils::test_utils::Placer;
 
-    use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
+    use crate::borrow_checker::r#impl::BorrowCheckerImpl;
     use crate::free_pcs::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
     use crate::rustc_interface::span::Symbol;

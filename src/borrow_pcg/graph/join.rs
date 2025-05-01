@@ -1,5 +1,5 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
-use crate::borrow_pcg::coupling_graph_constructor::AbstractionGraphConstructor;
+use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
@@ -8,14 +8,11 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::ToBorrowsEdge,
         edge::abstraction::{AbstractionBlockEdge, LoopAbstraction},
-        latest::Latest,
         path_condition::PathConditions,
     },
-    pcg::PCGNode,
     rustc_interface::middle::mir::{self, BasicBlock},
     utils::{
-        display::DisplayDiff, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
-        validity::HasValidityCheck, PlaceSnapshot, SnapshotLocation,
+        display::DisplayDiff, validity::HasValidityCheck,
     },
     validity_checks_enabled,
 };
@@ -235,20 +232,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 },
                 "done",
             );
-        }
-
-        for coupled in result.roots() {
-            for node in coupled {
-                if let PCGNode::RegionProjection(rp) = *node {
-                    if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = rp.place() {
-                        let mut old_rp = rp;
-                        old_rp.base =
-                            PlaceSnapshot::new(place, SnapshotLocation::Start(self_block)).into();
-                        let latest = Latest::singleton(place, SnapshotLocation::Start(self_block));
-                        self.make_place_old(place, &latest, repacker);
-                    }
-                }
-            }
         }
     }
 }

@@ -12,6 +12,7 @@
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(stmt_expr_attributes)]
 pub mod action;
+pub mod borrow_checker;
 pub mod borrow_pcg;
 pub mod coupling;
 pub mod free_pcs;
@@ -22,7 +23,8 @@ pub mod utils;
 pub mod visualization;
 
 use action::PcgActions;
-use borrow_pcg::{coupling_graph_constructor::BorrowCheckerInterface, latest::Latest};
+use borrow_checker::BorrowCheckerInterface;
+use borrow_pcg::latest::Latest;
 use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{

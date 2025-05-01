@@ -2,14 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::graph::NodeIndex;
 
-use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir::Location;
 use crate::rustc_interface::middle::ty::RegionVid;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::{
-    borrow_pcg::borrow_checker::r#impl::PoloniusBorrowChecker,
+    borrow_checker::r#impl::PoloniusBorrowChecker,
     rustc_interface::borrowck::{PoloniusRegionVid, RegionInferenceContext},
 };
 
@@ -78,7 +78,7 @@ pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
 }
 
 #[derive(Clone)]
-pub(crate) struct RegionPrettyPrinter {
+pub struct RegionPrettyPrinter {
     sccs: Vec<BTreeSet<RegionVid>>,
     region_to_string: BTreeMap<usize, String>,
 }
@@ -103,7 +103,7 @@ impl RegionPrettyPrinter {
             .unwrap()
     }
 
-    pub(crate) fn insert(&mut self, region: RegionVid, string: String) {
+    pub fn insert(&mut self, region: RegionVid, string: String) {
         let scc = self.index(region);
         assert!(self.region_to_string.insert(scc, string).is_none());
     }

@@ -20,8 +20,8 @@ use std::fs::File;
 use std::io::Write;
 
 use derive_more::From;
-use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
-use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
+use pcg::borrow_checker::BorrowCheckerInterface;
 use pcg::utils::{CompilerCtxt, Place};
 
 #[rustversion::since(2024-12-14)]
@@ -30,6 +30,7 @@ use pcg::visualization::bc_facts_graph::{
 };
 
 use pcg::{run_pcg, PcgOutput};
+use pcg::visualization::bc_facts_graph::RegionPrettyPrinter;
 use rustc_utils::test_utils::Placer;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
@@ -255,6 +256,16 @@ enum BorrowChecker<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
+
+impl<'tcx> BorrowChecker<'_, 'tcx> {
+    fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter {
+        match self {
+            BorrowChecker::Polonius(bc) => &mut bc.pretty_printer,
+            BorrowChecker::Impl(bc) => &mut bc.pretty_printer,
+        }
+    }
+}
+
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     fn is_live(&self, node: pcg::pcg::PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
         match self {
@@ -393,15 +404,15 @@ fn run_pcg_on_fn<'tcx>(
     } else {
         BTreeMap::new()
     };
-    let bc = if polonius {
-        BorrowChecker::Polonius(PoloniusBorrowChecker::new(
-            tcx,
-            body,
-            region_debug_name_overrides,
-        ))
+    let mut bc = if polonius {
+        BorrowChecker::Polonius(PoloniusBorrowChecker::new(tcx, body))
     } else {
         BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
     };
+    let region_printer = bc.region_pretty_printer();
+    for (region, name) in region_debug_name_overrides {
+        region_printer.insert(region, name.to_string());
+    }
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
     let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
