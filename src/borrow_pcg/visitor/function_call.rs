@@ -6,7 +6,8 @@ use crate::{
         edge::abstraction::{AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction},
         path_condition::PathConditions,
         region_projection::{
-            PcgRegion, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
+            HasRegionProjections, PcgRegion, RegionProjection, RegionProjectionBaseLike,
+            RegionProjectionLabel,
         },
     },
     pcg::PcgError,
