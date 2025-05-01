@@ -1,5 +1,5 @@
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
+    HasRegions, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::pcg::{PCGNode, PCGNodeLike};
@@ -8,7 +8,7 @@ use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::{Place, CompilerCtxt};
+use crate::utils::{CompilerCtxt, Place};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub struct RemotePlace {
@@ -33,14 +33,19 @@ impl<'tcx> PCGNodeLike<'tcx> for RemotePlace {
     }
 }
 
+impl<'tcx> HasRegions<'tcx> for RemotePlace {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
+        let place: Place<'_> = self.local.into();
+        extract_regions(place.ty(repacker).ty, repacker)
+    }
+}
+
 impl<'tcx> RegionProjectionBaseLike<'tcx> for RemotePlace {
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         MaybeRemoteRegionProjectionBase::Place((*self).into())
-    }
-
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
-        let place: Place<'_> = self.local.into();
-        extract_regions(place.ty(repacker).ty, repacker)
     }
 }
 

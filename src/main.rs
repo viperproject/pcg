@@ -22,6 +22,7 @@ use std::io::Write;
 use derive_more::From;
 use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use pcg::borrow_pcg::region_projection::HasRegions;
 use pcg::utils::{CompilerCtxt, Place};
 
 #[rustversion::since(2024-12-14)]

@@ -4,16 +4,14 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, RegionProjection,
+    HasRegionProjections, MaybeRemoteRegionProjectionBase, RegionProjection,
 };
 use crate::free_pcs::CapabilityKind;
-use crate::rustc_interface::middle::mir::{
-    self, Location, Operand, Rvalue,
-};
+use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils;
+use crate::utils::maybe_old::MaybeOldPlace;
 
 use super::{PCGUnsupportedError, PcgError};
 
