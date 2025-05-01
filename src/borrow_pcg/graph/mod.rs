@@ -25,7 +25,9 @@ use serde_json::json;
 
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
-    coupling_graph_constructor::{AbstractionGraphConstructor, BorrowCheckerInterface, AbstractionGraphNode},
+    coupling_graph_constructor::{
+        AbstractionGraphConstructor, AbstractionGraphNode, BorrowCheckerInterface,
+    },
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -194,7 +196,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn base_rp_graph(&self, repacker: CompilerCtxt<'_, 'tcx>) -> AbstractionGraph<'tcx> {
+    pub(crate) fn base_abstraction_graph(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> AbstractionGraph<'tcx> {
         let mut graph: AbstractionGraph<'tcx> = AbstractionGraph::new();
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         struct ExploreFrom<'tcx> {
@@ -244,17 +249,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let frozen_graph = FrozenGraphRef::new(self);
 
         let mut queue = vec![];
-        for node in frozen_graph.roots(repacker).iter() {
+        for node in frozen_graph.roots(ctxt).iter() {
             tracing::debug!("Adding root node to queue: {:?}", node);
-            queue.push(ExploreFrom::new(*node, repacker));
+            queue.push(ExploreFrom::new(*node, ctxt));
         }
 
         while let Some(ef) = queue.pop() {
-            if seen.contains(&ef) {
-                continue;
-            }
+            // if seen.contains(&ef) {
+            //     continue;
+            // }
             seen.insert(ef);
-            let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), repacker);
+            let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), ctxt);
             for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPcgEdgeKind::Abstraction(abstraction_edge) => {
@@ -274,20 +279,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             &inputs,
                             &outputs,
                             std::iter::once(edge.kind().to_owned()).collect(),
-                            repacker,
+                            ctxt,
                         );
                     }
                     BorrowPcgEdgeKind::BorrowPcgExpansion(e)
-                        if e.is_owned_expansion(repacker)
+                        if e.is_owned_expansion(ctxt)
                             && ef
                                 .current()
                                 .as_maybe_old_place()
-                                .is_some_and(|p| p.is_owned(repacker)) =>
+                                .is_some_and(|p| p.is_owned(ctxt)) =>
                     {
                         continue
                     }
                     _ => {
-                        for node in edge.blocked_by_nodes(repacker) {
+                        for node in edge.blocked_by_nodes(ctxt) {
                             if let LocalNode::RegionProjection(rp) = node {
                                 if let Some(source) = ef.connect()
                                     && source != rp.into()
@@ -296,15 +301,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                         &vec![source].into(),
                                         &vec![rp.into()].into(),
                                         std::iter::once(edge.kind().to_owned()).collect(),
-                                        repacker,
+                                        ctxt,
                                     );
                                 }
                             }
                         }
                     }
                 }
-                for node in edge.blocked_by_nodes(repacker) {
-                    queue.push(ef.extend(node.into(), repacker));
+                for node in edge.blocked_by_nodes(ctxt) {
+                    queue.push(ef.extend(node.into(), ctxt));
                 }
             }
         }

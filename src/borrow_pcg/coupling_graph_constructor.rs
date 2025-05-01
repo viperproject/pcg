@@ -8,7 +8,7 @@ use super::{
     edge::kind::BorrowPcgEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
-    region_projection::PcgRegion,
+    region_projection::{PcgRegion, RegionProjectionLabel},
 };
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -169,7 +169,9 @@ impl AbstractionGraphNode<'_> {
     pub(crate) fn is_old(&self) -> bool {
         match self.0 {
             PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(rp) => rp.base().is_old(),
+            PCGNode::RegionProjection(rp) => {
+                rp.base().is_old() || matches!(rp.label, Some(RegionProjectionLabel::Location(_)))
+            }
         }
     }
 }
@@ -402,10 +404,10 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
         bg: &BorrowsGraph<'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
     ) -> AbstractionGraph<'tcx> {
-        tracing::debug!("Construct coupling graph start");
-        let full_graph = bg.base_rp_graph(self.repacker);
+        tracing::debug!("Construct abstraction graph start");
+        let full_graph = bg.base_abstraction_graph(self.repacker);
         if coupling_imgcat_debug() {
-            full_graph.render_with_imgcat(self.repacker, "Base coupling graph");
+            full_graph.render_with_imgcat(self.repacker, "Base abstraction graph");
         }
         let leaf_nodes = full_graph.leaf_nodes();
         let num_leaf_nodes = leaf_nodes.len();
