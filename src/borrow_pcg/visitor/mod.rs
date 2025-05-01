@@ -3,6 +3,321 @@ use crate::rustc_interface::{
     middle::ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
 };
 
+use super::engine::BorrowsEngine;
+use super::{
+    action::{BorrowPCGAction, MakePlaceOldReason},
+    borrow_pcg_edge::BorrowPCGEdge,
+    edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
+    path_condition::PathConditions,
+    region_projection::{HasRegionProjections, PcgRegion, RegionIdx, RegionProjection},
+    state::BorrowsState,
+};
+use crate::borrow_pcg::action::actions::BorrowPCGActions;
+use crate::borrow_pcg::action::executed_actions::ExecutedActions;
+use crate::borrow_pcg::state::obtain::ObtainReason;
+use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{
+    free_pcs::CapabilityKind,
+    utils::{self, CompilerCtxt},
+};
+
+mod function_call;
+mod stmt;
+
+pub(crate) struct BorrowsVisitor<'tcx, 'mir, 'state> {
+    pub(super) ctxt: CompilerCtxt<'mir, 'tcx>,
+    pub(super) actions: BorrowPCGActions<'tcx>,
+    state: &'state mut BorrowsState<'tcx>,
+    capabilities: &'state mut PlaceCapabilities<'tcx>,
+    phase: EvalStmtPhase,
+}
+
+impl<'tcx, 'mir, 'state> BorrowsVisitor<'tcx, 'mir, 'state> {
+    fn record_actions(&mut self, actions: ExecutedActions<'tcx>) {
+        self.actions.extend(actions.actions());
+    }
+
+    fn apply_action(&mut self, action: BorrowPCGAction<'tcx>) -> bool {
+        self.actions.push(action.clone(), self.ctxt);
+        self.state
+            .apply_action(action, self.capabilities, self.ctxt)
+            .unwrap()
+    }
+
+    pub(super) fn new(
+        engine: &BorrowsEngine<'mir, 'tcx>,
+        state: &'state mut BorrowsState<'tcx>,
+        capabilities: &'state mut PlaceCapabilities<'tcx>,
+        phase: EvalStmtPhase,
+    ) -> BorrowsVisitor<'tcx, 'mir, 'state> {
+        BorrowsVisitor {
+            ctxt: engine.ctxt,
+            actions: BorrowPCGActions::new(),
+            state,
+            capabilities,
+            phase,
+        }
+    }
+
+    fn connect_outliving_projections(
+        &mut self,
+        source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        target: Place<'tcx>,
+        location: Location,
+        kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
+    ) {
+        for target_proj in target.region_projections(self.ctxt).into_iter() {
+            if self.outlives(source_proj.region(self.ctxt), target_proj.region(self.ctxt)) {
+                self.apply_action(BorrowPCGAction::add_edge(
+                    BorrowPCGEdge::new(
+                        BorrowFlowEdge::new(
+                            source_proj.into(),
+                            target_proj.into(),
+                            kind(target_proj.region(self.ctxt)),
+                            self.ctxt,
+                        )
+                        .into(),
+                        PathConditions::AtBlock(location.block),
+                    ),
+                    true,
+                ));
+            }
+        }
+    }
+
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
+        self.ctxt.bc.outlives(sup, sub)
+    }
+}
+
+impl BorrowsVisitor<'_, '_, '_> {
+    fn perform_base_pre_operand_actions(&mut self, location: Location) -> Result<(), PcgError> {
+        let actions =
+            self.state
+                .pack_old_and_dead_leaves(self.ctxt, self.capabilities, location)?;
+        self.record_actions(actions);
+        for created_location in self.ctxt.bc.twophase_borrow_activations(location) {
+            let borrow = match self.state.graph().borrow_created_at(created_location) {
+                Some(borrow) => borrow,
+                None => continue,
+            };
+            let blocked_place = borrow.blocked_place.place();
+            if self
+                .state
+                .graph()
+                .contains(borrow.deref_place(self.ctxt), self.ctxt)
+            {
+                let upgrade_action = BorrowPCGAction::restore_capability(
+                    borrow.deref_place(self.ctxt).place().into(),
+                    CapabilityKind::Exclusive,
+                );
+                self.apply_action(upgrade_action);
+            }
+            if !blocked_place.is_owned(self.ctxt) {
+                let actions = self.state.remove_read_permission_upwards(
+                    blocked_place,
+                    self.capabilities,
+                    self.ctxt,
+                )?;
+                self.record_actions(actions);
+            }
+            for place in blocked_place.iter_places(self.ctxt) {
+                for rp in place.region_projections(self.ctxt).into_iter() {
+                    if rp.is_nested_in_local_ty(self.ctxt) {
+                        self.state.label_region_projection(
+                            &rp.into(),
+                            Some(location.into()),
+                            self.ctxt,
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'tcx> FallableVisitor<'tcx> for BorrowsVisitor<'tcx, '_, '_> {
+    fn visit_operand_fallable(
+        &mut self,
+        operand: &Operand<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        self.super_operand_fallable(operand, location)?;
+        match self.phase {
+            EvalStmtPhase::PreOperands => match operand {
+                Operand::Copy(place) | Operand::Move(place) => {
+                    let expansion_reason = if matches!(operand, Operand::Copy(..)) {
+                        ObtainReason::CopyOperand
+                    } else {
+                        ObtainReason::MoveOperand
+                    };
+                    let place: utils::Place<'tcx> = (*place).into();
+                    let expansion_actions = self.state.obtain(
+                        self.ctxt,
+                        place,
+                        self.capabilities,
+                        location,
+                        expansion_reason,
+                    )?;
+                    self.record_actions(expansion_actions);
+                }
+                _ => {}
+            },
+            EvalStmtPhase::PostMain => {
+                if let Operand::Move(place) = operand {
+                    let place: utils::Place<'tcx> = (*place).into();
+                    self.apply_action(BorrowPCGAction::make_place_old(
+                        place,
+                        MakePlaceOldReason::MoveOut,
+                    ));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, terminator))]
+    fn visit_terminator_fallable(
+        &mut self,
+        terminator: &Terminator<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        if self.phase == EvalStmtPhase::PreOperands {
+            self.perform_base_pre_operand_actions(location)?;
+        }
+        self.super_terminator_fallable(terminator, location)?;
+        if self.phase == EvalStmtPhase::PostMain
+            && let TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                ..
+            } = &terminator.kind
+        {
+            let destination: utils::Place<'tcx> = (*destination).into();
+            self.apply_action(BorrowPCGAction::set_latest(
+                destination,
+                location,
+                "Destination of Function Call",
+            ));
+            self.make_function_call_abstraction(
+                func,
+                &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
+                destination,
+                location,
+            )?;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    fn visit_statement_fallable(
+        &mut self,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        if self.phase == EvalStmtPhase::PreOperands {
+            self.perform_base_pre_operand_actions(location)?;
+        }
+
+        self.super_statement_fallable(statement, location)?;
+
+        match self.phase {
+            EvalStmtPhase::PreOperands => {
+                if let StatementKind::FakeRead(box (_, place)) = &statement.kind {
+                    let place: utils::Place<'tcx> = (*place).into();
+                    if !place.is_owned(self.ctxt) {
+                        let expansion_reason = ObtainReason::FakeRead;
+                        let expansion_actions = self.state.obtain(
+                            self.ctxt,
+                            place,
+                            self.capabilities,
+                            location,
+                            expansion_reason,
+                        )?;
+                        self.record_actions(expansion_actions);
+                    }
+                }
+            }
+            EvalStmtPhase::PreMain => {
+                self.stmt_pre_main(statement, location)?;
+            }
+            EvalStmtPhase::PostMain => {
+                self.stmt_post_main(statement, location)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn visit_place_fallable(
+        &mut self,
+        place: Place<'tcx>,
+        _context: mir::visit::PlaceContext,
+        _location: mir::Location,
+    ) -> Result<(), PcgError> {
+        if place.contains_unsafe_deref(self.ctxt) {
+            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+        }
+        Ok(())
+    }
+
+    fn visit_rvalue_fallable(
+        &mut self,
+        rvalue: &Rvalue<'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        #[instrument(skip(this), fields(location = ?location))]
+        fn visit_rvalue_inner<'mir, 'tcx, 'state>(
+            this: &mut BorrowsVisitor<'tcx, 'mir, 'state>,
+            rvalue: &Rvalue<'tcx>,
+            location: Location,
+        ) -> Result<(), PcgError> {
+            if matches!(rvalue, Rvalue::Ref(_, BorrowKind::Fake(_), _)) {
+                return Ok(());
+            }
+            this.super_rvalue_fallable(rvalue, location)?;
+            use Rvalue::*;
+            match rvalue {
+                Use(_)
+                | Repeat(_, _)
+                | ThreadLocalRef(_)
+                | Cast(_, _, _)
+                | BinaryOp(_, _)
+                | NullaryOp(_, _)
+                | UnaryOp(_, _)
+                | Aggregate(_, _)
+                | ShallowInitBox(_, _) => {}
+
+                &Ref(_, _, place)
+                | &RawPtr(_, place)
+                | &Len(place)
+                | &Discriminant(place)
+                | &CopyForDeref(place) => {
+                    let expansion_reason = match rvalue {
+                        Rvalue::Ref(_, kind, _) => ObtainReason::CreateReference(*kind),
+                        Rvalue::RawPtr(mutbl, _) => ObtainReason::CreatePtr(*mutbl),
+                        _ => ObtainReason::RValueSimpleRead,
+                    };
+                    if this.phase == EvalStmtPhase::PreOperands {
+                        let expansion_actions = this.state.obtain(
+                            this.ctxt,
+                            place.into(),
+                            this.capabilities,
+                            location,
+                            expansion_reason,
+                        )?;
+                        this.record_actions(expansion_actions);
+                    }
+                }
+            }
+            Ok(())
+        }
+        visit_rvalue_inner(self, rvalue, location)
+    }
+}
 use super::region_projection::{PcgRegion, RegionIdx};
 use crate::utils::CompilerCtxt;
 

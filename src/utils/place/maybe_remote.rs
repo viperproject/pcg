@@ -2,7 +2,8 @@ use derive_more::From;
 
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::{
-    HasRegions, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
+    HasRegions, HasRegions, MaybeRemoteRegionProjectionBase, MaybeRemoteRegionProjectionBase,
+    PcgRegion, PcgRegion, RegionIdx, RegionIdx, RegionProjectionBaseLike, RegionProjectionBaseLike,
 };
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
