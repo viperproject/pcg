@@ -19,15 +19,15 @@ use crate::{
     utils::Place,
 };
 
+use super::engine::BorrowsEngine;
 use super::{
     action::{BorrowPCGAction, MakePlaceOldReason},
     borrow_pcg_edge::BorrowPCGEdge,
     edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
     path_condition::PathConditions,
-    region_projection::{PcgRegion, RegionIdx, RegionProjection},
+    region_projection::{HasRegionProjections, PcgRegion, RegionIdx, RegionProjection},
     state::BorrowsState,
 };
-use super::engine::BorrowsEngine;
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::state::obtain::ObtainReason;

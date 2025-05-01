@@ -8,7 +8,9 @@ use crate::{
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
         path_condition::PathConditions,
-        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
+        region_projection::{
+            HasRegionProjections, MaybeRemoteRegionProjectionBase, RegionProjection,
+        },
         state::obtain::ObtainReason,
     },
     free_pcs::CapabilityKind,

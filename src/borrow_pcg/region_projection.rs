@@ -204,11 +204,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tc
     }
 }
 
-impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
-        *self
-    }
-
+impl<'tcx> HasRegions<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn regions<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -217,6 +213,12 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
             MaybeRemoteRegionProjectionBase::Place(p) => p.regions(repacker),
             MaybeRemoteRegionProjectionBase::Const(c) => extract_regions(c.ty(), repacker),
         }
+    }
+}
+
+impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
+    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
+        *self
     }
 }
 
@@ -425,20 +427,50 @@ impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     }
 }
 
+pub trait HasRegions<'tcx> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion>;
+}
+
+/// A trait for PCG nodes that have region projections
+pub trait HasRegionProjections<'tcx>: Sized + HasRegions<'tcx> {
+    fn ty_region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion>;
+
+    fn base_region_projection<C: Copy>(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<RegionProjection<'tcx, Self>>;
+
+    fn region_projection(
+        &self,
+        idx: RegionIdx,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> RegionProjection<'tcx, Self>;
+
+    fn region_projections<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>>;
+
+    fn projection_index(
+        &self,
+        region: PcgRegion,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<RegionIdx>;
+}
+
 pub trait RegionProjectionBaseLike<'tcx>:
     Copy
     + std::fmt::Debug
     + std::hash::Hash
     + Eq
     + PartialEq
+    + HasRegions<'tcx>
     + ToJsonWithCompilerCtxt<'tcx>
     + DisplayWithCompilerCtxt<'tcx>
 {
-    fn regions<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, PcgRegion>;
-
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
 }
 
