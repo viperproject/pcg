@@ -20,8 +20,11 @@ use std::fs::File;
 use std::io::Write;
 
 use derive_more::From;
-use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
 use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use pcg::borrow_pcg::{
+    borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
+    region_projection::{PcgRegion, RegionIdx},
+};
 use pcg::utils::{CompilerCtxt, Place};
 
 #[rustversion::since(2024-12-14)]
@@ -29,8 +32,9 @@ use pcg::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location,
 };
 
+use pcg::rustc_interface::Placer;
+use pcg::rustc_interface::{borrowck::PoloniusLocationTable, driver::run_compiler};
 use pcg::{run_pcg, PcgOutput};
-use rustc_utils::test_utils::Placer;
 use std::cell::RefCell;
 use tracing::{debug, info, trace};
 
@@ -57,7 +61,7 @@ use pcg::rustc_interface::{
 };
 use pcg::{pcg::BodyWithBorrowckFacts, utils::env_feature_enabled};
 
-struct PcsCallbacks;
+struct PcgCallbacks;
 
 thread_local! {
     pub static BODIES:
@@ -291,7 +295,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
         }
     }
 
-    fn location_table(&self) -> &borrowck::LocationTable {
+    fn location_table(&self) -> &PoloniusLocationTable {
         match self {
             BorrowChecker::Polonius(bc) => bc.location_table(),
             BorrowChecker::Impl(bc) => bc.location_table(),
@@ -340,7 +344,7 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
 
 struct LifetimeRenderAnnotation {
     var: String,
-    region_idx: usize,
+    region_idx: RegionIdx,
     display_as: String,
 }
 
@@ -359,7 +363,8 @@ impl LifetimeRenderAnnotation {
 
     fn to_pair<'tcx>(&self, tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> (RegionVid, String) {
         let place = self.get_place(tcx, body);
-        let region = place.regions(CompilerCtxt::new(body, tcx, ()))[self.region_idx.into()];
+        let region: PcgRegion =
+            place.regions(CompilerCtxt::new(body, tcx, ()))[self.region_idx];
         (region.vid().unwrap(), self.display_as.clone())
     }
 }
@@ -369,7 +374,7 @@ impl From<&str> for LifetimeRenderAnnotation {
         let parts = s.split(" ").collect::<Vec<_>>();
         Self {
             var: parts[0].to_string(),
-            region_idx: parts[1].parse().unwrap(),
+            region_idx: parts[1].parse::<usize>().unwrap().into(),
             display_as: parts[2].to_string(),
         }
     }
@@ -450,7 +455,7 @@ fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
         std::fs::create_dir_all(path).expect("Failed to create visualization directory");
     }
 
-    for def_id in tcx.hir().body_owners() {
+    for def_id in tcx.hir_body_owners() {
         let kind = tcx.def_kind(def_id);
         if !matches!(kind, hir::def::DefKind::Fn | hir::def::DefKind::AssocFn) {
             continue;
@@ -500,7 +505,7 @@ fn set_mir_borrowck(_session: &Session, providers: &mut Providers) {
     providers.mir_borrowck = mir_borrowck;
 }
 
-impl driver::Callbacks for PcsCallbacks {
+impl driver::Callbacks for PcgCallbacks {
     fn config(&mut self, config: &mut Config) {
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
@@ -535,14 +540,19 @@ impl driver::Callbacks for PcsCallbacks {
 
 #[rustversion::before(2024-12-14)]
 fn go(args: Vec<String>) {
-    driver::RunCompiler::new(&args, &mut PcsCallbacks)
+    driver::RunCompiler::new(&args, &mut PcgCallbacks)
         .run()
         .unwrap()
 }
 
-#[rustversion::since(2024-12-14)]
+#[rustversion::nightly(2024-12-14)]
 fn go(args: Vec<String>) {
-    driver::RunCompiler::new(&args, &mut PcsCallbacks).run()
+    driver::RunCompiler::new(&args, &mut PcgCallbacks).run()
+}
+
+#[rustversion::nightly(2025-03-02)]
+fn go(args: Vec<String>) {
+    run_compiler(&args, &mut PcgCallbacks)
 }
 
 #[cfg(feature = "memory_profiling")]

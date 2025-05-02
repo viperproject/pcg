@@ -6,23 +6,23 @@
 
 mod mutable;
 mod root_place;
-pub(crate) mod repacker;
-pub(crate) mod domain_data;
+pub (crate) mod incoming_states;
+pub (crate) mod redirect;
 pub mod debug_info;
 pub mod display;
 pub mod eval_stmt_data;
-pub (crate) mod incoming_states;
-pub (crate) mod redirect;
 pub mod json;
 pub mod place;
 pub mod place_snapshot;
 pub mod r#const;
-pub mod visitor;
 pub mod validity;
+pub mod visitor;
 pub use mutable::*;
 pub use place::*;
 pub use place_snapshot::*;
 pub use repacker::*;
+pub(crate) mod domain_data;
+pub(crate) mod repacker;
 
 pub fn env_feature_enabled(feature: &str) -> Option<bool> {
     match std::env::var(feature) {

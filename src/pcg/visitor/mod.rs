@@ -420,6 +420,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                         this.record_actions(expansion_actions);
                     }
                 }
+                _ => todo!(),
             }
             Ok(())
         }

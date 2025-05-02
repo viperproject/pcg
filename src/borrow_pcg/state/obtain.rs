@@ -1,3 +1,4 @@
+
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
@@ -11,7 +12,7 @@ use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
-use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
+use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind, RawPtrKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, ShallowExpansion, SnapshotLocation};
@@ -34,8 +35,9 @@ impl ObtainReason {
                     MutBorrowKind::ClosureCapture => CapabilityKind::Exclusive,
                 },
             },
-            ObtainReason::CreatePtr(mutability) => {
-                if mutability.is_mut() {
+            ObtainReason::CreatePtr(ptr_kind) => {
+                #[rustversion::since(2025-03-02)]
+                if matches!(ptr_kind, RawPtrKind::Mut) {
                     CapabilityKind::Exclusive
                 } else {
                     CapabilityKind::Read
@@ -53,7 +55,7 @@ pub(crate) enum ObtainReason {
     FakeRead,
     AssignTarget,
     CreateReference(BorrowKind),
-    CreatePtr(Mutability),
+    CreatePtr(RawPtrKind),
     /// Just to read the place, but not refer to it
     RValueSimpleRead,
 }

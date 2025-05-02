@@ -13,7 +13,6 @@ use super::{
     latest::Latest,
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -25,12 +24,15 @@ use crate::{
             ty,
         },
         span::Symbol,
-        target::abi::{FieldIdx, VariantIdx},
     },
     utils::{
         display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, ConstantIndex,
         HasPlace, Place,
     },
+};
+use crate::{
+    rustc_interface::{FieldIdx, VariantIdx},
+    utils::json::ToJsonWithCompilerCtxt,
 };
 
 /// The projections resulting from an expansion of a place.
@@ -109,8 +111,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
                     PlaceElem::Subslice { from, to, from_end } => {
                         return PlaceExpansion::Subslice { from, to, from_end };
                     }
-                    PlaceElem::OpaqueCast(_) => todo!(),
-                    PlaceElem::Subtype(_) => todo!(),
+                    _ => todo!()
                 }
             }
         }

@@ -142,6 +142,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec",
+]
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -801,6 +816,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "indexical"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e34347764a58cb2b571ed62850684b1a2d8caf8fc612c1fa0263bcecd57bc2a8"
+dependencies = [
+ "index_vec",
+ "rustc-hash",
+ "splitmut",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1183,6 +1209,7 @@ name = "pcg"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bit-set",
  "bumpalo",
  "chrono",
  "derive_more",
@@ -1194,7 +1221,8 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "rustc_utils",
+ "rustc_utils 0.12.0-nightly-2024-12-15",
+ "rustc_utils 0.13.0-nightly-2025-03-03",
  "rustversion",
  "serde",
  "serde_derive",
@@ -1401,6 +1429,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
 
 [[package]]
+name = "rustc-hash"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
+
+[[package]]
 name = "rustc_utils"
 version = "0.12.0-nightly-2024-12-15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1408,7 +1442,21 @@ checksum = "8a82a375e5df4530b4c5e94ab8251c754c92c3e593efaf8214e572ea422bf3a0"
 dependencies = [
  "anyhow",
  "cfg-if",
- "indexical",
+ "indexical 0.3.1",
+ "intervaltree",
+ "log",
+ "textwrap",
+]
+
+[[package]]
+name = "rustc_utils"
+version = "0.13.0-nightly-2025-03-03"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f599f45d4951ad4373ad2f652bf97d2448de5cadece564fc5f9b42670c14afbb"
+dependencies = [
+ "anyhow",
+ "cfg-if",
+ "indexical 0.7.0",
  "intervaltree",
  "log",
  "textwrap",

@@ -9,7 +9,7 @@ use std::{
 };
 
 use rustc_interface::middle::mir::{
-    self, BinOp, Local, Operand, Rvalue, Statement, TerminatorKind, UnwindAction,
+    self, BinOp, Local, Operand, RawPtrKind, Rvalue, Statement, TerminatorKind, UnwindAction,
 };
 
 #[derive(Serialize)]
@@ -89,53 +89,62 @@ fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx
     }
 }
 
-fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+#[rustversion::since(2025-03-02)]
+fn format_raw_ptr<'tcx>(
+    kind: &RawPtrKind,
+    place: &mir::Place<'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+) -> String {
+    let kind = match kind {
+        RawPtrKind::Mut => "mut",
+        RawPtrKind::Const => "const",
+        RawPtrKind::FakeForPtrMetadata => todo!(),
+    };
+    format!("*{} {}", kind, format_place(place, ctxt))
+}
+
+fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
     match rvalue {
-        Rvalue::Use(operand) => format_operand(operand, repacker),
-        Rvalue::Repeat(operand, c) => format!("repeat {} {}", format_operand(operand, repacker), c),
+        Rvalue::Use(operand) => format_operand(operand, ctxt),
+        Rvalue::Repeat(operand, c) => format!("repeat {} {}", format_operand(operand, ctxt), c),
         Rvalue::Ref(_region, kind, place) => {
             let kind = match kind {
                 mir::BorrowKind::Shared => "",
                 mir::BorrowKind::Mut { .. } => "mut",
                 mir::BorrowKind::Fake(_) => "fake",
             };
-            format!("&{} {}", kind, format_place(place, repacker))
+            format!("&{} {}", kind, format_place(place, ctxt))
         }
-        Rvalue::RawPtr(kind, place) => {
-            let kind = match kind {
-                mir::Mutability::Mut => "mut",
-                mir::Mutability::Not => "const",
-            };
-            format!("*{} {}", kind, format_place(place, repacker))
-        }
+        Rvalue::RawPtr(kind, place) => format_raw_ptr(kind, place, ctxt),
         Rvalue::ThreadLocalRef(_) => todo!(),
-        Rvalue::Len(x) => format!("len({})", format_place(x, repacker)),
-        Rvalue::Cast(_, operand, ty) => format!("{} as {}", format_operand(operand, repacker), ty),
+        Rvalue::Len(x) => format!("len({})", format_place(x, ctxt)),
+        Rvalue::Cast(_, operand, ty) => format!("{} as {}", format_operand(operand, ctxt), ty),
         Rvalue::BinaryOp(op, box (lhs, rhs)) => {
             format!(
                 "{} {} {}",
-                format_operand(lhs, repacker),
+                format_operand(lhs, ctxt),
                 format_bin_op(op),
-                format_operand(rhs, repacker)
+                format_operand(rhs, ctxt)
             )
         }
         Rvalue::NullaryOp(op, _) => format!("{:?}", op),
         Rvalue::UnaryOp(op, val) => {
-            format!("{:?} {}", op, format_operand(val, repacker))
+            format!("{:?} {}", op, format_operand(val, ctxt))
         }
-        Rvalue::Discriminant(place) => format!("Discriminant({})", format_place(place, repacker)),
+        Rvalue::Discriminant(place) => format!("Discriminant({})", format_place(place, ctxt)),
         Rvalue::Aggregate(kind, ops) => {
             format!(
                 "Aggregate {:?} {}",
                 kind,
                 ops.iter()
-                    .map(|op| format_operand(op, repacker))
+                    .map(|op| format_operand(op, ctxt))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
         }
-        Rvalue::ShallowInitBox(operand, _) => format!("Box({})", format_operand(operand, repacker)),
-        Rvalue::CopyForDeref(place) => format!("CopyForDeref({})", format_place(place, repacker)),
+        Rvalue::ShallowInitBox(operand, _) => format!("Box({})", format_operand(operand, ctxt)),
+        Rvalue::CopyForDeref(place) => format!("CopyForDeref({})", format_place(place, ctxt)),
+        _ => todo!(),
     }
 }
 fn format_terminator<'tcx>(

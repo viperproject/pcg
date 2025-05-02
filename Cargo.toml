@@ -11,7 +11,7 @@ memory_profiling = [
     "tokio",
     "jemalloc_pprof",
 ]
-visualization = [ "rustc_utils" ]
+visualization = [ "rustc_utils_2025_03_03" ]
 debug_info = []
 default = ["visualization"]
 
@@ -26,6 +26,7 @@ default = ["visualization"]
 # rustc_middle = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_middle", optional = true}
 # rustc_target = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_target", optional = true}
 
+bit-set = "0.8.0"
 bumpalo = "3.16.0"
 derive_more = { version = "2.0.1", features = ["full"] }
 dot = "0.1"
@@ -46,7 +47,8 @@ tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_mall
 axum = { version = "0.7", features = ["multipart"], optional = true }
 tokio = { version = "1.0", features = ["full", "rt-multi-thread"], optional = true }
 jemalloc_pprof = { version = "0.6", optional = true }
-rustc_utils = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"], optional = true}
+rustc_utils_2024_12_15 = {version = "=0.12.0-nightly-2024-12-15", features = ["indexical", "test"], optional = true, package = "rustc_utils"}
+rustc_utils_2025_03_03 = {version = "=0.13.0-nightly-2025-03-03", features = ["indexical", "test"], optional = true, package = "rustc_utils"}
 
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking"] }

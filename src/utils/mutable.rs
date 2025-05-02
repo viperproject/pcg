@@ -10,12 +10,11 @@ use rustc_interface::{
         mir::{Mutability, ProjectionElem},
         ty::{CapturedPlace, TyKind, UpvarCapture},
     },
-    target::abi::FieldIdx,
 };
 
-use crate::rustc_interface;
+use crate::rustc_interface::{self, FieldIdx};
 
-use super::{root_place::RootPlace, Place, CompilerCtxt};
+use super::{root_place::RootPlace, CompilerCtxt, Place};
 
 struct Upvar<'tcx> {
     pub(crate) place: CapturedPlace<'tcx>,
@@ -211,7 +210,7 @@ impl<'tcx> Place<'tcx> {
                             )
                         }
                     }
-                    ProjectionElem::Subtype(_) => todo!(),
+                    _ => todo!(),
                 }
             }
         }

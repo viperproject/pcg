@@ -23,8 +23,7 @@ use crate::{
         middle::{
             mir::{Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
             ty::{self, Ty, TyKind},
-        },
-        target::abi::VariantIdx,
+        }, VariantIdx,
     },
 };
 
@@ -299,7 +298,7 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn contains_unsafe_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         for (p, proj) in self.iter_projections(repacker) {
-            if p.ty(repacker).ty.is_unsafe_ptr() && matches!(proj, PlaceElem::Deref) {
+            if p.ty(repacker).ty.is_raw_ptr() && matches!(proj, PlaceElem::Deref) {
                 return true;
             }
         }
@@ -622,7 +621,7 @@ impl Debug for Place<'_> {
                 | ProjectionElem::Index(_)
                 | ProjectionElem::ConstantIndex { .. }
                 | ProjectionElem::Subslice { .. } => {}
-                ProjectionElem::Subtype(_) => todo!(),
+                _ => todo!(),
             }
         }
 
@@ -690,7 +689,7 @@ impl Debug for Place<'_> {
                 } => {
                     write!(fmt, "[{from:?}..{to:?}]")?;
                 }
-                ProjectionElem::Subtype(_) => todo!(),
+                _ => todo!(),
             }
         }
 

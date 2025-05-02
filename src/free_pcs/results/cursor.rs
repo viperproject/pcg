@@ -121,7 +121,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                     .analysis
                     .0
                     .reachable_blocks
-                    .contains(*succ)
+                    .contains(succ.index())
             })
             .map(|succ| {
                 // Get repacks
@@ -198,7 +198,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         &mut self,
         block: BasicBlock,
     ) -> Result<Option<PcgBasicBlock<'tcx>>, PcgError> {
-        if !self.analysis().reachable_blocks.contains(block) {
+        if !self.analysis().reachable_blocks.contains(block.index()) {
             return Ok(None);
         }
         self.analysis_for_bb(block);

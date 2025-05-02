@@ -9,15 +9,15 @@ use crate::{
     rustc_interface::{
         borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,
-        index::{bit_set::BitSet, Idx},
+        index::{bit_set::DenseBitSet, Idx},
         middle::{
             mir::{
-                tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
-                Place as MirPlace, PlaceElem, ProjectionElem,
+                BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace, PlaceElem,
+                ProjectionElem,
             },
             ty::{TyCtxt, TyKind},
         },
-        target::abi::FieldIdx,
+        FieldIdx, PlaceTy,
     },
 };
 
@@ -111,9 +111,7 @@ pub struct CompilerCtxt<'a, 'tcx, T = &'a dyn BorrowCheckerInterface<'tcx>> {
     pub(crate) bc: T,
 }
 
-impl<'a, 'tcx, T: BorrowCheckerInterface<'tcx> + ?Sized>
-    CompilerCtxt<'a, 'tcx, &'a T>
-{
+impl<'a, 'tcx, T: BorrowCheckerInterface<'tcx> + ?Sized> CompilerCtxt<'a, 'tcx, &'a T> {
     pub fn as_dyn(self) -> CompilerCtxt<'a, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>> {
         CompilerCtxt {
             mir: self.mir,
@@ -125,11 +123,7 @@ impl<'a, 'tcx, T: BorrowCheckerInterface<'tcx> + ?Sized>
 
 impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
     pub fn new(mir: &'a Body<'tcx>, tcx: TyCtxt<'tcx>, bc: T) -> Self {
-        Self {
-            mir,
-            tcx,
-            bc,
-        }
+        Self { mir, tcx, bc }
     }
 
     pub fn body(self) -> &'a Body<'tcx> {
@@ -146,7 +140,6 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
     {
         self.bc
     }
-
 }
 
 impl CompilerCtxt<'_, '_> {
@@ -176,12 +169,17 @@ impl CompilerCtxt<'_, '_> {
         mir_dataflow::storage::always_storage_live_locals(self.mir)
     }
 
-    #[rustversion::since(2024-12-14)]
+    #[rustversion::nightly(2024-12-14)]
     pub fn always_live_locals(self) -> BitSet<Local> {
         mir_dataflow::impls::always_storage_live_locals(self.mir)
     }
 
-    pub fn always_live_locals_non_args(self) -> BitSet<Local> {
+    #[rustversion::since(2025-03-02)]
+    pub fn always_live_locals(self) -> DenseBitSet<Local> {
+        mir_dataflow::impls::always_storage_live_locals(self.mir)
+    }
+
+    pub fn always_live_locals_non_args(self) -> DenseBitSet<Local> {
         let mut all = self.always_live_locals();
         for arg in 0..self.mir.arg_count + 1 {
             // Includes `RETURN_PLACE`
@@ -219,10 +217,7 @@ impl<'tcx> DeepExpansion<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn to_rust_place<C: Copy>(
-        self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> MirPlace<'tcx> {
+    pub fn to_rust_place<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: repacker.tcx.mk_place_elems(self.projection),
@@ -337,7 +332,7 @@ impl<'tcx> Place<'tcx> {
             | ProjectionElem::Subslice { .. }
             | ProjectionElem::Downcast(..)
             | ProjectionElem::OpaqueCast(..) => (Vec::new(), ProjectionKind::Other),
-            ProjectionElem::Subtype(_) => todo!(),
+            _ => todo!(),
         };
         for p in other_places.iter() {
             assert!(
@@ -451,10 +446,7 @@ impl<'tcx> Place<'tcx> {
     }
 
     #[allow(unused)]
-    pub(crate) fn get_ref_region(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<PcgRegion> {
+    pub(crate) fn get_ref_region(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
         match self.ty(repacker).ty.kind() {
             TyKind::Ref(region, ..) => Some((*region).into()),
             _ => None,

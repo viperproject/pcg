@@ -228,16 +228,20 @@ pub(crate) trait FallableVisitor<'tcx> {
                 self.visit_operand_fallable(operand, location)?;
             }
             mir::Rvalue::RawPtr(mutability, place) => {
-                let context = match mutability {
-                    mir::Mutability::Not => {
+                let context = match *mutability {
+                    mir::RawPtrKind::Mut => {
+                        visit::PlaceContext::MutatingUse(visit::MutatingUseContext::RawBorrow)
+                    }
+                    mir::RawPtrKind::Const => {
                         visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
                     }
-                    mir::Mutability::Mut => {
-                        visit::PlaceContext::MutatingUse(visit::MutatingUseContext::RawBorrow)
+                    mir::RawPtrKind::FakeForPtrMetadata => {
+                        visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
                     }
                 };
                 self.visit_place_fallable((*place).into(), context, location)?;
             }
+            _ => {}
         }
         Ok(())
     }

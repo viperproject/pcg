@@ -8,6 +8,7 @@ use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
     self, BorrowKind, Local, Location, MutBorrowKind, Operand,
     Rvalue, Statement, StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
+    RawPtrKind,
 };
 
 use crate::utils::visitor::FallableVisitor;
@@ -131,13 +132,15 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 BorrowKind::Mut { .. } => Condition::exclusive(place, self.repacker),
             },
             &RawPtr(mutbl, place) => {
-                if mutbl.is_mut() {
+                #[rustversion::since(2025-03-02)]
+                if matches!(mutbl, RawPtrKind::Mut) {
                     Condition::exclusive(place, self.repacker)
                 } else {
                     Condition::read(place)
                 }
             }
             &Len(place) | &Discriminant(place) | &CopyForDeref(place) => Condition::read(place),
+            _ => todo!(),
         };
         tracing::debug!("Pre: {pre:?}");
         self.operand_triples.push(Triple { pre, post: None });
@@ -284,6 +287,7 @@ impl ProducesCapability for Rvalue<'_> {
             | Aggregate(_, _)
             | CopyForDeref(_) => Some(CapabilityKind::Exclusive),
             ShallowInitBox(_, _) => Some(CapabilityKind::ShallowExclusive),
+            _ => todo!(),
         }
     }
 }

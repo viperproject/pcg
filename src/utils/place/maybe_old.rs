@@ -8,8 +8,8 @@ use crate::borrow_pcg::region_projection::{
 use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
-use crate::rustc_interface::middle::mir::tcx::PlaceTy;
 use crate::rustc_interface::middle::mir::PlaceElem;
+use crate::rustc_interface::PlaceTy;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;

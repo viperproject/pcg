@@ -10,10 +10,11 @@ use std::{
     rc::Rc,
 };
 
+use bit_set::BitSet;
 use derive_more::From;
 
 use super::{
-    visitor::PcgVisitor, domain::PcgDomain, DataflowStmtPhase, DotGraphs, ErrorState,
+    domain::PcgDomain, visitor::PcgVisitor, DataflowStmtPhase, DotGraphs, ErrorState,
     EvalStmtPhase, PCGDebugData, PcgError,
 };
 use crate::utils::CompilerCtxt;
@@ -22,7 +23,7 @@ use crate::{
     rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
-        index::{bit_set::BitSet, Idx, IndexVec},
+        index::{Idx, IndexVec},
         middle::{
             mir::{
                 self, BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
@@ -114,11 +115,13 @@ struct PCGEngineDebugData {
     dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
 }
 
+type Block = usize;
+
 pub struct PcgEngine<'a, 'tcx: 'a> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
-    pub(crate) reachable_blocks: BitSet<BasicBlock>,
+    pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
 }
 pub(crate) fn edges_to_analyze<'tcx, 'mir>(
@@ -201,7 +204,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         object: AnalysisObject<'_, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if self.reachable_blocks.contains(location.block) {
+        if self.reachable_blocks.contains(location.block.index()) {
             state.reachable = true;
         } else {
             return Ok(());
@@ -209,7 +212,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
 
         if let AnalysisObject::Terminator(t) = object {
             for block in successor_blocks(t) {
-                self.reachable_blocks.insert(block);
+                self.reachable_blocks.insert(block.index());
             }
         }
 
@@ -265,8 +268,9 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
                 dot_graphs,
             }
         });
-        let mut reachable_blocks = BitSet::new_empty(repacker.body().basic_blocks.len());
-        reachable_blocks.insert(START_BLOCK);
+        let mut reachable_blocks = BitSet::default();
+        reachable_blocks.reserve_len(repacker.body().basic_blocks.len());
+        reachable_blocks.insert(START_BLOCK.index());
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,

@@ -194,7 +194,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 #[cfg(test)]
 #[test]
 fn test_aliases() {
-    use rustc_utils::test_utils::Placer;
+    use crate::rustc_interface::{compile_body, Placer};
 
     use crate::borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl;
     use crate::free_pcs::PcgLocation;
@@ -238,7 +238,7 @@ fn test_aliases() {
             x;
         }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
@@ -273,7 +273,7 @@ fn test_aliases() {
             *y;
         }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
@@ -301,7 +301,7 @@ fn test_aliases() {
             x;
         }
         "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(1usize.into()).unwrap().unwrap();
@@ -328,7 +328,7 @@ fn test_aliases() {
                     ok(f);
                 }
                 "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
@@ -362,7 +362,7 @@ fn main() {
     }
 }
         "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(2usize.into()).unwrap().unwrap();
@@ -407,7 +407,7 @@ fn main() {
     x;
     }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let bb = pcg.get_all_for_bb(3usize.into()).unwrap().unwrap();
@@ -442,7 +442,7 @@ fn main() {
         let y = x.0 .0 .0 .0 + 1;
     }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
@@ -468,7 +468,7 @@ fn main() {
     x;
 }
 "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let temp: mir::Place<'_> = mir::Local::from(4_usize).into();
@@ -491,7 +491,7 @@ fn main() {
                 let elapsed = start.elapsed();
                 println!("Elapsed: {}s", elapsed.as_secs());
             }"#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let temp_9: mir::Place<'_> = mir::Local::from(9_usize).into();
@@ -521,7 +521,7 @@ fn main() {
       let d = &b;
       let e = foo(c, d);
     }"#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
@@ -541,7 +541,7 @@ fn main() {
             let d = **c;
         }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
@@ -560,7 +560,7 @@ fn main() {
             let a = ***y;
         }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
@@ -593,7 +593,7 @@ fn main() {
             (x);
         }
     "#;
-    rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
+    compile_body(input, |tcx, body| {
         let bc = BorrowCheckerImpl::new(tcx, body);
         let mut pcg = run_pcg(body.body(), tcx, &bc, None);
         let placer = Placer::new(tcx, &body.body);
