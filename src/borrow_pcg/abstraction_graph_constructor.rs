@@ -158,7 +158,7 @@ impl<'tcx> AbstractionGraph<'tcx> {
                         && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
                         && !blocking_data.nodes.is_remote()
                         && ctxt.bc.outlives(blocked_region, blocking_region)
-                        && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
+                        // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
                     {
                         tracing::debug!(
                             "Adding edge {} -> {} because of outlives",

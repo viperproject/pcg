@@ -257,7 +257,7 @@ enum BorrowChecker<'mir, 'tcx> {
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
 
-impl<'tcx> BorrowChecker<'_, 'tcx> {
+impl BorrowChecker<'_, '_> {
     fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter {
         match self {
             BorrowChecker::Polonius(bc) => &mut bc.pretty_printer,

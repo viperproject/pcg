@@ -252,11 +252,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         while let Some(ef) = queue.pop() {
             let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), ctxt);
-            tracing::info!(
-                "Edges blocking:{} {:?}",
-                ef.current().to_short_string(ctxt),
-                edges_blocking.len()
-            );
             for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPcgEdgeKind::Abstraction(abstraction_edge) => {

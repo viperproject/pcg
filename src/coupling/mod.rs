@@ -352,19 +352,6 @@ impl<
             from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
         }
         let _ = self.add_edge_via_indices(from_idx, to_idx, weight, ctxt);
-        let from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
-        let to_idx = self.lookup(*to.iter().next().unwrap()).unwrap();
-        tracing::info!(
-            "Added edge: {} -> {}",
-            self.inner
-                .node_weight(from_idx)
-                .unwrap()
-                .to_short_string(ctxt),
-            self.inner
-                .node_weight(to_idx)
-                .unwrap()
-                .to_short_string(ctxt)
-        );
         pcg_validity_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 
