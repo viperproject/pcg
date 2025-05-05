@@ -68,7 +68,7 @@ async fn start_profiling_server() {
     let app = axum::Router::new().route("/debug/pprof/heap", axum::routing::get(handle_get_heap));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:4444").await.unwrap();
-    info!("Started profiling server on port 4444");
+    tracing::info!("Started profiling server on port 4444");
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
