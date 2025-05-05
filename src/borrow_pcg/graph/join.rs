@@ -164,9 +164,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         if coupling_imgcat_debug() {
             self_abstraction_graph
-                .render_with_imgcat(ctxt, &format!("self coupling graph: {:?}", self_block));
+                .render_with_imgcat(ctxt, &format!("self coupling graph: {self_block:?}"));
             other_coupling_graph
-                .render_with_imgcat(ctxt, &format!("other coupling graph: {:?}", other_block));
+                .render_with_imgcat(ctxt, &format!("other coupling graph: {other_block:?}"));
         }
 
         let to_keep = self.common_edges(other);
@@ -205,7 +205,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             .into_iter()
                             .map(|node| {
                                 node.try_into().unwrap_or_else(|_e| {
-                                    panic!("Failed to convert node {:?} to node index", node);
+                                    panic!("Failed to convert node {node:?} to node index");
                                 })
                             })
                             .collect(),
