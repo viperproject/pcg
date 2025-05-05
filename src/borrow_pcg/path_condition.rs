@@ -170,8 +170,8 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PathConditions {
 impl std::fmt::Display for PathConditions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PathConditions::AtBlock(b) => write!(f, "{:?}", b),
-            PathConditions::Paths(p) => write!(f, "{}", p),
+            PathConditions::AtBlock(b) => write!(f, "{b:?}"),
+            PathConditions::Paths(p) => write!(f, "{p}"),
         }
     }
 }

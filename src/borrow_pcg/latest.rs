@@ -38,11 +38,11 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
                         ty
                     )
                 } else {
-                    format!("{}", ty)
+                    format!("{ty}")
                 };
                 (
                     format!("{}: {}", p.to_short_string(repacker), ty_str),
-                    format!("{:?}", l),
+                    format!("{l:?}"),
                 )
             })
             .collect::<BTreeMap<_, _>>())

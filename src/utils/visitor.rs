@@ -5,6 +5,8 @@ use crate::rustc_interface::middle::mir::{
 };
 
 use super::Place;
+#[rustversion::before(2025-03-02)]
+use crate::rustc_interface::middle::mir::Mutability;
 
 pub(crate) trait FallableVisitor<'tcx> {
     fn visit_statement_fallable(
@@ -228,16 +230,30 @@ pub(crate) trait FallableVisitor<'tcx> {
                 self.visit_operand_fallable(operand, location)?;
             }
             mir::Rvalue::RawPtr(mutability, place) => {
-                let context = match mutability {
-                    mir::Mutability::Not => {
+                #[rustversion::since(2025-03-02)]
+                let context = match *mutability {
+                    mir::RawPtrKind::Mut => {
+                        visit::PlaceContext::MutatingUse(visit::MutatingUseContext::RawBorrow)
+                    }
+                    mir::RawPtrKind::Const => {
                         visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
                     }
-                    mir::Mutability::Mut => {
+                    mir::RawPtrKind::FakeForPtrMetadata => {
+                        visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
+                    }
+                };
+                #[rustversion::before(2025-03-02)]
+                let context = match *mutability {
+                    Mutability::Mut => {
                         visit::PlaceContext::MutatingUse(visit::MutatingUseContext::RawBorrow)
+                    }
+                    Mutability::Not => {
+                        visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
                     }
                 };
                 self.visit_place_fallable((*place).into(), context, location)?;
             }
+            _ => {}
         }
         Ok(())
     }

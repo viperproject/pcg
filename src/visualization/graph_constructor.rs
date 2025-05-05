@@ -195,10 +195,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         let use_label = input_nodes.len() > 1 || output_nodes.len() > 1;
 
-        let hyperedge_id = format!("<{}>", edge_idx);
+        let hyperedge_id = format!("<{edge_idx}>");
 
         let first_edge_label = if use_label {
-            format!("{label} {}", hyperedge_id)
+            format!("{label} {hyperedge_id}")
         } else {
             label
         };
@@ -336,9 +336,7 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
     }
 }
 
-impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx>
-    for PcgGraphConstructor<'pcg, 'a, 'tcx>
-{
+impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg, 'a, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
         self.repacker
     }
@@ -433,8 +431,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
     }
 
-    pub fn construct_graph(mut self) -> Graph
-    {
+    pub fn construct_graph(mut self) -> Graph {
         let capability_getter = &PCGCapabilityGetter {
             capabilities: self.capabilities,
         };
@@ -477,7 +474,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::CompilerCtxt,
+        utils::test::run_pcg_on_str,
         visualization::graph_constructor::PcgGraphConstructor,
     };
 
@@ -498,11 +495,9 @@ fn main() {
     *rx = 1;
 }
 "#;
-        rustc_utils::test_utils::compile_body(input, |tcx, _, body| {
-            let bc = BorrowCheckerImpl::new(tcx, body);
-            let ctxt: CompilerCtxt<'_, '_> = CompilerCtxt::new(&body.body, tcx, &bc);
-            let mut pcg = run_pcg(&body.body, tcx, &bc, None);
-            let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
+        run_pcg_on_str(input, |mut analysis| {
+            let bb = analysis.get_all_for_bb(0usize.into()).unwrap().unwrap();
+            let ctxt = analysis.ctxt();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
             let graph = PcgGraphConstructor::new(

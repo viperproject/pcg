@@ -181,11 +181,11 @@ fn write_edge<T: Write>(
         options,
     };
 
-    writeln!(out, "  subgraph cluster_{} {{", from)?;
-    writeln!(out, "    label=\"{}\"", label)?;
-    writeln!(out, "    {}", node_a)?;
-    writeln!(out, "    {}", node_b)?;
-    writeln!(out, "    {}", edge)?;
+    writeln!(out, "  subgraph cluster_{from} {{")?;
+    writeln!(out, "    label=\"{label}\"")?;
+    writeln!(out, "    {node_a}")?;
+    writeln!(out, "    {node_b}")?;
+    writeln!(out, "    {edge}")?;
     writeln!(out, "  }}")?;
     Ok(())
 }

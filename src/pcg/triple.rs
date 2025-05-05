@@ -4,11 +4,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
     self, BorrowKind, Local, Location, MutBorrowKind, Operand, Rvalue, Statement, StatementKind,
     Terminator, TerminatorKind, RETURN_PLACE,
 };
+
+#[rustversion::before(2025-03-02)]
+use crate::rustc_interface::middle::mir::Mutability;
+
+#[rustversion::since(2025-03-02)]
+use crate::rustc_interface::middle::mir::RawPtrKind;
 
 use crate::utils::visitor::FallableVisitor;
 use crate::{
@@ -134,15 +141,21 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.repacker),
             },
             &RawPtr(mutbl, place) => {
-                if mutbl.is_mut() {
+                #[rustversion::since(2025-03-02)]
+                if matches!(mutbl, RawPtrKind::Mut) {
+                    PlaceCondition::exclusive(place, self.repacker)
+                } else {
+                    PlaceCondition::read(place)
+                }
+                #[rustversion::before(2025-03-02)]
+                if matches!(mutbl, Mutability::Mut) {
                     PlaceCondition::exclusive(place, self.repacker)
                 } else {
                     PlaceCondition::read(place)
                 }
             }
-            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
-                PlaceCondition::read(place)
-            }
+            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => PlaceCondition::read(place),
+            _ => todo!(),
         };
         tracing::debug!("Pre: {pre:?}");
         self.operand_triples.push(Triple { pre, post: None });
@@ -291,6 +304,7 @@ impl ProducesCapability for Rvalue<'_> {
             | Aggregate(_, _)
             | CopyForDeref(_) => Some(CapabilityKind::Exclusive),
             ShallowInitBox(_, _) => Some(CapabilityKind::ShallowExclusive),
+            _ => todo!(),
         }
     }
 }

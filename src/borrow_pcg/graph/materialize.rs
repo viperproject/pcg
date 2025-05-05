@@ -36,8 +36,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut result = Vec::new();
         for edge in self.edges() {
             result.push(edge.into());
-            if let BorrowPcgEdgeKind::Borrow(edge) = edge.kind() {
-                if self.contains(edge.deref_place(repacker), repacker) {
+            if let BorrowPcgEdgeKind::Borrow(edge) = edge.kind()
+                && self.contains(edge.deref_place(repacker), repacker) {
                     result.push(MaterializedEdge::Synthetic(SyntheticEdge::Alias(
                         AliasEdge {
                             blocked_place: edge.blocked_place().into(),
@@ -45,7 +45,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         },
                     )));
                 }
-            }
         }
         result
     }

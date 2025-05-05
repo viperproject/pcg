@@ -113,14 +113,13 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         self.super_operand_fallable(operand, location)?;
-        if self.phase == EvalStmtPhase::PostMain {
-            if let Operand::Move(place) = operand {
+        if self.phase == EvalStmtPhase::PostMain
+            && let Operand::Move(place) = operand {
                 let place: utils::Place<'tcx> = (*place).into();
                 self.record_and_apply_action(
                     BorrowPCGAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
                 )?;
             }
-        }
         Ok(())
     }
 

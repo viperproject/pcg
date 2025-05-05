@@ -38,7 +38,7 @@ use self::{
 };
 
 pub fn place_id(place: &Place<'_>) -> String {
-    format!("{:?}", place)
+    format!("{place:?}")
 }
 
 pub struct GraphDrawer<T: io::Write> {
@@ -76,11 +76,11 @@ impl GraphNode {
                 ty,
             } => {
                 let capability_text = match capability {
-                    Some(k) => format!("{:?}", k),
+                    Some(k) => format!("{k:?}"),
                     None => "".to_string(),
                 };
                 let location_text = match location {
-                    Some(l) => escape_html(&format!(" at {:?}", l)),
+                    Some(l) => escape_html(&format!(" at {l:?}")),
                     None => "".to_string(),
                 };
                 let color = if location.is_some()
@@ -130,7 +130,7 @@ impl GraphNode {
                 shape: DotStringAttr("octagon".to_string()),
                 style: None,
                 penwidth: None,
-                tooltip: Some(DotStringAttr(format!("{}\\\n{}", place_ty, loans))),
+                tooltip: Some(DotStringAttr(format!("{place_ty}\\\n{loans}"))),
             },
         }
     }
@@ -269,7 +269,7 @@ impl GraphEdge {
                 kind,
             } => {
                 let options = EdgeOptions::directed(EdgeDirection::Forward)
-                    .with_label(format!("{}", kind))
+                    .with_label(format!("{kind}"))
                     .with_color("purple".to_string());
                 let options = match kind {
                     BorrowFlowEdgeKind::BorrowOutlives { regions_equal } => {
@@ -370,7 +370,7 @@ pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a, 'bc>(
         PcgGraphConstructor::new(summary, repacker, borrows_domain, capabilities, location);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
-        panic!("Failed to create file at path: {}: {}", file_path, e);
+        panic!("Failed to create file at path: {file_path}: {e}");
     }));
     drawer.draw(graph)
 }

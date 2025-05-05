@@ -225,7 +225,7 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// that it was created at.
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 
-    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx>;
+    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx>;
 
     fn location_table(&self) -> &LocationTable;
 
@@ -263,7 +263,7 @@ impl<T> DebugRecursiveCallHistory<T> {
                 action,
                 self.history
                     .iter()
-                    .map(|a| format!("{}", a))
+                    .map(|a| format!("{a}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             );
@@ -303,12 +303,12 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
             "bottom: {{{}}}, upper: {{{}}}",
             self.bottom_connect
                 .iter()
-                .map(|x| format!("{:?}", x))
+                .map(|x| format!("{x:?}"))
                 .collect::<Vec<_>>()
                 .join(", "),
             self.upper_candidate
                 .iter()
-                .map(|x| format!("{:?}", x))
+                .map(|x| format!("{x:?}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         )

@@ -96,7 +96,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                     .insert_region_projection_node(assigned_region_projection);
                 let kind = match borrow.kind() {
                     Some(mir::BorrowKind::Shared) => "shared".to_string(),
-                    Some(mir::BorrowKind::Mut { kind }) => format!("{:?}", kind),
+                    Some(mir::BorrowKind::Mut { kind }) => format!("{kind:?}"),
                     Some(mir::BorrowKind::Fake(_)) => "fake".to_string(),
                     None => "".to_string(),
                 };
@@ -104,7 +104,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                     borrowed_place,
                     assigned_region_projection: assigned_rp_node,
                     location: borrow.reserve_location(),
-                    region: borrow.borrow_region().map(|r| format!("{:?}", r)),
+                    region: borrow.borrow_region().map(|r| format!("{r:?}")),
                     path_conditions: format!("{}", edge.conditions()),
                     kind,
                 });

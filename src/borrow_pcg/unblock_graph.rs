@@ -95,8 +95,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             }
             if to_keep.len() >= edges.len() {
                 return Err(PCGInternalError::new(format!(
-                    "Didn't remove any leaves {:#?}",
-                    edges
+                    "Didn't remove any leaves {edges:#?}"
                 )));
             }
             edges = to_keep;
