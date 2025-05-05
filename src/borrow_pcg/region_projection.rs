@@ -26,14 +26,11 @@ use crate::{
                 TypeVisitor,
             },
         },
-        span::{source_map::get_source_map, FileNameDisplayPreference},
     },
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
 };
 
-use crate::rustc_interface::infer::infer::{NllRegionVariableOrigin, RegionVariableOrigin};
 
-use crate::rustc_interface::middle::ty::BoundRegionKind;
 
 /// A region occuring in region projections
 #[derive(PartialEq, Eq, Clone, Copy, Hash, From)]
@@ -48,9 +45,9 @@ pub enum PcgRegion {
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         if let Some(string) = ctxt.bc.override_region_debug_string(*self) {
-            return string.to_string();
+            string.to_string()
         } else {
-            format!("{:?}", self)
+            format!("{self:?}")
         }
         // let origin = ctxt.bc.region_inference_ctxt().definitions[*self].origin;
         // match origin {
@@ -96,13 +93,13 @@ impl PcgRegion {
                 if let Some(ctxt) = ctxt {
                     vid.to_short_string(ctxt)
                 } else {
-                    format!("{:?}", vid)
+                    format!("{vid:?}")
                 }
             }
             PcgRegion::ReErased => "ReErased".to_string(),
             PcgRegion::ReStatic => "ReStatic".to_string(),
             PcgRegion::ReBound(debruijn_index, region) => {
-                format!("ReBound({:?}, {:?})", debruijn_index, region)
+                format!("ReBound({debruijn_index:?}, {region:?})")
             }
             PcgRegion::ReLateParam(_) => todo!(),
         }
@@ -195,7 +192,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tc
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.to_short_string(repacker),
-            MaybeRemoteRegionProjectionBase::Const(c) => format!("{}", c),
+            MaybeRemoteRegionProjectionBase::Const(c) => format!("{c}"),
         }
     }
 }
@@ -443,7 +440,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
 {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let label_part = match self.label {
-            Some(RegionProjectionLabel::Location(location)) => format!(" {}", location),
+            Some(RegionProjectionLabel::Location(location)) => format!(" {location}"),
             Some(RegionProjectionLabel::Placeholder) => " FUTURE".to_string(),
             _ => "".to_string(),
         };
@@ -631,8 +628,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             Some(region_idx) => region_idx,
             None => {
                 return Err(PCGInternalError::new(format!(
-                    "Region {} not found in place {:?}",
-                    region, base
+                    "Region {region} not found in place {base:?}"
                 )));
             }
         };

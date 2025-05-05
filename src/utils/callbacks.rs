@@ -208,7 +208,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
 
         info!(
             "{}Running PCG on function: {}",
-            cargo_crate_name().map_or("".to_string(), |name| format!("{}: ", name)),
+            cargo_crate_name().map_or("".to_string(), |name| format!("{name}: ")),
             item_name
         );
         tracing::debug!("Path: {:?}", body.body.span);
@@ -219,7 +219,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
     }
 
     if let Some(dir_path) = &vis_dir {
-        let file_path = format!("{}/functions.json", dir_path);
+        let file_path = format!("{dir_path}/functions.json");
 
         let json_data = serde_json::to_string(
             &item_names
@@ -263,7 +263,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
         BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
     };
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
-    let item_dir = vis_dir.map(|dir| format!("{}/{}", dir, item_name));
+    let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
     let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
@@ -403,7 +403,7 @@ fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>)
         let mut debug_lines = Vec::new();
 
         if let Some(err) = output.first_error() {
-            debug_lines.push(format!("{:?}", err));
+            debug_lines.push(format!("{err:?}"));
         }
         for block in ctxt.body().basic_blocks.indices() {
             if let Ok(Some(state)) = output.get_all_for_bb(block) {
@@ -414,7 +414,7 @@ fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>)
         }
         if emit_pcg_annotations {
             for line in debug_lines.iter() {
-                eprintln!("// PCG: {}", line);
+                eprintln!("// PCG: {line}");
             }
         }
         if check_pcg_annotations {
@@ -435,11 +435,11 @@ fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>)
                     .filter(|a| !debug_lines_set.contains(**a))
                     .collect::<Vec<_>>();
                 if !missing_annotations.is_empty() {
-                    panic!("Missing annotations: {:?}", missing_annotations);
+                    panic!("Missing annotations: {missing_annotations:?}");
                 }
                 for not_expected_annotation in not_expected_annotations {
                     if debug_lines_set.contains(not_expected_annotation) {
-                        panic!("Unexpected annotation: {}", not_expected_annotation);
+                        panic!("Unexpected annotation: {not_expected_annotation}");
                     }
                 }
             } else {
@@ -472,22 +472,19 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                 };
                 let start_dot_graph = subset_at_location(location, true, ctxt);
                 let start_file_path = format!(
-                    "{}/bc_facts_graph_{:?}_{}_start.dot",
-                    dir_path, block_index, stmt_index
+                    "{dir_path}/bc_facts_graph_{block_index:?}_{stmt_index}_start.dot"
                 );
                 start_dot_graph
                     .write_to_file(start_file_path.as_str())
                     .unwrap();
                 let mid_dot_graph = subset_at_location(location, false, ctxt);
                 let mid_file_path = format!(
-                    "{}/bc_facts_graph_{:?}_{}_mid.dot",
-                    dir_path, block_index, stmt_index
+                    "{dir_path}/bc_facts_graph_{block_index:?}_{stmt_index}_mid.dot"
                 );
                 mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
 
                 let mut bc_facts_file = std::fs::File::create(format!(
-                    "{}/bc_facts_{:?}_{}.txt",
-                    dir_path, block_index, stmt_index
+                    "{dir_path}/bc_facts_{block_index:?}_{stmt_index}.txt"
                 ))
                 .unwrap();
 
@@ -497,7 +494,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     for (region, indices) in loans {
-                        writeln!(loans_file, "Region: {:?}", region).unwrap();
+                        writeln!(loans_file, "Region: {region:?}").unwrap();
                         for index in indices {
                             writeln!(loans_file, "  {:?}", ctxt.bc().borrow_set()[index].region())
                                 .unwrap();
@@ -511,19 +508,19 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
-                    writeln!(bc_facts_file, "{:?} Origin contains loan at:", location).unwrap();
+                    writeln!(bc_facts_file, "{location:?} Origin contains loan at:").unwrap();
                     if let Some(origin_contains_loan_at) = origin_contains_loan_at {
                         write_loans(origin_contains_loan_at, bc_facts_file, ctxt);
                     }
-                    writeln!(bc_facts_file, "{:?} Origin live on entry:", location).unwrap();
+                    writeln!(bc_facts_file, "{location:?} Origin live on entry:").unwrap();
                     if let Some(origin_live_on_entry) = ctxt.bc().origin_live_on_entry(location) {
                         for region in origin_live_on_entry {
-                            writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
+                            writeln!(bc_facts_file, "  Region: {region:?}").unwrap();
                         }
                     }
-                    writeln!(bc_facts_file, "{:?} Loans live at:", location).unwrap();
+                    writeln!(bc_facts_file, "{location:?} Loans live at:").unwrap();
                     for region in ctxt.bc().loans_live_at(location) {
-                        writeln!(bc_facts_file, "  Region: {:?}", region).unwrap();
+                        writeln!(bc_facts_file, "  Region: {region:?}").unwrap();
                     }
                 }
 
@@ -534,11 +531,11 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
             }
         }
         let dot_graph = subset_anywhere(ctxt);
-        let file_path = format!("{}/bc_facts_graph_anywhere.dot", dir_path);
+        let file_path = format!("{dir_path}/bc_facts_graph_anywhere.dot");
         dot_graph.write_to_file(file_path.as_str()).unwrap();
     }
 
     let region_inference_dot_graph = region_inference_outlives(ctxt);
-    let file_path = format!("{}/region_inference_outlives.dot", dir_path);
+    let file_path = format!("{dir_path}/region_inference_outlives.dot");
     std::fs::write(file_path, region_inference_dot_graph).unwrap();
 }

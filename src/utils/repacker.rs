@@ -275,9 +275,7 @@ impl<'tcx> Place<'tcx> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
-            "self place {:?} is not a prefix of guide place {:?}",
-            self,
-            guide_place
+            "self place {self:?} is not a prefix of guide place {guide_place:?}"
         );
         let new_projection = repacker.tcx.mk_place_elems_from_iter(
             self.projection
@@ -346,9 +344,7 @@ impl<'tcx> Place<'tcx> {
         for p in other_places.iter() {
             assert!(
                 p.projection.len() == self.projection.len() + 1,
-                "expanded place {:?} is not a direct child of {:?}",
-                p,
-                self,
+                "expanded place {p:?} is not a direct child of {self:?}",
             );
         }
         Ok(ShallowExpansion::new(new_current_place, other_places, kind))

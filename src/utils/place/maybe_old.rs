@@ -129,8 +129,8 @@ impl<'tcx> From<mir::Place<'tcx>> for MaybeOldPlace<'tcx> {
 impl std::fmt::Display for MaybeOldPlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MaybeOldPlace::Current { place } => write!(f, "{:?}", place),
-            MaybeOldPlace::OldPlace(old_place) => write!(f, "{}", old_place),
+            MaybeOldPlace::Current { place } => write!(f, "{place:?}"),
+            MaybeOldPlace::OldPlace(old_place) => write!(f, "{old_place}"),
         }
     }
 }
@@ -189,7 +189,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
             "{}{}",
             p,
             if let Some(location) = self.location() {
-                format!(" {}", location)
+                format!(" {location}")
             } else {
                 "".to_string()
             }
@@ -300,7 +300,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "place": self.place().to_json(repacker),
-            "at": self.location().map(|loc| format!("{:?}", loc)),
+            "at": self.location().map(|loc| format!("{loc:?}")),
         })
     }
 

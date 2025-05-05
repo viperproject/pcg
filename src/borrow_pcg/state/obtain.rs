@@ -12,7 +12,6 @@ use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
-use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, ShallowExpansion, SnapshotLocation};
 
@@ -55,6 +54,9 @@ impl ObtainReason {
         }
     }
 }
+
+#[rustversion::before(2025-03-02)]
+use crate::rustc_interface::middle::mir::Mutability;
 
 #[rustversion::before(2025-03-02)]
 type RawPtrKind = Mutability;

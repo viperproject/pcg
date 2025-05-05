@@ -6,11 +6,13 @@
 
 
 use crate::pcg_validity_assert;
-use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::middle::mir::{
     self, BorrowKind, Local, Location, MutBorrowKind, Operand, Rvalue, Statement, StatementKind,
     Terminator, TerminatorKind, RETURN_PLACE,
 };
+
+#[rustversion::before(2025-03-02)]
+use crate::rustc_interface::middle::mir::Mutability;
 
 #[rustversion::since(2025-03-02)]
 use crate::rustc_interface::middle::mir::RawPtrKind;

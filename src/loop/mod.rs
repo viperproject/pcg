@@ -88,7 +88,7 @@ impl LoopAnalysis {
                     // Merge in loops of this succ
                     assert_ne!(bb, succ);
                     // SAFETY: Index is different to mutably borrowed index
-                    let other = unsafe { &(*raw_bb_data)[succ] };
+                    let other = unsafe { &(&(*raw_bb_data))[succ] };
                     data.merge(other);
                     // If `succ` is a loop head, we are no longer in that loop
                     let loop_idx = loop_head_bb_index[succ];

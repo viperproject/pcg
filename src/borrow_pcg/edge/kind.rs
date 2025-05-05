@@ -32,7 +32,7 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
     pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
         match self {
             BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to),
-            other => panic!("Cannot redirect this edge kind: {:?}", other),
+            other => panic!("Cannot redirect this edge kind: {other:?}"),
         }
     }
 }

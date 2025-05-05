@@ -93,8 +93,8 @@ impl From<EvalStmtPhase> for DataflowStmtPhase {
 impl DataflowStmtPhase {
     pub(crate) fn to_filename_str_part(self) -> String {
         match self {
-            DataflowStmtPhase::Join(block) => format!("join_{:?}", block),
-            _ => format!("{:?}", self),
+            DataflowStmtPhase::Join(block) => format!("join_{block:?}"),
+            _ => format!("{self:?}"),
         }
     }
 }
@@ -272,7 +272,7 @@ impl DotGraphs {
                     .map(|map| {
                         map.iter()
                             .sorted_by_key(|x| x.0)
-                            .map(|(phase, filename)| (format!("{:?}", phase), filename))
+                            .map(|(phase, filename)| (format!("{phase:?}"), filename))
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>()
@@ -389,13 +389,13 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'tcx> {
         match &mut self.data {
             Ok(data) => Rc::<Pcg<'tcx>>::make_mut(&mut data.pcg[phase]),
-            Err(e) => panic!("PCG error: {:?}", e),
+            Err(e) => panic!("PCG error: {e:?}"),
         }
     }
     pub fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'tcx> {
         match &self.data {
             Ok(data) => &data.pcg[phase.into()],
-            Err(e) => panic!("PCG error: {:?}", e),
+            Err(e) => panic!("PCG error: {e:?}"),
         }
     }
 
@@ -466,8 +466,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
                 .insert(statement_index, phase, relative_filename)
             {
                 panic!(
-                    "Dot graph for entry ({}, {:?}) already exists",
-                    statement_index, phase
+                    "Dot graph for entry ({statement_index}, {phase:?}) already exists"
                 )
             }
 

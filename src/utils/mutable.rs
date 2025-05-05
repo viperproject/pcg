@@ -143,7 +143,7 @@ impl<'tcx> Place<'tcx> {
                                 repacker,
                             ),
                             // Deref should only be for reference, pointers or boxes
-                            _ => panic!("Deref of unexpected type: {:?}", base_ty),
+                            _ => panic!("Deref of unexpected type: {base_ty:?}"),
                         }
                     }
                     // All other projections are owned by their base path, so mutable if

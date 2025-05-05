@@ -91,7 +91,7 @@ fn format_operand<'tcx>(operand: &Operand<'tcx>, repacker: CompilerCtxt<'_, 'tcx
     match operand {
         Operand::Copy(p) => format_place(p, repacker),
         Operand::Move(p) => format!("move {}", format_place(p, repacker)),
-        Operand::Constant(c) => format!("{}", c),
+        Operand::Constant(c) => format!("{c}"),
     }
 }
 
@@ -146,7 +146,7 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> S
                 format_operand(rhs, ctxt)
             )
         }
-        Rvalue::NullaryOp(op, _) => format!("{:?}", op),
+        Rvalue::NullaryOp(op, _) => format!("{op:?}"),
         Rvalue::UnaryOp(op, val) => {
             format!("{:?} {}", op, format_operand(val, ctxt))
         }
@@ -190,7 +190,7 @@ fn format_terminator<'tcx>(
                     .join(", ")
             )
         }
-        _ => format!("{:?}", terminator),
+        _ => format!("{terminator:?}"),
     }
 }
 
@@ -248,7 +248,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                 .filter_map(|(point, idx)| {
                     if *point == bc.location_table().start_index(location) {
                         let borrow_region = bc.borrow_index_to_region(*idx);
-                        Some(format!("{:?}", borrow_region))
+                        Some(format!("{borrow_region:?}"))
                     } else {
                         None
                     }
@@ -259,7 +259,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                 .filter_map(|(point, idx)| {
                     if *point == bc.location_table().mid_index(location) {
                         let borrow_region = bc.borrow_index_to_region(*idx);
-                        Some(format!("{:?}", borrow_region))
+                        Some(format!("{borrow_region:?}"))
                     } else {
                         None
                     }
@@ -275,7 +275,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
         let terminator = format_terminator(&data.terminator().kind, ctxt);
 
         nodes.push(MirNode {
-            id: format!("{:?}", bb),
+            id: format!("{bb:?}"),
             block: bb.as_usize(),
             stmts: stmts.collect(),
             terminator,
@@ -284,21 +284,21 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
         match &data.terminator().kind {
             TerminatorKind::Goto { target } => {
                 edges.push(MirEdge {
-                    source: format!("{:?}", bb),
-                    target: format!("{:?}", target),
+                    source: format!("{bb:?}"),
+                    target: format!("{target:?}"),
                     label: "goto".to_string(),
                 });
             }
             TerminatorKind::SwitchInt { discr: _, targets } => {
                 for (val, target) in targets.iter() {
                     edges.push(MirEdge {
-                        source: format!("{:?}", bb),
-                        target: format!("{:?}", target),
-                        label: format!("{}", val),
+                        source: format!("{bb:?}"),
+                        target: format!("{target:?}"),
+                        label: format!("{val}"),
                     });
                 }
                 edges.push(MirEdge {
-                    source: format!("{:?}", bb),
+                    source: format!("{bb:?}"),
                     target: format!("{:?}", targets.otherwise()),
                     label: "otherwise".to_string(),
                 });
@@ -309,8 +309,8 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
             TerminatorKind::Unreachable => {}
             TerminatorKind::Drop { target, .. } => {
                 edges.push(MirEdge {
-                    source: format!("{:?}", bb),
-                    target: format!("{:?}", target),
+                    source: format!("{bb:?}"),
+                    target: format!("{target:?}"),
                     label: "drop".to_string(),
                 });
             }
@@ -325,8 +325,8 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
             } => {
                 if let Some(target) = target {
                     edges.push(MirEdge {
-                        source: format!("{:?}", bb),
-                        target: format!("{:?}", target),
+                        source: format!("{bb:?}"),
+                        target: format!("{target:?}"),
                         label: "call".to_string(),
                     });
                     match unwind {
@@ -335,8 +335,8 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                         UnwindAction::Terminate(_) => todo!(),
                         UnwindAction::Cleanup(cleanup) => {
                             edges.push(MirEdge {
-                                source: format!("{:?}", bb),
-                                target: format!("{:?}", cleanup),
+                                source: format!("{bb:?}"),
+                                target: format!("{cleanup:?}"),
                                 label: "unwind".to_string(),
                             });
                         }
@@ -356,15 +356,15 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                     UnwindAction::Terminate(_) => todo!(),
                     UnwindAction::Cleanup(cleanup) => {
                         edges.push(MirEdge {
-                            source: format!("{:?}", bb),
-                            target: format!("{:?}", cleanup),
+                            source: format!("{bb:?}"),
+                            target: format!("{cleanup:?}"),
                             label: "unwind".to_string(),
                         });
                     }
                 }
                 edges.push(MirEdge {
-                    source: format!("{:?}", bb),
-                    target: format!("{:?}", target),
+                    source: format!("{bb:?}"),
+                    target: format!("{target:?}"),
                     label: "success".to_string(),
                 });
             }
@@ -379,8 +379,8 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                 imaginary_target: _,
             } => {
                 edges.push(MirEdge {
-                    source: format!("{:?}", bb),
-                    target: format!("{:?}", real_target),
+                    source: format!("{bb:?}"),
+                    target: format!("{real_target:?}"),
                     label: "real".to_string(),
                 });
             }
@@ -389,8 +389,8 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                 unwind: _,
             } => {
                 edges.push(MirEdge {
-                    source: format!("{:?}", bb),
-                    target: format!("{:?}", real_target),
+                    source: format!("{bb:?}"),
+                    target: format!("{real_target:?}"),
                     label: "real".to_string(),
                 });
             }

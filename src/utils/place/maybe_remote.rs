@@ -51,7 +51,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             MaybeRemotePlace::Local(p) => p.to_short_string(repacker),
-            MaybeRemotePlace::Remote(rp) => format!("{}", rp),
+            MaybeRemotePlace::Remote(rp) => format!("{rp}"),
         }
     }
 }
@@ -60,7 +60,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
-            MaybeRemotePlace::Remote(rp) => format!("{}", rp).into(),
+            MaybeRemotePlace::Remote(rp) => format!("{rp}").into(),
         }
     }
 }
@@ -77,8 +77,8 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
 impl std::fmt::Display for MaybeRemotePlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MaybeRemotePlace::Local(p) => write!(f, "{}", p),
-            MaybeRemotePlace::Remote(l) => write!(f, "Remote({:?})", l),
+            MaybeRemotePlace::Local(p) => write!(f, "{p}"),
+            MaybeRemotePlace::Remote(l) => write!(f, "Remote({l:?})"),
         }
     }
 }

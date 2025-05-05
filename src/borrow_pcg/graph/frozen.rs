@@ -206,11 +206,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                                 let edges = pcgraph.edges_to(*block);
                                 if edges.len() == 1 {
                                     let from_block = edges.iter().next().unwrap().from;
-                                    if let Some(bs) = end_blocks_map.insert(block, from_block) {
-                                        if bs != from_block {
+                                    if let Some(bs) = end_blocks_map.insert(block, from_block)
+                                        && bs != from_block {
                                             return false;
                                         }
-                                    }
                                 }
                             }
                         }
@@ -225,7 +224,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 edge: BorrowPCGEdgeRef<'tcx, 'graph>,
                 repacker: CompilerCtxt<'_, 'tcx, C>,
             ) -> PushResult<'tcx, 'graph> {
-                if self.0.iter().any(|e| *e == edge) {
+                if self.0.contains(&edge) {
                     PushResult::Cycle
                 } else {
                     self.0.push(edge);

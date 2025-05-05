@@ -3,9 +3,10 @@ use crate::rustc_interface::middle::mir::{
     self,
     visit::{self},
 };
-use crate::rustc_interface::ast::Mutability;
 
 use super::Place;
+#[rustversion::before(2025-03-02)]
+use crate::rustc_interface::middle::mir::Mutability;
 
 pub(crate) trait FallableVisitor<'tcx> {
     fn visit_statement_fallable(

@@ -50,11 +50,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut stack = vec![node];
         while let Some(node) = stack.pop() {
             for alias in self.aliases_all_projections(node, repacker) {
-                if result.insert(alias) {
-                    if let Some(local_node) = alias.try_to_local_node(repacker) {
+                if result.insert(alias)
+                    && let Some(local_node) = alias.try_to_local_node(repacker) {
                         stack.push(local_node);
                     }
-                }
             }
         }
         result
@@ -96,8 +95,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     && let Some(rp) = p.deref_to_rp(ctxt)
                 {
                     for node in self.nodes(ctxt) {
-                        if let Some(PCGNode::RegionProjection(p)) = node.try_to_local_node(ctxt) {
-                            if p.base() == rp.base() && p.region_idx == rp.region_idx {
+                        if let Some(PCGNode::RegionProjection(p)) = node.try_to_local_node(ctxt)
+                            && p.base() == rp.base() && p.region_idx == rp.region_idx {
                                 results.extend(self.direct_aliases(
                                     p.to_local_node(ctxt),
                                     ctxt,
@@ -105,7 +104,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                     true,
                                 ));
                             }
-                        }
                     }
                 }
             }
@@ -194,7 +192,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 #[cfg(test)]
 #[test]
 fn test_aliases() {
-    use crate::borrow_checker::r#impl::BorrowCheckerImpl;
     use crate::free_pcs::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
     use crate::rustc_interface::span::Symbol;
@@ -205,7 +202,7 @@ fn test_aliases() {
         .init();
 
     use crate::utils::test::run_pcg_on_str;
-    use crate::{run_pcg, BodyAndBorrows, PcgOutput};
+    use crate::PcgOutput;
 
     fn check_all_statements<'mir, 'tcx>(
         body: &'mir mir::Body<'tcx>,

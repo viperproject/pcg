@@ -195,10 +195,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         let use_label = input_nodes.len() > 1 || output_nodes.len() > 1;
 
-        let hyperedge_id = format!("<{}>", edge_idx);
+        let hyperedge_id = format!("<{edge_idx}>");
 
         let first_edge_label = if use_label {
-            format!("{label} {}", hyperedge_id)
+            format!("{label} {hyperedge_id}")
         } else {
             label
         };
@@ -474,7 +474,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::{test::run_pcg_on_str, CompilerCtxt},
+        utils::test::run_pcg_on_str,
         visualization::graph_constructor::PcgGraphConstructor,
     };
 

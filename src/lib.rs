@@ -57,7 +57,7 @@ pub struct Weaken<'tcx> {
 impl<'tcx> Weaken<'tcx> {
     pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         let to_str = match self.to {
-            Some(to) => format!("{:?}", to),
+            Some(to) => format!("{to:?}"),
             None => "None".to_string(),
         };
         format!(
@@ -277,16 +277,16 @@ pub fn run_pcg<'a, 'tcx: 'a, BC: BorrowCheckerInterface<'tcx> + ?Sized>(
     let mut fpcs_analysis = free_pcs::PcgAnalysis::new(analysis.into_results_cursor(body));
 
     if let Some(dir_path) = visualization_output_path {
-        let edge_legend_file_path = format!("{}/edge_legend.dot", dir_path);
+        let edge_legend_file_path = format!("{dir_path}/edge_legend.dot");
         let edge_legend_graph = crate::visualization::legend::generate_edge_legend().unwrap();
         std::fs::write(&edge_legend_file_path, edge_legend_graph)
             .expect("Failed to write edge legend");
 
-        let node_legend_file_path = format!("{}/node_legend.dot", dir_path);
+        let node_legend_file_path = format!("{dir_path}/node_legend.dot");
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
         std::fs::write(&node_legend_file_path, node_legend_graph)
             .expect("Failed to write node legend");
-        generate_json_from_mir(&format!("{}/mir.json", dir_path), ctxt)
+        generate_json_from_mir(&format!("{dir_path}/mir.json"), ctxt)
             .expect("Failed to generate JSON from MIR");
 
         // Iterate over each statement in the MIR

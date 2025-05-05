@@ -122,7 +122,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         // let dot_file = format!("/pcs/dotfiles/{crate_name}_{timestamp}.dot");
         // std::fs::write(&dot_file, &dot).unwrap();
         DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
-            eprintln!("Error rendering graph: {}", e);
+            eprintln!("Error rendering graph: {e}");
         });
     }
 
@@ -168,8 +168,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         let old_node_data = self.inner.node_weight(old_idx).unwrap().clone();
         let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap_or_else(|| {
             panic!(
-                "Cannot merge {:?} and {:?} because node {:?} not found",
-                new_idx, old_idx, new_idx
+                "Cannot merge {new_idx:?} and {old_idx:?} because node {new_idx:?} not found"
             );
         });
         new_idx_weight.merge(old_node_data);
@@ -417,7 +416,7 @@ where
         for edge in self.inner.edge_references() {
             let source = self.inner.node_weight(edge.source()).unwrap();
             let target = self.inner.node_weight(edge.target()).unwrap();
-            writeln!(f, "{:?} -> {:?}", source, target)?;
+            writeln!(f, "{source:?} -> {target:?}")?;
         }
         Ok(())
     }

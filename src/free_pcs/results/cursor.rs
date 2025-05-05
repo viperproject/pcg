@@ -289,7 +289,7 @@ pub struct PcgLocation<'tcx> {
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
     fn debug_lines(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
-        self.iter().map(|r| format!("{:?}", r)).collect()
+        self.iter().map(|r| format!("{r:?}")).collect()
     }
 }
 

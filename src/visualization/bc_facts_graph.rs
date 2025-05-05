@@ -1,12 +1,11 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
 use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir::{Body, Location};
 use crate::rustc_interface::middle::ty::{self, RegionVid};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -119,7 +118,7 @@ impl<'bc, 'tcx> RegionPrettyPrinter<'bc, 'tcx> {
     }
 }
 
-fn get_all_regions<'tcx, 'bc>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> Vec<RegionVid> {
+fn get_all_regions<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> Vec<RegionVid> {
     body.local_decls
         .iter()
         .flat_map(|l| extract_regions(l.ty, CompilerCtxt::new(body, tcx, ())))
@@ -128,7 +127,7 @@ fn get_all_regions<'tcx, 'bc>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> Vec<R
         .collect()
 }
 
-fn compute_region_sccs<'tcx, 'bc>(
+fn compute_region_sccs<'tcx>(
     regions: Vec<RegionVid>,
     region_infer_ctxt: &RegionInferenceContext<'tcx>,
 ) -> petgraph::Graph<Vec<RegionVid>, ()> {
@@ -140,8 +139,8 @@ fn compute_region_sccs<'tcx, 'bc>(
         .collect::<BTreeMap<_, _>>();
     for r1 in regions.iter() {
         for r2 in regions.iter() {
-            if r1 != r2 && region_infer_ctxt.eval_outlives((*r1).into(), (*r2).into()) {
-                graph.add_edge(indices[&r1], indices[&r2], ());
+            if r1 != r2 && region_infer_ctxt.eval_outlives(*r1, *r2) {
+                graph.add_edge(indices[r1], indices[r2], ());
             }
         }
     }
