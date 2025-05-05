@@ -19,7 +19,7 @@ use super::{
 };
 use crate::utils::CompilerCtxt;
 use crate::{
-    free_pcs::triple::TripleWalker,
+    pcg::triple::TripleWalker,
     rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,

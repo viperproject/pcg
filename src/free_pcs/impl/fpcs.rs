@@ -12,7 +12,7 @@ use crate::{
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
-    }
+    },
 };
 use derive_more::{Deref, DerefMut};
 
@@ -103,11 +103,11 @@ impl Debug for CapabilityLocals<'_> {
 }
 
 impl<'tcx> CapabilityLocals<'tcx> {
-    pub(crate) fn capability_projections_mut(&mut self) -> Vec<&mut CapabilityProjections<'tcx>> {
+    pub(crate) fn capability_projections(&self) -> Vec<&CapabilityProjections<'tcx>> {
         self.0
-            .iter_mut()
+            .iter()
             .filter(|c| !c.is_unallocated())
-            .map(|c| c.get_allocated_mut())
+            .map(|c| c.get_allocated())
             .collect()
     }
 

@@ -26,21 +26,21 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Triple<'tcx> {
-    pre: Condition<'tcx>,
-    post: Option<Condition<'tcx>>,
+    pre: PlaceCondition<'tcx>,
+    post: Option<PlaceCondition<'tcx>>,
 }
 
 impl<'tcx> Triple<'tcx> {
-    pub fn pre(self) -> Condition<'tcx> {
+    pub fn pre(self) -> PlaceCondition<'tcx> {
         self.pre
     }
-    pub fn post(self) -> Option<Condition<'tcx>> {
+    pub fn post(self) -> Option<PlaceCondition<'tcx>> {
         self.post
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Condition<'tcx> {
+pub(crate) enum PlaceCondition<'tcx> {
     Capability(Place<'tcx>, CapabilityKind),
     RemoveCapability(Place<'tcx>),
     AllocateOrDeallocate(Local),
@@ -48,15 +48,15 @@ pub(crate) enum Condition<'tcx> {
     Return,
 }
 
-impl<'tcx> Condition<'tcx> {
-    fn new<T: Into<Place<'tcx>>>(place: T, capability: CapabilityKind) -> Condition<'tcx> {
-        Condition::Capability(place.into(), capability)
+impl<'tcx> PlaceCondition<'tcx> {
+    fn new<T: Into<Place<'tcx>>>(place: T, capability: CapabilityKind) -> PlaceCondition<'tcx> {
+        PlaceCondition::Capability(place.into(), capability)
     }
 
     fn exclusive<T: Into<Place<'tcx>>>(
         place: T,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Condition<'tcx> {
+    ) -> PlaceCondition<'tcx> {
         let place = place.into();
         pcg_validity_assert!(
             !place.projects_shared_ref(repacker),
@@ -66,11 +66,11 @@ impl<'tcx> Condition<'tcx> {
         Self::new(place, CapabilityKind::Exclusive)
     }
 
-    fn write<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+    fn write<T: Into<Place<'tcx>>>(place: T) -> PlaceCondition<'tcx> {
         Self::new(place, CapabilityKind::Write)
     }
 
-    fn read<T: Into<Place<'tcx>>>(place: T) -> Condition<'tcx> {
+    fn read<T: Into<Place<'tcx>>>(place: T) -> PlaceCondition<'tcx> {
         Self::new(place, CapabilityKind::Read)
     }
 }
@@ -101,12 +101,12 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
         self.super_operand_fallable(operand, location)?;
         let triple = match *operand {
             Operand::Copy(place) => Triple {
-                pre: Condition::read(place),
+                pre: PlaceCondition::read(place),
                 post: None,
             },
             Operand::Move(place) => Triple {
-                pre: Condition::exclusive(place, self.repacker),
-                post: Some(Condition::write(place)),
+                pre: PlaceCondition::exclusive(place, self.repacker),
+                post: Some(PlaceCondition::write(place)),
             },
             Operand::Constant(..) => return Ok(()),
         };
@@ -133,25 +133,28 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             | ShallowInitBox(_, _) => return Ok(()),
 
             &Ref(_, kind, place) => match kind {
-                BorrowKind::Shared => Condition::read(place),
+                BorrowKind::Shared
+                | BorrowKind::Mut {
+                    kind: MutBorrowKind::TwoPhaseBorrow,
+                } => PlaceCondition::read(place),
                 BorrowKind::Fake(..) => return Ok(()),
-                BorrowKind::Mut { .. } => Condition::exclusive(place, self.repacker),
+                BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.repacker),
             },
             &RawPtr(mutbl, place) => {
                 #[rustversion::since(2025-03-02)]
                 if matches!(mutbl, RawPtrKind::Mut) {
-                    Condition::exclusive(place, self.repacker)
+                    PlaceCondition::exclusive(place, self.repacker)
                 } else {
-                    Condition::read(place)
+                    PlaceCondition::read(place)
                 }
                 #[rustversion::before(2025-03-02)]
                 if matches!(mutbl, Mutability::Mut) {
-                    Condition::exclusive(place, self.repacker)
+                    PlaceCondition::exclusive(place, self.repacker)
                 } else {
-                    Condition::read(place)
+                    PlaceCondition::read(place)
                 }
             }
-            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => Condition::read(place),
+            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => PlaceCondition::read(place),
             _ => todo!(),
         };
         tracing::debug!("Pre: {pre:?}");
@@ -168,33 +171,35 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
         use StatementKind::*;
         let t = match statement.kind {
             Assign(box (place, ref rvalue)) => Triple {
-                pre: Condition::write(place),
-                post: rvalue.capability().map(|cap| Condition::new(place, cap)),
+                pre: PlaceCondition::write(place),
+                post: rvalue
+                    .capability()
+                    .map(|cap| PlaceCondition::new(place, cap)),
             },
             FakeRead(box (_, place)) => Triple {
-                pre: Condition::read(place),
+                pre: PlaceCondition::read(place),
                 post: None,
             },
             // Looking into `rustc` it seems that `PlaceMention` is effectively ignored.
             PlaceMention(_) => return Ok(()),
             SetDiscriminant { box place, .. } => Triple {
-                pre: Condition::exclusive(place, self.repacker),
+                pre: PlaceCondition::exclusive(place, self.repacker),
                 post: None,
             },
             Deinit(box place) => Triple {
-                pre: Condition::exclusive(place, self.repacker),
-                post: Some(Condition::write(place)),
+                pre: PlaceCondition::exclusive(place, self.repacker),
+                post: Some(PlaceCondition::write(place)),
             },
             StorageLive(local) => Triple {
-                pre: Condition::Unalloc(local),
-                post: Some(Condition::AllocateOrDeallocate(local)),
+                pre: PlaceCondition::Unalloc(local),
+                post: Some(PlaceCondition::AllocateOrDeallocate(local)),
             },
             StorageDead(local) => Triple {
-                pre: Condition::AllocateOrDeallocate(local),
-                post: Some(Condition::Unalloc(local)),
+                pre: PlaceCondition::AllocateOrDeallocate(local),
+                post: Some(PlaceCondition::Unalloc(local)),
             },
             Retag(_, box place) => Triple {
-                pre: Condition::exclusive(place, self.repacker),
+                pre: PlaceCondition::exclusive(place, self.repacker),
                 post: None,
             },
             _ => return Ok(()),
@@ -203,18 +208,18 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
         if let Assign(box (_, Rvalue::Ref(_, kind, place))) = &statement.kind {
             let triple = match kind {
                 BorrowKind::Shared => Triple {
-                    pre: Condition::read(*place),
-                    post: Some(Condition::read(*place)),
+                    pre: PlaceCondition::read(*place),
+                    post: Some(PlaceCondition::read(*place)),
                 },
                 BorrowKind::Fake(..) => return Ok(()),
                 BorrowKind::Mut { kind } => {
                     let post = if matches!(kind, MutBorrowKind::TwoPhaseBorrow) {
-                        Some(Condition::read(*place))
+                        Some(PlaceCondition::read(*place))
                     } else {
-                        Some(Condition::RemoveCapability((*place).into()))
+                        Some(PlaceCondition::RemoveCapability((*place).into()))
                     };
                     Triple {
-                        pre: Condition::exclusive(*place, self.repacker),
+                        pre: PlaceCondition::exclusive(*place, self.repacker),
                         post,
                     }
                 }
@@ -242,20 +247,20 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             | FalseEdge { .. }
             | FalseUnwind { .. } => return Ok(()),
             Return => Triple {
-                pre: Condition::Return,
-                post: Some(Condition::write(RETURN_PLACE)),
+                pre: PlaceCondition::Return,
+                post: Some(PlaceCondition::write(RETURN_PLACE)),
             },
             &Drop { place, .. } => Triple {
-                pre: Condition::write(place),
+                pre: PlaceCondition::write(place),
                 post: None,
             },
             &Call { destination, .. } => Triple {
-                pre: Condition::write(destination),
-                post: Some(Condition::exclusive(destination, self.repacker)),
+                pre: PlaceCondition::write(destination),
+                post: Some(PlaceCondition::exclusive(destination, self.repacker)),
             },
             &Yield { resume_arg, .. } => Triple {
-                pre: Condition::write(resume_arg),
-                post: Some(Condition::exclusive(resume_arg, self.repacker)),
+                pre: PlaceCondition::write(resume_arg),
+                post: Some(PlaceCondition::exclusive(resume_arg, self.repacker)),
             },
             InlineAsm { .. } => {
                 return Err(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));

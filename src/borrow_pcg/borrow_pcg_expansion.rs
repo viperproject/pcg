@@ -351,7 +351,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         }
     }
 
-    pub(super) fn new(
+    pub(crate) fn new(
         base: P,
         expansion: PlaceExpansion<'tcx>,
         location: Location,

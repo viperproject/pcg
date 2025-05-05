@@ -14,7 +14,6 @@ use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
-pub(crate) mod executed_actions;
 
 /// An action that is applied to a `BorrowsState` during the dataflow analysis
 /// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
@@ -249,13 +248,10 @@ impl<'tcx> BorrowsState<'tcx> {
                         return Ok(true);
                     };
 
-                    if !base.place().is_owned(repacker) {
-                        if for_exclusive {
-                            changed |= capabilities.remove(base.place().into()).is_some();
-                        } else {
-                            changed |=
-                                capabilities.insert(base.place().into(), CapabilityKind::Read);
-                        }
+                    if for_exclusive {
+                        changed |= capabilities.remove(base.place().into()).is_some();
+                    } else {
+                        changed |= capabilities.insert(base.place().into(), CapabilityKind::Read);
                     }
 
                     for p in expansion.expansion.iter() {

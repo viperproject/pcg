@@ -100,7 +100,7 @@ impl<S: CheckValidityOnExpiry, T> Drop for DropGuard<'_, S, T> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CapabilityProjections<'tcx> {
     local: Local,
-    expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
+    pub(crate) expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
 }
 
 impl CheckValidityOnExpiry for CapabilityProjections<'_> {
