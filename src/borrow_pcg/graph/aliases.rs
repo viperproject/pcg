@@ -204,9 +204,9 @@ fn test_aliases() {
     use crate::utils::test::run_pcg_on_str;
     use crate::PcgOutput;
 
-    fn check_all_statements<'mir, 'tcx>(
+    fn check_all_statements<'mir, 'tcx, 'arena>(
         body: &'mir mir::Body<'tcx>,
-        analysis: &mut PcgOutput<'mir, 'tcx>,
+        analysis: &mut PcgOutput<'mir, 'tcx, 'arena>,
         f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {

@@ -11,13 +11,14 @@ use std::{
 };
 
 use bit_set::BitSet;
+use bumpalo::Bump;
 use derive_more::From;
 
 use super::{
     domain::PcgDomain, visitor::PcgVisitor, DataflowStmtPhase, DotGraphs, ErrorState,
     EvalStmtPhase, PCGDebugData, PcgError,
 };
-use crate::utils::CompilerCtxt;
+use crate::utils::{arena::ArenaRef, CompilerCtxt};
 use crate::{
     pcg::triple::TripleWalker,
     rustc_interface::{
@@ -117,12 +118,13 @@ struct PCGEngineDebugData {
 
 type Block = usize;
 
-pub struct PcgEngine<'a, 'tcx: 'a> {
+pub struct PcgEngine<'a, 'tcx: 'a, 'arena> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
+    pub(crate) arena: &'arena Bump,
 }
 pub(crate) fn edges_to_analyze<'tcx, 'mir>(
     terminator: &'mir Terminator<'tcx>,
@@ -171,7 +173,7 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
     Terminator(&'mir Terminator<'tcx>),
 }
 
-impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
+impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -182,7 +184,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, '_>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -200,7 +202,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
     #[tracing::instrument(skip(self, state, object, location))]
     fn analyze(
         &mut self,
-        state: &mut PcgDomain<'a, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx, '_>,
         object: AnalysisObject<'_, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -237,7 +239,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         }
 
         for phase in EvalStmtPhase::phases() {
-            let curr = Rc::<_>::make_mut(&mut pcg.states.0[phase]);
+            let curr = ArenaRef::make_mut(&mut pcg.states.0[phase]);
             pcg_data.actions[phase] =
                 PcgVisitor::visit(curr, self.ctxt, &tw, phase, object, location)?;
             if let Some(next_phase) = phase.next() {
@@ -253,7 +255,11 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn new(repacker: CompilerCtxt<'a, 'tcx>, debug_output_dir: Option<&str>) -> Self {
+    pub(crate) fn new(
+        ctxt: CompilerCtxt<'a, 'tcx>,
+        arena: &'arena Bump,
+        debug_output_dir: Option<&str>,
+    ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
             if std::path::Path::new(&dir_path).exists() {
                 std::fs::remove_dir_all(dir_path).expect("Failed to delete directory contents");
@@ -261,7 +267,7 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             create_dir_all(dir_path).expect("Failed to create directory for DOT files");
             let dot_graphs = IndexVec::from_fn_n(
                 |_| Rc::new(RefCell::new(DotGraphs::new())),
-                repacker.body().basic_blocks.len(),
+                ctxt.body().basic_blocks.len(),
             );
             PCGEngineDebugData {
                 debug_output_dir: dir_path.to_string(),
@@ -269,20 +275,21 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
             }
         });
         let mut reachable_blocks = BitSet::default();
-        reachable_blocks.reserve_len(repacker.body().basic_blocks.len());
+        reachable_blocks.reserve_len(ctxt.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK.index());
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
-            ctxt: repacker,
+            ctxt,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
+            arena
         }
     }
 
     fn generate_dot_graph(
         &self,
-        state: &mut PcgDomain<'a, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx, '_>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
     ) {
@@ -296,8 +303,8 @@ impl<'a, 'tcx> PcgEngine<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
-    type Domain = PcgDomain<'a, 'tcx>;
+impl<'a, 'tcx, 'arena> Analysis<'tcx> for PcgEngine<'a, 'tcx, 'arena> {
+    type Domain = PcgDomain<'a, 'tcx, 'arena>;
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {
@@ -313,7 +320,7 @@ impl<'a, 'tcx> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
             // For results cursor, don't set block or consider debug data
             (None, None)
         };
-        PcgDomain::new(self.ctxt, block, debug_data)
+        PcgDomain::new(self.ctxt, block, debug_data, self.arena)
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {

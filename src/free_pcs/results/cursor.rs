@@ -41,14 +41,16 @@ use crate::{
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct PcgAnalysis<'mir, 'tcx: 'mir> {
-    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx>>>,
+pub struct PcgAnalysis<'mir, 'tcx: 'mir, 'arena> {
+    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, 'arena>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx>>>) -> Self {
+impl<'mir, 'tcx, 'arena> PcgAnalysis<'mir, 'tcx, 'arena> {
+    pub(crate) fn new(
+        cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, 'arena>>>,
+    ) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -93,7 +95,7 @@ impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
         let result = PcgLocation {
             location,
             actions: data.actions.clone(),
-            states: data.pcg.states.clone(),
+            states: data.pcg.states.to_owned(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -180,7 +182,7 @@ impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PcgEngine<'mir, 'tcx> {
+    fn analysis(&self) -> &PcgEngine<'mir, 'tcx, 'arena> {
         &self.cursor.analysis().0
     }
 

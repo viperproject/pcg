@@ -27,7 +27,7 @@ default = ["visualization"]
 # rustc_target = {path = "../.rustup/toolchains/nightly-2024-12-15-aarch64-apple-darwin/lib/rustlib/rustc-src/rust/compiler/rustc_target", optional = true}
 
 bit-set = "0.8.0"
-bumpalo = "3.16.0"
+bumpalo = {version = "3.16.0", features = ["allocator_api"]}
 derive_more = { version = "2.0.1", features = ["full"] }
 dot = "0.1"
 itertools = "0.12.0"

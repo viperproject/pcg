@@ -5,6 +5,7 @@ use std::{
     io::Write,
 };
 
+use bumpalo::Bump;
 use derive_more::From;
 use tracing::{debug, info, trace};
 
@@ -245,7 +246,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     tcx: TyCtxt<'tcx>,
     polonius: bool,
     vis_dir: Option<&str>,
-    callback: Option<&(dyn for<'mir> Fn(PcgAnalysis<'mir, 'tcx>) + 'static)>,
+    callback: Option<&(dyn for<'mir> Fn(PcgAnalysis<'mir, 'tcx, '_>) + 'static)>,
 ) {
     let region_debug_name_overrides = if let Ok(lines) = source_lines(tcx, &body.body) {
         lines
@@ -270,7 +271,8 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     }
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
-    let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
+    let arena = Bump::new();
+    let mut output = run_pcg(&body.body, tcx, &bc, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[rustversion::since(2024-12-14)]
@@ -410,7 +412,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>) {
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, '_>) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 

@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
-use serde_json::json;
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::pcg::EvalStmtPhase;
-use crate::utils::CompilerCtxt;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
+use crate::utils::CompilerCtxt;
+use serde_json::json;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EvalStmtData<T> {
@@ -12,6 +12,17 @@ pub struct EvalStmtData<T> {
     pub(crate) post_operands: T,
     pub(crate) pre_main: T,
     pub(crate) post_main: T,
+}
+
+impl<T> EvalStmtData<T> {
+    pub(crate) fn new(pre_operands: T, post_operands: T, pre_main: T, post_main: T) -> Self {
+        Self {
+            pre_operands,
+            post_operands,
+            pre_main,
+            post_main,
+        }
+    }
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for EvalStmtData<T> {
@@ -36,7 +47,7 @@ impl<T: Default> Default for EvalStmtData<T> {
     }
 }
 
-impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<Rc<T>> {
+impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<T> {
     fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.pre_operands.check_validity(repacker)?;
         self.post_operands.check_validity(repacker)?;
