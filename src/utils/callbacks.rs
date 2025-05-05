@@ -243,13 +243,16 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
     }
 }
 
+type PcgCallback<'tcx> =
+    dyn for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + 'static;
+
 pub(crate) fn run_pcg_on_fn<'tcx>(
     def_id: LocalDefId,
     body: &BodyWithBorrowckFacts<'tcx>,
     tcx: TyCtxt<'tcx>,
     polonius: bool,
     vis_dir: Option<&str>,
-    callback: Option<&(dyn for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + 'static)>,
+    callback: Option<&PcgCallback<'tcx>>,
 ) {
     let region_debug_name_overrides = if let Ok(lines) = source_lines(tcx, &body.body) {
         lines
@@ -415,9 +418,9 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations<'arena>(
+fn emit_and_check_annotations(
     item_name: String,
-    output: &mut PcgOutput<'_, '_, &'arena bumpalo::Bump>,
+    output: &mut PcgOutput<'_, '_, &bumpalo::Bump>,
 ) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);

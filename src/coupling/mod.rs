@@ -318,7 +318,8 @@ impl<
             } else {
                 self.inner.update_edge(source, target, weight);
             }
-            if !self.is_acyclic() {
+            // If so, then there must be a cycle
+            if petgraph::algo::has_path_connecting(&self.inner, target, source, None) {
                 self.merge_sccs(ctxt);
                 return AddEdgeResult::MergedNodes;
             }
