@@ -32,7 +32,6 @@ use crate::{
         session::Session,
         span::SpanSnippetError,
     },
-    visualization::bc_facts_graph::RegionPrettyPrinter,
     PcgOutput,
 };
 
@@ -41,7 +40,7 @@ use crate::rustc_interface::interface::Queries;
 
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::{
-    region_inference_outlives, subset_anywhere, subset_at_location,
+    region_inference_outlives, subset_anywhere, subset_at_location, RegionPrettyPrinter,
 };
 
 use super::{env_feature_enabled, CompilerCtxt, Place};
@@ -243,9 +242,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     vis_dir: Option<&str>,
     callback: Option<&(dyn for<'mir> Fn(PcgAnalysis<'mir, 'tcx>) + 'static)>,
 ) {
-    let region_debug_name_overrides = if vis_dir.is_some()
-        && let Ok(lines) = source_lines(tcx, &body.body)
-    {
+    let region_debug_name_overrides = if let Ok(lines) = source_lines(tcx, &body.body) {
         lines
             .iter()
             .flat_map(|l| l.split("PCG_LIFETIME_DISPLAY: ").nth(1))
@@ -259,9 +256,12 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     } else {
         BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
     };
-    let region_printer = bc.region_pretty_printer();
-    for (region, name) in region_debug_name_overrides {
-        region_printer.insert(region, name.to_string());
+    #[cfg(feature = "visualization")]
+    {
+        let region_printer = bc.region_pretty_printer();
+        for (region, name) in region_debug_name_overrides {
+            region_printer.insert(region, name.to_string());
+        }
     }
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
@@ -323,6 +323,7 @@ enum BorrowChecker<'mir, 'tcx> {
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
 
+#[cfg(feature = "visualization")]
 impl<'mir, 'tcx> BorrowChecker<'mir, 'tcx> {
     fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
         match self {
