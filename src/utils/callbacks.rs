@@ -204,6 +204,11 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
             continue;
         }
         let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
+        if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
+            && function != item_name {
+                tracing::info!("Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}");
+                continue;
+            }
         let body = take_stored_body(tcx, def_id);
 
         info!(
@@ -211,7 +216,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
             cargo_crate_name().map_or("".to_string(), |name| format!("{name}: ")),
             item_name
         );
-        tracing::debug!("Path: {:?}", body.body.span);
+        tracing::info!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
         run_pcg_on_fn(def_id, &body, tcx, polonius, vis_dir, None);

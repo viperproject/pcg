@@ -14,7 +14,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
-    utils::Place,
+    utils::{redirect::MaybeRedirected, Place},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
@@ -36,6 +36,16 @@ use smallvec::SmallVec;
 pub struct LoopAbstraction<'tcx> {
     pub(crate) edge: AbstractionBlockEdge<'tcx>,
     pub(crate) block: BasicBlock,
+}
+
+impl<'tcx> LoopAbstraction<'tcx> {
+    pub(crate) fn redirect(
+        &mut self,
+        from: AbstractionOutputTarget<'tcx>,
+        to: AbstractionOutputTarget<'tcx>,
+    ) {
+        self.edge.redirect(from, to);
+    }
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
@@ -128,6 +138,16 @@ pub struct FunctionCallAbstraction<'tcx> {
     def_id: DefId,
     substs: GenericArgsRef<'tcx>,
     edge: AbstractionBlockEdge<'tcx>,
+}
+
+impl<'tcx> FunctionCallAbstraction<'tcx> {
+    pub(crate) fn redirect(
+        &mut self,
+        from: AbstractionOutputTarget<'tcx>,
+        to: AbstractionOutputTarget<'tcx>,
+    ) {
+        self.edge.redirect(from, to);
+    }
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
@@ -245,10 +265,32 @@ edgedata_enum!(
     FunctionCall(FunctionCallAbstraction<'tcx>),
     Loop(LoopAbstraction<'tcx>),
 );
+
+impl<'tcx> AbstractionType<'tcx> {
+    pub(crate) fn redirect(&mut self, from: AbstractionOutputTarget<'tcx>, to: AbstractionOutputTarget<'tcx>) {
+        match self {
+            AbstractionType::FunctionCall(c) => c.redirect(from, to),
+            AbstractionType::Loop(c) => c.redirect(from, to),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash)]
 pub struct AbstractionBlockEdge<'tcx> {
     pub(crate) inputs: SmallVec<[AbstractionInputTarget<'tcx>; 8]>,
-    outputs: SmallVec<[AbstractionOutputTarget<'tcx>; 8]>,
+    outputs: SmallVec<[MaybeRedirected<AbstractionOutputTarget<'tcx>>; 8]>,
+}
+
+impl<'tcx> AbstractionBlockEdge<'tcx> {
+    pub(crate) fn redirect(
+        &mut self,
+        from: AbstractionOutputTarget<'tcx>,
+        to: AbstractionOutputTarget<'tcx>,
+    ) {
+        for output in self.outputs.iter_mut() {
+            output.redirect(from, to);
+        }
+    }
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx> {
@@ -333,11 +375,11 @@ impl<'tcx> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        self.outputs.iter_mut().collect()
-    }
-}
+// impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
+//     fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+//         self.outputs.iter_mut().collect()
+//     }
+// }
 
 impl PartialEq for AbstractionBlockEdge<'_> {
     fn eq(&self, other: &Self) -> bool {
@@ -356,12 +398,12 @@ impl<'tcx> AbstractionBlockEdge<'tcx> {
         assert!(!outputs.is_empty());
         Self {
             inputs: inputs.into_iter().collect(),
-            outputs: outputs.into_iter().collect(),
+            outputs: outputs.into_iter().map(|o| o.into()).collect(),
         }
     }
 
     pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
-        self.outputs.to_vec()
+        self.outputs.iter().map(|o| o.effective()).collect()
     }
 
     pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {

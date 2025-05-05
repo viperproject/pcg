@@ -62,16 +62,21 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
     let cargo = "cargo";
     let pcs_exe = cwd.join(["target", target, "pcg_bin"].iter().collect::<PathBuf>());
     println!("Running PCG on directory: {}", dir.display());
-    let exit = Command::new(cargo)
+    let mut command = Command::new(cargo);
+    command
         .arg("check")
+        .current_dir(dir)
         .env("RUST_TOOLCHAIN", get_rust_toolchain_channel())
         .env("RUSTUP_TOOLCHAIN", get_rust_toolchain_channel())
         .env(
             "PCG_VALIDITY_CHECKS",
             format!("{}", options.validity_checks()),
         )
-        .env("RUSTC", &pcs_exe)
-        .current_dir(dir)
+        .env("RUSTC", &pcs_exe);
+    if let Some(function) = options.function() {
+        command.env("PCG_CHECK_FUNCTION", function);
+    }
+    let exit = command
         .status()
         .unwrap_or_else(|_| panic!("Failed to execute cargo check on {}", dir.display()));
 
@@ -217,10 +222,18 @@ pub enum RunOnCrateOptions {
     RunPCG {
         target: Target,
         validity_checks: bool,
+        function: Option<&'static str>,
     },
 }
 
 impl RunOnCrateOptions {
+    pub fn function(&self) -> Option<&'static str> {
+        match self {
+            RunOnCrateOptions::RunPCG { function, .. } => *function,
+            RunOnCrateOptions::TypecheckOnly => None,
+        }
+    }
+
     pub fn validity_checks(&self) -> bool {
         match self {
             RunOnCrateOptions::RunPCG {
