@@ -1,3 +1,4 @@
+use std::alloc::Allocator;
 use std::path::Path;
 use std::sync::Arc;
 use std::{fs, io};
@@ -14,7 +15,14 @@ use super::callbacks::{in_cargo_crate, run_pcg_on_fn, take_stored_body};
 
 pub struct TestCallbacks {
     input: String,
-    callback: Option<Box<dyn for<'mir, 'tcx> Fn(PcgAnalysis<'mir, 'tcx, '_>) + Send + Sync + 'static>>,
+    callback: Option<
+        Box<
+            dyn for<'mir, 'tcx, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)
+                + Send
+                + Sync
+                + 'static,
+        >,
+    >,
 }
 
 pub struct StringLoader(pub String);
@@ -37,7 +45,7 @@ impl FileLoader for StringLoader {
 /// Stored bodies must come from the same `tcx`.
 unsafe fn run_pcg_on_first_fn<'tcx>(
     tcx: TyCtxt<'tcx>,
-    callback: impl for<'mir> Fn(PcgAnalysis<'mir, 'tcx, '_>) + Send + Sync + 'static,
+    callback: impl for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + Send + Sync + 'static,
 ) {
     let def_id = tcx
         .hir_body_owners()
@@ -73,8 +81,13 @@ impl driver::Callbacks for TestCallbacks {
 #[cfg(test)]
 pub(crate) fn run_pcg_on_str(
     input: &str,
-    callback: impl for<'mir, 'tcx> Fn(PcgAnalysis<'mir, 'tcx, '_>) + Send + Sync + 'static,
+    callback: impl for<'mir, 'tcx, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)
+        + Send
+        + Sync
+        + 'static,
 ) {
+    use std::alloc::Allocator;
+
     run_compiler(
         &vec![
             "rustc".to_string(),

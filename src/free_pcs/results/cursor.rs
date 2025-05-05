@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::rc::Rc;
+use std::{alloc::Allocator, rc::Rc};
 
 use derive_more::Deref;
 
@@ -41,15 +41,15 @@ use crate::{
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct PcgAnalysis<'mir, 'tcx: 'mir, 'arena> {
-    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, 'arena>>>,
+pub struct PcgAnalysis<'mir, 'tcx: 'mir, A: Allocator + Copy> {
+    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, 'arena> PcgAnalysis<'mir, 'tcx, 'arena> {
+impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
     pub(crate) fn new(
-        cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, 'arena>>>,
+        cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
     ) -> Self {
         Self {
             cursor,
@@ -182,7 +182,7 @@ impl<'mir, 'tcx, 'arena> PcgAnalysis<'mir, 'tcx, 'arena> {
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PcgEngine<'mir, 'tcx, 'arena> {
+    fn analysis(&self) -> &PcgEngine<'mir, 'tcx, A> {
         &self.cursor.analysis().0
     }
 

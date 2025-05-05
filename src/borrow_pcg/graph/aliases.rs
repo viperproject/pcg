@@ -192,6 +192,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 #[cfg(test)]
 #[test]
 fn test_aliases() {
+    use std::alloc::Allocator;
+
     use crate::free_pcs::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
     use crate::rustc_interface::span::Symbol;
@@ -204,9 +206,9 @@ fn test_aliases() {
     use crate::utils::test::run_pcg_on_str;
     use crate::PcgOutput;
 
-    fn check_all_statements<'mir, 'tcx, 'arena>(
+    fn check_all_statements<'mir, 'tcx, A: Allocator + Copy>(
         body: &'mir mir::Body<'tcx>,
-        analysis: &mut PcgOutput<'mir, 'tcx, 'arena>,
+        analysis: &mut PcgOutput<'mir, 'tcx, A>,
         f: impl Fn(mir::Location, &PcgLocation<'tcx>),
     ) {
         for block in body.basic_blocks.indices() {

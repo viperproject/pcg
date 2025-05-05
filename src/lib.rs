@@ -46,7 +46,7 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithCompilerCtxt;
 
-pub type PcgOutput<'mir, 'tcx, 'arena> = free_pcs::PcgAnalysis<'mir, 'tcx, 'arena>;
+pub type PcgOutput<'mir, 'tcx, A> = free_pcs::PcgAnalysis<'mir, 'tcx, A>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -158,7 +158,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPCGActions<'tcx> {
 }
 
 use borrow_pcg::action::actions::BorrowPCGActions;
-use std::sync::Mutex;
+use std::{alloc::Allocator, sync::Mutex};
 use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {
@@ -247,13 +247,18 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-pub fn run_pcg<'a, 'tcx: 'a, 'arena, BC: BorrowCheckerInterface<'tcx> + ?Sized>(
+pub fn run_pcg<
+    'a,
+    'tcx: 'a,
+    A: Allocator + Copy + std::fmt::Debug,
+    BC: BorrowCheckerInterface<'tcx> + ?Sized,
+>(
     body: &'a Body<'tcx>,
     tcx: TyCtxt<'tcx>,
     bc: &'a BC,
-    arena: &'arena Bump,
+    arena: A,
     visualization_output_path: Option<&str>,
-) -> PcgOutput<'a, 'tcx, 'arena> {
+) -> PcgOutput<'a, 'tcx, A> {
     let ctxt: CompilerCtxt<'a, 'tcx> = CompilerCtxt::new(body, tcx, bc.as_dyn());
     let engine = PcgEngine::new(ctxt, arena, visualization_output_path);
     {

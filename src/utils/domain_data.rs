@@ -1,3 +1,4 @@
+use std::alloc::Allocator;
 use std::rc::Rc;
 
 use derive_more::From;
@@ -46,7 +47,7 @@ impl<T: Clone> DomainDataStates<T> {
     }
 }
 
-impl<'arena, T: Clone> DomainDataStates<ArenaRef<'arena, T>> {
+impl<T: Clone, A: Allocator + Clone> DomainDataStates<ArenaRef<T, A>> {
     pub(crate) fn to_owned(&self) -> DomainDataStates<T> {
         DomainDataStates(self.0.clone().map(|x| (*x).clone()))
     }

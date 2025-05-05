@@ -5,6 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::{
+    alloc::Allocator,
     cell::{Cell, RefCell},
     fs::create_dir_all,
     rc::Rc,
@@ -118,13 +119,13 @@ struct PCGEngineDebugData {
 
 type Block = usize;
 
-pub struct PcgEngine<'a, 'tcx: 'a, 'arena> {
+pub struct PcgEngine<'a, 'tcx: 'a, A: Allocator + Clone> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
-    pub(crate) arena: &'arena Bump,
+    pub(crate) arena: A,
 }
 pub(crate) fn edges_to_analyze<'tcx, 'mir>(
     terminator: &'mir Terminator<'tcx>,
@@ -173,7 +174,7 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
     Terminator(&'mir Terminator<'tcx>),
 }
 
-impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
+impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
         self.debug_data
             .as_ref()
@@ -184,7 +185,7 @@ impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, '_>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, A>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -202,7 +203,7 @@ impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
     #[tracing::instrument(skip(self, state, object, location))]
     fn analyze(
         &mut self,
-        state: &mut PcgDomain<'a, 'tcx, '_>,
+        state: &mut PcgDomain<'a, 'tcx, A>,
         object: AnalysisObject<'_, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
@@ -257,7 +258,7 @@ impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
 
     pub(crate) fn new(
         ctxt: CompilerCtxt<'a, 'tcx>,
-        arena: &'arena Bump,
+        arena: A,
         debug_output_dir: Option<&str>,
     ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
@@ -283,13 +284,13 @@ impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
             ctxt,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
-            arena
+            arena,
         }
     }
 
     fn generate_dot_graph(
         &self,
-        state: &mut PcgDomain<'a, 'tcx, '_>,
+        state: &mut PcgDomain<'a, 'tcx, A>,
         phase: impl Into<DataflowStmtPhase>,
         statement_index: usize,
     ) {
@@ -303,8 +304,8 @@ impl<'a, 'tcx, 'arena> PcgEngine<'a, 'tcx, 'arena> {
     }
 }
 
-impl<'a, 'tcx, 'arena> Analysis<'tcx> for PcgEngine<'a, 'tcx, 'arena> {
-    type Domain = PcgDomain<'a, 'tcx, 'arena>;
+impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
+    type Domain = PcgDomain<'a, 'tcx, A>;
     const NAME: &'static str = "pcs";
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {

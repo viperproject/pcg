@@ -7,6 +7,7 @@
 use bumpalo::Bump;
 use itertools::Itertools;
 use std::{
+    alloc::Allocator,
     cell::RefCell,
     collections::BTreeMap,
     fmt::{Debug, Formatter, Result},
@@ -179,15 +180,21 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct PcgDomainData<'tcx, 'arena> {
-    pub(crate) pcg: DomainData<ArenaRef<'arena, Pcg<'tcx>>>,
+#[derive(Clone, Eq, Debug)]
+pub struct PcgDomainData<'tcx, A: Allocator> {
+    pub(crate) pcg: DomainData<ArenaRef<Pcg<'tcx>, A>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
-impl<'tcx, 'arena> PcgDomainData<'tcx, 'arena> {
-    pub(crate) fn new(arena: &'arena Bump) -> Self {
-        let pcg = Rc::new_in(Pcg::default(), arena);
+impl<'tcx, A: Allocator> PartialEq for PcgDomainData<'tcx, A> {
+    fn eq(&self, other: &Self) -> bool {
+        self.pcg == other.pcg
+    }
+}
+
+impl<'tcx, A: Allocator + Clone> PcgDomainData<'tcx, A> {
+    pub(crate) fn new(arena: A) -> Self {
+        let pcg = ArenaRef::new_in(Pcg::default(), arena);
         Self {
             pcg: DomainData::new(pcg),
             actions: EvalStmtData::default(),
@@ -196,15 +203,15 @@ impl<'tcx, 'arena> PcgDomainData<'tcx, 'arena> {
 }
 
 #[derive(Clone)]
-pub struct PcgDomain<'a, 'tcx, 'arena> {
+pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     repacker: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
-    pub(crate) data: std::result::Result<PcgDomainData<'tcx, 'arena>, PcgError>,
+    pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
     pub(crate) reachable: bool,
 }
 
-impl Debug for PcgDomain<'_, '_, '_> {
+impl<'a, 'tcx, A: Allocator + Debug> Debug for PcgDomain<'a, 'tcx, A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}", self.data)
     }
@@ -371,7 +378,7 @@ pub enum PCGUnsupportedError {
     InlineAssembly,
 }
 
-impl<'a, 'tcx, 'arena> PcgDomain<'a, 'tcx, 'arena> {
+impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
     pub(crate) fn has_error(&self) -> bool {
         self.data.is_err()
     }
@@ -384,7 +391,7 @@ impl<'a, 'tcx, 'arena> PcgDomain<'a, 'tcx, 'arena> {
         self.data = Err(error);
     }
 
-    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx, 'arena>, PcgError> {
+    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx, A>, PcgError> {
         self.data.as_ref().map_err(|e| e.clone())
     }
 
@@ -494,7 +501,7 @@ impl<'a, 'tcx, 'arena> PcgDomain<'a, 'tcx, 'arena> {
         repacker: CompilerCtxt<'a, 'tcx>,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
-        arena: &'arena Bump,
+        arena: A,
     ) -> Self {
         Self {
             repacker,
@@ -506,15 +513,15 @@ impl<'a, 'tcx, 'arena> PcgDomain<'a, 'tcx, 'arena> {
     }
 }
 
-impl Eq for PcgDomain<'_, '_, '_> {}
+impl<'a, 'tcx, A: Allocator + Clone> Eq for PcgDomain<'a, 'tcx, A> {}
 
-impl PartialEq for PcgDomain<'_, '_, '_> {
+impl<'a, 'tcx, A: Allocator + Clone> PartialEq for PcgDomain<'a, 'tcx, A> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl JoinSemiLattice for PcgDomain<'_, '_, '_> {
+impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> {
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;
@@ -582,11 +589,13 @@ impl JoinSemiLattice for PcgDomain<'_, '_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx, '_>>> for PcgDomain<'a, 'tcx, '_> {
+impl<'a, 'tcx, A: Allocator + Clone + Debug> DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx, A>>>
+    for PcgDomain<'a, 'tcx, A>
+{
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx, '_>>,
+        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx, A>>,
         _f: &mut Formatter<'_>,
     ) -> Result {
         todo!()

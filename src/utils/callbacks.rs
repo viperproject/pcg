@@ -1,4 +1,5 @@
 use std::{
+    alloc::Allocator,
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     fs::File,
@@ -206,10 +207,13 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
         }
         let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
         if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
-            && function != item_name {
-                tracing::info!("Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}");
-                continue;
-            }
+            && function != item_name
+        {
+            tracing::info!(
+                "Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}"
+            );
+            continue;
+        }
         let body = take_stored_body(tcx, def_id);
 
         info!(
@@ -246,7 +250,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     tcx: TyCtxt<'tcx>,
     polonius: bool,
     vis_dir: Option<&str>,
-    callback: Option<&(dyn for<'mir> Fn(PcgAnalysis<'mir, 'tcx, '_>) + 'static)>,
+    callback: Option<&(dyn for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + 'static)>,
 ) {
     let region_debug_name_overrides = if let Ok(lines) = source_lines(tcx, &body.body) {
         lines
@@ -412,7 +416,10 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, '_>) {
+fn emit_and_check_annotations<'arena>(
+    item_name: String,
+    output: &mut PcgOutput<'_, '_, &'arena bumpalo::Bump>,
+) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 
