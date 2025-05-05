@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use derive_more::{Deref, DerefMut, From};
+use petgraph::algo::has_path_connecting;
 use smallvec::SmallVec;
 
 use super::{
@@ -7,22 +9,19 @@ use super::{
     edge::kind::BorrowPcgEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
-    region_projection::PcgRegion,
+    region_projection::{PcgRegion, RegionProjectionLabel},
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{
+    borrow_checker::BorrowCheckerInterface,
+    coupling::{AddEdgeResult, JoinNodesResult},
+    utils::place::maybe_remote::MaybeRemotePlace,
+};
 use crate::{
     coupling,
     pcg::PCGNode,
     pcg_validity_assert,
-    rustc_interface::borrowck::{
-        BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
-        RegionInferenceContext
-    },
     rustc_interface::data_structures::fx::FxHashSet,
-    rustc_interface::data_structures::fx::FxIndexMap,
     rustc_interface::middle::mir::{BasicBlock, Location},
-    rustc_interface::middle::ty::RegionVid,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
@@ -36,6 +35,24 @@ use crate::{
 /// Internally, the nodes are stored in a `Vec` to allow for mutation
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Coupled<T>(SmallVec<[T; 4]>);
+
+impl<T: Copy + Eq> Coupled<T> {
+    pub(crate) fn empty() -> Self {
+        Self(SmallVec::new())
+    }
+
+    pub(crate) fn insert(&mut self, item: T) {
+        if !self.0.contains(&item) {
+            self.0.push(item);
+        }
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) {
+        for item in other.0.iter() {
+            self.insert(*item);
+        }
+    }
+}
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
     fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
@@ -59,9 +76,119 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for C
     }
 }
 
-// pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
+// pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
 pub(crate) type AbstractionGraph<'tcx> =
-    coupling::DisjointSetGraph<CGNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
+    coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
+
+impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
+    pub(crate) fn region_repr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
+        self.iter().find_map(|n| match n.0 {
+            PCGNode::RegionProjection(rp) => Some(rp.region(ctxt)),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn is_remote(&self) -> bool {
+        self.iter().any(|n| match n.0 {
+            PCGNode::Place(p) => p.is_remote(),
+            PCGNode::RegionProjection(rp) => rp.base().is_remote(),
+        })
+    }
+}
+
+impl<'tcx> AbstractionGraph<'tcx> {
+    pub(crate) fn transitive_reduction(
+        &mut self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> FxHashSet<BorrowPcgEdgeKind<'tcx>> {
+        pcg_validity_assert!(
+            self.is_acyclic(),
+            "Graph contains cycles after SCC computation"
+        );
+
+        let toposort = petgraph::algo::toposort(&self.inner(), None).unwrap();
+        let (g, revmap) =
+            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner(), &toposort);
+
+        let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure::<_, u32>(&g);
+        let mut removed_edges = FxHashSet::default();
+        self.retain_edges(|slf, ei| {
+            let endpoints = slf.edge_endpoints(ei).unwrap();
+            let should_keep =
+                tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()]);
+            if !should_keep {
+                let from_node = slf.node_weight(endpoints.0).unwrap();
+                let to_node = slf.node_weight(endpoints.1).unwrap();
+                tracing::debug!(
+                    "Removing edge {} -> {} because of transitive reduction",
+                    from_node.to_short_string(ctxt),
+                    to_node.to_short_string(ctxt)
+                );
+                removed_edges.extend(slf.edge_weight(ei).unwrap().clone());
+            }
+            should_keep
+        });
+        removed_edges
+    }
+    pub(crate) fn merge(&mut self, other: &Self, ctxt: CompilerCtxt<'_, 'tcx>) {
+        for (source, target, weight) in other.edges() {
+            let JoinNodesResult {
+                index: mut source_idx,
+                ..
+            } = self.join_nodes(&source, ctxt);
+            let JoinNodesResult {
+                index: target_idx,
+                performed_merge,
+            } = self.join_nodes(&target, ctxt);
+            if performed_merge {
+                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
+            }
+            let _ = self.add_edge_via_indices(source_idx, target_idx, weight, ctxt);
+        }
+
+        'top: loop {
+            for blocked in self.inner().node_indices() {
+                for blocking in self.inner().node_indices() {
+                    if has_path_connecting(&self.inner(), blocked, blocking, None) {
+                        continue;
+                    }
+                    let blocked_data = self.inner().node_weight(blocked).unwrap();
+                    let blocking_data = self.inner().node_weight(blocking).unwrap();
+                    if let Some(blocked_region) = blocked_data.nodes.region_repr(ctxt)
+                        && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
+                        && !blocking_data.nodes.is_remote()
+                        && ctxt.bc.outlives(blocked_region, blocking_region)
+                        // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
+                    {
+                        tracing::debug!(
+                            "Adding edge {} -> {} because of outlives",
+                            blocked_data.to_short_string(ctxt),
+                            blocking_data.to_short_string(ctxt)
+                        );
+                        match self.add_edge_via_indices(blocked, blocking, Default::default(), ctxt)
+                        {
+                            AddEdgeResult::DidNotMergeNodes => {
+                                let edges = self.transitive_reduction(ctxt);
+                                self.update_inner_edge(blocked, blocking, edges);
+                                if coupling_imgcat_debug() {
+                                    self.render_with_imgcat(ctxt, "Post add");
+                                }
+                            }
+                            AddEdgeResult::MergedNodes => {
+                                if coupling_imgcat_debug() {
+                                    self.render_with_imgcat(ctxt, "Post add");
+                                }
+                                continue 'top;
+                            }
+                        }
+                    }
+                }
+            }
+            pcg_validity_assert!(self.is_acyclic(), "Resulting graph contains cycles");
+            return;
+        }
+    }
+}
 
 impl<T: Clone> Coupled<T> {
     pub fn size(&self) -> usize {
@@ -104,14 +231,6 @@ impl<T: Ord> Coupled<T> {
     pub fn contains(&self, item: &T) -> bool {
         self.0.contains(item)
     }
-
-    pub(crate) fn merge(&mut self, other: Self) {
-        for item in other.0 {
-            if !self.0.contains(&item) {
-                self.0.push(item);
-            }
-        }
-    }
 }
 
 impl<T> From<BTreeSet<T>> for Coupled<T> {
@@ -130,111 +249,49 @@ impl<T: Ord> From<Vec<T>> for Coupled<T> {
     }
 }
 
-pub type CGNode<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
+#[derive(From, Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
+pub(crate) struct AbstractionGraphNode<'tcx>(
+    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
+);
 
-impl<'tcx> From<AbstractionOutputTarget<'tcx>> for CGNode<'tcx> {
+impl<'tcx, T> HasPcgElems<T> for AbstractionGraphNode<'tcx>
+where
+    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
+{
+    fn pcg_elems(&mut self) -> Vec<&mut T> {
+        self.0.pcg_elems()
+    }
+}
+
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionGraphNode<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+        self.0.to_short_string(repacker)
+    }
+}
+
+impl<'tcx> From<AbstractionOutputTarget<'tcx>> for AbstractionGraphNode<'tcx> {
     fn from(target: AbstractionOutputTarget<'tcx>) -> Self {
-        CGNode::RegionProjection(target.into())
+        AbstractionGraphNode(PCGNode::RegionProjection(target.into()))
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for CGNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            CGNode::Place(p) => p.pcg_elems(),
-            CGNode::RegionProjection(rp) => rp.base.pcg_elems(),
+impl<'tcx> From<AbstractionGraphNode<'tcx>> for PCGNode<'tcx> {
+    fn from(node: AbstractionGraphNode<'tcx>) -> Self {
+        match node.0 {
+            PCGNode::Place(p) => p.into(),
+            PCGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
         }
     }
 }
-
-impl<'tcx> From<CGNode<'tcx>> for PCGNode<'tcx> {
-    fn from(node: CGNode<'tcx>) -> Self {
-        match node {
-            CGNode::Place(p) => p.into(),
-            CGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
-        }
-    }
-}
-impl CGNode<'_> {
+impl AbstractionGraphNode<'_> {
     pub(crate) fn is_old(&self) -> bool {
-        match self {
-            CGNode::Place(p) => p.is_old(),
-            CGNode::RegionProjection(rp) => rp.base().is_old(),
+        match self.0 {
+            PCGNode::Place(p) => p.is_old(),
+            PCGNode::RegionProjection(rp) => {
+                rp.base().is_old() || matches!(rp.label, Some(RegionProjectionLabel::Location(_)))
+            }
         }
     }
-}
-
-pub trait BorrowCheckerInterface<'tcx> {
-    /// Returns true if the node is live *before* `location`. `is_leaf` should
-    /// be set to true if the node is a leaf node at this point: in this case,
-    /// we can approximate using liveness information of the place (if the place
-    /// is not live, then the node is definitely not live).
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool;
-
-    /// See [`BorrowCheckerInterface::is_live`].
-    fn is_dead(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
-        !self.is_live(node, location, is_leaf)
-    }
-    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
-
-    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion) -> bool {
-        self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
-    }
-
-    fn borrow_set(&self) -> &BorrowSet<'tcx>;
-
-    #[rustversion::since(2024-12-14)]
-    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
-        self.borrow_set()[borrow_index].region()
-    }
-
-    #[rustversion::before(2024-12-14)]
-    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
-        self.borrow_set()[borrow_index].region
-    }
-
-    #[rustversion::since(2024-12-14)]
-    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
-        self.borrow_set().location_map()
-    }
-
-    #[rustversion::before(2024-12-14)]
-    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
-        &self.borrow_set().location_map
-    }
-
-    fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {
-        let location_indices = [
-            self.location_table().start_index(location),
-            self.location_table().mid_index(location),
-        ];
-        self.input_facts()
-            .loan_killed_at
-            .iter()
-            .filter(|(_, point)| location_indices.contains(point))
-            .map(|(loan, _)| self.borrow_index_to_region(*loan))
-            .collect()
-    }
-
-    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
-
-    fn input_facts(&self) -> &PoloniusInput;
-
-    /// Returns the set of two-phase borrows that activate at `location`.
-    /// Each borrow in the returned set is represented by the MIR location
-    /// that it was created at.
-    fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
-
-    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx>;
-
-    fn location_table(&self) -> &LocationTable;
-
-    /// If the borrow checker is based on Polonius, it can define this method to
-    /// expose its output facts. This is only used for debugging /
-    /// visualization.
-    fn polonius_output(&self) -> Option<&PoloniusOutput>;
-
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
 }
 
 /// Records a history of actions for debugging purpose;
@@ -292,8 +349,8 @@ pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
 
 #[derive(Clone, Eq, PartialEq)]
 struct AddEdgeHistory<'a, 'tcx> {
-    bottom_connect: &'a Coupled<CGNode<'tcx>>,
-    upper_candidate: &'a Coupled<CGNode<'tcx>>,
+    bottom_connect: &'a Coupled<AbstractionGraphNode<'tcx>>,
+    upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
 }
 
 impl std::fmt::Display for AddEdgeHistory<'_, '_> {
@@ -327,8 +384,8 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
     fn add_edges_from<'a>(
         &mut self,
         bg: &AbstractionGraph<'tcx>,
-        bottom_connect: &'a Coupled<CGNode<'tcx>>,
-        upper_candidate: &'a Coupled<CGNode<'tcx>>,
+        bottom_connect: &'a Coupled<AbstractionGraphNode<'tcx>>,
+        upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
         incoming_weight: FxHashSet<BorrowPcgEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
@@ -355,7 +412,7 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
                             block: self.block,
                             statement_index: 0,
                         },
-                        false // TODO: Maybe actually check if this is a leaf
+                        false, // TODO: Maybe actually check if this is a leaf
                     );
                     is_live && !n.is_old()
                 });
@@ -392,10 +449,10 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
         bg: &BorrowsGraph<'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
     ) -> AbstractionGraph<'tcx> {
-        tracing::debug!("Construct coupling graph start");
-        let full_graph = bg.base_rp_graph(self.repacker);
+        tracing::debug!("Construct abstraction graph start");
+        let full_graph = bg.base_abstraction_graph(self.repacker);
         if coupling_imgcat_debug() {
-            full_graph.render_with_imgcat(self.repacker, "Base coupling graph");
+            full_graph.render_with_imgcat(self.repacker, "Base abstraction graph");
         }
         let leaf_nodes = full_graph.leaf_nodes();
         let num_leaf_nodes = leaf_nodes.len();

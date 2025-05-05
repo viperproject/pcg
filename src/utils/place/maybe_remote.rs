@@ -92,6 +92,10 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
     }
 
+    pub(crate) fn is_remote(&self) -> bool {
+        matches!(self, MaybeRemotePlace::Remote(_))
+    }
+
     pub(crate) fn related_local_place(&self) -> Place<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.place(),

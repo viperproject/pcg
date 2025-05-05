@@ -1,18 +1,40 @@
+use itertools::Itertools;
+use petgraph::algo::kosaraju_scc;
 use petgraph::dot::{Config, Dot};
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{EdgeIndex, Frozen, NodeIndex};
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
+use petgraph::{Direction, Graph};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
-use crate::borrow_pcg::coupling_graph_constructor::Coupled;
+use crate::borrow_pcg::abstraction_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
+use crate::rustc_interface::data_structures::fx::FxHashMap;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::{pcg_validity_assert, validity_checks_enabled};
+
+#[derive(Clone, Debug)]
+pub(crate) struct NodeData<N, E> {
+    pub(crate) nodes: Coupled<N>,
+    inner_edges: FxHashSet<E>,
+}
+
+impl<'tcx, N: DisplayWithCompilerCtxt<'tcx>, E> DisplayWithCompilerCtxt<'tcx> for NodeData<N, E> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+        self.nodes.to_short_string(repacker)
+    }
+}
+
+impl<N: Copy + Eq, E: Hash + Eq + Clone> NodeData<N, E> {
+    fn merge(&mut self, other: &NodeData<N, E>) {
+        self.nodes.merge(&other.nodes);
+        self.inner_edges.extend(other.inner_edges.iter().cloned());
+    }
+}
 
 /// A DAG where each node is a set of elements of type `N`. Cycles are resolved
 /// by merging the nodes in the cycle into a single node. The graph is always in
@@ -20,49 +42,42 @@ use crate::{pcg_validity_assert, validity_checks_enabled};
 /// https://en.wikipedia.org/wiki/Transitive_reduction)
 #[derive(Clone)]
 pub(crate) struct DisjointSetGraph<N, E> {
-    inner: petgraph::Graph<Coupled<N>, FxHashSet<E>>,
+    inner: petgraph::Graph<NodeData<N, E>, FxHashSet<E>>,
+    lookup_map: FxHashMap<N, petgraph::prelude::NodeIndex>,
 }
 
-struct JoinNodesResult {
-    index: petgraph::prelude::NodeIndex,
-    performed_merge: bool,
+pub(crate) struct JoinNodesResult {
+    pub(crate) index: petgraph::prelude::NodeIndex,
+    pub(crate) performed_merge: bool,
 }
 
-impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clone + Eq + Hash + DisplayWithCompilerCtxt<'tcx>>
-    DisjointSetGraph<N, E>
+pub(crate) enum AddEdgeResult {
+    DidNotMergeNodes,
+    MergedNodes,
+}
+
+impl<
+        'tcx,
+        N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash,
+        E: Clone + Eq + Hash + DisplayWithCompilerCtxt<'tcx>,
+    > DisjointSetGraph<N, E>
 {
+    pub(crate) fn inner(&self) -> &petgraph::Graph<NodeData<N, E>, FxHashSet<E>> {
+        &self.inner
+    }
+
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
+            lookup_map: FxHashMap::default(),
         }
     }
 
-    pub(crate) fn roots(&self) -> FxHashSet<Coupled<N>> {
-        self.inner
-            .node_indices()
-            .filter(|idx| {
-                self.inner
-                    .neighbors_directed(*idx, Direction::Incoming)
-                    .count()
-                    == 0
-            })
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
-            .collect()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn height(&self) -> usize {
-        let mut max_height = 0;
-        for node in self.roots() {
-            let height = petgraph::algo::dijkstra(
-                &self.inner,
-                self.lookup(*node.iter().next().unwrap()).unwrap(),
-                None,
-                |_| 1,
-            );
-            max_height = max_height.max(*height.values().max().unwrap_or(&0));
-        }
-        max_height
+    pub(crate) fn retain_edges<F>(&mut self, visit: F)
+    where
+        F: FnMut(Frozen<petgraph::Graph<NodeData<N, E>, FxHashSet<E>>>, EdgeIndex) -> bool,
+    {
+        self.inner.retain_edges(visit);
     }
 
     pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
@@ -81,7 +96,11 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         self.inner.edge_references().map(|e| {
             let source = self.inner.node_weight(e.source()).unwrap();
             let target = self.inner.node_weight(e.target()).unwrap();
-            (source.clone(), target.clone(), e.weight().clone())
+            (
+                source.nodes.clone(),
+                target.nodes.clone(),
+                e.weight().clone(),
+            )
         })
     }
 
@@ -91,7 +110,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
             |_, e| {
                 let node_name = format!(
                     "{}\n",
-                    e.iter().fold(String::from("{"), |mut acc, x| {
+                    e.nodes.iter().fold(String::from("{"), |mut acc, x| {
                         acc.push_str(&x.to_short_string(repacker));
                         acc
                     }) + "}"
@@ -126,30 +145,12 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         });
     }
 
-    fn insert(&mut self, node: N) -> petgraph::prelude::NodeIndex {
-        if let Some(idx) = self.lookup(node) {
-            return idx;
-        }
-        let idx = self.inner.add_node(BTreeSet::from([node]).into());
-        pcg_validity_assert!(
-            self.is_acyclic(),
-            "Graph contains cycles after inserting node"
-        );
-        idx
-    }
-
     pub(crate) fn insert_endpoint(
         &mut self,
         endpoint: Coupled<N>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> petgraph::prelude::NodeIndex {
-        let JoinNodesResult {
-            index,
-            performed_merge,
-        } = self.join_nodes(&endpoint);
-        if performed_merge {
-            self.merge_sccs(repacker);
-        }
+        let JoinNodesResult { index, .. } = self.join_nodes(&endpoint, ctxt);
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after inserting endpoint"
@@ -157,98 +158,129 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         index
     }
 
-    /// Merges the nodes at `old_idx` and `new_idx`.
-    ///
-    /// **IMPORTANT**: This will invalidate existing node indices
-    pub(crate) fn merge_idxs(
-        &mut self,
-        new_idx: petgraph::prelude::NodeIndex,
-        old_idx: petgraph::prelude::NodeIndex,
-    ) {
-        let old_node_data = self.inner.node_weight(old_idx).unwrap().clone();
-        let new_idx_weight = self.inner.node_weight_mut(new_idx).unwrap_or_else(|| {
-            panic!(
-                "Cannot merge {new_idx:?} and {old_idx:?} because node {new_idx:?} not found"
-            );
-        });
-        new_idx_weight.merge(old_node_data);
-        let edges_to_old = self.inner.edges_directed(old_idx, Direction::Outgoing);
-        let edges_from_old = self.inner.edges_directed(old_idx, Direction::Incoming);
-        let to_add = edges_to_old
-            .filter(|e| e.source() != new_idx)
-            .map(|e| (e.source(), new_idx, e.weight().clone()))
-            .chain(
-                edges_from_old
-                    .filter(|e| e.target() != new_idx)
-                    .map(|e| (new_idx, e.target(), e.weight().clone())),
-            );
-        for (source, target, weight) in to_add.collect::<Vec<_>>() {
-            self.inner.update_edge(source, target, weight);
-        }
-        assert!(self.inner.remove_node(old_idx).is_some());
-    }
-
     /// Joins the nodes in `nodes` into a single coupled node.
     ///
     /// **IMPORTANT**: This will invalidate existing node indices
     #[must_use]
-    fn join_nodes(&mut self, nodes: &Coupled<N>) -> JoinNodesResult {
-        let mut iter = nodes.iter().cloned();
-        let first_elem = iter.next().unwrap();
-        let mut idx = self.insert(first_elem);
-        let mut changed = false;
-        for node in iter {
-            let idx2 = self.insert(node);
-            if idx2 != idx {
-                self.merge_idxs(idx, idx2);
-                // Indexes are invalidated after merging
-                idx = self.lookup(first_elem).unwrap();
-                changed = true;
+    pub(crate) fn join_nodes(
+        &mut self,
+        nodes: &Coupled<N>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> JoinNodesResult {
+        let indices = nodes
+            .iter()
+            .map(|n| (n, self.lookup(*n)))
+            .unique()
+            .collect::<Vec<_>>();
+        let candidate_idx = indices.iter().filter_map(|(_, idx)| *idx).next();
+        if let Some(candidate_idx) = candidate_idx {
+            let mut should_merge = false;
+            for (node, idx_opt) in indices {
+                match idx_opt {
+                    Some(node_idx) => {
+                        if node_idx != candidate_idx {
+                            should_merge = true;
+                            self.inner
+                                .add_edge(node_idx, candidate_idx, FxHashSet::default());
+                            self.inner
+                                .add_edge(candidate_idx, node_idx, FxHashSet::default());
+                        }
+                    }
+                    None => {
+                        self.inner
+                            .node_weight_mut(candidate_idx)
+                            .unwrap()
+                            .nodes
+                            .insert(*node);
+                    }
+                }
+            }
+            if should_merge {
+                self.merge_sccs(ctxt);
+            }
+            let (new_index, nodes) = self.lookup_in_graph(*nodes.iter().next().unwrap()).unwrap();
+            for node in nodes {
+                self.lookup_map.insert(node, new_index);
+            }
+            JoinNodesResult {
+                index: new_index,
+                performed_merge: should_merge,
+            }
+        } else {
+            let idx = self.inner.add_node(NodeData {
+                nodes: nodes.clone(),
+                inner_edges: FxHashSet::default(),
+            });
+            for node in nodes.iter() {
+                self.lookup_map.insert(*node, idx);
+            }
+            JoinNodesResult {
+                index: idx,
+                performed_merge: false,
             }
         }
-        // We don't use `idx` here because node indices may change after merging SCCs.
-        JoinNodesResult {
-            index: self.lookup(*nodes.iter().next().unwrap()).unwrap(),
-            performed_merge: changed,
-        }
     }
 
-    fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
-        self.inner.node_indices().find(|idx| {
-            self.inner
-                .node_weight(*idx)
-                .is_some_and(|w| w.contains(&node))
-        })
+    fn lookup_in_graph(&self, node: N) -> Option<(petgraph::prelude::NodeIndex, Coupled<N>)> {
+        self.inner
+            .node_indices()
+            .find(|idx| self.inner.node_weight(*idx).unwrap().nodes.contains(&node))
+            .map(|idx| (idx, self.inner.node_weight(idx).unwrap().nodes.clone()))
     }
 
-    fn is_acyclic(&self) -> bool {
+    pub(crate) fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
+        self.lookup_map.get(&node).cloned()
+    }
+
+    pub(crate) fn is_acyclic(&self) -> bool {
         !petgraph::algo::is_cyclic_directed(&self.inner)
     }
 
     /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
     /// operation, the indices of the nodes may change.
-    fn merge_sccs(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn merge_sccs(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
         if self.is_acyclic() {
             return;
         }
-        let old_graph = self.clone(); // For debugging
 
-        'outer: loop {
-            let sccs = petgraph::algo::kosaraju_scc(&self.inner);
-            for scc in sccs {
-                if scc.len() > 1 {
-                    self.merge_idxs(scc[0], scc[1]);
-                    // We need to recompute sccs because node indices may have changed
-                    continue 'outer;
-                } else if let Some(edge_idx) = self.inner.find_edge(scc[0], scc[0]) {
-                    self.inner.remove_edge(edge_idx);
-                }
+        let sccs = kosaraju_scc(&self.inner);
+        let mut result = Graph::with_capacity(sccs.len(), self.inner.edge_count());
+
+        // Build a map from old indices to new ones.
+        let mut node_map = vec![NodeIndex::end(); self.inner.node_count()];
+        for comp in sccs {
+            let new_nix = result.add_node(NodeData {
+                nodes: Coupled::empty(),
+                inner_edges: FxHashSet::default(),
+            });
+            for nix in comp {
+                node_map[nix.index()] = new_nix;
             }
-            break;
+        }
+
+        // Consume nodes and edges of the old graph and insert them into the new one.
+        let (nodes, edges) = self.inner.clone().into_nodes_edges();
+        for (nix, node) in nodes.into_iter().enumerate() {
+            result[node_map[nix]].merge(&node.weight);
+        }
+        for edge in edges {
+            let source = node_map[edge.source().index()];
+            let target = node_map[edge.target().index()];
+            if source == target {
+                result[source].inner_edges.extend(edge.weight);
+            } else {
+                result.add_edge(source, target, edge.weight);
+            }
+        }
+        self.inner = result;
+        self.lookup_map.clear();
+        for nix in self.inner.node_indices() {
+            for node in self.inner.node_weight(nix).unwrap().nodes.iter() {
+                self.lookup_map.insert(*node, nix);
+            }
         }
 
         if validity_checks_enabled() && !self.is_acyclic() && coupling_imgcat_debug() {
-            old_graph.render_with_imgcat(repacker, "Before merging SCCs");
             self.render_with_imgcat(repacker, "After merging SCCs");
         }
 
@@ -258,13 +290,23 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         );
     }
 
+    pub(crate) fn update_inner_edge(
+        &mut self,
+        source: NodeIndex,
+        target: NodeIndex,
+        weight: FxHashSet<E>,
+    ) {
+        self.inner.update_edge(source, target, weight);
+    }
+
+    #[must_use]
     pub(crate) fn add_edge_via_indices(
         &mut self,
         source: NodeIndex,
         target: NodeIndex,
         weight: FxHashSet<E>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) {
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> AddEdgeResult {
         assert!(source.index() < self.inner.node_count());
         assert!(target.index() < self.inner.node_count());
         if source != target {
@@ -276,43 +318,19 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
             } else {
                 self.inner.update_edge(source, target, weight);
             }
-            self.merge_sccs(repacker);
-        }
-    }
-
-    pub(crate) fn merge(&mut self, other: &Self, repacker: CompilerCtxt<'_, 'tcx>) {
-        for (source, target, weight) in other.edges() {
-            let JoinNodesResult {
-                index: mut source_idx,
-                performed_merge,
-            } = self.join_nodes(&source);
-            if performed_merge {
-                self.merge_sccs(repacker);
+            // If so, then there must be a cycle
+            if petgraph::algo::has_path_connecting(&self.inner, target, source, None) {
+                self.merge_sccs(ctxt);
+                return AddEdgeResult::MergedNodes;
             }
-            let target_idx = self.join_nodes(&target);
-            if target_idx.performed_merge {
-                self.merge_sccs(repacker);
-                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
-            }
-            self.add_edge_via_indices(source_idx, target_idx.index, weight, repacker);
+        } else {
+            self.inner
+                .node_weight_mut(source)
+                .unwrap()
+                .inner_edges
+                .extend(weight);
         }
-
-        pcg_validity_assert!(
-            self.is_acyclic(),
-            "Graph contains cycles after SCC computation"
-        );
-
-        let toposort = petgraph::algo::toposort(&self.inner, None).unwrap();
-        let (g, revmap) =
-            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner, &toposort);
-
-        let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure::<_, u32>(&g);
-        self.inner.retain_edges(|slf, ei| {
-            let endpoints = slf.edge_endpoints(ei).unwrap();
-            tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()])
-        });
-
-        pcg_validity_assert!(self.is_acyclic(), "Resulting graph contains cycles");
+        AddEdgeResult::DidNotMergeNodes
     }
 
     pub(crate) fn add_edge(
@@ -320,7 +338,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         from: &Coupled<N>,
         to: &Coupled<N>,
         weight: FxHashSet<E>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         pcg_validity_assert!(
             self.is_acyclic(),
@@ -330,33 +348,22 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
             from != to,
             "Self-loop edge {}",
             from.iter()
-                .map(|x| x.to_short_string(repacker))
+                .map(|x| x.to_short_string(ctxt))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        let mut should_merge_sccs;
-        if from.is_empty() {
-            assert!(!to.is_empty());
-            should_merge_sccs = self.join_nodes(to).performed_merge;
-        } else if to.is_empty() {
-            assert!(!from.is_empty());
-            should_merge_sccs = self.join_nodes(from).performed_merge;
-        } else {
-            let mut from_idx = self.join_nodes(from);
-            should_merge_sccs = from_idx.performed_merge;
-            let mut to_idx = self.join_nodes(to);
-            should_merge_sccs |= to_idx.performed_merge;
-            if should_merge_sccs {
-                self.merge_sccs(repacker);
-                from_idx.index = self.lookup(*from.iter().next().unwrap()).unwrap();
-                to_idx.index = self.lookup(*to.iter().next().unwrap()).unwrap();
-                should_merge_sccs = false;
-            }
-            self.add_edge_via_indices(from_idx.index, to_idx.index, weight, repacker);
+        let JoinNodesResult {
+            index: mut from_idx,
+            ..
+        } = self.join_nodes(from, ctxt);
+        let JoinNodesResult {
+            index: to_idx,
+            performed_merge,
+        } = self.join_nodes(to, ctxt);
+        if performed_merge {
+            from_idx = self.lookup(*from.iter().next().unwrap()).unwrap();
         }
-        if should_merge_sccs {
-            self.merge_sccs(repacker);
-        }
+        let _ = self.add_edge_via_indices(from_idx, to_idx, weight, ctxt);
         pcg_validity_assert!(self.is_acyclic(), "Graph contains cycles after adding edge");
     }
 
@@ -365,7 +372,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         self.inner
             .node_indices()
             .filter(|idx| self.inner.neighbors(*idx).count() == 0)
-            .map(|idx| self.inner.node_weight(idx).unwrap().clone())
+            .map(|idx| self.inner.node_weight(idx).unwrap().nodes.clone())
             .collect()
     }
 
@@ -374,19 +381,7 @@ impl<'tcx, N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash, E: Clon
         self.inner
             .edges_directed(node_idx, Direction::Incoming)
             .map(|e| {
-                let source = self.inner.node_weight(e.source()).unwrap().clone();
-                (source, e.weight().clone())
-            })
-            .collect()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn children(&self, node: &Coupled<N>) -> Vec<(Coupled<N>, FxHashSet<E>)> {
-        let node_idx = self.lookup(*node.iter().next().unwrap()).unwrap();
-        self.inner
-            .edges_directed(node_idx, Direction::Outgoing)
-            .map(|e| {
-                let source = self.inner.node_weight(e.source()).unwrap().clone();
+                let source = self.inner.node_weight(e.source()).unwrap().nodes.clone();
                 (source, e.weight().clone())
             })
             .collect()
@@ -411,6 +406,7 @@ impl<N: Ord> HyperEdge<N> {
 impl<N, E> fmt::Display for DisjointSetGraph<N, E>
 where
     N: Eq + Hash + Clone + fmt::Display + Copy + Ord + fmt::Debug,
+    E: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for edge in self.inner.edge_references() {

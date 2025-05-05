@@ -11,6 +11,7 @@
 #![feature(proc_macro_hygiene)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(stmt_expr_attributes)]
+#![feature(allocator_api)]
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
@@ -23,7 +24,8 @@ pub mod utils;
 pub mod visualization;
 
 use action::PcgActions;
-use borrow_pcg::{coupling_graph_constructor::BorrowCheckerInterface, latest::Latest};
+use borrow_checker::BorrowCheckerInterface;
+use borrow_pcg::latest::Latest;
 use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
@@ -43,7 +45,7 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithCompilerCtxt;
 
-pub type PcgOutput<'mir, 'tcx> = free_pcs::PcgAnalysis<'mir, 'tcx>;
+pub type PcgOutput<'mir, 'tcx, A> = free_pcs::PcgAnalysis<'mir, 'tcx, A>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -155,7 +157,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPCGActions<'tcx> {
 }
 
 use borrow_pcg::action::actions::BorrowPCGActions;
-use std::sync::Mutex;
+use std::{alloc::Allocator, sync::Mutex};
 use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {
@@ -244,14 +246,20 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-pub fn run_pcg<'a, 'tcx: 'a, BC: BorrowCheckerInterface<'tcx> + ?Sized>(
+pub fn run_pcg<
+    'a,
+    'tcx: 'a,
+    A: Allocator + Copy + std::fmt::Debug,
+    BC: BorrowCheckerInterface<'tcx> + ?Sized,
+>(
     body: &'a Body<'tcx>,
     tcx: TyCtxt<'tcx>,
     bc: &'a BC,
+    arena: A,
     visualization_output_path: Option<&str>,
-) -> PcgOutput<'a, 'tcx> {
+) -> PcgOutput<'a, 'tcx, A> {
     let ctxt: CompilerCtxt<'a, 'tcx> = CompilerCtxt::new(body, tcx, bc.as_dyn());
-    let engine = PcgEngine::new(ctxt, visualization_output_path);
+    let engine = PcgEngine::new(ctxt, arena, visualization_output_path);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = true;

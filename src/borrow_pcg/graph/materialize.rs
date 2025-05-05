@@ -37,14 +37,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for edge in self.edges() {
             result.push(edge.into());
             if let BorrowPcgEdgeKind::Borrow(edge) = edge.kind()
-                && self.contains(edge.deref_place(repacker), repacker) {
-                    result.push(MaterializedEdge::Synthetic(SyntheticEdge::Alias(
-                        AliasEdge {
-                            blocked_place: edge.blocked_place().into(),
-                            blocking_place: edge.deref_place(repacker).into(),
-                        },
-                    )));
-                }
+                && self.contains(edge.deref_place(repacker), repacker)
+            {
+                result.push(MaterializedEdge::Synthetic(SyntheticEdge::Alias(
+                    AliasEdge {
+                        blocked_place: edge.blocked_place().into(),
+                        blocking_place: edge.deref_place(repacker).into(),
+                    },
+                )));
+            }
         }
         result
     }

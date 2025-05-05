@@ -1,14 +1,13 @@
 use crate::{
     borrow_pcg::{
-        coupling_graph_constructor::CGNode,
+        domain::AbstractionInputTarget,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowsState,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
     pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
-    rustc_interface::borrowck::BorrowIndex,
-    rustc_interface::middle::mir,
+    rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
         display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
         SnapshotLocation,
@@ -146,17 +145,21 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
-    pub(super) fn insert_cg_node(
+    pub(super) fn insert_abstraction_input_target(
         &mut self,
-        node: CGNode<'tcx>,
+        node: AbstractionInputTarget<'tcx>,
         capability: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
         match node {
-            CGNode::RegionProjection(rp) => self.insert_region_projection_node(rp.into()),
-            CGNode::Place(MaybeRemotePlace::Local(place)) => {
+            AbstractionInputTarget::RegionProjection(rp) => {
+                self.insert_region_projection_node(rp.into())
+            }
+            AbstractionInputTarget::Place(MaybeRemotePlace::Local(place)) => {
                 self.insert_place_node(place.place(), place.location(), capability)
             }
-            CGNode::Place(MaybeRemotePlace::Remote(place)) => self.insert_remote_node(place),
+            AbstractionInputTarget::Place(MaybeRemotePlace::Remote(place)) => {
+                self.insert_remote_node(place)
+            }
         }
     }
 
@@ -170,7 +173,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let mut output_nodes = vec![];
 
         for input in abstraction.inputs() {
-            let input = self.insert_cg_node(input, capabilities);
+            let input = self.insert_abstraction_input_target(input, capabilities);
             input_nodes.push(input);
         }
 
@@ -182,11 +185,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         let label = match abstraction {
             AbstractionType::FunctionCall(fc) => {
-                format!(
-                    "{} at {:?}",
-                    self.ctxt.tcx().def_path_str(fc.def_id()),
-                    fc.location()
-                )
+                fc.to_short_string(self.ctxt)
             }
             AbstractionType::Loop(loop_abstraction) => {
                 format!("loop at {:?}", loop_abstraction.location())

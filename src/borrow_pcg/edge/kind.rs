@@ -1,5 +1,6 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
+use crate::borrow_pcg::domain::AbstractionOutputTarget;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::utils::CompilerCtxt;
@@ -32,6 +33,15 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
     pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
         match self {
             BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to),
+            BorrowPcgEdgeKind::Abstraction(edge) => {
+                let from: Option<AbstractionOutputTarget<'tcx>> = from.try_into().ok();
+                let to: Option<AbstractionOutputTarget<'tcx>> = to.try_into().ok();
+                if let Some(from) = from
+                    && let Some(to) = to
+                {
+                    edge.redirect(from, to);
+                }
+            }
             other => panic!("Cannot redirect this edge kind: {other:?}"),
         }
     }

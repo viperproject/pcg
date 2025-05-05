@@ -60,12 +60,6 @@ impl<'tcx> Latest<'tcx> {
         Self(FxHashMap::default())
     }
 
-    pub(crate) fn singleton(place: Place<'tcx>, location: SnapshotLocation) -> Self {
-        let mut latest = Self::new();
-        latest.insert(place, location);
-        latest
-    }
-
     fn get_exact(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
         self.0.get(&place).copied()
     }
