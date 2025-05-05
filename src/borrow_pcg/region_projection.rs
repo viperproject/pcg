@@ -46,44 +46,40 @@ pub enum PcgRegion {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
-    #[rustversion::before(2024-12-14)]
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!("{:?}", self)
-    }
-
-    #[rustversion::since(2024-12-14)]
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         if let Some(string) = ctxt.bc.override_region_debug_string(*self) {
             return string.to_string();
+        } else {
+            format!("{:?}", self)
         }
-        let origin = ctxt.bc.region_inference_ctxt().var_infos[*self].origin;
-        match origin {
-            RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
-                let span_str = if let Some(source_map) = get_source_map() {
-                    source_map.span_to_string(span, FileNameDisplayPreference::Short)
-                } else {
-                    format!("{:?}", span)
-                };
-                format!("{} at {}: {:?}", symbol, span_str, self)
-            }
-            RegionVariableOrigin::RegionParameterDefinition(_span, symbol) => symbol.to_string(),
+        // let origin = ctxt.bc.region_inference_ctxt().definitions[*self].origin;
+        // match origin {
+        //     RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
+        //         let span_str = if let Some(source_map) = get_source_map() {
+        //             source_map.span_to_string(span, FileNameDisplayPreference::Short)
+        //         } else {
+        //             format!("{:?}", span)
+        //         };
+        //         format!("{} at {}: {:?}", symbol, span_str, self)
+        //     }
+        //     RegionVariableOrigin::RegionParameterDefinition(_span, symbol) => symbol.to_string(),
 
-            // `MiscVariable` is used as a placeholder for uncategorized, so we just
-            // display it as normal
-            RegionVariableOrigin::MiscVariable(_) => {
-                format!("{:?}", self)
-            }
+        //     // `MiscVariable` is used as a placeholder for uncategorized, so we just
+        //     // display it as normal
+        //     RegionVariableOrigin::MiscVariable(_) => {
+        //         format!("{:?}", self)
+        //     }
 
-            // Most NLL region variables have this origin, so just display it as normal
-            RegionVariableOrigin::Nll(NllRegionVariableOrigin::Existential {
-                from_forall: false,
-            }) => {
-                format!("{:?}", self)
-            }
-            other => {
-                format!("{:?}: {:?}", other, self)
-            }
-        }
+        //     // Most NLL region variables have this origin, so just display it as normal
+        //     RegionVariableOrigin::Nll(NllRegionVariableOrigin::Existential {
+        //         from_forall: false,
+        //     }) => {
+        //         format!("{:?}", self)
+        //     }
+        //     other => {
+        //         format!("{:?}: {:?}", other, self)
+        //     }
+        // }
     }
 }
 

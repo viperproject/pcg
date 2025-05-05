@@ -9,8 +9,14 @@ use std::{
 };
 
 use rustc_interface::middle::mir::{
-    self, BinOp, Local, Operand, RawPtrKind, Rvalue, Statement, TerminatorKind, UnwindAction,
+    self, BinOp, Local, Operand, Rvalue, Statement, TerminatorKind, UnwindAction,
 };
+
+#[rustversion::since(2025-03-02)]
+use rustc_interface::middle::mir::RawPtrKind;
+
+#[rustversion::before(2025-03-02)]
+use rustc_interface::ast::Mutability;
 
 #[derive(Serialize)]
 struct MirGraph {
@@ -99,6 +105,19 @@ fn format_raw_ptr<'tcx>(
         RawPtrKind::Mut => "mut",
         RawPtrKind::Const => "const",
         RawPtrKind::FakeForPtrMetadata => todo!(),
+    };
+    format!("*{} {}", kind, format_place(place, ctxt))
+}
+
+#[rustversion::before(2025-03-02)]
+fn format_raw_ptr<'tcx>(
+    kind: &Mutability,
+    place: &mir::Place<'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+) -> String {
+    let kind = match kind {
+        Mutability::Mut => "mut",
+        Mutability::Not => "const",
     };
     format!("*{} {}", kind, format_place(place, ctxt))
 }
@@ -288,12 +307,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
             TerminatorKind::UnwindTerminate(_) => todo!(),
             TerminatorKind::Return => {}
             TerminatorKind::Unreachable => {}
-            TerminatorKind::Drop {
-                place: _,
-                target,
-                unwind: _,
-                replace: _,
-            } => {
+            TerminatorKind::Drop { target, .. } => {
                 edges.push(MirEdge {
                     source: format!("{:?}", bb),
                     target: format!("{:?}", target),

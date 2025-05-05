@@ -5,7 +5,7 @@ use crate::action::PcgAction;
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, LocalNode};
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
@@ -273,7 +273,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                             for edge in blocked_edges {
                                 let should_remove = !matches!(
                                     edge.kind(),
-                                    BorrowPCGEdgeKind::BorrowPCGExpansion(_)
+                                    BorrowPcgEdgeKind::BorrowPcgExpansion(_)
                                 );
                                 if should_remove {
                                     self.remove_edge_and_set_latest(edge, location, "Assign")?;
@@ -528,7 +528,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
 
-        if let BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) = edge.kind() {
+        if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
             for node in expansion.expansion() {
                 for to_redirect in self
                     .pcg
@@ -539,7 +539,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .collect::<Vec<_>>()
                 {
                     // TODO: Due to a bug ignore other expansions to this place for now
-                    if !matches!(to_redirect, BorrowPCGEdgeKind::BorrowPCGExpansion(_)) {
+                    if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
                         self.pcg
                             .borrow
                             .graph
@@ -631,8 +631,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     ctxt.bc.is_dead(p.into(), location, true) // Definitely a leaf by this point
                 };
 
-                let should_pack_edge = |edge: &BorrowPCGEdgeKind<'tcx>| match edge {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                         if expansion.expansion().iter().all(|node| {
                             node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
                         }) {

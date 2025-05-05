@@ -3,6 +3,7 @@ use crate::rustc_interface::middle::mir::{
     self,
     visit::{self},
 };
+use crate::rustc_interface::ast::Mutability;
 
 use super::Place;
 
@@ -228,6 +229,7 @@ pub(crate) trait FallableVisitor<'tcx> {
                 self.visit_operand_fallable(operand, location)?;
             }
             mir::Rvalue::RawPtr(mutability, place) => {
+                #[rustversion::since(2025-03-02)]
                 let context = match *mutability {
                     mir::RawPtrKind::Mut => {
                         visit::PlaceContext::MutatingUse(visit::MutatingUseContext::RawBorrow)
@@ -236,6 +238,15 @@ pub(crate) trait FallableVisitor<'tcx> {
                         visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
                     }
                     mir::RawPtrKind::FakeForPtrMetadata => {
+                        visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
+                    }
+                };
+                #[rustversion::before(2025-03-02)]
+                let context = match *mutability {
+                    Mutability::Mut => {
+                        visit::PlaceContext::MutatingUse(visit::MutatingUseContext::RawBorrow)
+                    }
+                    Mutability::Not => {
                         visit::PlaceContext::NonMutatingUse(visit::NonMutatingUseContext::RawBorrow)
                     }
                 };

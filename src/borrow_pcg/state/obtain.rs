@@ -1,9 +1,8 @@
-
 use crate::borrow_pcg::action::executed_actions::ExecutedActions;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPCGExpansion, PlaceExpansion};
-use crate::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
@@ -12,10 +11,13 @@ use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::pcg_validity_assert;
-use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind, RawPtrKind};
+use crate::rustc_interface::middle::mir::{BorrowKind, Location, MutBorrowKind};
 use crate::rustc_interface::middle::ty::Mutability;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, ShallowExpansion, SnapshotLocation};
+
+#[rustversion::nightly(2025-05-01)]
+use crate::rustc_interface::middle::mir::RawPtrKind;
 
 impl ObtainReason {
     /// After calling `obtain` for a place, the minimum capability that we
@@ -42,11 +44,20 @@ impl ObtainReason {
                 } else {
                     CapabilityKind::Read
                 }
+                #[rustversion::before(2025-03-02)]
+                if matches!(ptr_kind, Mutability::Mut) {
+                    CapabilityKind::Exclusive
+                } else {
+                    CapabilityKind::Read
+                }
             }
             ObtainReason::RValueSimpleRead => CapabilityKind::Read,
         }
     }
 }
+
+#[rustversion::before(2025-03-02)]
+type RawPtrKind = Mutability;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ObtainReason {
@@ -83,13 +94,8 @@ impl<'tcx> BorrowsState<'tcx> {
         }
 
         if !self.contains(place, repacker) {
-            let extra_acts = self.expand_to(
-                place,
-                capabilities,
-                repacker,
-                obtain_reason,
-                location,
-            )?;
+            let extra_acts =
+                self.expand_to(place, capabilities, repacker, obtain_reason, location)?;
             actions.extend(extra_acts);
         }
         if !place.is_owned(repacker) {
@@ -202,7 +208,7 @@ impl<'tcx> BorrowsState<'tcx> {
         // that is handled by the owned PCG.
         if !target.is_owned(ctxt) {
             let place_expansion = PlaceExpansion::from_places(expansion.expansion().clone(), ctxt);
-            let expansion: BorrowPCGExpansion<'tcx, LocalNode<'tcx>> = BorrowPCGExpansion::new(
+            let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
                 base.into(),
                 place_expansion,
                 location,
@@ -232,7 +238,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
             let action = BorrowPCGAction::add_edge(
                 BorrowPCGEdge::new(
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                     PathConditions::new(location.block),
                 ),
                 for_exclusive,
@@ -283,7 +289,7 @@ impl<'tcx> BorrowsState<'tcx> {
                     if !dest_places.is_empty() {
                         let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
                         let place_expansion = PlaceExpansion::from_places(dest_places, ctxt);
-                        let expansion = BorrowPCGExpansion::new(
+                        let expansion = BorrowPcgExpansion::new(
                             rp.into(),
                             place_expansion,
                             location,
@@ -293,7 +299,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         self.record_and_apply_action(
                             BorrowPCGAction::add_edge(
                                 BorrowPCGEdge::new(
-                                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion),
+                                    BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                                     PathConditions::new(location.block),
                                 ),
                                 for_exclusive,

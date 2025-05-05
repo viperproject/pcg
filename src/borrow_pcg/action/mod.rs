@@ -1,7 +1,7 @@
 use tracing::instrument;
 
 use super::borrow_pcg_edge::BorrowPCGEdge;
-use super::edge::kind::BorrowPCGEdgeKind;
+use super::edge::kind::BorrowPcgEdgeKind;
 use super::state::BorrowsState;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
@@ -232,7 +232,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<bool, PcgError> {
         let mut changed = self.insert(edge.clone());
         Ok(match edge.kind {
-            BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                 if changed {
                     let base = expansion.base;
                     let expanded_capability = if expansion.is_owned_expansion(repacker) {

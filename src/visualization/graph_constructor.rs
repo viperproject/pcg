@@ -474,8 +474,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, run_pcg,
-        rustc_interface::compile_body, utils::CompilerCtxt,
+        borrow_checker::r#impl::BorrowCheckerImpl, run_pcg, utils::{test::run_pcg_on_str, CompilerCtxt},
         visualization::graph_constructor::PcgGraphConstructor,
     };
 
@@ -496,11 +495,9 @@ fn main() {
     *rx = 1;
 }
 "#;
-        compile_body(input, |tcx, body| {
-            let bc = BorrowCheckerImpl::new(tcx, body);
-            let ctxt: CompilerCtxt<'_, '_> = CompilerCtxt::new(&body.body, tcx, &bc);
-            let mut pcg = run_pcg(&body.body, tcx, &bc, None);
-            let bb = pcg.get_all_for_bb(0usize.into()).unwrap().unwrap();
+        run_pcg_on_str(input, |mut analysis| {
+            let bb = analysis.get_all_for_bb(0usize.into()).unwrap().unwrap();
+            let ctxt = analysis.ctxt();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
             let graph = PcgGraphConstructor::new(

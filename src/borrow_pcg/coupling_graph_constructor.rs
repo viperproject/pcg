@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use super::{
     domain::AbstractionOutputTarget,
-    edge::kind::BorrowPCGEdgeKind,
+    edge::kind::BorrowPcgEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
     has_pcs_elem::HasPcgElems,
     region_projection::PcgRegion,
@@ -61,7 +61,7 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for C
 
 // pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<CGNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
 pub(crate) type AbstractionGraph<'tcx> =
-    coupling::DisjointSetGraph<CGNode<'tcx>, BorrowPCGEdgeKind<'tcx>>;
+    coupling::DisjointSetGraph<CGNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
 
 impl<T: Clone> Coupled<T> {
     pub fn size(&self) -> usize {
@@ -225,7 +225,7 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// that it was created at.
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 
-    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx>;
+    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx>;
 
     fn location_table(&self) -> &LocationTable;
 
@@ -329,7 +329,7 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
         bg: &AbstractionGraph<'tcx>,
         bottom_connect: &'a Coupled<CGNode<'tcx>>,
         upper_candidate: &'a Coupled<CGNode<'tcx>>,
-        incoming_weight: FxHashSet<BorrowPCGEdgeKind<'tcx>>,
+        incoming_weight: FxHashSet<BorrowPcgEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {

@@ -27,7 +27,7 @@ use crate::{
         validity::HasValidityCheck,
         CompilerCtxt,
     },
-    DebugLines, PCGAnalysis, RECORD_PCG,
+    DebugLines, AnalysisEngine, RECORD_PCG,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
@@ -582,11 +582,11 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<PCGAnalysis<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx> DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &PCGAnalysis<PcgEngine<'a, 'tcx>>,
+        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx>>,
         _f: &mut Formatter<'_>,
     ) -> Result {
         todo!()

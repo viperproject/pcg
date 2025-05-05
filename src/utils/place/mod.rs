@@ -23,7 +23,8 @@ use crate::{
         middle::{
             mir::{Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
             ty::{self, Ty, TyKind},
-        }, VariantIdx,
+        },
+        VariantIdx,
     },
 };
 
@@ -298,7 +299,13 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn contains_unsafe_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         for (p, proj) in self.iter_projections(repacker) {
-            if p.ty(repacker).ty.is_raw_ptr() && matches!(proj, PlaceElem::Deref) {
+            #[rustversion::since(2025-03-02)]
+            let is_raw_ptr = p.ty(repacker).ty.is_raw_ptr();
+
+            #[rustversion::before(2025-03-02)]
+            let is_raw_ptr = p.ty(repacker).ty.is_unsafe_ptr();
+
+            if is_raw_ptr && matches!(proj, PlaceElem::Deref) {
                 return true;
             }
         }

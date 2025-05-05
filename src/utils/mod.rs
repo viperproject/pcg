@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+pub mod callbacks;
 mod mutable;
 mod root_place;
 pub (crate) mod incoming_states;
@@ -23,6 +24,9 @@ pub use place_snapshot::*;
 pub use repacker::*;
 pub(crate) mod domain_data;
 pub(crate) mod repacker;
+
+#[cfg(test)]
+pub(crate) mod test;
 
 pub fn env_feature_enabled(feature: &str) -> Option<bool> {
     match std::env::var(feature) {

@@ -39,6 +39,7 @@ impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
                 let by_ref = match capture {
                     UpvarCapture::ByValue => false,
                     UpvarCapture::ByRef(..) => true,
+                    _ => todo!(),
                 };
                 Upvar {
                     place: captured_place.clone(),

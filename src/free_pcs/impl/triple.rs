@@ -4,18 +4,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+
 use crate::pcg_validity_assert;
+use crate::rustc_interface::ast::Mutability;
 use crate::rustc_interface::middle::mir::{
-    self, BorrowKind, Local, Location, MutBorrowKind, Operand,
-    Rvalue, Statement, StatementKind, Terminator, TerminatorKind, RETURN_PLACE,
-    RawPtrKind,
+    self, BorrowKind, Local, Location, MutBorrowKind, Operand, Rvalue, Statement, StatementKind,
+    Terminator, TerminatorKind, RETURN_PLACE,
 };
+
+#[rustversion::since(2025-03-02)]
+use crate::rustc_interface::middle::mir::RawPtrKind;
 
 use crate::utils::visitor::FallableVisitor;
 use crate::{
-    pcg::{PCGUnsupportedError, PcgError},
     free_pcs::CapabilityKind,
-    utils::{display::DisplayWithCompilerCtxt, Place, CompilerCtxt},
+    pcg::{PCGUnsupportedError, PcgError},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -134,6 +138,12 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             &RawPtr(mutbl, place) => {
                 #[rustversion::since(2025-03-02)]
                 if matches!(mutbl, RawPtrKind::Mut) {
+                    Condition::exclusive(place, self.repacker)
+                } else {
+                    Condition::read(place)
+                }
+                #[rustversion::before(2025-03-02)]
+                if matches!(mutbl, Mutability::Mut) {
                     Condition::exclusive(place, self.repacker)
                 } else {
                     Condition::read(place)
