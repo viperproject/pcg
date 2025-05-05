@@ -26,7 +26,6 @@ pub mod visualization;
 use action::PcgActions;
 use borrow_checker::BorrowCheckerInterface;
 use borrow_pcg::latest::Latest;
-use bumpalo::Bump;
 use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{

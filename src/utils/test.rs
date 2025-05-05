@@ -1,4 +1,3 @@
-use std::alloc::Allocator;
 use std::path::Path;
 use std::sync::Arc;
 use std::{fs, io};
@@ -45,7 +44,10 @@ impl FileLoader for StringLoader {
 /// Stored bodies must come from the same `tcx`.
 unsafe fn run_pcg_on_first_fn<'tcx>(
     tcx: TyCtxt<'tcx>,
-    callback: impl for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + Send + Sync + 'static,
+    callback: impl for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)
+        + Send
+        + Sync
+        + 'static,
 ) {
     let def_id = tcx
         .hir_body_owners()
@@ -86,8 +88,6 @@ pub(crate) fn run_pcg_on_str(
         + Sync
         + 'static,
 ) {
-    use std::alloc::Allocator;
-
     run_compiler(
         &vec![
             "rustc".to_string(),

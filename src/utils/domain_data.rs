@@ -1,5 +1,4 @@
 use std::alloc::Allocator;
-use std::rc::Rc;
 
 use derive_more::From;
 

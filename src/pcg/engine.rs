@@ -12,7 +12,6 @@ use std::{
 };
 
 use bit_set::BitSet;
-use bumpalo::Bump;
 use derive_more::From;
 
 use super::{

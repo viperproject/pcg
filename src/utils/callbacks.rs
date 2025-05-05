@@ -1,5 +1,4 @@
 use std::{
-    alloc::Allocator,
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     fs::File,

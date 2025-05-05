@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use petgraph::algo::kosaraju_scc;
 use petgraph::dot::{Config, Dot};
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{EdgeIndex, Frozen, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::{Direction, Graph};
 use std::collections::BTreeSet;
@@ -10,6 +10,7 @@ use std::hash::Hash;
 
 use crate::borrow_pcg::abstraction_graph_constructor::Coupled;
 use crate::borrow_pcg::graph::coupling_imgcat_debug;
+use crate::rustc_interface::data_structures::fx::FxHashMap;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
@@ -41,7 +42,8 @@ impl<N: Copy + Eq, E: Hash + Eq + Clone> NodeData<N, E> {
 /// https://en.wikipedia.org/wiki/Transitive_reduction)
 #[derive(Clone)]
 pub(crate) struct DisjointSetGraph<N, E> {
-    pub(crate) inner: petgraph::Graph<NodeData<N, E>, FxHashSet<E>>,
+    inner: petgraph::Graph<NodeData<N, E>, FxHashSet<E>>,
+    lookup_map: FxHashMap<N, petgraph::prelude::NodeIndex>,
 }
 
 pub(crate) struct JoinNodesResult {
@@ -60,38 +62,22 @@ impl<
         E: Clone + Eq + Hash + DisplayWithCompilerCtxt<'tcx>,
     > DisjointSetGraph<N, E>
 {
+    pub(crate) fn inner(&self) -> &petgraph::Graph<NodeData<N, E>, FxHashSet<E>> {
+        &self.inner
+    }
+
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
+            lookup_map: FxHashMap::default(),
         }
     }
 
-    pub(crate) fn roots(&self) -> FxHashSet<Coupled<N>> {
-        self.inner
-            .node_indices()
-            .filter(|idx| {
-                self.inner
-                    .neighbors_directed(*idx, Direction::Incoming)
-                    .count()
-                    == 0
-            })
-            .map(|idx| self.inner.node_weight(idx).unwrap().nodes.clone())
-            .collect()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn height(&self) -> usize {
-        let mut max_height = 0;
-        for node in self.roots() {
-            let height = petgraph::algo::dijkstra(
-                &self.inner,
-                self.lookup(*node.iter().next().unwrap()).unwrap(),
-                None,
-                |_| 1,
-            );
-            max_height = max_height.max(*height.values().max().unwrap_or(&0));
-        }
-        max_height
+    pub(crate) fn retain_edges<F>(&mut self, visit: F)
+    where
+        F: FnMut(Frozen<petgraph::Graph<NodeData<N, E>, FxHashSet<E>>>, EdgeIndex) -> bool,
+    {
+        self.inner.retain_edges(visit);
     }
 
     pub(crate) fn is_root(&self, node: &Coupled<N>) -> bool {
@@ -212,8 +198,12 @@ impl<
             if should_merge {
                 self.merge_sccs(ctxt);
             }
+            let (new_index, nodes) = self.lookup_in_graph(*nodes.iter().next().unwrap()).unwrap();
+            for node in nodes {
+                self.lookup_map.insert(node, new_index);
+            }
             JoinNodesResult {
-                index: self.lookup(*nodes.iter().next().unwrap()).unwrap(),
+                index: new_index,
                 performed_merge: should_merge,
             }
         } else {
@@ -221,6 +211,9 @@ impl<
                 nodes: nodes.clone(),
                 inner_edges: FxHashSet::default(),
             });
+            for node in nodes.iter() {
+                self.lookup_map.insert(*node, idx);
+            }
             JoinNodesResult {
                 index: idx,
                 performed_merge: false,
@@ -228,12 +221,15 @@ impl<
         }
     }
 
+    fn lookup_in_graph(&self, node: N) -> Option<(petgraph::prelude::NodeIndex, Coupled<N>)> {
+        self.inner
+            .node_indices()
+            .find(|idx| self.inner.node_weight(*idx).unwrap().nodes.contains(&node))
+            .map(|idx| (idx, self.inner.node_weight(idx).unwrap().nodes.clone()))
+    }
+
     pub(crate) fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
-        self.inner.node_indices().find(|idx| {
-            self.inner
-                .node_weight(*idx)
-                .is_some_and(|w| w.nodes.contains(&node))
-        })
+        self.lookup_map.get(&node).cloned()
     }
 
     pub(crate) fn is_acyclic(&self) -> bool {
@@ -277,6 +273,12 @@ impl<
             }
         }
         self.inner = result;
+        self.lookup_map.clear();
+        for nix in self.inner.node_indices() {
+            for node in self.inner.node_weight(nix).unwrap().nodes.iter() {
+                self.lookup_map.insert(*node, nix);
+            }
+        }
 
         if validity_checks_enabled() && !self.is_acyclic() && coupling_imgcat_debug() {
             self.render_with_imgcat(repacker, "After merging SCCs");
@@ -286,6 +288,15 @@ impl<
             self.is_acyclic(),
             "Resulting graph contains cycles after merging SCCs"
         );
+    }
+
+    pub(crate) fn update_inner_edge(
+        &mut self,
+        source: NodeIndex,
+        target: NodeIndex,
+        weight: FxHashSet<E>,
+    ) {
+        self.inner.update_edge(source, target, weight);
     }
 
     #[must_use]

@@ -106,13 +106,13 @@ impl<'tcx> AbstractionGraph<'tcx> {
             "Graph contains cycles after SCC computation"
         );
 
-        let toposort = petgraph::algo::toposort(&self.inner, None).unwrap();
+        let toposort = petgraph::algo::toposort(&self.inner(), None).unwrap();
         let (g, revmap) =
-            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner, &toposort);
+            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner(), &toposort);
 
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure::<_, u32>(&g);
         let mut removed_edges = FxHashSet::default();
-        self.inner.retain_edges(|slf, ei| {
+        self.retain_edges(|slf, ei| {
             let endpoints = slf.edge_endpoints(ei).unwrap();
             let should_keep =
                 tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()]);
@@ -147,13 +147,13 @@ impl<'tcx> AbstractionGraph<'tcx> {
         }
 
         'top: loop {
-            for blocked in self.inner.node_indices() {
-                for blocking in self.inner.node_indices() {
-                    if has_path_connecting(&self.inner, blocked, blocking, None) {
+            for blocked in self.inner().node_indices() {
+                for blocking in self.inner().node_indices() {
+                    if has_path_connecting(&self.inner(), blocked, blocking, None) {
                         continue;
                     }
-                    let blocked_data = self.inner.node_weight(blocked).unwrap();
-                    let blocking_data = self.inner.node_weight(blocking).unwrap();
+                    let blocked_data = self.inner().node_weight(blocked).unwrap();
+                    let blocking_data = self.inner().node_weight(blocking).unwrap();
                     if let Some(blocked_region) = blocked_data.nodes.region_repr(ctxt)
                         && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
                         && !blocking_data.nodes.is_remote()
@@ -169,7 +169,7 @@ impl<'tcx> AbstractionGraph<'tcx> {
                         {
                             AddEdgeResult::DidNotMergeNodes => {
                                 let edges = self.transitive_reduction(ctxt);
-                                self.inner.update_edge(blocked, blocking, edges);
+                                self.update_inner_edge(blocked, blocking, edges);
                                 if coupling_imgcat_debug() {
                                     self.render_with_imgcat(ctxt, "Post add");
                                 }
