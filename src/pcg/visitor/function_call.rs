@@ -3,7 +3,7 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
 use crate::borrow_pcg::domain::AbstractionInputTarget;
 use crate::borrow_pcg::edge::abstraction::{
-    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction,
+    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction, FunctionData,
 };
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{
@@ -11,12 +11,22 @@ use crate::borrow_pcg::region_projection::{
 };
 use crate::rustc_interface::middle::mir::{Location, Operand};
 
+use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{self, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 
-use super::PcgError;
+fn get_function_data<'tcx>(
+    func: &Operand<'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+) -> Option<FunctionData<'tcx>> {
+    match func.ty(ctxt.body(), ctxt.tcx()).kind() {
+        ty::TyKind::FnDef(def_id, substs) => Some(FunctionData::new(*def_id, substs)),
+        ty::TyKind::FnPtr(..) => None,
+        _ => None,
+    }
+}
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(super) fn make_function_call_abstraction(
@@ -35,19 +45,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         {
             return Ok(());
         }
-        let func_ty = func.ty(self.ctxt.body(), self.ctxt.tcx());
-        let (func_def_id, substs) = if let ty::TyKind::FnDef(def_id, substs) = func_ty.kind() {
-            (def_id, substs)
-        } else {
-            panic!("Expected a function definition");
-        };
+        let function_data = get_function_data(func, self.ctxt);
 
         let mk_create_edge_action = |input, output| {
             let edge = BorrowPCGEdge::new(
                 AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                     location,
-                    *func_def_id,
-                    substs,
+                    function_data,
                     AbstractionBlockEdge::new(input, output),
                 ))
                 .into(),

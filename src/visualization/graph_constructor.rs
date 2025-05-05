@@ -185,11 +185,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         let label = match abstraction {
             AbstractionType::FunctionCall(fc) => {
-                format!(
-                    "{} at {:?}",
-                    self.ctxt.tcx().def_path_str(fc.def_id()),
-                    fc.location()
-                )
+                fc.to_short_string(self.ctxt)
             }
             AbstractionType::Loop(loop_abstraction) => {
                 format!("loop at {:?}", loop_abstraction.location())

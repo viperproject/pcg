@@ -132,11 +132,23 @@ impl<'tcx> LoopAbstraction<'tcx> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct FunctionData<'tcx> {
+    def_id: DefId,
+    substs: GenericArgsRef<'tcx>,
+}
+
+impl<'tcx> FunctionData<'tcx> {
+    pub fn new(def_id: DefId, substs: GenericArgsRef<'tcx>) -> Self {
+        Self { def_id, substs }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
-    def_id: DefId,
-    substs: GenericArgsRef<'tcx>,
+    /// This may be `None` if the call is to a function pointer
+    function_data: Option<FunctionData<'tcx>>,
     edge: AbstractionBlockEdge<'tcx>,
 }
 
@@ -206,8 +218,12 @@ impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
-            "call {} at {:?}: {}",
-            ctxt.tcx().def_path_str(self.def_id),
+            "call{} at {:?}: {}",
+            if let Some(function_data) = &self.function_data {
+                format!(" {}", ctxt.tcx().def_path_str(function_data.def_id))
+            } else {
+                "".to_string()
+            },
             self.location,
             self.edge.to_short_string(ctxt)
         )
@@ -224,11 +240,11 @@ where
 }
 
 impl<'tcx> FunctionCallAbstraction<'tcx> {
-    pub fn def_id(&self) -> DefId {
-        self.def_id
+    pub fn def_id(&self) -> Option<DefId> {
+        self.function_data.as_ref().map(|f| f.def_id)
     }
-    pub fn substs(&self) -> GenericArgsRef<'tcx> {
-        self.substs
+    pub fn substs(&self) -> Option<GenericArgsRef<'tcx>> {
+        self.function_data.as_ref().map(|f| f.substs)
     }
 
     pub fn location(&self) -> Location {
@@ -241,14 +257,12 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
 
     pub fn new(
         location: Location,
-        def_id: DefId,
-        substs: GenericArgsRef<'tcx>,
+        function_data: Option<FunctionData<'tcx>>,
         edge: AbstractionBlockEdge<'tcx>,
     ) -> Self {
         Self {
             location,
-            def_id,
-            substs,
+            function_data,
             edge,
         }
     }
@@ -267,7 +281,11 @@ edgedata_enum!(
 );
 
 impl<'tcx> AbstractionType<'tcx> {
-    pub(crate) fn redirect(&mut self, from: AbstractionOutputTarget<'tcx>, to: AbstractionOutputTarget<'tcx>) {
+    pub(crate) fn redirect(
+        &mut self,
+        from: AbstractionOutputTarget<'tcx>,
+        to: AbstractionOutputTarget<'tcx>,
+    ) {
         match self {
             AbstractionType::FunctionCall(c) => c.redirect(from, to),
             AbstractionType::Loop(c) => c.redirect(from, to),
