@@ -9,17 +9,20 @@ use crate::{
     rustc_interface::{
         borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,
-        index::{bit_set::BitSet, Idx},
+        index::Idx,
         middle::{
             mir::{
-                tcx::PlaceTy, BasicBlock, Body, HasLocalDecls, Local, Mutability,
-                Place as MirPlace, PlaceElem, ProjectionElem,
+                BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace, PlaceElem,
+                ProjectionElem, VarDebugInfoContents,
             },
             ty::{TyCtxt, TyKind},
         },
-        target::abi::FieldIdx,
+        FieldIdx, PlaceTy, RustBitSet,
     },
 };
+
+#[rustversion::before(2025-03-02)]
+use crate::rustc_interface::index::bit_set::BitSet;
 
 use crate::rustc_interface::mir_dataflow;
 
@@ -140,9 +143,20 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
     {
         self.bc
     }
+
+    pub fn local_place(&self, var_name: &str) -> Option<Place<'tcx>> {
+        for info in &self.mir.var_debug_info {
+            if let VarDebugInfoContents::Place(place) = info.value
+                && info.name.to_string() == var_name
+            {
+                return Some(place.into());
+            }
+        }
+        None
+    }
 }
 
-impl CompilerCtxt<'_, '_> {
+impl<'tcx> CompilerCtxt<'_, 'tcx> {
     pub(crate) fn is_arg(self, local: Local) -> bool {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
@@ -170,11 +184,11 @@ impl CompilerCtxt<'_, '_> {
     }
 
     #[rustversion::since(2024-12-14)]
-    pub fn always_live_locals(self) -> BitSet<Local> {
+    pub fn always_live_locals(self) -> RustBitSet<Local> {
         mir_dataflow::impls::always_storage_live_locals(self.mir)
     }
 
-    pub fn always_live_locals_non_args(self) -> BitSet<Local> {
+    pub fn always_live_locals_non_args(self) -> RustBitSet<Local> {
         let mut all = self.always_live_locals();
         for arg in 0..self.mir.arg_count + 1 {
             // Includes `RETURN_PLACE`
@@ -212,10 +226,10 @@ impl<'tcx> DeepExpansion<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn to_rust_place<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> MirPlace<'tcx> {
+    pub fn to_rust_place<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
-            projection: repacker.tcx.mk_place_elems(self.projection),
+            projection: ctxt.tcx.mk_place_elems(self.projection),
         }
     }
 
@@ -261,9 +275,7 @@ impl<'tcx> Place<'tcx> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
-            "self place {:?} is not a prefix of guide place {:?}",
-            self,
-            guide_place
+            "self place {self:?} is not a prefix of guide place {guide_place:?}"
         );
         let new_projection = repacker.tcx.mk_place_elems_from_iter(
             self.projection
@@ -327,14 +339,12 @@ impl<'tcx> Place<'tcx> {
             | ProjectionElem::Subslice { .. }
             | ProjectionElem::Downcast(..)
             | ProjectionElem::OpaqueCast(..) => (Vec::new(), ProjectionKind::Other),
-            ProjectionElem::Subtype(_) => todo!(),
+            _ => todo!(),
         };
         for p in other_places.iter() {
             assert!(
                 p.projection.len() == self.projection.len() + 1,
-                "expanded place {:?} is not a direct child of {:?}",
-                p,
-                self,
+                "expanded place {p:?} is not a direct child of {self:?}",
             );
         }
         Ok(ShallowExpansion::new(new_current_place, other_places, kind))
@@ -436,8 +446,16 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn ty<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
-        (*self).ty(repacker.mir, repacker.tcx)
+    pub fn ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
+        debug_assert!(
+            ctxt.mir.local_decls().len() > self.local.as_usize(),
+            "Place {:?} has local {:?}, but the provided MIR at {:?} only has {} local declarations",
+            self,
+            self.local,
+            ctxt.mir.span,
+            ctxt.mir.local_decls().len()
+        );
+        (*self).ty(ctxt.mir, ctxt.tcx)
     }
 
     #[allow(unused)]

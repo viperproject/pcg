@@ -145,11 +145,10 @@ impl<'tcx> BorrowsState<'tcx> {
         let removed = self.graph.remove(edge);
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
-                if !self.graph.contains(node, repacker) {
-                    if let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
+                if !self.graph.contains(node, repacker)
+                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
                         let _ = capabilities.remove(place.into());
                     }
-                }
             }
         }
         removed

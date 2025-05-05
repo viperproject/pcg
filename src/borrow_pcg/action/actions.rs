@@ -82,11 +82,10 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
     pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) {
-        if validity_checks_enabled() {
-            if let Some(last) = self.last() {
+        if validity_checks_enabled()
+            && let Some(last) = self.last() {
                 pcg_validity_assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this is probably a bug.", action);
             }
-        }
         self.0.push(action);
     }
 }

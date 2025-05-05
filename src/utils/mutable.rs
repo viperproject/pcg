@@ -10,12 +10,11 @@ use rustc_interface::{
         mir::{Mutability, ProjectionElem},
         ty::{CapturedPlace, TyKind, UpvarCapture},
     },
-    target::abi::FieldIdx,
 };
 
-use crate::rustc_interface;
+use crate::rustc_interface::{self, FieldIdx};
 
-use super::{root_place::RootPlace, Place, CompilerCtxt};
+use super::{root_place::RootPlace, CompilerCtxt, Place};
 
 struct Upvar<'tcx> {
     pub(crate) place: CapturedPlace<'tcx>,
@@ -40,6 +39,7 @@ impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
                 let by_ref = match capture {
                     UpvarCapture::ByValue => false,
                     UpvarCapture::ByRef(..) => true,
+                    _ => todo!(),
                 };
                 Upvar {
                     place: captured_place.clone(),
@@ -143,7 +143,7 @@ impl<'tcx> Place<'tcx> {
                                 repacker,
                             ),
                             // Deref should only be for reference, pointers or boxes
-                            _ => panic!("Deref of unexpected type: {:?}", base_ty),
+                            _ => panic!("Deref of unexpected type: {base_ty:?}"),
                         }
                     }
                     // All other projections are owned by their base path, so mutable if
@@ -211,7 +211,7 @@ impl<'tcx> Place<'tcx> {
                             )
                         }
                     }
-                    ProjectionElem::Subtype(_) => todo!(),
+                    _ => todo!(),
                 }
             }
         }

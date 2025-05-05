@@ -75,7 +75,7 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// that it was created at.
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 
-    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx>;
+    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx>;
 
     fn location_table(&self) -> &LocationTable;
 

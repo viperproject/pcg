@@ -24,13 +24,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         location: mir::Location,
         comment: &str,
     ) {
-        if borrows_imgcat_debug() {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, location) {
+        if borrows_imgcat_debug()
+            && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, location) {
                 DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {}", e);
+                    eprintln!("Error rendering self graph: {e}");
                 });
             }
-        }
     }
 
     pub(crate) fn join<'mir>(
@@ -58,29 +57,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.render_debug_graph(
                 repacker,
                 self_location,
-                &format!("Self graph: {:?}", self_block),
+                &format!("Self graph: {self_block:?}"),
             );
             other.render_debug_graph(
                 repacker,
                 other_location,
-                &format!("Other graph: {:?}", other_block),
+                &format!("Other graph: {other_block:?}"),
             );
             self.join_loop(other, self_block, other_block, repacker);
             let result = *self != old_self;
-            if borrows_imgcat_debug() {
-                if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
+            if borrows_imgcat_debug()
+                && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
                     DotGraph::render_with_imgcat(
                         &dot_graph,
-                        &format!("After join (loop, changed={:?}):", result),
+                        &format!("After join (loop, changed={result:?}):"),
                     )
                     .unwrap_or_else(|e| {
-                        eprintln!("Error rendering self graph: {}", e);
+                        eprintln!("Error rendering self graph: {e}");
                     });
                     if result {
                         eprintln!("{}", old_self.fmt_diff(self, repacker))
                     }
                 }
-            }
             // For performance reasons we don't check validity here.
             // if validity_checks_enabled() {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
@@ -105,8 +103,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let changed = old_self != *self;
 
-        if borrows_imgcat_debug() {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(
+        if borrows_imgcat_debug()
+            && let Ok(dot_graph) = generate_borrows_dot_graph(
                 repacker,
                 self,
                 mir::Location {
@@ -116,39 +114,37 @@ impl<'tcx> BorrowsGraph<'tcx> {
             ) {
                 DotGraph::render_with_imgcat(
                     &dot_graph,
-                    &format!("After join: (changed={:?})", changed),
+                    &format!("After join: (changed={changed:?})"),
                 )
                 .unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {}", e);
+                    eprintln!("Error rendering self graph: {e}");
                 });
                 if changed {
                     eprintln!("{}", old_self.fmt_diff(self, repacker))
                 }
             }
-        }
 
         // For performance reasons we only check validity here if we are also producing debug graphs
         if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(repacker) {
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
                     |e| {
-                        eprintln!("Error rendering self graph: {}", e);
+                        eprintln!("Error rendering self graph: {e}");
                     },
                 );
             }
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, &old_self, self_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(|e| {
-                    eprintln!("Error rendering old self graph: {}", e);
+                    eprintln!("Error rendering old self graph: {e}");
                 });
             }
             if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other, other_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
-                    eprintln!("Error rendering other graph: {}", e);
+                    eprintln!("Error rendering other graph: {e}");
                 });
             }
             panic!(
-                "Graph became invalid after join. self: {:?}, other: {:?}",
-                self_block, other_block
+                "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
             );
         }
         changed

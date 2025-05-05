@@ -19,7 +19,7 @@ use crate::{
     pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
     rustc_interface::{
         data_structures::fx::FxHashSet,
-        dataflow::PCGAnalysis,
+        dataflow::AnalysisEngine,
         index::IndexVec,
         middle::{
             mir::{self, BasicBlock, Body, Location},
@@ -41,14 +41,14 @@ use crate::{
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct FreePcsAnalysis<'mir, 'tcx: 'mir> {
-    pub cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx>>>,
+pub struct PcgAnalysis<'mir, 'tcx: 'mir> {
+    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, PCGAnalysis<PcgEngine<'mir, 'tcx>>>) -> Self {
+impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
+    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -107,40 +107,38 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         self.end_stmt = None;
 
         let from_pcg = &self.cursor.get().data()?.pcg;
+        let from_post_main = from_pcg.states[EvalStmtPhase::PostMain].clone();
+        let self_abstraction_edges = from_post_main
+            .borrow
+            .graph()
+            .abstraction_edges()
+            .collect::<FxHashSet<_>>();
 
-        // TODO: cleanup
-        let rp: CompilerCtxt = self.ctxt();
+        let ctxt: CompilerCtxt = self.ctxt();
         let block = &self.body()[location.block];
 
-        // Currently we ignore blocks that are only reached via panics
-        let succs = successor_blocks(block.terminator())
+        let succ_blocks = successor_blocks(block.terminator())
             .into_iter()
             .filter(|succ| {
                 self.cursor
-                    .results()
-                    .analysis
+                    .analysis()
                     .0
                     .reachable_blocks
-                    .contains(*succ)
+                    .contains(succ.index())
             })
+            .collect::<Vec<_>>();
+        let succs = succ_blocks
+            .into_iter()
             .map(|succ| {
-                // Get repacks
-                let entry_set = self.cursor.results().entry_set_for_block(succ);
-                let to = &entry_set.data()?.pcg;
+                self.cursor.seek_to_block_start(succ);
+                let to = &self.cursor.get().data()?.pcg;
 
-                let from = &from_pcg.states[EvalStmtPhase::PostMain];
-
-                let owned_bridge = from
+                let owned_bridge = from_post_main
                     .owned
-                    .bridge(&to.entry_state.owned, &from.capabilities, rp)
+                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, ctxt)
                     .unwrap();
 
                 let mut borrow_actions = BorrowPCGActions::new();
-                let self_abstraction_edges = from_pcg.states[EvalStmtPhase::PostMain]
-                    .borrow
-                    .graph()
-                    .abstraction_edges()
-                    .collect::<FxHashSet<_>>();
                 for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
@@ -152,7 +150,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
                                 for_exclusive: true,
                             }
                             .into(),
-                            self.ctxt(),
+                            ctxt,
                         );
                     }
                 }
@@ -183,7 +181,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
     }
 
     fn analysis(&self) -> &PcgEngine<'mir, 'tcx> {
-        &self.cursor.results().analysis.0
+        &self.cursor.analysis().0
     }
 
     pub fn first_error(&self) -> Option<PcgError> {
@@ -198,7 +196,7 @@ impl<'mir, 'tcx> FreePcsAnalysis<'mir, 'tcx> {
         &mut self,
         block: BasicBlock,
     ) -> Result<Option<PcgBasicBlock<'tcx>>, PcgError> {
-        if !self.analysis().reachable_blocks.contains(block) {
+        if !self.analysis().reachable_blocks.contains(block.index()) {
             return Ok(None);
         }
         self.analysis_for_bb(block);
@@ -291,7 +289,7 @@ pub struct PcgLocation<'tcx> {
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
     fn debug_lines(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
-        self.iter().map(|r| format!("{:?}", r)).collect()
+        self.iter().map(|r| format!("{r:?}")).collect()
     }
 }
 
@@ -330,11 +328,12 @@ impl<'tcx> PcgLocation<'tcx> {
         tcx: TyCtxt<'tcx>,
     ) -> FxHashSet<mir::Place<'tcx>> {
         let place: Place<'tcx> = place.into();
+        // let place = place.with_inherent_region(ctxt);
         let ctxt = CompilerCtxt::new(body, tcx, ());
         self.states[EvalStmtPhase::PostMain]
             .borrow
             .graph()
-            .aliases(place.with_inherent_region(ctxt).into(), ctxt)
+            .aliases(place.into(), ctxt)
             .into_iter()
             .flat_map(|p| match p {
                 PCGNode::Place(p) => p.as_current_place(),

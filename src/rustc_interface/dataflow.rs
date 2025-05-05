@@ -78,10 +78,10 @@ where
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct PCGAnalysis<T>(pub(crate) T);
+pub struct AnalysisEngine<T>(pub(crate) T);
 
 #[rustversion::before(2024-11-14)]
-impl<'tcx, T: Analysis<'tcx>> mir_dataflow::AnalysisDomain<'tcx> for PCGAnalysis<T> {
+impl<'tcx, T: Analysis<'tcx>> mir_dataflow::AnalysisDomain<'tcx> for AnalysisEngine<T> {
     type Domain = T::Domain;
     const NAME: &'static str = T::NAME;
 
@@ -93,7 +93,7 @@ impl<'tcx, T: Analysis<'tcx>> mir_dataflow::AnalysisDomain<'tcx> for PCGAnalysis
         self.0.initialize_start_block(body, state);
     }
 }
-impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for PCGAnalysis<T> {
+impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T> {
     #[rustversion::since(2024-11-14)]
     const NAME: &'static str = T::NAME;
 

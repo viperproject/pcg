@@ -66,8 +66,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
             Rvalue::Use(Operand::Constant(box c)) => {
-                if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind() {
-                    if let ty::TyKind::Ref(target_region, _, _) = target.ty(self.ctxt).ty.kind() {
+                if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind()
+                    && let ty::TyKind::Ref(target_region, _, _) = target.ty(self.ctxt).ty.kind() {
                         self.record_and_apply_action(
                             BorrowPCGAction::add_edge(
                                 BorrowPCGEdge::new(
@@ -98,7 +98,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .into(),
                         )?;
                     }
-                }
             }
             Rvalue::Use(operand @ (Operand::Move(from) | Operand::Copy(from))) => {
                 let from: utils::Place<'tcx> = (*from).into();

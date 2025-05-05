@@ -320,7 +320,7 @@ impl<T> DebugRecursiveCallHistory<T> {
                 action,
                 self.history
                     .iter()
-                    .map(|a| format!("{}", a))
+                    .map(|a| format!("{a}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             );
@@ -360,12 +360,12 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
             "bottom: {{{}}}, upper: {{{}}}",
             self.bottom_connect
                 .iter()
-                .map(|x| format!("{:?}", x))
+                .map(|x| format!("{x:?}"))
                 .collect::<Vec<_>>()
                 .join(", "),
             self.upper_candidate
                 .iter()
-                .map(|x| format!("{:?}", x))
+                .map(|x| format!("{x:?}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         )

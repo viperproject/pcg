@@ -155,7 +155,7 @@ impl<
         // let dot_file = format!("/pcs/dotfiles/{crate_name}_{timestamp}.dot");
         // std::fs::write(&dot_file, &dot).unwrap();
         DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
-            eprintln!("Error rendering graph: {}", e);
+            eprintln!("Error rendering graph: {e}");
         });
     }
 
@@ -400,7 +400,7 @@ where
         for edge in self.inner.edge_references() {
             let source = self.inner.node_weight(edge.source()).unwrap();
             let target = self.inner.node_weight(edge.target()).unwrap();
-            writeln!(f, "{:?} -> {:?}", source, target)?;
+            writeln!(f, "{source:?} -> {target:?}")?;
         }
         Ok(())
     }

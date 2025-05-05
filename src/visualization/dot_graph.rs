@@ -35,8 +35,7 @@ impl DotGraph {
         let dot_output = dot_process.wait_with_output()?;
 
         if !dot_output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "dot command failed",
             ));
         }
@@ -55,8 +54,7 @@ impl DotGraph {
         let imgcat_status = imgcat_process.wait()?;
 
         if !imgcat_status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "imgcat command failed",
             ));
         }
@@ -91,10 +89,10 @@ impl Display for DotGraph {
         writeln!(f, "layout=dot")?;
         writeln!(f, "node [shape=rect]")?;
         for node in &self.nodes {
-            writeln!(f, "{}", node)?;
+            writeln!(f, "{node}")?;
         }
         for edge in &self.edges {
-            writeln!(f, "{}", edge)?;
+            writeln!(f, "{edge}")?;
         }
         writeln!(f, "}}")
     }
@@ -108,8 +106,8 @@ pub enum DotLabel {
 impl Display for DotLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DotLabel::Text(text) => write!(f, "\"{}\"", text),
-            DotLabel::Html(html) => write!(f, "<{}>", html),
+            DotLabel::Text(text) => write!(f, "\"{text}\""),
+            DotLabel::Html(html) => write!(f, "<{html}>"),
         }
     }
 }
@@ -173,12 +171,12 @@ impl Display for DotFloatAttr {
 impl DotAttr for DotFloatAttr {}
 
 fn format_attr<T: DotAttr>(name: &'static str, value: &T) -> String {
-    format!("{}={}", name, value)
+    format!("{name}={value}")
 }
 
 fn format_optional<T: DotAttr>(name: &'static str, value: &Option<T>) -> String {
     match value {
-        Some(value) => format!("{}={}", name, value),
+        Some(value) => format!("{name}={value}"),
         None => "".to_string(),
     }
 }
@@ -279,7 +277,7 @@ pub(crate) struct DotEdge {
 impl Display for DotEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let style_part = match &self.options.style {
-            Some(style) => format!(", style=\"{}\"", style),
+            Some(style) => format!(", style=\"{style}\""),
             None => "".to_string(),
         };
         let direction_part = match &self.options.direction {
@@ -288,19 +286,19 @@ impl Display for DotEdge {
             None => "dir=\"none\", constraint=false",
         };
         let color_part = match &self.options.color {
-            Some(color) => format!(", color=\"{}\"", color),
+            Some(color) => format!(", color=\"{color}\""),
             None => "".to_string(),
         };
         let tooltip_part = match &self.options.tooltip {
-            Some(tooltip) => format!(", edgetooltip=\"{}\"", tooltip),
+            Some(tooltip) => format!(", edgetooltip=\"{tooltip}\""),
             None => "".to_string(),
         };
         let penwidth_part = match &self.options.penwidth {
-            Some(penwidth) => format!(", penwidth=\"{}\"", penwidth),
+            Some(penwidth) => format!(", penwidth=\"{penwidth}\""),
             None => "".to_string(),
         };
         let weight_part = match &self.options.weight {
-            Some(weight) => format!(", weight=\"{}\"", weight),
+            Some(weight) => format!(", weight=\"{weight}\""),
             None => "".to_string(),
         };
         write!(

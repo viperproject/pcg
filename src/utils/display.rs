@@ -63,7 +63,7 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for V
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for Place<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self.to_string(repacker) {
-            PlaceDisplay::Temporary(p) => format!("{:?}", p),
+            PlaceDisplay::Temporary(p) => format!("{p:?}"),
             PlaceDisplay::User(_p, s) => s,
         }
     }
@@ -219,13 +219,13 @@ impl<Ctxt: Copy, T: DebugLines<Ctxt>> DisplayDiff<Ctxt> for T {
 
         for line in self_lines.iter() {
             if !to_lines.contains(line) {
-                result.push(format!("-{}", line));
+                result.push(format!("-{line}"));
             }
         }
 
         for line in to_lines.iter() {
             if !self_lines.contains(line) {
-                result.push(format!("+{}", line));
+                result.push(format!("+{line}"));
             }
         }
 

@@ -15,12 +15,12 @@ use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::CompilerCtxt;
+#[cfg(feature = "visualization")]
+use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
-#[cfg(feature = "visualization")]
-use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
@@ -32,7 +32,7 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
     #[cfg(feature = "visualization")]
-    pub pretty_printer: RegionPrettyPrinter,
+    pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
 }
 
 impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
@@ -172,7 +172,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
         twophase_borrow_activations(location, self.borrows)
     }
 
-    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx> {
+    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         self.region_cx
     }
 
@@ -208,7 +208,7 @@ pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     body: &'mir mir::Body<'tcx>,
     tcx: ty::TyCtxt<'tcx>,
     #[cfg(feature = "visualization")]
-    pub pretty_printer: RegionPrettyPrinter,
+    pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
 }
 #[rustversion::before(2024-12-14)]
 fn cursor_contains_local(
@@ -350,7 +350,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         twophase_borrow_activations(location, self.borrows)
     }
 
-    fn region_inference_ctxt(&self) -> &RegionInferenceContext<'tcx> {
+    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         self.region_cx
     }
 

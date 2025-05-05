@@ -15,6 +15,6 @@ impl<T: io::Write> GraphDrawer<T> {
             nodes: graph.nodes.iter().map(|g| g.to_dot_node()).collect(),
             edges: graph.edges.into_iter().map(|e| e.to_dot_edge()).collect(),
         };
-        writeln!(self.out, "{}", dot_graph)
+        writeln!(self.out, "{dot_graph}")
     }
 }

@@ -272,8 +272,8 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
 impl<T: std::fmt::Display> std::fmt::Display for PCGNode<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PCGNode::Place(p) => write!(f, "{}", p),
-            PCGNode::RegionProjection(rp) => write!(f, "{}", rp),
+            PCGNode::Place(p) => write!(f, "{p}"),
+            PCGNode::RegionProjection(rp) => write!(f, "{rp}"),
         }
     }
 }

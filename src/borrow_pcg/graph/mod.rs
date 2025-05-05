@@ -82,11 +82,10 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn borrow_created_at(&self, location: mir::Location) -> Option<&LocalBorrow<'tcx>> {
         for edge in self.edges() {
-            if let BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) = edge.kind {
-                if borrow.reserve_location() == location {
+            if let BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) = edge.kind
+                && borrow.reserve_location() == location {
                     return Some(borrow);
                 }
-            }
         }
         None
     }
@@ -103,11 +102,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {
         for edge in self.edges() {
-            if let BorrowPcgEdgeKind::Abstraction(abstraction) = edge.kind() {
-                if abstraction.is_function_call() && abstraction.location() == location {
+            if let BorrowPcgEdgeKind::Abstraction(abstraction) = edge.kind()
+                && abstraction.is_function_call() && abstraction.location() == location {
                     return true;
                 }
-            }
         }
         false
     }
@@ -235,7 +233,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     "Current: {}, Connect: {}",
                     self.current,
                     match self.connect {
-                        Some(cg_node) => format!("{:?}", cg_node),
+                        Some(cg_node) => format!("{cg_node:?}"),
                         None => "None".to_string(),
                     }
                 )
@@ -285,8 +283,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                     _ => {
                         for node in edge.blocked_by_nodes(ctxt) {
-                            if let LocalNode::RegionProjection(rp) = node {
-                                if let Some(source) = ef.connect()
+                            if let LocalNode::RegionProjection(rp) = node
+                                && let Some(source) = ef.connect()
                                     && source != rp.into()
                                 {
                                     graph.add_edge(
@@ -296,7 +294,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                         ctxt,
                                     );
                                 }
-                            }
                         }
                     }
                 }
