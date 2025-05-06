@@ -11,7 +11,7 @@ use super::{
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, LabelRegionProjection, MakePlaceOld},
     latest::Latest,
-    region_projection::{RegionProjection, RegionProjectionLabel},
+    region_projection::{HasRegionProjections, RegionProjection, RegionProjectionLabel},
 };
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
