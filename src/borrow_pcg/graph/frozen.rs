@@ -201,7 +201,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                             for block in leaf_blocks.iter() {
                                 let edges = pcgraph.edges_to(*block);
                                 if edges.len() == 1 {
-                                    let from_block = edges.iter().next().unwrap().from;
+                                    let from_block = edges.iter().next().unwrap().from();
                                     if let Some(bs) = end_blocks_map.insert(block, from_block)
                                         && bs != from_block {
                                             return false;

@@ -29,10 +29,7 @@ use crate::{
     validity_checks_enabled,
 };
 use crate::{
-    borrow_pcg::{
-        edge::outlives::BorrowFlowEdge,
-        region_projection::RegionProjection,
-    },
+    borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::RegionProjection},
     utils::remote::RemotePlace,
 };
 use crate::{
@@ -146,9 +143,10 @@ impl<'tcx> BorrowsState<'tcx> {
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
-                        let _ = capabilities.remove(place.into());
-                    }
+                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+                {
+                    let _ = capabilities.remove(place.into());
+                }
             }
         }
         removed
@@ -163,18 +161,22 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        changed |= self
-            .graph
-            .join(&other.graph, self_block, other_block, repacker);
+        changed |= self.graph.join(&other.graph, self_block, other_block, ctxt);
         changed |= self.latest.join(&other.latest, self_block);
         changed
     }
 
-    pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
-        self.graph.add_path_condition(pc)
+    pub(crate) fn add_cfg_edge(&mut self, from: BasicBlock, to: BasicBlock) -> bool {
+        if from < to {
+            self.graph.add_path_condition(PathCondition::new(from, to))
+        } else {
+            // Back edge (loop)
+            // self.graph.remove_path_conditions_after(to)
+            false
+        }
     }
 
     pub fn filter_for_path(&mut self, path: &[BasicBlock]) {

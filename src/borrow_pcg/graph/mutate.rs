@@ -58,4 +58,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
         self.mut_edge_conditions(|conditions| conditions.insert(pc))
     }
+
+    pub(crate) fn remove_path_conditions_after(&mut self, block: BasicBlock) -> bool {
+        self.mut_edge_conditions(|conditions| conditions.remove_after(block))
+    }
 }

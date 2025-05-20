@@ -12,13 +12,23 @@ use crate::utils::json::ToJsonWithCompilerCtxt;
 
 #[derive(Copy, PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct PathCondition {
-    pub from: BasicBlock,
-    pub to: BasicBlock,
+    from: BasicBlock,
+    to: BasicBlock,
 }
 
 impl PathCondition {
     pub fn new(from: BasicBlock, to: BasicBlock) -> Self {
+        assert!(
+            from < to,
+            "Path condition created for backward edge {from:?} -> {to:?}"
+        );
         Self { from, to }
+    }
+    pub fn from(&self) -> BasicBlock {
+        self.from
+    }
+    pub fn to(&self) -> BasicBlock {
+        self.to
     }
 }
 
@@ -56,6 +66,19 @@ impl std::fmt::Display for PCGraph {
 }
 
 impl PCGraph {
+    pub(crate) fn remove_after(&mut self, block: BasicBlock) -> bool {
+        let mut changed = false;
+        self.0.retain(|pc| {
+            if pc.to() <= block {
+                true
+            } else {
+                changed = true;
+                false
+            }
+        });
+        changed
+    }
+
     pub(crate) fn remove(&mut self, other: &Self) -> bool {
         pcg_validity_assert!(self != other);
         let mut changed = false;
@@ -124,6 +147,10 @@ impl PCGraph {
             while i < path.len() - 1 {
                 let f = path[i];
                 let t = path[i + 1];
+                assert!(
+                    f < t,
+                    "Path {path:?} contains backward edge {f:?} -> {t:?}",
+                );
                 if !self.0.contains(&PathCondition::new(f, t)) {
                     return false;
                 }
@@ -219,6 +246,16 @@ impl PathConditions {
                 true
             }
             (PathConditions::Paths(_), PathConditions::AtBlock(_b)) => false,
+        }
+    }
+
+    pub(crate) fn remove_after(&mut self, block: BasicBlock) -> bool {
+        match self {
+            PathConditions::AtBlock(b) => {
+                assert!(*b <= block, "Cannot remove path conditions after block {block:?} for single block condition {b:?}");
+                false
+            }
+            PathConditions::Paths(p) => p.remove_after(block),
         }
     }
 
