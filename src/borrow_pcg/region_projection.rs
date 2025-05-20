@@ -350,7 +350,7 @@ pub struct RegionProjection<
 
 impl<'tcx, P: PartialEq, R: FromRegion<'tcx>> PartialEq for RegionProjection<'tcx, P, R> {
     fn eq(&self, other: &Self) -> bool {
-        self.base == other.base && self.region_idx == self.region_idx && self.label == other.label
+        self.base == other.base && self.region_idx == other.region_idx && self.label == other.label
     }
 }
 
