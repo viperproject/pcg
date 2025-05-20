@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
-    borrow_pcg_edge::LocalNode, coupling_graph_constructor::CGNode, visitor::extract_regions,
+    borrow_pcg_edge::LocalNode, abstraction_graph_constructor::AbstractionGraphNode, visitor::extract_regions,
 };
 use crate::pcg::{PCGInternalError, PcgError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -489,12 +489,12 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldP
     }
 }
 
-impl<'tcx> TryFrom<CGNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     type Error = ();
-    fn try_from(node: CGNode<'tcx>) -> Result<Self, Self::Error> {
-        match node {
-            CGNode::RegionProjection(rp) => rp.try_into(),
-            CGNode::Place(_) => Err(()),
+    fn try_from(node: AbstractionGraphNode<'tcx>) -> Result<Self, Self::Error> {
+        match *node {
+            PCGNode::RegionProjection(rp) => rp.try_into(),
+            PCGNode::Place(_) => Err(()),
         }
     }
 }

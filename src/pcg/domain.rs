@@ -6,6 +6,7 @@
 
 use itertools::Itertools;
 use std::{
+    alloc::Allocator,
     cell::RefCell,
     collections::BTreeMap,
     fmt::{Debug, Formatter, Result},
@@ -21,13 +22,14 @@ use crate::{
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
     },
     utils::{
+        arena::ArenaRef,
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
         validity::HasValidityCheck,
         CompilerCtxt,
     },
-    DebugLines, AnalysisEngine, RECORD_PCG,
+    AnalysisEngine, DebugLines, RECORD_PCG,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
@@ -177,22 +179,38 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Default, Debug)]
-pub struct PcgDomainData<'tcx> {
-    pub(crate) pcg: DomainData<Pcg<'tcx>>,
+#[derive(Clone, Eq, Debug)]
+pub struct PcgDomainData<'tcx, A: Allocator> {
+    pub(crate) pcg: DomainData<ArenaRef<Pcg<'tcx>, A>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
+impl<'tcx, A: Allocator> PartialEq for PcgDomainData<'tcx, A> {
+    fn eq(&self, other: &Self) -> bool {
+        self.pcg == other.pcg
+    }
+}
+
+impl<'tcx, A: Allocator + Clone> PcgDomainData<'tcx, A> {
+    pub(crate) fn new(arena: A) -> Self {
+        let pcg = ArenaRef::new_in(Pcg::default(), arena);
+        Self {
+            pcg: DomainData::new(pcg),
+            actions: EvalStmtData::default(),
+        }
+    }
+}
+
 #[derive(Clone)]
-pub struct PcgDomain<'a, 'tcx> {
+pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     repacker: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
-    pub(crate) data: std::result::Result<PcgDomainData<'tcx>, PcgError>,
+    pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
     pub(crate) reachable: bool,
 }
 
-impl Debug for PcgDomain<'_, '_> {
+impl<'a, 'tcx, A: Allocator + Debug> Debug for PcgDomain<'a, 'tcx, A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:?}", self.data)
     }
@@ -359,7 +377,7 @@ pub enum PCGUnsupportedError {
     InlineAssembly,
 }
 
-impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
     pub(crate) fn has_error(&self) -> bool {
         self.data.is_err()
     }
@@ -372,13 +390,13 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         self.data = Err(error);
     }
 
-    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx>, PcgError> {
+    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx, A>, PcgError> {
         self.data.as_ref().map_err(|e| e.clone())
     }
 
     pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'tcx> {
         match &mut self.data {
-            Ok(data) => Rc::<Pcg<'tcx>>::make_mut(&mut data.pcg[phase]),
+            Ok(data) => ArenaRef::make_mut(&mut data.pcg[phase]),
             Err(e) => panic!("PCG error: {e:?}"),
         }
     }
@@ -455,9 +473,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
                 .borrow_mut()
                 .insert(statement_index, phase, relative_filename)
             {
-                panic!(
-                    "Dot graph for entry ({statement_index}, {phase:?}) already exists"
-                )
+                panic!("Dot graph for entry ({statement_index}, {phase:?}) already exists")
             }
 
             let pcg: &Pcg<'tcx> = match phase {
@@ -484,26 +500,27 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         repacker: CompilerCtxt<'a, 'tcx>,
         block: Option<BasicBlock>,
         debug_data: Option<PCGDebugData>,
+        arena: A,
     ) -> Self {
         Self {
             repacker,
             block,
-            data: Ok(PcgDomainData::default()),
+            data: Ok(PcgDomainData::new(arena)),
             debug_data,
             reachable: false,
         }
     }
 }
 
-impl Eq for PcgDomain<'_, '_> {}
+impl<'a, 'tcx, A: Allocator + Clone> Eq for PcgDomain<'a, 'tcx, A> {}
 
-impl PartialEq for PcgDomain<'_, '_> {
+impl<'a, 'tcx, A: Allocator + Clone> PartialEq for PcgDomain<'a, 'tcx, A> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl JoinSemiLattice for PcgDomain<'_, '_> {
+impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> {
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;
@@ -539,7 +556,7 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
 
             let other_state = &other.data.as_ref().unwrap().pcg.states[EvalStmtPhase::PostMain];
             data.pcg.entry_state = other_state.clone();
-            let entry_state_mut = Rc::<Pcg<'_>>::make_mut(&mut data.pcg.entry_state);
+            let entry_state_mut = ArenaRef::make_mut(&mut data.pcg.entry_state);
             entry_state_mut
                 .borrow
                 .add_path_condition(PathCondition::new(other_block, self_block));
@@ -550,7 +567,7 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
 
         assert!(self.is_initialized() && other.is_initialized());
         let pcg =
-            Rc::<Pcg<'_>>::make_mut(&mut self.data.as_mut().unwrap().pcg[DomainDataIndex::Initial]);
+            ArenaRef::make_mut(&mut self.data.as_mut().unwrap().pcg[DomainDataIndex::Initial]);
         let result = match pcg.join(
             other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
             self_block,
@@ -571,13 +588,15 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
     }
 }
 
-impl<'a, 'tcx> DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
+impl<'a, 'tcx, A: Allocator + Clone + Debug>
+    DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx, A>>> for PcgDomain<'a, 'tcx, A>
+{
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx>>,
+        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx, A>>,
         _f: &mut Formatter<'_>,
     ) -> Result {
-        todo!()
+        Ok(())
     }
 }

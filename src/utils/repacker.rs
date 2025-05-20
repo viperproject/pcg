@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface,
+    borrow_checker::BorrowCheckerInterface,
     rustc_interface::{
         borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,
@@ -163,11 +163,7 @@ impl<'tcx> CompilerCtxt<'_, 'tcx> {
 
     /// Returns `true` iff the edge from `from` to `to` is a back edge.
     pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
-        self.mir.basic_blocks.dominators().dominates(to, from)
-            && self.mir.basic_blocks[from]
-                .terminator()
-                .successors()
-                .any(|s| s == to)
+        from > to
     }
 
     pub fn num_args(self) -> usize {

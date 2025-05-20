@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::rc::Rc;
+use std::{alloc::Allocator, rc::Rc};
 
 use derive_more::Deref;
 
@@ -41,14 +41,16 @@ use crate::{
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
-pub struct PcgAnalysis<'mir, 'tcx: 'mir> {
-    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx>>>,
+pub struct PcgAnalysis<'mir, 'tcx: 'mir, A: Allocator + Copy> {
+    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
-    pub(crate) fn new(cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx>>>) -> Self {
+impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
+    pub(crate) fn new(
+        cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
+    ) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -93,7 +95,7 @@ impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
         let result = PcgLocation {
             location,
             actions: data.actions.clone(),
-            states: data.pcg.states.clone(),
+            states: data.pcg.states.to_owned(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -180,7 +182,7 @@ impl<'mir, 'tcx> PcgAnalysis<'mir, 'tcx> {
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PcgEngine<'mir, 'tcx> {
+    fn analysis(&self) -> &PcgEngine<'mir, 'tcx, A> {
         &self.cursor.analysis().0
     }
 

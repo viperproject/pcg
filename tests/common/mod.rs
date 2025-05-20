@@ -62,16 +62,24 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
     let cargo = "cargo";
     let pcs_exe = cwd.join(["target", target, "pcg_bin"].iter().collect::<PathBuf>());
     println!("Running PCG on directory: {}", dir.display());
-    let exit = Command::new(cargo)
+    let mut command = Command::new(cargo);
+    command
         .arg("check")
+        .current_dir(dir)
         .env("RUST_TOOLCHAIN", get_rust_toolchain_channel())
         .env("RUSTUP_TOOLCHAIN", get_rust_toolchain_channel())
         .env(
             "PCG_VALIDITY_CHECKS",
             format!("{}", options.validity_checks()),
         )
-        .env("RUSTC", &pcs_exe)
-        .current_dir(dir)
+        .env("RUSTC", &pcs_exe);
+    for (key, value) in options.extra_env_vars() {
+        command.env(key, value);
+    }
+    if let Some(function) = options.function() {
+        command.env("PCG_CHECK_FUNCTION", function);
+    }
+    let exit = command
         .status()
         .unwrap_or_else(|_| panic!("Failed to execute cargo check on {}", dir.display()));
 
@@ -211,29 +219,47 @@ pub enum Target {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RunOnCrateOptions {
-    TypecheckOnly,
+    TypecheckOnly {
+        extra_env_vars: Vec<(&'static str, &'static str)>,
+    },
     RunPCG {
         target: Target,
         validity_checks: bool,
+        function: Option<&'static str>,
+        extra_env_vars: Vec<(&'static str, &'static str)>,
     },
 }
 
 impl RunOnCrateOptions {
+    pub fn function(&self) -> Option<&'static str> {
+        match self {
+            RunOnCrateOptions::RunPCG { function, .. } => *function,
+            RunOnCrateOptions::TypecheckOnly { .. } => None,
+        }
+    }
+
+    pub fn extra_env_vars(&self) -> &[(&'static str, &'static str)] {
+        match self {
+            RunOnCrateOptions::RunPCG { extra_env_vars, .. } => extra_env_vars,
+            RunOnCrateOptions::TypecheckOnly { extra_env_vars } => extra_env_vars,
+        }
+    }
+
     pub fn validity_checks(&self) -> bool {
         match self {
             RunOnCrateOptions::RunPCG {
                 validity_checks, ..
             } => *validity_checks,
-            RunOnCrateOptions::TypecheckOnly => false,
+            RunOnCrateOptions::TypecheckOnly { .. } => false,
         }
     }
 
     pub fn target(&self) -> Target {
         match self {
             RunOnCrateOptions::RunPCG { target, .. } => *target,
-            RunOnCrateOptions::TypecheckOnly => Target::Release,
+            RunOnCrateOptions::TypecheckOnly { .. } => Target::Release,
         }
     }
 }

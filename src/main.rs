@@ -84,6 +84,10 @@ fn setup_rustc_args() -> Vec<String> {
     if env_feature_enabled("PCG_POLONIUS").unwrap_or(false) {
         rustc_args.push("-Zpolonius".to_string());
     }
+    if env_feature_enabled("PCG_DUMP_MIR_DATAFLOW").unwrap_or(false) {
+        rustc_args.push("-Zdump-mir=all".to_string());
+        rustc_args.push("-Zdump-mir-dataflow".to_string());
+    }
     if !in_cargo_crate() {
         rustc_args.push("-Zno-codegen".to_string());
     }

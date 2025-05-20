@@ -1,7 +1,7 @@
 extern crate polonius_engine;
 use polonius_engine::Output;
 
-use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
@@ -32,7 +32,7 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
     #[cfg(feature = "visualization")]
-    pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
+    pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
 }
 
 impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
@@ -40,37 +40,6 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
 
-    #[cfg(feature = "visualization")]
-    pub fn new<T: BodyAndBorrows<'tcx>>(
-        tcx: ty::TyCtxt<'tcx>,
-        body: &'mir T,
-        debug_region_name_overrides: BTreeMap<ty::RegionVid, String>,
-    ) -> Self {
-        let location_table = body.location_table();
-        let output_facts = Output::compute(
-            body.input_facts(),
-            polonius_engine::Algorithm::DatafrogOpt,
-            true,
-        );
-        let region_cx = body.region_inference_context();
-        let borrows = body.borrow_set();
-        let mut pretty_printer = RegionPrettyPrinter::new(region_cx);
-        for (region, name) in debug_region_name_overrides {
-            pretty_printer.insert(region, name);
-        }
-        Self {
-            input_facts: body.input_facts(),
-            location_table,
-            output_facts,
-            body: body.body(),
-            tcx,
-            region_cx,
-            borrows,
-            pretty_printer,
-        }
-    }
-
-    #[cfg(not(feature = "visualization"))]
     pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let location_table = body.location_table();
         let output_facts = Output::compute(
@@ -88,6 +57,8 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
             tcx,
             region_cx,
             borrows,
+            #[cfg(feature = "visualization")]
+            pretty_printer: RegionPrettyPrinter::new(region_cx),
         }
     }
 
@@ -236,6 +207,8 @@ pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
     body: &'mir mir::Body<'tcx>,
     tcx: ty::TyCtxt<'tcx>,
+    #[cfg(feature = "visualization")]
+    pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
 }
 #[rustversion::before(2024-12-14)]
 fn cursor_contains_local(
@@ -254,7 +227,10 @@ fn cursor_contains_local(
 }
 
 impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
-    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
+    pub fn new<T: BodyAndBorrows<'tcx>>(
+        tcx: ty::TyCtxt<'tcx>,
+        body: &'mir T,
+    ) -> Self {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
@@ -273,6 +249,8 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
                 region_cx,
                 borrows,
             ),
+            #[cfg(feature = "visualization")]
+            pretty_printer: RegionPrettyPrinter::new(region_cx),
         }
     }
 
@@ -301,6 +279,15 @@ impl BorrowCheckerImpl<'_, '_> {
 }
 
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
+
+    #[cfg(feature = "visualization")]
+    fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
+        self.pretty_printer.lookup(region).map(|s| s.as_str())
+    }
+    #[cfg(not(feature = "visualization"))]
+    fn override_region_debug_string(&self, _region: ty::RegionVid) -> Option<&str> {
+        None
+    }
     fn input_facts(&self) -> &PoloniusInput {
         self.input_facts
     }
@@ -381,10 +368,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
         self.borrows
-    }
-
-    fn override_region_debug_string(&self, _region: ty::RegionVid) -> Option<&str> {
-        None
     }
 }
 

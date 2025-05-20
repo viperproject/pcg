@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
-use crate::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::rustc_interface::middle::mir::{Body, Location};
 use crate::rustc_interface::middle::ty::{self, RegionVid};
@@ -80,9 +80,9 @@ pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
 }
 
 #[derive(Clone)]
-pub(crate) struct RegionPrettyPrinter<'bc, 'tcx> {
-    region_to_string: BTreeMap<RegionVid, String>,
+pub struct RegionPrettyPrinter<'bc, 'tcx> {
     sccs: RefCell<Option<petgraph::Graph<Vec<RegionVid>, ()>>>,
+    region_to_string: BTreeMap<RegionVid, String>,
     region_infer_ctxt: &'bc RegionInferenceContext<'tcx>,
 }
 

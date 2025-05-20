@@ -5,15 +5,16 @@ use std::{
     io::Write,
 };
 
+use bumpalo::Bump;
 use derive_more::From;
 use tracing::{debug, info, trace};
 
 use crate::{
-    borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
-    borrow_pcg::{
-        coupling_graph_constructor::BorrowCheckerInterface,
-        region_projection::{PcgRegion, RegionIdx},
+    borrow_checker::{
+        r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
+        BorrowCheckerInterface,
     },
+    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
     free_pcs::PcgAnalysis,
     pcg::{self, BodyWithBorrowckFacts},
     run_pcg,
@@ -40,7 +41,7 @@ use crate::rustc_interface::interface::Queries;
 
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::{
-    region_inference_outlives, subset_anywhere, subset_at_location,
+    region_inference_outlives, subset_anywhere, subset_at_location, RegionPrettyPrinter,
 };
 
 use super::{env_feature_enabled, CompilerCtxt, Place};
@@ -204,6 +205,14 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
             continue;
         }
         let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
+        if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
+            && function != item_name
+        {
+            tracing::info!(
+                "Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}"
+            );
+            continue;
+        }
         let body = take_stored_body(tcx, def_id);
 
         info!(
@@ -211,7 +220,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
             cargo_crate_name().map_or("".to_string(), |name| format!("{name}: ")),
             item_name
         );
-        tracing::debug!("Path: {:?}", body.body.span);
+        tracing::info!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
         tracing::debug!("Number of locals: {}", body.body.local_decls.len());
         run_pcg_on_fn(def_id, &body, tcx, polonius, vis_dir, None);
@@ -234,17 +243,18 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
     }
 }
 
+type PcgCallback<'tcx> =
+    dyn for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + 'static;
+
 pub(crate) fn run_pcg_on_fn<'tcx>(
     def_id: LocalDefId,
     body: &BodyWithBorrowckFacts<'tcx>,
     tcx: TyCtxt<'tcx>,
     polonius: bool,
     vis_dir: Option<&str>,
-    callback: Option<&(dyn for<'mir> Fn(PcgAnalysis<'mir, 'tcx>) + 'static)>,
+    callback: Option<&PcgCallback<'tcx>>,
 ) {
-    let region_debug_name_overrides = if vis_dir.is_some()
-        && let Ok(lines) = source_lines(tcx, &body.body)
-    {
+    let region_debug_name_overrides = if let Ok(lines) = source_lines(tcx, &body.body) {
         lines
             .iter()
             .flat_map(|l| l.split("PCG_LIFETIME_DISPLAY: ").nth(1))
@@ -253,18 +263,22 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     } else {
         BTreeMap::new()
     };
-    let bc = if polonius {
-        #[cfg(feature = "visualization")]
-        let polonius_bc = PoloniusBorrowChecker::new(tcx, body, region_debug_name_overrides);
-        #[cfg(not(feature = "visualization"))]
-        let polonius_bc = PoloniusBorrowChecker::new(tcx, body);
-        BorrowChecker::Polonius(polonius_bc)
+    let mut bc = if polonius {
+        BorrowChecker::Polonius(PoloniusBorrowChecker::new(tcx, body))
     } else {
         BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
     };
+    #[cfg(feature = "visualization")]
+    {
+        let region_printer = bc.region_pretty_printer();
+        for (region, name) in region_debug_name_overrides {
+            region_printer.insert(region, name.to_string());
+        }
+    }
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
-    let mut output = run_pcg(&body.body, tcx, &bc, item_dir.as_deref());
+    let arena = Bump::new();
+    let mut output = run_pcg(&body.body, tcx, &bc, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[rustversion::since(2024-12-14)]
@@ -321,6 +335,17 @@ enum BorrowChecker<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
 }
+
+#[cfg(feature = "visualization")]
+impl<'mir, 'tcx> BorrowChecker<'mir, 'tcx> {
+    fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
+        match self {
+            BorrowChecker::Polonius(bc) => &mut bc.pretty_printer,
+            BorrowChecker::Impl(bc) => &mut bc.pretty_printer,
+        }
+    }
+}
+
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
         match self {
@@ -393,7 +418,10 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>) {
+fn emit_and_check_annotations(
+    item_name: String,
+    output: &mut PcgOutput<'_, '_, &bumpalo::Bump>,
+) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 
@@ -471,16 +499,14 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     statement_index: stmt_index,
                 };
                 let start_dot_graph = subset_at_location(location, true, ctxt);
-                let start_file_path = format!(
-                    "{dir_path}/bc_facts_graph_{block_index:?}_{stmt_index}_start.dot"
-                );
+                let start_file_path =
+                    format!("{dir_path}/bc_facts_graph_{block_index:?}_{stmt_index}_start.dot");
                 start_dot_graph
                     .write_to_file(start_file_path.as_str())
                     .unwrap();
                 let mid_dot_graph = subset_at_location(location, false, ctxt);
-                let mid_file_path = format!(
-                    "{dir_path}/bc_facts_graph_{block_index:?}_{stmt_index}_mid.dot"
-                );
+                let mid_file_path =
+                    format!("{dir_path}/bc_facts_graph_{block_index:?}_{stmt_index}_mid.dot");
                 mid_dot_graph.write_to_file(mid_file_path.as_str()).unwrap();
 
                 let mut bc_facts_file = std::fs::File::create(format!(
