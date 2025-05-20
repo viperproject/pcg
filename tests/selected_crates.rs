@@ -12,7 +12,8 @@ fn test_selected_crates() {
     //     common::RunOnCrateOptions::RunPCG {
     //         target: common::Target::Debug,
     //         validity_checks: false,
-    //         function: None,
+    //         function: Some("internals::check::check_variant_skip_attrs"),
+    //         extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW", "true")],
     //     },
     // );
 
@@ -24,6 +25,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: false,
             function: Some("internals::attr::is_cow"),
+            extra_env_vars: vec![],
         },
     );
 
@@ -35,6 +37,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: false,
             function: Some("internals::ast::Container::<'a>::from_ast"),
+            extra_env_vars: vec![],
         },
     );
 

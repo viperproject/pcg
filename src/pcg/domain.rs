@@ -588,8 +588,8 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
     }
 }
 
-impl<'a, 'tcx, A: Allocator + Clone + Debug> DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx, A>>>
-    for PcgDomain<'a, 'tcx, A>
+impl<'a, 'tcx, A: Allocator + Clone + Debug>
+    DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx, A>>> for PcgDomain<'a, 'tcx, A>
 {
     fn fmt_diff_with(
         &self,
@@ -597,6 +597,6 @@ impl<'a, 'tcx, A: Allocator + Clone + Debug> DebugWithContext<AnalysisEngine<Pcg
         _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx, A>>,
         _f: &mut Formatter<'_>,
     ) -> Result {
-        todo!()
+        Ok(())
     }
 }
