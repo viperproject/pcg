@@ -5,6 +5,7 @@ use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
 use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::rustc_interface::middle::mir::{Body, Location};
 use crate::rustc_interface::middle::ty::{self, RegionVid};
@@ -122,7 +123,7 @@ fn get_all_regions<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> Vec<Region
     body.local_decls
         .iter()
         .flat_map(|l| extract_regions(l.ty, CompilerCtxt::new(body, tcx, ())))
-        .flat_map(|r| r.vid())
+        .flat_map(|r: PcgRegion| r.vid())
         .unique()
         .collect()
 }

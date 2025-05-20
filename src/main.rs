@@ -16,15 +16,6 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 use pcg::utils::callbacks::{in_cargo_crate, PcgCallbacks};
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs::File;
-use std::io::Write;
-
-use derive_more::From;
-use pcg::borrow_pcg::borrow_checker::r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker};
-use pcg::borrow_pcg::coupling_graph_constructor::BorrowCheckerInterface;
-use pcg::borrow_pcg::region_projection::HasRegions;
-use pcg::utils::{CompilerCtxt, Place};
 
 #[rustversion::since(2025-03-02)]
 use pcg::rustc_interface::driver::run_compiler;

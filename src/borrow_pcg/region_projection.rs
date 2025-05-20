@@ -32,7 +32,7 @@ use crate::{
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
 };
 
-use crate::rustc_interface::middle::ty::{BoundRegionKind, Ty};
+use crate::rustc_interface::middle::ty::Ty;
 
 pub trait FromRegion<'tcx>:
     Clone + Copy + Hash + std::fmt::Debug + std::fmt::Display + PartialEq + Eq + From<ty::Region<'tcx>>
