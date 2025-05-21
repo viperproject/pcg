@@ -71,6 +71,13 @@ impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
+    fn blocks_node<C: Copy>(
+        &self,
+        node: BlockedNode<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> bool {
+        self.edge.blocks_node(node, repacker)
+    }
     fn blocked_nodes<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -347,20 +354,17 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
             },
         }
     }
-    fn blocked_nodes<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    fn blocked_nodes<C: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> FxHashSet<PCGNode<'tcx>> {
         self.inputs().into_iter().map(|i| i.into()).collect()
     }
 
     fn blocked_by_nodes<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> FxHashSet<LocalNode<'tcx>> {
         self.outputs()
             .into_iter()
-            .map(|o| o.to_local_node(repacker))
+            .map(|o| o.to_local_node(ctxt))
             .collect()
     }
 }
