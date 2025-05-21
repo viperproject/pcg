@@ -1,5 +1,5 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
@@ -154,8 +154,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) {
         assert!(from_block > loop_head);
         tracing::info!("join_loop {from_block:?} {loop_head:?} start");
+        let old_self = self.clone();
         let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
-            .construct_abstraction_graph(self, ctxt.bc);
+            .construct_abstraction_graph(&old_self, ctxt.bc);
         let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
             .construct_abstraction_graph(other, ctxt.bc);
 

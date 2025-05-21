@@ -1,7 +1,7 @@
 use super::PcgVisitor;
 
 use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg_validity_assert;

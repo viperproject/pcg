@@ -64,7 +64,7 @@ impl<'tcx> MakePlaceOld<'tcx> for BorrowPcgEdge<'tcx> {
     }
 }
 
-pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
+pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPcgEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
     fn to_owned_edge(self) -> BorrowPcgEdge<'tcx>;
@@ -85,7 +85,7 @@ pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     }
 }
 
-impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPcgEdge<'tcx> {
+impl<'tcx> BorrowPcgEdgeLike<'tcx> for BorrowPcgEdge<'tcx> {
     fn kind(&self) -> &BorrowPcgEdgeKind<'tcx> {
         &self.kind
     }
@@ -99,8 +99,8 @@ impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPcgEdge<'tcx> {
     }
 }
 
-impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
-    fn kind(&self) -> &'graph BorrowPcgEdgeKind<'tcx> {
+impl<'tcx, 'graph> BorrowPcgEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
+    fn kind<'baz> (&'baz self) -> &'graph BorrowPcgEdgeKind<'tcx> {
         self.kind
     }
 
@@ -116,13 +116,13 @@ impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
+impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
     fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         self.kind().check_validity(repacker)
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithCompilerCtxt<'tcx> for T {
+impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> DisplayWithCompilerCtxt<'tcx> for T {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         if self.conditions().is_empty() {
             self.kind().to_short_string(ctxt)
@@ -424,7 +424,7 @@ impl<'tcx> BorrowPcgEdge<'tcx> {
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
+impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocked_by_nodes<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -472,6 +472,12 @@ edgedata_enum!(
     Abstraction(AbstractionType<'tcx>),
     BorrowFlow(BorrowFlowEdge<'tcx>),
 );
+
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for &BorrowPcgEdgeKind<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        (*self).to_short_string(ctxt)
+    }
+}
 
 pub(crate) trait ToBorrowsEdge<'tcx> {
     fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPcgEdge<'tcx>;

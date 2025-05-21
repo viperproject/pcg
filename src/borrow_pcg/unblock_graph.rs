@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::pcg::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
-use super::borrow_pcg_edge::BorrowPCGEdgeLike;
+use super::borrow_pcg_edge::BorrowPcgEdgeLike;
 use super::borrow_pcg_edge::{BlockedNode, BorrowPcgEdge};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
@@ -110,7 +110,7 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     pub(crate) fn kill_edge(
         &mut self,
-        edge: impl BorrowPCGEdgeLike<'tcx>,
+        edge: impl BorrowPcgEdgeLike<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {

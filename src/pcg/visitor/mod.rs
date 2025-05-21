@@ -1,6 +1,6 @@
 use crate::action::PcgAction;
 use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPCGEdgeLike};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
@@ -219,7 +219,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     #[tracing::instrument(skip(self, edge, location))]
     pub(crate) fn remove_edge_and_set_latest(
         &mut self,
-        edge: impl BorrowPCGEdgeLike<'tcx>,
+        edge: impl BorrowPcgEdgeLike<'tcx>,
         location: Location,
         context: &str,
     ) -> Result<(), PcgError> {

@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use super::PcgVisitor;
 use super::{Pcg, PcgError};
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPCGEdgeLike, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;

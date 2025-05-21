@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::BorrowPCGEdgeLike,
+        borrow_pcg_edge::BorrowPcgEdgeLike,
         edge::kind::BorrowPcgEdgeKind,
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
@@ -71,7 +71,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     }
     fn draw_borrow_pcg_edge(
         &mut self,
-        edge: impl BorrowPCGEdgeLike<'tcx>,
+        edge: impl BorrowPcgEdgeLike<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
         edge_idx: usize,
     ) {

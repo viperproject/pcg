@@ -76,8 +76,8 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for C
     }
 }
 
-pub(crate) type AbstractionGraph<'tcx> =
-    coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
+pub(crate) type AbstractionGraph<'tcx, 'graph> =
+    coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, &'graph BorrowPcgEdgeKind<'tcx>>;
 
 impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
     pub(crate) fn region_repr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
@@ -95,11 +95,11 @@ impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
     }
 }
 
-impl<'tcx> AbstractionGraph<'tcx> {
+impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
     pub(crate) fn transitive_reduction(
         &mut self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<BorrowPcgEdgeKind<'tcx>> {
+    ) -> FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>> {
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles after SCC computation"
@@ -157,7 +157,7 @@ impl<'tcx> AbstractionGraph<'tcx> {
                         && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
                         && !blocking_data.nodes.is_remote()
                         && ctxt.bc.outlives(blocked_region, blocking_region)
-                        // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
+                    // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
                     {
                         tracing::debug!(
                             "Adding edge {} -> {} because of outlives",
@@ -339,11 +339,11 @@ impl<T> DebugRecursiveCallHistory<T> {
     fn add(&mut self, _action: T) {}
 }
 
-pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
-    repacker: CompilerCtxt<'mir, 'tcx>,
+pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
+    ctxt: CompilerCtxt<'mir, 'tcx>,
     #[allow(unused)]
     block: BasicBlock,
-    graph: AbstractionGraph<'tcx>,
+    graph: AbstractionGraph<'tcx, 'graph>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -371,10 +371,10 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
+impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
     pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx>, block: BasicBlock) -> Self {
         Self {
-            repacker,
+            ctxt: repacker,
             block,
             graph: AbstractionGraph::new(),
         }
@@ -382,10 +382,10 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
 
     fn add_edges_from<'a>(
         &mut self,
-        bg: &AbstractionGraph<'tcx>,
+        bg: &AbstractionGraph<'tcx, 'graph>,
         bottom_connect: &'a Coupled<AbstractionGraphNode<'tcx>>,
         upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
-        incoming_weight: FxHashSet<BorrowPcgEdgeKind<'tcx>>,
+        incoming_weight: FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
@@ -425,12 +425,8 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
                     history.clone(),
                 );
             } else {
-                self.graph.add_edge(
-                    &coupled,
-                    &bottom_connect.clone(),
-                    weight.clone(),
-                    self.repacker,
-                );
+                self.graph
+                    .add_edge(&coupled, &bottom_connect.clone(), weight.clone(), self.ctxt);
                 self.add_edges_from(
                     bg,
                     &coupled,
@@ -445,19 +441,19 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
 
     pub(crate) fn construct_abstraction_graph(
         mut self,
-        bg: &BorrowsGraph<'tcx>,
+        bg: &'graph BorrowsGraph<'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
-    ) -> AbstractionGraph<'tcx> {
+    ) -> AbstractionGraph<'tcx, 'graph> {
         tracing::debug!("Construct abstraction graph start");
-        let full_graph = bg.base_abstraction_graph(self.repacker);
+        let full_graph = bg.base_abstraction_graph(self.ctxt);
         if coupling_imgcat_debug() {
-            full_graph.render_with_imgcat(self.repacker, "Base abstraction graph");
+            full_graph.render_with_imgcat(self.ctxt, "Base abstraction graph");
         }
         let leaf_nodes = full_graph.leaf_nodes();
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.graph.insert_endpoint(node.clone(), self.repacker);
+            self.graph.insert_endpoint(node.clone(), self.ctxt);
             self.add_edges_from(
                 &full_graph,
                 &node,
