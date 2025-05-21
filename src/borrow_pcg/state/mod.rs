@@ -187,7 +187,6 @@ impl<'tcx> BorrowsState<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if from < to {
-            tracing::info!("adding cfg edge for {:?} -> {:?}", from, to);
             let pc = PathCondition::new(from, to);
             self.path_conditions.insert(pc, ctxt.body());
             self.graph.add_path_condition(pc, ctxt)
