@@ -1,7 +1,7 @@
 use derive_more::{Deref, DerefMut};
 
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
 use crate::borrow_pcg::graph::Conditioned;
@@ -11,7 +11,7 @@ use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::{pcg_validity_assert, validity_checks_enabled, Weaken};
 
-use super::BorrowPCGActionKind;
+use super::BorrowPcgActionKind;
 
 #[derive(Clone, Deref, DerefMut, Debug, Default)]
 pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
@@ -36,9 +36,9 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::AddEdge {
+                BorrowPcgActionKind::AddEdge {
                     edge:
-                        BorrowPCGEdge {
+                        BorrowPcgEdge {
                             kind: BorrowPcgEdgeKind::BorrowFlow(edge),
                             conditions,
                             ..
@@ -54,7 +54,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::Weaken(weaken) => Some(*weaken),
+                BorrowPcgActionKind::Weaken(weaken) => Some(*weaken),
                 _ => None,
             })
             .collect()
@@ -64,7 +64,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
-                BorrowPCGActionKind::RemoveEdge(edge) => Some(edge.clone().into()),
+                BorrowPcgActionKind::RemoveEdge(edge) => Some(edge.clone().into()),
                 _ => None,
             })
             .collect()

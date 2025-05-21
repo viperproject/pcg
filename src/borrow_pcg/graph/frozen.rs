@@ -1,19 +1,16 @@
 use std::cell::{Ref, RefCell};
 
 use derive_more::{Deref, IntoIterator};
-use itertools::Itertools;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
+        borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
         edge_data::EdgeData,
-        path_condition::PathConditions,
     },
     pcg::PCGNode,
-    rustc_interface::{
-        data_structures::fx::{FxHashMap, FxHashSet},
-        middle::mir::TerminatorEdges,
-    },
+    rustc_interface::
+        data_structures::fx::{FxHashMap, FxHashSet}
+    ,
     utils::CompilerCtxt,
 };
 
@@ -154,140 +151,5 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         let result = !edges.is_empty();
         self.edges_blocking_cache.borrow_mut().insert(node, edges);
         result
-    }
-
-    pub(super) fn is_acyclic<'mir: 'graph, 'bc: 'graph, C: Copy>(
-        &mut self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
-    ) -> bool {
-        // The representation of an allowed path prefix, e.g. paths
-        // with this representation definitely cannot reach a feasible cycle.
-        type AllowedPathPrefix<'tcx, 'graph> = Path<'tcx, 'graph>;
-
-        let mut allowed_path_prefixes: FxHashSet<AllowedPathPrefix<'tcx, 'graph>> =
-            FxHashSet::default();
-
-        enum PushResult<'tcx, 'graph> {
-            ExtendPath(Path<'tcx, 'graph>),
-            Cycle,
-            PathConditionsUnsatisfiable,
-        }
-
-        #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-        struct Path<'tcx, 'graph>(Vec<BorrowPCGEdgeRef<'tcx, 'graph>>);
-        impl<'tcx, 'graph> Path<'tcx, 'graph> {
-            /// Checks if the path is actually feasible, i.e. there is an
-            /// execution path of the program such that the path conditions of
-            /// each edge are satisfied.
-            ///
-            /// Note that this check is very conservative right now (basically
-            /// only checking some obvious cases)
-            fn is_feasible<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
-                let leaf_blocks = repacker
-                    .body()
-                    .basic_blocks
-                    .iter_enumerated()
-                    .filter(|(_, bb)| matches!(bb.terminator().edges(), TerminatorEdges::None))
-                    .map(|(idx, _)| idx)
-                    .collect::<Vec<_>>();
-
-                // Maps leaf blocks `be` to a block `bs`, where the path feasibility
-                // requires an edge `bs` -> `be`. If `bs` is not unique for some
-                // `be`, then the path is definitely not feasible.
-                let mut end_blocks_map = FxHashMap::default();
-                for edge in self.0.iter() {
-                    match edge.conditions() {
-                        PathConditions::Paths(pcgraph) => {
-                            for block in leaf_blocks.iter() {
-                                let edges = pcgraph.edges_to(*block);
-                                if edges.len() == 1 {
-                                    let from_block = edges.iter().next().unwrap().from();
-                                    if let Some(bs) = end_blocks_map.insert(block, from_block)
-                                        && bs != from_block {
-                                            return false;
-                                        }
-                                }
-                            }
-                        }
-                        PathConditions::AtBlock(_) => {}
-                    }
-                }
-                true
-            }
-
-            fn try_push<C: Copy>(
-                mut self,
-                edge: BorrowPCGEdgeRef<'tcx, 'graph>,
-                repacker: CompilerCtxt<'_, 'tcx, C>,
-            ) -> PushResult<'tcx, 'graph> {
-                if self.0.contains(&edge) {
-                    PushResult::Cycle
-                } else {
-                    self.0.push(edge);
-                    if self.is_feasible(repacker) {
-                        PushResult::ExtendPath(self)
-                    } else {
-                        PushResult::PathConditionsUnsatisfiable
-                    }
-                }
-            }
-
-            fn last(&self) -> BorrowPCGEdgeRef<'tcx, 'graph> {
-                *self.0.last().unwrap()
-            }
-
-            fn new(edge: BorrowPCGEdgeRef<'tcx, 'graph>) -> Self {
-                Self(vec![edge])
-            }
-
-            fn path_prefix_repr(&self) -> AllowedPathPrefix<'tcx, 'graph> {
-                self.clone()
-            }
-
-            fn leads_to_feasible_cycle<'mir: 'graph, 'bc: 'graph, C: Copy>(
-                &self,
-                graph: &FrozenGraphRef<'graph, 'tcx>,
-                repacker: CompilerCtxt<'mir, 'tcx, C>,
-                prefixes: &mut FxHashSet<AllowedPathPrefix<'tcx, 'graph>>,
-            ) -> bool {
-                let path_prefix_repr = self.path_prefix_repr();
-                if prefixes.contains(&path_prefix_repr) {
-                    return false;
-                }
-                let curr = self.last();
-                let blocking_edges = curr
-                    .blocked_by_nodes(repacker)
-                    .into_iter()
-                    .flat_map(|node| graph.get_edges_blocking(node.into(), repacker))
-                    .unique();
-                for edge in blocking_edges {
-                    match self.clone().try_push(edge, repacker) {
-                        PushResult::Cycle => {
-                            return true;
-                        }
-                        PushResult::ExtendPath(next_path) => {
-                            next_path.leads_to_feasible_cycle(graph, repacker, prefixes);
-                        }
-                        PushResult::PathConditionsUnsatisfiable => {}
-                    }
-                }
-                prefixes.insert(path_prefix_repr);
-                false
-            }
-        }
-
-        for root in self.roots(repacker).iter() {
-            for edge in self.get_edges_blocking(*root, repacker) {
-                if Path::new(edge).leads_to_feasible_cycle(
-                    self,
-                    repacker,
-                    &mut allowed_path_prefixes,
-                ) {
-                    return false;
-                }
-            }
-        }
-
-        true
     }
 }

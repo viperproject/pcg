@@ -2,11 +2,10 @@ use std::cmp::Ordering;
 
 use itertools::Itertools;
 
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg_validity_assert;
@@ -104,12 +103,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?;
             } else {
                 self.record_and_apply_action(
-                    RepackOp::Expand(
-                        expansion.base_place(),
-                        expansion.target_place,
-                        capability,
-                    )
-                    .into(),
+                    RepackOp::Expand(expansion.base_place(), expansion.target_place, capability)
+                        .into(),
                 )?;
             }
         } else {
@@ -142,9 +137,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
 
             let action = BorrowPCGAction::add_edge(
-                BorrowPCGEdge::new(
+                BorrowPcgEdge::new(
                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
-                    PathConditions::new(location.block),
+                    self.pcg.borrow.path_conditions.clone(),
                 ),
                 capability != CapabilityKind::Read,
             );
@@ -187,9 +182,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         )?;
                         self.record_and_apply_action(
                             BorrowPCGAction::add_edge(
-                                BorrowPCGEdge::new(
+                                BorrowPcgEdge::new(
                                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
-                                    PathConditions::new(location.block),
+                                    self.pcg.borrow.path_conditions.clone(),
                                 ),
                                 for_exclusive,
                             )
@@ -209,7 +204,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn collapse(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> Result<(), PcgError> {
+    pub(crate) fn collapse(
+        &mut self,
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+    ) -> Result<(), PcgError> {
         let capability_projs = self.pcg.owned.locals_mut()[place.local].get_allocated_mut();
         let expansions = capability_projs
             .expansions

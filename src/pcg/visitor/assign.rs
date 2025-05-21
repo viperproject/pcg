@@ -1,19 +1,14 @@
 use super::PcgVisitor;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, RegionProjection,
-};
+use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
-use crate::rustc_interface::middle::mir::{
-    self, Location, Operand, Rvalue,
-};
+use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils;
+use crate::utils::maybe_old::MaybeOldPlace;
 
 use super::{PCGUnsupportedError, PcgError};
 
@@ -67,37 +62,38 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             Rvalue::Use(Operand::Constant(box c)) => {
                 if let ty::TyKind::Ref(const_region, _, _) = c.ty().kind()
-                    && let ty::TyKind::Ref(target_region, _, _) = target.ty(self.ctxt).ty.kind() {
-                        self.record_and_apply_action(
-                            BorrowPCGAction::add_edge(
-                                BorrowPCGEdge::new(
-                                    BorrowFlowEdge::new(
-                                        RegionProjection::new(
-                                            (*const_region).into(),
-                                            MaybeRemoteRegionProjectionBase::Const(c.const_),
-                                            None,
-                                            self.ctxt,
-                                        )
-                                        .unwrap(),
-                                        RegionProjection::new(
-                                            (*target_region).into(),
-                                            target,
-                                            None,
-                                            self.ctxt,
-                                        )
-                                        .unwrap()
-                                        .into(),
-                                        BorrowFlowEdgeKind::ConstRef,
+                    && let ty::TyKind::Ref(target_region, _, _) = target.ty(self.ctxt).ty.kind()
+                {
+                    self.record_and_apply_action(
+                        BorrowPCGAction::add_edge(
+                            BorrowPcgEdge::new(
+                                BorrowFlowEdge::new(
+                                    RegionProjection::new(
+                                        (*const_region).into(),
+                                        MaybeRemoteRegionProjectionBase::Const(c.const_),
+                                        None,
                                         self.ctxt,
                                     )
+                                    .unwrap(),
+                                    RegionProjection::new(
+                                        (*target_region).into(),
+                                        target,
+                                        None,
+                                        self.ctxt,
+                                    )
+                                    .unwrap()
                                     .into(),
-                                    PathConditions::AtBlock(location.block),
-                                ),
-                                true,
-                            )
-                            .into(),
-                        )?;
-                    }
+                                    BorrowFlowEdgeKind::ConstRef,
+                                    self.ctxt,
+                                )
+                                .into(),
+                                self.pcg.borrow.path_conditions.clone(),
+                            ),
+                            true,
+                        )
+                        .into(),
+                    )?;
+                }
             }
             Rvalue::Use(operand @ (Operand::Move(from) | Operand::Copy(from))) => {
                 let from: utils::Place<'tcx> = (*from).into();
@@ -116,7 +112,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 {
                     self.record_and_apply_action(
                         BorrowPCGAction::add_edge(
-                            BorrowPCGEdge::new(
+                            BorrowPcgEdge::new(
                                 BorrowFlowEdge::new(
                                     source_proj.into(),
                                     target_proj.into(),
@@ -124,7 +120,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                PathConditions::AtBlock(location.block),
+                                self.pcg.borrow.path_conditions.clone(),
                             ),
                             true,
                         )
@@ -172,7 +168,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 self.ctxt.bc.same_region(source_region, target_region);
                             self.record_and_apply_action(
                                 BorrowPCGAction::add_edge(
-                                    BorrowPCGEdge::new(
+                                    BorrowPcgEdge::new(
                                         BorrowFlowEdge::new(
                                             source_proj.into(),
                                             target_proj.into(),
@@ -180,7 +176,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                             self.ctxt,
                                         )
                                         .into(),
-                                        PathConditions::AtBlock(location.block),
+                                        self.pcg.borrow.path_conditions.clone(),
                                     ),
                                     true,
                                 )

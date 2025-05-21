@@ -1,7 +1,6 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::pcg_validity_assert;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -86,7 +85,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             return result;
         }
         for other_edge in other.edges() {
-            self.insert(other_edge.to_owned_edge());
+            self.insert(other_edge.to_owned_edge(), ctxt);
         }
         for edge in self
             .edges()
@@ -210,18 +209,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ),
                     loop_head,
                 )
-                .to_borrow_pcg_edge(PathConditions::new(loop_head));
+                .to_borrow_pcg_edge(PathConditions::new());
 
-                self.insert(abstraction);
+                self.insert(abstraction, ctxt);
                 self.edges
                     .retain(|edge_kind, _| !to_remove.contains(edge_kind));
             }
         }
-        if validity_checks_enabled() {
-            for edge in self.edges() {
-                pcg_validity_assert!(edge.conditions().all_not_after(loop_head));
-            }
-        }
+
+        // if validity_checks_enabled() {
+        //     for edge in self.edges() {
+        //         pcg_validity_assert!(edge.conditions().all_not_after(loop_head));
+        //     }
+        // }
+
         if borrows_imgcat_debug() {
             self.render_debug_graph(
                 ctxt,

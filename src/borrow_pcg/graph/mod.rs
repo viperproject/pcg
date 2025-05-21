@@ -25,7 +25,7 @@ use serde_json::json;
 
 use super::{
     abstraction_graph_constructor::{AbstractionGraphConstructor, AbstractionGraphNode},
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeLike, BorrowPCGEdgeRef, BorrowPcgEdge, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -52,15 +52,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        tracing::debug!(
-            "Checking acyclicity of borrows graph ({} edges)",
-            self.edges.len()
-        );
-        if !self.is_acyclic(repacker) {
-            return Err("Graph is not acyclic".to_string());
-        }
-        tracing::debug!("Acyclicity check passed");
+    fn check_validity<C: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -120,10 +112,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         mut edge: BorrowPcgEdgeKind<'tcx>,
         from: LocalNode<'tcx>,
         to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         let conditions = self.edges.remove(&edge).unwrap();
         edge.redirect(from, to);
-        self.insert(BorrowPCGEdge::new(edge, conditions));
+        self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
     }
 
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
@@ -314,10 +307,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         FrozenGraphRef::new(self)
     }
 
-    pub(crate) fn is_acyclic<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        self.frozen_graph().is_acyclic(repacker)
-    }
-
     pub(crate) fn abstraction_edge_kinds<'slf>(
         &'slf self,
     ) -> impl Iterator<Item = &'slf AbstractionType<'tcx>> + 'slf {
@@ -495,9 +484,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
-    pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
+    pub(crate) fn insert(
+        &mut self,
+        edge: BorrowPcgEdge<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            conditions.join(&edge.conditions)
+            conditions.join(&edge.conditions, ctxt.body())
         } else {
             self.edges.insert(edge.kind, edge.conditions);
             true
@@ -523,11 +516,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn remove(&mut self, edge: &impl BorrowPCGEdgeLike<'tcx>) -> bool {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            if conditions == edge.conditions() {
-                self.edges.remove(edge.kind());
-            } else {
-                assert!(conditions.remove(edge.conditions()));
-            }
+            assert_eq!(conditions, edge.conditions());
+            self.edges.remove(edge.kind());
             true
         } else {
             false

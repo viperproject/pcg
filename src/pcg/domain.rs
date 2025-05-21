@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     action::PcgActions,
-    borrow_pcg::{path_condition::PathCondition, state::BorrowsState},
+    borrow_pcg::state::BorrowsState,
     pcg::triple::Triple,
     rustc_interface::{
         middle::mir::{self, BasicBlock},
@@ -157,7 +157,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
-        other.borrow.add_cfg_edge(other_block, self_block);
+        other.borrow.add_cfg_edge(other_block, self_block, ctxt);
         res |= self
             .borrow
             .join(&other.borrow, self_block, other_block, ctxt);
@@ -559,7 +559,9 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
             let other_state = &other.data.as_ref().unwrap().pcg.states[EvalStmtPhase::PostMain];
             data.pcg.entry_state = other_state.clone();
             let entry_state_mut = ArenaRef::make_mut(&mut data.pcg.entry_state);
-            entry_state_mut.borrow.add_cfg_edge(other_block, self_block);
+            entry_state_mut
+                .borrow
+                .add_cfg_edge(other_block, self_block, self.ctxt);
             return true;
         } else {
             data.pcg.incoming_states.insert(other_block);

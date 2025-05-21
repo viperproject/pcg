@@ -1,5 +1,6 @@
 fn basic<'l, 's>(num: &'l mut i32) -> &'s mut i32
-where 'l: 's
+where
+    'l: 's,
 {
     &mut *num
 }
@@ -7,10 +8,10 @@ where 'l: 's
 fn basic_user() {
     let mut x = 42;
     let y = basic(&mut x);
-    // PCG: bb0[8] post_main: call basic at bb0[8]: [_3 after bb0[7]↓'?7] -> [y↓'?6] under conditions bb0
+    // PCG: bb0[8] post_main: call basic at bb0[8]: [_3 after bb0[7]↓'?7] -> [y↓'?6]
     *y = 72;
-    // PCG: bb1[4] pre_operands: Remove Edge call basic at bb0[8]: [_3 after bb0[7]↓'?7] -> [y↓'?6] under conditions bb0 -> bb1,
+    // PCG: bb1[4] pre_operands: Remove Edge call basic at bb0[8]: [_3 after bb0[7]↓'?7] -> [y↓'?6]
     drop(x);
 }
 
-fn main(){}
+fn main() {}

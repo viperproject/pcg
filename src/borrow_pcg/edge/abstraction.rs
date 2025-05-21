@@ -17,7 +17,7 @@ use crate::{
     utils::{redirect::MaybeRedirected, Place},
 };
 
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, LocalNode, ToBorrowsEdge};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode, ToBorrowsEdge};
 use crate::borrow_pcg::domain::{AbstractionInputTarget, AbstractionOutputTarget};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
@@ -111,8 +111,8 @@ where
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
-    fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
-        BorrowPCGEdge::new(
+    fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
+        BorrowPcgEdge::new(
             BorrowPcgEdgeKind::Abstraction(AbstractionType::Loop(self)),
             path_conditions,
         )

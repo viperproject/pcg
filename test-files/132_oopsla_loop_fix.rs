@@ -22,8 +22,8 @@ fn main() {
     // PCG_LIFETIME_DISPLAY: list2 0 'b
     let mut list3 = List { head: rv3, tail: None};
     // PCG_LIFETIME_DISPLAY: list3 0 'c
-    // PCG: bb4[0] post_main: Loop(bb4): [list1↓'a] -> [list2↓'b] under conditions bb4
-    // PCG: bb4[0] post_main: Loop(bb4): [list2↓'b] -> [list3↓'c] under conditions bb4
+    // PCG: bb4[0] post_main: Loop(bb4): [list1↓'a] -> [list2↓'b]
+    // PCG: bb4[0] post_main: Loop(bb4): [list2↓'b] -> [list3↓'c]
     while true {
         let h1 = list1.head;
         let h2 = list2.head;

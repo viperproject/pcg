@@ -1,12 +1,12 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::BorrowPCGEdge,
+        borrow_pcg_edge::BorrowPcgEdge,
         has_pcs_elem::MakePlaceOld,
         latest::Latest,
         path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::{Place, CompilerCtxt},
+    utils::{CompilerCtxt, Place},
 };
 
 use super::BorrowsGraph;
@@ -23,14 +23,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn mut_edges<'slf>(
         &'slf mut self,
-        mut f: impl FnMut(&mut BorrowPCGEdge<'tcx>) -> bool,
+        mut f: impl FnMut(&mut BorrowPcgEdge<'tcx>) -> bool,
     ) -> bool {
         let mut changed = false;
         self.edges = self
             .edges
             .drain()
             .map(|(kind, conditions)| {
-                let mut edge = BorrowPCGEdge::new(kind, conditions);
+                let mut edge = BorrowPcgEdge::new(kind, conditions);
                 if f(&mut edge) {
                     changed = true;
                 }
@@ -50,16 +50,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub fn filter_for_path(&mut self, path: &[BasicBlock]) {
+    pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
         self.edges
-            .retain(|_, conditions| conditions.valid_for_path(path));
+            .retain(|_, conditions| conditions.valid_for_path(path, ctxt.body()));
     }
 
-    pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
-        self.mut_edge_conditions(|conditions| conditions.insert(pc))
+    pub(crate) fn add_path_condition(&mut self, pc: PathCondition, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.mut_edge_conditions(|conditions| conditions.insert(pc, ctxt.body()))
     }
 
-    pub(crate) fn remove_path_conditions_after(&mut self, block: BasicBlock) -> bool {
-        self.mut_edge_conditions(|conditions| conditions.remove_after(block))
-    }
+    // pub(crate) fn remove_path_conditions_after(&mut self, block: BasicBlock) -> bool {
+    //     self.mut_edge_conditions(|conditions| conditions.remove_after(block))
+    // }
 }

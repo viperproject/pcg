@@ -1,10 +1,9 @@
 use crate::action::PcgAction;
 use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPCGEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
@@ -42,14 +41,14 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         &mut self,
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
-        location: Location,
+        _location: Location,
         kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) -> Result<(), PcgError> {
         for target_proj in target.region_projections(self.ctxt).into_iter() {
             if self.outlives(source_proj.region(self.ctxt), target_proj.region(self.ctxt)) {
                 self.record_and_apply_action(
                     BorrowPCGAction::add_edge(
-                        BorrowPCGEdge::new(
+                        BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
                                 source_proj.into(),
                                 target_proj.into(),
@@ -57,7 +56,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                                 self.ctxt,
                             )
                             .into(),
-                            PathConditions::AtBlock(location.block),
+                            self.pcg.borrow.path_conditions.clone(),
                         ),
                         true,
                     )
@@ -114,12 +113,13 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         self.super_operand_fallable(operand, location)?;
         if self.phase == EvalStmtPhase::PostMain
-            && let Operand::Move(place) = operand {
-                let place: utils::Place<'tcx> = (*place).into();
-                self.record_and_apply_action(
-                    BorrowPCGAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
-                )?;
-            }
+            && let Operand::Move(place) = operand
+        {
+            let place: utils::Place<'tcx> = (*place).into();
+            self.record_and_apply_action(
+                BorrowPCGAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
+            )?;
+        }
         Ok(())
     }
 
@@ -286,10 +286,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 {
                     // TODO: Due to a bug ignore other expansions to this place for now
                     if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
-                        self.pcg
-                            .borrow
-                            .graph
-                            .redirect_edge(to_redirect, *node, expansion.base)
+                        self.pcg.borrow.graph.redirect_edge(
+                            to_redirect,
+                            *node,
+                            expansion.base,
+                            self.ctxt,
+                        )
                     }
                 }
             }
