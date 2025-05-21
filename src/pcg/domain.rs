@@ -167,7 +167,10 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
 
     pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'mir, 'tcx>) -> Vec<String> {
         let mut result = self.borrow.debug_lines(repacker);
-        result.extend(self.capabilities.debug_lines(repacker));
+        result.sort();
+        let mut capabilities = self.capabilities.debug_lines(repacker);
+        capabilities.sort();
+        result.extend(capabilities);
         result
     }
     pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {

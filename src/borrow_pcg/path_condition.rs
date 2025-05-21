@@ -66,6 +66,10 @@ impl std::fmt::Display for PCGraph {
 }
 
 impl PCGraph {
+    pub(crate) fn all_not_after(&self, block: BasicBlock) -> bool {
+        self.0.iter().all(|pc| pc.to() <= block)
+    }
+
     pub(crate) fn remove_after(&mut self, block: BasicBlock) -> bool {
         let mut changed = false;
         self.0.retain(|pc| {
@@ -246,6 +250,13 @@ impl PathConditions {
                 true
             }
             (PathConditions::Paths(_), PathConditions::AtBlock(_b)) => false,
+        }
+    }
+
+    pub(crate) fn all_not_after(&self, block: BasicBlock) -> bool {
+        match self {
+            PathConditions::AtBlock(b) => *b <= block,
+            PathConditions::Paths(p) => p.all_not_after(block),
         }
     }
 

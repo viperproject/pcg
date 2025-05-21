@@ -1,6 +1,7 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::pcg_validity_assert;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -148,21 +149,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
     fn join_loop<'mir>(
         &mut self,
         other: &Self,
-        self_block: BasicBlock,
-        other_block: BasicBlock,
+        loop_head: BasicBlock,
+        from_block: BasicBlock,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
-        tracing::info!("join_loop {self_block:?} {other_block:?} start");
-        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, self_block)
+        assert!(from_block > loop_head);
+        tracing::info!("join_loop {from_block:?} {loop_head:?} start");
+        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
             .construct_abstraction_graph(self, ctxt.bc);
-        let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, other_block)
+        let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
             .construct_abstraction_graph(other, ctxt.bc);
 
         if coupling_imgcat_debug() {
             self_abstraction_graph
-                .render_with_imgcat(ctxt, &format!("self coupling graph: {self_block:?}"));
+                .render_with_imgcat(ctxt, &format!("self coupling graph: {from_block:?}"));
             other_coupling_graph
-                .render_with_imgcat(ctxt, &format!("other coupling graph: {other_block:?}"));
+                .render_with_imgcat(ctxt, &format!("other coupling graph: {loop_head:?}"));
         }
 
         let to_keep = self.common_edges(other);
@@ -173,7 +175,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.render_debug_graph(
                 ctxt,
                 mir::Location {
-                    block: self_block,
+                    block: from_block,
                     statement_index: 0,
                 },
                 "after removal of common edges",
@@ -206,25 +208,30 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             })
                             .collect(),
                     ),
-                    self_block,
+                    loop_head,
                 )
-                .to_borrow_pcg_edge(PathConditions::new(self_block));
+                .to_borrow_pcg_edge(PathConditions::new(loop_head));
 
                 self.insert(abstraction);
                 self.edges
                     .retain(|edge_kind, _| !to_remove.contains(edge_kind));
             }
         }
+        if validity_checks_enabled() {
+            for edge in self.edges() {
+                pcg_validity_assert!(edge.conditions().all_not_after(loop_head));
+            }
+        }
         if borrows_imgcat_debug() {
             self.render_debug_graph(
                 ctxt,
                 mir::Location {
-                    block: self_block,
+                    block: from_block,
                     statement_index: 0,
                 },
                 "done",
             );
         }
-        tracing::info!("join_loop {self_block:?} {other_block:?} end");
+        tracing::info!("join_loop {from_block:?} {loop_head:?} end");
     }
 }
