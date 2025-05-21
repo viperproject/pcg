@@ -6,17 +6,17 @@
 
 pub mod arena;
 pub mod callbacks;
-mod mutable;
-mod root_place;
-pub (crate) mod incoming_states;
-pub (crate) mod redirect;
+pub mod r#const;
 pub mod debug_info;
 pub mod display;
 pub mod eval_stmt_data;
+pub(crate) mod incoming_states;
 pub mod json;
+mod mutable;
 pub mod place;
 pub mod place_snapshot;
-pub mod r#const;
+pub(crate) mod redirect;
+mod root_place;
 pub mod validity;
 pub mod visitor;
 pub use mutable::*;
@@ -29,7 +29,23 @@ pub(crate) mod repacker;
 #[cfg(test)]
 pub(crate) mod test;
 
-pub fn env_feature_enabled(feature: &str) -> Option<bool> {
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref VALIDITY_CHECKS: bool =
+        env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(false);
+    pub static ref COUPLING_DEBUG_IMGCAT: bool =
+        env_feature_enabled("PCG_COUPLING_DEBUG_IMGCAT").unwrap_or(false);
+    pub static ref BORROWS_DEBUG_IMGCAT: bool =
+        env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false);
+    pub static ref VALIDITY_CHECKS_WARN_ONLY: bool =
+        env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false);
+    pub static ref POLONIUS: bool = env_feature_enabled("PCG_POLONIUS").unwrap_or(false);
+    pub static ref DUMP_MIR_DATAFLOW: bool =
+        env_feature_enabled("PCG_DUMP_MIR_DATAFLOW").unwrap_or(false);
+}
+
+fn env_feature_enabled(feature: &'static str) -> Option<bool> {
     match std::env::var(feature) {
         Ok(val) => {
             if val.is_empty() {
@@ -41,7 +57,7 @@ pub fn env_feature_enabled(feature: &str) -> Option<bool> {
                     other => panic!("Environment variable {feature} has unexpected value: '{other}'. Expected one of: true, false, 1, 0, or empty string")
                 }
             }
-        },
-        Err(_) => None
+        }
+        Err(_) => None,
     }
 }

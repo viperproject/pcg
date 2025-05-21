@@ -16,7 +16,7 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-        HasPlace,
+        HasPlace, COUPLING_DEBUG_IMGCAT, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -35,7 +35,7 @@ use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::utils::{env_feature_enabled, CompilerCtxt};
+use crate::utils::CompilerCtxt;
 
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
@@ -66,11 +66,11 @@ impl PartialEq for BorrowsGraph<'_> {
 }
 
 pub(crate) fn coupling_imgcat_debug() -> bool {
-    env_feature_enabled("PCG_COUPLING_DEBUG_IMGCAT").unwrap_or(false)
+    *COUPLING_DEBUG_IMGCAT
 }
 
 pub(crate) fn borrows_imgcat_debug() -> bool {
-    env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false)
+    *BORROWS_DEBUG_IMGCAT
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
