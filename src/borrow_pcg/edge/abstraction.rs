@@ -11,7 +11,7 @@ use crate::{
         hir::def_id::DefId,
         middle::{
             mir::{BasicBlock, Location},
-            ty::GenericArgsRef,
+            ty::{FnSig, FnSigTys, GenericArgsRef, Ty, TyCtxt},
         },
     },
     utils::{redirect::MaybeRedirected, Place},
@@ -133,22 +133,77 @@ impl<'tcx> LoopAbstraction<'tcx> {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub struct FunctionData<'tcx> {
-    def_id: DefId,
-    substs: GenericArgsRef<'tcx>,
+pub enum FunctionData<'tcx> {
+    FnDefData(FnDefData<'tcx>),
+    FnPtrData(FnPtrData<'tcx>),
 }
 
 impl<'tcx> FunctionData<'tcx> {
-    pub fn new(def_id: DefId, substs: GenericArgsRef<'tcx>) -> Self {
-        Self { def_id, substs }
+    pub fn inputs_and_output(self) -> &'tcx [Ty<'tcx>] {
+        match self {
+            FunctionData::FnDefData(fn_def_data) => fn_def_data.inputs_and_output(),
+            FunctionData::FnPtrData(fn_ptr_data) => fn_ptr_data.inputs_and_output(),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct FnDefData<'tcx> {
+    def_id: DefId,
+    substs: GenericArgsRef<'tcx>,
+    fn_sig: FnSig<'tcx>,
+}
+
+impl<'tcx> FnDefData<'tcx> {
+    pub fn new(ctxt: CompilerCtxt<'_, 'tcx>, def_id: DefId, substs: GenericArgsRef<'tcx>) -> Self {
+        let fn_sig = ctxt.tcx().fn_sig(def_id).skip_binder().skip_binder();
+        Self {
+            def_id,
+            substs,
+            fn_sig,
+        }
+    }
+
+    pub fn def_id(self) -> DefId {
+        self.def_id
+    }
+
+    pub fn substs(self) -> GenericArgsRef<'tcx> {
+        self.substs
+    }
+
+    pub fn fn_sig(self) -> FnSig<'tcx> {
+        self.fn_sig
+    }
+
+    pub fn inputs_and_output(self) -> &'tcx [Ty<'tcx>] {
+        self.fn_sig.inputs_and_output
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct FnPtrData<'tcx> {
+    fn_sig_tys: FnSigTys<TyCtxt<'tcx>>,
+}
+
+impl<'tcx> FnPtrData<'tcx> {
+    pub fn new(fn_sig_tys: FnSigTys<TyCtxt<'tcx>>) -> Self {
+        Self { fn_sig_tys }
+    }
+
+    pub fn fn_sig_tys(self) -> FnSigTys<TyCtxt<'tcx>> {
+        self.fn_sig_tys
+    }
+
+    pub fn inputs_and_output(self) -> &'tcx [Ty<'tcx>] {
+        self.fn_sig_tys.inputs_and_output
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
-    /// This may be `None` if the call is to a function pointer
-    function_data: Option<FunctionData<'tcx>>,
+    function_data: FunctionData<'tcx>,
     edge: AbstractionBlockEdge<'tcx>,
 }
 
@@ -219,10 +274,10 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "call{} at {:?}: {}",
-            if let Some(function_data) = &self.function_data {
-                format!(" {}", ctxt.tcx().def_path_str(function_data.def_id))
-            } else {
-                "".to_string()
+            match &self.function_data {
+                FunctionData::FnDefData(fn_def_data) =>
+                    format!(" {}", ctxt.tcx().def_path_str(fn_def_data.def_id)),
+                FunctionData::FnPtrData(_) => "".to_string(),
             },
             self.location,
             self.edge.to_short_string(ctxt)
@@ -241,10 +296,17 @@ where
 
 impl<'tcx> FunctionCallAbstraction<'tcx> {
     pub fn def_id(&self) -> Option<DefId> {
-        self.function_data.as_ref().map(|f| f.def_id)
+        match self.function_data {
+            FunctionData::FnDefData(fn_def_data) => Some(fn_def_data.def_id()),
+            FunctionData::FnPtrData(_) => None,
+        }
     }
+
     pub fn substs(&self) -> Option<GenericArgsRef<'tcx>> {
-        self.function_data.as_ref().map(|f| f.substs)
+        match self.function_data {
+            FunctionData::FnDefData(fn_def_data) => Some(fn_def_data.substs()),
+            FunctionData::FnPtrData(_) => None,
+        }
     }
 
     pub fn location(&self) -> Location {
@@ -257,7 +319,7 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
 
     pub fn new(
         location: Location,
-        function_data: Option<FunctionData<'tcx>>,
+        function_data: FunctionData<'tcx>,
         edge: AbstractionBlockEdge<'tcx>,
     ) -> Self {
         Self {
