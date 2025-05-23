@@ -11,7 +11,7 @@ use super::{
     edge_data::EdgeData,
     has_pcs_elem::{HasPcgElems, LabelRegionProjection, MakePlaceOld},
     latest::Latest,
-    region_projection::{RegionProjection, RegionProjectionLabel},
+    region_projection::{HasRegionProjections, RegionProjection, RegionProjectionLabel},
 };
 use crate::{rustc_interface::{FieldIdx, VariantIdx}, utils::place::maybe_old::MaybeOldPlace};
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};

@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::{fmt, marker::PhantomData};
 
@@ -6,7 +7,8 @@ use serde_json::json;
 
 use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
-    borrow_pcg_edge::LocalNode, abstraction_graph_constructor::AbstractionGraphNode, visitor::extract_regions,
+    abstraction_graph_constructor::AbstractionGraphNode, borrow_pcg_edge::LocalNode,
+    visitor::extract_regions,
 };
 use crate::pcg::{PCGInternalError, PcgError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -14,7 +16,8 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{CompilerCtxt, SnapshotLocation};
-use crate::validity_checks_enabled;
+// use crate::validity_checks_enabled;
+// use crate::validity_checks_enabled;
 use crate::{
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -30,10 +33,16 @@ use crate::{
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
 };
 
+use crate::rustc_interface::middle::ty::Ty;
 
+pub trait FromRegion<'tcx>:
+    Clone + Copy + Hash + std::fmt::Debug + std::fmt::Display + PartialEq + Eq + From<ty::Region<'tcx>>
+{
+    fn from(region: ty::Region<'tcx>) -> Self;
+}
 
 /// A region occuring in region projections
-#[derive(PartialEq, Eq, Clone, Copy, Hash, From)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, From, Debug)]
 pub enum PcgRegion {
     RegionVid(RegionVid),
     ReErased,
@@ -119,6 +128,12 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PcgRegion {
     }
 }
 
+impl<'tcx> FromRegion<'tcx> for PcgRegion {
+    fn from(region: ty::Region<'tcx>) -> Self {
+        region.into()
+    }
+}
+
 impl<'tcx> From<ty::Region<'tcx>> for PcgRegion {
     fn from(region: ty::Region<'tcx>) -> Self {
         match region.kind() {
@@ -131,6 +146,93 @@ impl<'tcx> From<ty::Region<'tcx>> for PcgRegion {
             ty::RegionKind::ReLateParam(late_param) => PcgRegion::ReLateParam(late_param),
             ty::RegionKind::ReStatic => PcgRegion::ReStatic,
             ty::RegionKind::RePlaceholder(_) => todo!(),
+            ty::RegionKind::ReError(_) => todo!(),
+        }
+    }
+}
+
+/// A region occuring in types
+#[derive(PartialEq, Eq, Clone, Copy, Hash, From, Debug)]
+pub enum TyRegion {
+    RegionVid(RegionVid),
+    ReEarlyParam(ty::EarlyParamRegion),
+    ReBound(DebruijnIndex, ty::BoundRegion),
+    ReLateParam(ty::LateParamRegion),
+    ReStatic,
+    RePlaceholder(ty::PlaceholderRegion),
+    ReErased,
+    // ReError(ty::ErrorGuaranteed),
+}
+
+impl std::fmt::Display for TyRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string(None))
+    }
+}
+
+impl TyRegion {
+    pub fn to_string(&self, ctxt: Option<CompilerCtxt<'_, '_>>) -> String {
+        match self {
+            TyRegion::RegionVid(vid) => {
+                if let Some(ctxt) = ctxt {
+                    vid.to_short_string(ctxt)
+                } else {
+                    format!("{:?}", vid)
+                }
+            }
+            TyRegion::ReEarlyParam(early_param_region) => {
+                format!("ReEarlyParam({:?})", early_param_region)
+            }
+            TyRegion::ReBound(debruijn_index, region) => {
+                format!("ReBound({:?}, {:?})", debruijn_index, region)
+            }
+            TyRegion::ReLateParam(late_param_region) => {
+                format!("ReLateParam({:?})", late_param_region)
+            }
+            TyRegion::ReStatic => "ReStatic".to_string(),
+            TyRegion::RePlaceholder(placeholder_region) => {
+                format!("RePlaceholder({:?})", placeholder_region)
+            }
+            TyRegion::ReErased => "ReErased".to_string(),
+        }
+    }
+
+    pub fn vid(&self) -> Option<RegionVid> {
+        match self {
+            TyRegion::RegionVid(vid) => Some(*vid),
+            _ => None,
+        }
+    }
+}
+
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for TyRegion {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+        self.to_string(Some(repacker))
+    }
+}
+
+impl<'tcx> FromRegion<'tcx> for TyRegion {
+    fn from(region: ty::Region<'tcx>) -> Self {
+        region.into()
+    }
+}
+
+impl<'tcx> From<ty::Region<'tcx>> for TyRegion {
+    fn from(region: ty::Region<'tcx>) -> Self {
+        match region.kind() {
+            ty::RegionKind::ReVar(vid) => TyRegion::RegionVid(vid),
+            ty::RegionKind::ReErased => TyRegion::ReErased,
+            ty::RegionKind::ReEarlyParam(early_param_region) => {
+                TyRegion::ReEarlyParam(early_param_region)
+            }
+            ty::RegionKind::ReBound(debruijn_index, inner) => {
+                TyRegion::ReBound(debruijn_index, inner)
+            }
+            ty::RegionKind::ReLateParam(late_param) => TyRegion::ReLateParam(late_param),
+            ty::RegionKind::ReStatic => TyRegion::ReStatic,
+            ty::RegionKind::RePlaceholder(placeholder_region) => {
+                TyRegion::RePlaceholder(placeholder_region)
+            }
             ty::RegionKind::ReError(_) => todo!(),
         }
     }
@@ -197,11 +299,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tc
     }
 }
 
-impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
-        *self
-    }
-
+impl<'tcx> HasRegions<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn regions<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -210,6 +308,12 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
             MaybeRemoteRegionProjectionBase::Place(p) => p.regions(repacker),
             MaybeRemoteRegionProjectionBase::Const(c) => extract_regions(c.ty(), repacker),
         }
+    }
+}
+
+impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
+    fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
+        *self
     }
 }
 
@@ -232,12 +336,40 @@ impl From<mir::Location> for RegionProjectionLabel {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
-pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
+#[derive(Clone, Debug, Hash, Copy)]
+pub struct RegionProjection<
+    'tcx,
+    P = MaybeRemoteRegionProjectionBase<'tcx>,
+    R: FromRegion<'tcx> = PcgRegion,
+> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
     pub(crate) label: Option<RegionProjectionLabel>,
-    phantom: PhantomData<&'tcx ()>,
+    phantom: PhantomData<&'tcx R>,
+}
+
+impl<'tcx, P: PartialEq, R: FromRegion<'tcx>> PartialEq for RegionProjection<'tcx, P, R> {
+    fn eq(&self, other: &Self) -> bool {
+        self.base == other.base && self.region_idx == other.region_idx && self.label == other.label
+    }
+}
+
+impl<'tcx, P: Eq, R: FromRegion<'tcx>> Eq for RegionProjection<'tcx, P, R> {}
+
+impl<'tcx, P: PartialOrd, R: FromRegion<'tcx>> PartialOrd for RegionProjection<'tcx, P, R> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        (&self.base, self.region_idx, self.label).partial_cmp(&(
+            &other.base,
+            other.region_idx,
+            other.label,
+        ))
+    }
+}
+
+impl<'tcx, P: Ord, R: FromRegion<'tcx>> Ord for RegionProjection<'tcx, P, R> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.base, self.region_idx, self.label).cmp(&(&other.base, other.region_idx, other.label))
+    }
 }
 
 impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> {
@@ -295,14 +427,14 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
-struct IsNestedChecker<'mir, 'tcx, C: Copy> {
+struct IsNestedChecker<'mir, 'tcx, C: Copy, R: FromRegion<'tcx> = PcgRegion> {
     ctxt: CompilerCtxt<'mir, 'tcx, C>,
-    target: PcgRegion,
+    target: R,
     found: bool,
 }
 
-impl<'mir, 'tcx, C: Copy> IsNestedChecker<'mir, 'tcx, C> {
-    fn new(ctxt: CompilerCtxt<'mir, 'tcx, C>, target: PcgRegion) -> Self {
+impl<'mir, 'tcx, C: Copy, R: FromRegion<'tcx>> IsNestedChecker<'mir, 'tcx, C, R> {
+    fn new(ctxt: CompilerCtxt<'mir, 'tcx, C>, target: R) -> Self {
         Self {
             ctxt,
             target,
@@ -311,7 +443,9 @@ impl<'mir, 'tcx, C: Copy> IsNestedChecker<'mir, 'tcx, C> {
     }
 }
 
-impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx, C> {
+impl<'tcx, C: Copy, R: FromRegion<'tcx>> TypeVisitor<ty::TyCtxt<'tcx>>
+    for IsNestedChecker<'_, 'tcx, C, R>
+{
     fn visit_ty(&mut self, t: ty::Ty<'tcx>) {
         if self.found {
             return;
@@ -333,18 +467,29 @@ impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx, 
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<'tcx, T> {
+impl<'tcx, T: HasRegionProjections<'tcx> + HasPlace<'tcx>> RegionProjection<'tcx, T, PcgRegion> {
     // Returns true iff the region is nested under another reference, w.r.t the local
     // of the place of this region projection
     pub(crate) fn is_nested_in_local_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        let mut checker = IsNestedChecker::new(ctxt, self.region(ctxt));
+        let mut checker: IsNestedChecker<'_, '_, C> = IsNestedChecker::new(ctxt, self.region(ctxt));
         let local_place: Place<'tcx> = self.base.place().local.into();
         local_place.ty(ctxt).visit_with(&mut checker);
         checker.found
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+impl<'tcx> RegionProjection<'tcx, Ty<'tcx>, TyRegion> {
+    // Returns true iff the region is nested under another reference
+    pub(crate) fn is_nested_in_local_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
+        let mut checker: IsNestedChecker<'_, '_, C, TyRegion> =
+            IsNestedChecker::new(ctxt, self.region(ctxt));
+        let local_type: Ty<'tcx> = self.base;
+        local_type.visit_with(&mut checker);
+        checker.found
+    }
+}
+
+impl<'tcx, T: HasRegionProjections<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn label_projection(
         self,
         label: RegionProjectionLabel,
@@ -357,6 +502,21 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         }
     }
 }
+
+impl<'tcx> RegionProjection<'tcx, Ty<'tcx>, TyRegion> {
+    pub(crate) fn label_projection(
+        self,
+        label: RegionProjectionLabel,
+    ) -> RegionProjection<'tcx, Ty<'tcx>, TyRegion> {
+        RegionProjection {
+            base: self.base,
+            region_idx: self.region_idx,
+            label: Some(label),
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjection<'tcx> {
     fn from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
         RegionProjection {
@@ -418,20 +578,53 @@ impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     }
 }
 
-pub trait RegionProjectionBaseLike<'tcx>:
+// A trait for PCG nodes that have regions
+pub trait HasRegions<'tcx, R: FromRegion<'tcx> = PcgRegion>: Debug {
+    fn region(&self, idx: RegionIdx, repacker: CompilerCtxt<'_, 'tcx>) -> R {
+        self.regions(repacker)[idx]
+    }
+    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, R>;
+}
+
+/// A trait for PCG nodes that have region projections
+pub trait HasRegionProjections<'tcx, R: FromRegion<'tcx> = PcgRegion>:
+    Sized + HasRegions<'tcx, R>
+{
+    fn ty_region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Option<R>;
+
+    fn base_region_projection<C: Copy>(
+        self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<RegionProjection<'tcx, Self, R>>;
+
+    fn region_projection(
+        &self,
+        idx: RegionIdx,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> RegionProjection<'tcx, Self, R>;
+
+    fn region_projections<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self, R>>;
+
+    fn projection_index<C: Copy>(
+        &self,
+        region: R,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<RegionIdx>;
+}
+
+pub trait RegionProjectionBaseLike<'tcx, R: FromRegion<'tcx> = PcgRegion>:
     Copy
     + std::fmt::Debug
     + std::hash::Hash
     + Eq
     + PartialEq
+    + HasRegions<'tcx, R>
     + ToJsonWithCompilerCtxt<'tcx>
     + DisplayWithCompilerCtxt<'tcx>
 {
-    fn regions<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, PcgRegion>;
-
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
 }
 
@@ -543,8 +736,8 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
-    for RegionProjection<'tcx, T>
+impl<'tcx, T: RegionProjectionBaseLike<'tcx, R> + HasPlace<'tcx>, R: FromRegion<'tcx>>
+    HasPlace<'tcx> for RegionProjection<'tcx, T, R>
 {
     fn place(&self) -> Place<'tcx> {
         self.base.place()
@@ -597,7 +790,9 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionProjection<'tcx, T> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx, R>, R: FromRegion<'tcx>> HasValidityCheck<'tcx>
+    for RegionProjection<'tcx, T, R>
+{
     fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         let num_regions = self.base.regions(repacker);
         if self.region_idx.index() >= num_regions.len() {
@@ -612,9 +807,9 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionP
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+impl<'tcx, T: HasRegions<'tcx, R>, R: FromRegion<'tcx>> RegionProjection<'tcx, T, R> {
     pub(crate) fn new<C: Copy>(
-        region: PcgRegion,
+        region: R,
         base: T,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -638,13 +833,13 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             label,
             phantom: PhantomData,
         };
-        if validity_checks_enabled() {
-            result.assert_validity(repacker);
-        }
+        // if validity_checks_enabled() {
+        //     result.assert_validity(repacker);
+        // }
         Ok(result)
     }
 
-    pub(crate) fn region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgRegion {
+    pub(crate) fn region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> R {
         let regions = self.base.regions(repacker);
         if self.region_idx.index() >= regions.len() {
             unreachable!()

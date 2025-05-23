@@ -14,7 +14,7 @@ use crate::{
         action::BorrowPCGActionKind,
         borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeRef},
         latest::Latest,
-        region_projection::MaybeRemoteRegionProjectionBase,
+        region_projection::{HasRegionProjections, MaybeRemoteRegionProjectionBase},
     },
     pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
     rustc_interface::{

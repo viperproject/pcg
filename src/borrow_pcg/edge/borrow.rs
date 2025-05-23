@@ -2,7 +2,7 @@ use crate::{
     borrow_pcg::{
         has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
         latest::Latest,
-        region_projection::RegionProjectionLabel,
+        region_projection::{HasRegionProjections, RegionProjectionLabel},
     },
     edgedata_enum,
     pcg::PCGNode,
