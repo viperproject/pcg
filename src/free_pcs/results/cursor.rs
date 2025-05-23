@@ -11,8 +11,8 @@ use derive_more::Deref;
 use crate::{
     action::PcgActions,
     borrow_pcg::{
-        action::BorrowPCGActionKind,
-        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeRef},
+        action::BorrowPcgActionKind,
+        borrow_pcg_edge::{BorrowPcgEdge, BorrowPCGEdgeRef},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
@@ -144,8 +144,8 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                 for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
-                            BorrowPCGActionKind::AddEdge {
-                                edge: BorrowPCGEdge::new(
+                            BorrowPcgActionKind::AddEdge {
+                                edge: BorrowPcgEdge::new(
                                     abstraction.value.clone().into(),
                                     abstraction.conditions,
                                 ),

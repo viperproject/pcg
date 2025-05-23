@@ -36,10 +36,9 @@ use rustc_interface::{
 use serde_json::json;
 use utils::{
     display::{DebugLines, DisplayWithCompilerCtxt},
-    env_feature_enabled,
     maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
-    CompilerCtxt, Place,
+    CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -381,9 +380,9 @@ macro_rules! pcg_validity_warn {
 }
 
 pub(crate) fn validity_checks_enabled() -> bool {
-    env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
+    *VALIDITY_CHECKS
 }
 
 pub(crate) fn validity_checks_warn_only() -> bool {
-    env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false)
+    *VALIDITY_CHECKS_WARN_ONLY
 }

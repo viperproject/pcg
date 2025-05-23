@@ -13,12 +13,11 @@ use super::{
     latest::Latest,
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
-use crate::{rustc_interface::{FieldIdx, VariantIdx}, utils::place::maybe_old::MaybeOldPlace};
+use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
-        data_structures::fx::FxHashSet,
         middle::{
             mir::{Local, Location, PlaceElem},
             ty,
@@ -31,7 +30,8 @@ use crate::{
     },
 };
 use crate::{
-    utils::json::ToJsonWithCompilerCtxt,
+    rustc_interface::{FieldIdx, VariantIdx},
+    utils::place::maybe_old::MaybeOldPlace,
 };
 
 /// The projections resulting from an expansion of a place.
@@ -110,7 +110,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
                     PlaceElem::Subslice { from, to, from_end } => {
                         return PlaceExpansion::Subslice { from, to, from_end };
                     }
-                    _ => todo!()
+                    _ => todo!(),
                 }
             }
         }
@@ -255,22 +255,31 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
         }
     }
 
-    fn blocked_nodes<C: Copy>(
+    // `return` is needed because both branches have different types
+    #[allow(clippy::needless_return)]
+    fn blocked_nodes<'slf, C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
-        let mut base: FxHashSet<PCGNode<'tcx>> = vec![self.base.into()].into_iter().collect();
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
+        let iter = std::iter::once(self.base.into());
         if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
-            base.insert(blocked_rp);
+            return Box::new(iter.chain(std::iter::once(blocked_rp)));
+        } else {
+            return Box::new(iter);
         }
-        base
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        self.expansion.iter().copied().collect()
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy>(
+        &'slf self,
+        _ctxt: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir,
+    {
+        Box::new(self.expansion.iter().copied())
     }
 }
 

@@ -2,7 +2,7 @@ use derive_more::{Deref, DerefMut, From};
 
 use crate::{
     borrow_pcg::{
-        action::{actions::BorrowPCGActions, BorrowPCGAction, BorrowPCGActionKind},
+        action::{actions::BorrowPCGActions, BorrowPCGAction, BorrowPcgActionKind},
         unblock_graph::BorrowPCGUnblockAction,
     },
     free_pcs::{CapabilityKind, RepackOp},
@@ -69,7 +69,7 @@ impl<'tcx> PcgActions<'tcx> {
             .iter()
             .filter_map(|action| match action {
                 PcgAction::Borrow(BorrowPCGAction {
-                    kind: BorrowPCGActionKind::RemoveEdge(edge),
+                    kind: BorrowPcgActionKind::RemoveEdge(edge),
                     ..
                 }) => Some(edge.clone().into()),
                 _ => None,
@@ -94,7 +94,7 @@ impl<'tcx> PcgAction<'tcx> {
             PcgAction::Owned(RepackOp::RegainLoanedCapability(place.place(), capability))
         } else {
             PcgAction::Borrow(
-                BorrowPCGActionKind::Restore(RestoreCapability::new(place, capability))
+                BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability))
                     .into(),
             )
         }

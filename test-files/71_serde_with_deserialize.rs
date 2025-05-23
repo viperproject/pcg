@@ -56,7 +56,7 @@ where
         deserializer.deserialize_seq(VisitorWrapper {
             delegate: self.delegate,
             is_human_readable,
-            // PCG: bb1[12] post_main: self.first↓'?13 after bb1[11] -> _10 after bb1[11]↓'?17 under conditions bb1
+            // PCG: bb1[12] post_main: self.first↓'?13 after bb1[11] -> _10 after bb1[11]↓'?17
             first: self.first.take(),
         })
     }

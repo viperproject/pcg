@@ -20,7 +20,7 @@ fn main() {
     };
     list.push(rv2);
     // list|'a should not be a placeholder here
-    // PCG: bb2[0] post_main: call List::<T>::push at bb1[8]: [_11 after bb1[5]↓'?20 after bb1[7], _12 after bb1[7]↓'?21] -> [list↓'?16] under conditions bb1 -> bb2,
+    // PCG: bb2[0] post_main: call List::<T>::push at bb1[8]: [_11 after bb1[5]↓'?20 after bb1[7], _12 after bb1[7]↓'?21] -> [list↓'?16]
     let y = 1;
     list.push(rv3);
 }

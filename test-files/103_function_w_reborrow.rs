@@ -13,7 +13,7 @@ fn main() {
     let test_r1 = r1;
     // After r1 dies, x is no longer part of the abstraction but the function abstraction is still live
     // PCG: bb1[14] post_main: x: E
-    // PCG: bb1[14] post_main: call f at bb0[25]: [_11 after bb0[22]↓'?23] -> [_9 after bb0[25]↓'?20, _9 after bb0[25]↓'?21] under conditions bb0 -> bb1,
+    // PCG: bb1[14] post_main: call f at bb0[25]: [_11 after bb0[22]↓'?23] -> [_9 after bb0[25]↓'?20, _9 after bb0[25]↓'?21]
     let test_r2 = r2;
     let test_x = x;
     let test_y = y;

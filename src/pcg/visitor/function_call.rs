@@ -1,11 +1,10 @@
 use super::PcgVisitor;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::domain::AbstractionInputTarget;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
+use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction, FunctionData,
 };
-use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{
     PcgRegion, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
 };
@@ -47,15 +46,17 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
         let function_data = get_function_data(func, self.ctxt);
 
-        let mk_create_edge_action = |input, output| {
-            let edge = BorrowPCGEdge::new(
+        let path_conditions = self.pcg.borrow.path_conditions.clone();
+
+        let mk_create_edge_action = |input: Vec<FunctionCallAbstractionInput<'tcx>>, output| {
+            let edge = BorrowPcgEdge::new(
                 AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                     location,
                     function_data,
                     AbstractionBlockEdge::new(input, output),
                 ))
                 .into(),
-                PathConditions::AtBlock(location.block),
+                path_conditions.clone(),
             );
             BorrowPCGAction::add_edge(edge, true)
         };
@@ -113,10 +114,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let disjoint_lifetime_sets = get_disjoint_lifetime_sets(&arg_region_projections, self.ctxt);
         for ls in disjoint_lifetime_sets.iter() {
             let this_region = ls.iter().next().unwrap();
-            let inputs: Vec<AbstractionInputTarget<'tcx>> = source_arg_projections
+            let inputs: Vec<FunctionCallAbstractionInput<'tcx>> = source_arg_projections
                 .iter()
                 .filter(|rp| self.ctxt.bc.outlives(rp.region(self.ctxt), *this_region))
-                .map(|rp| (*rp).into())
+                .copied()
                 .collect::<Vec<_>>();
             let mut outputs = placeholder_targets
                 .iter()

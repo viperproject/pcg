@@ -1,9 +1,9 @@
-use itertools::Itertools;
 use petgraph::algo::kosaraju_scc;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{EdgeIndex, Frozen, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::{Direction, Graph};
+use smallvec::SmallVec;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
@@ -44,6 +44,20 @@ impl<N: Copy + Eq, E: Hash + Eq + Clone> NodeData<N, E> {
 pub(crate) struct DisjointSetGraph<N, E> {
     inner: petgraph::Graph<NodeData<N, E>, FxHashSet<E>>,
     lookup_map: FxHashMap<N, petgraph::prelude::NodeIndex>,
+}
+
+type GetIndicesSmallVec<T> = SmallVec<[T; 4]>;
+
+struct RequiredJoin<'a, N> {
+    merge_into: NodeIndex,
+    needs_insert: GetIndicesSmallVec<&'a N>,
+    merge_from: GetIndicesSmallVec<NodeIndex>,
+}
+
+enum GetNodeIndicesResult<'a, N> {
+    AlreadyJoined(NodeIndex),
+    NoneExist,
+    RequiresJoin(RequiredJoin<'a, N>),
 }
 
 pub(crate) struct JoinNodesResult {
@@ -158,65 +172,103 @@ impl<
         index
     }
 
+    fn get_node_indices<'a>(&self, nodes: &'a Coupled<N>) -> GetNodeIndicesResult<'a, N> {
+        let mut merge_from: GetIndicesSmallVec<NodeIndex> = GetIndicesSmallVec::new();
+        let mut needs_insert = GetIndicesSmallVec::new();
+        let mut candidate_idx = None;
+        for node in nodes.iter() {
+            match self.lookup(*node) {
+                Some(idx) => match candidate_idx {
+                    Some(existing_idx) => {
+                        if existing_idx != idx && !merge_from.contains(&idx) {
+                            merge_from.push(idx);
+                        }
+                    }
+                    None => {
+                        candidate_idx = Some(idx);
+                    }
+                },
+                None => {
+                    needs_insert.push(node);
+                }
+            }
+        }
+        match candidate_idx {
+            Some(idx) => {
+                if needs_insert.is_empty() && merge_from.is_empty() {
+                    GetNodeIndicesResult::AlreadyJoined(idx)
+                } else {
+                    GetNodeIndicesResult::RequiresJoin(RequiredJoin {
+                        merge_into: idx,
+                        merge_from,
+                        needs_insert,
+                    })
+                }
+            }
+            None => GetNodeIndicesResult::NoneExist,
+        }
+    }
+
     /// Joins the nodes in `nodes` into a single coupled node.
     ///
-    /// **IMPORTANT**: This will invalidate existing node indices
+    /// **IMPORTANT**: This may invalidate existing node indices
     #[must_use]
     pub(crate) fn join_nodes(
         &mut self,
         nodes: &Coupled<N>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> JoinNodesResult {
-        let indices = nodes
-            .iter()
-            .map(|n| (n, self.lookup(*n)))
-            .unique()
-            .collect::<Vec<_>>();
-        let candidate_idx = indices.iter().filter_map(|(_, idx)| *idx).next();
-        if let Some(candidate_idx) = candidate_idx {
-            let mut should_merge = false;
-            for (node, idx_opt) in indices {
-                match idx_opt {
-                    Some(node_idx) => {
-                        if node_idx != candidate_idx {
-                            should_merge = true;
-                            self.inner
-                                .add_edge(node_idx, candidate_idx, FxHashSet::default());
-                            self.inner
-                                .add_edge(candidate_idx, node_idx, FxHashSet::default());
-                        }
-                    }
-                    None => {
-                        self.inner
-                            .node_weight_mut(candidate_idx)
-                            .unwrap()
-                            .nodes
-                            .insert(*node);
-                    }
+        match self.get_node_indices(nodes) {
+            GetNodeIndicesResult::AlreadyJoined(node_index) => JoinNodesResult {
+                index: node_index,
+                performed_merge: false,
+            },
+            GetNodeIndicesResult::NoneExist => {
+                let idx = self.inner.add_node(NodeData {
+                    nodes: nodes.clone(),
+                    inner_edges: FxHashSet::default(),
+                });
+                for node in nodes.iter() {
+                    self.lookup_map.insert(*node, idx);
+                }
+                JoinNodesResult {
+                    index: idx,
+                    performed_merge: false,
                 }
             }
-            if should_merge {
+            GetNodeIndicesResult::RequiresJoin(required_join) => {
+                let node_data = &mut self
+                    .inner
+                    .node_weight_mut(required_join.merge_into)
+                    .unwrap()
+                    .nodes;
+                for node in required_join.needs_insert.iter() {
+                    node_data.insert(**node);
+                }
+                if required_join.merge_from.is_empty() {
+                    return JoinNodesResult {
+                        index: required_join.merge_into,
+                        performed_merge: false,
+                    };
+                }
+                for idx in required_join.merge_from.iter() {
+                    // We add edges in both directions because these will be squashed into the same node
+                    // when making SCCs
+                    self.inner
+                        .add_edge(*idx, required_join.merge_into, FxHashSet::default());
+                    self.inner
+                        .add_edge(required_join.merge_into, *idx, FxHashSet::default());
+                }
                 self.merge_sccs(ctxt);
-            }
-            let (new_index, nodes) = self.lookup_in_graph(*nodes.iter().next().unwrap()).unwrap();
-            for node in nodes {
-                self.lookup_map.insert(node, new_index);
-            }
-            JoinNodesResult {
-                index: new_index,
-                performed_merge: should_merge,
-            }
-        } else {
-            let idx = self.inner.add_node(NodeData {
-                nodes: nodes.clone(),
-                inner_edges: FxHashSet::default(),
-            });
-            for node in nodes.iter() {
-                self.lookup_map.insert(*node, idx);
-            }
-            JoinNodesResult {
-                index: idx,
-                performed_merge: false,
+                let (new_index, nodes) =
+                    self.lookup_in_graph(*nodes.iter().next().unwrap()).unwrap();
+                for node in nodes {
+                    self.lookup_map.insert(node, new_index);
+                }
+                JoinNodesResult {
+                    index: new_index,
+                    performed_merge: true,
+                }
             }
         }
     }

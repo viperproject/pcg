@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use super::PcgVisitor;
 use super::{Pcg, PcgError};
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeLike, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
@@ -43,7 +43,7 @@ impl PcgVisitor<'_, '_, '_> {
                 slf: &'slf mut Pcg<'tcx>,
                 ctxt: CompilerCtxt<'mir, 'tcx>,
                 location: Location,
-            ) -> Vec<BorrowPCGEdge<'tcx>> {
+            ) -> Vec<BorrowPcgEdge<'tcx>> {
                 let fg = slf.borrow.graph().frozen_graph();
 
                 let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
@@ -83,8 +83,7 @@ impl PcgVisitor<'_, '_, '_> {
                     }
                     _ => edge
                         .blocked_by_nodes(ctxt)
-                        .iter()
-                        .all(|p| should_kill_node(*p, &fg)),
+                        .all(|p| should_kill_node(p, &fg)),
                 };
 
                 let mut edges_to_trim = Vec::new();

@@ -1,5 +1,5 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdgeLike;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
@@ -25,11 +25,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         comment: &str,
     ) {
         if borrows_imgcat_debug()
-            && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, location) {
-                DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {e}");
-                });
-            }
+            && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, location)
+        {
+            DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
+                eprintln!("Error rendering self graph: {e}");
+            });
+        }
     }
 
     pub(crate) fn join<'mir>(
@@ -37,9 +38,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
-        tracing::info!("join {self_block:?} {other_block:?} start");
+        tracing::debug!("join {self_block:?} {other_block:?} start");
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
@@ -54,32 +55,29 @@ impl<'tcx> BorrowsGraph<'tcx> {
             block: other_block,
             statement_index: 0,
         };
-        if repacker.is_back_edge(other_block, self_block) {
-            self.render_debug_graph(
-                repacker,
-                self_location,
-                &format!("Self graph: {self_block:?}"),
-            );
+        if ctxt.is_back_edge(other_block, self_block) {
+            self.render_debug_graph(ctxt, self_location, &format!("Self graph: {self_block:?}"));
             other.render_debug_graph(
-                repacker,
+                ctxt,
                 other_location,
                 &format!("Other graph: {other_block:?}"),
             );
-            self.join_loop(other, self_block, other_block, repacker);
+            self.join_loop(other, self_block, other_block, ctxt);
             let result = *self != old_self;
             if borrows_imgcat_debug()
-                && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
-                    DotGraph::render_with_imgcat(
-                        &dot_graph,
-                        &format!("After join (loop, changed={result:?}):"),
-                    )
-                    .unwrap_or_else(|e| {
-                        eprintln!("Error rendering self graph: {e}");
-                    });
-                    if result {
-                        eprintln!("{}", old_self.fmt_diff(self, repacker))
-                    }
+                && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self, self_location)
+            {
+                DotGraph::render_with_imgcat(
+                    &dot_graph,
+                    &format!("After join (loop, changed={result:?}):"),
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!("Error rendering self graph: {e}");
+                });
+                if result {
+                    eprintln!("{}", old_self.fmt_diff(self, ctxt))
                 }
+            }
             // For performance reasons we don't check validity here.
             // if validity_checks_enabled() {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
@@ -87,7 +85,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             return result;
         }
         for other_edge in other.edges() {
-            self.insert(other_edge.to_owned_edge());
+            self.insert(other_edge.to_owned_edge(), ctxt);
         }
         for edge in self
             .edges()
@@ -97,7 +95,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if let BorrowPcgEdgeKind::Abstraction(_) = edge.kind() {
                 continue;
             }
-            if self.is_encapsulated_by_abstraction(&edge, repacker) {
+            if self.is_encapsulated_by_abstraction(&edge, ctxt) {
                 self.remove(&edge);
             }
         }
@@ -106,47 +104,43 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         if borrows_imgcat_debug()
             && let Ok(dot_graph) = generate_borrows_dot_graph(
-                repacker,
+                ctxt,
                 self,
                 mir::Location {
                     block: self_block,
                     statement_index: 0,
                 },
-            ) {
-                DotGraph::render_with_imgcat(
-                    &dot_graph,
-                    &format!("After join: (changed={changed:?})"),
-                )
+            )
+        {
+            DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
                 .unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {e}");
                 });
-                if changed {
-                    eprintln!("{}", old_self.fmt_diff(self, repacker))
-                }
+            if changed {
+                eprintln!("{}", old_self.fmt_diff(self, ctxt))
             }
+        }
 
         // For performance reasons we only check validity here if we are also producing debug graphs
-        if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(repacker) {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, self_location) {
+        if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(ctxt) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self, self_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
                     |e| {
                         eprintln!("Error rendering self graph: {e}");
                     },
                 );
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, &old_self, self_location) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, &old_self, self_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering old self graph: {e}");
                 });
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(repacker, other, other_location) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, other, other_location) {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {e}");
                 });
             }
-            panic!(
-                "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
-            );
+            panic!("Graph became invalid after join. self: {self_block:?}, other: {other_block:?}");
         }
         changed
     }
@@ -154,21 +148,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
     fn join_loop<'mir>(
         &mut self,
         other: &Self,
-        self_block: BasicBlock,
-        other_block: BasicBlock,
+        loop_head: BasicBlock,
+        from_block: BasicBlock,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
-        tracing::info!("join_loop {self_block:?} {other_block:?} start");
-        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, self_block)
-            .construct_abstraction_graph(self, ctxt.bc);
-        let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, other_block)
+        assert!(from_block > loop_head);
+        tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
+        let old_self = self.clone();
+        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
+            .construct_abstraction_graph(&old_self, ctxt.bc);
+        let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
             .construct_abstraction_graph(other, ctxt.bc);
 
         if coupling_imgcat_debug() {
             self_abstraction_graph
-                .render_with_imgcat(ctxt, &format!("self coupling graph: {self_block:?}"));
+                .render_with_imgcat(ctxt, &format!("self coupling graph: {from_block:?}"));
             other_coupling_graph
-                .render_with_imgcat(ctxt, &format!("other coupling graph: {other_block:?}"));
+                .render_with_imgcat(ctxt, &format!("other coupling graph: {loop_head:?}"));
         }
 
         let to_keep = self.common_edges(other);
@@ -179,7 +175,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.render_debug_graph(
                 ctxt,
                 mir::Location {
-                    block: self_block,
+                    block: from_block,
                     statement_index: 0,
                 },
                 "after removal of common edges",
@@ -212,25 +208,32 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             })
                             .collect(),
                     ),
-                    self_block,
+                    loop_head,
                 )
-                .to_borrow_pcg_edge(PathConditions::new(self_block));
+                .to_borrow_pcg_edge(PathConditions::new());
 
-                self.insert(abstraction);
+                self.insert(abstraction, ctxt);
                 self.edges
                     .retain(|edge_kind, _| !to_remove.contains(edge_kind));
             }
         }
+
+        // if validity_checks_enabled() {
+        //     for edge in self.edges() {
+        //         pcg_validity_assert!(edge.conditions().all_not_after(loop_head));
+        //     }
+        // }
+
         if borrows_imgcat_debug() {
             self.render_debug_graph(
                 ctxt,
                 mir::Location {
-                    block: self_block,
+                    block: from_block,
                     statement_index: 0,
                 },
                 "done",
             );
         }
-        tracing::info!("join_loop {self_block:?} {other_block:?} end");
+        tracing::debug!("join_loop {from_block:?} {loop_head:?} end");
     }
 }

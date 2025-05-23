@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     action::PcgActions,
-    borrow_pcg::{path_condition::PathCondition, state::BorrowsState},
+    borrow_pcg::state::BorrowsState,
     pcg::triple::Triple,
     rustc_interface::{
         middle::mir::{self, BasicBlock},
@@ -140,35 +140,37 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self.owned.locals_mut().ensures(t, &mut self.capabilities);
     }
 
-    #[tracing::instrument(skip(self, other, repacker))]
+    #[tracing::instrument(skip(self, other, ctxt))]
     pub(crate) fn join(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut res = self.owned.join(
             &other.owned,
             &mut self.capabilities,
             &other.capabilities,
-            repacker,
+            ctxt,
         )?;
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
-        let pc = PathCondition::new(other_block, self_block);
-        other.borrow.add_path_condition(pc);
+        other.borrow.add_cfg_edge(other_block, self_block, ctxt);
         res |= self
             .borrow
-            .join(&other.borrow, self_block, other_block, repacker);
+            .join(&other.borrow, self_block, other_block, ctxt);
         res |= self.capabilities.join(&other.capabilities);
         Ok(res)
     }
 
     pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'mir, 'tcx>) -> Vec<String> {
         let mut result = self.borrow.debug_lines(repacker);
-        result.extend(self.capabilities.debug_lines(repacker));
+        result.sort();
+        let mut capabilities = self.capabilities.debug_lines(repacker);
+        capabilities.sort();
+        result.extend(capabilities);
         result
     }
     pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
@@ -203,7 +205,7 @@ impl<'tcx, A: Allocator + Clone> PcgDomainData<'tcx, A> {
 
 #[derive(Clone)]
 pub struct PcgDomain<'a, 'tcx, A: Allocator> {
-    repacker: CompilerCtxt<'a, 'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
     pub(crate) debug_data: Option<PCGDebugData>,
@@ -482,7 +484,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
             };
 
             generate_dot_graph(
-                self.repacker,
+                self.ctxt,
                 pcg.owned.data.as_ref().unwrap(),
                 &pcg.borrow,
                 &pcg.capabilities,
@@ -503,7 +505,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
         arena: A,
     ) -> Self {
         Self {
-            repacker,
+            ctxt: repacker,
             block,
             data: Ok(PcgDomainData::new(arena)),
             debug_data,
@@ -540,7 +542,7 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
 
         let seen = data.pcg.incoming_states.contains(other_block);
 
-        if seen && other_block > self_block {
+        if seen && self.ctxt.is_back_edge(other_block, self_block) {
             // It's a loop, but we've already joined it
             return false;
         }
@@ -559,7 +561,7 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
             let entry_state_mut = ArenaRef::make_mut(&mut data.pcg.entry_state);
             entry_state_mut
                 .borrow
-                .add_path_condition(PathCondition::new(other_block, self_block));
+                .add_cfg_edge(other_block, self_block, self.ctxt);
             return true;
         } else {
             data.pcg.incoming_states.insert(other_block);
@@ -572,7 +574,7 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
             other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
             self_block,
             other_block,
-            self.repacker,
+            self.ctxt,
         ) {
             Ok(changed) => changed,
             Err(e) => {

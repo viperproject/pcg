@@ -241,7 +241,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let action = BorrowPCGAction::add_edge(
                 BorrowPCGEdge::new(
                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
-                    PathConditions::new(location.block),
+                    self.path_conditions.clone(),
                 ),
                 for_exclusive,
             );
@@ -302,7 +302,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             BorrowPCGAction::add_edge(
                                 BorrowPCGEdge::new(
                                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
-                                    PathConditions::new(location.block),
+                                    self.path_conditions.clone(),
                                 ),
                                 for_exclusive,
                             ),

@@ -2,7 +2,7 @@ use derive_more::From;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef},
+        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPCGEdgeRef},
         edge::kind::BorrowPcgEdgeKind,
     },
     pcg::PCGNode,

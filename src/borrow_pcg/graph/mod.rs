@@ -16,15 +16,16 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-        HasPlace,
+        HasPlace, BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT,
     },
 };
-use frozen::{CachedLeafEdges, FrozenGraphRef};
+use frozen::{CachedBlockingEdges, CachedLeafEdges, FrozenGraphRef};
+use itertools::Itertools;
 use serde_json::json;
 
 use super::{
     abstraction_graph_constructor::{AbstractionGraphConstructor, AbstractionGraphNode},
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeLike, BorrowPCGEdgeRef, LocalNode},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -34,7 +35,7 @@ use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::utils::{env_feature_enabled, CompilerCtxt};
+use crate::utils::CompilerCtxt;
 
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
@@ -45,20 +46,13 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.edges()
             .map(|edge| edge.to_short_string(repacker).to_string())
+            .sorted()
             .collect()
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        tracing::debug!(
-            "Checking acyclicity of borrows graph ({} edges)",
-            self.edges.len()
-        );
-        if !self.is_acyclic(repacker) {
-            return Err("Graph is not acyclic".to_string());
-        }
-        tracing::debug!("Acyclicity check passed");
+    fn check_validity<C: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -72,11 +66,11 @@ impl PartialEq for BorrowsGraph<'_> {
 }
 
 pub(crate) fn coupling_imgcat_debug() -> bool {
-    env_feature_enabled("PCG_COUPLING_DEBUG_IMGCAT").unwrap_or(false)
+    *COUPLING_DEBUG_IMGCAT
 }
 
 pub(crate) fn borrows_imgcat_debug() -> bool {
-    env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false)
+    *BORROWS_DEBUG_IMGCAT
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
@@ -118,10 +112,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         mut edge: BorrowPcgEdgeKind<'tcx>,
         from: LocalNode<'tcx>,
         to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         let conditions = self.edges.remove(&edge).unwrap();
         edge.redirect(from, to);
-        self.insert(BorrowPCGEdge::new(edge, conditions));
+        self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
     }
 
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
@@ -194,11 +189,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn base_abstraction_graph(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> AbstractionGraph<'tcx> {
-        let mut graph: AbstractionGraph<'tcx> = AbstractionGraph::new();
+    pub(crate) fn base_abstraction_graph<'graph, 'mir: 'graph>(
+        &'graph self,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> AbstractionGraph<'tcx, 'graph> {
+        let mut graph: AbstractionGraph<'tcx, 'graph> = AbstractionGraph::new();
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         struct ExploreFrom<'tcx> {
             current: PCGNode<'tcx>,
@@ -245,14 +240,32 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let frozen_graph = FrozenGraphRef::new(self);
 
+        tracing::debug!(
+            "Constructing abstraction graph for graph with {} edges",
+            self.num_edges()
+        );
+
         let mut queue = vec![];
         for node in frozen_graph.roots(ctxt).iter() {
             tracing::debug!("Adding root node to queue: {:?}", node);
             queue.push(ExploreFrom::new(*node, ctxt));
         }
 
+        let mut seen = FxHashSet::default();
+
+        let mut iteration = 0;
+
         while let Some(ef) = queue.pop() {
-            let edges_blocking = frozen_graph.get_edges_blocking(ef.current(), ctxt);
+            if seen.contains(&ef) {
+                continue;
+            }
+            seen.insert(ef);
+            iteration += 1;
+            if iteration % 100000 == 0 {
+                tracing::info!("Iteration {iteration}",);
+            }
+            let edges_blocking: CachedBlockingEdges<'graph, 'tcx> =
+                frozen_graph.get_edges_blocking(ef.current(), ctxt);
             for edge in edges_blocking {
                 match edge.kind() {
                     BorrowPcgEdgeKind::Abstraction(abstraction_edge) => {
@@ -271,7 +284,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         graph.add_edge(
                             &inputs,
                             &outputs,
-                            std::iter::once(edge.kind().to_owned()).collect(),
+                            std::iter::once(edge.kind).collect(),
                             ctxt,
                         );
                     }
@@ -293,7 +306,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 graph.add_edge(
                                     &vec![source].into(),
                                     &vec![rp.into()].into(),
-                                    std::iter::once(edge.kind().to_owned()).collect(),
+                                    std::iter::once(edge.kind).collect(),
                                     ctxt,
                                 );
                             }
@@ -310,10 +323,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
         FrozenGraphRef::new(self)
-    }
-
-    pub(crate) fn is_acyclic<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        self.frozen_graph().is_acyclic(repacker)
     }
 
     pub(crate) fn abstraction_edge_kinds<'slf>(
@@ -353,7 +362,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// is to be called multiple times on the same graph.
     pub(crate) fn is_leaf_edge<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
-        edge: &impl BorrowPCGEdgeLike<'tcx>,
+        edge: &impl BorrowPcgEdgeLike<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
         mut blocking_map: Option<&FrozenGraphRef<'graph, 'tcx>>,
     ) -> bool {
@@ -392,11 +401,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> FxHashSet<PCGNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
-                edge.blocked_nodes(repacker).into_iter().chain(
-                    edge.blocked_by_nodes(repacker)
-                        .into_iter()
-                        .map(|node| node.into()),
-                )
+                edge.blocked_nodes(repacker)
+                    .chain(edge.blocked_by_nodes(repacker).map(|node| node.into()))
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -461,12 +468,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     #[tracing::instrument(skip(self, borrow_checker, repacker))]
-    fn construct_region_projection_abstraction<'mir>(
-        &self,
+    fn construct_region_projection_abstraction<'mir: 'graph, 'graph>(
+        &'graph self,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
         block: BasicBlock,
-    ) -> AbstractionGraph<'tcx> {
+    ) -> AbstractionGraph<'tcx, 'graph> {
         let constructor = AbstractionGraphConstructor::new(repacker, block);
         constructor.construct_abstraction_graph(self, borrow_checker)
     }
@@ -474,7 +481,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// Returns true iff `edge` connects two nodes within an abstraction edge
     fn is_encapsulated_by_abstraction(
         &self,
-        edge: &impl BorrowPCGEdgeLike<'tcx>,
+        edge: &impl BorrowPcgEdgeLike<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         'outer: for abstraction in self.abstraction_edge_kinds() {
@@ -493,9 +500,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
-    pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
+    pub(crate) fn insert(
+        &mut self,
+        edge: BorrowPcgEdge<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            conditions.join(&edge.conditions)
+            conditions.join(&edge.conditions, ctxt.body())
         } else {
             self.edges.insert(edge.kind, edge.conditions);
             true
@@ -519,13 +530,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges_blocking(node, repacker).collect()
     }
 
-    pub(crate) fn remove(&mut self, edge: &impl BorrowPCGEdgeLike<'tcx>) -> bool {
+    pub(crate) fn remove(&mut self, edge: &impl BorrowPcgEdgeLike<'tcx>) -> bool {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            if conditions == edge.conditions() {
-                self.edges.remove(edge.kind());
-            } else {
-                assert!(conditions.remove(edge.conditions()));
-            }
+            // assert_eq!(conditions, edge.conditions());
+            self.edges.remove(edge.kind());
             true
         } else {
             false
