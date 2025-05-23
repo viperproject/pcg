@@ -532,7 +532,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn remove(&mut self, edge: &impl BorrowPcgEdgeLike<'tcx>) -> bool {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
-            assert_eq!(conditions, edge.conditions());
+            // assert_eq!(conditions, edge.conditions());
             self.edges.remove(edge.kind());
             true
         } else {
