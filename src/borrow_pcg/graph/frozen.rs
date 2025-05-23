@@ -104,7 +104,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     ) -> impl Iterator<Item = LocalNode<'tcx>> + use<'tcx, 'slf, 'mir, 'bc> {
         self.leaf_edges(repacker)
             .into_iter()
-            .flat_map(move |edge| edge.blocked_by_nodes(repacker))
+            .flat_map(move |edge| edge.blocked_by_nodes(repacker).collect::<Vec<_>>())
     }
 
     pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph, C: Copy>(

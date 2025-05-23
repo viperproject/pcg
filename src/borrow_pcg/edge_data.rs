@@ -8,21 +8,28 @@ use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 pub trait EdgeData<'tcx> {
     /// For an edge A -> B, this returns the set of nodes A. In general, the capabilities
     /// of nodes B are obtained from these nodes.
-    fn blocked_nodes<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> FxHashSet<PCGNode<'tcx>>;
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf;
 
     /// For an edge A -> B, this returns the set of nodes B. In general, these nodes
     /// obtain their capabilities from the nodes A.
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>>;
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir;
 
     fn blocks_node<C: Copy>(
         &self,
         node: BlockedNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
-        self.blocked_nodes(ctxt).contains(&node)
+        self.blocked_nodes(ctxt).any(|n| n == node)
     }
 
     fn is_blocked_by<C: Copy>(
@@ -30,7 +37,7 @@ pub trait EdgeData<'tcx> {
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
-        self.blocked_by_nodes(ctxt).contains(&node)
+        self.blocked_by_nodes(ctxt).any(|n| n == node)
     }
 }
 
@@ -41,10 +48,13 @@ macro_rules! edgedata_enum {
         $( $variant_name:ident($inner_type:ty) ),+ $(,)?
     ) => {
         impl<$tcx> $crate::borrow_pcg::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
-            fn blocked_nodes<C: Copy>(
-                &self,
+            fn blocked_nodes<'slf, C: Copy + 'slf>(
+                &'slf self,
                 repacker: CompilerCtxt<'_, $tcx, C>,
-            ) -> FxHashSet<PCGNode<'tcx>> {
+            ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+            where
+                'tcx: 'slf,
+            {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_nodes(repacker),
@@ -52,10 +62,13 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn blocked_by_nodes<C: Copy>(
-                &self,
-                repacker: CompilerCtxt<'_, $tcx, C>,
-            ) -> FxHashSet<$crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> {
+            fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+                &'slf self,
+                repacker: CompilerCtxt<'mir, $tcx, C>,
+            ) -> Box<dyn std::iter::Iterator<Item = $crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> + 'slf>
+            where
+                'tcx: 'mir,
+            {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.blocked_by_nodes(repacker),

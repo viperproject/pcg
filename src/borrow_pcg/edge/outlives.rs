@@ -77,18 +77,24 @@ impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
         self.long.to_pcg_node(repacker) == node
     }
 
-    fn blocked_nodes<C: Copy>(
-        &self,
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
         _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
-        std::iter::once(self.long.into()).collect()
+    ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
+        Box::new(std::iter::once(self.long.into()))
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        std::iter::once(self.short.effective().into()).collect()
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        _repacker: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir,
+    {
+        Box::new(std::iter::once(self.short.effective().into()))
     }
 }
 

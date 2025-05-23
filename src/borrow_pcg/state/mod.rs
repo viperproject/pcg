@@ -220,7 +220,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if edges.len() != 1 {
             return None;
         }
-        let nodes = edges[0].blocked_by_nodes(repacker);
+        let nodes = edges[0].blocked_by_nodes(repacker).collect::<Vec<_>>();
         if nodes.len() != 1 {
             return None;
         }

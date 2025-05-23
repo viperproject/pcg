@@ -78,17 +78,23 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     ) -> bool {
         self.edge.blocks_node(node, repacker)
     }
-    fn blocked_nodes<C: Copy>(
-        &self,
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
         self.edge.blocked_by_nodes(repacker)
     }
 }
@@ -201,17 +207,23 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
         self.edge.blocks_node(node, repacker)
     }
 
-    fn blocked_nodes<C: Copy>(
-        &self,
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir,
+    {
         self.edge.blocked_by_nodes(repacker)
     }
 }
@@ -354,18 +366,24 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
             },
         }
     }
-    fn blocked_nodes<C: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> FxHashSet<PCGNode<'tcx>> {
-        self.inputs().into_iter().map(|i| i.into()).collect()
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
+        _ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
+        Box::new(self.inputs().into_iter().map(|i| i.into()))
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        self.outputs()
-            .into_iter()
-            .map(|o| o.to_local_node(ctxt))
-            .collect()
+    fn blocked_by_nodes<'slf, 'mir, C: Copy + 'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir, 'mir: 'slf,
+    {
+        Box::new(self.outputs().into_iter().map(move |o| o.to_local_node(ctxt)))
     }
 }
 

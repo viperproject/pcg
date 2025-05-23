@@ -118,8 +118,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
             if expansion
                 .blocked_by_nodes(self.ctxt)
-                .iter()
-                .all(|node| self.pcg.borrow.graph().contains(*node, self.ctxt))
+                .all(|node| self.pcg.borrow.graph().contains(node, self.ctxt))
             {
                 return Ok(false);
             }

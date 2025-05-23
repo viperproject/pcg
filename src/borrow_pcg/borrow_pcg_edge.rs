@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use rustc_interface::{
     data_structures::fx::FxHashSet,
     middle::mir::{self, BasicBlock, PlaceElem},
@@ -74,14 +75,17 @@ pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
         self.kind().is_shared_borrow(repacker)
     }
 
-    fn blocked_places<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.blocked_nodes(repacker)
+    fn blocked_places<'slf, C: Copy + 'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> impl Iterator<Item = MaybeRemotePlace<'tcx>> + 'slf
+    where
+        'tcx: 'slf,
+    {
+        self.blocked_nodes(ctxt)
             .into_iter()
             .flat_map(|node| node.as_place())
-            .collect()
+            .unique()
     }
 }
 
@@ -100,7 +104,7 @@ impl<'tcx> BorrowPcgEdgeLike<'tcx> for BorrowPcgEdge<'tcx> {
 }
 
 impl<'tcx, 'graph> BorrowPcgEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
-    fn kind<'baz> (&'baz self) -> &'graph BorrowPcgEdgeKind<'tcx> {
+    fn kind<'baz>(&'baz self) -> &'graph BorrowPcgEdgeKind<'tcx> {
         self.kind
     }
 
@@ -425,17 +429,23 @@ impl<'tcx> BorrowPcgEdge<'tcx> {
 }
 
 impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir
+    {
         self.kind().blocked_by_nodes(repacker)
     }
 
-    fn blocked_nodes<C: Copy>(
-        &self,
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<BlockedNode<'tcx>> {
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
         self.kind().blocked_nodes(repacker)
     }
 

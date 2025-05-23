@@ -179,20 +179,26 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         }
     }
 
-    fn blocked_nodes<C: Copy>(
-        &self,
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
         _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
-        vec![self.blocked_place().into()].into_iter().collect()
+    ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
+        Box::new(std::iter::once(self.blocked_place().into()))
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        vec![self.assigned_region_projection(repacker).into()]
-            .into_iter()
-            .collect()
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir,
+    {
+        Box::new(std::iter::once(
+            self.assigned_region_projection(repacker).into(),
+        ))
     }
 }
 
@@ -332,19 +338,25 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         }
     }
 
-    fn blocked_nodes<C: Copy>(
-        &self,
+    fn blocked_nodes<'slf, C: Copy + 'slf>(
+        &'slf self,
         _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<BlockedNode<'tcx>> {
-        vec![self.blocked_place.into()].into_iter().collect()
+    ) -> Box<dyn Iterator<Item = BlockedNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
+        Box::new(std::iter::once(self.blocked_place.into()))
     }
 
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
+    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+        &'slf self,
+        repacker: CompilerCtxt<'mir, 'tcx, C>,
+    ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir,
+    {
         let rp = self.assigned_region_projection(repacker);
-        vec![LocalNode::RegionProjection(rp)].into_iter().collect()
+        Box::new(std::iter::once(LocalNode::RegionProjection(rp)))
     }
 }
 

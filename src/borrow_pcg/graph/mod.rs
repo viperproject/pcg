@@ -388,7 +388,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     edge.blocked_by_nodes(repacker)
                         .into_iter()
                         .map(|node| node.into()),
-                )
+                ).collect::<Vec<_>>()
             })
             .collect()
     }

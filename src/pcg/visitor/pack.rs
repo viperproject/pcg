@@ -83,8 +83,7 @@ impl PcgVisitor<'_, '_, '_> {
                     }
                     _ => edge
                         .blocked_by_nodes(ctxt)
-                        .iter()
-                        .all(|p| should_kill_node(*p, &fg)),
+                        .all(|p| should_kill_node(p, &fg)),
                 };
 
                 let mut edges_to_trim = Vec::new();
