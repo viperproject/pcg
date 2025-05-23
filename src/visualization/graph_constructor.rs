@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        domain::AbstractionInputTarget,
+        domain::LoopAbstractionInput,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowsState,
@@ -147,17 +147,17 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
     pub(super) fn insert_abstraction_input_target(
         &mut self,
-        node: AbstractionInputTarget<'tcx>,
+        node: LoopAbstractionInput<'tcx>,
         capability: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
         match node {
-            AbstractionInputTarget::RegionProjection(rp) => {
+            LoopAbstractionInput::RegionProjection(rp) => {
                 self.insert_region_projection_node(rp.into())
             }
-            AbstractionInputTarget::Place(MaybeRemotePlace::Local(place)) => {
+            LoopAbstractionInput::Place(MaybeRemotePlace::Local(place)) => {
                 self.insert_place_node(place.place(), place.location(), capability)
             }
-            AbstractionInputTarget::Place(MaybeRemotePlace::Remote(place)) => {
+            LoopAbstractionInput::Place(MaybeRemotePlace::Remote(place)) => {
                 self.insert_remote_node(place)
             }
         }

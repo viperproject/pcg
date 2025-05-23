@@ -5,9 +5,21 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
+    common::run_on_crate(
+        "encoding_rs",
+        "0.8.35",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("iso_2022_jp::Iso2022JpDecoder::decode_to_utf16_raw"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // common::run_on_crate(
-    //     "serde_derive",
-    //     "1.0.219",
+    //     "cc",
+    //     "1.2.16",
     //     Some("2025-03-13"),
     //     common::RunOnCrateOptions::RunPCG {
     //         target: common::Target::Debug,
@@ -16,6 +28,42 @@ fn test_selected_crates() {
     //         extra_env_vars: vec![],
     //     },
     // );
+
+    // common::run_on_crate(
+    //     "encoding_rs",
+    //     "0.8.35",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: false,
+    //         function: None,
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
+    common::run_on_crate(
+        "encoding_rs",
+        "0.8.35",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("shift_jis::ShiftJisEncoder::encode_from_utf16_raw"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "serde_derive",
+        "1.0.219",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("internals::attr::parse_lit_into_path"),
+            extra_env_vars: vec![],
+        },
+    );
 
     common::run_on_crate(
         "serde_derive",

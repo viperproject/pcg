@@ -309,12 +309,12 @@ impl<T> DebugRecursiveCallHistory<T> {
         Self { history: vec![] }
     }
 
-    fn add(&mut self, action: T)
+    fn add(&mut self, action: T) -> Result<(), String>
     where
         T: std::cmp::Eq + std::fmt::Display,
     {
         if self.history.contains(&action) {
-            panic!(
+            return Err(format!(
                 "Infinite recursion adding:\n{}, to path:\n{}",
                 action,
                 self.history
@@ -322,9 +322,10 @@ impl<T> DebugRecursiveCallHistory<T> {
                     .map(|a| format!("{a}"))
                     .collect::<Vec<_>>()
                     .join("\n")
-            );
+            ));
         }
         self.history.push(action);
+        Ok(())
     }
 }
 
@@ -336,7 +337,9 @@ impl<T> DebugRecursiveCallHistory<T> {
         }
     }
 
-    fn add(&mut self, _action: T) {}
+    fn add(&mut self, _action: T) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
@@ -389,10 +392,13 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
-        history.add(AddEdgeHistory {
+        if let Err(e) = history.add(AddEdgeHistory {
             bottom_connect,
             upper_candidate,
-        });
+        }) {
+            tracing::error!("Infinite recursion adding edge: {e}");
+            return;
+        }
         let upper_candidate = upper_candidate.clone();
         let endpoints = bg.parents(&upper_candidate);
         for (coupled, edge_weight) in endpoints {
