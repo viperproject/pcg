@@ -18,7 +18,6 @@ use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
-        data_structures::fx::FxHashSet,
         middle::{
             mir::{Local, Location, PlaceElem},
             ty,
@@ -256,6 +255,8 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
         }
     }
 
+    // `return` is needed because both branches have different types
+    #[allow(clippy::needless_return)]
     fn blocked_nodes<'slf, C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -276,7 +277,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
         _ctxt: CompilerCtxt<'mir, 'tcx, C>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
-        'tcx: 'mir
+        'tcx: 'mir,
     {
         Box::new(self.expansion.iter().copied())
     }

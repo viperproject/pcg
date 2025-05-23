@@ -1,5 +1,4 @@
 use crate::pcg::PCGNode;
-use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::CompilerCtxt;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};

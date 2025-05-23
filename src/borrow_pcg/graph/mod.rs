@@ -240,13 +240,30 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let frozen_graph = FrozenGraphRef::new(self);
 
+        tracing::debug!(
+            "Constructing abstraction graph for graph with {} edges",
+            self.num_edges()
+        );
+
         let mut queue = vec![];
         for node in frozen_graph.roots(ctxt).iter() {
             tracing::debug!("Adding root node to queue: {:?}", node);
             queue.push(ExploreFrom::new(*node, ctxt));
         }
 
+        let mut seen = FxHashSet::default();
+
+        let mut iteration = 0;
+
         while let Some(ef) = queue.pop() {
+            if seen.contains(&ef) {
+                continue;
+            }
+            seen.insert(ef);
+            iteration += 1;
+            if iteration % 100000 == 0 {
+                tracing::info!("Iteration {iteration}",);
+            }
             let edges_blocking: CachedBlockingEdges<'graph, 'tcx> =
                 frozen_graph.get_edges_blocking(ef.current(), ctxt);
             for edge in edges_blocking {
@@ -384,11 +401,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> FxHashSet<PCGNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
-                edge.blocked_nodes(repacker).into_iter().chain(
-                    edge.blocked_by_nodes(repacker)
-                        .into_iter()
-                        .map(|node| node.into()),
-                ).collect::<Vec<_>>()
+                edge.blocked_nodes(repacker)
+                    .chain(edge.blocked_by_nodes(repacker).map(|node| node.into()))
+                    .collect::<Vec<_>>()
             })
             .collect()
     }

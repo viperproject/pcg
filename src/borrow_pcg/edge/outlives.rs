@@ -8,7 +8,6 @@ use crate::{
     },
     pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
-    rustc_interface::data_structures::fx::FxHashSet,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
         validity::HasValidityCheck, CompilerCtxt, Place,

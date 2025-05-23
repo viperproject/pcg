@@ -1,8 +1,5 @@
 use itertools::Itertools;
-use rustc_interface::{
-    data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, PlaceElem},
-};
+use rustc_interface::middle::mir::{self, BasicBlock, PlaceElem};
 
 use super::{
     abstraction_graph_constructor::AbstractionGraphNode,
@@ -83,7 +80,6 @@ pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
         'tcx: 'slf,
     {
         self.blocked_nodes(ctxt)
-            .into_iter()
             .flat_map(|node| node.as_place())
             .unique()
     }
@@ -434,7 +430,7 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
         repacker: CompilerCtxt<'mir, 'tcx, C>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
-        'tcx: 'mir
+        'tcx: 'mir,
     {
         self.kind().blocked_by_nodes(repacker)
     }

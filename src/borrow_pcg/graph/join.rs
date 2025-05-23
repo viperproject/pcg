@@ -40,7 +40,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_block: BasicBlock,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
-        tracing::info!("join {self_block:?} {other_block:?} start");
+        tracing::debug!("join {self_block:?} {other_block:?} start");
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
@@ -153,7 +153,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         assert!(from_block > loop_head);
-        tracing::info!("join_loop {from_block:?} {loop_head:?} start");
+        tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
         let old_self = self.clone();
         let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
             .construct_abstraction_graph(&old_self, ctxt.bc);
@@ -234,6 +234,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 "done",
             );
         }
-        tracing::info!("join_loop {from_block:?} {loop_head:?} end");
+        tracing::debug!("join_loop {from_block:?} {loop_head:?} end");
     }
 }

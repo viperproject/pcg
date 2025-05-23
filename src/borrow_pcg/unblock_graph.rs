@@ -85,7 +85,6 @@ impl<'tcx> UnblockGraph<'tcx> {
 
             let should_kill_edge = |edge: &BorrowPcgEdge<'tcx>| {
                 edge.blocked_by_nodes(repacker)
-                    .into_iter()
                     .all(|node| edges.iter().all(|e| !e.blocks_node(node.into(), repacker)))
             };
             for edge in edges.iter() {

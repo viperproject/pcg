@@ -8,7 +8,6 @@ use crate::{
     pcg::PCGNode,
     rustc_interface::{
         ast::Mutability,
-        data_structures::fx::FxHashSet,
         middle::{
             mir::{self, Location},
             ty::{self},

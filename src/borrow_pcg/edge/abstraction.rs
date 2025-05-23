@@ -7,7 +7,6 @@ use crate::{
     },
     edgedata_enum,
     rustc_interface::{
-        data_structures::fx::FxHashSet,
         hir::def_id::DefId,
         middle::{
             mir::{BasicBlock, Location},
@@ -381,9 +380,14 @@ impl<'tcx> EdgeData<'tcx> for AbstractionBlockEdge<'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx, C>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
-        'tcx: 'mir, 'mir: 'slf,
+        'tcx: 'mir,
+        'mir: 'slf,
     {
-        Box::new(self.outputs().into_iter().map(move |o| o.to_local_node(ctxt)))
+        Box::new(
+            self.outputs()
+                .into_iter()
+                .map(move |o| o.to_local_node(ctxt)),
+        )
     }
 }
 
