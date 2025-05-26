@@ -96,7 +96,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             if self.is_encapsulated_by_abstraction(&edge, ctxt) {
-                self.remove(&edge);
+                self.remove(edge.kind());
             }
         }
 
@@ -152,8 +152,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         from_block: BasicBlock,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
-        assert!(from_block > loop_head);
         tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
+        tracing::info!("Self has {} edges", self.edges.len());
+        tracing::info!("Other has {} edges", other.edges.len());
         let old_self = self.clone();
         let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
             .construct_abstraction_graph(&old_self, ctxt.bc);

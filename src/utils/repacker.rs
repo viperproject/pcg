@@ -161,9 +161,10 @@ impl<'tcx> CompilerCtxt<'_, 'tcx> {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
 
-    /// Returns `true` iff the edge from `from` to `to` is a back edge.
+    /// Returns `true` iff the edge from `from` to `to` is a back edge (i.e.
+    /// `to` dominates `from`).
     pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
-        from > to
+        self.mir.basic_blocks.dominators().dominates(to, from)
     }
 
     pub fn num_args(self) -> usize {

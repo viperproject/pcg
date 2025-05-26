@@ -3,10 +3,7 @@ use bit_set::BitSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
 
-use crate::{
-    rustc_interface::middle::mir::BasicBlock,
-    utils::CompilerCtxt,
-};
+use crate::{rustc_interface::middle::mir::BasicBlock, utils::CompilerCtxt};
 
 use crate::utils::json::ToJsonWithCompilerCtxt;
 
@@ -18,10 +15,6 @@ pub struct PathCondition {
 
 impl PathCondition {
     pub fn new(from: BasicBlock, to: BasicBlock) -> Self {
-        assert!(
-            from < to,
-            "Path condition created for backward edge {from:?} -> {to:?}"
-        );
         Self { from, to }
     }
     pub fn from(&self) -> BasicBlock {
@@ -245,9 +238,10 @@ impl PathConditions {
 
         for pc in self.all_branch_choices() {
             if let Some(choice) = get_successor_of_block_in_path(pc.from)
-                && !pc.includes_successor(choice, body) {
-                    return false;
-                }
+                && !pc.includes_successor(choice, body)
+            {
+                return false;
+            }
         }
         true
     }

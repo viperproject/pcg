@@ -147,7 +147,7 @@ impl<'tcx> BorrowsState<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let removed = self.graph.remove(edge);
+        let removed = self.graph.remove(edge.kind());
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker)
@@ -186,15 +186,12 @@ impl<'tcx> BorrowsState<'tcx> {
         to: BasicBlock,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if from < to {
-            let pc = PathCondition::new(from, to);
-            self.path_conditions.insert(pc, ctxt.body());
-            self.graph.add_path_condition(pc, ctxt)
-        } else {
-            // Back edge (loop)
-            // self.graph.remove_path_conditions_after(to);
-            false
+        if ctxt.is_back_edge(from, to) {
+            return false;
         }
+        let pc = PathCondition::new(from, to);
+        self.path_conditions.insert(pc, ctxt.body());
+        self.graph.add_path_condition(pc, ctxt)
     }
 
     pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
