@@ -240,11 +240,12 @@ impl ShiftJisEncoder {
             } else {
                 let bmp_minus_katakana = bmp.wrapping_sub(0x30A1);
                 if bmp_minus_katakana < 0x56 {
-                    let trail_offset = if bmp_minus_katakana < 0x3F {
-                        0x40
-                    } else {
-                        0x41
-                    };
+                    // let trail_offset = if bmp_minus_katakana < 0x3F {
+                    //     0x40
+                    // } else {
+                    //     0x41
+                    // };
+                    let trail_offset = 0x40;
                     handle.write_two(0x83, (trail_offset + bmp_minus_katakana) as u8)
                 } else {
                     let bmp_minus_space = bmp.wrapping_sub(0x3000);
@@ -255,8 +256,6 @@ impl ShiftJisEncoder {
                         handle.write_one(0x5Cu8)
                     } else if bmp == 0x80 {
                         handle.write_one(0x80u8)
-                    } else if bmp == 0x203E {
-                        handle.write_one(0x7Eu8)
                     } else if in_inclusive_range16(bmp, 0xFF61, 0xFF9F) {
                         handle.write_one((bmp - (0xFF61 - 0xA1)) as u8)
                     } else if bmp == 0x2212 {
@@ -283,9 +282,9 @@ impl ShiftJisEncoder {
                                 handle.written(),
                             );
                         };
-                        let lead = pointer / 188;
+                        let lead = pointer;
                         let lead_offset = if lead < 0x1F { 0x81usize } else { 0xC1usize };
-                        let trail = pointer % 188;
+                        let trail = pointer;
                         let trail_offset = if trail < 0x3F { 0x40usize } else { 0x41usize };
                         handle.write_two((lead + lead_offset) as u8, (trail + trail_offset) as u8)
                     }

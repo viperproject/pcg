@@ -396,7 +396,7 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
             bottom_connect,
             upper_candidate,
         }) {
-            tracing::error!("Infinite recursion adding edge: {e}");
+            panic!("Infinite recursion adding edge: {e}");
             return;
         }
         let upper_candidate = upper_candidate.clone();

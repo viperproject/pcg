@@ -39,6 +39,15 @@ pub fn get_rust_toolchain_channel() -> String {
     }
 }
 
+pub fn cargo_clean_in_dir(dir: &Path) {
+    let cargo_clean = Command::new("cargo")
+        .arg("clean")
+        .current_dir(dir)
+        .status()
+        .unwrap_or_else(|_| panic!("Failed to clean cargo in {}", dir.display()));
+    assert!(cargo_clean.success(), "Failed to clean cargo in {}", dir.display());
+}
+
 #[allow(dead_code)]
 pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
     let cwd = std::env::current_dir().unwrap();
@@ -59,10 +68,9 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
     } else {
         "debug"
     };
-    let cargo = "cargo";
     let pcs_exe = cwd.join(["target", target, "pcg_bin"].iter().collect::<PathBuf>());
     println!("Running PCG on directory: {}", dir.display());
-    let mut command = Command::new(cargo);
+    let mut command = Command::new("cargo");
     command
         .arg("check")
         .current_dir(dir)
