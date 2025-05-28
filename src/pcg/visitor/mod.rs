@@ -404,7 +404,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             for place in blocked_place.iter_places(self.ctxt) {
                 for rp in place.region_projections(self.ctxt).into_iter() {
-                    if rp.is_nested_in_local_ty(self.ctxt) {
+                    if rp.is_nested_under_mut_ref(self.ctxt) {
                         self.pcg.borrow.label_region_projection(
                             &rp.into(),
                             Some(location.into()),

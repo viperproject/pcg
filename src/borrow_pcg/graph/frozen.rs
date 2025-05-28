@@ -110,12 +110,12 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph, C: Copy>(
         &mut self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        ctxt: CompilerCtxt<'mir, 'tcx, C>,
     ) -> &CachedBlockedEdges<'graph, 'tcx> {
         self.edges_blocked_by_cache
             .get_mut()
             .entry(node)
-            .or_insert_with(|| self.graph.edges_blocked_by(node, repacker).collect())
+            .or_insert_with(|| self.graph.edges_blocked_by(node, ctxt).collect())
     }
 
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph, C: Copy>(

@@ -25,6 +25,15 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
     RegionProjection(RegionProjection<'tcx, U>),
 }
 
+impl<'tcx, T, U> PCGNode<'tcx, T, U> {
+    pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
+        match self {
+            PCGNode::RegionProjection(rp) => Ok(rp),
+            _ => Err(self),
+        }
+    }
+}
+
 impl<'tcx> From<LoopAbstractionInput<'tcx>> for PCGNode<'tcx> {
     fn from(target: LoopAbstractionInput<'tcx>) -> Self {
         match target {

@@ -9,6 +9,7 @@ use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::{MaybeHasLocation, PCGNode};
 use crate::rustc_interface::middle::mir::Location;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, HasPlace};
 
 impl PcgVisitor<'_, '_, '_> {
@@ -53,13 +54,22 @@ impl PcgVisitor<'_, '_, '_> {
                     };
                     if place.is_old() {
                         return true;
+                        // match p {
+                        //     PCGNode::Place(_) => return true,
+                        //     PCGNode::RegionProjection(region_projection) => {
+                        //         if !region_projection.is_nested_under_mut_ref(ctxt) {
+                        //             return true;
+                        //         }
+                        //     }
+                        // }
                     }
 
                     if ctxt.is_arg(place.local()) {
                         return false;
                     }
 
-                    if !place.place().projection.is_empty()
+                    if let PCGNode::Place(p) = p
+                        && p.place().projection.is_empty()
                         && !fg.has_edge_blocking(place.into(), ctxt)
                     {
                         return true;
@@ -81,9 +91,19 @@ impl PcgVisitor<'_, '_, '_> {
                             })
                         }
                     }
-                    _ => edge
-                        .blocked_by_nodes(ctxt)
-                        .all(|p| should_kill_node(p, &fg)),
+                    _ => {
+                        let blocked_by_nodes = edge.blocked_by_nodes(ctxt).collect::<Vec<_>>();
+                        let should_pack =
+                            blocked_by_nodes.iter().all(|p| should_kill_node(*p, &fg));
+                        if should_pack {
+                            tracing::info!(
+                                "Will pack edge: {} because blocked nodes {} should be killed",
+                                edge.to_short_string(ctxt),
+                                blocked_by_nodes.to_short_string(ctxt)
+                            );
+                        }
+                        should_pack
+                    }
                 };
 
                 let mut edges_to_trim = Vec::new();

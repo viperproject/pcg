@@ -20,12 +20,12 @@ use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
         location: mir::Location,
         comment: &str,
     ) {
         if borrows_imgcat_debug()
-            && let Ok(dot_graph) = generate_borrows_dot_graph(repacker, self, location)
+            && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self, location)
         {
             DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
                 eprintln!("Error rendering self graph: {e}");

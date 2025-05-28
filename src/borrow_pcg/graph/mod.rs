@@ -6,7 +6,7 @@ mod mutate;
 
 use crate::{
     borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::abstraction_graph_constructor::AbstractionGraph,
+    borrow_pcg::{abstraction_graph_constructor::AbstractionGraph, util::ExploreFrom},
     pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
@@ -24,7 +24,7 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    abstraction_graph_constructor::{AbstractionGraphConstructor, AbstractionGraphNode},
+    abstraction_graph_constructor::AbstractionGraphConstructor,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
@@ -140,6 +140,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
+    pub(crate) fn into_edges(self) -> impl Iterator<Item = BorrowPcgEdge<'tcx>> {
+        self.edges
+            .into_iter()
+            .map(|(kind, conditions)| BorrowPcgEdge { kind, conditions })
+    }
+
     pub fn edges<'slf>(&'slf self) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + 'slf {
         self.edges
             .iter()
@@ -194,49 +200,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> AbstractionGraph<'tcx, 'graph> {
         let mut graph: AbstractionGraph<'tcx, 'graph> = AbstractionGraph::new();
-        #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-        struct ExploreFrom<'tcx> {
-            current: PCGNode<'tcx>,
-            connect: Option<AbstractionGraphNode<'tcx>>,
-        }
-
-        impl<'tcx> ExploreFrom<'tcx> {
-            pub fn new(current: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
-                Self {
-                    current,
-                    connect: current.as_abstraction_graph_node(repacker),
-                }
-            }
-
-            pub fn connect(&self) -> Option<AbstractionGraphNode<'tcx>> {
-                self.connect
-            }
-
-            pub fn current(&self) -> PCGNode<'tcx> {
-                self.current
-            }
-
-            pub fn extend(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
-                Self {
-                    current: node,
-                    connect: node.as_abstraction_graph_node(repacker).or(self.connect),
-                }
-            }
-        }
-
-        impl std::fmt::Display for ExploreFrom<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "Current: {}, Connect: {}",
-                    self.current,
-                    match self.connect {
-                        Some(cg_node) => format!("{cg_node:?}"),
-                        None => "None".to_string(),
-                    }
-                )
-            }
-        }
 
         let frozen_graph = FrozenGraphRef::new(self);
 
@@ -248,7 +211,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut queue = vec![];
         for node in frozen_graph.roots(ctxt).iter() {
             tracing::debug!("Adding root node to queue: {:?}", node);
-            queue.push(ExploreFrom::new(*node, ctxt));
+            queue.push(ExploreFrom::new(
+                *node,
+                node.as_abstraction_graph_node(ctxt),
+            ));
         }
 
         let mut seen = FxHashSet::default();
@@ -314,7 +280,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 for node in edge.blocked_by_nodes(ctxt) {
-                    queue.push(ef.extend(node.into(), ctxt));
+                    let pcg_node = node.into();
+                    queue.push(ExploreFrom::new(
+                        pcg_node,
+                        pcg_node.as_abstraction_graph_node(ctxt).or(ef.connect()),
+                    ));
                 }
             }
         }

@@ -39,6 +39,7 @@ pub fn get_rust_toolchain_channel() -> String {
     }
 }
 
+#[allow(dead_code)]
 pub fn cargo_clean_in_dir(dir: &Path) {
     let cargo_clean = Command::new("cargo")
         .arg("clean")

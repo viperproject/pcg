@@ -240,11 +240,11 @@ impl ShiftJisEncoder {
             } else {
                 let bmp_minus_katakana = bmp.wrapping_sub(0x30A1);
                 if bmp_minus_katakana < 0x56 {
-                    // let trail_offset = if bmp_minus_katakana < 0x3F {
-                    //     0x40
-                    // } else {
-                    //     0x41
-                    // };
+                    let trail_offset = if bmp_minus_katakana < 0x3F {
+                        0x40
+                    } else {
+                        0x41
+                    };
                     let trail_offset = 0x40;
                     handle.write_two(0x83, (trail_offset + bmp_minus_katakana) as u8)
                 } else {

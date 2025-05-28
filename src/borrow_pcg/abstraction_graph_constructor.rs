@@ -304,22 +304,22 @@ struct DebugRecursiveCallHistory<T> {
 }
 
 #[cfg(debug_assertions)]
-impl<T> DebugRecursiveCallHistory<T> {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DebugRecursiveCallHistory<T> {
     fn new() -> Self {
         Self { history: vec![] }
     }
 
-    fn add(&mut self, action: T) -> Result<(), String>
+    fn add(&mut self, action: T, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String>
     where
         T: std::cmp::Eq + std::fmt::Display,
     {
         if self.history.contains(&action) {
             return Err(format!(
                 "Infinite recursion adding:\n{}, to path:\n{}",
-                action,
+                action.to_short_string(ctxt),
                 self.history
                     .iter()
-                    .map(|a| format!("{a}"))
+                    .map(|a| a.to_short_string(ctxt))
                     .collect::<Vec<_>>()
                     .join("\n")
             ));
@@ -355,6 +355,15 @@ struct AddEdgeHistory<'a, 'tcx> {
     upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
 }
 
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AddEdgeHistory<'_, 'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        format!(
+            "bottom: {{{}}}, upper: {{{}}}",
+            self.bottom_connect.to_short_string(ctxt),
+            self.upper_candidate.to_short_string(ctxt)
+        )
+    }
+}
 impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -392,12 +401,14 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
-        if let Err(e) = history.add(AddEdgeHistory {
-            bottom_connect,
-            upper_candidate,
-        }) {
+        if let Err(e) = history.add(
+            AddEdgeHistory {
+                bottom_connect,
+                upper_candidate,
+            },
+            self.ctxt,
+        ) {
             panic!("Infinite recursion adding edge: {e}");
-            return;
         }
         let upper_candidate = upper_candidate.clone();
         let endpoints = bg.parents(&upper_candidate);

@@ -46,14 +46,14 @@ impl PlaceDisplay<'_> {
 }
 
 pub trait DisplayWithCompilerCtxt<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String;
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String;
 }
 
 impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Vec<T> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         let comma_sep = self
             .iter()
-            .map(|t| t.to_short_string(repacker))
+            .map(|t| t.to_short_string(ctxt))
             .collect::<Vec<_>>()
             .join(", ");
         format!("[{comma_sep}]")

@@ -417,7 +417,7 @@ impl<'tcx> Place<'tcx> {
     ) -> bool {
         self.region_projections(ctxt)
             .iter()
-            .any(|rp| rp.is_nested_in_local_ty(ctxt))
+            .any(|rp| rp.is_nested_under_mut_ref(ctxt))
     }
 
     pub fn ref_mutability<C: Copy>(

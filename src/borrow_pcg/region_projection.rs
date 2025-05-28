@@ -6,7 +6,8 @@ use serde_json::json;
 
 use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
-    borrow_pcg_edge::LocalNode, abstraction_graph_constructor::AbstractionGraphNode, visitor::extract_regions,
+    abstraction_graph_constructor::AbstractionGraphNode, borrow_pcg_edge::LocalNode,
+    visitor::extract_regions,
 };
 use crate::pcg::{PCGInternalError, PcgError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -29,8 +30,6 @@ use crate::{
     },
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
 };
-
-
 
 /// A region occuring in region projections
 #[derive(PartialEq, Eq, Clone, Copy, Hash, From)]
@@ -334,9 +333,9 @@ impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx, 
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<'tcx, T> {
-    // Returns true iff the region is nested under another reference, w.r.t the local
-    // of the place of this region projection
-    pub(crate) fn is_nested_in_local_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
+    // Returns true iff the region is nested under a mutable reference, w.r.t
+    // the local of the place of this region projection
+    pub(crate) fn is_nested_under_mut_ref<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
         let mut checker = IsNestedChecker::new(ctxt, self.region(ctxt));
         let local_place: Place<'tcx> = self.base.place().local.into();
         local_place.ty(ctxt).visit_with(&mut checker);

@@ -95,7 +95,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     )?;
                 }
             }
-            Rvalue::Use(operand @ (Operand::Move(from) | Operand::Copy(from))) => {
+            Rvalue::Use(operand @ (Operand::Move(from) | Operand::Copy(from)))
+            | Rvalue::Cast(_, operand @ (Operand::Move(from) | Operand::Copy(from)), _) => {
                 let from: utils::Place<'tcx> = (*from).into();
                 let (from, kind) = if matches!(operand, Operand::Move(_)) {
                     (

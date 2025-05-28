@@ -116,9 +116,9 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
         kind: BorrowFlowEdgeKind,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        pcg_validity_assert!(long.to_pcg_node(repacker) != short.to_pcg_node(repacker));
+        pcg_validity_assert!(long.to_pcg_node(ctxt) != short.to_pcg_node(ctxt));
         Self {
             long,
             short: short.into(),
@@ -164,6 +164,7 @@ pub enum BorrowFlowEdgeKind {
     CopySharedRef,
     Move,
     HavocRegion,
+    FunctionCallNestedRefs,
 }
 
 impl std::fmt::Display for BorrowFlowEdgeKind {
@@ -187,6 +188,7 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
             BorrowFlowEdgeKind::HavocRegion => write!(f, "HavocRegion"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
+            BorrowFlowEdgeKind::FunctionCallNestedRefs => write!(f, "FunctionCallNestedRefs"),
         }
     }
 }

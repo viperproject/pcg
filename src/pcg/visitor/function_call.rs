@@ -1,14 +1,22 @@
 use super::PcgVisitor;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode};
 use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction, FunctionData,
 };
+use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
+use crate::borrow_pcg::edge_data::EdgeData;
+use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
+use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::region_projection::{
-    PcgRegion, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
+    LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionBaseLike,
+    RegionProjectionLabel,
 };
+use crate::borrow_pcg::util::ExploreFrom;
+use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
 use crate::rustc_interface::middle::mir::{Location, Operand};
+use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
@@ -77,9 +85,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<Vec<_>>();
 
+        // The subset of the argument region projections that are nested
+        // (and labelled, since the set of borrows inside may be modified)
         let mut labelled_rps = FxHashSet::default();
         for arg in arg_region_projections.iter() {
-            if arg.is_nested_in_local_ty(self.ctxt) {
+            if arg.is_nested_under_mut_ref(self.ctxt) {
                 self.pcg.borrow.label_region_projection(
                     arg,
                     Some(SnapshotLocation::before(location).into()),
@@ -90,20 +100,50 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
 
-        let placeholder_targets = labelled_rps
-            .iter()
-            .flat_map(|rp| {
-                self.pcg
-                    .borrow
-                    .graph()
-                    .identify_placeholder_target(*rp, self.ctxt)
-            })
-            .collect::<FxHashSet<_>>();
+        // let placeholder_targets = labelled_rps
+        //     .iter()
+        //     .flat_map(|rp| {
+        //         self.pcg
+        //             .borrow
+        //             .graph()
+        //             .identify_placeholder_target(*rp, self.ctxt)
+        //     })
+        //     .collect::<FxHashSet<_>>();
 
+        let future_subgraph = get_future_subgraph(
+            &labelled_rps,
+            self.pcg.borrow.graph().frozen_graph(),
+            self.ctxt,
+        );
+
+        future_subgraph.render_debug_graph(self.ctxt, location, "future_subgraph");
+
+        let placeholder_targets = future_subgraph
+            .roots(self.ctxt)
+            .into_iter()
+            .map(|root| {
+                root.try_to_local_node(self.ctxt)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Root {:?} of future subgraph is not a local node",
+                            root.to_short_string(self.ctxt)
+                        )
+                    })
+                    .try_into_region_projection()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        for edge in future_subgraph.into_edges() {
+            self.pcg.borrow.graph.insert(edge, self.ctxt);
+        }
+
+        // The set of region projections that contain borrows that could be
+        // moved into the labelled rps (as they are seen after the function call)
         let source_arg_projections = arg_region_projections
             .iter()
             .map(|rp| {
-                if rp.is_nested_in_local_ty(self.ctxt) {
+                if rp.is_nested_under_mut_ref(self.ctxt) {
                     (*rp).label_projection(SnapshotLocation::before(location).into())
                 } else {
                     *rp
@@ -163,4 +203,85 @@ fn get_disjoint_lifetime_sets<'tcx, T: RegionProjectionBaseLike<'tcx>>(
         }
     }
     disjoin_lifetime_sets
+}
+
+fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
+    arg_region_projections: &FxHashSet<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>,
+    mut source_graph: FrozenGraphRef<'graph, 'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx>,
+) -> BorrowsGraph<'tcx> {
+    let mut graph = BorrowsGraph::new();
+    let mut queue: Vec<ExploreFrom<LocalNode<'tcx>, LocalRegionProjection<'tcx>>> =
+        arg_region_projections
+            .iter()
+            .map(|rp| ExploreFrom::new(rp.to_local_node(ctxt), (*rp).into()))
+            .collect();
+    while let Some(ef) = queue.pop() {
+        let blocked_by = source_graph.get_edges_blocked_by(ef.current(), ctxt);
+        for edge in blocked_by.iter() {
+            for node in edge.blocked_nodes(ctxt) {
+                match node {
+                    PCGNode::Place(_) => {
+                        if let Some(local) = node.try_to_local_node(ctxt) {
+                            queue.push(ef.extend(local));
+                        }
+                    }
+                    PCGNode::RegionProjection(rp) => {
+
+                        // RP isn't the same region, stop search
+                        if !ctxt
+                            .bc
+                            .same_region(rp.region(ctxt), ef.connect().region(ctxt))
+                        {
+                            continue;
+                        }
+
+                        // Continue search if we haven't hit a root
+                        if let Some(PCGNode::RegionProjection(local_rp)) =
+                            rp.try_to_local_node(ctxt)
+                        {
+                            // If the place is old, we can skip it but continue search up
+                            if local_rp.base.is_old() {
+                                queue.push(ef.extend(local_rp.into()));
+                                continue;
+                            }
+
+                            // If we get here, we want to include this node
+
+                            let future_rp = rp.label_projection(RegionProjectionLabel::Placeholder);
+
+                            // Somewhat of a hack: if the base of the connect is old, its the
+                            // moved-in place for the function call. We'll skip it, but this node
+                            // will be included in further edges upwards
+                            if !ef.connect().base.is_old() {
+                                graph.insert(
+                                    BorrowPcgEdge::new(
+                                        BorrowFlowEdge::new(
+                                            future_rp,
+                                            ef.connect(),
+                                            BorrowFlowEdgeKind::FunctionCallNestedRefs,
+                                            ctxt,
+                                        )
+                                        .into(),
+                                        edge.conditions.clone(),
+                                    ),
+                                    ctxt,
+                                );
+                            }
+
+                            if let Some(local @ PCGNode::RegionProjection(local_rp)) =
+                                rp.try_to_local_node(ctxt)
+                            {
+                                queue.push(ExploreFrom::new(
+                                    local,
+                                    local_rp.label_projection(RegionProjectionLabel::Placeholder),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    graph
 }
