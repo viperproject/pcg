@@ -25,6 +25,7 @@ impl<'tcx, A> AnalysisAndResults<'tcx, A>
 where
     A: mir_dataflow::Analysis<'tcx>,
 {
+    #[rustversion::since(2025-05-24)]
     pub fn into_results_cursor<'mir>(
         self,
         body: &'mir Body<'tcx>,
@@ -32,8 +33,22 @@ where
         mir_dataflow::ResultsCursor::new_owning(body, self.analysis, self.results)
     }
 
+    #[rustversion::since(2025-05-24)]
     pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
         &self.results[block]
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
+        &self.results.entry_set_for_block(block)
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn into_results_cursor<'mir>(
+        self,
+        body: &'mir Body<'tcx>,
+    ) -> mir_dataflow::ResultsCursor<'mir, 'tcx, A> {
+        self.results.into_results_cursor(body)
     }
 }
 
@@ -42,7 +57,7 @@ pub struct AnalysisAndResults<'tcx, A>
 where
     A: mir_dataflow::Analysis<'tcx>,
 {
-    results: mir_dataflow::Results<'tcx, A::Domain>,
+    results: mir_dataflow::Results<'tcx, A>,
 }
 pub trait Analysis<'tcx> {
     const NAME: &'static str;
