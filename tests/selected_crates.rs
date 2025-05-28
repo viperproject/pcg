@@ -16,30 +16,29 @@ fn test_selected_crates() {
     //     },
     // );
 
-    // common::run_on_crate(
-    //     "encoding_rs",
-    //     "0.8.35",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: false,
-    //         function: Some("shift_jis::ShiftJisEncoder::encode_from_utf16_raw"),
-    //         extra_env_vars: vec![],
-    //     },
-    // );
-    // return;
+    common::run_on_crate(
+        "encoding_rs",
+        "0.8.35",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("shift_jis::ShiftJisEncoder::encode_from_utf16_raw"),
+            extra_env_vars: vec![],
+        },
+    );
 
-    // common::run_on_crate(
-    //     "cc",
-    //     "1.2.16",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: false,
-    //         function: Some("flags::RustcCodegenFlags::<'this>::cc_flags"),
-    //         extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW", "true")],
-    //     },
-    // );
+    common::run_on_crate(
+        "cc",
+        "1.2.16",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("flags::RustcCodegenFlags::<'this>::cc_flags"),
+            extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW", "true")],
+        },
+    );
 
     common::run_on_crate(
         "encoding_rs",

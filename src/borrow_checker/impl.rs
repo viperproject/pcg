@@ -141,19 +141,15 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
             .iter()
             .map(|r| (*r).into())
             .collect::<BTreeSet<_>>();
-        tracing::info!("live_origins: {:?}", live_origins);
         regions.iter().any(|region| match region {
             PcgRegion::RegionVid(region_vid) => live_loans.iter().any(|loan| {
-                if live_origins
-                    .iter()
-                    .any(|lo| self.outlives((*region_vid).into(), (*lo).into()))
-                {
+                if live_origins.contains(region_vid) {
                     return true;
                 }
-                if self.outlives(
-                    (*region_vid).into(),
-                    self.borrow_index_to_region(*loan).into(),
-                ) {
+                if self
+                    .region_cx
+                    .eval_outlives(*region_vid, self.borrow_index_to_region(*loan))
+                {
                     return true;
                 }
                 false
@@ -231,7 +227,10 @@ fn cursor_contains_local(
 }
 
 impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
-    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
+    pub fn new<T: BodyAndBorrows<'tcx>>(
+        tcx: ty::TyCtxt<'tcx>,
+        body: &'mir T,
+    ) -> Self {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
@@ -280,6 +279,7 @@ impl BorrowCheckerImpl<'_, '_> {
 }
 
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
+
     #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())

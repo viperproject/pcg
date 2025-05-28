@@ -15,6 +15,7 @@ use crate::borrow_pcg::region_projection::{
 };
 use crate::borrow_pcg::util::ExploreFrom;
 use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
+use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -36,6 +37,7 @@ fn get_function_data<'tcx>(
 }
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+    #[tracing::instrument(skip(self, func, args, destination))]
     pub(super) fn make_function_call_abstraction(
         &mut self,
         func: &Operand<'tcx>,
@@ -110,6 +112,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         //     })
         //     .collect::<FxHashSet<_>>();
 
+        pcg_validity_assert!(
+            self.pcg.borrow.graph().frozen_graph().is_acyclic(self.ctxt),
+            "Borrow graph is not acyclic"
+        );
+
         let future_subgraph = get_future_subgraph(
             &labelled_rps,
             self.pcg.borrow.graph().frozen_graph(),
@@ -135,6 +142,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .collect::<Vec<_>>();
 
         for edge in future_subgraph.into_edges() {
+            if edge.blocked_by_nodes(self.ctxt).any(|p| match p {
+                PCGNode::RegionProjection(rp) => labelled_rps.contains(&rp),
+                _ => false,
+            }) {
+                continue;
+            }
             self.pcg.borrow.graph.insert(edge, self.ctxt);
         }
 
@@ -211,6 +224,9 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) -> BorrowsGraph<'tcx> {
     let mut graph = BorrowsGraph::new();
+    for arg in arg_region_projections.iter() {
+        tracing::info!("arg: {:?}", arg.to_short_string(ctxt));
+    }
     let mut queue: Vec<ExploreFrom<LocalNode<'tcx>, LocalRegionProjection<'tcx>>> =
         arg_region_projections
             .iter()
@@ -227,7 +243,6 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
                         }
                     }
                     PCGNode::RegionProjection(rp) => {
-
                         // RP isn't the same region, stop search
                         if !ctxt
                             .bc
@@ -250,24 +265,27 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
 
                             let future_rp = rp.label_projection(RegionProjectionLabel::Placeholder);
 
-                            // Somewhat of a hack: if the base of the connect is old, its the
-                            // moved-in place for the function call. We'll skip it, but this node
-                            // will be included in further edges upwards
-                            if !ef.connect().base.is_old() {
-                                graph.insert(
-                                    BorrowPcgEdge::new(
-                                        BorrowFlowEdge::new(
-                                            future_rp,
-                                            ef.connect(),
-                                            BorrowFlowEdgeKind::FunctionCallNestedRefs,
-                                            ctxt,
-                                        )
-                                        .into(),
-                                        edge.conditions.clone(),
-                                    ),
-                                    ctxt,
-                                );
+                            if future_rp == ef.connect().into() {
+                                // We saw, earlier, a version of the same lifetime projection at a different snapshot, lets skip for now
+                                // TODO: Verify that this is correct
+                                continue;
                             }
+
+                            assert!(future_rp != ef.connect().into());
+
+                            graph.insert(
+                                BorrowPcgEdge::new(
+                                    BorrowFlowEdge::new(
+                                        future_rp,
+                                        ef.connect(),
+                                        BorrowFlowEdgeKind::FunctionCallNestedRefs,
+                                        ctxt,
+                                    )
+                                    .into(),
+                                    edge.conditions.clone(),
+                                ),
+                                ctxt,
+                            );
 
                             if let Some(local @ PCGNode::RegionProjection(local_rp)) =
                                 rp.try_to_local_node(ctxt)
