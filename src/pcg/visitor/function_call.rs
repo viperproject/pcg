@@ -197,6 +197,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.record_and_apply_action(mk_create_edge_action(inputs, outputs).into())?;
             }
         }
+        self.pcg
+            .borrow
+            .graph
+            .render_debug_graph(self.ctxt, location, "final borrow_graph");
         Ok(())
     }
 }
@@ -229,9 +233,6 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) -> BorrowsGraph<'tcx> {
     let mut graph = BorrowsGraph::new();
-    for arg in arg_region_projections.iter() {
-        tracing::info!("arg: {:?}", arg.to_short_string(ctxt));
-    }
     let mut queue: Vec<ExploreFrom<LocalNode<'tcx>, LocalRegionProjection<'tcx>>> =
         arg_region_projections
             .iter()

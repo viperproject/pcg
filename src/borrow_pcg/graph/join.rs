@@ -1,6 +1,9 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -46,6 +49,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
         // }
         let old_self = self.clone();
+
+        for node in other.nodes(ctxt) {
+            if let PCGNode::RegionProjection(rp) = node
+                && matches!(rp.label, Some(RegionProjectionLabel::Placeholder))
+                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
+            {
+                let mut orig_rp = local_rp;
+                orig_rp.label = None;
+                self.mut_edges(|edge| {
+                    edge.label_region_projection(
+                        &orig_rp,
+                        Some(RegionProjectionLabel::Placeholder),
+                        ctxt,
+                    )
+                });
+            }
+        }
 
         let self_location = mir::Location {
             block: self_block,
@@ -153,8 +173,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
-        tracing::info!("Self has {} edges", self.edges.len());
-        tracing::info!("Other has {} edges", other.edges.len());
+        tracing::debug!("Self has {} edges", self.edges.len());
+        tracing::debug!("Other has {} edges", other.edges.len());
         let old_self = self.clone();
         let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
             .construct_abstraction_graph(&old_self, ctxt.bc);
