@@ -337,7 +337,7 @@ impl<T> DebugRecursiveCallHistory<T> {
         }
     }
 
-    fn add(&mut self, _action: T) -> Result<(), String> {
+    fn add(&mut self, _action: T, _ctxt: CompilerCtxt<'_, '_>) -> Result<(), String> {
         Ok(())
     }
 }

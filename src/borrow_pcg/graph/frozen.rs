@@ -52,9 +52,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         self.nodes(repacker).contains(&node)
     }
 
-    pub(crate) fn is_acyclic<'mir: 'graph, 'bc: 'graph, C: Copy>(
+    pub(crate) fn is_acyclic<'mir: 'graph, 'bc: 'graph>(
         &mut self,
-        ctxt: CompilerCtxt<'mir, 'tcx, C>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         enum PushResult<'tcx, 'graph> {
             ExtendPath(Path<'tcx, 'graph>),
@@ -64,11 +64,11 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         #[derive(Clone, Debug, Eq, PartialEq, Hash)]
         struct Path<'tcx, 'graph>(Vec<BorrowPCGEdgeRef<'tcx, 'graph>>);
 
-        type PathPrefix<'tcx, 'graph> = Path<'tcx, 'graph>;
         impl<'tcx, 'graph> Path<'tcx, 'graph> {
             fn try_push(
                 mut self,
                 edge: BorrowPCGEdgeRef<'tcx, 'graph>,
+                _ctxt: CompilerCtxt<'_, 'tcx>,
             ) -> PushResult<'tcx, 'graph> {
                 if self.0.contains(&edge) {
                     PushResult::Cycle
@@ -86,40 +86,36 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 Self(vec![edge])
             }
 
-            fn leads_to_cycle<'mir: 'graph, 'bc: 'graph, C: Copy>(
+            #[must_use]
+            fn leads_to_cycle<'mir: 'graph, 'bc: 'graph>(
                 &self,
                 graph: &FrozenGraphRef<'graph, 'tcx>,
-                ctxt: CompilerCtxt<'mir, 'tcx, C>,
-                prefixes: &mut FxHashSet<PathPrefix<'tcx, 'graph>>,
+                ctxt: CompilerCtxt<'mir, 'tcx>,
             ) -> bool {
-                if prefixes.contains(&self) {
-                    return false;
-                }
                 let curr = self.last();
                 let blocking_edges = curr
                     .blocked_by_nodes(ctxt)
                     .flat_map(|node| graph.get_edges_blocking(node.into(), ctxt))
                     .unique();
                 for edge in blocking_edges {
-                    match self.clone().try_push(edge) {
+                    match self.clone().try_push(edge, ctxt) {
                         PushResult::Cycle => {
                             return true;
                         }
                         PushResult::ExtendPath(next_path) => {
-                            next_path.leads_to_cycle(graph, ctxt, prefixes);
+                            if next_path.leads_to_cycle(graph, ctxt) {
+                                return true;
+                            }
                         }
                     }
                 }
-                prefixes.insert(self.clone());
                 false
             }
         }
 
-        let mut prefixes = FxHashSet::default();
-
         for root in self.roots(ctxt).iter() {
             for edge in self.get_edges_blocking(*root, ctxt) {
-                if Path::new(edge).leads_to_cycle(self, ctxt, &mut prefixes) {
+                if Path::new(edge).leads_to_cycle(self, ctxt) {
                     return false;
                 }
             }

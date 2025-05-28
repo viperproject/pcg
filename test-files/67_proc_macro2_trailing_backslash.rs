@@ -48,6 +48,4 @@ fn trailing_backslash(input: &mut Cursor, mut last: u8) -> Result<(), Reject> {
     }
 }
 
-fn main(){
-
-}
+fn main(){ }

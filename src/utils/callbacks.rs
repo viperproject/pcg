@@ -331,6 +331,7 @@ impl From<&str> for LifetimeRenderAnnotation {
 }
 
 #[derive(From)]
+#[allow(clippy::large_enum_variant)]
 enum BorrowChecker<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
     Impl(BorrowCheckerImpl<'mir, 'tcx>),

@@ -5,18 +5,16 @@ pub(crate) mod materialize;
 mod mutate;
 
 use crate::{
-    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{abstraction_graph_constructor::AbstractionGraph, util::ExploreFrom},
     pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
-        middle::mir::{self, BasicBlock},
+        middle::mir::{self},
     },
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-        HasPlace, BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT,
+        BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedBlockingEdges, CachedLeafEdges, FrozenGraphRef};
@@ -24,12 +22,10 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    abstraction_graph_constructor::AbstractionGraphConstructor,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
-    region_projection::RegionProjection,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
@@ -150,49 +146,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges
             .iter()
             .map(|(kind, conditions)| BorrowPCGEdgeRef { kind, conditions })
-    }
-
-    pub(crate) fn region_projections_blocked_by(
-        &self,
-        from: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<RegionProjection<'tcx>> {
-        let mut result = FxHashSet::default();
-        for edge in self.edges_blocked_by(from, ctxt) {
-            for node in edge.blocked_nodes(ctxt) {
-                if let PCGNode::RegionProjection(rp) = node {
-                    result.insert(rp);
-                }
-            }
-        }
-        result
-    }
-
-    pub(crate) fn identify_placeholder_target(
-        &self,
-        from: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        let mut result = FxHashSet::default();
-        let mut blocking: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
-            .region_projections_blocked_by(from.into(), ctxt)
-            .into_iter()
-            .flat_map(|rp| rp.try_into())
-            .collect();
-        while let Some(node) = blocking.pop() {
-            let place = node.base().place();
-            if place.is_deref() {
-                let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
-                    .region_projections_blocked_by(node.into(), ctxt)
-                    .into_iter()
-                    .flat_map(|rp| rp.try_into())
-                    .collect();
-                blocking.extend(to_add);
-            } else {
-                result.insert(node);
-            }
-        }
-        result
     }
 
     pub(crate) fn base_abstraction_graph<'graph, 'mir: 'graph>(
@@ -316,16 +269,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn borrows(&self) -> impl Iterator<Item = Conditioned<BorrowEdge<'tcx>>> + '_ {
-        self.edges().filter_map(|edge| match &edge.kind() {
-            BorrowPcgEdgeKind::Borrow(reborrow) => Some(Conditioned {
-                conditions: edge.conditions().clone(),
-                value: reborrow.clone(),
-            }),
-            _ => None,
-        })
-    }
-
     /// All edges that are not blocked by any other edge The argument
     /// `blocking_map` can be provided to use a shared cache for computation
     /// of blocking calculations. The argument should be used if this function
@@ -435,17 +378,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
     {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
-    }
-
-    #[tracing::instrument(skip(self, borrow_checker, repacker))]
-    fn construct_region_projection_abstraction<'mir: 'graph, 'graph>(
-        &'graph self,
-        borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-        block: BasicBlock,
-    ) -> AbstractionGraph<'tcx, 'graph> {
-        let constructor = AbstractionGraphConstructor::new(repacker, block);
-        constructor.construct_abstraction_graph(self, borrow_checker)
     }
 
     /// Returns true iff `edge` connects two nodes within an abstraction edge

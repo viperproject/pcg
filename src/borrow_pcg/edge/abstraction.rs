@@ -30,7 +30,6 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 use itertools::Itertools;
-use smallvec::SmallVec;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
@@ -317,8 +316,8 @@ impl<'tcx> AbstractionType<'tcx> {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct AbstractionBlockEdge<'tcx, Input> {
-    pub(crate) inputs: SmallVec<[Input; 8]>,
-    pub(crate) outputs: SmallVec<[MaybeRedirected<AbstractionOutputTarget<'tcx>>; 8]>,
+    pub(crate) inputs: Vec<Input>,
+    pub(crate) outputs: Vec<MaybeRedirected<AbstractionOutputTarget<'tcx>>>,
 }
 
 impl<'tcx, Input> AbstractionBlockEdge<'tcx, Input> {

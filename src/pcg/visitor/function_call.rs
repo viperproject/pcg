@@ -117,6 +117,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             "Borrow graph is not acyclic"
         );
 
+        self.pcg
+            .borrow
+            .graph()
+            .render_debug_graph(self.ctxt, location, "borrow_graph");
+
         let future_subgraph = get_future_subgraph(
             &labelled_rps,
             self.pcg.borrow.graph().frozen_graph(),
@@ -230,7 +235,7 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
     let mut queue: Vec<ExploreFrom<LocalNode<'tcx>, LocalRegionProjection<'tcx>>> =
         arg_region_projections
             .iter()
-            .map(|rp| ExploreFrom::new(rp.to_local_node(ctxt), (*rp).into()))
+            .map(|rp| ExploreFrom::new(rp.to_local_node(ctxt), *rp))
             .collect();
     while let Some(ef) = queue.pop() {
         let blocked_by = source_graph.get_edges_blocked_by(ef.current(), ctxt);

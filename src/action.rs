@@ -78,6 +78,7 @@ impl<'tcx> PcgActions<'tcx> {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Debug, From)]
 pub enum PcgAction<'tcx> {
     Borrow(BorrowPCGAction<'tcx>),

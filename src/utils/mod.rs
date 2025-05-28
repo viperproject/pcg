@@ -33,7 +33,7 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     pub static ref VALIDITY_CHECKS: bool =
-        env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(false);
+        env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions));
     pub static ref COUPLING_DEBUG_IMGCAT: bool =
         env_feature_enabled("PCG_COUPLING_DEBUG_IMGCAT").unwrap_or(false);
     pub static ref BORROWS_DEBUG_IMGCAT: bool =

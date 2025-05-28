@@ -219,12 +219,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        // if validity_checks_enabled() {
-        //     for edge in self.edges() {
-        //         pcg_validity_assert!(edge.conditions().all_not_after(loop_head));
-        //     }
-        // }
-
         if borrows_imgcat_debug() {
             self.render_debug_graph(
                 ctxt,
