@@ -161,6 +161,11 @@ pub(crate) unsafe fn take_stored_body<'tcx>(
     })
 }
 
+fn should_check_body(_body: &Body<'_>) -> bool {
+    true
+    // body.basic_blocks.len() < 5
+}
+
 /// # Safety
 ///
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
@@ -215,10 +220,15 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
         }
         let body = take_stored_body(tcx, def_id);
 
+        if !should_check_body(&body.body) {
+            continue;
+        }
+
         info!(
-            "{}Running PCG on function: {}",
+            "{}Running PCG on function: {} with {} basic blocks",
             cargo_crate_name().map_or("".to_string(), |name| format!("{name}: ")),
-            item_name
+            item_name,
+            body.body.basic_blocks.len()
         );
         tracing::info!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
@@ -419,10 +429,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(
-    item_name: String,
-    output: &mut PcgOutput<'_, '_, &bumpalo::Bump>,
-) {
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 

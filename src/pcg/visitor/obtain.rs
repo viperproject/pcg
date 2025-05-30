@@ -189,7 +189,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             )
                             .into(),
                         )?;
-                        if base.is_mut_ref(self.ctxt) && for_exclusive {
+                        if rp.is_nested_under_mut_ref(self.ctxt) && for_exclusive {
                             self.pcg.borrow.label_region_projection(
                                 &rp,
                                 Some(SnapshotLocation::before(location).into()),

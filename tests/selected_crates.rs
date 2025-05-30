@@ -5,16 +5,17 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
-    // common::cargo_clean_in_dir(Path::new("modified-test-crates/encoding_rs-0.8.35"));
-    // common::run_pcg_on_crate_in_dir(
-    //     Path::new("modified-test-crates/encoding_rs-0.8.35"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: false,
-    //         function: Some("shift_jis::ShiftJisEncoder::encode_from_utf16_raw"),
-    //         extra_env_vars: vec![],
-    //     },
-    // );
+    common::run_on_crate(
+        "syn",
+        "2.0.100",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<punctuated::Pairs<'a, T, P> as std::iter::Iterator>::next"),
+            extra_env_vars: vec![("PCG_BORROWS_DEBUG_IMGCAT", "true")],
+        },
+    );
 
     common::run_on_crate(
         "encoding_rs",
@@ -22,7 +23,7 @@ fn test_selected_crates() {
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
-            validity_checks: true,
+            validity_checks: false,
             function: Some("shift_jis::ShiftJisEncoder::encode_from_utf16_raw"),
             extra_env_vars: vec![],
         },

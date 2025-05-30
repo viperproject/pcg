@@ -112,15 +112,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         //     })
         //     .collect::<FxHashSet<_>>();
 
-        pcg_validity_assert!(
-            self.pcg.borrow.graph().frozen_graph().is_acyclic(self.ctxt),
-            "Borrow graph is not acyclic"
-        );
-
         self.pcg
             .borrow
             .graph()
             .render_debug_graph(self.ctxt, location, "borrow_graph");
+
+        // if !self.pcg.borrow.graph().frozen_graph().is_acyclic(self.ctxt) {
+        //     return Ok(());
+        // }
+        pcg_validity_assert!(
+            self.pcg.borrow.graph().frozen_graph().is_acyclic(self.ctxt),
+            "{:?}: Borrow graph is not acyclic",
+            self.ctxt.body().span
+        );
 
         let future_subgraph = get_future_subgraph(
             &labelled_rps,
