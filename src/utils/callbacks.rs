@@ -162,8 +162,8 @@ pub(crate) unsafe fn take_stored_body<'tcx>(
 }
 
 fn should_check_body(_body: &Body<'_>) -> bool {
+    // body.basic_blocks.len() == 6
     true
-    // body.basic_blocks.len() < 5
 }
 
 /// # Safety

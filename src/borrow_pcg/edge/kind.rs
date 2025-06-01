@@ -30,9 +30,16 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
         }
     }
 
-    pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+    /// Returns true if the edge could be redirected, false if it would create a self edge.
+    #[must_use]
+    pub(crate) fn redirect(
+        &mut self,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
-            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to),
+            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to, ctxt),
             BorrowPcgEdgeKind::Abstraction(edge) => {
                 let from: Option<AbstractionOutputTarget<'tcx>> = from.try_into().ok();
                 let to: Option<AbstractionOutputTarget<'tcx>> = to.try_into().ok();
@@ -41,6 +48,8 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
                 {
                     edge.redirect(from, to);
                 }
+                // TODO
+                true
             }
             other => panic!("Cannot redirect this edge kind: {other:?}"),
         }

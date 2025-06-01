@@ -111,8 +111,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         let conditions = self.edges.remove(&edge).unwrap();
-        edge.redirect(from, to);
+        if edge.redirect(from, to, ctxt) {
         self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
+        }
     }
 
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(

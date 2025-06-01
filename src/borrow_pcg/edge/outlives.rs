@@ -106,10 +106,17 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
-    pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+    /// Returns true if the edge could be redirected, false if it would create a self edge.
+    pub(crate) fn redirect(
+        &mut self,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         if let PCGNode::RegionProjection(rp) = from {
             self.short.redirect(rp, to.try_into().unwrap());
         }
+        self.long.to_pcg_node(ctxt) != self.short.effective().to_pcg_node(ctxt)
     }
 
     pub(crate) fn new(

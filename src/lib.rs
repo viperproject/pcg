@@ -25,13 +25,13 @@ pub mod visualization;
 
 use action::PcgActions;
 use borrow_checker::BorrowCheckerInterface;
-use borrow_pcg::latest::Latest;
+use borrow_pcg::{graph::borrows_imgcat_debug, latest::Latest};
 use free_pcs::{CapabilityKind, PcgLocation};
-use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
+use pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
-    middle::{mir::Body, ty::TyCtxt},
+    middle::{mir::{self, Body}, ty::TyCtxt},
 };
 use serde_json::json;
 use utils::{
@@ -338,6 +338,22 @@ pub fn run_pcg<
     }
 
     fpcs_analysis
+}
+
+pub(crate) fn validity_assert_acyclic<'tcx>(
+    pcg: &Pcg<'tcx>,
+    location: mir::Location,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+) {
+    if validity_checks_enabled() {
+        let acyclic = pcg.borrow.graph().frozen_graph().is_acyclic(ctxt);
+        if !acyclic {
+            if borrows_imgcat_debug() {
+                pcg.borrow.graph().render_debug_graph(ctxt, location, "Acyclic borrow graph");
+            }
+            panic!("Borrow graph is not acyclic");
+        }
+    }
 }
 
 #[macro_export]

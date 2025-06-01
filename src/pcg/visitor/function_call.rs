@@ -15,9 +15,9 @@ use crate::borrow_pcg::region_projection::{
 };
 use crate::borrow_pcg::util::ExploreFrom;
 use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
-use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::validity_assert_acyclic;
 
 use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
@@ -45,6 +45,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
+        validity_assert_acyclic(self.pcg, location, self.ctxt);
         // This is just a performance optimization
         if self
             .pcg
@@ -112,19 +113,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         //     })
         //     .collect::<FxHashSet<_>>();
 
-        self.pcg
-            .borrow
-            .graph()
-            .render_debug_graph(self.ctxt, location, "borrow_graph");
-
-        // if !self.pcg.borrow.graph().frozen_graph().is_acyclic(self.ctxt) {
-        //     return Ok(());
-        // }
-        pcg_validity_assert!(
-            self.pcg.borrow.graph().frozen_graph().is_acyclic(self.ctxt),
-            "{:?}: Borrow graph is not acyclic",
-            self.ctxt.body().span
-        );
+        validity_assert_acyclic(self.pcg, location, self.ctxt);
 
         let future_subgraph = get_future_subgraph(
             &labelled_rps,

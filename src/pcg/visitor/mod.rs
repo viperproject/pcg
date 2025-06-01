@@ -7,6 +7,7 @@ use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
+use crate::validity_assert_acyclic;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 
 use crate::action::PcgActions;
@@ -128,6 +129,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
+        validity_assert_acyclic(self.pcg, location, self.ctxt);
         self.super_terminator_fallable(terminator, location)?;
         if self.phase == EvalStmtPhase::PostMain
             && let mir::TerminatorKind::Call {
@@ -214,6 +216,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.visit_terminator_fallable(terminator, location)?
             }
         }
+        validity_assert_acyclic(self.pcg, location, self.ctxt);
         Ok(self.actions)
     }
     #[tracing::instrument(skip(self, edge, location))]
