@@ -245,6 +245,18 @@ impl<'tcx, P> RegionProjection<'tcx, P> {
     }
 }
 
+impl<'tcx> LocalRegionProjection<'tcx> {
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        let place = self.base.place();
+        place
+            .ty(ctxt)
+            .ty
+            .ref_mutability()
+            .is_none_or(|mutability| mutability.is_not())
+            && !place.projects_shared_ref(ctxt)
+    }
+}
+
 impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> {
     fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
         RegionProjection {
@@ -300,13 +312,16 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
-struct IsNestedChecker<'mir, 'tcx, C: Copy> {
+/// Determines if a region `'r` is nested under a mutable reference for a type
+/// `t`, such that a function taking a value `v` of type `t` can mutate the (set
+/// of) references of lifetime `'r` in `v`.
+struct MutableNestedReferenceChecker<'mir, 'tcx, C: Copy> {
     ctxt: CompilerCtxt<'mir, 'tcx, C>,
     target: PcgRegion,
     found: bool,
 }
 
-impl<'mir, 'tcx, C: Copy> IsNestedChecker<'mir, 'tcx, C> {
+impl<'mir, 'tcx, C: Copy> MutableNestedReferenceChecker<'mir, 'tcx, C> {
     fn new(ctxt: CompilerCtxt<'mir, 'tcx, C>, target: PcgRegion) -> Self {
         Self {
             ctxt,
@@ -316,20 +331,24 @@ impl<'mir, 'tcx, C: Copy> IsNestedChecker<'mir, 'tcx, C> {
     }
 }
 
-impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for IsNestedChecker<'_, 'tcx, C> {
+impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for MutableNestedReferenceChecker<'_, 'tcx, C> {
     fn visit_ty(&mut self, t: ty::Ty<'tcx>) {
         if self.found {
             return;
         }
 
         match t.kind() {
-            TyKind::RawPtr(ty, mutbl) | TyKind::Ref(_, ty, mutbl) if mutbl.is_mut() => {
-                if extract_regions(*ty, self.ctxt)
-                    .iter()
-                    .any(|r| self.target == *r)
-                {
-                    self.found = true;
+            TyKind::RawPtr(ty, mutbl) | TyKind::Ref(_, ty, mutbl) => {
+                if mutbl.is_mut() {
+                    if extract_regions(*ty, self.ctxt)
+                        .iter()
+                        .any(|r| self.target == *r)
+                    {
+                        self.found = true;
+                    }
                 }
+                // Otherwise, this is an immutable reference, don't check under
+                // here since nothing will be mutable
             }
             _ => {
                 t.super_visit_with(self);
@@ -342,7 +361,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<
     // Returns true iff the region is nested under a mutable reference, w.r.t
     // the local of the place of this region projection
     pub(crate) fn is_nested_under_mut_ref<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        let mut checker = IsNestedChecker::new(ctxt, self.region(ctxt));
+        let mut checker = MutableNestedReferenceChecker::new(ctxt, self.region(ctxt));
         let local_place: Place<'tcx> = self.base.place().local.into();
         local_place.ty(ctxt).visit_with(&mut checker);
         checker.found

@@ -89,6 +89,10 @@ fn setup_rustc_args() -> Vec<String> {
     if !in_cargo_crate() {
         rustc_args.push("-Zno-codegen".to_string());
     }
+
+    // http crate for top crates eval.
+    rustc_args.push("-Adangerous_implicit_autorefs".to_string());
+
     rustc_args.extend(std::env::args().skip(1));
 
     let args_str = rustc_args

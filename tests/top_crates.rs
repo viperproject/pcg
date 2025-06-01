@@ -23,6 +23,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
     let top_crates: Vec<_> = Crates::top(n, date).to_vec();
     top_crates
         .into_par_iter()
+        .skip(64)
         .panic_fuse()
         .enumerate()
         .for_each(|(i, krate)| {

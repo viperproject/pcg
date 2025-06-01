@@ -269,6 +269,9 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
                         if let Some(PCGNode::RegionProjection(local_rp)) =
                             rp.try_to_local_node(ctxt)
                         {
+                            if !local_rp.is_mutable(ctxt) {
+                                continue;
+                            }
                             // If the place is old, we can skip it but continue search up
                             if local_rp.base.is_old() {
                                 queue.push(ef.extend(local_rp.into()));
@@ -279,7 +282,7 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
 
                             let future_rp = rp.label_projection(RegionProjectionLabel::Placeholder);
 
-                            if future_rp == ef.connect().into() {
+                            if future_rp == ef.connect().into() /* || graph.contains(future_rp, ctxt) */ {
                                 // We saw, earlier, a version of the same lifetime projection at a different snapshot, lets skip for now
                                 // TODO: Verify that this is correct
                                 continue;

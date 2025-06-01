@@ -13,7 +13,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<punctuated::Pairs<'a, T, P> as std::iter::Iterator>::next"),
-            extra_env_vars: vec![("PCG_BORROWS_DEBUG_IMGCAT", "true")],
+            extra_env_vars: vec![],
         },
     );
 

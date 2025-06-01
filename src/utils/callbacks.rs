@@ -161,16 +161,20 @@ pub(crate) unsafe fn take_stored_body<'tcx>(
     })
 }
 
-fn should_check_body(_body: &Body<'_>) -> bool {
-    // body.basic_blocks.len() <= 6
-    true
+fn should_check_body(body: &Body<'_>) -> bool {
+    body.basic_blocks.len() <= 6
+    // true
+}
+
+fn is_primary_crate() -> bool {
+    std::env::var("CARGO_PRIMARY_PACKAGE").is_ok()
 }
 
 /// # Safety
 ///
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
 pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
-    if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
+    if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
         return;
