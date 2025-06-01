@@ -17,7 +17,7 @@ use crate::borrow_pcg::util::ExploreFrom;
 use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::validity_assert_acyclic;
+use crate::{pcg_validity_assert, validity_assert_acyclic};
 
 use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
@@ -121,7 +121,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.ctxt,
         );
 
+        self.pcg
+            .borrow
+            .graph
+            .render_debug_graph(self.ctxt, location, "future constructed from");
+
         future_subgraph.render_debug_graph(self.ctxt, location, "future_subgraph");
+
+        pcg_validity_assert!(
+            future_subgraph.frozen_graph().is_acyclic(self.ctxt),
+            "{:?}: Future subgraph is not acyclic",
+            self.ctxt.body().span
+        );
 
         let placeholder_targets = future_subgraph
             .roots(self.ctxt)
@@ -247,6 +258,10 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
                             .bc
                             .same_region(rp.region(ctxt), ef.connect().region(ctxt))
                         {
+                            continue;
+                        }
+
+                        if rp.is_placeholder() {
                             continue;
                         }
 

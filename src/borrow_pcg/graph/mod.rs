@@ -112,7 +112,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) {
         let conditions = self.edges.remove(&edge).unwrap();
         if edge.redirect(from, to, ctxt) {
-        self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
+            self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
         }
     }
 

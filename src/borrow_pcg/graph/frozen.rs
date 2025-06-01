@@ -10,7 +10,7 @@ use crate::{
     },
     pcg::PCGNode,
     rustc_interface::data_structures::fx::{FxHashMap, FxHashSet},
-    utils::CompilerCtxt,
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
 
 use super::BorrowsGraph;
@@ -100,6 +100,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 for edge in blocking_edges {
                     match self.clone().try_push(edge, ctxt) {
                         PushResult::Cycle => {
+                            tracing::info!("Cycle: {}", self.0.to_short_string(ctxt));
                             return true;
                         }
                         PushResult::ExtendPath(next_path) => {
@@ -113,8 +114,8 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             }
         }
 
-        for root in self.roots(ctxt).iter() {
-            for edge in self.get_edges_blocking(*root, ctxt) {
+        for node in self.nodes(ctxt).iter() {
+            for edge in self.get_edges_blocking(*node, ctxt) {
                 if Path::new(edge).leads_to_cycle(self, ctxt) {
                     return false;
                 }
@@ -126,7 +127,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
 
     pub fn nodes<'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
         {
             let nodes = self.nodes_cache.borrow();
@@ -134,7 +135,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 return Ref::map(nodes, |o| o.as_ref().unwrap());
             }
         }
-        let nodes = self.graph.nodes(repacker);
+        let nodes = self.graph.nodes(ctxt);
         self.nodes_cache.replace(Some(nodes));
         Ref::map(self.nodes_cache.borrow(), |o| o.as_ref().unwrap())
     }

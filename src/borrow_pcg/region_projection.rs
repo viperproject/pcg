@@ -239,6 +239,12 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     phantom: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx, P> RegionProjection<'tcx, P> {
+    pub(crate) fn is_placeholder(&self) -> bool {
+        self.label == Some(RegionProjectionLabel::Placeholder)
+    }
+}
+
 impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> {
     fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
         RegionProjection {
