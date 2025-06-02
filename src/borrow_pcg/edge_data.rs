@@ -140,13 +140,10 @@ macro_rules! edgedata_enum {
         }
 
         impl<$tcx> HasValidityCheck<$tcx> for $enum_name<$tcx> {
-            fn check_validity<C: Copy>(
-                &self,
-                repacker: CompilerCtxt<'_, 'tcx, C>,
-            ) -> Result<(), String> {
+            fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.check_validity(repacker),
+                        $enum_name::$variant_name(inner) => inner.check_validity(ctxt),
                     )+
                 }
             }

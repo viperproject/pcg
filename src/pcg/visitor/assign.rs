@@ -44,13 +44,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         .iter()
                         .enumerate()
                     {
-                        let source_proj = source_proj.with_base(
-                            MaybeOldPlace::new(
-                                source_proj.base,
-                                Some(self.pcg.borrow.get_latest(source_proj.base)),
-                            ),
-                            self.ctxt,
-                        );
+                        let source_proj = source_proj.with_base(MaybeOldPlace::new(
+                            source_proj.base,
+                            Some(self.pcg.borrow.get_latest(source_proj.base)),
+                        ));
                         self.connect_outliving_projections(source_proj, target, location, |_| {
                             BorrowFlowEdgeKind::Aggregate {
                                 field_idx,

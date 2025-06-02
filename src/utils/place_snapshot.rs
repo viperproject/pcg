@@ -85,8 +85,8 @@ impl<'tcx> LocalNodeLike<'tcx> for PlaceSnapshot<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.place.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.place.check_validity(ctxt)
     }
 }
 

@@ -86,10 +86,10 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for M
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for MaybeRedirected<T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.original.check_validity(repacker)?;
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.original.check_validity(ctxt)?;
         if let Some(r) = &self.redirected {
-            r.check_validity(repacker)?;
+            r.check_validity(ctxt)?;
         }
         Ok(())
     }

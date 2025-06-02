@@ -117,8 +117,8 @@ impl<'tcx, 'graph> BorrowPcgEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
 }
 
 impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.kind().check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.kind().check_validity(ctxt)
     }
 }
 
@@ -259,7 +259,7 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -339,10 +339,7 @@ impl<'tcx> PCGNode<'tcx> {
         self.as_local_node(repacker)
     }
 
-    pub(crate) fn as_local_node<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<LocalNode<'tcx>> {
+    pub(crate) fn as_local_node(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
@@ -350,7 +347,7 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
             PCGNode::RegionProjection(rp) => {
                 let place = rp.place().as_local_place()?;
-                Some(LocalNode::RegionProjection(rp.with_base(place, repacker)))
+                Some(LocalNode::RegionProjection(rp.with_base(place)))
             }
         }
     }

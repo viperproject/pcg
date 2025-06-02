@@ -73,10 +73,10 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         match self {
-            MaybeOldPlace::Current { place } => place.check_validity(repacker),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.check_validity(repacker),
+            MaybeOldPlace::Current { place } => place.check_validity(ctxt),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.check_validity(ctxt),
         }
     }
 }
@@ -231,7 +231,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.place()
             .base_region_projection(repacker)
-            .map(|rp| rp.with_base(*self, repacker))
+            .map(|rp| rp.with_base(*self))
     }
 
     pub(crate) fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {

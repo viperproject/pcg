@@ -9,6 +9,7 @@ use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::validity::HasValidityCheck;
 use crate::validity_assert_acyclic;
 
 use crate::action::PcgActions;
@@ -130,6 +131,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
+        self.pcg.assert_validity(self.ctxt);
         validity_assert_acyclic(self.pcg, location, self.ctxt);
         self.super_terminator_fallable(terminator, location)?;
         if self.phase == EvalStmtPhase::PostMain

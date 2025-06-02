@@ -26,6 +26,7 @@ use super::{
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
+    region_projection::RegionProjection,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
@@ -48,7 +49,22 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    fn check_validity<C: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        let nodes = self.nodes(ctxt);
+        for node in nodes.iter() {
+            if let PCGNode::RegionProjection(rp) = node
+                && rp.is_placeholder()
+            {
+                if nodes
+                    .iter()
+                    .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label.is_none())) {
+                        return Err(format!(
+                            "Placeholder region projection {} is not unique",
+                            rp.to_short_string(ctxt)
+                        ));
+                    }
+            }
+        }
         Ok(())
     }
 }
@@ -322,10 +338,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn roots<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    pub(crate) fn roots(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         let roots: FxHashSet<PCGNode<'tcx>> = self
             .nodes(repacker)
             .into_iter()
@@ -345,15 +358,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .any(|edge| edge.blocks_node(blocked_node, repacker))
     }
 
-    pub(crate) fn is_root<T: Into<PCGNode<'tcx>>, C: Copy>(
+    pub(crate) fn is_root<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        match node.into().as_local_node(repacker) {
+        match node.into().as_local_node(ctxt) {
             Some(node) => match node {
-                PCGNode::Place(place) if place.is_owned(repacker) => true,
-                _ => !self.has_edge_blocked_by(node, repacker),
+                PCGNode::Place(place) if place.is_owned(ctxt) => true,
+                _ => !self.has_edge_blocked_by(node, ctxt),
             },
             None => true,
         }

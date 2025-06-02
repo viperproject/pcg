@@ -16,6 +16,7 @@ use std::{
 use crate::{
     action::PcgActions,
     borrow_pcg::state::BorrowsState,
+    borrows_imgcat_debug,
     pcg::triple::Triple,
     rustc_interface::{
         middle::mir::{self, BasicBlock},
@@ -29,11 +30,12 @@ use crate::{
         validity::HasValidityCheck,
         CompilerCtxt,
     },
+    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
     AnalysisEngine, DebugLines, RECORD_PCG,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
-use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::generate_dot_graph};
+use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::write_pcg_dot_graph_to_file};
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -115,15 +117,30 @@ pub struct Pcg<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> std::result::Result<(), String> {
-        self.borrow.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
+        self.borrow.check_validity(ctxt)
     }
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
+    pub(crate) fn is_acyclic(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> bool {
+        self.borrow.graph().frozen_graph().is_acyclic(ctxt)
+    }
+
+    pub(crate) fn render_debug_graph(
+        &self,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+        location: mir::Location,
+        comment: &str,
+    ) {
+        if borrows_imgcat_debug() {
+            let dot_graph = generate_pcg_dot_graph(self, ctxt, location).unwrap();
+            DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
+                eprintln!("Error rendering self graph: {e}");
+            });
+        }
+    }
+
     pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {
         &self.capabilities
     }
@@ -483,11 +500,9 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
                 _ => self.pcg(DomainDataIndex::Initial),
             };
 
-            generate_dot_graph(
+            write_pcg_dot_graph_to_file(
+                pcg,
                 self.ctxt,
-                pcg.owned.data.as_ref().unwrap(),
-                &pcg.borrow,
-                &pcg.capabilities,
                 mir::Location {
                     block: self.block(),
                     statement_index,

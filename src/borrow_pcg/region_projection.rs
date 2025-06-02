@@ -170,9 +170,9 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.check_validity(repacker),
+            MaybeRemoteRegionProjectionBase::Place(p) => p.check_validity(ctxt),
             MaybeRemoteRegionProjectionBase::Const(_) => todo!(),
         }
     }
@@ -213,8 +213,8 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjection<'tcx, T> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
-        self.with_base(self.base.to_maybe_remote_region_projection_base(), repacker)
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+        self.with_base(self.base.to_maybe_remote_region_projection_base())
             .into()
     }
 }
@@ -429,10 +429,8 @@ impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, Place<'tcx>> {
-    fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
-        LocalNode::RegionProjection(
-            self.with_base(MaybeOldPlace::Current { place: self.base }, repacker),
-        )
+    fn to_local_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
+        LocalNode::RegionProjection(self.with_base(MaybeOldPlace::Current { place: self.base }))
     }
 }
 
@@ -597,21 +595,20 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
 
     fn iter_projections<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> Vec<(Self, PlaceElem<'tcx>)> {
-        self.assert_validity(repacker);
         self.base
-            .iter_projections(repacker)
+            .iter_projections(ctxt)
             .into_iter()
             .map(move |(base, elem)| {
                 (
-                    RegionProjection::new(self.region(repacker), base, self.label, repacker)
+                    RegionProjection::new(self.region(ctxt), base, self.label, ctxt)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "Error iter projections for {:?}: {:?}. Place ty: {:?}",
                                 self,
                                 e,
-                                base.place().ty(repacker),
+                                base.place().ty(ctxt),
                             );
                         }),
                     elem,
@@ -622,8 +619,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionProjection<'tcx, T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        let num_regions = self.base.regions(repacker);
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        let num_regions = self.base.regions(ctxt);
         if self.region_idx.index() >= num_regions.len() {
             Err(format!(
                 "Region index {} is out of bounds for place {:?}",
@@ -662,9 +659,6 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
             label,
             phantom: PhantomData,
         };
-        if validity_checks_enabled() {
-            result.assert_validity(repacker);
-        }
         Ok(result)
     }
 
@@ -689,10 +683,9 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         &mut self.base
     }
 
-    pub(crate) fn with_base<U: RegionProjectionBaseLike<'tcx>, C: Copy>(
+    pub(crate) fn with_base<U: RegionProjectionBaseLike<'tcx>>(
         self,
         base: U,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> RegionProjection<'tcx, U> {
         let result = RegionProjection {
             base,
@@ -700,7 +693,6 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
             label: self.label,
             phantom: PhantomData,
         };
-        result.assert_validity(repacker);
         result
     }
 }
@@ -720,8 +712,8 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
 pub(crate) type LocalRegionProjection<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LocalRegionProjection<'tcx> {
-    pub fn to_region_projection(&self, repacker: CompilerCtxt<'_, 'tcx>) -> RegionProjection<'tcx> {
-        self.with_base(self.base.into(), repacker)
+    pub fn to_region_projection(&self) -> RegionProjection<'tcx> {
+        self.with_base(self.base.into())
     }
 }
 
@@ -730,14 +722,11 @@ impl<'tcx> RegionProjection<'tcx> {
         self.base.as_local_place().map(|p| p.local())
     }
 
-    fn as_local_region_projection(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+    fn as_local_region_projection(&self) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
         match self.base {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 match maybe_remote_place {
-                    MaybeRemotePlace::Local(local) => Some(self.with_base(local, repacker)),
+                    MaybeRemotePlace::Local(local) => Some(self.with_base(local)),
                     _ => None,
                 }
             }
@@ -747,9 +736,9 @@ impl<'tcx> RegionProjection<'tcx> {
 
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
     /// this returns `*x`. Otherwise, it returns `None`.
-    pub fn deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        self.as_local_region_projection(repacker)
-            .and_then(|rp| rp.deref(repacker))
+    pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+        self.as_local_region_projection()
+            .and_then(|rp| rp.deref(ctxt))
     }
 }
 

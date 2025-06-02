@@ -52,10 +52,7 @@ impl<T: Clone, A: Allocator + Clone> DomainDataStates<ArenaRef<T, A>> {
     }
 }
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for DomainDataStates<T> {
-    fn check_validity<C: Copy>(
-        &self,
-        ctxt: super::CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<(), String> {
+    fn check_validity(&self, ctxt: super::CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.0.check_validity(ctxt)
     }
 }

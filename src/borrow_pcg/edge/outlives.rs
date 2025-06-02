@@ -98,9 +98,9 @@ impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.long.check_validity(repacker)?;
-        self.short.check_validity(repacker)?;
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.long.check_validity(ctxt)?;
+        self.short.check_validity(ctxt)?;
         Ok(())
     }
 }

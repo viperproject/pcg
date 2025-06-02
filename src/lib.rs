@@ -31,7 +31,10 @@ use pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
-    middle::{mir::{self, Body}, ty::TyCtxt},
+    middle::{
+        mir::{self, Body},
+        ty::TyCtxt,
+    },
 };
 use serde_json::json;
 use utils::{
@@ -345,10 +348,10 @@ pub(crate) fn validity_assert_acyclic<'tcx>(
     ctxt: CompilerCtxt<'_, 'tcx>,
 ) {
     if validity_checks_enabled() {
-        let acyclic = pcg.borrow.graph().frozen_graph().is_acyclic(ctxt);
+        let acyclic = pcg.is_acyclic(ctxt);
         if !acyclic {
             if borrows_imgcat_debug() {
-                pcg.borrow.graph().render_debug_graph(ctxt, location, "Acyclic borrow graph");
+                pcg.render_debug_graph(ctxt, location, "Acyclic borrow graph");
             }
             panic!("Borrow graph is not acyclic");
         }

@@ -17,7 +17,7 @@ mod node;
 use crate::{
     borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph, state::BorrowsState},
     free_pcs::{CapabilityKind, CapabilityLocals},
-    pcg::place_capabilities::PlaceCapabilities,
+    pcg::{place_capabilities::PlaceCapabilities, Pcg},
     rustc_interface::middle::mir::Location,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
@@ -358,16 +358,27 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
     Ok(String::from_utf8(buf).unwrap())
 }
 
-pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a, 'bc>(
-    repacker: CompilerCtxt<'a, 'tcx>,
-    summary: &'pcg CapabilityLocals<'tcx>,
-    borrows_domain: &'pcg BorrowsState<'tcx>,
-    capabilities: &'pcg PlaceCapabilities<'tcx>,
+pub(crate) fn generate_pcg_dot_graph<'a, 'tcx: 'a>(
+    pcg: &Pcg<'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
+    location: Location,
+) -> io::Result<String> {
+    let constructor = PcgGraphConstructor::new(pcg, ctxt, location);
+    let graph = constructor.construct_graph();
+    let mut buf = vec![];
+    let drawer = GraphDrawer::new(&mut buf);
+    drawer.draw(graph)?;
+    Ok(String::from_utf8(buf).unwrap())
+}
+
+pub(crate) fn write_pcg_dot_graph_to_file<'a, 'tcx: 'a>(
+    pcg: &Pcg<'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
     location: Location,
     file_path: &str,
 ) -> io::Result<()> {
     let constructor =
-        PcgGraphConstructor::new(summary, repacker, borrows_domain, capabilities, location);
+        PcgGraphConstructor::new(pcg, ctxt, location);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {file_path}: {e}");

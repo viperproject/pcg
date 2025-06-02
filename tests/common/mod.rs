@@ -94,7 +94,7 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
 
     assert!(
         exit.success(),
-        "PCS check failed for directory {} with status: {}",
+        "PCG check failed for directory {} with status: {}",
         dir.display(),
         exit
     );

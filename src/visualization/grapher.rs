@@ -94,7 +94,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                 let borrowed_place = self.insert_maybe_remote_place(borrow.blocked_place());
                 let assigned_region_projection = borrow
                     .assigned_region_projection(self.ctxt())
-                    .to_region_projection(self.ctxt());
+                    .to_region_projection();
                 let assigned_rp_node = self
                     .constructor()
                     .insert_region_projection_node(assigned_region_projection);

@@ -55,9 +55,9 @@ impl<T: Copy + Eq> Coupled<T> {
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         for t in self.0.iter() {
-            t.check_validity(repacker)?;
+            t.check_validity(ctxt)?;
         }
         Ok(())
     }

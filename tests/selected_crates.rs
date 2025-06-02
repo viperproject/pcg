@@ -6,6 +6,18 @@ fn test_selected_crates() {
     std::fs::create_dir_all("tmp").unwrap();
 
     common::run_on_crate(
+        "encoding_rs",
+        "0.8.35",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
         "syn",
         "2.0.100",
         Some("2025-03-13"),

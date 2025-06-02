@@ -98,8 +98,8 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.edge.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.edge.check_validity(ctxt)
     }
 }
 
@@ -231,8 +231,8 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.edge.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.edge.check_validity(ctxt)
     }
 }
 
@@ -372,7 +372,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
             PCGNode::Place(p) => inputs.contains(&p.into()),
             PCGNode::RegionProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
-                    inputs.contains(&region_projection.with_base(maybe_remote_place, ctxt).into())
+                    inputs.contains(&region_projection.with_base(maybe_remote_place).into())
                 }
                 MaybeRemoteRegionProjectionBase::Const(_) => false,
             },
@@ -394,7 +394,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
             PCGNode::Place(_) => false,
             PCGNode::RegionProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(MaybeRemotePlace::Local(rp)) => {
-                    inputs.contains(&region_projection.with_base(rp, ctxt))
+                    inputs.contains(&region_projection.with_base(rp))
                 }
                 _ => false,
             },
@@ -476,12 +476,12 @@ impl<'tcx, Input: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx>
 impl<'tcx, Input: HasValidityCheck<'tcx>> HasValidityCheck<'tcx>
     for AbstractionBlockEdge<'tcx, Input>
 {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         for input in self.inputs.iter() {
-            input.check_validity(repacker)?;
+            input.check_validity(ctxt)?;
         }
         for output in self.outputs.iter() {
-            output.check_validity(repacker)?;
+            output.check_validity(ctxt)?;
         }
         Ok(())
     }

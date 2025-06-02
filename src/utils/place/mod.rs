@@ -127,10 +127,7 @@ impl<'tcx> From<Place<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
-    fn check_validity<C: Copy>(
-        &self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> std::result::Result<(), std::string::String> {
+    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), std::string::String> {
         Ok(())
     }
 }

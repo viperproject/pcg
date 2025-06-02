@@ -66,7 +66,7 @@ pub enum PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -234,7 +234,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgExpansion<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }

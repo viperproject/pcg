@@ -6,7 +6,7 @@ use crate::{
         state::BorrowsState,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
+    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation, Pcg},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
         display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
@@ -178,15 +178,13 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
 
         for output in abstraction.outputs() {
-            let output = output.with_base(output.base.into(), self.ctxt);
+            let output = output.with_base(output.base.into());
             let output = self.insert_region_projection_node(output);
             output_nodes.push(output);
         }
 
         let label = match abstraction {
-            AbstractionType::FunctionCall(fc) => {
-                fc.to_short_string(self.ctxt)
-            }
+            AbstractionType::FunctionCall(fc) => fc.to_short_string(self.ctxt),
             AbstractionType::Loop(loop_abstraction) => {
                 format!("loop at {:?}", loop_abstraction.location())
             }
@@ -379,16 +377,14 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> Grapher<'graph, 'mir, 'tcx>
 
 impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     pub fn new(
-        summary: &'pcg CapabilityLocals<'tcx>,
+        pcg: &'pcg Pcg<'tcx>,
         repacker: CompilerCtxt<'a, 'tcx>,
-        borrows_domain: &'pcg BorrowsState<'tcx>,
-        capabilities: &'pcg PlaceCapabilities<'tcx>,
         location: mir::Location,
     ) -> Self {
         Self {
-            summary,
-            borrows_domain,
-            capabilities,
+            summary: pcg.owned.locals(),
+            borrows_domain: &pcg.borrow,
+            capabilities: &pcg.capabilities,
             constructor: GraphConstructor::new(repacker, location),
             repacker,
         }
@@ -473,8 +469,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        utils::test::run_pcg_on_str,
-        visualization::graph_constructor::PcgGraphConstructor,
+        utils::test::run_pcg_on_str, visualization::graph_constructor::PcgGraphConstructor,
     };
 
     // 26_ref_in_struct.rs
@@ -499,14 +494,7 @@ fn main() {
             let ctxt = analysis.ctxt();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
-            let graph = PcgGraphConstructor::new(
-                pcg.owned.locals(),
-                ctxt,
-                &pcg.borrow,
-                &pcg.capabilities,
-                stmt.location,
-            )
-            .construct_graph();
+            let graph = PcgGraphConstructor::new(pcg, ctxt, stmt.location).construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }

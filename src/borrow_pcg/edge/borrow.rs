@@ -160,8 +160,8 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.assigned_ref.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.assigned_ref.check_validity(ctxt)
     }
 }
 
@@ -284,9 +284,9 @@ impl<'tcx> BorrowEdge<'tcx> {
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.blocked_place.check_validity(repacker)?;
-        self.assigned_ref.check_validity(repacker)?;
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.blocked_place.check_validity(ctxt)?;
+        self.assigned_ref.check_validity(ctxt)?;
         Ok(())
     }
 }

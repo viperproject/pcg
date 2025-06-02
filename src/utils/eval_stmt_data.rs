@@ -47,11 +47,11 @@ impl<T: Default> Default for EvalStmtData<T> {
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.pre_operands.check_validity(repacker)?;
-        self.post_operands.check_validity(repacker)?;
-        self.pre_main.check_validity(repacker)?;
-        self.post_main.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.pre_operands.check_validity(ctxt)?;
+        self.post_operands.check_validity(ctxt)?;
+        self.pre_main.check_validity(ctxt)?;
+        self.post_main.check_validity(ctxt)
     }
 }
 impl<T> EvalStmtData<T> {

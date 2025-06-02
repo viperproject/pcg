@@ -296,9 +296,9 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         // TODO
-        self.states.check_validity(repacker)
+        self.states.check_validity(ctxt)
     }
 }
 

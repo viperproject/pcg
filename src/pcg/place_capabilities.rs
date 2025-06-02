@@ -34,8 +34,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         &'slf mut self,
         local: mir::Local,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = (Place<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir>
-    {
+    ) -> impl Iterator<Item = (Place<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir> {
         self.0.iter_mut().filter_map(move |(place, capability)| {
             if place.local == local && place.is_owned(ctxt) {
                 Some((*place, capability))
@@ -46,11 +45,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    pub(crate) fn insert(
-        &mut self,
-        place: Place<'tcx>,
-        capability: CapabilityKind,
-    ) -> bool {
+    pub(crate) fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool {
         self.0.insert(place, capability) != Some(capability)
     }
 

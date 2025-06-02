@@ -122,8 +122,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         );
 
         self.pcg
-            .borrow
-            .graph
             .render_debug_graph(self.ctxt, location, "future constructed from");
 
         future_subgraph.render_debug_graph(self.ctxt, location, "future_subgraph");
@@ -216,8 +214,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
         self.pcg
-            .borrow
-            .graph
             .render_debug_graph(self.ctxt, location, "final borrow_graph");
         Ok(())
     }
@@ -300,8 +296,7 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
 
                             let future_rp = rp.label_projection(RegionProjectionLabel::Placeholder);
 
-                            if future_rp == ef.connect().into() || graph.contains(future_rp, ctxt)
-                            {
+                            if future_rp == ef.connect().into() || graph.contains(future_rp, ctxt) {
                                 // We saw, earlier, a version of the same lifetime projection at a different snapshot, lets skip for now
                                 // TODO: Verify that this is correct
                                 continue;

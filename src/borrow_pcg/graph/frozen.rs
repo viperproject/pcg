@@ -140,9 +140,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.nodes_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub fn roots<'slf, 'bc: 'graph, C: Copy>(
+    pub fn roots<'slf, 'bc: 'graph>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
         {
             let roots = self.roots_cache.borrow();
@@ -150,7 +150,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 return Ref::map(roots, |o| o.as_ref().unwrap());
             }
         }
-        let roots = self.graph.roots(repacker);
+        let roots = self.graph.roots(ctxt);
         self.roots_cache.replace(Some(roots));
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }

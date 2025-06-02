@@ -109,10 +109,10 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> PCGNodeLike<
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         match self {
-            PCGNode::Place(p) => p.check_validity(repacker),
-            PCGNode::RegionProjection(rp) => rp.check_validity(repacker),
+            PCGNode::Place(p) => p.check_validity(ctxt),
+            PCGNode::RegionProjection(rp) => rp.check_validity(ctxt),
         }
     }
 }
@@ -179,7 +179,7 @@ pub trait PCGNodeLike<'tcx>:
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
                         MaybeRemotePlace::Local(maybe_old_place) => Some(
-                            rp.with_base(maybe_old_place, repacker)
+                            rp.with_base(maybe_old_place)
                                 .to_local_node(repacker),
                         ),
                         MaybeRemotePlace::Remote(_) => None,
