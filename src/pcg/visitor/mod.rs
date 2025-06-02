@@ -7,8 +7,9 @@ use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
-use crate::validity_assert_acyclic;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::validity_assert_acyclic;
 
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -247,7 +248,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .filter(|node| !fg.has_edge_blocking(*node, self.ctxt))
             .collect::<Vec<_>>();
         for node in to_restore {
-            if let Some(place) = node.as_maybe_old_place() {
+            if let Some(place) = node.as_current_place() {
                 let blocked_cap = self.pcg.capabilities.get(place);
 
                 let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
@@ -389,6 +390,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 Some(borrow) => borrow,
                 None => continue,
             };
+            tracing::debug!(
+                "activate twophase borrow: {}",
+                borrow.to_short_string(self.ctxt)
+            );
             let blocked_place = borrow.blocked_place.place();
             if self
                 .pcg

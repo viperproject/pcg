@@ -248,12 +248,12 @@ impl<'tcx, P> RegionProjection<'tcx, P> {
 impl<'tcx> LocalRegionProjection<'tcx> {
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         let place = self.base.place();
-        place
-            .ty(ctxt)
-            .ty
-            .ref_mutability()
-            .is_none_or(|mutability| mutability.is_not())
-            && !place.projects_shared_ref(ctxt)
+        place.iter_places(ctxt).iter().all(|p| {
+            p.ty(ctxt)
+                .ty
+                .ref_mutability()
+                .is_none_or(|mutability| mutability.is_mut())
+        })
     }
 }
 

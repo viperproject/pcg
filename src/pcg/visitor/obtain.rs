@@ -30,9 +30,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         mut current: Place<'tcx>,
     ) -> Result<(), PcgError> {
-        while !current.is_owned(self.ctxt)
-            && self.pcg.capabilities.get(current.into()) == Some(CapabilityKind::Read)
-        {
+        while self.pcg.capabilities.get(current.into()) == Some(CapabilityKind::Read) {
             self.record_and_apply_action(
                 BorrowPCGAction::weaken(current, CapabilityKind::Read, None).into(),
             )?;
@@ -189,7 +187,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             )
                             .into(),
                         )?;
-                        if rp.is_nested_under_mut_ref(self.ctxt) && for_exclusive {
+                        if rp.is_mutable(self.ctxt) && for_exclusive {
                             self.pcg.borrow.label_region_projection(
                                 &rp,
                                 Some(SnapshotLocation::before(location).into()),

@@ -322,7 +322,7 @@ struct PCGCapabilityGetter<'a, 'tcx> {
 }
 
 impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
-    fn get(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
         self.capabilities.get(place)
     }
 }
@@ -330,7 +330,7 @@ impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
 struct NullCapabilityGetter;
 
 impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
-    fn get(&self, _: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+    fn get(&self, _: Place<'tcx>) -> Option<CapabilityKind> {
         None
     }
 }

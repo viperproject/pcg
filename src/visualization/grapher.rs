@@ -10,14 +10,14 @@ use crate::{
     rustc_interface::middle::mir,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
-        CompilerCtxt, HasPlace,
+        CompilerCtxt, HasPlace, Place,
     },
 };
 
 use super::{graph_constructor::GraphConstructor, GraphEdge, NodeId};
 
 pub(super) trait CapabilityGetter<'tcx> {
-    fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind>;
+    fn get(&self, node: Place<'tcx>) -> Option<CapabilityKind>;
 }
 
 pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {

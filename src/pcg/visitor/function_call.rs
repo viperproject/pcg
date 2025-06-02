@@ -134,6 +134,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.ctxt.body().span
         );
 
+        for node in future_subgraph.nodes(self.ctxt) {
+            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt)
+                && rp.is_placeholder()
+            {
+                let base_node: LocalRegionProjection<'tcx> =
+                    RegionProjection::new(rp.region(self.ctxt), rp.base, None, self.ctxt).unwrap();
+                self.pcg.borrow.label_region_projection(
+                    &base_node,
+                    Some(SnapshotLocation::before(location).into()),
+                    self.ctxt,
+                );
+            }
+        }
+
         let placeholder_targets = future_subgraph
             .roots(self.ctxt)
             .into_iter()
@@ -270,6 +284,10 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
                             rp.try_to_local_node(ctxt)
                         {
                             if !local_rp.is_mutable(ctxt) {
+                                tracing::info!(
+                                    "Skipping non-mutable region projection {}",
+                                    rp.to_short_string(ctxt)
+                                );
                                 continue;
                             }
                             // If the place is old, we can skip it but continue search up
@@ -282,7 +300,8 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
 
                             let future_rp = rp.label_projection(RegionProjectionLabel::Placeholder);
 
-                            if future_rp == ef.connect().into() /* || graph.contains(future_rp, ctxt) */ {
+                            if future_rp == ef.connect().into() || graph.contains(future_rp, ctxt)
+                            {
                                 // We saw, earlier, a version of the same lifetime projection at a different snapshot, lets skip for now
                                 // TODO: Verify that this is correct
                                 continue;

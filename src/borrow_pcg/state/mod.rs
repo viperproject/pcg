@@ -243,7 +243,7 @@ impl<'tcx> BorrowsState<'tcx> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(
         &mut self,
-        blocked_place: MaybeOldPlace<'tcx>,
+        blocked_place: Place<'tcx>,
         assigned_place: Place<'tcx>,
         kind: BorrowKind,
         location: Location,
@@ -260,7 +260,7 @@ impl<'tcx> BorrowsState<'tcx> {
             assigned_place.ty(ctxt).ty
         );
         let borrow_edge = LocalBorrow::new(
-            blocked_place,
+            blocked_place.into(),
             assigned_place.into(),
             kind,
             location,

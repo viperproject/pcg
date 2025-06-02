@@ -9,7 +9,6 @@ use crate::pcg::PcgError;
 use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
@@ -57,7 +56,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     }
 
     pub(crate) fn restore_capability(
-        place: MaybeOldPlace<'tcx>,
+        place: Place<'tcx>,
         capability: CapabilityKind,
     ) -> Self {
         BorrowPCGAction {
@@ -192,7 +191,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPcgActionKind::Restore(restore) => {
-                let restore_place: MaybeOldPlace<'tcx> = restore.place();
+                let restore_place = restore.place();
                 if let Some(cap) = capabilities.get(restore_place) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
@@ -202,7 +201,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 true
             }
             BorrowPcgActionKind::Weaken(weaken) => {
-                let weaken_place: MaybeOldPlace<'tcx> = weaken.place().into();
+                let weaken_place = weaken.place();
                 assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
                 match weaken.to {
                     Some(to) => assert!(capabilities.insert(weaken_place, to)),

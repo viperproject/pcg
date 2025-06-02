@@ -14,7 +14,7 @@ use crate::{
         place_capabilities::PlaceCapabilities,
         PcgError,
     },
-    utils::{corrected::CorrectedPlace, maybe_old::MaybeOldPlace, CompilerCtxt},
+    utils::{corrected::CorrectedPlace, CompilerCtxt},
 };
 
 impl<'tcx> CapabilityLocals<'tcx> {
@@ -57,10 +57,8 @@ impl<'tcx> CapabilityLocal<'tcx> {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
-                for (p, k) in place_capabilities.owned_capabilities(local, repacker) {
-                    if let MaybeOldPlace::Current { place } = p
-                        && *k > CapabilityKind::Write
-                    {
+                for (place, k) in place_capabilities.owned_capabilities(local, repacker) {
+                    if *k > CapabilityKind::Write {
                         repacks.push(RepackOp::Weaken(place, *k, CapabilityKind::Write));
                         *k = CapabilityKind::Write;
                     }

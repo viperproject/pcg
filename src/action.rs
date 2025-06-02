@@ -7,7 +7,7 @@ use crate::{
     },
     free_pcs::{CapabilityKind, RepackOp},
     utils::{
-        json::ToJsonWithCompilerCtxt, maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace,
+        json::ToJsonWithCompilerCtxt, CompilerCtxt, Place,
     },
     RestoreCapability,
 };
@@ -87,12 +87,12 @@ pub enum PcgAction<'tcx> {
 
 impl<'tcx> PcgAction<'tcx> {
     pub(crate) fn restore_capability(
-        place: MaybeOldPlace<'tcx>,
+        place: Place<'tcx>,
         capability: CapabilityKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         if place.is_owned(ctxt) {
-            PcgAction::Owned(RepackOp::RegainLoanedCapability(place.place(), capability))
+            PcgAction::Owned(RepackOp::RegainLoanedCapability(place, capability))
         } else {
             PcgAction::Borrow(
                 BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability))

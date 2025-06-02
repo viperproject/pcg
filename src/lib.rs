@@ -36,7 +36,6 @@ use rustc_interface::{
 use serde_json::json;
 use utils::{
     display::{DebugLines, DisplayWithCompilerCtxt},
-    maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
     CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
 };
@@ -102,7 +101,7 @@ impl<'tcx> Weaken<'tcx> {
 /// a lent exclusive capability should be restored to an exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RestoreCapability<'tcx> {
-    place: MaybeOldPlace<'tcx>,
+    place: Place<'tcx>,
     capability: CapabilityKind,
 }
 
@@ -123,11 +122,11 @@ impl<'tcx> RestoreCapability<'tcx> {
         )
     }
 
-    pub(crate) fn new(place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> Self {
+    pub(crate) fn new(place: Place<'tcx>, capability: CapabilityKind) -> Self {
         Self { place, capability }
     }
 
-    pub fn place(&self) -> MaybeOldPlace<'tcx> {
+    pub fn place(&self) -> Place<'tcx> {
         self.place
     }
 
