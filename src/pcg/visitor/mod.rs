@@ -9,7 +9,6 @@ use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::validity::HasValidityCheck;
 
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;

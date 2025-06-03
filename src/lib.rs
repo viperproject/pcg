@@ -27,7 +27,7 @@ use action::PcgActions;
 use borrow_checker::BorrowCheckerInterface;
 use borrow_pcg::{graph::borrows_imgcat_debug, latest::Latest};
 use free_pcs::{CapabilityKind, PcgLocation};
-use pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgSuccessor};
+use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},

@@ -15,9 +15,9 @@ pub mod mir_graph;
 mod node;
 
 use crate::{
-    borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph, state::BorrowsState},
-    free_pcs::{CapabilityKind, CapabilityLocals},
-    pcg::{place_capabilities::PlaceCapabilities, Pcg},
+    borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph},
+    free_pcs::CapabilityKind,
+    pcg::Pcg,
     rustc_interface::middle::mir::Location,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };

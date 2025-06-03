@@ -15,7 +15,6 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{CompilerCtxt, SnapshotLocation};
-use crate::validity_checks_enabled;
 use crate::{
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{

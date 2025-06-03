@@ -366,7 +366,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
     fn inputs_block<C: Copy>(
         inputs: &[Self],
         node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        _ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node {
             PCGNode::Place(p) => inputs.contains(&p.into()),
@@ -388,7 +388,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn inputs_block<C: Copy>(
         inputs: &[Self],
         node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        _ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node {
             PCGNode::Place(_) => false,
