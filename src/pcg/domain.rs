@@ -30,6 +30,7 @@ use crate::{
         validity::HasValidityCheck,
         CompilerCtxt,
     },
+    validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
     AnalysisEngine, DebugLines, RECORD_PCG,
 };
@@ -116,9 +117,35 @@ pub struct Pcg<'tcx> {
     pub(crate) capabilities: PlaceCapabilities<'tcx>,
 }
 
+impl<'tcx> Pcg<'tcx> {
+    pub(crate) fn assert_validity_at_location(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+        location: mir::Location,
+    ) {
+        if validity_checks_enabled()
+            && let Err(err) = self.check_validity(ctxt)
+        {
+            if borrows_imgcat_debug() {
+                self.render_debug_graph(ctxt, location, "Validity check failed");
+            }
+            if validity_checks_warn_only() {
+                tracing::error!("Validity check failed: {}", err.to_string());
+            } else {
+                panic!("Validity check failed: {}", err.to_string());
+            }
+        }
+    }
+}
+
 impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
-        self.borrow.check_validity(ctxt)
+        self.borrow.check_validity(ctxt)?;
+        // TODO
+        if !self.is_acyclic(ctxt) {
+            return Err("PCG is not acyclic".to_string());
+        }
+        Ok(())
     }
 }
 

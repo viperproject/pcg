@@ -17,7 +17,7 @@ use crate::borrow_pcg::util::ExploreFrom;
 use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::{pcg_validity_assert, validity_assert_acyclic};
+use crate::pcg_validity_assert;
 
 use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
@@ -45,7 +45,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        validity_assert_acyclic(self.pcg, location, self.ctxt);
         // This is just a performance optimization
         if self
             .pcg
@@ -113,7 +112,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         //     })
         //     .collect::<FxHashSet<_>>();
 
-        validity_assert_acyclic(self.pcg, location, self.ctxt);
 
         let future_subgraph = get_future_subgraph(
             &labelled_rps,
@@ -253,7 +251,7 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
             .map(|rp| ExploreFrom::new(rp.to_local_node(ctxt), *rp))
             .collect();
     while let Some(ef) = queue.pop() {
-        let blocked_by = source_graph.get_edges_blocked_by(ef.current(), ctxt);
+        let blocked_by = source_graph.get_edges_blocked_by(ef.current(), ctxt).clone();
         for edge in blocked_by.iter() {
             for node in edge.blocked_nodes(ctxt) {
                 match node {
@@ -273,6 +271,14 @@ fn get_future_subgraph<'graph, 'mir: 'graph, 'tcx: 'mir>(
 
                         if rp.is_placeholder() {
                             continue;
+                        }
+
+                        if rp.label.is_some() {
+                            let mut unlabelled_rp = rp;
+                            unlabelled_rp.label = None;
+                            if source_graph.contains(unlabelled_rp.into(), ctxt) {
+                                continue;
+                            }
                         }
 
                         // Continue search if we haven't hit a root

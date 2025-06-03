@@ -122,7 +122,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
 
             if base.is_mut_ref(self.ctxt)
-                && base.contains_mutable_region_projections(self.ctxt)
+                // && base.contains_mutable_region_projections(self.ctxt)
                 && capability != CapabilityKind::Read
             {
                 let place: MaybeOldPlace<'tcx> = base.into();

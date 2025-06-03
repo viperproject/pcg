@@ -342,22 +342,6 @@ pub fn run_pcg<
     fpcs_analysis
 }
 
-pub(crate) fn validity_assert_acyclic<'tcx>(
-    pcg: &Pcg<'tcx>,
-    location: mir::Location,
-    ctxt: CompilerCtxt<'_, 'tcx>,
-) {
-    if validity_checks_enabled() {
-        let acyclic = pcg.is_acyclic(ctxt);
-        if !acyclic {
-            if borrows_imgcat_debug() {
-                pcg.render_debug_graph(ctxt, location, "Acyclic borrow graph");
-            }
-            panic!("Borrow graph is not acyclic");
-        }
-    }
-}
-
 #[macro_export]
 macro_rules! pcg_validity_assert {
     ($cond:expr) => {

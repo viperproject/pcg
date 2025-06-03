@@ -52,7 +52,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for node in other.nodes(ctxt) {
             if let PCGNode::RegionProjection(rp) = node
-                && matches!(rp.label, Some(RegionProjectionLabel::Placeholder))
+                && rp.is_placeholder()
                 && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
                 let mut orig_rp = local_rp;

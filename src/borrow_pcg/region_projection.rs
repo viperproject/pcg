@@ -700,9 +700,9 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
 impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
     /// this returns `*x`.
-    pub fn deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
-        if self.base.ty_region(repacker) == Some(self.region(repacker)) {
-            Some(self.base.project_deref(repacker))
+    pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+        if self.base.ty_region(ctxt) == Some(self.region(ctxt)) {
+            Some(self.base.project_deref(ctxt))
         } else {
             None
         }

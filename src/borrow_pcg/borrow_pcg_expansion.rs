@@ -173,30 +173,18 @@ pub struct BorrowPcgExpansion<'tcx, P = LocalNode<'tcx>> {
     _marker: PhantomData<&'tcx ()>,
 }
 
-impl<'tcx> BorrowPcgExpansion<'tcx> {
-    fn is_mutable_deref_of_place_with_nested_region_projections(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let place = self.base.place();
-        place.is_mut_ref(ctxt) && place.contains_mutable_region_projections(ctxt)
-    }
-}
-
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self
-            .base
-            .label_region_projection(projection, label, repacker);
+        let mut changed = self.base.label_region_projection(projection, label, ctxt);
         for p in &mut self.expansion {
-            changed |= p.label_region_projection(projection, label, repacker);
+            changed |= p.label_region_projection(projection, label, ctxt);
         }
-        if self.is_mutable_deref_of_place_with_nested_region_projections(repacker)
+        if self.base.place().is_mut_ref(ctxt)
             && projection.label == self.deref_blocked_region_projection_label
         {
             self.deref_blocked_region_projection_label = label;
@@ -319,6 +307,13 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
+    pub(crate) fn is_mutable_deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        if let BlockingNode::Place(p) = self.base {
+            p.place().is_mut_ref(ctxt)
+        } else {
+            false
+        }
+    }
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         if let BlockingNode::Place(p) = self.base {
             p.place().is_ref(repacker)
@@ -372,7 +367,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     {
         let deref_blocked_region_projection_label = if for_exclusive
             && base.place().is_mut_ref(ctxt)
-            && base.place().contains_mutable_region_projections(ctxt)
+        // && base.place().contains_mutable_region_projections(ctxt)
         {
             Some(location.into())
         } else {

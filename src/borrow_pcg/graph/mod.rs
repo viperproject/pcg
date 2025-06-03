@@ -26,7 +26,6 @@ use super::{
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
-    region_projection::RegionProjection,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;

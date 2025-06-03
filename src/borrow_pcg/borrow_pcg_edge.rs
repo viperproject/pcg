@@ -339,7 +339,7 @@ impl<'tcx> PCGNode<'tcx> {
         self.as_local_node(repacker)
     }
 
-    pub(crate) fn as_local_node(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
+    pub(crate) fn as_local_node(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))

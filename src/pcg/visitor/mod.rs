@@ -10,7 +10,6 @@ use crate::pcg::triple::TripleWalker;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
-use crate::validity_assert_acyclic;
 
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -18,7 +17,9 @@ use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, CompilerCtxt, HasPlace, Place};
 
-use super::{AnalysisObject, EvalStmtPhase, PCGUnsupportedError, Pcg, PcgError};
+use super::{
+    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, PCGUnsupportedError, Pcg, PcgError,
+};
 
 mod assign;
 mod function_call;
@@ -101,12 +102,15 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
 }
 
 impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
+    #[tracing::instrument(skip(self, location))]
     fn visit_statement_fallable(
         &mut self,
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.perform_statement_actions(statement, location)
+        self.perform_statement_actions(statement, location)?;
+        self.pcg.assert_validity_at_location(self.ctxt, location);
+        Ok(())
     }
 
     fn visit_operand_fallable(
@@ -131,8 +135,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.pcg.assert_validity(self.ctxt);
-        validity_assert_acyclic(self.pcg, location, self.ctxt);
+        self.pcg.assert_validity_at_location(self.ctxt, location);
         self.super_terminator_fallable(terminator, location)?;
         if self.phase == EvalStmtPhase::PostMain
             && let mir::TerminatorKind::Call {
@@ -219,7 +222,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.visit_terminator_fallable(terminator, location)?
             }
         }
-        validity_assert_acyclic(self.pcg, location, self.ctxt);
         Ok(self.actions)
     }
     #[tracing::instrument(skip(self, edge, location))]
@@ -270,17 +272,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
         for blocked_place in edge.blocked_places(self.ctxt) {
             if let MaybeRemotePlace::Local(place) = blocked_place {
-                for mut region_projection in place.region_projections(self.ctxt) {
-                    // Remove Placeholder label from the region projection
-                    region_projection.label = Some(RegionProjectionLabel::Placeholder);
-                    self.pcg
-                        .borrow
-                        .label_region_projection(&region_projection, None, self.ctxt);
-                }
+                self.remove_placeholder_labels(place);
             }
         }
 
         if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
+            if expansion.is_mutable_deref(self.ctxt) {
+                if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
+                    if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
+                        self.pcg
+                            .borrow
+                            .label_region_projection(&rp, None, self.ctxt);
+                    }
+                }
+            }
             for node in expansion.expansion() {
                 for to_redirect in self
                     .pcg
@@ -373,6 +378,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .capabilities
                             .insert((*base_place).into(), retained_cap);
                         capability_projections.expansions.remove(base_place);
+                        self.remove_placeholder_labels((*base_place).into());
                         true
                     }
                     _ => unreachable!(),
@@ -414,16 +420,41 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             for place in blocked_place.iter_places(self.ctxt) {
                 for rp in place.region_projections(self.ctxt).into_iter() {
-                    if rp.is_nested_under_mut_ref(self.ctxt) {
-                        self.pcg.borrow.label_region_projection(
-                            &rp.into(),
-                            Some(location.into()),
-                            self.ctxt,
-                        );
-                    }
+                    // if rp.is_nested_under_mut_ref(self.ctxt) {
+                    self.pcg.borrow.label_region_projection(
+                        &rp.into(),
+                        Some(location.into()),
+                        self.ctxt,
+                    );
+                    // }
+                }
+            }
+        }
+        let leaf_nodes = self
+            .pcg
+            .borrow
+            .graph()
+            .frozen_graph()
+            .leaf_nodes(self.ctxt)
+            .collect::<Vec<_>>();
+        for node in leaf_nodes {
+            if let PCGNode::RegionProjection(rp) = node {
+                if rp.base().is_current() && self.pcg.capabilities.get(rp.base().place()).is_some()
+                {
+                    self.remove_placeholder_labels(rp.base());
                 }
             }
         }
         Ok(())
+    }
+
+    fn remove_placeholder_labels(&mut self, place: MaybeOldPlace<'tcx>) {
+        for mut region_projection in place.region_projections(self.ctxt) {
+            // Remove Placeholder label from the region projection
+            region_projection.label = Some(RegionProjectionLabel::Placeholder);
+            self.pcg
+                .borrow
+                .label_region_projection(&region_projection, None, self.ctxt);
+        }
     }
 }
