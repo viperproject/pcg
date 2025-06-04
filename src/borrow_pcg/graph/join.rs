@@ -228,6 +228,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 })
                             })
                             .collect(),
+                        ctxt,
                     ),
                     loop_head,
                 )

@@ -387,6 +387,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(result)
     }
 
+    #[tracing::instrument(skip(self, location))]
     fn perform_borrow_initial_pre_operand_actions(
         &mut self,
         location: Location,
@@ -449,6 +450,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
     fn remove_placeholder_labels(&mut self, place: MaybeOldPlace<'tcx>) {
         for mut region_projection in place.region_projections(self.ctxt) {
+            tracing::debug!(
+                "remove_placeholder_labels: {}",
+                region_projection.to_short_string(self.ctxt)
+            );
             // Remove Placeholder label from the region projection
             region_projection.label = Some(RegionProjectionLabel::Placeholder);
             self.pcg

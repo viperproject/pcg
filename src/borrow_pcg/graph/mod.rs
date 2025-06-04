@@ -64,6 +64,9 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
                     }
             }
         }
+        for edge in self.edges() {
+            edge.check_validity(ctxt)?;
+        }
         Ok(())
     }
 }

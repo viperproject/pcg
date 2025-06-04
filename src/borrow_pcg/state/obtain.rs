@@ -310,7 +310,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             capabilities,
                             ctxt,
                         )?;
-                        if base.is_mut_ref(ctxt) && for_exclusive {
+                        if base.is_mut_ref(ctxt) {
                             self.label_region_projection(
                                 &rp,
                                 Some(SnapshotLocation::before(location).into()),

@@ -46,7 +46,7 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
                 if let Some(from) = from
                     && let Some(to) = to
                 {
-                    edge.redirect(from, to);
+                    edge.redirect(from, to, ctxt);
                 }
                 // TODO
                 true

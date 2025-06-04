@@ -162,8 +162,7 @@ pub(crate) unsafe fn take_stored_body<'tcx>(
 }
 
 fn should_check_body(body: &Body<'_>) -> bool {
-    body.basic_blocks.len() == 7
-    // true
+    body.basic_blocks.len() <= 7
 }
 
 fn is_primary_crate() -> bool {
