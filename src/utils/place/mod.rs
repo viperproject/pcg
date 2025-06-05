@@ -234,6 +234,16 @@ impl<'tcx> Place<'tcx> {
             .into())
     }
 
+    #[rustversion::since(2025-05-24)]
+    pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.ty(ctxt).ty.is_raw_ptr()
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.ty(ctxt).ty.is_unsafe_ptr()
+    }
+
     pub(crate) fn compare_projections(
         self,
         other: Self,

@@ -50,7 +50,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if arg_place
                     .iter_places(self.ctxt)
                     .iter()
-                    .any(|p| p.ty(self.ctxt).ty.is_unsafe_ptr())
+                    .any(|p| p.is_raw_ptr(self.ctxt))
                 {
                     return Err(PcgError::unsupported(
                         PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
