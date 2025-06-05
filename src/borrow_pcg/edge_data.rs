@@ -1,5 +1,6 @@
-use crate::pcg::PCGNode;
-use crate::utils::CompilerCtxt;
+use crate::borrow_pcg::latest::Latest;
+use crate::{pcg::PCGNode, utils::SnapshotLocation};
+use crate::utils::{CompilerCtxt, Place};
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
@@ -38,6 +39,26 @@ pub trait EdgeData<'tcx> {
     ) -> bool {
         self.blocked_by_nodes(ctxt).any(|n| n == node)
     }
+}
+
+pub enum LabelPlacePredicate<'tcx> {
+    PrefixOrPostfix(Place<'tcx>),
+}
+
+pub trait LabelEdgePlaces<'tcx> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
 }
 
 #[macro_export]
@@ -98,7 +119,34 @@ macro_rules! edgedata_enum {
                     )+
                 }
             }
+        }
 
+        impl<$tcx> $crate::borrow_pcg::edge_data::LabelEdgePlaces<$tcx> for $enum_name<$tcx> {
+            fn label_blocked_places(
+                &mut self,
+                predicate: &$crate::borrow_pcg::edge_data::LabelPlacePredicate<'tcx>,
+                latest: &Latest<'tcx>,
+                ctxt: CompilerCtxt<'_, 'tcx>,
+            ) -> bool {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.label_blocked_places(predicate, latest, ctxt),
+                    )+
+                }
+            }
+
+            fn label_blocked_by_places(
+                &mut self,
+                predicate: &$crate::borrow_pcg::edge_data::LabelPlacePredicate<'tcx>,
+                latest: &Latest<'tcx>,
+                ctxt: CompilerCtxt<'_, 'tcx>,
+            ) -> bool {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.label_blocked_by_places(predicate, latest, ctxt),
+                    )+
+                }
+            }
         }
 
         $(
@@ -108,21 +156,6 @@ macro_rules! edgedata_enum {
                 }
             }
         )+
-
-        impl<$tcx> $crate::borrow_pcg::has_pcs_elem::MakePlaceOld<$tcx> for $enum_name<$tcx> {
-            fn make_place_old(
-                &mut self,
-                place: $crate::utils::Place<'tcx>,
-                latest: &$crate::borrow_pcg::latest::Latest<'tcx>,
-                repacker: CompilerCtxt<'_, 'tcx>,
-            ) -> bool {
-                match self {
-                    $(
-                        $enum_name::$variant_name(inner) => inner.make_place_old(place, latest, repacker),
-                    )+
-                }
-            }
-        }
 
         impl<$tcx> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjection<$tcx> for $enum_name<$tcx> {
             fn label_region_projection(

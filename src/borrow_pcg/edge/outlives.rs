@@ -1,8 +1,8 @@
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
-        edge_data::EdgeData,
-        has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
+        edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
+        has_pcs_elem::{default_label_place, HasPcgElems, LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
@@ -10,7 +10,7 @@ use crate::{
     pcg_validity_assert,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
-        validity::HasValidityCheck, CompilerCtxt, Place,
+        validity::HasValidityCheck, CompilerCtxt, Place, SnapshotLocation,
     },
 };
 
@@ -19,6 +19,26 @@ pub struct BorrowFlowEdge<'tcx> {
     long: RegionProjection<'tcx>,
     short: MaybeRedirected<LocalRegionProjection<'tcx>>,
     pub(crate) kind: BorrowFlowEdgeKind,
+}
+
+impl<'tcx> LabelEdgePlaces<'tcx> for BorrowFlowEdge<'tcx> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.long.label_place(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.short.label_place(predicate, latest, ctxt)
+    }
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
@@ -35,17 +55,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             .short
             .label_region_projection(projection, label, repacker);
         changed
-    }
-}
-
-impl<'tcx> MakePlaceOld<'tcx> for BorrowFlowEdge<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
     }
 }
 
@@ -168,7 +177,7 @@ pub enum BorrowFlowEdgeKind {
         regions_equal: bool,
     },
     InitialBorrows,
-    CopySharedRef,
+    CopyRef,
     Move,
     HavocRegion,
     FunctionCallNestedRefs,
@@ -192,7 +201,7 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
                 }
             }
             BorrowFlowEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
-            BorrowFlowEdgeKind::CopySharedRef => write!(f, "CopySharedRef"),
+            BorrowFlowEdgeKind::CopyRef => write!(f, "CopySharedRef"),
             BorrowFlowEdgeKind::HavocRegion => write!(f, "HavocRegion"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
             BorrowFlowEdgeKind::FunctionCallNestedRefs => write!(f, "FunctionCallNestedRefs"),

@@ -118,6 +118,13 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         }
     }
 
+    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            MaybeRemotePlace::Local(p) => Some(p),
+            MaybeRemotePlace::Remote(_) => None,
+        }
+    }
+
     pub fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(*p),

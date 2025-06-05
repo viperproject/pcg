@@ -9,11 +9,15 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcgElems, LabelRegionProjection, MakePlaceOld},
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
     latest::Latest,
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
-use crate::utils::json::ToJsonWithCompilerCtxt;
+use crate::{
+    borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    pcg::MaybeHasLocation,
+    utils::json::ToJsonWithCompilerCtxt,
+};
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
@@ -173,6 +177,30 @@ pub struct BorrowPcgExpansion<'tcx, P = LocalNode<'tcx>> {
     _marker: PhantomData<&'tcx ()>,
 }
 
+impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.base.label_place(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for p in &mut self.expansion {
+            changed |= p.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
+}
+
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
     fn label_region_projection(
         &mut self,
@@ -189,21 +217,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
         {
             self.deref_blocked_region_projection_label = label;
         }
-        changed
-    }
-}
-
-impl<'tcx> MakePlaceOld<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = self.base.make_place_old(place, latest, repacker);
-        self.expansion.iter_mut().for_each(|p| {
-            changed |= p.make_place_old(place, latest, repacker);
-        });
         changed
     }
 }
@@ -333,6 +346,31 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
             Some(projection.into())
         } else {
             None
+        }
+    }
+
+    /// Returns true iff the expansion is packable, i.e. without losing any
+    /// information. This is the case when the expansion node labels (for
+    /// places, and for region projections) are the same as the base node
+    /// labels.
+    pub(crate) fn is_packable(&self) -> bool {
+        match self.base {
+            PCGNode::Place(base_place) => self.expansion.iter().all(|p| {
+                base_place.place().is_prefix_exact(p.place())
+                    && p.location() == base_place.location()
+            }),
+            PCGNode::RegionProjection(base_rp) => self.expansion.iter().all(|p| {
+                if let PCGNode::RegionProjection(p_rp) = p {
+                    p_rp.place().location() == base_rp.place().location()
+                        && base_rp
+                            .place()
+                            .place()
+                            .is_prefix_exact(p_rp.place().place())
+                        && p_rp.label == base_rp.label
+                } else {
+                    false
+                }
+            }),
         }
     }
 }

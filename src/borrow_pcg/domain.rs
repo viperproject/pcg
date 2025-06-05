@@ -1,13 +1,42 @@
 use super::region_projection::RegionProjection;
 use crate::{
-    pcg::PCGNode,
-    utils::{maybe_remote::MaybeRemotePlace, place::maybe_old::MaybeOldPlace},
+    borrow_pcg::{edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::{HasPcgElems, LabelPlace}, latest::Latest}, pcg::PCGNode, utils::{maybe_remote::MaybeRemotePlace, place::maybe_old::MaybeOldPlace, CompilerCtxt, SnapshotLocation}
 };
 
 pub type FunctionCallAbstractionInput<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
+impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for p in self.pcg_elems() {
+            changed |= p.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
+}
+
 pub type LoopAbstractionInput<'tcx> =
     PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
+
+impl<'tcx> LabelPlace<'tcx> for LoopAbstractionInput<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for p in self.pcg_elems() {
+            changed |= p.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
+}
 
 impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LoopAbstractionInput<'tcx> {
     fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {

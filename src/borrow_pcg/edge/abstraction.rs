@@ -2,7 +2,8 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeLike},
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
-        has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        has_pcs_elem::{default_label_place, LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
@@ -15,7 +16,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
-    utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected, Place},
+    utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected, Place, SnapshotLocation},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode, ToBorrowsEdge};
@@ -61,17 +62,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
             .label_region_projection(projection, label, repacker)
     }
 }
-impl<'tcx> MakePlaceOld<'tcx> for LoopAbstraction<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
-    }
-}
-
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     fn blocks_node<C: Copy>(
         &self,
@@ -98,6 +88,26 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
         'tcx: 'slf,
     {
         self.edge.blocked_by_nodes(repacker)
+    }
+}
+
+impl<'tcx> LabelEdgePlaces<'tcx> for LoopAbstraction<'tcx> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.edge.label_blocked_places(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.edge.label_blocked_by_places(predicate, latest, ctxt)
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
@@ -193,14 +203,23 @@ impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn make_place_old(
+impl<'tcx> LabelEdgePlaces<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn label_blocked_places(
         &mut self,
-        place: Place<'tcx>,
+        predicate: &LabelPlacePredicate<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
+        self.edge.label_blocked_places(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.edge.label_blocked_by_places(predicate, latest, ctxt)
     }
 }
 
@@ -323,6 +342,34 @@ impl<'tcx> AbstractionType<'tcx> {
 pub struct AbstractionBlockEdge<'tcx, Input> {
     inputs: Vec<Input>,
     pub(crate) outputs: Vec<MaybeRedirected<AbstractionOutputTarget<'tcx>>>,
+}
+
+impl<'tcx, T: LabelPlace<'tcx>> LabelEdgePlaces<'tcx> for AbstractionBlockEdge<'tcx, T> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for input in &mut self.inputs {
+            changed |= input.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for output in &mut self.outputs {
+            changed |= output.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
 }
 
 impl<'tcx, Input: PCGNodeLike<'tcx>> AbstractionBlockEdge<'tcx, Input> {

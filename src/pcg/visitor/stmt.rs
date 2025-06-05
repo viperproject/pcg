@@ -37,14 +37,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         if target.is_ref(self.ctxt)
                             && self.pcg.borrow.graph().contains(target, self.ctxt)
                         {
-                            self.record_and_apply_action(
-                                BorrowPCGAction::make_place_old(
-                                    (*target).into(),
-                                    MakePlaceOldReason::ReAssign,
-                                )
-                                .into(),
-                            )?;
-
                             // The permission to the target may have been Read originally.
                             // Now, because it's been made old, the non-old place should be a leaf,
                             // and its permission should be Exclusive.

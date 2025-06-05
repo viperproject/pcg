@@ -32,18 +32,18 @@ pub(super) struct GraphConstructor<'mir, 'tcx> {
     nodes: Vec<GraphNode>,
     pub(super) edges: HashSet<GraphEdge>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
-    location: mir::Location,
+    location: Option<mir::Location>,
 }
 
 impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
-    fn new(repacker: CompilerCtxt<'a, 'tcx>, location: mir::Location) -> Self {
+    fn new(ctxt: CompilerCtxt<'a, 'tcx>, location: Option<mir::Location>) -> Self {
         Self {
             remote_nodes: IdLookup::new('a'),
             place_nodes: IdLookup::new('p'),
             region_projection_nodes: IdLookup::new('r'),
             nodes: vec![],
             edges: HashSet::new(),
-            ctxt: repacker,
+            ctxt,
             location,
         }
     }
@@ -112,24 +112,30 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                     "{}".to_string()
                 }
             };
-            let loans_before = render_loans(
-                output
-                    .origin_contains_loan_at(
-                        self.ctxt.bc.location_table().start_index(self.location),
-                    )
-                    .get(&region_vid),
-            );
-            let loans_after = render_loans(
-                output
-                    .origin_contains_loan_at(self.ctxt.bc.location_table().mid_index(self.location))
-                    .get(&region_vid),
-            );
-            format!(
-                "Loans in {} - before: {}, mid: {}",
-                projection.region(self.ctxt).to_short_string(self.ctxt),
-                loans_before,
-                loans_after
-            )
+            if let Some(location) = self.location {
+                let loans_before = render_loans(
+                    output
+                        .origin_contains_loan_at(
+                            self.ctxt.bc.location_table().start_index(location),
+                        )
+                        .get(&region_vid),
+                );
+                let loans_after = render_loans(
+                    output
+                        .origin_contains_loan_at(
+                            self.ctxt.bc.location_table().mid_index(location),
+                        )
+                        .get(&region_vid),
+                );
+                format!(
+                    "Loans in {} - before: {}, mid: {}",
+                    projection.region(self.ctxt).to_short_string(self.ctxt),
+                    loans_before,
+                    loans_after
+                )
+            } else {
+                "".to_string()
+            }
         } else {
             "".to_string()
         };
@@ -285,14 +291,10 @@ pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
 }
 
 impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
-    pub fn new(
-        borrows_graph: &'graph BorrowsGraph<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-        location: mir::Location,
-    ) -> Self {
+    pub fn new(borrows_graph: &'graph BorrowsGraph<'tcx>, ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
         Self {
             borrows_graph,
-            constructor: GraphConstructor::new(ctxt, location),
+            constructor: GraphConstructor::new(ctxt, None),
             repacker: ctxt,
         }
     }
@@ -385,7 +387,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
             summary: pcg.owned.locals(),
             borrows_domain: &pcg.borrow,
             capabilities: &pcg.capabilities,
-            constructor: GraphConstructor::new(repacker, location),
+            constructor: GraphConstructor::new(repacker, Some(location)),
             repacker,
         }
     }
@@ -466,6 +468,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     }
 }
 
+#[rustversion::since(2025-05-24)]
 #[cfg(test)]
 mod tests {
     use crate::{

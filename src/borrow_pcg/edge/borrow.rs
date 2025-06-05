@@ -1,8 +1,6 @@
 use crate::{
     borrow_pcg::{
-        has_pcs_elem::{default_make_place_old, LabelRegionProjection, MakePlaceOld},
-        latest::Latest,
-        region_projection::RegionProjectionLabel,
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::{default_label_place, LabelPlace, LabelRegionProjection}, latest::Latest, region_projection::RegionProjectionLabel
     },
     edgedata_enum,
     pcg::PCGNode,
@@ -13,7 +11,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace, Place},
+    utils::{remote::RemotePlace, HasPlace, Place, SnapshotLocation},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -63,14 +61,23 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     }
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for LocalBorrow<'tcx> {
-    fn make_place_old(
+impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
+    fn label_blocked_places(
         &mut self,
-        place: Place<'tcx>,
+        predicate: &LabelPlacePredicate<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
+        self.blocked_place.label_place(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.assigned_ref.label_place(predicate, latest, ctxt)
     }
 }
 
@@ -101,14 +108,23 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     }
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for RemoteBorrow<'tcx> {
-    fn make_place_old(
+impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
+    fn label_blocked_places(
         &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        _predicate: &LabelPlacePredicate<'tcx>,
+        _latest: &Latest<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
+        false
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.assigned_ref.label_place(predicate, latest, ctxt)
     }
 }
 

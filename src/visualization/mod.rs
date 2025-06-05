@@ -348,9 +348,8 @@ impl Graph {
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
     repacker: CompilerCtxt<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
-    location: Location,
 ) -> io::Result<String> {
-    let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker, location);
+    let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
     let graph = constructor.construct_graph();
     let mut buf = vec![];
     let drawer = GraphDrawer::new(&mut buf);

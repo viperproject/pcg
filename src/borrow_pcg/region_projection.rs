@@ -9,6 +9,9 @@ use super::{
     abstraction_graph_constructor::AbstractionGraphNode, borrow_pcg_edge::LocalNode,
     visitor::extract_regions,
 };
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::has_pcs_elem::LabelPlace;
+use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PCGInternalError, PcgError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -161,6 +164,13 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
+    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place_mut(),
+            MaybeRemoteRegionProjectionBase::Const(_) => None,
+        }
+    }
+
     pub(crate) fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place(),
@@ -236,6 +246,21 @@ pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) region_idx: RegionIdx,
     pub(crate) label: Option<RegionProjectionLabel>,
     phantom: PhantomData<&'tcx ()>,
+}
+
+impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        if let Some(p) = self.base.as_local_place_mut() {
+            p.label_place(predicate, latest, ctxt)
+        } else {
+            false
+        }
+    }
 }
 
 impl<'tcx, P> RegionProjection<'tcx, P> {

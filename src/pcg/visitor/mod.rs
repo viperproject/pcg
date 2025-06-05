@@ -70,7 +70,6 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(pcg, ctxt, tw, analysis_object, location))]
     pub(crate) fn visit(
         pcg: &'pcg mut Pcg<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,

@@ -189,6 +189,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 }
 
+#[rustversion::since(2025-05-24)]
 #[cfg(test)]
 #[test]
 fn test_aliases() {

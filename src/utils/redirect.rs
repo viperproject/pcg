@@ -1,6 +1,8 @@
-use crate::borrow_pcg::{
-    has_pcs_elem::{HasPcgElems, LabelRegionProjection},
-    region_projection::{RegionProjection, RegionProjectionLabel},
+use crate::{
+    borrow_pcg::{
+        edge_data::LabelPlacePredicate, has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection}, latest::Latest, region_projection::{RegionProjection, RegionProjectionLabel}
+    },
+    utils::SnapshotLocation,
 };
 
 use super::{
@@ -12,6 +14,21 @@ use super::{
 pub(crate) struct MaybeRedirected<T, U = T> {
     original: T,
     redirected: Option<U>,
+}
+
+impl<'tcx, T: LabelPlace<'tcx>> LabelPlace<'tcx> for MaybeRedirected<T> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.original.label_place(predicate, latest, ctxt);
+        if let Some(r) = &mut self.redirected {
+            changed |= r.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
 }
 
 impl<T> From<T> for MaybeRedirected<T> {

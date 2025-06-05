@@ -1,10 +1,12 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
 };
+use crate::borrow_pcg::visitor::extract_regions;
 use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -14,8 +16,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::borrow_pcg::visitor::extract_regions;
-use crate::utils::{HasPlace, Place, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasPlace, Place, PlaceSnapshot, SnapshotLocation};
 use derive_more::{From, TryInto};
 use serde_json::json;
 
@@ -42,7 +43,10 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         match self {
             MaybeOldPlace::Current { place } => place.regions(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.place.regions(repacker),
@@ -303,16 +307,31 @@ impl<'tcx> MaybeOldPlace<'tcx> {
             "at": self.location().map(|loc| format!("{loc:?}")),
         })
     }
+}
 
-    pub(crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
-        if self.is_current() && (place.is_prefix(self.place()) || self.place().is_prefix(place)) {
-            *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
-                place: self.place(),
-                at: latest.get(self.place()),
-            });
-            true
-        } else {
-            false
+impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        match self {
+            MaybeOldPlace::Current { place } => match predicate {
+                LabelPlacePredicate::PrefixOrPostfix(p2) => {
+                    if place.is_prefix(*p2) || p2.is_prefix(*place) {
+                        *self = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                            *place,
+                            latest.get(*place, ctxt),
+                        ));
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            },
+            _ => false,
         }
     }
 }

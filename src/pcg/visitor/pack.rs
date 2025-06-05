@@ -75,10 +75,7 @@ impl PcgVisitor<'_, '_, '_> {
                         }) {
                             true
                         } else {
-                            expansion.expansion().iter().all(|node| {
-                                expansion.base().place().is_prefix_exact(node.place())
-                                    && expansion.base().location() == node.location()
-                            })
+                            expansion.is_packable()
                         }
                     }
                     _ => edge

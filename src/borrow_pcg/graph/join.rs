@@ -21,14 +21,9 @@ use crate::{
 use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn render_debug_graph(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-        location: mir::Location,
-        comment: &str,
-    ) {
+    pub(crate) fn render_debug_graph(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
         if borrows_imgcat_debug()
-            && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self, location)
+            && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
         {
             DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
                 eprintln!("Error rendering self graph: {e}");
@@ -76,16 +71,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             statement_index: 0,
         };
         if ctxt.is_back_edge(other_block, self_block) {
-            self.render_debug_graph(ctxt, self_location, &format!("Self graph: {self_block:?}"));
-            other.render_debug_graph(
-                ctxt,
-                other_location,
-                &format!("Other graph: {other_block:?}"),
-            );
+            self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
+            other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
             self.join_loop(other, self_block, other_block, ctxt);
             let result = *self != old_self;
             if borrows_imgcat_debug()
-                && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self, self_location)
+                && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
             {
                 DotGraph::render_with_imgcat(
                     &dot_graph,
@@ -123,14 +114,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let changed = old_self != *self;
 
         if borrows_imgcat_debug()
-            && let Ok(dot_graph) = generate_borrows_dot_graph(
-                ctxt,
-                self,
-                mir::Location {
-                    block: self_block,
-                    statement_index: 0,
-                },
-            )
+            && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
         {
             DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
                 .unwrap_or_else(|e| {
@@ -143,19 +127,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         // For performance reasons we only check validity here if we are also producing debug graphs
         if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(ctxt) {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self, self_location) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self) {
                 DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
                     |e| {
                         eprintln!("Error rendering self graph: {e}");
                     },
                 );
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, &old_self, self_location) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, &old_self) {
                 DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering old self graph: {e}");
                 });
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, other, other_location) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, other) {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {e}");
                 });
@@ -195,10 +179,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if borrows_imgcat_debug() {
             self.render_debug_graph(
                 ctxt,
-                mir::Location {
-                    block: from_block,
-                    statement_index: 0,
-                },
                 "after removal of common edges",
             );
         }
@@ -243,10 +223,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if borrows_imgcat_debug() {
             self.render_debug_graph(
                 ctxt,
-                mir::Location {
-                    block: from_block,
-                    statement_index: 0,
-                },
                 "done",
             );
         }

@@ -173,7 +173,7 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let mut changed = false;
         changed |= self.graph.join(&other.graph, self_block, other_block, ctxt);
-        changed |= self.latest.join(&other.latest, self_block);
+        changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions
             .join(&other.path_conditions, ctxt.body());
@@ -236,8 +236,12 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker).collect()
     }
 
-    pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
-        self.latest.get(place)
+    pub(crate) fn get_latest(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> SnapshotLocation {
+        self.latest.get(place, ctxt)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -310,8 +314,8 @@ impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.graph.make_place_old(place, &self.latest, repacker)
+        self.graph.make_place_old(place, &self.latest, ctxt)
     }
 }

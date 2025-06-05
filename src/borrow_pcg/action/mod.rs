@@ -182,7 +182,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    #[instrument(skip(self, repacker), fields(action))]
+    #[instrument(skip(self, repacker, capabilities))]
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,

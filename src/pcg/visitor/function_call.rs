@@ -14,7 +14,7 @@ use crate::borrow_pcg::region_projection::{
     RegionProjectionBaseLike, RegionProjectionLabel,
 };
 use crate::borrow_pcg::util::ExploreFrom;
-use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike};
+use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike, PCGUnsupportedError};
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -46,6 +46,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
+        for arg in args.iter() {
+            if let Some(arg_place) = arg.place() {
+                let arg_place: utils::Place<'tcx> = arg_place.into();
+                if arg_place
+                    .iter_places(self.ctxt)
+                    .iter()
+                    .any(|p| p.ty(self.ctxt).ty.is_unsafe_ptr())
+                {
+                    return Err(PcgError::unsupported(
+                        PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
+                    ));
+                }
+            }
+        }
         // This is just a performance optimization
         if self
             .pcg
@@ -58,7 +72,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let function_data = get_function_data(func, self.ctxt);
 
         let path_conditions = self.pcg.borrow.path_conditions.clone();
-
         let ctxt = self.ctxt;
 
         let mk_create_edge_action = |input: Vec<FunctionCallAbstractionInput<'tcx>>, output| {
@@ -84,7 +97,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let input_place: utils::Place<'tcx> = mir_place.into();
                 let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                     input_place,
-                    self.pcg.borrow.get_latest(input_place),
+                    self.pcg.borrow.get_latest(input_place, self.ctxt),
                 ));
                 input_place.region_projections(self.ctxt)
             })
@@ -120,7 +133,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         self.pcg
             .render_debug_graph(self.ctxt, location, "future constructed from");
 
-        future_subgraph.render_debug_graph(self.ctxt, location, "future_subgraph");
+        future_subgraph.render_debug_graph(self.ctxt, "future_subgraph");
 
         pcg_validity_assert!(
             future_subgraph.frozen_graph().is_acyclic(self.ctxt),
@@ -283,7 +296,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 rp.try_to_local_node(self.ctxt)
                             {
                                 if !local_rp.is_mutable(self.ctxt) {
-                                    tracing::info!(
+                                    tracing::debug!(
                                         "Skipping non-mutable region projection {}",
                                         rp.to_short_string(self.ctxt)
                                     );

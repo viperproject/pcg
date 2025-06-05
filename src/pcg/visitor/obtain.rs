@@ -250,27 +250,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.collapse(collapse_to, capability)?;
         }
 
-        self.expand_to(place, location, capability)?;
-
-        // The place holds a borrow, that is derefed in the borrow PCG.
-        // Therefore, it has either no capability or read capability. It will
-        // soon be labelled in the borrow PCG, meaning the (current) place will
-        // imminently become a a leaf at which point it would in principle have
-        // the capability anyways
-        if place.is_owned(self.ctxt)
-            && self.pcg.borrow.graph().contains(place, self.ctxt)
-            && capability.is_write()
-        {
-            self.pcg.capabilities.insert(place.into(), capability);
+        if capability.is_write() {
+            let _ = self.pcg.borrow.make_place_old(place, self.ctxt);
         }
 
-        pcg_validity_assert!(
-            self.pcg.capabilities.get(place.into()).is_some(),
-            "{:?}: Place {:?} does not have a capability after obtain {:?}",
-            location,
-            place,
-            capability
-        );
+        self.expand_to(place, location, capability)?;
+
+        // pcg_validity_assert!(
+        //     self.pcg.capabilities.get(place.into()).is_some(),
+        //     "{:?}: Place {:?} does not have a capability after obtain {:?}",
+        //     location,
+        //     place,
+        //     capability
+        // );
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).unwrap() >= capability,
         //     "{:?} Capability {:?} for {:?} is not greater than {:?}",

@@ -199,7 +199,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         assert!(state.is_initialized());
     }
 
-    #[tracing::instrument(skip(self, state, object, location))]
+    #[tracing::instrument(skip(self, state, object))]
     fn analyze(
         &mut self,
         state: &mut PcgDomain<'a, 'tcx, A>,

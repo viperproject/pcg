@@ -7,7 +7,7 @@ use super::{
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
+    has_pcs_elem::{default_label_place, HasPcgElems, LabelRegionProjection, LabelPlace},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::{
@@ -15,7 +15,7 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::{borrow_pcg::{edge::kind::BorrowPcgEdgeKind, edge_data::{LabelEdgePlaces, LabelPlacePredicate}}, utils::SnapshotLocation};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
@@ -39,6 +39,26 @@ pub struct BorrowPcgEdge<'tcx> {
     pub(crate) kind: BorrowPcgEdgeKind<'tcx>,
 }
 
+impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgEdge<'tcx> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.kind.label_blocked_places(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.kind.label_blocked_by_places(predicate, latest, ctxt)
+    }
+}
+
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     fn label_region_projection(
         &mut self,
@@ -48,17 +68,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     ) -> bool {
         self.kind
             .label_region_projection(projection, label, repacker)
-    }
-}
-
-impl<'tcx> MakePlaceOld<'tcx> for BorrowPcgEdge<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.kind.make_place_old(place, latest, repacker)
     }
 }
 
@@ -150,14 +159,17 @@ impl LocalNode<'_> {
 /// node other than a [`RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
-impl<'tcx> MakePlaceOld<'tcx> for LocalNode<'tcx> {
-    fn make_place_old(
+impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
+    fn label_place(
         &mut self,
-        place: Place<'tcx>,
+        predicate: &LabelPlacePredicate<'tcx>,
         latest: &Latest<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
+        match self {
+            LocalNode::Place(p) => p.label_place(predicate, latest, repacker),
+            LocalNode::RegionProjection(rp) => rp.base.label_place(predicate, latest, repacker),
+        }
     }
 }
 

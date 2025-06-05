@@ -1,6 +1,6 @@
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::has_pcs_elem::{
-    default_make_place_old, LabelRegionProjection, MakePlaceOld,
+    default_label_place, LabelRegionProjection, LabelPlace,
 };
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
@@ -26,6 +26,10 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx, T, U> PCGNode<'tcx, T, U> {
+    pub(crate) fn is_place(&self) -> bool {
+        matches!(self, PCGNode::Place(_))
+    }
+
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
         match self {
             PCGNode::RegionProjection(rp) => Ok(rp),
@@ -57,17 +61,6 @@ impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         } else {
             false
         }
-    }
-}
-
-impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
     }
 }
 

@@ -3,7 +3,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use crate::borrow_pcg::domain::AbstractionOutputTarget;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
-use crate::utils::CompilerCtxt;
+use crate::utils::{CompilerCtxt, SnapshotLocation};
 
 use super::borrow::RemoteBorrow;
 use super::outlives::BorrowFlowEdge;

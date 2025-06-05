@@ -1,5 +1,5 @@
 use super::PcgVisitor;
-use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
@@ -46,7 +46,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     {
                         let source_proj = source_proj.with_base(MaybeOldPlace::new(
                             source_proj.base,
-                            Some(self.pcg.borrow.get_latest(source_proj.base)),
+                            Some(self.pcg.borrow.get_latest(source_proj.base, self.ctxt)),
                         ));
                         self.connect_outliving_projections(source_proj, target, location, |_| {
                             BorrowFlowEdgeKind::Aggregate {
@@ -97,11 +97,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let from: utils::Place<'tcx> = (*from).into();
                 let (from, kind) = if matches!(operand, Operand::Move(_)) {
                     (
-                        MaybeOldPlace::new(from, Some(self.pcg.borrow.get_latest(from))),
+                        MaybeOldPlace::new(from, Some(self.pcg.borrow.get_latest(from, self.ctxt))),
                         BorrowFlowEdgeKind::Move,
                     )
                 } else {
-                    (from.into(), BorrowFlowEdgeKind::CopySharedRef)
+                    (from.into(), BorrowFlowEdgeKind::CopyRef)
                 };
                 for (source_proj, target_proj) in from
                     .region_projections(self.ctxt)

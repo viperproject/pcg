@@ -288,6 +288,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
+    pub(crate) fn is_root_edge<'graph, 'mir: 'graph, 'bc: 'graph>(
+        &'graph self,
+        edge: &impl BorrowPcgEdgeLike<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> bool {
+        edge.blocked_nodes(ctxt).all(|n| self.is_root(n, ctxt))
+    }
+
     /// All edges that are not blocked by any other edge The argument
     /// `blocking_map` can be provided to use a shared cache for computation
     /// of blocking calculations. The argument should be used if this function
