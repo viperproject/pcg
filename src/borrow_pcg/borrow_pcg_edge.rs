@@ -7,7 +7,7 @@ use super::{
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{default_label_place, HasPcgElems, LabelRegionProjection, LabelPlace},
+    has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelPlace},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::{
@@ -15,7 +15,7 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::{borrow_pcg::{edge::kind::BorrowPcgEdgeKind, edge_data::{LabelEdgePlaces, LabelPlacePredicate}}, utils::SnapshotLocation};
+use crate::borrow_pcg::{edge::kind::BorrowPcgEdgeKind, edge_data::{LabelEdgePlaces, LabelPlacePredicate}};
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};

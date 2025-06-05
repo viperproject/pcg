@@ -2,7 +2,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{default_label_place, HasPcgElems, LabelPlace, LabelRegionProjection},
+        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
@@ -10,7 +10,7 @@ use crate::{
     pcg_validity_assert,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
-        validity::HasValidityCheck, CompilerCtxt, Place, SnapshotLocation,
+        validity::HasValidityCheck, CompilerCtxt,
     },
 };
 

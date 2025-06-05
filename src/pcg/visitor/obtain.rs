@@ -8,7 +8,6 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
-use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::{borrow_pcg::action::BorrowPCGAction, utils::ShallowExpansion};

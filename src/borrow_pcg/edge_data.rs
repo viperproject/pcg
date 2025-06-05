@@ -1,5 +1,5 @@
 use crate::borrow_pcg::latest::Latest;
-use crate::{pcg::PCGNode, utils::SnapshotLocation};
+use crate::pcg::PCGNode;
 use crate::utils::{CompilerCtxt, Place};
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};

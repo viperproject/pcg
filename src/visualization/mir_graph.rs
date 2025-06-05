@@ -122,6 +122,7 @@ fn format_raw_ptr<'tcx>(
     format!("*{} {}", kind, format_place(place, ctxt))
 }
 
+#[allow(unreachable_patterns)]
 fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
     match rvalue {
         Rvalue::Use(operand) => format_operand(operand, ctxt),

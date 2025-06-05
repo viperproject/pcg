@@ -1,5 +1,5 @@
 use super::PcgVisitor;
-use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
+use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};

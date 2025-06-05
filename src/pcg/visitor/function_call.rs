@@ -7,7 +7,6 @@ use crate::borrow_pcg::edge::abstraction::{
 };
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::region_projection::{
     LocalRegionProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionProjection,
@@ -18,7 +17,6 @@ use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike, PCGUnsupportedError};
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::maybe_remote::MaybeRemotePlace;
 
 use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;

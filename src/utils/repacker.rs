@@ -21,9 +21,6 @@ use crate::{
     },
 };
 
-#[rustversion::before(2025-03-02)]
-use crate::rustc_interface::index::bit_set::BitSet;
-
 use crate::rustc_interface::mir_dataflow;
 
 use crate::{

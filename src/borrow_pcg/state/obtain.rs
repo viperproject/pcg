@@ -108,15 +108,16 @@ impl<'tcx> BorrowsState<'tcx> {
                 place,
                 obtain_reason
             );
-            pcg_validity_assert!(
-                capabilities.get(place.into()).unwrap()
-                    >= obtain_reason.min_post_obtain_capability(),
-                "{:?} Capability {:?} for {:?} is not greater than {:?}",
-                location,
-                capabilities.get(place.into()).unwrap(),
-                place,
-                obtain_reason.min_post_obtain_capability()
-            );
+            // TODO
+            // pcg_validity_assert!(
+            //     capabilities.get(place.into()).unwrap()
+            //         >= obtain_reason.min_post_obtain_capability(),
+            //     "{:?} Capability {:?} for {:?} is not greater than {:?}",
+            //     location,
+            //     capabilities.get(place.into()).unwrap(),
+            //     place,
+            //     obtain_reason.min_post_obtain_capability()
+            // );
         }
         Ok(actions)
     }

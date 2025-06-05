@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::{default_label_place, LabelPlace, LabelRegionProjection}, latest::Latest, region_projection::RegionProjectionLabel
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::{LabelPlace, LabelRegionProjection}, latest::Latest, region_projection::RegionProjectionLabel
     },
     edgedata_enum,
     pcg::PCGNode,
@@ -11,7 +11,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace, Place, SnapshotLocation},
+    utils::{remote::RemotePlace, HasPlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};

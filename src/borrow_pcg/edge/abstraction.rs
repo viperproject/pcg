@@ -1,9 +1,9 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeLike},
+        borrow_pcg_edge::BlockedNode,
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{default_label_place, LabelPlace, LabelRegionProjection},
+        has_pcs_elem::{LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
@@ -16,7 +16,7 @@ use crate::{
             ty::GenericArgsRef,
         },
     },
-    utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected, Place, SnapshotLocation},
+    utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode, ToBorrowsEdge};

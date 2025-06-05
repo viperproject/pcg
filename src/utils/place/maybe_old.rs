@@ -329,7 +329,6 @@ impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
                         false
                     }
                 }
-                _ => false,
             },
             _ => false,
         }

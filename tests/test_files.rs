@@ -1,3 +1,4 @@
+#[allow(unused)]
 use rayon::prelude::*;
 use std::path::PathBuf;
 

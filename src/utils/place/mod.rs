@@ -408,15 +408,6 @@ impl<'tcx> Place<'tcx> {
         self.0.ty(ctxt.mir, ctxt.tcx).ty.is_ref()
     }
 
-    pub(crate) fn contains_mutable_region_projections<C: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> bool {
-        self.region_projections(ctxt)
-            .iter()
-            .any(|rp| rp.is_nested_under_mut_ref(ctxt))
-    }
-
     pub fn ref_mutability<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,

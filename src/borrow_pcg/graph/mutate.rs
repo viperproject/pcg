@@ -1,14 +1,13 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, ToBorrowsEdge},
+        borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike},
         edge::kind::BorrowPcgEdgeKind,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::LabelPlace,
         latest::Latest,
         path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::{data_structures::fx::FxHashSet, middle::mir::BasicBlock},
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place},
 };
 
 use super::BorrowsGraph;

@@ -1,8 +1,5 @@
 use crate::borrow_pcg::domain::LoopAbstractionInput;
-use crate::borrow_pcg::has_pcs_elem::{
-    default_label_place, LabelRegionProjection, LabelPlace,
-};
-use crate::borrow_pcg::latest::Latest;
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -26,9 +23,6 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx, T, U> PCGNode<'tcx, T, U> {
-    pub(crate) fn is_place(&self) -> bool {
-        matches!(self, PCGNode::Place(_))
-    }
 
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
         match self {
@@ -171,10 +165,9 @@ pub trait PCGNodeLike<'tcx>:
             PCGNode::RegionProjection(rp) => match rp.base() {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
-                        MaybeRemotePlace::Local(maybe_old_place) => Some(
-                            rp.with_base(maybe_old_place)
-                                .to_local_node(repacker),
-                        ),
+                        MaybeRemotePlace::Local(maybe_old_place) => {
+                            Some(rp.with_base(maybe_old_place).to_local_node(repacker))
+                        }
                         MaybeRemotePlace::Remote(_) => None,
                     }
                 }

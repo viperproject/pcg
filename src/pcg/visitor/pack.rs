@@ -7,7 +7,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::{MaybeHasLocation, PCGNode};
+use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::{CompilerCtxt, HasPlace};
 

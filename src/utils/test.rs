@@ -14,6 +14,7 @@ use crate::utils::callbacks::set_mir_borrowck;
 
 use super::callbacks::{in_cargo_crate, run_pcg_on_fn, take_stored_body};
 
+#[allow(unused)]
 pub struct TestCallbacks {
     input: String,
     callback: Option<

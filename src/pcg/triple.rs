@@ -114,6 +114,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
         Ok(())
     }
 
+    #[allow(unreachable_patterns)]
     fn visit_rvalue_fallable(
         &mut self,
         rvalue: &mir::Rvalue<'tcx>,
@@ -286,6 +287,7 @@ trait ProducesCapability {
 }
 
 impl ProducesCapability for Rvalue<'_> {
+    #[allow(unreachable_patterns)]
     fn capability(&self) -> Option<CapabilityKind> {
         use Rvalue::*;
         match self {

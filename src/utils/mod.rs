@@ -27,6 +27,7 @@ pub(crate) mod domain_data;
 pub(crate) mod repacker;
 
 #[cfg(test)]
+#[rustversion::since(2025-05-25)]
 pub(crate) mod test;
 
 use lazy_static::lazy_static;

@@ -1,8 +1,8 @@
-use crate::{
-    borrow_pcg::{
-        edge_data::LabelPlacePredicate, has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection}, latest::Latest, region_projection::{RegionProjection, RegionProjectionLabel}
-    },
-    utils::SnapshotLocation,
+use crate::borrow_pcg::{
+    edge_data::LabelPlacePredicate,
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+    latest::Latest,
+    region_projection::{RegionProjection, RegionProjectionLabel},
 };
 
 use super::{

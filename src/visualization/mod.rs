@@ -61,6 +61,7 @@ pub struct GraphNode {
 }
 
 impl GraphNode {
+    #[allow(unused)]
     #[cfg(test)]
     fn label(&self) -> String {
         self.node_type.label()
@@ -314,6 +315,7 @@ impl Graph {
         Self { nodes, edges }
     }
 
+    #[allow(unused)]
     #[cfg(test)]
     pub(crate) fn edge_between_labelled_nodes(
         &self,

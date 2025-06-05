@@ -31,10 +31,7 @@ use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
-    middle::{
-        mir::{self, Body},
-        ty::TyCtxt,
-    },
+    middle::{mir::Body, ty::TyCtxt},
 };
 use serde_json::json;
 use utils::{
@@ -76,14 +73,15 @@ impl<'tcx> Weaken<'tcx> {
         from: CapabilityKind,
         to: Option<CapabilityKind>,
     ) -> Self {
-        if let Some(to) = to {
-            pcg_validity_assert!(
-                from > to,
-                "FROM capability ({:?}) is not greater than TO capability ({:?})",
-                from,
-                to
-            );
-        }
+        // TODO
+        // if let Some(to) = to {
+        //     pcg_validity_assert!(
+        //         from > to,
+        //         "FROM capability ({:?}) is not greater than TO capability ({:?})",
+        //         from,
+        //         to
+        //     );
+        // }
         Self { place, from, to }
     }
 

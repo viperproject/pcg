@@ -152,6 +152,7 @@ pub(crate) trait FallableVisitor<'tcx> {
         location: mir::Location,
     ) -> Result<(), PcgError>;
 
+    #[allow(unreachable_patterns)]
     fn super_rvalue_fallable(
         &mut self,
         rvalue: &mir::Rvalue<'tcx>,

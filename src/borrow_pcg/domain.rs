@@ -1,6 +1,12 @@
 use super::region_projection::RegionProjection;
 use crate::{
-    borrow_pcg::{edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::{HasPcgElems, LabelPlace}, latest::Latest}, pcg::PCGNode, utils::{maybe_remote::MaybeRemotePlace, place::maybe_old::MaybeOldPlace, CompilerCtxt, SnapshotLocation}
+    borrow_pcg::{
+        edge_data::LabelPlacePredicate,
+        has_pcs_elem::{HasPcgElems, LabelPlace},
+        latest::Latest,
+    },
+    pcg::PCGNode,
+    utils::{maybe_remote::MaybeRemotePlace, place::maybe_old::MaybeOldPlace, CompilerCtxt},
 };
 
 pub type FunctionCallAbstractionInput<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
@@ -20,8 +26,7 @@ impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
     }
 }
 
-pub type LoopAbstractionInput<'tcx> =
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
+pub type LoopAbstractionInput<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
 
 impl<'tcx> LabelPlace<'tcx> for LoopAbstractionInput<'tcx> {
     fn label_place(
@@ -55,5 +60,6 @@ impl<'tcx> TryFrom<LoopAbstractionInput<'tcx>> for RegionProjection<'tcx> {
     }
 }
 
-pub type AbstractionInputTarget<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
+pub type AbstractionInputTarget<'tcx> =
+    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
 pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;

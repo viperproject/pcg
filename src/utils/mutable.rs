@@ -29,6 +29,7 @@ pub enum LocalMutationIsAllowed {
 }
 
 impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
+    #[allow(unreachable_patterns)]
     fn upvars(self) -> Vec<Upvar<'tcx>> {
         let def = self.body().source.def_id().expect_local();
         self.tcx

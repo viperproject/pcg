@@ -1,4 +1,3 @@
-
 use crate::rustc_interface::{
     index::IndexVec,
     middle::ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
@@ -16,6 +15,8 @@ struct LifetimeExtractor<'tcx> {
 impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
     fn visit_ty(&mut self, ty: ty::Ty<'tcx>) {
         match ty.kind() {
+            //  TODO: Justify why function pointers are ignored
+            ty::TyKind::FnPtr(_, _) => {}
             ty::TyKind::Closure(_, args) => {
                 let closure_args = args.as_closure();
                 let upvar_tys = closure_args.upvar_tys();

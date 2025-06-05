@@ -1,5 +1,4 @@
 use crate::{
-    borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason},
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     pcg::{
         triple::{PlaceCondition, Triple},

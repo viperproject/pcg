@@ -13,7 +13,7 @@ use crate::{
         edge::abstraction::{AbstractionBlockEdge, LoopAbstraction},
         path_condition::PathConditions,
     },
-    rustc_interface::middle::mir::{self, BasicBlock},
+    rustc_interface::middle::mir::BasicBlock,
     utils::{display::DisplayDiff, validity::HasValidityCheck},
     validity_checks_enabled,
 };
@@ -62,14 +62,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        let self_location = mir::Location {
-            block: self_block,
-            statement_index: 0,
-        };
-        let other_location = mir::Location {
-            block: other_block,
-            statement_index: 0,
-        };
         if ctxt.is_back_edge(other_block, self_block) {
             self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
