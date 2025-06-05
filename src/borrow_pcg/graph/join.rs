@@ -3,7 +3,9 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -31,11 +33,42 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
+    fn apply_placeholder_labels<'mir>(
+        &mut self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) {
+        let nodes = self.nodes(ctxt);
+        for node in nodes {
+            if let PCGNode::RegionProjection(rp) = node
+                && rp.is_placeholder()
+                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
+            {
+                if let MaybeOldPlace::Current { place } = local_rp.base
+                    && capabilities.get(place).is_some()
+                {
+                    self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
+                } else {
+                    let mut orig_rp = local_rp;
+                    orig_rp.label = None;
+                    self.mut_edges(|edge| {
+                        edge.label_region_projection(
+                            &orig_rp,
+                            Some(RegionProjectionLabel::Placeholder),
+                            ctxt,
+                        )
+                    });
+                }
+            }
+        }
+    }
+
     pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         tracing::debug!("join {self_block:?} {other_block:?} start");
@@ -45,27 +78,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // }
         let old_self = self.clone();
 
-        for node in other.nodes(ctxt) {
-            if let PCGNode::RegionProjection(rp) = node
-                && rp.is_placeholder()
-                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
-            {
-                let mut orig_rp = local_rp;
-                orig_rp.label = None;
-                self.mut_edges(|edge| {
-                    edge.label_region_projection(
-                        &orig_rp,
-                        Some(RegionProjectionLabel::Placeholder),
-                        ctxt,
-                    )
-                });
-            }
-        }
-
         if ctxt.is_back_edge(other_block, self_block) {
             self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
-            self.join_loop(other, self_block, other_block, ctxt);
+            self.join_loop(&other, self_block, other_block, ctxt);
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -85,6 +101,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // if validity_checks_enabled() {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
             // }
+            self.apply_placeholder_labels(capabilities, ctxt);
             return result;
         }
         for other_edge in other.edges() {
@@ -102,6 +119,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self.remove(edge.kind());
             }
         }
+
+        self.apply_placeholder_labels(capabilities, ctxt);
 
         let changed = old_self != *self;
 
@@ -131,7 +150,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     eprintln!("Error rendering old self graph: {e}");
                 });
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, other) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, &other) {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {e}");
                 });
@@ -169,10 +188,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .retain(|edge_kind, _| to_keep.contains(edge_kind));
 
         if borrows_imgcat_debug() {
-            self.render_debug_graph(
-                ctxt,
-                "after removal of common edges",
-            );
+            self.render_debug_graph(ctxt, "after removal of common edges");
         }
 
         let mut result = self_abstraction_graph.clone();
@@ -213,10 +229,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         if borrows_imgcat_debug() {
-            self.render_debug_graph(
-                ctxt,
-                "done",
-            );
+            self.render_debug_graph(ctxt, "done");
         }
         tracing::debug!("join_loop {from_block:?} {loop_head:?} end");
     }

@@ -169,10 +169,11 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        changed |= self.graph.join(&other.graph, self_block, other_block, ctxt);
+        changed |= self.graph.join(&other.graph, self_block, other_block, capabilities, ctxt);
         changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions

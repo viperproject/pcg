@@ -201,10 +201,14 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         // add the path condition that leads them to this block
         let mut other = other.clone();
         other.borrow.add_cfg_edge(other_block, self_block, ctxt);
-        res |= self
-            .borrow
-            .join(&other.borrow, self_block, other_block, ctxt);
         res |= self.capabilities.join(&other.capabilities);
+        res |= self.borrow.join(
+            &other.borrow,
+            self_block,
+            other_block,
+            &self.capabilities,
+            ctxt,
+        );
         Ok(res)
     }
 

@@ -1,3 +1,4 @@
+#![feature(rustc_private)]
 use chrono::Local;
 use derive_more::Deref;
 use pcg::utils::MAX_BASIC_BLOCKS;
