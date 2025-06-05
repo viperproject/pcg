@@ -5,6 +5,18 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
+    // common::run_on_crate(
+    //     "rustls",
+    //     "0.23.23",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: None,
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
     common::run_on_crate(
         "predicates-tree",
         "1.0.12",
@@ -73,7 +85,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: false,
             function: Some("flags::RustcCodegenFlags::<'this>::cc_flags"),
-            extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW", "true")],
+            extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW".to_string(), "true".to_string())],
         },
     );
 
@@ -121,7 +133,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: false,
             function: Some("internals::check::check_variant_skip_attrs"),
-            extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW", "true")],
+            extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW".to_string(), "true".to_string())],
         },
     );
 

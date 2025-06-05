@@ -231,13 +231,13 @@ pub enum Target {
 #[derive(Debug, Clone)]
 pub enum RunOnCrateOptions {
     TypecheckOnly {
-        extra_env_vars: Vec<(&'static str, &'static str)>,
+        extra_env_vars: Vec<(String, String)>,
     },
     RunPCG {
         target: Target,
         validity_checks: bool,
         function: Option<&'static str>,
-        extra_env_vars: Vec<(&'static str, &'static str)>,
+        extra_env_vars: Vec<(String, String)>,
     },
 }
 
@@ -249,7 +249,7 @@ impl RunOnCrateOptions {
         }
     }
 
-    pub fn extra_env_vars(&self) -> &[(&'static str, &'static str)] {
+    pub fn extra_env_vars(&self) -> &[(String, String)] {
         match self {
             RunOnCrateOptions::RunPCG { extra_env_vars, .. } => extra_env_vars,
             RunOnCrateOptions::TypecheckOnly { extra_env_vars } => extra_env_vars,

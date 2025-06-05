@@ -7,18 +7,13 @@ use std::{
 
 use bumpalo::Bump;
 use derive_more::From;
-use tracing::{debug, info, trace};
+use tracing::info;
 
 use crate::{
     borrow_checker::{
         r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
         BorrowCheckerInterface,
-    },
-    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
-    free_pcs::PcgAnalysis,
-    pcg::{self, BodyWithBorrowckFacts},
-    run_pcg,
-    rustc_interface::{
+    }, borrow_pcg::region_projection::{PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
         borrowck::{self, BorrowIndex, LocationTable, RichLocation},
         data_structures::fx::{FxHashMap, FxHashSet},
         driver::{self, Compilation},
@@ -32,8 +27,7 @@ use crate::{
         },
         session::Session,
         span::SpanSnippetError,
-    },
-    PcgOutput,
+    }, utils::MAX_BASIC_BLOCKS, PcgOutput
 };
 
 #[rustversion::before(2024-11-09)]
@@ -54,6 +48,7 @@ pub(crate) fn set_mir_borrowck(_session: &Session, providers: &mut Providers) {
 
 impl driver::Callbacks for PcgCallbacks {
     fn config(&mut self, config: &mut Config) {
+        tracing::info!("Setting mir_borrowck");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }
@@ -99,12 +94,12 @@ thread_local! {
 
 pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
     let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
-    debug!(
+    tracing::info!(
         "Start mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
     let body_with_facts = borrowck::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
-    debug!(
+    tracing::info!(
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
@@ -113,7 +108,7 @@ pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBo
         let body: BodyWithBorrowckFacts<'static> = std::mem::transmute(body);
         BODIES.with(|state| {
             let mut map = state.borrow_mut();
-            trace!(
+            tracing::info!(
                 "Inserting body for {}",
                 tcx.def_path_str(def_id.to_def_id())
             );
@@ -162,8 +157,11 @@ pub(crate) unsafe fn take_stored_body<'tcx>(
 }
 
 fn should_check_body(body: &Body<'_>) -> bool {
-    body.basic_blocks.len() <= 7
-    // true
+    if let Some(len) = *MAX_BASIC_BLOCKS {
+        body.basic_blocks.len() <= len
+    } else {
+        true
+    }
 }
 
 fn is_primary_crate() -> bool {
@@ -174,6 +172,7 @@ fn is_primary_crate() -> bool {
 ///
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
 pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
+    tracing::info!("Running PCG on all functions");
     if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
