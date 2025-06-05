@@ -261,7 +261,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .get_edges_blocked_by(ef.current(), self.ctxt)
                 .clone();
             for edge in blocked_by.iter() {
-                if edge.is_shared_borrow(self.ctxt) {
+                if !edge.kind().could_mutate(self.ctxt) {
                     continue;
                 }
                 for node in edge.blocked_nodes(self.ctxt) {

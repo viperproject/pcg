@@ -77,11 +77,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
-    fn blocks_node<'slf>(
-        &self,
-        node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
 
@@ -115,6 +111,10 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
+    pub(crate) fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.kind.is_mut(repacker)
+    }
+
     /// Returns true if the edge could be redirected, false if it would create a self edge.
     pub(crate) fn redirect(
         &mut self,
@@ -205,6 +205,24 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::HavocRegion => write!(f, "HavocRegion"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
             BorrowFlowEdgeKind::FunctionCallNestedRefs => write!(f, "FunctionCallNestedRefs"),
+        }
+    }
+}
+
+impl<'tcx> BorrowFlowEdgeKind {
+    pub(crate) fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            BorrowFlowEdgeKind::Aggregate {
+                field_idx,
+                target_rp_index,
+            } => true,
+            BorrowFlowEdgeKind::ConstRef => false,
+            BorrowFlowEdgeKind::BorrowOutlives { regions_equal } => true,
+            BorrowFlowEdgeKind::InitialBorrows => true,
+            BorrowFlowEdgeKind::CopyRef => false,
+            BorrowFlowEdgeKind::Move => true,
+            BorrowFlowEdgeKind::HavocRegion => true,
+            BorrowFlowEdgeKind::FunctionCallNestedRefs => true,
         }
     }
 }
