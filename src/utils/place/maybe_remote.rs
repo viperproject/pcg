@@ -22,6 +22,15 @@ pub enum MaybeRemotePlace<'tcx> {
     Remote(RemotePlace),
 }
 
+impl<'tcx> MaybeRemotePlace<'tcx> {
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            MaybeRemotePlace::Local(p) => p.is_mutable(ctxt),
+            MaybeRemotePlace::Remote(rp) => false,
+        }
+    }
+}
+
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
         match self {

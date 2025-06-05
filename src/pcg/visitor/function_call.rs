@@ -265,6 +265,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     continue;
                 }
                 for node in edge.blocked_nodes(self.ctxt) {
+                    if !node.is_mutable(self.ctxt) {
+                        continue;
+                    }
                     match node {
                         PCGNode::Place(_) => {
                             if let Some(local) = node.try_to_local_node(self.ctxt) {

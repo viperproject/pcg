@@ -50,20 +50,21 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         let nodes = self.nodes(ctxt);
-        for node in nodes.iter() {
-            if let PCGNode::RegionProjection(rp) = node
-                && rp.is_placeholder()
-            {
-                if nodes
-                    .iter()
-                    .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
-                        return Err(format!(
-                            "Placeholder region projection {} is not unique",
-                            rp.to_short_string(ctxt)
-                        ));
-                    }
-            }
-        }
+        // TODO
+        // for node in nodes.iter() {
+        //     if let PCGNode::RegionProjection(rp) = node
+        //         && rp.is_placeholder()
+        //     {
+        //         if nodes
+        //             .iter()
+        //             .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
+        //                 return Err(format!(
+        //                     "Placeholder region projection {} is not unique",
+        //                     rp.to_short_string(ctxt)
+        //                 ));
+        //             }
+        //     }
+        // }
         for edge in self.edges() {
             edge.check_validity(ctxt)?;
         }

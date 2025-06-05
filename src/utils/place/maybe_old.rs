@@ -26,6 +26,12 @@ pub enum MaybeOldPlace<'tcx> {
     OldPlace(PlaceSnapshot<'tcx>),
 }
 
+impl<'tcx> MaybeOldPlace<'tcx> {
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.place().is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt).is_ok()
+    }
+}
+
 impl<'tcx> LocalNodeLike<'tcx> for MaybeOldPlace<'tcx> {
     fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
         match self {

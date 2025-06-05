@@ -123,16 +123,19 @@ impl GraphNode {
                 label,
                 loans,
                 base_ty: place_ty,
-            } => DotNode {
-                id: self.id.to_string(),
-                label: DotLabel::Text(label.clone()),
-                color: DotStringAttr("blue".to_string()),
-                font_color: DotStringAttr("blue".to_string()),
-                shape: DotStringAttr("octagon".to_string()),
-                style: None,
-                penwidth: None,
-                tooltip: Some(DotStringAttr(format!("{place_ty}\\\n{loans}"))),
-            },
+            } => {
+                let label = escape_html(label);
+                DotNode {
+                    id: self.id.to_string(),
+                    label: DotLabel::Html(label.clone()),
+                    color: DotStringAttr("blue".to_string()),
+                    font_color: DotStringAttr("blue".to_string()),
+                    shape: DotStringAttr("octagon".to_string()),
+                    style: None,
+                    penwidth: None,
+                    tooltip: Some(DotStringAttr(format!("{place_ty}\\\n{loans}"))),
+                }
+            }
         }
     }
 }
@@ -292,15 +295,13 @@ impl GraphEdge {
                 source,
                 target,
                 label,
-            } => {
-                DotEdge {
-                    from: source.to_string(),
-                    to: target.to_string(),
-                    options: EdgeOptions::undirected()
-                        .with_style("dashed".to_string())
-                        .with_label(label.clone()),
-                }
-            }
+            } => DotEdge {
+                from: source.to_string(),
+                to: target.to_string(),
+                options: EdgeOptions::undirected()
+                    .with_style("dashed".to_string())
+                    .with_label(label.clone()),
+            },
         }
     }
 }
@@ -378,8 +379,7 @@ pub(crate) fn write_pcg_dot_graph_to_file<'a, 'tcx: 'a>(
     location: Location,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor =
-        PcgGraphConstructor::new(pcg, ctxt, location);
+    let constructor = PcgGraphConstructor::new(pcg, ctxt, location);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {file_path}: {e}");

@@ -188,14 +188,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .into(),
                         )?;
                         if rp.can_be_labelled(self.ctxt) && for_exclusive {
-                            tracing::info!("Expand and label {}", rp.to_short_string(self.ctxt));
+                            tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
                             self.pcg.borrow.label_region_projection(
                                 &rp,
                                 Some(SnapshotLocation::before(location).into()),
                                 self.ctxt,
                             );
                         } else {
-                            tracing::info!(
+                            tracing::debug!(
                                 "No label for {} (exclusive={})",
                                 rp.to_short_string(self.ctxt),
                                 for_exclusive

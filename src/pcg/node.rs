@@ -13,6 +13,7 @@ use crate::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
+    rustc_interface::hir::Mutability,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
@@ -22,8 +23,19 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
     RegionProjection(RegionProjection<'tcx, U>),
 }
 
-impl<'tcx, T, U> PCGNode<'tcx, T, U> {
+impl<'tcx> PCGNode<'tcx> {
+    // TODO: Make this more precise
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            PCGNode::Place(p) => p.is_mutable(ctxt),
+            PCGNode::RegionProjection(rp) => rp.base().as_local_place().map_or(false, |p| {
+                p.ty(ctxt).ty.ref_mutability() != Some(Mutability::Not)
+            }),
+        }
+    }
+}
 
+impl<'tcx, T, U> PCGNode<'tcx, T, U> {
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
         match self {
             PCGNode::RegionProjection(rp) => Ok(rp),

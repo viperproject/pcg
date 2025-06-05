@@ -165,6 +165,12 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(p) => p.is_mutable(ctxt),
+            MaybeRemoteRegionProjectionBase::Const(_) => false
+        }
+    }
     pub(crate) fn base_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
