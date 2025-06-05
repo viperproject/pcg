@@ -13,6 +13,7 @@ use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PCGInternalError, PcgError};
+use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -164,6 +165,16 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
+    pub(crate) fn base_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
+                let local_place: Place<'tcx> =
+                    maybe_remote_place.related_local_place().local.into();
+                local_place.ty(ctxt).ty
+            }
+            MaybeRemoteRegionProjectionBase::Const(c) => c.ty(),
+        }
+    }
     pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place_mut(),
@@ -244,7 +255,7 @@ impl From<mir::Location> for RegionProjectionLabel {
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
-    pub(crate) label: Option<RegionProjectionLabel>,
+    label: Option<RegionProjectionLabel>,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -267,17 +278,8 @@ impl<'tcx, P> RegionProjection<'tcx, P> {
     pub(crate) fn is_placeholder(&self) -> bool {
         self.label == Some(RegionProjectionLabel::Placeholder)
     }
-}
-
-impl<'tcx> LocalRegionProjection<'tcx> {
-    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        let place = self.base.place();
-        place.iter_places(ctxt).iter().all(|p| {
-            p.ty(ctxt)
-                .ty
-                .ref_mutability()
-                .is_none_or(|mutability| mutability.is_mut())
-        })
+    pub(crate) fn label(&self) -> Option<RegionProjectionLabel> {
+        self.label
     }
 }
 
@@ -309,8 +311,15 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         label: Option<RegionProjectionLabel>,
-        _repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
+        if label.is_some() {
+            pcg_validity_assert!(
+                projection.can_be_labelled(ctxt),
+                "{} is not mutable and shouldn't be labelled",
+                projection.to_short_string(ctxt)
+            );
+        }
         if self.region_idx == projection.region_idx
             && self.base == projection.base.into()
             && self.label == projection.label
@@ -336,32 +345,28 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
     }
 }
 
-/// Determines if a region `'r` is nested under a mutable reference for a type
-/// `t`, such that a function taking a value `v` of type `t` can mutate the (set
-/// of) references of lifetime `'r` in `v`.
-struct MutableNestedReferenceChecker<'mir, 'tcx, C: Copy> {
-    ctxt: CompilerCtxt<'mir, 'tcx, C>,
+struct TyVarianceVisitor<'mir, 'tcx> {
+    ctxt: CompilerCtxt<'mir, 'tcx>,
     target: PcgRegion,
     found: bool,
 }
 
-impl<'mir, 'tcx, C: Copy> MutableNestedReferenceChecker<'mir, 'tcx, C> {
-    fn new(ctxt: CompilerCtxt<'mir, 'tcx, C>, target: PcgRegion) -> Self {
-        Self {
-            ctxt,
-            target,
-            found: false,
-        }
-    }
-}
-
-impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for MutableNestedReferenceChecker<'_, 'tcx, C> {
+impl<'mir, 'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'mir, 'tcx> {
     fn visit_ty(&mut self, t: ty::Ty<'tcx>) {
         if self.found {
             return;
         }
-
         match t.kind() {
+            TyKind::Adt(def_id, substs) => {
+                let variances = self.ctxt.tcx().variances_of(def_id.did());
+                for (idx, region) in substs.regions().enumerate() {
+                    if self.target == region.into()
+                        && variances.get(idx) == Some(&ty::Variance::Invariant)
+                    {
+                        self.found = true;
+                    }
+                }
+            }
             TyKind::RawPtr(ty, mutbl) | TyKind::Ref(_, ty, mutbl) => {
                 if mutbl.is_mut() {
                     if extract_regions(*ty, self.ctxt)
@@ -381,26 +386,53 @@ impl<'tcx, C: Copy> TypeVisitor<ty::TyCtxt<'tcx>> for MutableNestedReferenceChec
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> RegionProjection<'tcx, T> {
-    // Returns true iff the region is nested under a mutable reference, w.r.t
-    // the local of the place of this region projection
-    pub(crate) fn is_nested_under_mut_ref<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        let mut checker = MutableNestedReferenceChecker::new(ctxt, self.region(ctxt));
-        let local_place: Place<'tcx> = self.base.place().local.into();
-        local_place.ty(ctxt).visit_with(&mut checker);
-        checker.found
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+    pub(crate) fn can_be_labelled(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        true
+    }
+    pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        let mut visitor = TyVarianceVisitor {
+            ctxt,
+            target: self.region(ctxt),
+            found: false,
+        };
+        self.base
+            .to_maybe_remote_region_projection_base()
+            .base_ty(ctxt)
+            .visit_with(&mut visitor);
+        visitor.found
     }
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn label_projection(
-        self,
-        label: RegionProjectionLabel,
-    ) -> RegionProjection<'tcx, T> {
+    #[must_use]
+    pub(crate) fn unlabelled(self) -> RegionProjection<'tcx, T> {
         RegionProjection {
             base: self.base,
             region_idx: self.region_idx,
-            label: Some(label),
+            label: None,
+            phantom: PhantomData,
+        }
+    }
+}
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+    #[must_use]
+    pub(crate) fn with_label(
+        self,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> RegionProjection<'tcx, T> {
+        if label.is_some() {
+            pcg_validity_assert!(
+                self.can_be_labelled(ctxt),
+                "{} is not mutable and shouldn't be labelled",
+                self.to_short_string(ctxt)
+            );
+        }
+        RegionProjection {
+            base: self.base,
+            region_idx: self.region_idx,
+            label,
             phantom: PhantomData,
         }
     }
@@ -662,10 +694,10 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         region: PcgRegion,
         base: T,
         label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> Result<Self, PCGInternalError> {
         let region_idx = base
-            .regions(repacker)
+            .regions(ctxt)
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
             .map(|(idx, _)| idx);
@@ -677,6 +709,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
                 )));
             }
         };
+
         let result = Self {
             base,
             region_idx,

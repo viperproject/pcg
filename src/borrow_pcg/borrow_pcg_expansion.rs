@@ -213,7 +213,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
             changed |= p.label_region_projection(projection, label, ctxt);
         }
         if self.base.place().is_mut_ref(ctxt)
-            && projection.label == self.deref_blocked_region_projection_label
+            && projection.label() == self.deref_blocked_region_projection_label
         {
             self.deref_blocked_region_projection_label = label;
         }
@@ -241,10 +241,10 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if self.base.to_pcg_node(repacker) == node {
             return true;
@@ -258,9 +258,9 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
 
     // `return` is needed because both branches have different types
     #[allow(clippy::needless_return)]
-    fn blocked_nodes<'slf, C: Copy>(
+    fn blocked_nodes<'slf>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -273,9 +273,9 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
         }
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        _ctxt: CompilerCtxt<'mir, 'tcx, C>,
+        _ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -335,15 +335,18 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn deref_blocked_region_projection<C: Copy>(
+    pub(crate) fn deref_blocked_region_projection(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<PCGNode<'tcx>> {
         if let BlockingNode::Place(p) = self.base
-            && let Some(mut projection) = p.base_region_projection(repacker)
+            && let Some(projection) = p.base_region_projection(ctxt)
         {
-            projection.label = self.deref_blocked_region_projection_label;
-            Some(projection.into())
+            Some(
+                projection
+                    .with_label(self.deref_blocked_region_projection_label, ctxt)
+                    .into(),
+            )
         } else {
             None
         }
@@ -366,7 +369,7 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
                             .place()
                             .place()
                             .is_prefix_exact(p_rp.place().place())
-                        && p_rp.label == base_rp.label
+                        && p_rp.label() == base_rp.label()
                 } else {
                     false
                 }

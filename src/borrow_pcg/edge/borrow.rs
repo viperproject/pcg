@@ -1,6 +1,9 @@
 use crate::{
     borrow_pcg::{
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::{LabelPlace, LabelRegionProjection}, latest::Latest, region_projection::RegionProjectionLabel
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        has_pcs_elem::{LabelPlace, LabelRegionProjection},
+        latest::Latest,
+        region_projection::RegionProjectionLabel,
     },
     edgedata_enum,
     pcg::PCGNode,
@@ -147,13 +150,13 @@ impl<'tcx> RemoteBorrow<'tcx> {
         self.assigned_ref
     }
 
-    pub(crate) fn assigned_region_projection<C: Copy>(
+    pub(crate) fn assigned_region_projection(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-        let rp = self.assigned_ref.base_region_projection(repacker).unwrap();
+        let rp = self.assigned_ref.base_region_projection(ctxt).unwrap();
         if let Some(location) = self.rp_snapshot_location {
-            rp.label_projection(location)
+            rp.with_label(Some(location), ctxt)
         } else {
             rp
         }
@@ -182,10 +185,10 @@ impl<'tcx> HasValidityCheck<'tcx> for RemoteBorrow<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if let BlockedNode::Place(MaybeRemotePlace::Remote(rp)) = node {
             self.blocked_place() == rp
@@ -194,9 +197,9 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         }
     }
 
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -204,9 +207,9 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         Box::new(std::iter::once(self.blocked_place().into()))
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -329,10 +332,10 @@ impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, T>> for BorrowEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match node {
             PCGNode::Place(MaybeRemotePlace::Local(p)) => self.blocked_place == p,
@@ -340,10 +343,10 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         }
     }
 
-    fn is_blocked_by<C: Copy>(
+    fn is_blocked_by<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match node {
             PCGNode::Place(_) => false,
@@ -353,9 +356,9 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         }
     }
 
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn Iterator<Item = BlockedNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -363,9 +366,9 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         Box::new(std::iter::once(self.blocked_place.into()))
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,

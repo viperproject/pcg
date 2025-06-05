@@ -63,16 +63,16 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge.blocks_node(node, repacker)
     }
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -80,9 +80,9 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -224,17 +224,17 @@ impl<'tcx> LabelEdgePlaces<'tcx> for FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge.blocks_node(node, repacker)
     }
 
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -242,9 +242,9 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -507,10 +507,10 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
 }
 
 impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBlockEdge<'tcx, Input> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         Input::inputs_block(&self.inputs, node, ctxt)
         // match node {
@@ -525,9 +525,9 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBloc
         //     },
         // }
     }
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        _ctxt: CompilerCtxt<'_, 'tcx, C>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -539,9 +539,9 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBloc
         )
     }
 
-    fn blocked_by_nodes<'slf, 'mir, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir>(
         &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx, C>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,

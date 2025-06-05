@@ -179,10 +179,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .flat_map(move |edge| edge.blocked_by_nodes(repacker).collect::<Vec<_>>())
     }
 
-    pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph, C: Copy>(
+    pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph>(
         &mut self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx, C>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> &CachedBlockedEdges<'graph, 'tcx> {
         self.edges_blocked_by_cache
             .get_mut()
@@ -190,10 +190,10 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .or_insert_with(|| self.graph.edges_blocked_by(node, ctxt).collect())
     }
 
-    pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph, C: Copy>(
+    pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> CachedBlockingEdges<'graph, 'tcx> {
         {
             let map = self.edges_blocking_cache.borrow();

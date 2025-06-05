@@ -9,15 +9,12 @@ use std::{alloc::Allocator, rc::Rc};
 use derive_more::Deref;
 
 use crate::{
-    action::PcgActions,
-    borrow_pcg::{
+    action::PcgActions, borrow_checker::BorrowCheckerInterface, borrow_pcg::{
         action::BorrowPcgActionKind,
-        borrow_pcg_edge::{BorrowPcgEdge, BorrowPCGEdgeRef},
+        borrow_pcg_edge::{BorrowPCGEdgeRef, BorrowPcgEdge},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
-    },
-    pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
-    rustc_interface::{
+    }, pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor}, rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,
         index::IndexVec,
@@ -26,10 +23,9 @@ use crate::{
             ty::TyCtxt,
         },
         mir_dataflow::ResultsCursor,
-    },
-    utils::{
+    }, utils::{
         display::DebugLines, domain_data::DomainDataStates, validity::HasValidityCheck, Place,
-    },
+    }
 };
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
@@ -251,8 +247,9 @@ impl<'tcx> PcgBasicBlocks<'tcx> {
         place: mir::Place<'tcx>,
         body: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
+        bc: &dyn BorrowCheckerInterface<'tcx>,
     ) -> FxHashSet<mir::Place<'tcx>> {
-        self.aggregate(|stmt| stmt.aliases(place, body, tcx))
+        self.aggregate(|stmt| stmt.aliases(place, body, tcx, bc))
     }
 }
 
@@ -310,10 +307,10 @@ impl<'tcx> PcgLocation<'tcx> {
         &self.actions[phase]
     }
 
-    pub fn ancestor_edges<'slf, 'mir: 'slf, 'bc: 'slf, C: Copy>(
+    pub fn ancestor_edges<'slf, 'mir: 'slf, 'bc: 'slf>(
         &'slf self,
         place: Place<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
         let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
         let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);
@@ -328,10 +325,11 @@ impl<'tcx> PcgLocation<'tcx> {
         place: impl Into<Place<'tcx>>,
         body: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
+        bc: &dyn BorrowCheckerInterface<'tcx>,
     ) -> FxHashSet<mir::Place<'tcx>> {
         let place: Place<'tcx> = place.into();
         // let place = place.with_inherent_region(ctxt);
-        let ctxt = CompilerCtxt::new(body, tcx, ());
+        let ctxt = CompilerCtxt::new(body, tcx, bc);
         self.states[EvalStmtPhase::PostMain]
             .borrow
             .graph()

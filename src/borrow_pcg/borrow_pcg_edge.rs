@@ -81,9 +81,9 @@ pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
         self.kind().is_shared_borrow(repacker)
     }
 
-    fn blocked_places<'slf, C: Copy + 'slf>(
+    fn blocked_places<'slf>(
         &'slf self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> impl Iterator<Item = MaybeRemotePlace<'tcx>> + 'slf
     where
         'tcx: 'slf,
@@ -434,9 +434,9 @@ impl<'tcx> BorrowPcgEdge<'tcx> {
 }
 
 impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -444,9 +444,9 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
         self.kind().blocked_by_nodes(repacker)
     }
 
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -454,18 +454,18 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
         self.kind().blocked_nodes(repacker)
     }
 
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.kind().blocks_node(node, repacker)
     }
 
-    fn is_blocked_by<C: Copy>(
+    fn is_blocked_by<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.kind().is_blocked_by(node, repacker)
     }

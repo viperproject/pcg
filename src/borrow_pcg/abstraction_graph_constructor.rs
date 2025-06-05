@@ -287,7 +287,7 @@ impl AbstractionGraphNode<'_> {
         match self.0 {
             PCGNode::Place(p) => p.is_old(),
             PCGNode::RegionProjection(rp) => {
-                rp.base().is_old() || matches!(rp.label, Some(RegionProjectionLabel::Location(_)))
+                rp.base().is_old() || matches!(rp.label(), Some(RegionProjectionLabel::Location(_)))
             }
         }
     }

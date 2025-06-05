@@ -56,7 +56,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
             {
                 if nodes
                     .iter()
-                    .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label.is_none())) {
+                    .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
                         return Err(format!(
                             "Placeholder region projection {} is not unique",
                             rp.to_short_string(ctxt)
@@ -327,9 +327,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn nodes<C: Copy>(
+    pub(crate) fn nodes<'slf>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
@@ -374,10 +374,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub(crate) fn has_edge_blocked_by<C: Copy>(
+    pub(crate) fn has_edge_blocked_by<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edges().any(|edge| edge.is_blocked_by(node, repacker))
     }
@@ -386,11 +386,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.len()
     }
 
-    pub fn edges_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph, C: Copy>(
+    pub fn edges_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc, C>
+        repacker: CompilerCtxt<'mir, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc>
     {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
@@ -431,19 +431,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub(crate) fn edges_blocking<'slf, 'mir: 'slf, 'bc: 'slf, C: Copy>(
+    pub(crate) fn edges_blocking<'slf, 'mir: 'slf, 'bc: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + use<'tcx, 'slf, 'mir, 'bc, C> {
+        repacker: CompilerCtxt<'mir, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + use<'tcx, 'slf, 'mir, 'bc> {
         self.edges()
             .filter(move |edge| edge.blocks_node(node, repacker))
     }
 
-    pub(crate) fn edges_blocking_set<'slf, 'mir: 'slf, 'bc: 'slf, C: Copy>(
+    pub(crate) fn edges_blocking_set<'slf, 'mir: 'slf, 'bc: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
         self.edges_blocking(node, repacker).collect()
     }

@@ -49,8 +49,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 {
                     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
                 } else {
-                    let mut orig_rp = local_rp;
-                    orig_rp.label = None;
+                    let orig_rp = local_rp.with_label(None, ctxt);
                     self.mut_edges(|edge| {
                         edge.label_region_projection(
                             &orig_rp,

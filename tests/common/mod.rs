@@ -138,6 +138,9 @@ pub fn crate_download_dirname(name: &str, version: &str) -> String {
 
 pub fn is_supported_crate(name: &str, version: &str) -> Result<(), String> {
     match (name, version) {
+        ("rustls", "0.23.23") => {
+            Err("not working, not sure why".to_string())
+        }
         ("system-configuration", "0.6.1") => {
             Err("Skipping system-configuration; it doesn't compile.".to_string())
         }

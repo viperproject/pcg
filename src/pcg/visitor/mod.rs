@@ -419,13 +419,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             for place in blocked_place.iter_places(self.ctxt) {
                 for rp in place.region_projections(self.ctxt).into_iter() {
-                    // if rp.is_nested_under_mut_ref(self.ctxt) {
-                    self.pcg.borrow.label_region_projection(
-                        &rp.into(),
-                        Some(location.into()),
-                        self.ctxt,
-                    );
-                    // }
+                    if rp.can_be_labelled(self.ctxt) {
+                        self.pcg.borrow.label_region_projection(
+                            &rp.into(),
+                            Some(location.into()),
+                            self.ctxt,
+                        );
+                    }
                 }
             }
         }
@@ -448,16 +448,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     fn remove_placeholder_labels(&mut self, place: MaybeOldPlace<'tcx>) {
-        for mut region_projection in place.region_projections(self.ctxt) {
+        for region_projection in place.region_projections(self.ctxt) {
+            if !region_projection.can_be_labelled(self.ctxt) {
+                continue;
+            }
             tracing::debug!(
                 "remove_placeholder_labels: {}",
                 region_projection.to_short_string(self.ctxt)
             );
             // Remove Placeholder label from the region projection
-            region_projection.label = Some(RegionProjectionLabel::Placeholder);
-            self.pcg
-                .borrow
-                .label_region_projection(&region_projection, None, self.ctxt);
+            self.pcg.borrow.label_region_projection(
+                &region_projection.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt),
+                None,
+                self.ctxt,
+            );
         }
     }
 }

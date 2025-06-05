@@ -9,6 +9,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::rustc_interface::middle::mir::Location;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::{borrow_pcg::action::BorrowPCGAction, utils::ShallowExpansion};
 
@@ -186,11 +187,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             )
                             .into(),
                         )?;
-                        if rp.is_mutable(self.ctxt) && for_exclusive {
+                        if rp.can_be_labelled(self.ctxt) && for_exclusive {
+                            tracing::info!("Expand and label {}", rp.to_short_string(self.ctxt));
                             self.pcg.borrow.label_region_projection(
                                 &rp,
                                 Some(SnapshotLocation::before(location).into()),
                                 self.ctxt,
+                            );
+                        } else {
+                            tracing::info!(
+                                "No label for {} (exclusive={})",
+                                rp.to_short_string(self.ctxt),
+                                for_exclusive
                             );
                         }
                     }

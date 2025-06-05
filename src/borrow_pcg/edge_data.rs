@@ -8,34 +8,34 @@ use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 pub trait EdgeData<'tcx> {
     /// For an edge A -> B, this returns the set of nodes A. In general, the capabilities
     /// of nodes B are obtained from these nodes.
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf;
 
     /// For an edge A -> B, this returns the set of nodes B. In general, these nodes
     /// obtain their capabilities from the nodes A.
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx, C>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir;
 
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.blocked_nodes(ctxt).any(|n| n == node)
     }
 
-    fn is_blocked_by<C: Copy>(
+    fn is_blocked_by<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.blocked_by_nodes(ctxt).any(|n| n == node)
     }
@@ -68,9 +68,9 @@ macro_rules! edgedata_enum {
         $( $variant_name:ident($inner_type:ty) ),+ $(,)?
     ) => {
         impl<$tcx> $crate::borrow_pcg::edge_data::EdgeData<$tcx> for $enum_name<$tcx> {
-            fn blocked_nodes<'slf, C: Copy + 'slf>(
+            fn blocked_nodes<'slf>(
                 &'slf self,
-                repacker: CompilerCtxt<'_, $tcx, C>,
+                repacker: CompilerCtxt<'_, $tcx>,
             ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
             where
                 'tcx: 'slf,
@@ -82,9 +82,9 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+            fn blocked_by_nodes<'slf, 'mir: 'slf>(
                 &'slf self,
-                repacker: CompilerCtxt<'mir, $tcx, C>,
+                repacker: CompilerCtxt<'mir, $tcx>,
             ) -> Box<dyn std::iter::Iterator<Item = $crate::borrow_pcg::borrow_pcg_edge::LocalNode<'tcx>> + 'slf>
             where
                 'tcx: 'mir,
@@ -96,10 +96,10 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn blocks_node<C: Copy>(
+            fn blocks_node<'slf>(
                 &self,
                 node: BlockedNode<'tcx>,
-                repacker: CompilerCtxt<'_, $tcx, C>,
+                repacker: CompilerCtxt<'_, $tcx>,
             ) -> bool {
                 match self {
                     $(
@@ -108,10 +108,10 @@ macro_rules! edgedata_enum {
                 }
             }
 
-            fn is_blocked_by<C: Copy>(
+            fn is_blocked_by<'slf>(
                 &self,
                 node: LocalNode<'tcx>,
-                repacker: CompilerCtxt<'_, $tcx, C>,
+                repacker: CompilerCtxt<'_, $tcx>,
             ) -> bool {
                 match self {
                     $(

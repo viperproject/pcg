@@ -1,6 +1,6 @@
 use super::PcgVisitor;
 use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::{
     AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction, FunctionData,
@@ -105,14 +105,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         // (and labelled, since the set of borrows inside may be modified)
         let mut labelled_rps = FxHashSet::default();
         for arg in arg_region_projections.iter() {
-            if arg.is_nested_under_mut_ref(self.ctxt) {
+            if arg.is_invariant_in_type(self.ctxt) {
                 self.pcg.borrow.label_region_projection(
                     arg,
                     Some(SnapshotLocation::before(location).into()),
                     self.ctxt,
                 );
-                labelled_rps
-                    .insert(arg.label_projection(SnapshotLocation::before(location).into()));
+                labelled_rps.insert(
+                    arg.with_label(Some(SnapshotLocation::before(location).into()), self.ctxt),
+                );
             }
         }
 
@@ -184,8 +185,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let source_arg_projections = arg_region_projections
             .iter()
             .map(|rp| {
-                if rp.is_nested_under_mut_ref(self.ctxt) {
-                    (*rp).label_projection(SnapshotLocation::before(location).into())
+                if rp.is_invariant_in_type(self.ctxt) {
+                    (*rp).with_label(Some(SnapshotLocation::before(location).into()), self.ctxt)
                 } else {
                     *rp
                 }
@@ -228,19 +229,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
     fn maybe_futurize(
         &self,
-        mut rp: RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>,
+        rp: LocalRegionProjection<'tcx>,
     ) -> RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>> {
-        let base_place = rp.base.as_local_place().unwrap().place();
+        let base_place = rp.base().place();
         if self
             .pcg
             .capabilities
             .has_capability_to_any_prefix(base_place, self.ctxt)
         {
-            rp.label = None;
+            rp.with_label(None, self.ctxt).into()
         } else {
-            rp.label = Some(RegionProjectionLabel::Placeholder);
+            rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
+                .into()
         }
-        rp
     }
 
     fn get_future_subgraph(
@@ -260,6 +261,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .get_edges_blocked_by(ef.current(), self.ctxt)
                 .clone();
             for edge in blocked_by.iter() {
+                if edge.is_shared_borrow(self.ctxt) {
+                    continue;
+                }
                 for node in edge.blocked_nodes(self.ctxt) {
                     match node {
                         PCGNode::Place(_) => {
@@ -281,9 +285,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 continue;
                             }
 
-                            if rp.label.is_some() {
-                                let mut unlabelled_rp = rp;
-                                unlabelled_rp.label = None;
+                            if rp.label().is_some() {
+                                let unlabelled_rp = rp.unlabelled();
                                 if source_graph.contains(unlabelled_rp.into(), self.ctxt) {
                                     continue;
                                 }
@@ -293,13 +296,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             if let Some(PCGNode::RegionProjection(local_rp)) =
                                 rp.try_to_local_node(self.ctxt)
                             {
-                                if !local_rp.is_mutable(self.ctxt) {
-                                    tracing::debug!(
-                                        "Skipping non-mutable region projection {}",
-                                        rp.to_short_string(self.ctxt)
-                                    );
-                                    continue;
-                                }
+                                // if !local_rp.is_mutable(self.ctxt) {
+                                //     tracing::debug!(
+                                //         "Skipping non-mutable region projection {}",
+                                //         rp.to_short_string(self.ctxt)
+                                //     );
+                                //     continue;
+                                // }
                                 // If the place is old, we can skip it but continue search up
                                 if local_rp.base.is_old() {
                                     queue.push(ef.extend(local_rp.into()));
@@ -308,7 +311,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
                                 // If we get here, we want to include this node
 
-                                let future_rp = self.maybe_futurize(rp);
+                                let future_rp = self.maybe_futurize(local_rp);
                                 let future_connect = self.maybe_futurize(ef.connect().into());
 
                                 if future_rp == future_connect

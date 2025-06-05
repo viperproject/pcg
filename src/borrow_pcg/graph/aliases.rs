@@ -18,10 +18,10 @@ struct Alias<'tcx> {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph, 'bc: 'graph, C: Copy>(
+    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
@@ -40,10 +40,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         result
     }
-    pub(crate) fn aliases<C: Copy>(
+    pub(crate) fn aliases<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut result: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
         result.insert(node.into());
@@ -59,10 +59,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn aliases_all_projections<C: Copy>(
+    pub(crate) fn aliases_all_projections<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(ctxt) {
@@ -112,10 +112,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     #[tracing::instrument(skip(self, repacker, seen, direct))]
-    fn direct_aliases<C: Copy>(
+    fn direct_aliases<'slf>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
         seen: &mut FxHashSet<PCGNode<'tcx>>,
         direct: bool,
     ) -> FxHashSet<Alias<'tcx>> {

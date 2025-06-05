@@ -77,17 +77,17 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
-    fn blocks_node<C: Copy>(
+    fn blocks_node<'slf>(
         &self,
         node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
 
-    fn blocked_nodes<'slf, C: Copy + 'slf>(
+    fn blocked_nodes<'slf>(
         &'slf self,
-        _repacker: CompilerCtxt<'_, 'tcx, C>,
+        _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -95,9 +95,9 @@ impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
         Box::new(std::iter::once(self.long.into()))
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf, C: Copy + 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        _repacker: CompilerCtxt<'mir, 'tcx, C>,
+        _repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,

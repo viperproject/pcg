@@ -146,15 +146,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &mut self.pcg.capabilities,
                     self.ctxt,
                 );
-                for mut source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
-                    let source_proj = if kind.mutability().is_mut() {
+                for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
+                    let source_proj = if kind.mutability().is_mut()
+                        && source_proj.can_be_labelled(self.ctxt)
+                    {
                         self.pcg.borrow.label_region_projection(
                             &source_proj.into(),
                             Some(location.into()),
                             self.ctxt,
                         );
-                        source_proj.label = Some(location.into());
-                        source_proj
+                        source_proj.with_label(Some(location.into()), self.ctxt)
                     } else {
                         source_proj
                     };
