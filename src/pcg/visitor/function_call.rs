@@ -12,6 +12,7 @@ use crate::borrow_pcg::region_projection::{
     HasRegionProjections, HasRegions, PcgRegion, RegionProjection, RegionProjectionBaseLike,
     RegionProjectionLabel, TyRegion,
 };
+use crate::borrow_pcg::visitor::extract_regions;
 use crate::rustc_interface::data_structures::fx::{FxHashMap, FxHashSet};
 use crate::rustc_interface::middle::ty::{self, ProjectionPredicate, TraitPredicate, Ty};
 use crate::rustc_interface::{
@@ -19,7 +20,7 @@ use crate::rustc_interface::{
     middle::mir::{Location, Operand},
 };
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{self, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{self, CompilerCtxt, HasPlace, PlaceSnapshot, SnapshotLocation};
 
 #[derive(Clone, Default, Debug)]
 struct TyConstraints<'tcx> {
@@ -29,19 +30,18 @@ struct TyConstraints<'tcx> {
 }
 
 #[derive(Clone, Default, Debug)]
-struct TyRegionCtxt<'tcx> {
+struct FnSigCtxt<'tcx> {
     type_constraints: FxHashMap<Ty<'tcx>, TyConstraints<'tcx>>,
     region_outlives: FxHashMap<TyRegion, FxHashSet<TyRegion>>,
-    place_ty_map: FxHashMap<utils::Place<'tcx>, Ty<'tcx>>,
-    inputs_region_map: FxHashMap<TyRegion, PcgRegion>,
-    output_region_map: FxHashMap<TyRegion, PcgRegion>,
+    place_to_ty: FxHashMap<utils::Place<'tcx>, Ty<'tcx>>,
+    pcgregion_to_tyregion: FxHashMap<PcgRegion, TyRegion>,
 }
 
-impl<'tcx> TyRegionCtxt<'tcx> {
+impl<'tcx> FnSigCtxt<'tcx> {
     fn new(
         repacker: CompilerCtxt<'_, 'tcx>,
         function_data: FunctionData<'tcx>,
-        arg_places: Vec<utils::Place<'tcx>>,
+        args: &[&Operand<'tcx>],
         destination: &utils::Place<'tcx>,
     ) -> Self {
         let mut ty_region_ctxt = Self::default();
@@ -49,18 +49,18 @@ impl<'tcx> TyRegionCtxt<'tcx> {
             FunctionData::FnDefData(fn_def_data) => {
                 ty_region_ctxt.infer_constraints(repacker, fn_def_data.def_id());
                 let (output, inputs) = fn_def_data.inputs_and_output().split_last().unwrap();
-                ty_region_ctxt.infer_mappings(repacker, arg_places, destination, inputs, output);
+                ty_region_ctxt.infer_mappings(repacker, args, destination, inputs, output);
             }
             FunctionData::FnPtrData(fn_ptr_data) => {
                 let (output, inputs) = fn_ptr_data.inputs_and_output().split_last().unwrap();
-                ty_region_ctxt.infer_mappings(repacker, arg_places, destination, inputs, output);
+                ty_region_ctxt.infer_mappings(repacker, args, destination, inputs, output);
             }
         };
         ty_region_ctxt
     }
 
     fn infer_constraints(&mut self, repacker: CompilerCtxt<'_, 'tcx>, def_id: DefId) {
-        for (clause, _span) in repacker.tcx().predicates_of(def_id).predicates {
+        for clause in repacker.tcx().param_env(def_id).caller_bounds() {
             match clause.kind().skip_binder() {
                 ty::ClauseKind::Trait(trait_predicate) => {
                     let ty = trait_predicate.self_ty();
@@ -109,10 +109,18 @@ impl<'tcx> TyRegionCtxt<'tcx> {
                     }
                 }
                 // unused clause kinds
-                // ty::ClauseKind::ConstArgHasType(_, _) => todo!(),
-                // ty::ClauseKind::WellFormed(_) => todo!(),
-                // ty::ClauseKind::ConstEvaluatable(_) => todo!(),
-                // ty::ClauseKind::HostEffect(host_effect_predicate) => todo!(),
+                // ty::ClauseKind::ConstArgHasType(const_, ty) => {
+                //     println!("const_arg_has_type: {const_:#?} {ty:#?}");
+                // }
+                // ty::ClauseKind::WellFormed(term) => {
+                //     println!("well_formed: {term:#?}");
+                // }
+                // ty::ClauseKind::ConstEvaluatable(const_) => {
+                //     println!("const_evaluatable: {const_:#?}");
+                // }
+                // ty::ClauseKind::HostEffect(host_effect_predicate) => {
+                //     println!("host_effect: {host_effect_predicate:#?}");
+                // }
                 _ => {} // do nothing
             }
         }
@@ -121,57 +129,58 @@ impl<'tcx> TyRegionCtxt<'tcx> {
     fn infer_mappings(
         &mut self,
         repacker: CompilerCtxt<'_, 'tcx>,
-        arg_places: Vec<utils::Place<'tcx>>,
+        args: &[&Operand<'tcx>],
         destination: &utils::Place<'tcx>,
         inputs: &[Ty<'tcx>],
         output: &Ty<'tcx>,
     ) {
-        for (place, ty) in arg_places.iter().zip(inputs) {
-            self.place_ty_map.insert(*place, *ty);
+        for (arg, ty) in args.iter().zip(inputs) {
+            // let ty = repacker.tcx().
+            let zipper = match arg {
+                Operand::Copy(mir_place) | Operand::Move(mir_place) => {
+                    let place: utils::Place<'tcx> = (*mir_place).into();
+                    self.place_to_ty.insert(place, *ty);
+                    let ty_regions = ty.regions(repacker);
+                    let pcg_regions = place.regions(repacker);
+                    ty_regions.into_iter().zip(pcg_regions.into_iter())
+                }
+                Operand::Constant(const_operand) => {
+                    let ty_regions = ty.regions(repacker);
+                    let pcg_regions = extract_regions(const_operand.const_.ty(), repacker);
+                    ty_regions.into_iter().zip(pcg_regions.into_iter())
+                }
+            };
+
+            for (ty_region, pcg_region) in zipper {
+                self.pcgregion_to_tyregion.insert(pcg_region, ty_region);
+            }
         }
 
-        for (ty, place) in self.place_ty_map.iter().flat_map(|(place, ty)| {
-            let ty_regions = ty.regions(repacker);
-            let pcg_regions = place.regions(repacker);
-            ty_regions.into_iter().zip(pcg_regions.into_iter())
-        }) {
-            self.inputs_region_map.insert(ty, place);
-        }
-
-        for (ty, place) in output
+        for (ty_region, pcg_region) in output
             .regions(repacker)
             .into_iter()
             .zip(destination.regions(repacker).into_iter())
         {
-            self.output_region_map.insert(ty, place);
+            self.pcgregion_to_tyregion.insert(pcg_region, ty_region);
         }
 
-        self.place_ty_map.insert(*destination, *output);
+        self.place_to_ty.insert(*destination, *output);
     }
 
     fn equivalent(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
-        ty_region_projection: RegionProjection<'tcx, Ty<'tcx>, TyRegion>,
         pcg_region_projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        is_input: bool,
+        ty_region_projection: RegionProjection<'tcx, Ty<'tcx>, TyRegion>,
     ) -> bool {
-        let mapping = if is_input {
-            &self.inputs_region_map
-        } else {
-            &self.output_region_map
-        };
-
-        let place = match pcg_region_projection.base {
-            MaybeOldPlace::Current { place } => place,
-            MaybeOldPlace::OldPlace(place_snapshot) => place_snapshot.place,
-        };
-        self.place_ty_map
+        let place = pcg_region_projection.base().place();
+        self.place_to_ty
             .get(&place)
             .is_some_and(|ty| *ty == ty_region_projection.base)
-            && mapping
-                .get(&ty_region_projection.region(repacker))
-                .is_some_and(|pcg_region| *pcg_region == pcg_region_projection.region(repacker))
+            && self
+                .pcgregion_to_tyregion
+                .get(&pcg_region_projection.region(repacker))
+                .is_some_and(|ty_region| *ty_region == ty_region_projection.region(repacker))
     }
 
     fn outlives(&self, repacker: CompilerCtxt<'_, 'tcx>, sup: TyRegion, sub: TyRegion) -> bool {
@@ -182,6 +191,7 @@ impl<'tcx> TyRegionCtxt<'tcx> {
                 .region_infer_ctxt()
                 .eval_outlives(sup_region, sub_region),
             (TyRegion::ReStatic, _) => true,
+
             // region outlives relations should be a DAG, dfs to check
             (_, _) => {
                 sup == sub
@@ -210,7 +220,9 @@ fn get_function_data<'tcx>(
 ) -> FunctionData<'tcx> {
     match func.ty(ctxt.body(), ctxt.tcx()).kind() {
         ty::TyKind::FnDef(def_id, substs) => {
-            FunctionData::FnDefData(FnDefData::new(ctxt, *def_id, substs))
+            let mut fn_def_data = FnDefData::new(ctxt, *def_id, substs);
+            fn_def_data.normalize(ctxt);
+            FunctionData::FnDefData(fn_def_data)
         }
         ty::TyKind::FnPtr(binder, _) => {
             FunctionData::FnPtrData(FnPtrData::new(binder.skip_binder()))
@@ -238,21 +250,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
 
         let function_data = get_function_data(func, self.ctxt);
-        let function_in_out = function_data.inputs_and_output();
+        let (output, inputs) = function_data.inputs_and_output().split_last().unwrap();
 
-        let inputs = function_in_out.split_last().unwrap().1;
-        let output = function_in_out.split_last().unwrap().0;
-
-        assert!(args.len() == inputs.len());
-
-        let ty_region_ctxt = TyRegionCtxt::new(
-            self.ctxt,
-            function_data,
-            args.iter()
-                .map(|arg| arg.place().unwrap().into())
-                .collect::<Vec<_>>(),
-            &destination,
-        );
+        let mut ty_region_ctxt = FnSigCtxt::new(self.ctxt, function_data, args, &destination);
 
         let mk_create_edge_action = |input, output| {
             let edge = BorrowPCGEdge::new(
@@ -315,18 +315,47 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         // placeholder targets
 
-        let param_placeholder_targets: FxHashSet<RegionProjection<'_, Ty<'_>, TyRegion>> =
-            FxHashSet::default();
+        let mut param_placeholder_targets = FxHashSet::default();
+        let mut arg_placeholder_targets = FxHashSet::default();
 
-        let arg_placeholder_targets = labelled_arg_rps
-            .iter()
-            .flat_map(|rp| {
-                self.pcg
-                    .borrow
-                    .graph()
-                    .identify_placeholder_target(*rp, self.ctxt)
-            })
-            .collect::<FxHashSet<_>>();
+        for (pcg_rp, ty_rp) in labelled_arg_rps.iter().zip(labelled_param_rps.iter()) {
+            assert!(ty_region_ctxt.equivalent(self.ctxt, *pcg_rp, *ty_rp));
+
+            let pcg_targets = self
+                .pcg
+                .borrow
+                .graph()
+                .identify_placeholder_target(*pcg_rp, self.ctxt);
+
+            arg_placeholder_targets.extend(pcg_targets.iter());
+
+            let ty_targets = pcg_targets.into_iter().flat_map(|pcg_rp| {
+                let place = pcg_rp.base().place();
+                // from here on, making the assumption that the targets have the same lifetimes
+                // as their "from" region projections
+                let ty = ty_rp.base;
+
+                ty_region_ctxt.place_to_ty.insert(place, ty);
+
+                for (pcg_region, ty_region) in place
+                    .regions(self.ctxt)
+                    .iter()
+                    .zip(ty.regions(self.ctxt).iter())
+                {
+                    ty_region_ctxt
+                        .pcgregion_to_tyregion
+                        .insert(*pcg_region, *ty_region);
+                }
+
+                ty.region_projections(self.ctxt)
+                    .iter()
+                    .copied()
+                    .filter(|ty_rp| ty_rp.region_idx == pcg_rp.region_idx)
+                    .collect::<Vec<_>>()
+            });
+
+            param_placeholder_targets.extend(ty_targets);
+        }
 
         // source projections
 
@@ -363,34 +392,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let _disjoint_arg_lifetime_sets =
             get_disjoint_arg_lifetime_sets(&arg_region_projections, self.ctxt);
 
-        // for ls in disjoint_arg_lifetime_sets.iter() {
-        //     let this_region = ls.iter().next().unwrap();
-        //     let _inputs: Vec<AbstractionInputTarget<'tcx>> = source_arg_projections
-        //         .iter()
-        //         .filter(|rp| self.ctxt.bc.outlives(rp.region(self.ctxt), *this_region))
-        //         .map(|rp| (*rp).into())
-        //         .collect::<Vec<_>>();
-        //     let mut outputs = arg_placeholder_targets
-        //         .iter()
-        //         .copied()
-        //         .filter(|rp| self.ctxt.bc.same_region(*this_region, rp.region(self.ctxt)))
-        //         .map(|mut rp| {
-        //             rp.label = Some(RegionProjectionLabel::Placeholder);
-        //             rp
-        //         })
-        //         .collect::<Vec<_>>();
-        //     let result_projections: Vec<RegionProjection<MaybeOldPlace<'tcx>>> = destination
-        //         .region_projections(self.ctxt)
-        //         .iter()
-        //         .filter(|rp| self.ctxt.bc.outlives(*this_region, rp.region(self.ctxt)))
-        //         .map(|rp| (*rp).into())
-        //         .collect();
-        //     outputs.extend(result_projections);
-        //     if !inputs.is_empty() && !outputs.is_empty() {
-        //         self.record_and_apply_action(mk_create_edge_action(inputs, outputs).into())?;
-        //     }
-        // }
-
         let dest_rps = destination.region_projections(self.ctxt);
 
         for ls in disjoint_param_lifetime_sets.iter() {
@@ -401,18 +402,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .filter_map(|ty_rp| {
                     source_arg_projections
                         .iter()
-                        .find(|&pcg_rp| ty_region_ctxt.equivalent(self.ctxt, *ty_rp, *pcg_rp, true))
+                        .find(|&pcg_rp| ty_region_ctxt.equivalent(self.ctxt, *pcg_rp, *ty_rp))
                 })
                 .map(|rp| (*rp).into())
                 .collect::<Vec<_>>();
             let mut outputs = param_placeholder_targets
                 .iter()
                 .copied()
-                .filter(|rp| ty_region_ctxt.outlives(self.ctxt, *this_region, rp.region(self.ctxt)))
+                .filter(|rp: &RegionProjection<'_, Ty<'_>, TyRegion>| {
+                    ty_region_ctxt.outlives(self.ctxt, *this_region, rp.region(self.ctxt))
+                })
                 .filter_map(|ty_rp| {
                     arg_placeholder_targets
                         .iter()
-                        .find(|&pcg_rp| ty_region_ctxt.equivalent(self.ctxt, ty_rp, *pcg_rp, false))
+                        .find(|&pcg_rp| ty_region_ctxt.equivalent(self.ctxt, *pcg_rp, ty_rp))
                         .map(|rp| *rp)
                 })
                 .map(|mut rp| {
@@ -426,7 +429,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .filter(|rp| ty_region_ctxt.outlives(self.ctxt, *this_region, rp.region(self.ctxt)))
                 .filter_map(|ty_rp| {
                     dest_rps.iter().find(|&pcg_rp| {
-                        ty_region_ctxt.equivalent(self.ctxt, *ty_rp, (*pcg_rp).into(), false)
+                        ty_region_ctxt.equivalent(self.ctxt, (*pcg_rp).into(), *ty_rp)
                     })
                 })
                 .map(|rp| (*rp).into())
@@ -443,7 +446,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 fn get_disjoint_param_lifetime_sets<'tcx>(
     param_region_projections: &[RegionProjection<'tcx, Ty<'tcx>, TyRegion>],
     ctxt: CompilerCtxt<'_, 'tcx>,
-    ty_region_ctxt: TyRegionCtxt<'tcx>,
+    ty_region_ctxt: FnSigCtxt<'tcx>,
 ) -> Vec<FxHashSet<TyRegion>> {
     let regions = param_region_projections
         .iter()
