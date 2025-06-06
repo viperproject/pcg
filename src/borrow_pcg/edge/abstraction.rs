@@ -7,11 +7,15 @@ use crate::{
     },
     edgedata_enum,
     rustc_interface::{
-        data_structures::fx::FxHashSet,
+        data_structures::fx::{FxHashMap, FxHashSet},
         hir::def_id::DefId,
+        infer::infer::{self},
         middle::{
             mir::{BasicBlock, Location},
-            ty::GenericArgsRef,
+            ty::{
+                self, FnSig, FnSigTys, GenericArg, GenericArgsRef, PseudoCanonicalInput, Ty,
+                TyCtxt, TypeFoldable, TypeFolder, TypeSuperFoldable, TypeVisitableExt,
+            },
         },
     },
     utils::{redirect::MaybeRedirected, Place},
@@ -132,23 +136,407 @@ impl<'tcx> LoopAbstraction<'tcx> {
     }
 }
 
+pub struct AliasNormalizer<'tcx> {
+    pub tcx: TyCtxt<'tcx>,
+    pub substs: &'tcx [GenericArg<'tcx>],
+    pub bindings: FxHashMap<Ty<'tcx>, Ty<'tcx>>,
+    pub binders_passed: u32,
+}
+
+impl<'tcx> TypeFolder<TyCtxt<'tcx>> for AliasNormalizer<'tcx> {
+    fn cx(&self) -> TyCtxt<'tcx> {
+        self.tcx
+    }
+
+    fn fold_binder<T>(
+        &mut self,
+        t: infer::canonical::ir::Binder<TyCtxt<'tcx>, T>,
+    ) -> infer::canonical::ir::Binder<TyCtxt<'tcx>, T>
+    where
+        T: TypeFoldable<TyCtxt<'tcx>>,
+    {
+        self.binders_passed += 1;
+        let t = t.super_fold_with(self);
+        self.binders_passed -= 1;
+        t
+    }
+
+    fn fold_ty(&mut self, t: Ty<'tcx>) -> Ty<'tcx> {
+        if !t.has_param() {
+            return t;
+        }
+
+        match t.kind() {
+            // when on a param type, add it to the bindings
+            ty::TyKind::Param(param_ty) => {
+                let real_ty = self
+                    .substs
+                    .get(param_ty.index as usize)
+                    .unwrap_or_else(|| panic!("parameter {param_ty:#?} out of range"))
+                    .expect_ty();
+                self.bindings
+                    .insert(t, self.shift_vars_through_binders(real_ty));
+                t
+            }
+            // when on an alias, try to resolve it
+            // this is the whole point of this folder
+            ty::TyKind::Alias(_, alias_ty) => {
+                for arg in alias_ty.args {
+                    arg.fold_with(self);
+                }
+                let maybe_normalized = self.normalize_alias(t).fold_with(self);
+                self.bindings.insert(t, maybe_normalized);
+                maybe_normalized
+            }
+
+            // recur on these
+            // just args
+            ty::TyKind::Adt(adt_def, args) => {
+                let args = args.fold_with(self);
+                let new_kind = ty::TyKind::Adt(*adt_def, args);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+            ty::TyKind::Closure(def_id, args) => {
+                let args = args.fold_with(self);
+                let new_kind = ty::TyKind::Closure(*def_id, args);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+            ty::TyKind::CoroutineClosure(def_id, args) => {
+                let args = args.fold_with(self);
+                let new_kind = ty::TyKind::CoroutineClosure(*def_id, args);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+            ty::TyKind::Coroutine(def_id, args) => {
+                let args = args.fold_with(self);
+                let new_kind = ty::TyKind::Coroutine(*def_id, args);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+            ty::TyKind::CoroutineWitness(def_id, args) => {
+                let args = args.fold_with(self);
+                let new_kind = ty::TyKind::CoroutineWitness(*def_id, args);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+            ty::TyKind::FnDef(def_id, args) => {
+                let args = args.fold_with(self);
+                let new_kind = ty::TyKind::FnDef(*def_id, args);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+
+            // nested tys
+            ty::TyKind::Array(ty, const_) => {
+                let ty = ty.fold_with(self);
+                let const_ = const_.fold_with(self);
+                let new_kind = ty::TyKind::Array(ty, const_);
+                let main_ty = if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                };
+                if let Some(&subst_ty) = self.bindings.get(&ty) {
+                    let real_ty = self
+                        .tcx
+                        .mk_ty_from_kind(ty::TyKind::Array(subst_ty, const_));
+                    self.bindings.insert(main_ty, real_ty);
+                }
+                main_ty
+            }
+            ty::TyKind::Pat(ty, pat) => {
+                let ty = ty.fold_with(self);
+                let pat = pat.fold_with(self);
+                let new_kind = ty::TyKind::Pat(ty, pat);
+                let main_ty = if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                };
+                if let Some(&subst_ty) = self.bindings.get(&ty) {
+                    let real_ty = self.tcx.mk_ty_from_kind(ty::TyKind::Pat(subst_ty, pat));
+                    self.bindings.insert(main_ty, real_ty);
+                }
+                main_ty
+            }
+            ty::TyKind::Slice(ty) => {
+                let ty = ty.fold_with(self);
+                let new_kind = ty::TyKind::Slice(ty);
+                let main_ty = if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                };
+                if let Some(&subst_ty) = self.bindings.get(&ty) {
+                    let real_ty = self.tcx.mk_ty_from_kind(ty::TyKind::Slice(subst_ty));
+                    self.bindings.insert(main_ty, real_ty);
+                }
+                main_ty
+            }
+            ty::TyKind::RawPtr(ty, mutbl) => {
+                let ty = ty.fold_with(self);
+                let new_kind = ty::TyKind::RawPtr(ty, *mutbl);
+                let main_ty = if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                };
+                if let Some(&subst_ty) = self.bindings.get(&ty) {
+                    let real_ty = self
+                        .tcx
+                        .mk_ty_from_kind(ty::TyKind::RawPtr(subst_ty, *mutbl));
+                    self.bindings.insert(main_ty, real_ty);
+                }
+                main_ty
+            }
+            ty::TyKind::Ref(region, ty, mutbl) => {
+                let region = region.fold_with(self);
+                let ty = ty.fold_with(self);
+                let new_kind = ty::TyKind::Ref(region, ty, *mutbl);
+                let main_ty = if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                };
+                if let Some(&subst_ty) = self.bindings.get(&ty) {
+                    let real_ty = self
+                        .tcx
+                        .mk_ty_from_kind(ty::TyKind::Ref(region, subst_ty, *mutbl));
+                    self.bindings.insert(main_ty, real_ty);
+                }
+                main_ty
+            }
+            ty::TyKind::Tuple(tys) => {
+                let tys = tys.fold_with(self);
+                let new_kind = ty::TyKind::Tuple(tys);
+                if *t.kind() != new_kind {
+                    self.tcx.mk_ty_from_kind(new_kind)
+                } else {
+                    t
+                }
+            }
+
+            ty::TyKind::FnPtr(..) | ty::TyKind::UnsafeBinder(_) | ty::TyKind::Dynamic(..) => {
+                t.super_fold_with(self)
+            }
+
+            // keeing these the same
+            ty::TyKind::Bool
+            | ty::TyKind::Char
+            | ty::TyKind::Str
+            | ty::TyKind::Int(_)
+            | ty::TyKind::Uint(_)
+            | ty::TyKind::Float(_)
+            | ty::TyKind::Error(_)
+            | ty::TyKind::Infer(_)
+            | ty::TyKind::Bound(..)
+            | ty::TyKind::Placeholder(..)
+            | ty::TyKind::Never
+            | ty::TyKind::Foreign(..) => return t,
+        }
+    }
+}
+
+impl<'tcx> AliasNormalizer<'tcx> {
+    /// Normalizes the given `ty`. This MUST have kind `ty::TyKind::Alias`.
+    /// Panics if given a different kind of `Ty`.
+    fn normalize_alias(&mut self, ty: Ty<'tcx>) -> Ty<'tcx> {
+        let (_alias_ty_kind, alias_ty) =
+            if let ty::TyKind::Alias(alias_ty_kind, alias_ty) = ty.kind() {
+                (alias_ty_kind, alias_ty)
+            } else {
+                panic!("`normalize_alias` expected an alias, got {ty:#?}");
+            };
+
+        let (trait_ref, _own_args) = alias_ty.trait_ref_and_own_args(self.tcx);
+        let mut args = alias_ty.args.iter().collect_vec();
+
+        loop {
+            let mut generic_candidates = vec![];
+            let mut real_candidates = vec![];
+
+            self.tcx
+                .for_each_relevant_impl(trait_ref.def_id, args[0].expect_ty(), |impl_def_id| {
+                    println!("{impl_def_id:#?}");
+                    if let Some(assoc_def_id) = self
+                        .tcx
+                        .impl_item_implementor_ids(impl_def_id)
+                        .get(&alias_ty.def_id)
+                    {
+                        let type_of = self.tcx.type_of(*assoc_def_id);
+                        let generic_ty = type_of.instantiate_identity();
+
+                        if let Some(bound_ty) = self.bindings.get(&generic_ty) {
+                            let real_ty = type_of.instantiate(self.tcx, self.substs);
+                            if real_ty == *bound_ty {
+                                generic_candidates.push(generic_ty);
+                            }
+                        } else {
+                            real_candidates.push(generic_ty);
+                        }
+                    }
+                });
+
+            if generic_candidates.len() == 1
+                && let Some(candidate_ty) = generic_candidates.get(0)
+            {
+                return *candidate_ty;
+            } else if generic_candidates.is_empty()
+                && real_candidates.len() == 1
+                && let Some(candidate_ty) = real_candidates.get(0)
+            {
+                return *candidate_ty;
+            } else if args.has_param() {
+                if let Some(next_arg) = args.iter_mut().skip_while(|arg| !arg.has_param()).next() {
+                    *next_arg = (*self.bindings.get(&(*next_arg).expect_ty()).unwrap()).into();
+                }
+            } else {
+                // unable to normalize :(
+                break;
+            }
+        }
+
+        ty
+    }
+
+    fn shift_vars_through_binders<T: TypeFoldable<TyCtxt<'tcx>>>(&self, val: T) -> T {
+        if self.binders_passed == 0 || !val.has_escaping_bound_vars() {
+            val
+        } else {
+            ty::shift_vars(self.tcx, val, self.binders_passed)
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub struct FunctionData<'tcx> {
-    def_id: DefId,
-    substs: GenericArgsRef<'tcx>,
+pub enum FunctionData<'tcx> {
+    FnDefData(FnDefData<'tcx>),
+    FnPtrData(FnPtrData<'tcx>),
 }
 
 impl<'tcx> FunctionData<'tcx> {
-    pub fn new(def_id: DefId, substs: GenericArgsRef<'tcx>) -> Self {
-        Self { def_id, substs }
+    pub fn inputs_and_output(self) -> &'tcx [Ty<'tcx>] {
+        match self {
+            FunctionData::FnDefData(fn_def_data) => fn_def_data.inputs_and_output(),
+            FunctionData::FnPtrData(fn_ptr_data) => fn_ptr_data.inputs_and_output(),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct FnDefData<'tcx> {
+    def_id: DefId,
+    substs: GenericArgsRef<'tcx>,
+    fn_sig: FnSig<'tcx>,
+}
+
+impl<'tcx> FnDefData<'tcx> {
+    pub fn new(ctxt: CompilerCtxt<'_, 'tcx>, def_id: DefId, substs: GenericArgsRef<'tcx>) -> Self {
+        let fn_sig = ctxt
+            .tcx()
+            .fn_sig(def_id)
+            .instantiate_identity()
+            .skip_binder();
+        Self {
+            def_id,
+            substs,
+            fn_sig,
+        }
+    }
+
+    pub fn def_id(self) -> DefId {
+        self.def_id
+    }
+
+    pub fn substs(self) -> GenericArgsRef<'tcx> {
+        self.substs
+    }
+
+    pub fn fn_sig(self) -> FnSig<'tcx> {
+        self.fn_sig
+    }
+
+    pub fn inputs_and_output(self) -> &'tcx [Ty<'tcx>] {
+        self.fn_sig.inputs_and_output
+    }
+
+    /// Normalizes FnDefData, including any aliases.
+    pub fn normalize(&mut self, ctxt: CompilerCtxt<'_, 'tcx>) {
+        let typing_env = ctxt.body().typing_env(ctxt.tcx());
+        let bindings: FxHashMap<Ty<'tcx>, Ty<'tcx>> = FxHashMap::default();
+
+        // the following function erases region information
+        // which is a problem further down the road
+        match ctxt.tcx().resolve_instance_raw(PseudoCanonicalInput {
+            typing_env: typing_env,
+            value: (self.def_id, self.substs),
+        }) {
+            Ok(maybe_instance) if let Some(instance) = maybe_instance => {
+                self.def_id = instance.def.def_id();
+                self.substs = instance.args;
+            }
+            _ => (),
+        }
+
+        let mut folder = AliasNormalizer {
+            tcx: ctxt.tcx(),
+            substs: self.substs,
+            bindings,
+            binders_passed: 0,
+        };
+
+        self.fn_sig = ctxt
+            .tcx()
+            .fn_sig(self.def_id)
+            .instantiate_identity()
+            .fold_with(&mut folder)
+            .skip_binder();
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct FnPtrData<'tcx> {
+    fn_sig_tys: FnSigTys<TyCtxt<'tcx>>,
+}
+
+impl<'tcx> FnPtrData<'tcx> {
+    pub fn new(fn_sig_tys: FnSigTys<TyCtxt<'tcx>>) -> Self {
+        Self { fn_sig_tys }
+    }
+
+    pub fn fn_sig_tys(self) -> FnSigTys<TyCtxt<'tcx>> {
+        self.fn_sig_tys
+    }
+
+    pub fn inputs_and_output(self) -> &'tcx [Ty<'tcx>] {
+        self.fn_sig_tys.inputs_and_output
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
-    /// This may be `None` if the call is to a function pointer
-    function_data: Option<FunctionData<'tcx>>,
+    function_data: FunctionData<'tcx>,
     edge: AbstractionBlockEdge<'tcx>,
 }
 
@@ -219,10 +607,10 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         format!(
             "call{} at {:?}: {}",
-            if let Some(function_data) = &self.function_data {
-                format!(" {}", ctxt.tcx().def_path_str(function_data.def_id))
-            } else {
-                "".to_string()
+            match &self.function_data {
+                FunctionData::FnDefData(fn_def_data) =>
+                    format!(" {}", ctxt.tcx().def_path_str(fn_def_data.def_id)),
+                FunctionData::FnPtrData(_) => "".to_string(),
             },
             self.location,
             self.edge.to_short_string(ctxt)
@@ -241,10 +629,17 @@ where
 
 impl<'tcx> FunctionCallAbstraction<'tcx> {
     pub fn def_id(&self) -> Option<DefId> {
-        self.function_data.as_ref().map(|f| f.def_id)
+        match self.function_data {
+            FunctionData::FnDefData(fn_def_data) => Some(fn_def_data.def_id()),
+            FunctionData::FnPtrData(_) => None,
+        }
     }
+
     pub fn substs(&self) -> Option<GenericArgsRef<'tcx>> {
-        self.function_data.as_ref().map(|f| f.substs)
+        match self.function_data {
+            FunctionData::FnDefData(fn_def_data) => Some(fn_def_data.substs()),
+            FunctionData::FnPtrData(_) => None,
+        }
     }
 
     pub fn location(&self) -> Location {
@@ -257,7 +652,7 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
 
     pub fn new(
         location: Location,
-        function_data: Option<FunctionData<'tcx>>,
+        function_data: FunctionData<'tcx>,
         edge: AbstractionBlockEdge<'tcx>,
     ) -> Self {
         Self {

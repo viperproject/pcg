@@ -14,7 +14,7 @@ use crate::{
         r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
         BorrowCheckerInterface,
     },
-    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
+    borrow_pcg::region_projection::{HasRegions, PcgRegion, RegionIdx},
     free_pcs::PcgAnalysis,
     pcg::{self, BodyWithBorrowckFacts},
     run_pcg,
@@ -418,10 +418,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(
-    item_name: String,
-    output: &mut PcgOutput<'_, '_, &bumpalo::Bump>,
-) {
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 

@@ -2,7 +2,7 @@ use derive_more::From;
 
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
+    HasRegions, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
@@ -31,19 +31,21 @@ impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
+impl<'tcx> HasRegions<'tcx> for MaybeRemotePlace<'tcx> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
+        self.related_local_place().regions(repacker)
+    }
+}
+
 impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.to_maybe_remote_region_projection_base(),
             MaybeRemotePlace::Remote(rp) => (*rp).into(),
         }
-    }
-
-    fn regions<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, PcgRegion> {
-        self.related_local_place().regions(repacker)
     }
 }
 

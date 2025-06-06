@@ -5,7 +5,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::region_projection::RegionProjection;
+use crate::borrow_pcg::region_projection::{HasRegionProjections, RegionProjection};
 use crate::borrow_pcg::state::BorrowsState;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;

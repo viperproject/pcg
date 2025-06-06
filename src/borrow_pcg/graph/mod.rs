@@ -20,6 +20,7 @@ use crate::{
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
+use itertools::Itertools;
 use serde_json::json;
 
 use super::{
@@ -45,6 +46,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.edges()
             .map(|edge| edge.to_short_string(repacker).to_string())
+            .sorted()
             .collect()
     }
 }

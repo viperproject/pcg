@@ -5,7 +5,9 @@ use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::region_projection::{
+    HasRegionProjections, PcgRegion, RegionProjection, RegionProjectionLabel,
+};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
