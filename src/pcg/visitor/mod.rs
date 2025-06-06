@@ -259,7 +259,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityKind::Exclusive
                 };
 
-                if blocked_cap.is_none_or(|bc| bc < restore_cap) {
+                if blocked_cap.is_none() {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,
@@ -330,10 +330,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             *from,
                             PlaceExpansion::from_places(target_places.clone(), self.ctxt),
                         );
+                        let source_cap = if capability.is_read() {
+                            *capability
+                        } else {
+                            self.pcg.capabilities.get((*from).into()).unwrap()
+                        };
                         for target_place in target_places {
                             self.pcg
                                 .capabilities
-                                .insert(target_place.into(), *capability);
+                                .insert(target_place.into(), source_cap);
+                        }
+                        if source_cap > *capability {
+                            self.pcg.capabilities.insert((*to).into(), *capability);
                         }
                         if capability.is_read() {
                             self.pcg
