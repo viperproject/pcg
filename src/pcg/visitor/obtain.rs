@@ -82,7 +82,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         location: Location,
-        capability: CapabilityKind,
+        obtain_type: ObtainType,
     ) -> Result<bool, PcgError> {
         let place_expansion = PlaceExpansion::from_places(expansion.expansion().clone(), self.ctxt);
         let expansion_is_owned = base.is_owned(self.ctxt)
@@ -94,25 +94,38 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let capability_projs = self.pcg.owned.locals_mut()[base.local].get_allocated_mut();
             if capability_projs.contains_expansion_from(base) {
                 return Ok(false);
-            } else if expansion.kind.is_box() && capability.is_shallow_exclusive() {
+            } else if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
                 self.record_and_apply_action(
                     RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place)
                         .into(),
                 )?;
             } else {
                 self.record_and_apply_action(
-                    RepackOp::Expand(expansion.base_place(), expansion.target_place, capability)
-                        .into(),
+                    RepackOp::Expand(
+                        expansion.base_place(),
+                        expansion.target_place,
+                        obtain_type.capability(),
+                    )
+                    .into(),
                 )?;
             }
         } else {
             let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
                 base.into(),
                 place_expansion,
-                location,
-                capability != CapabilityKind::Read,
+                if obtain_type.should_label_rp() {
+                    Some(location.into())
+                } else {
+                    None
+                },
                 self.ctxt,
             )?;
+
+            tracing::debug!(
+                "Adding edge {} (label rp: {})",
+                expansion.to_short_string(self.ctxt),
+                obtain_type.should_label_rp()
+            );
 
             if expansion
                 .blocked_by_nodes(self.ctxt)
@@ -121,16 +134,17 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 return Ok(false);
             }
 
-            if base.is_mut_ref(self.ctxt)
-                // && base.contains_mutable_region_projections(self.ctxt)
-                && capability != CapabilityKind::Read
-            {
+            if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
                 let place: MaybeOldPlace<'tcx> = base.into();
-                self.pcg.borrow.label_region_projection(
-                    &place.base_region_projection(self.ctxt).unwrap(),
-                    Some(location.into()),
-                    self.ctxt,
+                let rp = place.base_region_projection(self.ctxt).unwrap();
+                tracing::debug!(
+                    "Labeling {} with {:?}",
+                    rp.to_short_string(self.ctxt),
+                    location
                 );
+                self.pcg
+                    .borrow
+                    .label_region_projection(&rp, Some(location.into()), self.ctxt);
             }
 
             let action = BorrowPCGAction::add_edge(
@@ -138,7 +152,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                     self.pcg.borrow.path_conditions.clone(),
                 ),
-                capability != CapabilityKind::Read,
+                obtain_type.capability().is_exclusive(),
             );
             self.record_and_apply_action(action.into())?;
         }
@@ -149,13 +163,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: Location,
-        capability: CapabilityKind,
+        obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
         for (base, _) in place.iter_projections(self.ctxt) {
             let base = base.with_inherent_region(self.ctxt);
             let expansion = base.expand_one_level(place, self.ctxt)?;
-            let for_exclusive = capability != CapabilityKind::Read;
-            if self.expand_place_one_level(base, &expansion, location, capability)? {
+            if self.expand_place_one_level(base, &expansion, location, obtain_type)? {
                 for rp in base.region_projections(self.ctxt) {
                     let dest_places = expansion
                         .expansion()
@@ -173,32 +186,30 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         let expansion = BorrowPcgExpansion::new(
                             rp.into(),
                             place_expansion,
-                            location,
-                            for_exclusive,
+                            if obtain_type.should_label_rp() {
+                                Some(location.into())
+                            } else {
+                                None
+                            },
                             self.ctxt,
                         )?;
+                        tracing::debug!("Adding edge {}", expansion.to_short_string(self.ctxt));
                         self.record_and_apply_action(
                             BorrowPCGAction::add_edge(
                                 BorrowPcgEdge::new(
                                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                                     self.pcg.borrow.path_conditions.clone(),
                                 ),
-                                for_exclusive,
+                                obtain_type.capability().is_exclusive(),
                             )
                             .into(),
                         )?;
-                        if rp.can_be_labelled(self.ctxt) && for_exclusive {
+                        if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
                             tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
                             self.pcg.borrow.label_region_projection(
                                 &rp,
                                 Some(SnapshotLocation::before(location).into()),
                                 self.ctxt,
-                            );
-                        } else {
-                            tracing::debug!(
-                                "No label for {} (exclusive={})",
-                                rp.to_short_string(self.ctxt),
-                                for_exclusive
                             );
                         }
                     }
@@ -239,9 +250,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: Location,
-        capability: CapabilityKind,
+        obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
-        if capability != CapabilityKind::Read {
+        if !obtain_type.capability().is_read() {
             self.upgrade_closest_root_to_exclusive(place)?;
         }
 
@@ -249,19 +260,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         if current_cap.is_none()
             || matches!(
-                current_cap.unwrap().partial_cmp(&capability),
+                current_cap.unwrap().partial_cmp(&obtain_type.capability()),
                 Some(Ordering::Less) | None
             )
         {
             let collapse_to = self.place_to_collapse_to(place);
-            self.collapse(collapse_to, capability)?;
+            self.collapse(collapse_to, obtain_type.capability())?;
         }
 
-        if capability.is_write() {
+        if obtain_type.capability().is_write() {
             let _ = self.pcg.borrow.make_place_old(place, self.ctxt);
         }
 
-        self.expand_to(place, location, capability)?;
+        self.expand_to(place, location, obtain_type)?;
 
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),
@@ -279,5 +290,27 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         //     capability
         // );
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ObtainType {
+    Capability(CapabilityKind),
+    TwoPhaseExpand,
+}
+
+impl ObtainType {
+    fn capability(&self) -> CapabilityKind {
+        match self {
+            ObtainType::Capability(cap) => *cap,
+            ObtainType::TwoPhaseExpand => CapabilityKind::Read,
+        }
+    }
+
+    fn should_label_rp(&self) -> bool {
+        match self {
+            ObtainType::Capability(cap) => !cap.is_read(),
+            ObtainType::TwoPhaseExpand => true,
+        }
     }
 }

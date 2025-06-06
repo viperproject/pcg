@@ -259,7 +259,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityKind::Exclusive
                 };
 
-                if blocked_cap.is_none() {
+                if blocked_cap.is_none()
+                    || (blocked_cap.unwrap().is_read()
+                        && place.place().projection.is_empty())
+                {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,

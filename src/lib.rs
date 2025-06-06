@@ -350,6 +350,9 @@ macro_rules! pcg_validity_assert {
                     tracing::error!("assertion failed: {}", stringify!($cond));
                 }
             } else {
+                if !$cond {
+                    tracing::error!("assertion failed: {}", stringify!($cond));
+                }
                 assert!($cond);
             }
         }
@@ -362,6 +365,9 @@ macro_rules! pcg_validity_assert {
                     tracing::error!($($arg)*);
                 }
             } else {
+                if !$cond {
+                    tracing::error!($($arg)*);
+                }
                 assert!($cond, $($arg)*);
             }
         }

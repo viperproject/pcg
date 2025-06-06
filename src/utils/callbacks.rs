@@ -48,7 +48,7 @@ pub(crate) fn set_mir_borrowck(_session: &Session, providers: &mut Providers) {
 
 impl driver::Callbacks for PcgCallbacks {
     fn config(&mut self, config: &mut Config) {
-        tracing::info!("Setting mir_borrowck");
+        tracing::debug!("Setting mir_borrowck");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }
@@ -94,12 +94,12 @@ thread_local! {
 
 pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
     let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
-    tracing::info!(
+    tracing::debug!(
         "Start mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
     let body_with_facts = borrowck::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
-    tracing::info!(
+    tracing::debug!(
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );

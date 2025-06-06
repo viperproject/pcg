@@ -4,7 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
     self, BorrowKind, Local, Location, MutBorrowKind, Operand, Rvalue, Statement, StatementKind,
@@ -41,6 +40,11 @@ impl<'tcx> Triple<'tcx> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum PlaceCondition<'tcx> {
+    /// Similar to read capability, but indicates that the place is expanded as part of a two-phase borrow.
+    /// For example, if `let y = &mut *x` is a two-phase borrow, then we have `ExpandTwoPhase(*x)` as condition.
+    /// This distinction is relevant for expanding lifetime projections: the lifetime projection base of *x will
+    /// be labelled, similarly to the situation where the borrow was exclusive.
+    ExpandTwoPhase(Place<'tcx>),
     Capability(Place<'tcx>, CapabilityKind),
     RemoveCapability(Place<'tcx>),
     AllocateOrDeallocate(Local),
@@ -134,10 +138,10 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             | ShallowInitBox(_, _) => return Ok(()),
 
             &Ref(_, kind, place) => match kind {
-                BorrowKind::Shared
-                | BorrowKind::Mut {
+                BorrowKind::Shared => PlaceCondition::read(place),
+                BorrowKind::Mut {
                     kind: MutBorrowKind::TwoPhaseBorrow,
-                } => PlaceCondition::read(place),
+                } => PlaceCondition::ExpandTwoPhase(place.into()),
                 BorrowKind::Fake(..) => return Ok(()),
                 BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.repacker),
             },
@@ -155,7 +159,9 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                     PlaceCondition::read(place)
                 }
             }
-            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => PlaceCondition::read(place),
+            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
+                PlaceCondition::read(place)
+            }
             _ => todo!(),
         };
         tracing::debug!("Pre: {pre:?}");
@@ -215,7 +221,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 BorrowKind::Fake(..) => return Ok(()),
                 BorrowKind::Mut { kind } => {
                     let post = if matches!(kind, MutBorrowKind::TwoPhaseBorrow) {
-                        Some(PlaceCondition::read(*place))
+                        Some(PlaceCondition::ExpandTwoPhase((*place).into()))
                     } else {
                         Some(PlaceCondition::RemoveCapability((*place).into()))
                     };

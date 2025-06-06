@@ -1,8 +1,7 @@
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     pcg::{
-        triple::{PlaceCondition, Triple},
-        PCGUnsupportedError, PcgError,
+        triple::{PlaceCondition, Triple}, visitor::obtain::ObtainType, PCGUnsupportedError, PcgError
     },
     rustc_interface::middle::mir::Location,
 };
@@ -17,11 +16,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         match triple.pre() {
+            PlaceCondition::ExpandTwoPhase(place) => {
+                self.obtain(place, location, ObtainType::TwoPhaseExpand)?;
+            }
             PlaceCondition::Capability(place, capability) => {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, location, capability)?;
+                self.obtain(place, location, ObtainType::Capability(capability))?;
             }
             PlaceCondition::RemoveCapability(place) => {
                 self.pcg.capabilities.remove(place.into());

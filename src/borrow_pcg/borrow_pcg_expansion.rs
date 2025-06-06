@@ -16,6 +16,7 @@ use super::{
 use crate::{
     borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
     pcg::MaybeHasLocation,
+    pcg_validity_assert,
     utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
@@ -241,11 +242,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn blocks_node<'slf>(
-        &self,
-        node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         if self.base.to_pcg_node(repacker) == node {
             return true;
         }
@@ -399,21 +396,12 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     pub(crate) fn new(
         base: P,
         expansion: PlaceExpansion<'tcx>,
-        location: Location,
-        for_exclusive: bool,
+        deref_blocked_region_projection_label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Self, PcgError>
     where
         P: Ord + HasPlace<'tcx>,
     {
-        let deref_blocked_region_projection_label = if for_exclusive
-            && base.place().is_mut_ref(ctxt)
-        // && base.place().contains_mutable_region_projections(ctxt)
-        {
-            Some(location.into())
-        } else {
-            None
-        };
         Ok(Self {
             base,
             expansion: expansion
