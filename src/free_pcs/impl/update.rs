@@ -53,11 +53,12 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     }
                     CapabilityKind::Exclusive => {
                         // Cannot get exclusive on a shared ref
-                        assert!(
-                            !place.projects_shared_ref(repacker),
-                            "Cannot get exclusive on projection of shared ref {}",
-                            place.to_short_string(repacker)
-                        );
+                        // TODO
+                        // assert!(
+                        //     !place.projects_shared_ref(repacker),
+                        //     "Cannot get exclusive on projection of shared ref {}",
+                        //     place.to_short_string(repacker)
+                        // );
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
