@@ -55,10 +55,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         &self.kind
     }
 
-    pub(crate) fn restore_capability(
-        place: Place<'tcx>,
-        capability: CapabilityKind,
-    ) -> Self {
+    pub(crate) fn restore_capability(place: Place<'tcx>, capability: CapabilityKind) -> Self {
         BorrowPCGAction {
             kind: BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability)),
             debug_context: None,
@@ -237,7 +234,13 @@ impl<'tcx> BorrowsState<'tcx> {
                         match expansion.base.place().ty(ctxt).ty.ref_mutability() {
                             Some(Mutability::Mut) => CapabilityKind::Exclusive,
                             Some(Mutability::Not) => CapabilityKind::Read,
-                            None => unreachable!(),
+                            None => {
+                                unreachable!(
+                                    "Expansion base ({}: {:?}) is not a ref",
+                                    expansion.base.to_short_string(ctxt),
+                                    expansion.base.place().ty(ctxt).ty
+                                )
+                            }
                         }
                     } else if !for_exclusive {
                         CapabilityKind::Read

@@ -6,7 +6,6 @@
 
 pub mod arena;
 pub mod callbacks;
-pub mod r#const;
 pub mod debug_info;
 pub mod display;
 pub mod eval_stmt_data;
