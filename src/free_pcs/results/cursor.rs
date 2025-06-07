@@ -145,7 +145,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                                     abstraction.value.clone().into(),
                                     abstraction.conditions,
                                 ),
-                                for_exclusive: true,
+                                for_read: false,
                             }
                             .into(),
                             ctxt,

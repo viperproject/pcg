@@ -5,7 +5,10 @@ pub(crate) mod materialize;
 mod mutate;
 
 use crate::{
-    borrow_pcg::{abstraction_graph_constructor::AbstractionGraph, util::ExploreFrom},
+    borrow_pcg::{
+        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph,
+        util::ExploreFrom,
+    },
     pcg::PCGNode,
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
@@ -48,6 +51,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
+    #[allow(unused)]
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         let nodes = self.nodes(ctxt);
         // TODO
@@ -170,6 +174,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn base_abstraction_graph<'graph, 'mir: 'graph>(
         &'graph self,
+        block: mir::BasicBlock,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> AbstractionGraph<'tcx, 'graph> {
         let mut graph: AbstractionGraph<'tcx, 'graph> = AbstractionGraph::new();
@@ -186,7 +191,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             tracing::debug!("Adding root node to queue: {:?}", node);
             queue.push(ExploreFrom::new(
                 *node,
-                node.as_abstraction_graph_node(ctxt),
+                node.as_abstraction_graph_node(block, ctxt),
             ));
         }
 
@@ -211,13 +216,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let inputs = abstraction_edge
                             .inputs()
                             .into_iter()
-                            .map(|node| node.into())
+                            .map(|node| AbstractionGraphNode::from_pcg_node(node, block, ctxt))
                             .collect::<Vec<_>>()
                             .into();
                         let outputs = abstraction_edge
                             .outputs()
                             .into_iter()
-                            .map(|node| node.into())
+                            .map(|node| {
+                                AbstractionGraphNode::from_pcg_node(node.into(), block, ctxt)
+                            })
                             .collect::<Vec<_>>()
                             .into();
                         graph.add_edge(
@@ -240,11 +247,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         for node in edge.blocked_by_nodes(ctxt) {
                             if let LocalNode::RegionProjection(rp) = node
                                 && let Some(source) = ef.connect()
-                                && source != rp.into()
+                                && source
+                                    != AbstractionGraphNode::from_pcg_node(rp.into(), block, ctxt)
                             {
                                 graph.add_edge(
                                     &vec![source].into(),
-                                    &vec![rp.into()].into(),
+                                    &vec![AbstractionGraphNode::from_pcg_node(
+                                        rp.into(),
+                                        block,
+                                        ctxt,
+                                    )]
+                                    .into(),
                                     std::iter::once(edge.kind).collect(),
                                     ctxt,
                                 );
@@ -256,7 +269,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     let pcg_node = node.into();
                     queue.push(ExploreFrom::new(
                         pcg_node,
-                        pcg_node.as_abstraction_graph_node(ctxt).or(ef.connect()),
+                        pcg_node
+                            .as_abstraction_graph_node(block, ctxt)
+                            .or(ef.connect()),
                     ));
                 }
             }
@@ -328,10 +343,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn nodes<'slf>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    pub(crate) fn nodes<'slf>(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
                 edge.blocked_nodes(repacker)
@@ -361,12 +373,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .any(|edge| edge.blocks_node(blocked_node, repacker))
     }
 
-    pub(crate) fn is_root<T: Into<PCGNode<'tcx>>>(
+    pub(crate) fn is_root<T: Copy + Into<PCGNode<'tcx>>>(
         &self,
         node: T,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        match node.into().as_local_node(ctxt) {
+        self.contains(node.into(), ctxt) && match node.into().as_local_node(ctxt) {
             Some(node) => match node {
                 PCGNode::Place(place) if place.is_owned(ctxt) => true,
                 _ => !self.has_edge_blocked_by(node, ctxt),
@@ -391,8 +403,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc>
-    {
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc> {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
     }

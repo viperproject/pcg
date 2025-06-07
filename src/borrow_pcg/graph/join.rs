@@ -1,12 +1,13 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
+use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::CompilerCtxt;
+use crate::utils::{CompilerCtxt, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
@@ -169,11 +170,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
         tracing::debug!("Self has {} edges", self.edges.len());
         tracing::debug!("Other has {} edges", other.edges.len());
+
         let old_self = self.clone();
-        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, from_block)
+        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
             .construct_abstraction_graph(&old_self, ctxt.bc);
+        // `loop_head` is the correct block to use here
         let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
-            .construct_abstraction_graph(other, ctxt.bc);
+            .construct_abstraction_graph(&other, ctxt.bc);
 
         if coupling_imgcat_debug() {
             self_abstraction_graph
@@ -182,48 +185,80 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 .render_with_imgcat(ctxt, &format!("other coupling graph: {loop_head:?}"));
         }
 
-        let to_keep = self.common_edges(other);
-        self.edges
-            .retain(|edge_kind, _| to_keep.contains(edge_kind));
-
-        if borrows_imgcat_debug() {
-            self.render_debug_graph(ctxt, "after removal of common edges");
-        }
-
         let mut result = self_abstraction_graph.clone();
         result.merge(&other_coupling_graph, ctxt);
         if coupling_imgcat_debug() {
             result.render_with_imgcat(ctxt, "merged coupling graph");
         }
+
+        let to_keep = self.common_edges(&other);
+        self.edges
+            .retain(|edge_kind, _| to_keep.contains(edge_kind));
+
+        if borrows_imgcat_debug() {
+            self.render_debug_graph(ctxt, "common edges");
+        }
+
         let other_coupling_edges = other_coupling_graph.edges().collect::<Vec<_>>();
         let self_coupling_edges = self_abstraction_graph.edges().collect::<Vec<_>>();
-        for tupl in result.edges() {
-            if self_coupling_edges.iter().all(|other| other != &tupl)
-                || other_coupling_edges.iter().all(|other| other != &tupl)
-            {
-                // This edge is missing from one of the graphs
-                let (blocked, assigned, to_remove) = tupl;
-                let abstraction = LoopAbstraction::new(
-                    AbstractionBlockEdge::new(
-                        blocked.clone().into_iter().map(|node| *node).collect(),
-                        assigned
-                            .clone()
-                            .into_iter()
-                            .map(|node| {
-                                node.try_into().unwrap_or_else(|_e| {
-                                    panic!("Failed to convert node {node:?} to node index");
-                                })
-                            })
-                            .collect(),
-                        ctxt,
-                    ),
-                    loop_head,
-                )
-                .to_borrow_pcg_edge(PathConditions::new());
+        let unique_edges = result
+            .edges()
+            .filter(|edge| {
+                self_coupling_edges.iter().all(|other| other != edge)
+                    || other_coupling_edges.iter().all(|other| other != edge)
+            })
+            .collect::<Vec<_>>();
 
-                self.insert(abstraction, ctxt);
-                self.edges
-                    .retain(|edge_kind, _| !to_remove.contains(edge_kind));
+        for (blocked, assigned, to_remove) in unique_edges.iter() {
+            // This edge is missing from one of the graphs
+            let abstraction = LoopAbstraction::new(
+                AbstractionBlockEdge::new(
+                    blocked.clone().into_iter().map(|node| *node).collect(),
+                    assigned
+                        .clone()
+                        .into_iter()
+                        .map(|node| {
+                            node.try_into().unwrap_or_else(|_e| {
+                                panic!("Failed to convert node {node:?} to node index");
+                            })
+                        })
+                        .collect(),
+                    ctxt,
+                ),
+                loop_head,
+            )
+            .to_borrow_pcg_edge(PathConditions::new());
+
+            self.insert(abstraction, ctxt);
+            self.edges
+                .retain(|edge_kind, _| !to_remove.contains(edge_kind));
+        }
+
+        for (blocked, assigned, _) in unique_edges.iter() {
+            for node in blocked.iter().chain(assigned.iter()) {
+                if let Some(PCGNode::RegionProjection(rp)) =
+                    node.to_pcg_node().try_to_local_node(ctxt)
+                    && let Some(place) = rp.deref(ctxt)
+                    && self.is_root(place, ctxt)
+                {
+                    self.insert(
+                        BorrowPcgEdge::new(
+                            BorrowPcgEdgeKind::BorrowPcgExpansion(
+                                BorrowPcgExpansion::new(
+                                    rp.base.into(),
+                                    PlaceExpansion::Deref,
+                                    Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
+                                        loop_head,
+                                    ))),
+                                    ctxt,
+                                )
+                                .unwrap(),
+                            ),
+                            PathConditions::new(),
+                        ),
+                        ctxt,
+                    );
+                }
             }
         }
 

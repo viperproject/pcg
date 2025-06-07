@@ -15,8 +15,7 @@ use super::{
 };
 use crate::{
     borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-    pcg::MaybeHasLocation,
-    pcg_validity_assert,
+    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
     utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
@@ -24,7 +23,7 @@ use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         middle::{
-            mir::{Local, Location, PlaceElem},
+            mir::{Local, PlaceElem},
             ty,
         },
         span::Symbol,
@@ -353,12 +352,24 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     /// information. This is the case when the expansion node labels (for
     /// places, and for region projections) are the same as the base node
     /// labels.
-    pub(crate) fn is_packable(&self) -> bool {
+    pub(crate) fn is_packable(&self, capabilities: &PlaceCapabilities<'tcx>) -> bool {
         match self.base {
-            PCGNode::Place(base_place) => self.expansion.iter().all(|p| {
-                base_place.place().is_prefix_exact(p.place())
-                    && p.location() == base_place.location()
-            }),
+            PCGNode::Place(base_place) => {
+                let mut fst_cap = None;
+                self.expansion.iter().all(|p| {
+                    if let PCGNode::Place(MaybeOldPlace::Current { place }) = p {
+                        if let Some(cap) = fst_cap {
+                            if cap != capabilities.get(*place) {
+                                return false;
+                            }
+                        } else {
+                            fst_cap = Some(capabilities.get(*place));
+                        }
+                    }
+                    base_place.place().is_prefix_exact(p.place())
+                        && p.location() == base_place.location()
+                })
+            }
             PCGNode::RegionProjection(base_rp) => self.expansion.iter().all(|p| {
                 if let PCGNode::RegionProjection(p_rp) = p {
                     p_rp.place().location() == base_rp.place().location()

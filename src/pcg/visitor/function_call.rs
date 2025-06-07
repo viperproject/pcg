@@ -82,7 +82,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .into(),
                 path_conditions.clone(),
             );
-            BorrowPCGAction::add_edge(edge, true)
+            BorrowPCGAction::add_edge(edge, false)
         };
 
         // The versions of the region projections for the function inputs just

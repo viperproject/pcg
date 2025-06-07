@@ -210,14 +210,11 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
 }
 
 impl<'tcx> BorrowFlowEdgeKind {
-    pub(crate) fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_mut(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
-            BorrowFlowEdgeKind::Aggregate {
-                field_idx,
-                target_rp_index,
-            } => true,
+            BorrowFlowEdgeKind::Aggregate { .. } => true,
             BorrowFlowEdgeKind::ConstRef => false,
-            BorrowFlowEdgeKind::BorrowOutlives { regions_equal } => true,
+            BorrowFlowEdgeKind::BorrowOutlives { .. } => true,
             BorrowFlowEdgeKind::InitialBorrows => true,
             BorrowFlowEdgeKind::CopyRef => false,
             BorrowFlowEdgeKind::Move => true,

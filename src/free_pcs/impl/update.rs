@@ -14,7 +14,7 @@ use crate::{
     },
     pcg_validity_assert,
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt,
+        CompilerCtxt,
         LocalMutationIsAllowed,
     },
 };

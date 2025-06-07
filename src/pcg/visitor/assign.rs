@@ -86,7 +86,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 .into(),
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
-                            true,
+                            false,
                         )
                         .into(),
                     )?;
@@ -120,7 +120,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 .into(),
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
-                            true,
+                            false,
                         )
                         .into(),
                     )?;
@@ -177,7 +177,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                         .into(),
                                         self.pcg.borrow.path_conditions.clone(),
                                     ),
-                                    true,
+                                    false,
                                 )
                                 .into(),
                             )?;

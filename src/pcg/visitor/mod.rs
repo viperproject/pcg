@@ -61,7 +61,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                             .into(),
                             self.pcg.borrow.path_conditions.clone(),
                         ),
-                        true,
+                        false,
                     )
                     .into(),
                 )?;
@@ -260,8 +260,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 };
 
                 if blocked_cap.is_none()
-                    || (blocked_cap.unwrap().is_read()
-                        && place.place().projection.is_empty())
+                    || (blocked_cap.unwrap().is_read() && place.place().projection.is_empty())
                 {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
@@ -311,7 +310,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, action))]
     fn record_and_apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         let result =
             match &action {
@@ -320,7 +319,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &mut self.pcg.capabilities,
                     self.ctxt,
                 )?,
-                PcgAction::Owned(action) => match action {
+                PcgAction::Owned(owned_action) => match owned_action {
                     RepackOp::RegainLoanedCapability(place, capability_kind) => self
                         .pcg
                         .capabilities
@@ -338,14 +337,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         } else {
                             self.pcg.capabilities.get((*from).into()).unwrap()
                         };
+                        tracing::info!("source_cap for {:?}: {:?}", owned_action, source_cap);
                         for target_place in target_places {
                             self.pcg
                                 .capabilities
                                 .insert(target_place.into(), source_cap);
                         }
-                        if source_cap > *capability {
-                            self.pcg.capabilities.insert((*to).into(), *capability);
-                        }
+                        // if source_cap > *capability {
+                        //     self.pcg.capabilities.insert((*to).into(), *capability);
+                        // }
                         if capability.is_read() {
                             self.pcg
                                 .capabilities

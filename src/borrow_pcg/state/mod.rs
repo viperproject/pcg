@@ -80,7 +80,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let _ = self.apply_action(
                 BorrowPCGAction::add_edge(
                     BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
-                    true,
+                    false,
                 ),
                 capabilities,
                 repacker,
@@ -114,7 +114,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             .into(),
                             PathConditions::new(),
                         ),
-                        true,
+                        false,
                     ),
                     capabilities,
                     repacker,

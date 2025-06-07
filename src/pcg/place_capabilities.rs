@@ -57,6 +57,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
 
     /// Returns true iff the capability was changed.
     pub(crate) fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool {
+        tracing::debug!("inserting {:?} with {:?}", place, capability);
         self.0.insert(place, capability) != Some(capability)
     }
 

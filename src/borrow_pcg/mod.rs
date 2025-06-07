@@ -1,4 +1,5 @@
 pub mod action;
+pub(crate) mod abstraction;
 pub mod borrow_pcg_edge;
 pub mod borrow_pcg_expansion;
 pub mod domain;

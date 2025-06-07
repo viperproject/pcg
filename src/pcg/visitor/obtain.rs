@@ -113,7 +113,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
                 base.into(),
                 place_expansion,
-                if obtain_type.should_label_rp() {
+                if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
                     Some(location.into())
                 } else {
                     None
@@ -152,7 +152,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                     self.pcg.borrow.path_conditions.clone(),
                 ),
-                obtain_type.capability().is_exclusive(),
+                obtain_type.capability().is_read(),
             );
             self.record_and_apply_action(action.into())?;
         }
@@ -186,11 +186,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         let expansion = BorrowPcgExpansion::new(
                             rp.into(),
                             place_expansion,
-                            if obtain_type.should_label_rp() {
-                                Some(location.into())
-                            } else {
-                                None
-                            },
+                            None,
                             self.ctxt,
                         )?;
                         tracing::debug!("Adding edge {}", expansion.to_short_string(self.ctxt));
@@ -200,7 +196,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                                     self.pcg.borrow.path_conditions.clone(),
                                 ),
-                                obtain_type.capability().is_exclusive(),
+                                obtain_type.capability().is_read(),
                             )
                             .into(),
                         )?;

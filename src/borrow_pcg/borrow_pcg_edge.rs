@@ -2,12 +2,11 @@ use itertools::Itertools;
 use rustc_interface::middle::mir::{self, BasicBlock, PlaceElem};
 
 use super::{
-    abstraction_graph_constructor::AbstractionGraphNode,
     borrow_pcg_expansion::BorrowPcgExpansion,
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelPlace},
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::{
@@ -15,9 +14,15 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::borrow_pcg::{edge::kind::BorrowPcgEdgeKind, edge_data::{LabelEdgePlaces, LabelPlacePredicate}};
+use crate::borrow_pcg::{
+    edge::kind::BorrowPcgEdgeKind,
+    edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+};
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{
+    borrow_pcg::abstraction::node::AbstractionGraphNode,
+    utils::place::maybe_remote::MaybeRemotePlace,
+};
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
@@ -322,26 +327,28 @@ pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 impl<'tcx> PCGNode<'tcx> {
     pub(crate) fn as_abstraction_graph_node(
         self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        block: mir::BasicBlock,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<AbstractionGraphNode<'tcx>> {
         match self {
             // Places are allowed only if they are roots of the borrow graph
             PCGNode::Place(place) => match place {
                 MaybeRemotePlace::Local(maybe_old_place) => {
-                    if maybe_old_place.is_owned(repacker) {
-                        Some(PCGNode::Place(place).into())
+                    if maybe_old_place.is_owned(ctxt) {
+                        Some(AbstractionGraphNode::place(place))
                     } else {
                         None
                     }
                 }
                 MaybeRemotePlace::Remote(remote_place) => {
-                    Some(PCGNode::Place(remote_place.into()).into())
+                    Some(AbstractionGraphNode::place(remote_place.into()))
                 }
             },
-            PCGNode::RegionProjection(rp) => {
-                let rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>> = rp.try_into().ok()?;
-                Some(PCGNode::RegionProjection(rp).into())
-            }
+            PCGNode::RegionProjection(rp) => Some(AbstractionGraphNode::from_region_projection(
+                rp.try_into().ok()?,
+                block,
+                ctxt,
+            )),
         }
     }
     pub(crate) fn as_blocking_node(
@@ -454,19 +461,11 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
         self.kind().blocked_nodes(repacker)
     }
 
-    fn blocks_node<'slf>(
-        &self,
-        node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.kind().blocks_node(node, repacker)
     }
 
-    fn is_blocked_by<'slf>(
-        &self,
-        node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.kind().is_blocked_by(node, repacker)
     }
 }

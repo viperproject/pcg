@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
-    abstraction_graph_constructor::AbstractionGraphNode, borrow_pcg_edge::LocalNode,
+    abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode,
     visitor::extract_regions,
 };
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
@@ -165,6 +165,7 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
+    #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.is_mutable(ctxt),
@@ -393,7 +394,7 @@ impl<'mir, 'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'mir, 'tcx>
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn can_be_labelled(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn can_be_labelled(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         true
     }
     pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {

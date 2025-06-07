@@ -421,11 +421,23 @@ impl<
 
     /// Returns the leaf nodes (nodes with no incoming edges)
     pub(crate) fn leaf_nodes(&self) -> Vec<Coupled<N>> {
+        self.leaf_node_indices()
+            .into_iter()
+            .map(|idx| self.inner.node_weight(idx).unwrap().nodes.clone())
+            .collect()
+    }
+
+    pub(crate) fn leaf_node_indices(&self) -> Vec<NodeIndex> {
         self.inner
             .node_indices()
             .filter(|idx| self.inner.neighbors(*idx).count() == 0)
-            .map(|idx| self.inner.node_weight(idx).unwrap().nodes.clone())
             .collect()
+    }
+
+    pub(crate) fn mut_leaf_nodes(&mut self, f: impl Fn(&mut NodeData<N, E>)) {
+        self.leaf_node_indices()
+            .into_iter()
+            .for_each(|idx| f(self.inner.node_weight_mut(idx).unwrap()));
     }
 
     pub(crate) fn parents(&self, node: &Coupled<N>) -> Vec<(Coupled<N>, FxHashSet<E>)> {

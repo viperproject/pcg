@@ -6,11 +6,11 @@ use super::state::BorrowsState;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
-use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
+use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
-use crate::{RestoreCapability, Weaken};
+use crate::{pcg_validity_assert, RestoreCapability, Weaken};
 
 pub mod actions;
 
@@ -91,12 +91,9 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(crate) fn add_edge(edge: BorrowPcgEdge<'tcx>, for_exclusive: bool) -> Self {
+    pub(crate) fn add_edge(edge: BorrowPcgEdge<'tcx>, for_read: bool) -> Self {
         BorrowPCGAction {
-            kind: BorrowPcgActionKind::AddEdge {
-                edge,
-                for_exclusive,
-            },
+            kind: BorrowPcgActionKind::AddEdge { edge, for_read },
             debug_context: None,
         }
     }
@@ -134,7 +131,7 @@ pub enum BorrowPcgActionKind<'tcx> {
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,
-        for_exclusive: bool,
+        for_read: bool,
     },
 }
 
@@ -160,13 +157,10 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgActionKind<'tcx> {
             BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
             }
-            BorrowPcgActionKind::AddEdge {
-                edge,
-                for_exclusive,
-            } => format!(
-                "Add Edge: {}; for exclusive: {}",
+            BorrowPcgActionKind::AddEdge { edge, for_read } => format!(
+                "Add Edge: {}; for read: {}",
                 edge.to_short_string(repacker),
-                for_exclusive
+                for_read
             ),
         }
     }
@@ -179,12 +173,12 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    #[instrument(skip(self, repacker, capabilities))]
+    #[instrument(skip(self, ctxt, capabilities))]
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPcgActionKind::Restore(restore) => {
@@ -206,13 +200,12 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 true
             }
-            BorrowPcgActionKind::MakePlaceOld(place, _) => self.make_place_old(place, repacker),
+            BorrowPcgActionKind::MakePlaceOld(place, _) => self.make_place_old(place, ctxt),
             BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location),
-            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, repacker),
-            BorrowPcgActionKind::AddEdge {
-                edge,
-                for_exclusive,
-            } => self.handle_add_edge(edge, for_exclusive, capabilities, repacker)?,
+            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
+            BorrowPcgActionKind::AddEdge { edge, for_read } => {
+                self.handle_add_edge(edge, for_read, capabilities, ctxt)?
+            }
         };
         Ok(result)
     }
@@ -221,7 +214,7 @@ impl<'tcx> BorrowsState<'tcx> {
     fn handle_add_edge(
         &mut self,
         edge: BorrowPcgEdge<'tcx>,
-        for_exclusive: bool,
+        for_read: bool,
         capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
@@ -230,30 +223,37 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                 if changed {
                     let base = expansion.base;
+                    let base_capability = capabilities.get(base.place().into());
                     let expanded_capability = if expansion.is_owned_expansion(ctxt) {
-                        match expansion.base.place().ty(ctxt).ty.ref_mutability() {
-                            Some(Mutability::Mut) => CapabilityKind::Exclusive,
-                            Some(Mutability::Not) => CapabilityKind::Read,
-                            None => {
-                                unreachable!(
-                                    "Expansion base ({}: {:?}) is not a ref",
-                                    expansion.base.to_short_string(ctxt),
-                                    expansion.base.place().ty(ctxt).ty
-                                )
-                            }
-                        }
-                    } else if !for_exclusive {
+                        pcg_validity_assert!(
+                            base_capability.is_some(),
+                            "Base capability should be set for owned expansion"
+                        );
+                        // TODO: Don't use exclusive as default
+                        base_capability.unwrap_or(CapabilityKind::Exclusive)
+                        // match expansion.base.place().ty(ctxt).ty.ref_mutability() {
+                        //     Some(Mutability::Mut) => CapabilityKind::Exclusive,
+                        //     Some(Mutability::Not) => CapabilityKind::Read,
+                        //     None => {
+                        //         unreachable!(
+                        //             "Expansion base ({}: {:?}) is not a ref",
+                        //             expansion.base.to_short_string(ctxt),
+                        //             expansion.base.place().ty(ctxt).ty
+                        //         )
+                        //     }
+                        // }
+                    } else if for_read {
                         CapabilityKind::Read
-                    } else if let Some(capability) = capabilities.get(base.place().into()) {
+                    } else if let Some(capability) = base_capability {
                         capability
                     } else {
                         return Ok(true);
                     };
 
-                    if for_exclusive {
-                        changed |= capabilities.remove(base.place().into()).is_some();
-                    } else {
+                    if for_read {
                         changed |= capabilities.insert(base.place().into(), CapabilityKind::Read);
+                    } else {
+                        changed |= capabilities.remove(base.place().into()).is_some();
                     }
 
                     for p in expansion.expansion.iter() {

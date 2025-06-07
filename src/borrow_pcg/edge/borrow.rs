@@ -40,9 +40,9 @@ pub struct LocalBorrow<'tcx> {
 
     pub region: ty::Region<'tcx>,
 
-    blocked_rp_snapshot: Option<RegionProjectionLabel>,
     assigned_rp_snapshot: Option<RegionProjectionLabel>,
 }
+
 
 impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     fn label_region_projection(
@@ -52,11 +52,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if self.blocked_place.base_region_projection(repacker) == Some(*projection) {
-            self.blocked_rp_snapshot = label;
-            changed = true;
-        }
-        if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
+        // if self.blocked_region_projection(repacker) == *projection {
+        //     self.blocked_rp_snapshot = label;
+        //     changed = true;
+        // }
+        if self.assigned_region_projection(repacker) == *projection {
             self.assigned_rp_snapshot = label;
             changed = true;
         }
@@ -394,7 +394,6 @@ impl<'tcx> LocalBorrow<'tcx> {
             kind,
             reserve_location: reservation_location,
             region,
-            blocked_rp_snapshot: None,
             assigned_rp_snapshot: None,
         }
     }

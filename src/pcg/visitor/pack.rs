@@ -75,7 +75,7 @@ impl PcgVisitor<'_, '_, '_> {
                         }) {
                             true
                         } else {
-                            expansion.is_packable()
+                            expansion.is_packable(slf.capabilities())
                         }
                     }
                     _ => edge

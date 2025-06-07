@@ -26,7 +26,7 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemotePlace::Local(p) => p.is_mutable(ctxt),
-            MaybeRemotePlace::Remote(rp) => false,
+            MaybeRemotePlace::Remote(_) => false,
         }
     }
 }

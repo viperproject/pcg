@@ -1,20 +1,19 @@
 use std::collections::BTreeSet;
 
-use derive_more::{Deref, DerefMut, From};
 use petgraph::algo::has_path_connecting;
 use smallvec::SmallVec;
 
 use super::{
-    domain::AbstractionOutputTarget,
     edge::kind::BorrowPcgEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
-    has_pcs_elem::HasPcgElems,
-    region_projection::{PcgRegion, RegionProjectionLabel},
+    region_projection::PcgRegion,
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::
+        abstraction::node::AbstractionGraphNode
+    ,
     coupling::{AddEdgeResult, JoinNodesResult},
-    utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     coupling,
@@ -52,6 +51,12 @@ impl<T: Copy + Eq> Coupled<T> {
             self.insert(*item);
         }
     }
+
+    pub(crate) fn mutate(&mut self, f: impl Fn(&mut T)) {
+        for item in self.0.iter_mut() {
+            f(item);
+        }
+    }
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
@@ -81,14 +86,14 @@ pub(crate) type AbstractionGraph<'tcx, 'graph> =
 
 impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
     pub(crate) fn region_repr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
-        self.iter().find_map(|n| match n.0 {
+        self.iter().find_map(|n| match n.to_pcg_node() {
             PCGNode::RegionProjection(rp) => Some(rp.region(ctxt)),
             _ => None,
         })
     }
 
     pub(crate) fn is_remote(&self) -> bool {
-        self.iter().any(|n| match n.0 {
+        self.iter().any(|n| match n.to_pcg_node() {
             PCGNode::Place(p) => p.is_remote(),
             PCGNode::RegionProjection(rp) => rp.base().is_remote(),
         })
@@ -248,51 +253,6 @@ impl<T: Ord> From<Vec<T>> for Coupled<T> {
     }
 }
 
-#[derive(From, Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) struct AbstractionGraphNode<'tcx>(
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
-);
-
-impl<'tcx, T> HasPcgElems<T> for AbstractionGraphNode<'tcx>
-where
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.0.pcg_elems()
-    }
-}
-
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionGraphNode<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        self.0.to_short_string(repacker)
-    }
-}
-
-impl<'tcx> From<AbstractionOutputTarget<'tcx>> for AbstractionGraphNode<'tcx> {
-    fn from(target: AbstractionOutputTarget<'tcx>) -> Self {
-        AbstractionGraphNode(PCGNode::RegionProjection(target.into()))
-    }
-}
-
-impl<'tcx> From<AbstractionGraphNode<'tcx>> for PCGNode<'tcx> {
-    fn from(node: AbstractionGraphNode<'tcx>) -> Self {
-        match node.0 {
-            PCGNode::Place(p) => p.into(),
-            PCGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
-        }
-    }
-}
-impl AbstractionGraphNode<'_> {
-    pub(crate) fn is_old(&self) -> bool {
-        match self.0 {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(rp) => {
-                rp.base().is_old() || matches!(rp.label(), Some(RegionProjectionLabel::Location(_)))
-            }
-        }
-    }
-}
-
 /// Records a history of actions for debugging purpose;
 /// used to detect infinite recursion
 #[derive(Clone)]
@@ -344,8 +304,7 @@ impl<T> DebugRecursiveCallHistory<T> {
 
 pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
     ctxt: CompilerCtxt<'mir, 'tcx>,
-    #[allow(unused)]
-    block: BasicBlock,
+    loop_head_block: BasicBlock,
     graph: AbstractionGraph<'tcx, 'graph>,
 }
 
@@ -384,10 +343,10 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
 }
 
 impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
-    pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx>, block: BasicBlock) -> Self {
+    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>, loop_head_block: BasicBlock) -> Self {
         Self {
-            ctxt: repacker,
-            block,
+            ctxt,
+            loop_head_block,
             graph: AbstractionGraph::new(),
         }
     }
@@ -423,9 +382,9 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
             let should_include = is_root
                 || coupled.iter().any(|n| {
                     let is_live = borrow_checker.is_live(
-                        (*n).into(),
+                        (*n).to_pcg_node().into(),
                         Location {
-                            block: self.block,
+                            block: self.loop_head_block,
                             statement_index: 0,
                         },
                         false, // TODO: Maybe actually check if this is a leaf
@@ -462,7 +421,7 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
     ) -> AbstractionGraph<'tcx, 'graph> {
         tracing::debug!("Construct abstraction graph start");
-        let full_graph = bg.base_abstraction_graph(self.ctxt);
+        let full_graph = bg.base_abstraction_graph(self.loop_head_block, self.ctxt);
         if coupling_imgcat_debug() {
             full_graph.render_with_imgcat(self.ctxt, "Base abstraction graph");
         }
@@ -481,6 +440,11 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
             );
         }
         tracing::debug!("Construct coupling graph end");
+        self.graph.mut_leaf_nodes(|node| {
+            node.nodes.mutate(|n| {
+                n.remove_rp_label_if_present();
+            });
+        });
         self.graph
     }
 }
