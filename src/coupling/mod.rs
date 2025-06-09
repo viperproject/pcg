@@ -9,12 +9,11 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::borrow_pcg::abstraction_graph_constructor::Coupled;
-use crate::rustc_interface::data_structures::fx::FxHashMap;
+use crate::pcg_validity_assert;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
-use crate::pcg_validity_assert;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NodeData<N, E> {
@@ -42,7 +41,6 @@ impl<N: Copy + Eq, E: Hash + Eq + Clone> NodeData<N, E> {
 #[derive(Clone)]
 pub(crate) struct DisjointSetGraph<N, E> {
     inner: petgraph::Graph<NodeData<N, E>, FxHashSet<E>>,
-    lookup_map: FxHashMap<N, petgraph::prelude::NodeIndex>,
 }
 
 type GetIndicesSmallVec<T> = SmallVec<[T; 4]>;
@@ -69,11 +67,8 @@ pub(crate) enum AddEdgeResult {
     MergedNodes,
 }
 
-impl<
-        'tcx,
-        N: Copy + Ord + Clone + DisplayWithCompilerCtxt<'tcx> + Hash,
-        E: Clone + Eq + Hash + DisplayWithCompilerCtxt<'tcx>,
-    > DisjointSetGraph<N, E>
+impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
+    DisjointSetGraph<N, E>
 {
     pub(crate) fn inner(&self) -> &petgraph::Graph<NodeData<N, E>, FxHashSet<E>> {
         &self.inner
@@ -82,7 +77,6 @@ impl<
     pub(crate) fn new() -> Self {
         DisjointSetGraph {
             inner: petgraph::Graph::new(),
-            lookup_map: FxHashMap::default(),
         }
     }
 
@@ -117,7 +111,10 @@ impl<
         })
     }
 
-    fn to_dot(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_dot(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String
+    where
+        N: DisplayWithCompilerCtxt<'tcx>,
+    {
         let arena = bumpalo::Bump::new();
         let to_render: petgraph::Graph<&str, ()> = self.inner.clone().map(
             |_, e| {
@@ -145,7 +142,10 @@ impl<
         lines.join("\n")
     }
 
-    pub(crate) fn render_with_imgcat(&self, repacker: CompilerCtxt<'_, 'tcx>, msg: &str) {
+    pub(crate) fn render_with_imgcat(&self, repacker: CompilerCtxt<'_, 'tcx>, msg: &str)
+    where
+        N: DisplayWithCompilerCtxt<'tcx>,
+    {
         let dot = self.to_dot(repacker);
         // let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_string());
         // let timestamp = std::time::SystemTime::now()
@@ -159,10 +159,7 @@ impl<
         });
     }
 
-    pub(crate) fn insert_endpoint(
-        &mut self,
-        endpoint: Coupled<N>,
-    ) -> petgraph::prelude::NodeIndex {
+    pub(crate) fn insert_endpoint(&mut self, endpoint: Coupled<N>) -> petgraph::prelude::NodeIndex {
         let JoinNodesResult { index, .. } = self.join_nodes(&endpoint);
         pcg_validity_assert!(
             self.is_acyclic(),
@@ -184,6 +181,7 @@ impl<
                         }
                     }
                     None => {
+                        tracing::info!("Candidate idx for {:?}: {:?}", node, idx);
                         candidate_idx = Some(idx);
                     }
                 },
@@ -212,23 +210,24 @@ impl<
     ///
     /// **IMPORTANT**: This may invalidate existing node indices
     #[must_use]
-    pub(crate) fn join_nodes(
-        &mut self,
-        nodes: &Coupled<N>,
-    ) -> JoinNodesResult {
+    pub(crate) fn join_nodes(&mut self, nodes: &Coupled<N>) -> JoinNodesResult
+    where
+        N: std::fmt::Debug,
+    {
         match self.get_node_indices(nodes) {
-            GetNodeIndicesResult::AlreadyJoined(node_index) => JoinNodesResult {
-                index: node_index,
-                performed_merge: false,
-            },
+            GetNodeIndicesResult::AlreadyJoined(node_index) => {
+                tracing::info!("Already joined {:?}", nodes);
+                JoinNodesResult {
+                    index: node_index,
+                    performed_merge: false,
+                }
+            }
             GetNodeIndicesResult::NoneExist => {
+                tracing::info!("None exist {:?}", nodes);
                 let idx = self.inner.add_node(NodeData {
                     nodes: nodes.clone(),
                     inner_edges: FxHashSet::default(),
                 });
-                for node in nodes.iter() {
-                    self.lookup_map.insert(*node, idx);
-                }
                 JoinNodesResult {
                     index: idx,
                     performed_merge: false,
@@ -258,11 +257,7 @@ impl<
                         .add_edge(required_join.merge_into, *idx, FxHashSet::default());
                 }
                 self.merge_sccs();
-                let (new_index, nodes) =
-                    self.lookup_in_graph(*nodes.iter().next().unwrap()).unwrap();
-                for node in nodes {
-                    self.lookup_map.insert(node, new_index);
-                }
+                let (new_index, _) = self.lookup_in_graph(*nodes.iter().next().unwrap()).unwrap();
                 JoinNodesResult {
                     index: new_index,
                     performed_merge: true,
@@ -279,11 +274,28 @@ impl<
     }
 
     pub(crate) fn lookup(&self, node: N) -> Option<petgraph::prelude::NodeIndex> {
-        self.lookup_map.get(&node).cloned()
+        self.lookup_in_graph(node).map(|(idx, _)| idx)
     }
 
     pub(crate) fn is_acyclic(&self) -> bool {
         !petgraph::algo::is_cyclic_directed(&self.inner)
+    }
+
+    pub(crate) fn join(&mut self, other: &Self) {
+        for (source, target, weight) in other.edges() {
+            let JoinNodesResult {
+                index: mut source_idx,
+                ..
+            } = self.join_nodes(&source);
+            let JoinNodesResult {
+                index: target_idx,
+                performed_merge,
+            } = self.join_nodes(&target);
+            if performed_merge {
+                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
+            }
+            let _ = self.add_edge_via_indices(source_idx, target_idx, weight);
+        }
     }
 
     /// Merges all cycles into single nodes. **IMPORTANT**: After performing this
@@ -324,13 +336,6 @@ impl<
             }
         }
         self.inner = result;
-        self.lookup_map.clear();
-        for nix in self.inner.node_indices() {
-            for node in self.inner.node_weight(nix).unwrap().nodes.iter() {
-                self.lookup_map.insert(*node, nix);
-            }
-        }
-
         pcg_validity_assert!(
             self.is_acyclic(),
             "Resulting graph contains cycles after merging SCCs"
@@ -379,20 +384,12 @@ impl<
         AddEdgeResult::DidNotMergeNodes
     }
 
-    pub(crate) fn add_edge(
-        &mut self,
-        from: &Coupled<N>,
-        to: &Coupled<N>,
-        weight: FxHashSet<E>,
-    ) {
+    pub(crate) fn add_edge(&mut self, from: &Coupled<N>, to: &Coupled<N>, weight: FxHashSet<E>) {
         pcg_validity_assert!(
             self.is_acyclic(),
             "Graph contains cycles before adding edge"
         );
-        pcg_validity_assert!(
-            from == to || from.is_disjoint(to),
-            "Non-disjoint edges"
-        );
+        pcg_validity_assert!(from.is_disjoint(to), "Non-disjoint edges");
         let JoinNodesResult {
             index: mut from_idx,
             ..
@@ -479,28 +476,15 @@ mod tests {
 
     // Simple mock types for testing
     #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    struct TestNode(i32);
+    struct TestNode<T>(T);
 
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     struct TestEdge(String);
 
-    // Mock implementation of DisplayWithCompilerCtxt for testing
-    impl<'tcx> crate::utils::display::DisplayWithCompilerCtxt<'tcx> for TestNode {
-        fn to_short_string(&self, _: crate::utils::CompilerCtxt<'_, 'tcx>) -> String {
-            format!("Node({})", self.0)
-        }
-    }
+    type TestGraph<T = i32> = DisjointSetGraph<TestNode<T>, TestEdge>;
+    type TestCoupled<T> = Coupled<TestNode<T>>;
 
-    impl<'tcx> crate::utils::display::DisplayWithCompilerCtxt<'tcx> for TestEdge {
-        fn to_short_string(&self, _: crate::utils::CompilerCtxt<'_, 'tcx>) -> String {
-            self.0.clone()
-        }
-    }
-
-    type TestGraph = DisjointSetGraph<TestNode, TestEdge>;
-    type TestCoupled = Coupled<TestNode>;
-
-    fn create_coupled(nodes: &[i32]) -> TestCoupled {
+    fn create_coupled<T: Copy + Ord + Hash + Eq + fmt::Debug>(nodes: &[T]) -> TestCoupled<T> {
         let mut coupled = TestCoupled::empty();
         for &node in nodes {
             coupled.insert(TestNode(node));
@@ -705,16 +689,40 @@ mod tests {
         // SCC1 -> SCC2 -> 5
 
         // First SCC: 1 <-> 2
-        graph.add_edge(&create_coupled(&[1]), &create_coupled(&[2]), edge_weight.clone());
-        graph.add_edge(&create_coupled(&[2]), &create_coupled(&[1]), edge_weight.clone());
+        graph.add_edge(
+            &create_coupled(&[1]),
+            &create_coupled(&[2]),
+            edge_weight.clone(),
+        );
+        graph.add_edge(
+            &create_coupled(&[2]),
+            &create_coupled(&[1]),
+            edge_weight.clone(),
+        );
 
         // Second SCC: 3 <-> 4
-        graph.add_edge(&create_coupled(&[3]), &create_coupled(&[4]), edge_weight.clone());
-        graph.add_edge(&create_coupled(&[4]), &create_coupled(&[3]), edge_weight.clone());
+        graph.add_edge(
+            &create_coupled(&[3]),
+            &create_coupled(&[4]),
+            edge_weight.clone(),
+        );
+        graph.add_edge(
+            &create_coupled(&[4]),
+            &create_coupled(&[3]),
+            edge_weight.clone(),
+        );
 
         // Connect SCCs and add leaf
-        graph.add_edge(&create_coupled(&[1]), &create_coupled(&[3]), edge_weight.clone());
-        graph.add_edge(&create_coupled(&[3]), &create_coupled(&[5]), edge_weight.clone());
+        graph.add_edge(
+            &create_coupled(&[1]),
+            &create_coupled(&[3]),
+            edge_weight.clone(),
+        );
+        graph.add_edge(
+            &create_coupled(&[3]),
+            &create_coupled(&[5]),
+            edge_weight.clone(),
+        );
 
         assert!(graph.is_acyclic());
 
@@ -736,22 +744,6 @@ mod tests {
         // Leaf should be node 5
         assert_eq!(graph.leaf_nodes().len(), 1);
         assert_eq!(graph.leaf_nodes()[0], create_coupled(&[5]));
-    }
-
-    #[test]
-    fn test_self_loop() {
-        let mut graph: TestGraph = DisjointSetGraph::new();
-
-        let node1 = create_coupled(&[1]);
-        let edge_weight = FxHashSet::from_iter([TestEdge("self_loop".to_string())]);
-
-        // Add self-loop
-        graph.add_edge(&node1, &node1, edge_weight.clone());
-
-        assert!(graph.is_acyclic());
-        assert_eq!(graph.inner().node_count(), 1);
-        assert_eq!(graph.leaf_nodes().len(), 1);
-        assert_eq!(graph.leaf_nodes()[0], node1);
     }
 
     #[test]
@@ -787,7 +779,7 @@ mod tests {
         // Create: 1 -> 2
         graph.add_edge(&node1, &node2, edge_weight);
 
-        assert!(graph.is_root(&node1));  // 1 has no incoming edges
+        assert!(graph.is_root(&node1)); // 1 has no incoming edges
         assert!(!graph.is_root(&node2)); // 2 has incoming edge from 1
     }
 
@@ -891,7 +883,57 @@ mod tests {
 
         // Check that the edge to node3 still exists with correct weight
         let edges: Vec<_> = graph.edges().collect();
-        let edge_to_3 = edges.iter().find(|(_, target, _)| target.contains(&TestNode(3))).unwrap();
+        let edge_to_3 = edges
+            .iter()
+            .find(|(_, target, _)| target.contains(&TestNode(3)))
+            .unwrap();
         assert_eq!(edge_to_3.2, edge_weight3);
+    }
+
+    #[test]
+    fn test_join() {
+        let mut graph1: TestGraph = DisjointSetGraph::new();
+        let mut graph2: TestGraph = DisjointSetGraph::new();
+
+        let node1 = create_coupled(&[1]);
+        let node2 = create_coupled(&[2, 3]);
+        let node3 = create_coupled(&[3]);
+
+        graph1.add_edge(&node1, &node2, Default::default());
+        graph2.add_edge(&node1, &node3, Default::default());
+
+        graph1.join(&graph2);
+
+        assert!(graph1.is_acyclic());
+        assert_eq!(graph1.inner().node_count(), 2);
+        assert_eq!(graph1.leaf_nodes().len(), 1);
+        // assert_eq!(graph1.leaf_nodes()[0], create_coupled(&[1, 2, 3]));
+    }
+
+    #[test]
+    fn test_join_2() {
+        let mut graph1: TestGraph<&str> = DisjointSetGraph::new();
+        let mut graph2: TestGraph<&str> = DisjointSetGraph::new();
+
+        let node1 = create_coupled(&["remote1"]);
+        let node2 = create_coupled(&["remote128"]);
+        let node3 = create_coupled(&["xstart"]);
+        let node4 = create_coupled(&["iter32"]);
+        let node5 = create_coupled(&["extra0", "iter32", "extra1"]);
+
+        for (from, to) in [
+            (node1.clone(), node2.clone()),
+            (node1.clone(), node3.clone()),
+        ] {
+            graph1.add_edge(&from, &to, Default::default());
+            graph2.add_edge(&from, &to, Default::default());
+        }
+
+        graph1.add_edge(&node3, &node4, Default::default());
+        graph2.add_edge(&node3, &node5, Default::default());
+
+        graph1.join(&graph2);
+
+        assert_eq!(graph1.edges().count(), 3);
     }
 }
