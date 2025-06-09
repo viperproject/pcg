@@ -43,7 +43,6 @@ pub struct LocalBorrow<'tcx> {
     assigned_rp_snapshot: Option<RegionProjectionLabel>,
 }
 
-
 impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
@@ -61,6 +60,15 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
             changed = true;
         }
         changed
+    }
+
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        if self.assigned_ref == place {
+            self.assigned_rp_snapshot = None;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -104,6 +112,15 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     ) -> bool {
         if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
             self.rp_snapshot_location = label;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        if self.assigned_ref == place {
+            self.rp_snapshot_location = None;
             true
         } else {
             false
@@ -311,16 +328,22 @@ impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LocalBorrow<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        let rp_part = if let Some(rp) = self.assigned_rp_snapshot {
+            format!(" <{}>", rp)
+        } else {
+            "".to_string()
+        };
         format!(
-            "borrow: {} = &{} {}",
-            self.assigned_ref.to_short_string(repacker),
+            "borrow: {}{} = &{} {}",
+            self.assigned_ref.to_short_string(ctxt),
+            rp_part,
             if self.kind.mutability() == Mutability::Mut {
                 "mut "
             } else {
                 ""
             },
-            self.blocked_place.to_short_string(repacker)
+            self.blocked_place.to_short_string(ctxt),
         )
     }
 }
@@ -343,11 +366,7 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         }
     }
 
-    fn is_blocked_by<'slf>(
-        &self,
-        node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match node {
             PCGNode::Place(_) => false,
             PCGNode::RegionProjection(region_projection) => {

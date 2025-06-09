@@ -122,9 +122,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 );
                 let loans_after = render_loans(
                     output
-                        .origin_contains_loan_at(
-                            self.ctxt.bc.location_table().mid_index(location),
-                        )
+                        .origin_contains_loan_at(self.ctxt.bc.location_table().mid_index(location))
                         .get(&region_vid),
                 );
                 format!(
@@ -267,7 +265,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         if let Some(node_id) = self.place_nodes.existing_id(&(place, location)) {
             return node_id;
         }
-        let capability = capability_getter.get(place.into());
+        let capability = capability_getter.get(place);
         let id = self.place_node_id(place, location);
         let label = format!("{:?}", place.to_string(self.ctxt));
         let place_ty = place.ty(self.ctxt);
@@ -280,7 +278,10 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         };
         let node = GraphNode { id, node_type };
         self.insert_node(node);
-        if matches!(capability, Some(CapabilityKind::Read | CapabilityKind::Exclusive)) {
+        if matches!(
+            capability,
+            Some(CapabilityKind::Read | CapabilityKind::Exclusive)
+        ) {
             for rp in place.region_projections(self.ctxt) {
                 self.insert_region_projection_node(rp.into());
             }
@@ -427,10 +428,11 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     }
 
     fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
-        let capability_getter = &PCGCapabilityGetter {
-            capabilities: self.capabilities,
-        };
-        self.insert_place_and_previous_projections(place.place, Some(place.at), capability_getter)
+        self.insert_place_and_previous_projections(
+            place.place,
+            Some(place.at),
+            &NullCapabilityGetter,
+        )
     }
 
     pub fn construct_graph(mut self) -> Graph {

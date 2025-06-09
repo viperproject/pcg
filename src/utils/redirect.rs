@@ -80,6 +80,15 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
         self.collapse_if_equal();
         changed
     }
+
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        let mut changed = self.original.remove_rp_label(place, ctxt);
+        if let Some(r) = &mut self.redirected {
+            changed |= r.remove_rp_label(place, ctxt);
+        }
+        self.collapse_if_equal();
+        changed
+    }
 }
 
 impl<E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {

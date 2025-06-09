@@ -202,6 +202,24 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.base.remove_rp_label(place, ctxt);
+        for p in &mut self.expansion {
+            changed |= p.remove_rp_label(place, ctxt)
+        }
+        if self.base.place().is_mut_ref(ctxt)
+            && self.base == place.into()
+            && self.deref_blocked_region_projection_label.is_some()
+        {
+            self.deref_blocked_region_projection_label = None;
+        }
+        changed
+    }
+
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,

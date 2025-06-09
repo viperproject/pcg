@@ -74,6 +74,14 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
         self.kind
             .label_region_projection(projection, label, repacker)
     }
+
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.kind.remove_rp_label(place, ctxt)
+    }
 }
 
 pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
@@ -443,12 +451,12 @@ impl<'tcx> BorrowPcgEdge<'tcx> {
 impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocked_by_nodes<'slf, 'mir: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
     {
-        self.kind().blocked_by_nodes(repacker)
+        self.kind().blocked_by_nodes(ctxt)
     }
 
     fn blocked_nodes<'slf>(

@@ -56,6 +56,12 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             .label_region_projection(projection, label, repacker);
         changed
     }
+
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        let mut changed = self.long.remove_rp_label(place, ctxt);
+        changed |= self.short.remove_rp_label(place, ctxt);
+        changed
+    }
 }
 
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {

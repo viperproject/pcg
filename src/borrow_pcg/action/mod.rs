@@ -1,4 +1,4 @@
-use tracing::{info_span, instrument};
+use tracing::instrument;
 
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use super::edge::kind::BorrowPcgEdgeKind;

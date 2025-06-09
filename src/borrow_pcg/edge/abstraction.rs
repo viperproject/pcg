@@ -52,6 +52,13 @@ impl<'tcx> LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.edge.remove_rp_label(place, ctxt)
+    }
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -63,11 +70,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
-    fn blocks_node<'slf>(
-        &self,
-        node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.edge.blocks_node(node, repacker)
     }
     fn blocked_nodes<'slf>(
@@ -192,6 +195,13 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.edge.remove_rp_label(place, ctxt)
+    }
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -224,11 +234,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for FunctionCallAbstraction<'tcx> {
 }
 
 impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn blocks_node<'slf>(
-        &self,
-        node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.edge.blocks_node(node, repacker)
     }
 
@@ -450,6 +456,21 @@ impl<'tcx, Input: LabelRegionProjection<'tcx> + PCGNodeLike<'tcx>> LabelRegionPr
         self.assert_validity(ctxt);
         changed
     }
+
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        for input in &mut self.inputs {
+            changed |= input.remove_rp_label(place, ctxt);
+        }
+        for output in &mut self.outputs {
+            changed |= output.remove_rp_label(place, ctxt);
+        }
+        changed
+    }
 }
 
 trait AbstractionInputLike<'tcx>: Sized + Clone {
@@ -507,11 +528,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
 }
 
 impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBlockEdge<'tcx, Input> {
-    fn blocks_node<'slf>(
-        &self,
-        node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         Input::inputs_block(&self.inputs, node, ctxt)
         // match node {
         //     PCGNode::Place(p) => self.inputs.contains(&p.into()),

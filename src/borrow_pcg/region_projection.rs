@@ -252,6 +252,15 @@ pub(crate) enum RegionProjectionLabel {
     Placeholder,
 }
 
+impl std::fmt::Display for RegionProjectionLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RegionProjectionLabel::Location(location) => write!(f, "{}", location),
+            RegionProjectionLabel::Placeholder => write!(f, "FUTURE"),
+        }
+    }
+}
+
 impl From<mir::Location> for RegionProjectionLabel {
     fn from(location: mir::Location) -> Self {
         RegionProjectionLabel::Location(location.into())
@@ -332,6 +341,15 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
             && self.label == projection.label
         {
             self.label = label;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        if self.base == place.into() {
+            self.label = None;
             true
         } else {
             false

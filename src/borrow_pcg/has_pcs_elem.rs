@@ -9,11 +9,12 @@ pub(crate) trait HasPcgElems<T> {
 }
 
 pub(crate) trait LabelRegionProjection<'tcx> {
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool;
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
 

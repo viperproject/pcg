@@ -72,6 +72,14 @@ impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
             false
         }
     }
+
+    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        if let PCGNode::RegionProjection(this_projection) = self {
+            this_projection.remove_rp_label(place, ctxt)
+        } else {
+            false
+        }
+    }
 }
 
 impl<T, U> From<T> for PCGNode<'_, T, U> {

@@ -24,19 +24,11 @@ pub trait EdgeData<'tcx> {
     where
         'tcx: 'mir;
 
-    fn blocks_node<'slf>(
-        &self,
-        node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.blocked_nodes(ctxt).any(|n| n == node)
     }
 
-    fn is_blocked_by<'slf>(
-        &self,
-        node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.blocked_by_nodes(ctxt).any(|n| n == node)
     }
 }
@@ -158,6 +150,13 @@ macro_rules! edgedata_enum {
         )+
 
         impl<$tcx> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjection<$tcx> for $enum_name<$tcx> {
+            fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+                match self {
+                    $(
+                        $enum_name::$variant_name(inner) => inner.remove_rp_label(place, ctxt),
+                    )+
+                }
+            }
             fn label_region_projection(
                 &mut self,
                 projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,

@@ -4,7 +4,9 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::edge_data::EdgeData;
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::triple::TripleWalker;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
@@ -12,7 +14,6 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, CompilerCtxt, HasPlace, Place};
 
@@ -270,11 +271,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         }
-        for blocked_place in edge.blocked_places(self.ctxt) {
-            if let MaybeRemotePlace::Local(place) = blocked_place {
-                self.remove_placeholder_labels(place);
-            }
-        }
 
         if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
             if expansion.is_mutable_deref(self.ctxt) {
@@ -387,14 +383,49 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .capabilities
                             .insert((*base_place).into(), retained_cap);
                         capability_projections.expansions.remove(base_place);
-                        self.remove_placeholder_labels((*base_place).into());
+                        self.remove_rp_labels_from_leaf_edges();
                         true
                     }
                     _ => unreachable!(),
                 },
             };
+        self.pcg.borrow.graph.render_debug_graph(
+            self.ctxt,
+            &format!("after {}", action.debug_line(self.ctxt)),
+        );
         self.actions.push(action);
         Ok(result)
+    }
+
+    fn remove_rp_labels_from_leaf_edges(&mut self) {
+        let leaf_edges = self
+            .pcg
+            .borrow
+            .graph()
+            .frozen_graph()
+            .leaf_edges(self.ctxt)
+            .into_iter()
+            .map(|edge| edge.to_owned_edge())
+            .collect::<Vec<_>>();
+        for edge in leaf_edges {
+            self.remove_rp_labels_from_leaf_edge(edge);
+        }
+    }
+
+    pub(crate) fn remove_rp_labels_from_leaf_edge(&mut self, edge: BorrowPcgEdge<'tcx>) {
+        let mut new_edge = edge.clone();
+        let mut changed = false;
+        for node in edge.blocked_by_nodes(self.ctxt) {
+            if let PCGNode::RegionProjection(rp) = node {
+                if rp.base.is_current() && self.pcg.capabilities.get(rp.base.place()).is_some() {
+                    changed |= new_edge.remove_rp_label(rp.base, self.ctxt);
+                }
+            }
+        }
+        if changed {
+            self.pcg.borrow.graph.remove(&edge.kind());
+            self.pcg.borrow.graph.insert(new_edge, self.ctxt);
+        }
     }
 
     #[tracing::instrument(skip(self, location))]
@@ -440,39 +471,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         }
-        let leaf_nodes = self
-            .pcg
-            .borrow
-            .graph()
-            .frozen_graph()
-            .leaf_nodes(self.ctxt)
-            .collect::<Vec<_>>();
-        for node in leaf_nodes {
-            if let PCGNode::RegionProjection(rp) = node {
-                if rp.base().is_current() && self.pcg.capabilities.get(rp.base().place()).is_some()
-                {
-                    self.remove_placeholder_labels(rp.base());
-                }
-            }
-        }
+        self.remove_rp_labels_from_leaf_edges();
         Ok(())
-    }
-
-    fn remove_placeholder_labels(&mut self, place: MaybeOldPlace<'tcx>) {
-        for region_projection in place.region_projections(self.ctxt) {
-            if !region_projection.can_be_labelled(self.ctxt) {
-                continue;
-            }
-            tracing::debug!(
-                "remove_placeholder_labels: {}",
-                region_projection.to_short_string(self.ctxt)
-            );
-            // Remove Placeholder label from the region projection
-            self.pcg.borrow.label_region_projection(
-                &region_projection.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt),
-                None,
-                self.ctxt,
-            );
-        }
     }
 }
