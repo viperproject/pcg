@@ -10,10 +10,8 @@ use super::{
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::
-        abstraction::node::AbstractionGraphNode
-    ,
-    coupling::{AddEdgeResult, JoinNodesResult},
+    borrow_pcg::abstraction::node::AbstractionGraphNode,
+    coupling::{AddEdgeResult, JoinNodesResult}, validity_checks_enabled,
 };
 use crate::{
     coupling,
@@ -36,6 +34,10 @@ use crate::{
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<T: Copy + Eq> Coupled<T> {
+    pub(crate) fn is_disjoint(&self, other: &Self) -> bool {
+        self.0.iter().all(|x| !other.0.contains(x))
+    }
+
     pub(crate) fn empty() -> Self {
         Self(SmallVec::new())
     }
@@ -101,6 +103,22 @@ impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
 }
 
 impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
+    pub(crate) fn add_edge_with_ctxt(
+        &mut self,
+        from: &Coupled<AbstractionGraphNode<'tcx>>,
+        to: &Coupled<AbstractionGraphNode<'tcx>>,
+        weight: FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        pcg_validity_assert!(
+            from.is_disjoint(to),
+            "Non-disjoint edges: {} and {}",
+            from.to_short_string(ctxt),
+            to.to_short_string(ctxt)
+        );
+        self.add_edge(from, to, weight);
+    }
+
     pub(crate) fn transitive_reduction(
         &mut self,
         ctxt: CompilerCtxt<'_, 'tcx>,
@@ -109,6 +127,19 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
             self.is_acyclic(),
             "Graph contains cycles after SCC computation"
         );
+
+        tracing::info!("Before");
+        if validity_checks_enabled() {
+            for (source, target, _) in self.edges() {
+                pcg_validity_assert!(
+                    source.is_disjoint(&target),
+                    "Non-disjoint edges: {} and {}",
+                    source.to_short_string(ctxt),
+                    target.to_short_string(ctxt)
+                );
+            }
+        }
+        tracing::info!("After");
 
         let toposort = petgraph::algo::toposort(&self.inner(), None).unwrap();
         let (g, revmap) =
@@ -132,6 +163,16 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
             }
             should_keep
         });
+        if validity_checks_enabled() {
+            for (source, target, _) in self.edges() {
+                pcg_validity_assert!(
+                    source.is_disjoint(&target),
+                    "Non-disjoint edges: {} and {}",
+                    source.to_short_string(ctxt),
+                    target.to_short_string(ctxt)
+                );
+            }
+        }
         removed_edges
     }
     pub(crate) fn merge(&mut self, other: &Self, ctxt: CompilerCtxt<'_, 'tcx>) {
@@ -139,15 +180,26 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
             let JoinNodesResult {
                 index: mut source_idx,
                 ..
-            } = self.join_nodes(&source, ctxt);
+            } = self.join_nodes(&source);
             let JoinNodesResult {
                 index: target_idx,
                 performed_merge,
-            } = self.join_nodes(&target, ctxt);
+            } = self.join_nodes(&target);
             if performed_merge {
                 source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
             }
-            let _ = self.add_edge_via_indices(source_idx, target_idx, weight, ctxt);
+            let _ = self.add_edge_via_indices(source_idx, target_idx, weight);
+        }
+
+        if validity_checks_enabled() {
+            for (source, target, _) in self.edges() {
+                pcg_validity_assert!(
+                    source.is_disjoint(&target),
+                    "Non-disjoint edges: {} and {}",
+                    source.to_short_string(ctxt),
+                    target.to_short_string(ctxt)
+                );
+            }
         }
 
         'top: loop {
@@ -164,14 +216,19 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
                         && ctxt.bc.outlives(blocked_region, blocking_region)
                     // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
                     {
-                        tracing::debug!(
+
+                        tracing::info!(
                             "Adding edge {} -> {} because of outlives",
                             blocked_data.to_short_string(ctxt),
                             blocking_data.to_short_string(ctxt)
                         );
-                        match self.add_edge_via_indices(blocked, blocking, Default::default(), ctxt)
+                        if coupling_imgcat_debug() {
+                            self.render_with_imgcat(ctxt, "Before add");
+                        }
+                        match self.add_edge_via_indices(blocked, blocking, Default::default())
                         {
                             AddEdgeResult::DidNotMergeNodes => {
+                                tracing::info!("No merge");
                                 let edges = self.transitive_reduction(ctxt);
                                 self.update_inner_edge(blocked, blocking, edges);
                                 if coupling_imgcat_debug() {
@@ -179,6 +236,7 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
                                 }
                             }
                             AddEdgeResult::MergedNodes => {
+                                tracing::info!("Merged");
                                 if coupling_imgcat_debug() {
                                     self.render_with_imgcat(ctxt, "Post add");
                                 }
@@ -188,6 +246,7 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
                     }
                 }
             }
+            tracing::info!("After top");
             pcg_validity_assert!(self.is_acyclic(), "Resulting graph contains cycles");
             return;
         }
@@ -402,7 +461,7 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
                 );
             } else {
                 self.graph
-                    .add_edge(&coupled, &bottom_connect.clone(), weight.clone(), self.ctxt);
+                    .add_edge_with_ctxt(&coupled, &bottom_connect.clone(), weight.clone(), self.ctxt);
                 self.add_edges_from(
                     bg,
                     &coupled,
@@ -429,7 +488,7 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.graph.insert_endpoint(node.clone(), self.ctxt);
+            self.graph.insert_endpoint(node.clone());
             self.add_edges_from(
                 &full_graph,
                 &node,

@@ -13,7 +13,7 @@ use crate::visualization::generate_borrows_dot_graph;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::ToBorrowsEdge,
-        edge::abstraction::{AbstractionBlockEdge, LoopAbstraction},
+        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
         path_condition::PathConditions,
     },
     rustc_interface::middle::mir::BasicBlock,

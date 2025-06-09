@@ -231,7 +231,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             &inputs,
                             &outputs,
                             std::iter::once(edge.kind).collect(),
-                            ctxt,
                         );
                     }
                     BorrowPcgEdgeKind::BorrowPcgExpansion(e)
@@ -259,7 +258,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                     )]
                                     .into(),
                                     std::iter::once(edge.kind).collect(),
-                                    ctxt,
                                 );
                             }
                         }

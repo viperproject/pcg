@@ -2,8 +2,9 @@ use super::PcgVisitor;
 use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
+use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{
-    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction, FunctionData,
+    AbstractionBlockEdge, AbstractionType
 };
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::EdgeData;

@@ -1,7 +1,12 @@
+pub(crate) mod function;
+pub(crate) mod r#loop;
+pub(crate) mod r#type;
+
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::BlockedNode,
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
+        edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{LabelPlace, LabelRegionProjection},
         latest::Latest,
@@ -9,22 +14,13 @@ use crate::{
     },
     edgedata_enum,
     pcg::PCGNodeLike,
-    rustc_interface::{
-        hir::def_id::DefId,
-        middle::{
-            mir::{BasicBlock, Location},
-            ty::GenericArgsRef,
-        },
-    },
     utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected},
 };
 
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode, ToBorrowsEdge};
+use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
-use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::pcg::{LocalNodeLike, PCGNode};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -32,291 +28,6 @@ use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 use itertools::Itertools;
-
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub struct LoopAbstraction<'tcx> {
-    pub(crate) edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>>,
-    pub(crate) block: BasicBlock,
-}
-
-impl<'tcx> LoopAbstraction<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: AbstractionOutputTarget<'tcx>,
-        to: AbstractionOutputTarget<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.edge.redirect(from, to, ctxt);
-        self.assert_validity(ctxt);
-    }
-}
-
-impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
-    fn remove_rp_label(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.remove_rp_label(place, ctxt)
-    }
-    fn label_region_projection(
-        &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge
-            .label_region_projection(projection, label, repacker)
-    }
-}
-impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
-    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.edge.blocks_node(node, repacker)
-    }
-    fn blocked_nodes<'slf>(
-        &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
-    where
-        'tcx: 'slf,
-    {
-        self.edge.blocked_nodes(repacker)
-    }
-
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
-        &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
-    where
-        'tcx: 'slf,
-    {
-        self.edge.blocked_by_nodes(repacker)
-    }
-}
-
-impl<'tcx> LabelEdgePlaces<'tcx> for LoopAbstraction<'tcx> {
-    fn label_blocked_places(
-        &mut self,
-        predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.label_blocked_places(predicate, latest, ctxt)
-    }
-
-    fn label_blocked_by_places(
-        &mut self,
-        predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.label_blocked_by_places(predicate, latest, ctxt)
-    }
-}
-impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
-    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
-        self.edge.check_validity(ctxt)
-    }
-}
-
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LoopAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!(
-            "Loop({:?}): {}",
-            self.block,
-            self.edge.to_short_string(_repacker)
-        )
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for LoopAbstraction<'tcx>
-where
-    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcg_elems()
-    }
-}
-
-impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
-    fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
-        BorrowPcgEdge::new(
-            BorrowPcgEdgeKind::Abstraction(AbstractionType::Loop(self)),
-            path_conditions,
-        )
-    }
-}
-
-impl<'tcx> LoopAbstraction<'tcx> {
-    pub(crate) fn new(
-        edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>>,
-        block: BasicBlock,
-    ) -> Self {
-        Self { edge, block }
-    }
-
-    pub(crate) fn location(&self) -> Location {
-        Location {
-            block: self.block,
-            statement_index: 0,
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub struct FunctionData<'tcx> {
-    def_id: DefId,
-    substs: GenericArgsRef<'tcx>,
-}
-
-impl<'tcx> FunctionData<'tcx> {
-    pub fn new(def_id: DefId, substs: GenericArgsRef<'tcx>) -> Self {
-        Self { def_id, substs }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub struct FunctionCallAbstraction<'tcx> {
-    location: Location,
-    /// This may be `None` if the call is to a function pointer
-    function_data: Option<FunctionData<'tcx>>,
-    edge: AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>>,
-}
-
-impl<'tcx> FunctionCallAbstraction<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: AbstractionOutputTarget<'tcx>,
-        to: AbstractionOutputTarget<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.edge.redirect(from, to, ctxt);
-    }
-}
-
-impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn remove_rp_label(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.remove_rp_label(place, ctxt)
-    }
-    fn label_region_projection(
-        &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge
-            .label_region_projection(projection, label, repacker)
-    }
-}
-
-impl<'tcx> LabelEdgePlaces<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn label_blocked_places(
-        &mut self,
-        predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.label_blocked_places(predicate, latest, ctxt)
-    }
-
-    fn label_blocked_by_places(
-        &mut self,
-        predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.label_blocked_by_places(predicate, latest, ctxt)
-    }
-}
-
-impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.edge.blocks_node(node, repacker)
-    }
-
-    fn blocked_nodes<'slf>(
-        &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
-    where
-        'tcx: 'slf,
-    {
-        self.edge.blocked_nodes(repacker)
-    }
-
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
-        &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
-    where
-        'tcx: 'mir,
-    {
-        self.edge.blocked_by_nodes(repacker)
-    }
-}
-
-impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
-        self.edge.check_validity(ctxt)
-    }
-}
-
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
-        format!(
-            "call{} at {:?}: {}",
-            if let Some(function_data) = &self.function_data {
-                format!(" {}", ctxt.tcx().def_path_str(function_data.def_id))
-            } else {
-                "".to_string()
-            },
-            self.location,
-            self.edge.to_short_string(ctxt)
-        )
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for FunctionCallAbstraction<'tcx>
-where
-    AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcg_elems()
-    }
-}
-
-impl<'tcx> FunctionCallAbstraction<'tcx> {
-    pub fn def_id(&self) -> Option<DefId> {
-        self.function_data.as_ref().map(|f| f.def_id)
-    }
-    pub fn substs(&self) -> Option<GenericArgsRef<'tcx>> {
-        self.function_data.as_ref().map(|f| f.substs)
-    }
-
-    pub fn location(&self) -> Location {
-        self.location
-    }
-
-    pub fn edge(&self) -> &AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>> {
-        &self.edge
-    }
-
-    pub fn new(
-        location: Location,
-        function_data: Option<FunctionData<'tcx>>,
-        edge: AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>>,
-    ) -> Self {
-        Self {
-            location,
-            function_data,
-            edge,
-        }
-    }
-}
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum AbstractionType<'tcx> {
@@ -615,11 +326,6 @@ impl<'tcx, Input: HasValidityCheck<'tcx> + PCGNodeLike<'tcx>> HasValidityCheck<'
     }
 }
 
-// impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for AbstractionBlockEdge<'tcx> {
-//     fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-//         self.outputs.iter_mut().collect()
-//     }
-// }
 
 impl<'tcx, Input: Clone + PCGNodeLike<'tcx>> AbstractionBlockEdge<'tcx, Input> {
     pub(crate) fn new(
@@ -668,45 +374,5 @@ impl<'tcx, Input: HasPcgElems<MaybeOldPlace<'tcx>>> HasPcgElems<MaybeOldPlace<'t
             result.extend(output.pcg_elems());
         }
         result
-    }
-}
-
-impl<'tcx> AbstractionType<'tcx> {
-    pub(crate) fn is_function_call(&self) -> bool {
-        matches!(self, AbstractionType::FunctionCall(_))
-    }
-
-    pub fn location(&self) -> Location {
-        match self {
-            AbstractionType::FunctionCall(c) => c.location,
-            AbstractionType::Loop(c) => c.location(),
-        }
-    }
-
-    pub fn inputs(&self) -> Vec<AbstractionInputTarget<'tcx>> {
-        self.edge().inputs()
-    }
-
-    pub fn outputs(&self) -> Vec<AbstractionOutputTarget<'tcx>> {
-        self.edge().outputs()
-    }
-
-    pub fn edge(&self) -> AbstractionBlockEdge<'tcx, AbstractionInputTarget<'tcx>> {
-        match self {
-            AbstractionType::FunctionCall(c) => AbstractionBlockEdge {
-                inputs: c
-                    .edge
-                    .inputs
-                    .iter()
-                    .map(|i| i.to_abstraction_input())
-                    .collect(),
-                outputs: c.edge.outputs.clone(),
-            },
-            AbstractionType::Loop(c) => c.edge.clone(),
-        }
-    }
-
-    pub fn has_input(&self, node: LoopAbstractionInput<'tcx>) -> bool {
-        self.inputs().contains(&node)
     }
 }
