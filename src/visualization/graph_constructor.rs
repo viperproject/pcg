@@ -280,6 +280,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         };
         let node = GraphNode { id, node_type };
         self.insert_node(node);
+        if matches!(capability, Some(CapabilityKind::Read | CapabilityKind::Exclusive)) {
+            for rp in place.region_projections(self.ctxt) {
+                self.insert_region_projection_node(rp.into());
+            }
+        }
         id
     }
 }
