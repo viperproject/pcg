@@ -77,6 +77,60 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
     }
 
+    fn add_deref_expansion(
+        &mut self,
+        base: Place<'tcx>,
+        place_expansion: PlaceExpansion<'tcx>,
+        location: Location,
+        obtain_type: ObtainType,
+    ) -> Result<bool, PcgError> {
+        let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
+            base.into(),
+            place_expansion,
+            if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
+                Some(location.into())
+            } else {
+                None
+            },
+            self.ctxt,
+        )?;
+
+        tracing::debug!(
+            "Adding edge {} (label rp: {})",
+            expansion.to_short_string(self.ctxt),
+            obtain_type.should_label_rp()
+        );
+
+        if expansion
+            .blocked_by_nodes(self.ctxt)
+            .all(|node| self.pcg.borrow.graph().contains(node, self.ctxt))
+        {
+            return Ok(false);
+        }
+
+        if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
+            let place: MaybeOldPlace<'tcx> = base.into();
+            let rp = place.base_region_projection(self.ctxt).unwrap();
+            tracing::debug!(
+                "Labeling {} with {:?}",
+                rp.to_short_string(self.ctxt),
+                location
+            );
+            self.pcg
+                .borrow
+                .label_region_projection(&rp, Some(location.into()), self.ctxt);
+        }
+
+        let action = BorrowPCGAction::add_edge(
+            BorrowPcgEdge::new(
+                BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
+                self.pcg.borrow.path_conditions.clone(),
+            ),
+            obtain_type.capability().is_read(),
+        );
+        self.record_and_apply_action(action.into())
+    }
+
     fn expand_place_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -84,7 +138,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         location: Location,
         obtain_type: ObtainType,
     ) -> Result<bool, PcgError> {
-        let place_expansion = PlaceExpansion::from_places(expansion.expansion().clone(), self.ctxt);
+        let place_expansion = PlaceExpansion::from_places(expansion.expansion(), self.ctxt);
         let expansion_is_owned = base.is_owned(self.ctxt)
             && !matches!(
                 expansion.kind,
@@ -110,53 +164,47 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?;
             }
         } else {
-            let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
-                base.into(),
-                place_expansion,
-                if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
-                    Some(location.into())
-                } else {
-                    None
-                },
-                self.ctxt,
-            )?;
-
-            tracing::debug!(
-                "Adding edge {} (label rp: {})",
-                expansion.to_short_string(self.ctxt),
-                obtain_type.should_label_rp()
-            );
-
-            if expansion
-                .blocked_by_nodes(self.ctxt)
-                .all(|node| self.pcg.borrow.graph().contains(node, self.ctxt))
-            {
-                return Ok(false);
-            }
-
-            if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
-                let place: MaybeOldPlace<'tcx> = base.into();
-                let rp = place.base_region_projection(self.ctxt).unwrap();
-                tracing::debug!(
-                    "Labeling {} with {:?}",
-                    rp.to_short_string(self.ctxt),
-                    location
-                );
-                self.pcg
-                    .borrow
-                    .label_region_projection(&rp, Some(location.into()), self.ctxt);
-            }
-
-            let action = BorrowPCGAction::add_edge(
-                BorrowPcgEdge::new(
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
-                    self.pcg.borrow.path_conditions.clone(),
-                ),
-                obtain_type.capability().is_read(),
-            );
-            self.record_and_apply_action(action.into())?;
+            self.add_deref_expansion(base, place_expansion, location, obtain_type)?;
         }
         Ok(true)
+    }
+
+    fn expand_region_projections_one_level(
+        &mut self,
+        base: Place<'tcx>,
+        expansion: &ShallowExpansion<'tcx>,
+        location: Location,
+        obtain_type: ObtainType,
+    ) -> Result<(), PcgError> {
+        for rp in base.region_projections(self.ctxt) {
+            if let Some(place_expansion) =
+                expansion.place_expansion_for_region(rp.region(self.ctxt), self.ctxt)
+            {
+                let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
+                let expansion =
+                    BorrowPcgExpansion::new(rp.into(), place_expansion, None, self.ctxt)?;
+                tracing::debug!("Adding edge {}", expansion.to_short_string(self.ctxt));
+                self.record_and_apply_action(
+                    BorrowPCGAction::add_edge(
+                        BorrowPcgEdge::new(
+                            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
+                            self.pcg.borrow.path_conditions.clone(),
+                        ),
+                        obtain_type.capability().is_read(),
+                    )
+                    .into(),
+                )?;
+                if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
+                    tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
+                    self.pcg.borrow.label_region_projection(
+                        &rp,
+                        Some(SnapshotLocation::before(location).into()),
+                        self.ctxt,
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     fn expand_to(
@@ -169,47 +217,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let base = base.with_inherent_region(self.ctxt);
             let expansion = base.expand_one_level(place, self.ctxt)?;
             if self.expand_place_one_level(base, &expansion, location, obtain_type)? {
-                for rp in base.region_projections(self.ctxt) {
-                    let dest_places = expansion
-                        .expansion()
-                        .iter()
-                        .filter(|e| {
-                            e.region_projections(self.ctxt)
-                                .into_iter()
-                                .any(|child_rp| rp.region(self.ctxt) == child_rp.region(self.ctxt))
-                        })
-                        .copied()
-                        .collect::<Vec<_>>();
-                    if !dest_places.is_empty() {
-                        let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
-                        let place_expansion = PlaceExpansion::from_places(dest_places, self.ctxt);
-                        let expansion = BorrowPcgExpansion::new(
-                            rp.into(),
-                            place_expansion,
-                            None,
-                            self.ctxt,
-                        )?;
-                        tracing::debug!("Adding edge {}", expansion.to_short_string(self.ctxt));
-                        self.record_and_apply_action(
-                            BorrowPCGAction::add_edge(
-                                BorrowPcgEdge::new(
-                                    BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
-                                    self.pcg.borrow.path_conditions.clone(),
-                                ),
-                                obtain_type.capability().is_read(),
-                            )
-                            .into(),
-                        )?;
-                        if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
-                            tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
-                            self.pcg.borrow.label_region_projection(
-                                &rp,
-                                Some(SnapshotLocation::before(location).into()),
-                                self.ctxt,
-                            );
-                        }
-                    }
-                }
+                self.expand_region_projections_one_level(base, &expansion, location, obtain_type)?;
             }
         }
         Ok(())

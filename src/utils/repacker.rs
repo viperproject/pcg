@@ -6,6 +6,7 @@
 
 use crate::{
     borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     rustc_interface::{
         borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,
@@ -72,6 +73,35 @@ impl<'tcx> ShallowExpansion<'tcx> {
         self.kind
             .insert_target_into_expansion(self.target_place, &mut expansion);
         expansion
+    }
+
+    fn dest_places_for_region(
+        &self,
+        region: PcgRegion,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<Place<'tcx>> {
+        self.expansion()
+            .iter()
+            .filter(|e| {
+                e.region_projections(ctxt)
+                    .into_iter()
+                    .any(|child_rp| region == child_rp.region(ctxt))
+            })
+            .copied()
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn place_expansion_for_region(
+        &self,
+        region: PcgRegion,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<PlaceExpansion<'tcx>> {
+        let dest_places = self.dest_places_for_region(region, ctxt);
+        if dest_places.is_empty() {
+            None
+        } else {
+            Some(PlaceExpansion::from_places(dest_places, ctxt))
+        }
     }
 }
 

@@ -36,6 +36,10 @@ impl<'tcx> PCGNode<'tcx> {
 }
 
 impl<'tcx, T, U> PCGNode<'tcx, T, U> {
+    pub(crate) fn is_place(&self) -> bool {
+        matches!(self, PCGNode::Place(_))
+    }
+
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
         match self {
             PCGNode::RegionProjection(rp) => Ok(rp),

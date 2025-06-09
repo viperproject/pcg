@@ -1,4 +1,4 @@
-use tracing::instrument;
+use tracing::{info_span, instrument};
 
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use super::edge::kind::BorrowPcgEdgeKind;
@@ -173,7 +173,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    #[instrument(skip(self, ctxt, capabilities))]
+    #[instrument(skip(self, action, capabilities, ctxt))]
     pub(crate) fn apply_action(
         &mut self,
         action: BorrowPCGAction<'tcx>,
@@ -210,7 +210,7 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(result)
     }
 
-    #[tracing::instrument(skip(self, capabilities, ctxt))]
+    #[instrument(skip(self, edge, capabilities, ctxt), fields(edge = edge.to_short_string(ctxt)))]
     fn handle_add_edge(
         &mut self,
         edge: BorrowPcgEdge<'tcx>,
@@ -221,33 +221,24 @@ impl<'tcx> BorrowsState<'tcx> {
         let mut changed = self.insert(edge.clone(), ctxt);
         Ok(match edge.kind {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                if changed {
+                // We only want to change capability for expanding x -> *x, not
+                // for expanding region projections
+                if changed && expansion.base.is_place() {
                     let base = expansion.base;
                     let base_capability = capabilities.get(base.place().into());
-                    let expanded_capability = if expansion.is_owned_expansion(ctxt) {
-                        pcg_validity_assert!(
-                            base_capability.is_some(),
-                            "Base capability should be set for owned expansion"
-                        );
-                        // TODO: Don't use exclusive as default
-                        base_capability.unwrap_or(CapabilityKind::Exclusive)
-                        // match expansion.base.place().ty(ctxt).ty.ref_mutability() {
-                        //     Some(Mutability::Mut) => CapabilityKind::Exclusive,
-                        //     Some(Mutability::Not) => CapabilityKind::Read,
-                        //     None => {
-                        //         unreachable!(
-                        //             "Expansion base ({}: {:?}) is not a ref",
-                        //             expansion.base.to_short_string(ctxt),
-                        //             expansion.base.place().ty(ctxt).ty
-                        //         )
-                        //     }
-                        // }
-                    } else if for_read {
+                    let expanded_capability = if for_read {
                         CapabilityKind::Read
                     } else if let Some(capability) = base_capability {
                         capability
                     } else {
+                        // TODO
+                        pcg_validity_assert!(
+                            false,
+                            "Base capability for {} is not set",
+                            base.place().to_short_string(ctxt)
+                        );
                         return Ok(true);
+                        // panic!("Base capability should be set");
                     };
 
                     if for_read {
@@ -258,6 +249,11 @@ impl<'tcx> BorrowsState<'tcx> {
 
                     for p in expansion.expansion.iter() {
                         if !p.place().is_owned(ctxt) {
+                            tracing::debug!(
+                                "Inserting capability {:?} for {}",
+                                expanded_capability,
+                                p.place().to_short_string(ctxt)
+                            );
                             changed |= capabilities.insert(p.place().into(), expanded_capability);
                         }
                     }
