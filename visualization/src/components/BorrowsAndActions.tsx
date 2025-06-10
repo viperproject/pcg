@@ -12,7 +12,10 @@ import {
   LocalNode,
   PCGStmtVisualizationData,
   PcgProgramPointData,
+  CurrentPoint,
 } from "../types";
+import { PcgIteration } from "../api";
+import { openDotGraphInNewWindow } from "../dot_graph";
 import * as Viz from "@viz-js/viz";
 
 function MaybeOldPlaceDisplay({
@@ -104,17 +107,84 @@ function PCGNodeDisplay({ node }: { node: PCGNode<MaybeRemotePlace> }) {
   return <span>{JSON.stringify(node)}</span>;
 }
 
-function PcgActionsDisplay({ actions }: { actions: PcgActions }) {
+function PcgActionsDisplay({
+  actions,
+  stmtIteration,
+  selectedFunction,
+  phase,
+}: {
+  actions: PcgActions;
+  stmtIteration?: { iterations: PcgIteration[] };
+  selectedFunction?: string;
+  phase: string;
+}) {
+  const getActionGraphFilename = (actionIndex: number): string | null => {
+    if (!stmtIteration || stmtIteration.iterations.length === 0 || !selectedFunction) {
+      return null;
+    }
+
+    // Use the most recent iteration
+    const mostRecentIteration = stmtIteration.iterations[stmtIteration.iterations.length - 1];
+
+    // Map display phase names to iteration phase names
+    const phaseMapping: Record<string, string> = {
+      "pre_operands": "PreOperands",
+      "post_operands": "PostOperands",
+      "pre_main": "PreMain",
+      "post_main": "PostMain",
+      "actions": "actions" // fallback for the simple case
+    };
+
+    const iterationPhaseName = phaseMapping[phase] || phase;
+    const phaseActions = mostRecentIteration.actions[iterationPhaseName];
+
+    if (!phaseActions || !(actionIndex in phaseActions)) {
+      return null;
+    }
+
+    // Return the filename with the correct path
+    return `data/${selectedFunction}/${phaseActions[actionIndex]}`;
+  };
+
   return (
     <ul>
-      {actions.map((action, index) => (
-        <li key={`action-${index}`}>{action}</li>
-      ))}
+      {actions.map((action, index) => {
+        const graphFilename = getActionGraphFilename(index);
+        return (
+          <li key={`action-${index}`} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span>{action}</span>
+            {graphFilename && (
+              <button
+                style={{
+                  fontSize: "12px",
+                  padding: "2px 6px",
+                  backgroundColor: "#e6f3ff",
+                  border: "1px solid #007acc",
+                  borderRadius: "3px",
+                  cursor: "pointer",
+                }}
+                onClick={() => openDotGraphInNewWindow(graphFilename)}
+                title="Show graph after this action"
+              >
+                Show Graph
+              </button>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-export default function PCGOps({ data }: { data: PcgProgramPointData }) {
+export default function PCGOps({
+  data,
+  stmtIteration,
+  selectedFunction,
+}: {
+  data: PcgProgramPointData;
+  stmtIteration?: { iterations: PcgIteration[] };
+  selectedFunction?: string;
+}) {
   let content;
   if ("latest" in data) {
     content = (
@@ -127,7 +197,12 @@ export default function PCGOps({ data }: { data: PcgProgramPointData }) {
         ].map((key) => (
           <div key={key}>
             <h5>{key}</h5>
-            <PcgActionsDisplay actions={data.actions[key]} />
+            <PcgActionsDisplay
+              actions={data.actions[key]}
+              stmtIteration={stmtIteration}
+              selectedFunction={selectedFunction}
+              phase={key}
+            />
           </div>
         ))}
       </>
@@ -136,9 +211,12 @@ export default function PCGOps({ data }: { data: PcgProgramPointData }) {
     content = (
       <>
         <h4>Actions</h4>
-        <ul>
-          {data.actions.map((op, index) => <li key={`action-${index}`}>{op}</li>)}
-        </ul>
+        <PcgActionsDisplay
+          actions={data.actions}
+          stmtIteration={stmtIteration}
+          selectedFunction={selectedFunction}
+          phase="actions"
+        />
       </>
     );
   }

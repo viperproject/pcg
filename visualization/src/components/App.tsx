@@ -366,7 +366,16 @@ export const App: React.FC<AppProps> = ({
         />
         {pcgProgramPointData && showPCGOps && (
           <>
-            <PCGOps data={pcgProgramPointData} />
+                        <PCGOps
+              data={pcgProgramPointData}
+              stmtIteration={
+                currentPoint.type === "stmt" &&
+                iterations.length > currentPoint.stmt
+                  ? iterations[currentPoint.stmt]
+                  : undefined
+              }
+              selectedFunction={selectedFunction}
+            />
             {"latest" in pcgProgramPointData && (
               <LatestDisplay latest={pcgProgramPointData.latest} />
             )}
