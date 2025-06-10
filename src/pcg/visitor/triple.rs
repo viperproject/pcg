@@ -5,30 +5,25 @@ use crate::{
         visitor::obtain::ObtainType,
         PCGUnsupportedError, PcgError,
     },
-    rustc_interface::middle::mir::Location,
 };
 
 use super::PcgVisitor;
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
-    #[tracing::instrument(skip(self, location))]
-    pub(crate) fn require_triple(
-        &mut self,
-        triple: Triple<'tcx>,
-        location: Location,
-    ) -> Result<(), PcgError> {
+    #[tracing::instrument(skip(self))]
+    pub(crate) fn require_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
         match triple.pre() {
             PlaceCondition::ExpandTwoPhase(place) => {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, location, ObtainType::TwoPhaseExpand)?;
+                self.obtain(place, ObtainType::TwoPhaseExpand)?;
             }
             PlaceCondition::Capability(place, capability) => {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, location, ObtainType::Capability(capability))?;
+                self.obtain(place, ObtainType::Capability(capability))?;
             }
             PlaceCondition::RemoveCapability(place) => {
                 self.pcg.capabilities.remove(place.into());

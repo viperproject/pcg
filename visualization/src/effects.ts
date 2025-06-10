@@ -1,10 +1,10 @@
-import { getPathData, getPCSIterations, MirGraphNode, MirStmt, PCSIterations } from "./api";
+import { getPathData, getPCSIterations, MirGraphNode, MirStmt, PcgIterations } from "./api";
 import { CurrentPoint, PathData } from "./types";
 
 export function reloadIterations(
   selectedFunction: string,
   currentPoint: CurrentPoint,
-  setIterations: React.Dispatch<React.SetStateAction<PCSIterations>>
+  setIterations: React.Dispatch<React.SetStateAction<PcgIterations>>
 ) {
   if (currentPoint.type != "stmt") {
     setIterations([]);

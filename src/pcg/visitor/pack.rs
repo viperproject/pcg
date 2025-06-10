@@ -96,7 +96,7 @@ impl PcgVisitor<'_, '_, '_> {
                 break Ok(());
             }
             for edge in edges_to_trim {
-                self.remove_edge_and_set_latest(edge, location, "Trim Old Leaves")?
+                self.remove_edge_and_perform_associated_state_updates(edge, location, "Trim Old Leaves")?
             }
             let new_num_edges = self.pcg.borrow.graph().num_edges();
             assert!(new_num_edges <= num_edges_prev);

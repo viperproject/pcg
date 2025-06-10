@@ -10,7 +10,7 @@ use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
-use crate::{pcg_validity_assert, RestoreCapability, Weaken};
+use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
 

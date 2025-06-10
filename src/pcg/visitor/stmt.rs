@@ -96,7 +96,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     BorrowPcgEdgeKind::BorrowPcgExpansion(_)
                                 );
                                 if should_remove {
-                                    self.remove_edge_and_set_latest(edge, location, "Assign")?;
+                                    self.remove_edge_and_perform_associated_state_updates(edge, location, "Assign")?;
                                 }
                             }
                         }

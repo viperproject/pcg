@@ -4,20 +4,25 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use itertools::Itertools;
 use std::{
     alloc::Allocator,
     cell::RefCell,
-    collections::BTreeMap,
-    fmt::{Debug, Formatter, Result},
+    fmt::{Debug, Formatter},
     rc::Rc,
 };
+
+use derive_more::TryInto;
+use serde::{Serialize, Serializer};
+use serde_derive::Serialize;
 
 use crate::{
     action::PcgActions,
     borrow_pcg::state::BorrowsState,
     borrows_imgcat_debug,
-    pcg::triple::Triple,
+    pcg::{
+        dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
+        triple::Triple,
+    },
     rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
@@ -32,18 +37,18 @@ use crate::{
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
-    AnalysisEngine, DebugLines, RECORD_PCG,
+    AnalysisEngine, DebugLines,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
-use crate::{free_pcs::FreePlaceCapabilitySummary, visualization::write_pcg_dot_graph_to_file};
+use crate::free_pcs::FreePlaceCapabilitySummary;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
     pub join_with: BasicBlock,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd, Serialize)]
 pub enum EvalStmtPhase {
     PreOperands,
     PostOperands,
@@ -82,7 +87,7 @@ impl std::fmt::Display for EvalStmtPhase {
     }
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd, TryInto)]
 pub enum DataflowStmtPhase {
     Initial,
     EvalStmt(EvalStmtPhase),
@@ -104,10 +109,25 @@ impl DataflowStmtPhase {
     }
 }
 
+impl Serialize for DataflowStmtPhase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            DataflowStmtPhase::Initial => serializer.serialize_str("Initial"),
+            DataflowStmtPhase::EvalStmt(phase) => serializer.serialize_str(&phase.to_string()),
+            DataflowStmtPhase::Join(block) => {
+                serializer.serialize_str(format!("join {:?}", block).as_str())
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
-pub(crate) struct PCGDebugData {
+pub(crate) struct PcgDebugData {
     pub(crate) dot_output_dir: String,
-    pub(crate) dot_graphs: Rc<RefCell<DotGraphs>>,
+    pub(crate) dot_graphs: Rc<RefCell<PcgDotGraphsForBlock>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -255,94 +275,15 @@ pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
-    pub(crate) debug_data: Option<PCGDebugData>,
+    pub(crate) debug_data: Option<PcgDebugData>,
     pub(crate) reachable: bool,
 }
 
 impl<'a, 'tcx, A: Allocator + Debug> Debug for PcgDomain<'a, 'tcx, A> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.data)
     }
 }
-
-/// Outermost Vec can be considered a map StatementIndex -> Vec<BTreeMap<DataflowStmtPhase, String>>
-/// The inner Vec has one entry per iteration.
-/// The BTreeMap maps each phase to a filename for the dot graph
-#[derive(Clone)]
-pub struct DotGraphs(Vec<Vec<BTreeMap<DataflowStmtPhase, String>>>);
-
-impl Default for DotGraphs {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DotGraphs {
-    pub fn new() -> Self {
-        Self(vec![])
-    }
-
-    fn relative_filename(
-        &self,
-        phase: DataflowStmtPhase,
-        block: BasicBlock,
-        statement_index: usize,
-    ) -> String {
-        let iteration = self.num_iterations(statement_index);
-        format!(
-            "{:?}_stmt_{}_iteration_{}_{}.dot",
-            block,
-            statement_index,
-            iteration,
-            phase.to_filename_str_part()
-        )
-    }
-
-    pub fn register_new_iteration(&mut self, statement_index: usize) {
-        if self.0.len() <= statement_index {
-            self.0.resize_with(statement_index + 1, Vec::new);
-        }
-        self.0[statement_index].push(BTreeMap::new());
-    }
-
-    pub fn num_iterations(&self, statement_index: usize) -> usize {
-        self.0[statement_index].len()
-    }
-
-    pub(crate) fn insert(
-        &mut self,
-        statement_index: usize,
-        phase: DataflowStmtPhase,
-        filename: String,
-    ) -> bool {
-        let top = self.0[statement_index].last_mut().unwrap();
-        top.insert(phase, filename).is_none()
-    }
-
-    pub(crate) fn write_json_file(&self, filename: &str) {
-        let iterations_json = self
-            .0
-            .iter()
-            .map(|iterations| {
-                iterations
-                    .iter()
-                    .map(|map| {
-                        map.iter()
-                            .sorted_by_key(|x| x.0)
-                            .map(|(phase, filename)| (format!("{phase:?}"), filename))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        std::fs::write(
-            filename,
-            serde_json::to_string_pretty(&iterations_json).unwrap(),
-        )
-        .unwrap();
-    }
-}
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct ErrorState {
     error: Option<PcgError>,
@@ -465,8 +406,12 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
         self.block = Some(block);
     }
 
-    pub fn set_debug_data(&mut self, output_dir: String, dot_graphs: Rc<RefCell<DotGraphs>>) {
-        self.debug_data = Some(PCGDebugData {
+    pub(crate) fn set_debug_data(
+        &mut self,
+        output_dir: String,
+        dot_graphs: Rc<RefCell<PcgDotGraphsForBlock>>,
+    ) {
+        self.debug_data = Some(PcgDebugData {
             dot_output_dir: output_dir,
             dot_graphs,
         });
@@ -476,78 +421,35 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
         self.block.unwrap()
     }
 
-    pub fn dot_graphs(&self) -> Option<Rc<RefCell<DotGraphs>>> {
+    pub(crate) fn dot_graphs(&self) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
         self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
     }
 
-    fn dot_filename_for(
-        &self,
-        output_dir: &str,
-        phase: DataflowStmtPhase,
-        statement_index: usize,
-    ) -> String {
-        format!(
-            "{}/{}",
-            output_dir,
-            self.dot_graphs().unwrap().borrow().relative_filename(
-                phase,
-                self.block(),
-                statement_index
-            )
-        )
+    pub(crate) fn register_new_debug_iteration(&mut self, location: mir::Location) {
+        if let Some(debug_data) = &mut self.debug_data {
+            debug_data.dot_graphs.borrow_mut().register_new_iteration(location.statement_index);
+        }
     }
 
     pub(crate) fn generate_dot_graph(&self, phase: DataflowStmtPhase, statement_index: usize) {
-        if !*RECORD_PCG.lock().unwrap() {
-            return;
-        }
-        if self.block().as_usize() == 0 {
-            assert!(!matches!(phase, DataflowStmtPhase::Join(_)));
-        }
-        if let Some(debug_data) = &self.debug_data {
-            if phase == DataflowStmtPhase::Initial {
-                debug_data
-                    .dot_graphs
-                    .borrow_mut()
-                    .register_new_iteration(statement_index);
-            }
-            let relative_filename = debug_data.dot_graphs.borrow().relative_filename(
-                phase,
-                self.block(),
-                statement_index,
-            );
-            let filename =
-                self.dot_filename_for(&debug_data.dot_output_dir, phase, statement_index);
-            if !debug_data
-                .dot_graphs
-                .borrow_mut()
-                .insert(statement_index, phase, relative_filename)
-            {
-                panic!("Dot graph for entry ({statement_index}, {phase:?}) already exists")
-            }
-
-            let pcg: &Pcg<'tcx> = match phase {
-                DataflowStmtPhase::EvalStmt(phase) => self.pcg(DomainDataIndex::Eval(phase)),
-                _ => self.pcg(DomainDataIndex::Initial),
-            };
-
-            write_pcg_dot_graph_to_file(
-                pcg,
-                self.ctxt,
-                mir::Location {
-                    block: self.block(),
-                    statement_index,
-                },
-                &filename,
-            )
-            .unwrap();
-        }
+        let pcg: &Pcg<'tcx> = match phase {
+            DataflowStmtPhase::EvalStmt(phase) => self.pcg(DomainDataIndex::Eval(phase)),
+            _ => self.pcg(DomainDataIndex::Initial),
+        };
+        generate_dot_graph(
+            self.block(),
+            statement_index,
+            ToGraph::Phase(phase),
+            pcg,
+            &self.debug_data,
+            self.ctxt,
+        );
     }
 
     pub(crate) fn new(
         repacker: CompilerCtxt<'a, 'tcx>,
         block: Option<BasicBlock>,
-        debug_data: Option<PCGDebugData>,
+        debug_data: Option<PcgDebugData>,
         arena: A,
     ) -> Self {
         Self {
@@ -628,8 +530,7 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
                 false
             }
         };
-        if let Some(debug_data) = &self.debug_data {
-            debug_data.dot_graphs.borrow_mut().register_new_iteration(0);
+        if self.debug_data.is_some() {
             self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         }
         result
@@ -644,7 +545,7 @@ impl<'a, 'tcx, A: Allocator + Clone + Debug>
         _old: &Self,
         _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx, A>>,
         _f: &mut Formatter<'_>,
-    ) -> Result {
+    ) -> std::fmt::Result {
         Ok(())
     }
 }

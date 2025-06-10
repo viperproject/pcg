@@ -21,7 +21,7 @@ import {
   getPathData,
   getPcgProgramPointData,
   getPaths,
-  PCSIterations,
+  PcgIterations,
 } from "../api";
 import {
   filterNodesAndEdges,
@@ -44,13 +44,13 @@ function getPCGDotGraphFilename(
   currentPoint: CurrentPoint,
   selectedFunction: string,
   selected: number,
-  iterations: PCSIterations
+  iterations: PcgIterations
 ): string | null {
   if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
     return null;
   }
-  const stmtIterations = iterations[currentPoint.stmt].flatMap(
-    (phases) => phases
+  const stmtIterations = iterations[currentPoint.stmt].iterations.flatMap(
+    (phases) => phases.at_phase
   );
   const filename =
     selected >= stmtIterations.length
@@ -74,7 +74,7 @@ export const App: React.FC<AppProps> = ({
   functions,
   initialPath = 0,
 }) => {
-  const [iterations, setIterations] = useState<PCSIterations>([]);
+  const [iterations, setIterations] = useState<PcgIterations>([]);
   const [selected, setSelected] = useState<Selection>(999); // HACK - always show last iteration
   const [pathData, setPathData] = useState<PathData | null>(null);
   const [pcgProgramPointData, setPcgProgramPointData] =
@@ -235,7 +235,9 @@ export const App: React.FC<AppProps> = ({
   const pcsGraphSelector =
     currentPoint.type === "stmt" && iterations.length > currentPoint.stmt ? (
       <PCGGraphSelector
-        iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
+        iterations={iterations[currentPoint.stmt].iterations.flatMap(
+          (iteration) => iteration.at_phase
+        )}
         selected={selected}
         onSelect={setSelected}
       />
@@ -381,8 +383,8 @@ export const App: React.FC<AppProps> = ({
           showPCGSelector &&
           currentPoint.type === "stmt" && (
             <PCGGraphSelector
-              iterations={iterations[currentPoint.stmt].flatMap(
-                (phases) => phases
+              iterations={iterations[currentPoint.stmt].iterations.flatMap(
+                (iteration) => iteration.at_phase
               )}
               selected={selected}
               onSelect={setSelected}

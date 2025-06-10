@@ -1,7 +1,4 @@
-use std::collections::BTreeSet;
-
 use petgraph::algo::has_path_connecting;
-use smallvec::SmallVec;
 
 use super::{
     edge::kind::BorrowPcgEdgeKind,
@@ -18,7 +15,7 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
 
 

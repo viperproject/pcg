@@ -8,7 +8,6 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
-use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::{borrow_pcg::action::BorrowPCGAction, utils::ShallowExpansion};
@@ -81,14 +80,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         base: Place<'tcx>,
         place_expansion: PlaceExpansion<'tcx>,
-        location: Location,
         obtain_type: ObtainType,
     ) -> Result<bool, PcgError> {
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
             base.into(),
             place_expansion,
             if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
-                Some(location.into())
+                Some(self.location.into())
             } else {
                 None
             },
@@ -114,11 +112,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             tracing::debug!(
                 "Labeling {} with {:?}",
                 rp.to_short_string(self.ctxt),
-                location
+                self.location
             );
             self.pcg
                 .borrow
-                .label_region_projection(&rp, Some(location.into()), self.ctxt);
+                .label_region_projection(&rp, Some(self.location.into()), self.ctxt);
         }
 
         let action = BorrowPCGAction::add_edge(
@@ -135,7 +133,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
-        location: Location,
         obtain_type: ObtainType,
     ) -> Result<bool, PcgError> {
         let place_expansion = PlaceExpansion::from_places(expansion.expansion(), self.ctxt);
@@ -164,7 +161,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?;
             }
         } else {
-            self.add_deref_expansion(base, place_expansion, location, obtain_type)?;
+            self.add_deref_expansion(base, place_expansion, obtain_type)?;
         }
         Ok(true)
     }
@@ -173,7 +170,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
-        location: Location,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
         for rp in base.region_projections(self.ctxt) {
@@ -198,7 +194,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
                     self.pcg.borrow.label_region_projection(
                         &rp,
-                        Some(SnapshotLocation::before(location).into()),
+                        Some(SnapshotLocation::before(self.location).into()),
                         self.ctxt,
                     );
                 }
@@ -210,14 +206,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     fn expand_to(
         &mut self,
         place: Place<'tcx>,
-        location: Location,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
         for (base, _) in place.iter_projections(self.ctxt) {
             let base = base.with_inherent_region(self.ctxt);
             let expansion = base.expand_one_level(place, self.ctxt)?;
-            if self.expand_place_one_level(base, &expansion, location, obtain_type)? {
-                self.expand_region_projections_one_level(base, &expansion, location, obtain_type)?;
+            if self.expand_place_one_level(base, &expansion, obtain_type)? {
+                self.expand_region_projections_one_level(base, &expansion, obtain_type)?;
             }
         }
         Ok(())
@@ -253,7 +248,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn obtain(
         &mut self,
         place: Place<'tcx>,
-        location: Location,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
         if !obtain_type.capability().is_read() {
@@ -276,7 +270,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let _ = self.pcg.borrow.make_place_old(place, self.ctxt);
         }
 
-        self.expand_to(place, location, obtain_type)?;
+        self.expand_to(place, obtain_type)?;
 
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),

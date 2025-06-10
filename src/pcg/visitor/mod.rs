@@ -1,14 +1,16 @@
 use crate::action::PcgAction;
 use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
-use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
+use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
 use crate::free_pcs::{CapabilityKind, RepackOp};
+use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::triple::TripleWalker;
+use crate::pcg::PcgDebugData;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -34,6 +36,8 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
     actions: PcgActions<'tcx>,
     phase: EvalStmtPhase,
     tw: &'pcg TripleWalker<'mir, 'tcx>,
+    location: Location,
+    debug_data: Option<PcgDebugData>,
 }
 
 impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
@@ -78,9 +82,10 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         phase: EvalStmtPhase,
         analysis_object: AnalysisObject<'_, 'tcx>,
         location: Location,
+        debug_data: Option<PcgDebugData>,
     ) -> Result<PcgActions<'tcx>, PcgError> {
-        let visitor = Self::new(pcg, ctxt, tw, phase);
-        let actions = visitor.apply(analysis_object, location)?;
+        let visitor = Self::new(pcg, ctxt, tw, phase, location, debug_data);
+        let actions = visitor.apply(analysis_object)?;
         Ok(actions)
     }
 
@@ -89,6 +94,8 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
         tw: &'pcg TripleWalker<'mir, 'tcx>,
         phase: EvalStmtPhase,
+        location: Location,
+        debug_data: Option<PcgDebugData>,
     ) -> Self {
         Self {
             pcg,
@@ -96,6 +103,8 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
             actions: PcgActions::default(),
             phase,
             tw,
+            location,
+            debug_data,
         }
     }
 }
@@ -187,14 +196,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn apply(
         mut self,
         object: AnalysisObject<'_, 'tcx>,
-        location: Location,
     ) -> Result<PcgActions<'tcx>, PcgError> {
         match self.phase {
             EvalStmtPhase::PreOperands => {
-                self.perform_borrow_initial_pre_operand_actions(location)?;
+                self.perform_borrow_initial_pre_operand_actions()?;
                 self.collapse_owned_places()?;
                 for triple in self.tw.operand_triples.iter() {
-                    self.require_triple(*triple, location)?;
+                    self.require_triple(*triple)?;
                 }
             }
             EvalStmtPhase::PostOperands => {
@@ -204,7 +212,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             EvalStmtPhase::PreMain => {
                 for triple in self.tw.main_triples.iter() {
-                    self.require_triple(*triple, location)?;
+                    self.require_triple(*triple)?;
                 }
             }
             EvalStmtPhase::PostMain => {
@@ -215,18 +223,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
         match object {
             AnalysisObject::Statement(statement) => {
-                self.visit_statement_fallable(statement, location)?
+                self.visit_statement_fallable(statement, self.location)?
             }
             AnalysisObject::Terminator(terminator) => {
-                self.visit_terminator_fallable(terminator, location)?
+                self.visit_terminator_fallable(terminator, self.location)?
             }
         }
         Ok(self.actions)
     }
-    #[tracing::instrument(skip(self, edge, location))]
-    pub(crate) fn remove_edge_and_set_latest(
+
+    fn update_latest_for_blocked_places(
         &mut self,
-        edge: impl BorrowPcgEdgeLike<'tcx>,
+        edge: &impl BorrowPcgEdgeLike<'tcx>,
         location: Location,
         context: &str,
     ) -> Result<(), PcgError> {
@@ -240,10 +248,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?;
             }
         }
-        let remove_edge_action =
-            BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context);
-        self.record_and_apply_action(remove_edge_action.into())?;
+        Ok(())
+    }
 
+    fn restore_capabilities_for_removed_edge(
+        &mut self,
+        edge: &impl BorrowPcgEdgeLike<'tcx>,
+    ) -> Result<(), PcgError> {
         let fg = self.pcg.borrow.graph().frozen_graph();
         let blocked_nodes = edge.blocked_nodes(self.ctxt);
         let to_restore = blocked_nodes
@@ -271,38 +282,64 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         }
+        Ok(())
+    }
 
-        if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
-            if expansion.is_mutable_deref(self.ctxt) {
-                if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
-                    if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
-                        self.pcg
-                            .borrow
-                            .label_region_projection(&rp, None, self.ctxt);
-                    }
-                }
-            }
-            for node in expansion.expansion() {
-                for to_redirect in self
-                    .pcg
+    fn unlabel_blocked_region_projections(&mut self, expansion: &BorrowPcgExpansion<'tcx>) {
+        if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
+            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
+                self.pcg
                     .borrow
-                    .graph()
-                    .edges_blocked_by(*node, self.ctxt)
-                    .map(|e| e.kind.clone())
-                    .collect::<Vec<_>>()
-                {
-                    // TODO: Due to a bug ignore other expansions to this place for now
-                    if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
-                        self.pcg.borrow.graph.redirect_edge(
-                            to_redirect,
-                            *node,
-                            expansion.base,
-                            self.ctxt,
-                        )
-                    }
+                    .label_region_projection(&rp, None, self.ctxt);
+            }
+        }
+    }
+
+    fn redirect_blocked_nodes_to_base(&mut self, expansion: &BorrowPcgExpansion<'tcx>) {
+        for node in expansion.expansion() {
+            for to_redirect in self
+                .pcg
+                .borrow
+                .graph()
+                .edges_blocked_by(*node, self.ctxt)
+                .map(|e| e.kind.clone())
+                .collect::<Vec<_>>()
+            {
+                // TODO: Due to a bug ignore other expansions to this place for now
+                if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
+                    self.pcg.borrow.graph.redirect_edge(
+                        to_redirect,
+                        *node,
+                        expansion.base,
+                        self.ctxt,
+                    )
                 }
             }
         }
+    }
+
+    #[tracing::instrument(skip(self, edge, location))]
+    pub(crate) fn remove_edge_and_perform_associated_state_updates(
+        &mut self,
+        edge: impl BorrowPcgEdgeLike<'tcx>,
+        location: Location,
+        context: &str,
+    ) -> Result<(), PcgError> {
+        self.update_latest_for_blocked_places(&edge, location, context)?;
+
+        self.record_and_apply_action(
+            BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
+        )?;
+
+        self.restore_capabilities_for_removed_edge(&edge)?;
+
+        if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
+            if expansion.is_mutable_deref(self.ctxt) {
+                self.unlabel_blocked_region_projections(expansion);
+            }
+            self.redirect_blocked_nodes_to_base(expansion);
+        }
+        self.remove_rp_labels_from_leaf_edges();
         Ok(())
     }
 
@@ -394,6 +431,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             &format!("after {}", action.debug_line(self.ctxt)),
         );
         self.actions.push(action);
+        generate_dot_graph(
+            self.location.block,
+            self.location.statement_index,
+            ToGraph::Action(self.phase, self.actions.len()),
+            self.pcg,
+            &self.debug_data,
+            self.ctxt,
+        );
         Ok(result)
     }
 
@@ -428,13 +473,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
     }
 
-    #[tracing::instrument(skip(self, location))]
-    fn perform_borrow_initial_pre_operand_actions(
-        &mut self,
-        location: Location,
-    ) -> Result<(), PcgError> {
-        self.pack_old_and_dead_borrow_leaves(location)?;
-        for created_location in self.ctxt.bc.twophase_borrow_activations(location) {
+    #[tracing::instrument(skip(self))]
+    fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
+        self.pack_old_and_dead_borrow_leaves(self.location)?;
+        for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
             let borrow = match self.pcg.borrow.graph().borrow_created_at(created_location) {
                 Some(borrow) => borrow,
                 None => continue,
@@ -464,7 +506,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     if rp.can_be_labelled(self.ctxt) {
                         self.pcg.borrow.label_region_projection(
                             &rp.into(),
-                            Some(location.into()),
+                            Some(self.location.into()),
                             self.ctxt,
                         );
                     }
