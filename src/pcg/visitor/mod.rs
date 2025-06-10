@@ -430,7 +430,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.ctxt,
             &format!("after {}", action.debug_line(self.ctxt)),
         );
-        self.actions.push(action);
         generate_dot_graph(
             self.location.block,
             self.location.statement_index,
@@ -439,6 +438,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             &self.debug_data,
             self.ctxt,
         );
+        self.actions.push(action);
         Ok(result)
     }
 

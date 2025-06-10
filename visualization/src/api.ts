@@ -25,9 +25,11 @@ type MirGraph = {
   edges: MirGraphEdge[];
 };
 
+export type IterationActions = Record<string, string[]>;
+
 export type PcgIteration = {
   at_phase: [string, string][];
-  actions: Record<string, Record<number, string>>;
+  actions: IterationActions;
 };
 
 export type PcgIterations = {iterations: PcgIteration[]}[];

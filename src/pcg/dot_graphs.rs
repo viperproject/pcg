@@ -14,7 +14,7 @@ pub(crate) struct PcgDotGraphsForBlock(Vec<PcgDotGraphsForStmt>);
 #[derive(Clone, Serialize)]
 pub(crate) struct PcgDotGraphsForIteration {
     at_phase: Vec<(DataflowStmtPhase, String)>,
-    actions: BTreeMap<EvalStmtPhase, BTreeMap<usize, String>>,
+    actions: BTreeMap<EvalStmtPhase, Vec<String>>,
 }
 
 impl Default for PcgDotGraphsForIteration {
@@ -108,8 +108,7 @@ impl PcgDotGraphsForBlock {
         phase: DataflowStmtPhase,
         filename: String,
     ) {
-        self
-            .last_iteration_mut(statement_index)
+        self.last_iteration_mut(statement_index)
             .at_phase
             .push((phase, filename));
     }
@@ -122,8 +121,9 @@ impl PcgDotGraphsForBlock {
         filename: String,
     ) {
         let top = self.last_iteration_mut(statement_index);
-        let within_phase = top.actions.entry(phase).or_insert_with(BTreeMap::new);
-        within_phase.insert(action_idx, filename);
+        let within_phase = top.actions.entry(phase).or_insert_with(Vec::new);
+        assert_eq!(within_phase.len(), action_idx);
+        within_phase.push(filename);
     }
 
     pub(crate) fn write_json_file(&self, filename: &str) {
