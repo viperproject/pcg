@@ -17,6 +17,7 @@ use rustc_interface::{
         },
         ty::{AdtKind, TyKind},
     },
+    data_structures::fx::FxHashSet,
     span::Span,
 };
 
@@ -57,6 +58,17 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for V
             .collect::<Vec<_>>()
             .join(", ");
         format!("[{comma_sep}]")
+    }
+}
+
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for FxHashSet<T> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        let comma_sep = self
+            .iter()
+            .map(|t| t.to_short_string(ctxt))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{{{comma_sep}}}")
     }
 }
 

@@ -6,6 +6,8 @@ use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::loop_usage::LoopUsage;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
@@ -13,7 +15,7 @@ use crate::visualization::generate_borrows_dot_graph;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::ToBorrowsEdge,
-        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
+        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
         path_condition::PathConditions,
     },
     rustc_interface::middle::mir::BasicBlock,
@@ -68,6 +70,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        loop_usage: &LoopUsage<'tcx, '_>,
         capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
@@ -81,7 +84,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if ctxt.is_back_edge(other_block, self_block) {
             self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
-            self.join_loop(&other, self_block, other_block, ctxt);
+            self.join_loop(&other, self_block, other_block, &loop_usage, ctxt);
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -165,6 +168,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         loop_head: BasicBlock,
         from_block: BasicBlock,
+        loop_usage: &LoopUsage<'tcx, '_>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
@@ -186,11 +190,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         let mut result = self_abstraction_graph.clone();
-        result.merge(&other_coupling_graph, ctxt);
+        result.merge(&other_coupling_graph, loop_usage, ctxt);
         if coupling_imgcat_debug() {
             result.render_with_imgcat(ctxt, "merged coupling graph");
         }
 
+        // First only keep edges present in both graphs (remove other edges from `self`)
         let to_keep = self.common_edges(&other);
         self.edges
             .retain(|edge_kind, _| to_keep.contains(edge_kind));
@@ -209,7 +214,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<Vec<_>>();
 
+        // Add any edges that are missing in either graph
         for (blocked, assigned, to_remove) in unique_edges.iter() {
+            tracing::info!(
+                "Adding edge {} -> {}",
+                blocked.to_short_string(ctxt),
+                assigned.to_short_string(ctxt)
+            );
             // This edge is missing from one of the graphs
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
@@ -234,6 +245,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 .retain(|edge_kind, _| !to_remove.contains(edge_kind));
         }
 
+        // This is somewhat of a hack: we want to re-introduce borrow expansions
+        // that were removed simply due to being re-introduced at different
+        // times in the loop
         for (blocked, assigned, _) in unique_edges.iter() {
             for node in blocked.iter().chain(assigned.iter()) {
                 if let Some(PCGNode::RegionProjection(rp)) =

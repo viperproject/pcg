@@ -9,10 +9,8 @@ use super::{
     region_projection::PcgRegion,
 };
 use crate::{
-    borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::abstraction::node::AbstractionGraphNode,
-    coupling::{AddEdgeResult, JoinNodesResult},
-    validity_checks_enabled,
+    borrow_checker::BorrowCheckerInterface, borrow_pcg::abstraction::node::AbstractionGraphNode,
+    coupling::{coupled::Coupled, AddEdgeResult}, utils::loop_usage::LoopUsage, validity_checks_enabled,
 };
 use crate::{
     coupling,
@@ -23,66 +21,7 @@ use crate::{
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
-/// A collection of coupled PCG nodes. They will expire at the same time, and only one
-/// node in the set will be alive.
-///
-/// These nodes are introduced for loops: place `a` may borrow from `b` or place
-/// `b` may borrow from `a` depending on the number of loop iterations. Therefore,
-/// `a` and `b` are coupled and only one can be accessed.
-///
-/// Internally, the nodes are stored in a `Vec` to allow for mutation
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Coupled<T>(SmallVec<[T; 4]>);
 
-impl<T: Copy + Eq> Coupled<T> {
-    pub(crate) fn is_disjoint(&self, other: &Self) -> bool {
-        self.0.iter().all(|x| !other.0.contains(x))
-    }
-
-    pub(crate) fn empty() -> Self {
-        Self(SmallVec::new())
-    }
-
-    pub(crate) fn insert(&mut self, item: T) {
-        if !self.0.contains(&item) {
-            self.0.push(item);
-        }
-    }
-
-    pub(crate) fn merge(&mut self, other: &Self) {
-        for item in other.0.iter() {
-            self.insert(*item);
-        }
-    }
-
-    pub(crate) fn mutate(&mut self, f: impl Fn(&mut T)) {
-        for item in self.0.iter_mut() {
-            f(item);
-        }
-    }
-}
-
-impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
-    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
-        for t in self.0.iter() {
-            t.check_validity(ctxt)?;
-        }
-        Ok(())
-    }
-}
-
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Coupled<T> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!(
-            "{{{}}}",
-            self.0
-                .iter()
-                .map(|t| t.to_short_string(repacker))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
-}
 
 #[derive(Clone)]
 pub(crate) struct AbstractionGraph<'tcx, 'graph> {
@@ -162,7 +101,6 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
             "Graph contains cycles after SCC computation"
         );
 
-        tracing::info!("Before");
         if validity_checks_enabled() {
             for (source, target, _) in self.inner.edges() {
                 pcg_validity_assert!(
@@ -173,7 +111,6 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
                 );
             }
         }
-        tracing::info!("After");
 
         let toposort = petgraph::algo::toposort(&self.inner.inner(), None).unwrap();
         let (g, revmap) =
@@ -209,7 +146,12 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
         }
         removed_edges
     }
-    pub(crate) fn merge(&mut self, other: &Self, ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn merge(
+        &mut self,
+        other: &Self,
+        loop_usage: &LoopUsage<'tcx, '_>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
         self.inner.join(&other.inner);
         if validity_checks_enabled() {
             for (source, target, _) in self.inner.edges() {
@@ -234,108 +176,46 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
                     }
                     let blocked_data = self.inner.inner().node_weight(blocked).unwrap();
                     let blocking_data = self.inner.inner().node_weight(blocking).unwrap();
+                    if !blocking_data
+                        .nodes
+                        .iter()
+                        .flat_map(|n| n.related_current_place())
+                        .any(|p| loop_usage.used_in_loop(p, ctxt))
+                    {
+                        continue;
+                    }
                     if let Some(blocked_region) = blocked_data.nodes.region_repr(ctxt)
                         && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
                         && !blocking_data.nodes.is_remote()
                         && ctxt.bc.outlives(blocked_region, blocking_region)
                     // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
                     {
-                        tracing::info!(
+                        tracing::debug!(
                             "Adding edge {} -> {} because of outlives",
                             blocked_data.to_short_string(ctxt),
                             blocking_data.to_short_string(ctxt)
                         );
-                        if coupling_imgcat_debug() {
-                            self.inner.render_with_imgcat(ctxt, "Before add");
-                        }
                         match self
                             .inner
                             .add_edge_via_indices(blocked, blocking, Default::default())
                         {
                             AddEdgeResult::DidNotMergeNodes => {
-                                tracing::info!("No merge");
                                 let edges = self.transitive_reduction(ctxt);
                                 self.inner.update_inner_edge(blocked, blocking, edges);
-                                if coupling_imgcat_debug() {
-                                    self.inner.render_with_imgcat(ctxt, "Post add");
-                                }
                             }
                             AddEdgeResult::MergedNodes => {
-                                tracing::info!("Merged");
-                                if coupling_imgcat_debug() {
-                                    self.inner.render_with_imgcat(ctxt, "Post add");
-                                }
                                 continue 'top;
                             }
                         }
                     }
                 }
             }
-            tracing::info!("After top");
             pcg_validity_assert!(self.inner.is_acyclic(), "Resulting graph contains cycles");
             return;
         }
     }
 }
 
-impl<T: Clone> Coupled<T> {
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn singleton(item: T) -> Self {
-        let mut sv = SmallVec::new();
-        sv.push(item);
-        Self(sv)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.0.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.0.iter_mut()
-    }
-}
-
-impl<T> IntoIterator for Coupled<T> {
-    type Item = T;
-    type IntoIter = <SmallVec<[T; 4]> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<T: Ord> Coupled<T> {
-    pub fn elems_btree_set(&self) -> BTreeSet<&T> {
-        self.0.iter().collect()
-    }
-
-    pub fn contains(&self, item: &T) -> bool {
-        self.0.contains(item)
-    }
-}
-
-impl<T> From<BTreeSet<T>> for Coupled<T> {
-    fn from(set: BTreeSet<T>) -> Self {
-        Self(set.into_iter().collect())
-    }
-}
-
-impl<T: Ord> From<Vec<T>> for Coupled<T> {
-    fn from(vec: Vec<T>) -> Self {
-        let mut bts = BTreeSet::new();
-        for item in vec {
-            bts.insert(item);
-        }
-        Self(bts.into_iter().collect())
-    }
-}
 
 /// Records a history of actions for debugging purpose;
 /// used to detect infinite recursion

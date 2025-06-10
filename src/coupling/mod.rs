@@ -8,12 +8,14 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::hash::Hash;
 
-use crate::borrow_pcg::abstraction_graph_constructor::Coupled;
+use crate::coupling::coupled::Coupled;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::visualization::dot_graph::DotGraph;
+
+pub mod coupled;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NodeData<N, E> {
@@ -181,7 +183,6 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
                         }
                     }
                     None => {
-                        tracing::info!("Candidate idx for {:?}: {:?}", node, idx);
                         candidate_idx = Some(idx);
                     }
                 },
@@ -216,14 +217,12 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
     {
         match self.get_node_indices(nodes) {
             GetNodeIndicesResult::AlreadyJoined(node_index) => {
-                tracing::info!("Already joined {:?}", nodes);
                 JoinNodesResult {
                     index: node_index,
                     performed_merge: false,
                 }
             }
             GetNodeIndicesResult::NoneExist => {
-                tracing::info!("None exist {:?}", nodes);
                 let idx = self.inner.add_node(NodeData {
                     nodes: nodes.clone(),
                     inner_edges: FxHashSet::default(),

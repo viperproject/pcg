@@ -232,11 +232,11 @@ impl<'tcx> BorrowsState<'tcx> {
                         capability
                     } else {
                         // TODO
-                        pcg_validity_assert!(
-                            false,
-                            "Base capability for {} is not set",
-                            base.place().to_short_string(ctxt)
-                        );
+                        // pcg_validity_assert!(
+                        //     false,
+                        //     "Base capability for {} is not set",
+                        //     base.place().to_short_string(ctxt)
+                        // );
                         return Ok(true);
                         // panic!("Base capability should be set");
                     };

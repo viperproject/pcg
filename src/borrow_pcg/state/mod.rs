@@ -9,8 +9,8 @@ use super::{
     region_projection::RegionProjectionLabel,
     visitor::extract_regions,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -173,9 +173,10 @@ impl<'tcx> BorrowsState<'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
+        let loop_usage = LoopUsage::new(self.latest.clone(), &other.latest);
         changed |= self
             .graph
-            .join(&other.graph, self_block, other_block, capabilities, ctxt);
+            .join(&other.graph, self_block, other_block, &loop_usage, capabilities, ctxt);
         changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions

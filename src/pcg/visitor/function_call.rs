@@ -3,9 +3,7 @@ use crate::borrow_pcg::action::BorrowPCGAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
-use crate::borrow_pcg::edge::abstraction::{
-    AbstractionBlockEdge, AbstractionType
-};
+use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::BorrowsGraph;
@@ -118,22 +116,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
 
-        // let placeholder_targets = labelled_rps
-        //     .iter()
-        //     .flat_map(|rp| {
-        //         self.pcg
-        //             .borrow
-        //             .graph()
-        //             .identify_placeholder_target(*rp, self.ctxt)
-        //     })
-        //     .collect::<FxHashSet<_>>();
-
         let future_subgraph = self.get_future_subgraph(&labelled_rps);
 
         self.pcg
             .render_debug_graph(self.ctxt, location, "future constructed from");
 
-        future_subgraph.render_debug_graph(self.ctxt, "future_subgraph");
+        future_subgraph.render_debug_graph(
+            self.ctxt,
+            &format!(
+                "future_subgraph from {}",
+                labelled_rps.to_short_string(self.ctxt)
+            ),
+        );
 
         pcg_validity_assert!(
             future_subgraph.frozen_graph().is_acyclic(self.ctxt),
@@ -316,7 +310,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 // If we get here, we want to include this node
 
                                 let future_rp = self.maybe_futurize(local_rp);
-                                let future_connect = self.maybe_futurize(ef.connect().into());
+
+                                // If the connect is one of the arg region projections, we use it directly
+                                // the caller detects this and ensures this edge is not added
+                                let future_connect = if arg_region_projections.contains(&ef.connect())
+                                {
+                                    ef.connect().into()
+                                } else {
+                                    self.maybe_futurize(ef.connect().into())
+                                };
 
                                 if future_rp == future_connect
                                     || graph.contains(future_rp, self.ctxt)

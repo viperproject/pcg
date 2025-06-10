@@ -10,6 +10,7 @@ pub mod debug_info;
 pub mod display;
 pub mod eval_stmt_data;
 pub(crate) mod incoming_states;
+pub mod loop_usage;
 pub mod json;
 mod mutable;
 pub mod place;
