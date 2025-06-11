@@ -388,6 +388,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             let ctxt = self.ctxt;
             for leaf_node in leaf_nodes.iter().copied() {
+                if !self
+                    .ctxt
+                    .bc
+                    .outlives(leaf_node.region(self.ctxt), place_rp.region(self.ctxt))
+                {
+                    continue;
+                }
                 if self.any_reachable_reverse(leaf_node.into(), |node| {
                     if let PCGNode::RegionProjection(rp) = node {
                         rp.base == place_rp.base.into() && rp.region(ctxt) == place_rp.region(ctxt)
@@ -427,7 +434,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 BorrowPCGAction::label_region_projection(
                     leaf_node,
                     Some(label),
-                    "reconnect_current_rps",
+                    format!(
+                        "{}: Reconnect Region Projections for place {}",
+                        context,
+                        place.to_short_string(self.ctxt)
+                    ),
                 )
                 .into(),
             )?;
