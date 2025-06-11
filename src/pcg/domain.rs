@@ -13,7 +13,6 @@ use std::{
 
 use derive_more::TryInto;
 use serde::{Serialize, Serializer};
-use serde_derive::Serialize;
 
 use crate::{
     action::PcgActions,
@@ -48,12 +47,21 @@ pub struct DataflowIterationDebugInfo {
     pub join_with: BasicBlock,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd, Serialize)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd)]
 pub enum EvalStmtPhase {
     PreOperands,
     PostOperands,
     PreMain,
     PostMain,
+}
+
+impl Serialize for EvalStmtPhase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 impl EvalStmtPhase {
@@ -100,12 +108,18 @@ impl From<EvalStmtPhase> for DataflowStmtPhase {
     }
 }
 
+impl std::fmt::Display for DataflowStmtPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataflowStmtPhase::Initial => write!(f, "initial"),
+            DataflowStmtPhase::EvalStmt(phase) => write!(f, "{phase}"),
+            DataflowStmtPhase::Join(block) => write!(f, "join {block:?}"),
+        }
+    }
+}
 impl DataflowStmtPhase {
     pub(crate) fn to_filename_str_part(self) -> String {
-        match self {
-            DataflowStmtPhase::Join(block) => format!("join_{block:?}"),
-            _ => format!("{self:?}"),
-        }
+        self.to_string()
     }
 }
 
@@ -114,13 +128,7 @@ impl Serialize for DataflowStmtPhase {
     where
         S: Serializer,
     {
-        match self {
-            DataflowStmtPhase::Initial => serializer.serialize_str("Initial"),
-            DataflowStmtPhase::EvalStmt(phase) => serializer.serialize_str(&phase.to_string()),
-            DataflowStmtPhase::Join(block) => {
-                serializer.serialize_str(format!("join {:?}", block).as_str())
-            }
-        }
+        serializer.serialize_str(&self.to_filename_str_part())
     }
 }
 
@@ -427,7 +435,10 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
 
     pub(crate) fn register_new_debug_iteration(&mut self, location: mir::Location) {
         if let Some(debug_data) = &mut self.debug_data {
-            debug_data.dot_graphs.borrow_mut().register_new_iteration(location.statement_index);
+            debug_data
+                .dot_graphs
+                .borrow_mut()
+                .register_new_iteration(location.statement_index);
         }
     }
 

@@ -21,7 +21,8 @@ import {
   getPathData,
   getPcgProgramPointData,
   getPaths,
-  PcgIterations,
+  PcgBlockDotGraphs,
+  IterationActions,
 } from "../api";
 import {
   filterNodesAndEdges,
@@ -44,7 +45,7 @@ function getPCGDotGraphFilename(
   currentPoint: CurrentPoint,
   selectedFunction: string,
   selected: number,
-  iterations: PcgIterations
+  iterations: PcgBlockDotGraphs
 ): string | null {
   if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
     return null;
@@ -80,7 +81,7 @@ export const App: React.FC<AppProps> = ({
   functions,
   initialPath = 0,
 }) => {
-  const [iterations, setIterations] = useState<PcgIterations>([]);
+  const [iterations, setIterations] = useState<PcgBlockDotGraphs>([]);
   const [selected, setSelected] = useState<Selection>(999); // HACK - always show last iteration
   const [pathData, setPathData] = useState<PathData | null>(null);
   const [pcgProgramPointData, setPcgProgramPointData] =
@@ -395,14 +396,9 @@ export const App: React.FC<AppProps> = ({
         />
         {pcgProgramPointData && showPCGOps && (
           <>
-                        <PCGOps
+            <PCGOps
               data={pcgProgramPointData}
-              stmtIteration={
-                currentPoint.type === "stmt" &&
-                iterations.length > currentPoint.stmt
-                  ? iterations[currentPoint.stmt]
-                  : undefined
-              }
+              iterationActions={getIterationActions(iterations, currentPoint)}
               selectedFunction={selectedFunction}
               onShowGraph={loadSpecificPCGDotGraph}
               onDeselectPcg={deselectPCG}
@@ -463,3 +459,15 @@ export const App: React.FC<AppProps> = ({
     </div>
   );
 };
+
+function getIterationActions(
+  dotGraphs: PcgBlockDotGraphs,
+  currentPoint: CurrentPoint
+): IterationActions {
+  if (currentPoint.type !== "stmt" || dotGraphs.length <= currentPoint.stmt) {
+    return {};
+  }
+  const iterations = dotGraphs[currentPoint.stmt].iterations;
+  console.log(iterations);
+  return iterations[iterations.length - 1].actions;
+}
