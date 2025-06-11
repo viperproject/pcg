@@ -1,9 +1,17 @@
 import { MirStmt } from "./api";
 
+export type EvalStmtPhase = "pre_operands" | "post_operands" | "pre_main" | "post_main";
+
+export type SelectedAction = {
+  phase: EvalStmtPhase;
+  index: number;
+};
+
 export type CurrentPoint = {
   type: "stmt";
   block: number;
   stmt: number;
+  selectedAction: SelectedAction | null;
 } | {
   type: "terminator";
   block1: number;

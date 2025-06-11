@@ -9,7 +9,12 @@ import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "../dot_graph";
 
 import PCGOps from "./BorrowsAndActions";
-import { CurrentPoint, PathData, PcgProgramPointData } from "../types";
+import {
+  CurrentPoint,
+  PathData,
+  PcgProgramPointData,
+  SelectedAction,
+} from "../types";
 import SymbolicHeap from "./SymbolicHeap";
 import PathConditions from "./PathConditions";
 import MirGraph from "./MirGraph";
@@ -74,6 +79,13 @@ interface AppProps {
   initialPath?: number;
 }
 
+function getSelectedAction(currentPoint: CurrentPoint): SelectedAction | null {
+  if (currentPoint.type !== "stmt") {
+    return null;
+  }
+  return currentPoint.selectedAction;
+}
+
 export const App: React.FC<AppProps> = ({
   initialFunction,
   initialPaths,
@@ -90,6 +102,7 @@ export const App: React.FC<AppProps> = ({
     type: "stmt",
     block: 0,
     stmt: 0,
+    selectedAction: null,
   });
 
   const [selectedFunction, setSelectedFunction] = useState<string>(
@@ -179,10 +192,6 @@ export const App: React.FC<AppProps> = ({
       console.error("Error loading specific PCG dot graph:", error);
       dotGraph.innerHTML = "<p>Error loading graph</p>";
     }
-  }
-
-  function deselectPCG() {
-    setSelected(-1); // Set to invalid selection to deselect
   }
 
   useEffect(() => {
@@ -401,7 +410,15 @@ export const App: React.FC<AppProps> = ({
               iterationActions={getIterationActions(iterations, currentPoint)}
               selectedFunction={selectedFunction}
               onShowGraph={loadSpecificPCGDotGraph}
-              onDeselectPcg={deselectPCG}
+              selectedAction={getSelectedAction(currentPoint)}
+              setSelectedAction={(selectedAction) => {
+                if (currentPoint.type === "stmt") {
+                  setCurrentPoint({
+                    ...currentPoint,
+                    selectedAction,
+                  });
+                }
+              }}
             />
             {"latest" in pcgProgramPointData && (
               <LatestDisplay latest={pcgProgramPointData.latest} />

@@ -1,4 +1,10 @@
-import { getPathData, getPCSIterations, MirGraphNode, MirStmt, PcgBlockDotGraphs } from "./api";
+import {
+  getPathData,
+  getPCSIterations,
+  MirGraphNode,
+  MirStmt,
+  PcgBlockDotGraphs,
+} from "./api";
 import { CurrentPoint, PathData } from "./types";
 
 export function reloadIterations(
@@ -127,6 +133,7 @@ function keydown(
             type: "stmt",
             block: filteredNodes[nextBlockIdx].block,
             stmt: getNextStmtIdx(data, -1),
+            selectedAction: null,
           };
         } else {
           const nextBlockIdx =
@@ -136,12 +143,18 @@ function keydown(
             type: "stmt",
             block: data.block,
             stmt: data.stmts.length,
+            selectedAction: null,
           };
         }
       }
     });
   } else if (event.key >= "0" && event.key <= "9") {
     const newBlock = parseInt(event.key);
-    setCurrentPoint({ type: "stmt", block: newBlock, stmt: 0 });
+    setCurrentPoint({
+      type: "stmt",
+      block: newBlock,
+      stmt: 0,
+      selectedAction: null,
+    });
   }
 }

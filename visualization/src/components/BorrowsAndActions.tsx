@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { PcgActions, PcgProgramPointData } from "../types";
+import { PcgActions, PcgProgramPointData, SelectedAction } from "../types";
 import { IterationActions, PcgIteration } from "../api";
 
 const getActionGraphFilename = (
@@ -16,7 +16,6 @@ function PcgActionsDisplay({
   selectedFunction,
   phase,
   onShowGraph,
-  onDeselectPcg,
   selectedAction,
   onActionSelect,
 }: {
@@ -25,7 +24,6 @@ function PcgActionsDisplay({
   selectedFunction?: string;
   phase: string;
   onShowGraph?: (filename: string) => void;
-  onDeselectPcg?: () => void;
   selectedAction?: { phase: string; index: number };
   onActionSelect?: (phase: string, index: number) => void;
 }) {
@@ -38,8 +36,7 @@ function PcgActionsDisplay({
       actionGraphFilenames,
       index
     );
-    if (graphFilename && onShowGraph && onDeselectPcg && onActionSelect) {
-      onDeselectPcg(); // Unselect any currently selected PCG
+    if (graphFilename && onShowGraph && onActionSelect) {
       onShowGraph(graphFilename); // Show the graph in main view
       onActionSelect(phase, index); // Mark this action as selected
     }
@@ -91,13 +88,13 @@ export default function PCGOps({
   iterationActions,
   selectedFunction,
   onShowGraph,
-  onDeselectPcg,
 }: {
   data: PcgProgramPointData;
   iterationActions: IterationActions;
   selectedFunction?: string;
   onShowGraph?: (filename: string) => void;
-  onDeselectPcg?: () => void;
+  selectedAction: SelectedAction | null;
+  setSelectedAction: (action: SelectedAction) => void;
 }) {
   const [selectedAction, setSelectedAction] = useState<
     { phase: string; index: number } | undefined
@@ -171,8 +168,7 @@ export default function PCGOps({
           actionGraphFilenames,
           actionData.index
         );
-        if (graphFilename && onShowGraph && onDeselectPcg) {
-          onDeselectPcg();
+        if (graphFilename && onShowGraph) {
           onShowGraph(graphFilename);
         }
       }
@@ -186,7 +182,6 @@ export default function PCGOps({
     iterationActions,
     selectedFunction,
     onShowGraph,
-    onDeselectPcg,
   ]);
 
   let content;
@@ -207,7 +202,6 @@ export default function PCGOps({
               selectedFunction={selectedFunction}
               phase={key}
               onShowGraph={onShowGraph}
-              onDeselectPcg={onDeselectPcg}
               selectedAction={selectedAction}
               onActionSelect={(phase, index) =>
                 setSelectedAction({ phase, index })
@@ -227,7 +221,6 @@ export default function PCGOps({
           selectedFunction={selectedFunction}
           phase="actions"
           onShowGraph={onShowGraph}
-          onDeselectPcg={onDeselectPcg}
           selectedAction={selectedAction}
           onActionSelect={(phase, index) => setSelectedAction({ phase, index })}
         />
