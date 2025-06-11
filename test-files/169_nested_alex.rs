@@ -11,5 +11,6 @@ fn main() {
     *z = y;
     // At this point `*b` should be an alias of x
     // **z should also be an alias of x
+    let res = **z;
     *b = 5;
 }

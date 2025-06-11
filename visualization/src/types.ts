@@ -119,7 +119,12 @@ export type BorrowPCGUnblockAction = {
   edge: BorrowPCGEdge;
 };
 
-export type PcgActions = string[];
+export type PcgAction = string | {
+  kind: string;
+  debug_context: string | null;
+};
+
+export type PcgActions = PcgAction[];
 
 export type PathData = {
   heap: Record<string, { value: string; ty: string; old: boolean }>;

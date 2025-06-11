@@ -1,3 +1,4 @@
+use serde_json::Map;
 use tracing::instrument;
 
 use super::borrow_pcg_edge::BorrowPcgEdge;
@@ -168,7 +169,23 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgActionKind<'tcx> {
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        self.kind.to_short_string(repacker).into()
+        let mut map = Map::new();
+        map.insert(
+            "kind".to_string(),
+            self.kind.to_short_string(repacker).into(),
+        );
+        if let Some(debug_context) = &self.debug_context {
+            map.insert(
+                "debug_context".to_string(),
+                debug_context.to_string().into(),
+            );
+        } else {
+            map.insert(
+                "debug_context".to_string(),
+                serde_json::Value::Null,
+            );
+        }
+        map.into()
     }
 }
 

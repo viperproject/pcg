@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   EvalStmtPhase,
+  PcgAction,
   PcgActions,
   PcgProgramPointData,
   SelectedAction,
@@ -47,9 +48,11 @@ function PcgActionsDisplay({
                 flex: 1,
               }}
               onClick={() => handleActionClick(index)}
-              title={"Click to show graph in main view"}
+              title={
+                typeof action === "object" ? action.debug_context : undefined
+              }
             >
-              {action}
+              {typeof action === "object" ? action.kind : action}
             </span>
           </li>
         );
@@ -72,7 +75,7 @@ export default function PCGOps({
   // Collect all actions with their phase info for keyboard navigation
   const getAllActions = () => {
     const allActions: Array<{
-      action: string;
+      action: PcgAction;
       index: number;
       phase: EvalStmtPhase;
     }> = [];
@@ -129,17 +132,12 @@ export default function PCGOps({
 
         const actionData = allActions[newGlobalIndex];
         setSelectedAction({ phase: actionData.phase, index: actionData.index });
-
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    selectedAction,
-    allActions,
-    selectedFunction,
-  ]);
+  }, [selectedAction, allActions, selectedFunction]);
 
   let content;
   if ("latest" in data) {
