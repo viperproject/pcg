@@ -46,20 +46,22 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self
-            .long
-            .label_region_projection(projection, label, repacker);
-        changed |= self
-            .short
-            .label_region_projection(projection, label, repacker);
+        let mut changed = self.long.label_region_projection(projection, label, ctxt);
+        changed |= self.short.label_region_projection(projection, label, ctxt);
+        self.assert_validity(ctxt);
         changed
     }
 
-    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         let mut changed = self.long.remove_rp_label(place, ctxt);
         changed |= self.short.remove_rp_label(place, ctxt);
+        self.assert_validity(ctxt);
         changed
     }
 }
@@ -112,6 +114,16 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.long.check_validity(ctxt)?;
         self.short.check_validity(ctxt)?;
+        if self.long.to_pcg_node(ctxt) == self.short.effective().to_pcg_node(ctxt) {
+            panic!(
+                "BorrowFlowEdge: long and short are the same node: {}",
+                self.to_short_string(ctxt)
+            );
+            return Err(format!(
+                "BorrowFlowEdge: long and short are the same node: {}",
+                self.to_short_string(ctxt)
+            ));
+        }
         Ok(())
     }
 }
@@ -185,8 +197,7 @@ pub enum BorrowFlowEdgeKind {
     InitialBorrows,
     CopyRef,
     Move,
-    HavocRegion,
-    FunctionCallNestedRefs,
+    UpdateNestedRefs,
 }
 
 impl std::fmt::Display for BorrowFlowEdgeKind {
@@ -207,10 +218,9 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
                 }
             }
             BorrowFlowEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
-            BorrowFlowEdgeKind::CopyRef => write!(f, "CopySharedRef"),
-            BorrowFlowEdgeKind::HavocRegion => write!(f, "HavocRegion"),
+            BorrowFlowEdgeKind::CopyRef => write!(f, "CopyRef"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
-            BorrowFlowEdgeKind::FunctionCallNestedRefs => write!(f, "FunctionCallNestedRefs"),
+            BorrowFlowEdgeKind::UpdateNestedRefs => write!(f, "UpdateNestedRefs"),
         }
     }
 }
@@ -224,8 +234,7 @@ impl<'tcx> BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::InitialBorrows => true,
             BorrowFlowEdgeKind::CopyRef => false,
             BorrowFlowEdgeKind::Move => true,
-            BorrowFlowEdgeKind::HavocRegion => true,
-            BorrowFlowEdgeKind::FunctionCallNestedRefs => true,
+            BorrowFlowEdgeKind::UpdateNestedRefs => true,
         }
     }
 }

@@ -81,7 +81,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .into(),
                 path_conditions.clone(),
             );
-            BorrowPCGAction::add_edge(edge, false)
+            BorrowPCGAction::add_edge(edge, "make_function_call_abstraction", false)
         };
 
         // The versions of the region projections for the function inputs just
@@ -105,11 +105,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let mut labelled_rps = FxHashSet::default();
         for arg in arg_region_projections.iter() {
             if arg.is_invariant_in_type(self.ctxt) {
-                self.pcg.borrow.label_region_projection(
-                    arg,
-                    Some(SnapshotLocation::before(location).into()),
-                    self.ctxt,
-                );
+                self.record_and_apply_action(
+                    BorrowPCGAction::label_region_projection(
+                        arg.clone().into(),
+                        Some(SnapshotLocation::before(location).into()),
+                        "make_function_call_abstraction",
+                    )
+                    .into(),
+                )?;
                 labelled_rps.insert(
                     arg.with_label(Some(SnapshotLocation::before(location).into()), self.ctxt),
                 );
@@ -141,11 +144,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             {
                 let base_node: LocalRegionProjection<'tcx> =
                     RegionProjection::new(rp.region(self.ctxt), rp.base, None, self.ctxt).unwrap();
-                self.pcg.borrow.label_region_projection(
-                    &base_node,
-                    Some(SnapshotLocation::before(location).into()),
-                    self.ctxt,
-                );
+                self.record_and_apply_action(
+                    BorrowPCGAction::label_region_projection(
+                        base_node.into(),
+                        Some(SnapshotLocation::before(location).into()),
+                        "make_function_call_abstraction",
+                    )
+                    .into(),
+                )?;
             }
         }
 
@@ -313,12 +319,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
                                 // If the connect is one of the arg region projections, we use it directly
                                 // the caller detects this and ensures this edge is not added
-                                let future_connect = if arg_region_projections.contains(&ef.connect())
-                                {
-                                    ef.connect().into()
-                                } else {
-                                    self.maybe_futurize(ef.connect().into())
-                                };
+                                let future_connect =
+                                    if arg_region_projections.contains(&ef.connect()) {
+                                        ef.connect().into()
+                                    } else {
+                                        self.maybe_futurize(ef.connect().into())
+                                    };
 
                                 if future_rp == future_connect
                                     || graph.contains(future_rp, self.ctxt)
@@ -335,7 +341,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                         BorrowFlowEdge::new(
                                             future_rp,
                                             future_connect.try_into().unwrap(),
-                                            BorrowFlowEdgeKind::FunctionCallNestedRefs,
+                                            BorrowFlowEdgeKind::UpdateNestedRefs,
                                             self.ctxt,
                                         )
                                         .into(),

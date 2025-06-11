@@ -6,18 +6,19 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
+use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::PcgDebugData;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
+use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, CompilerCtxt, HasPlace, Place};
+use crate::utils::{self, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
     AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, PCGUnsupportedError, Pcg, PcgError,
@@ -66,6 +67,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                             .into(),
                             self.pcg.borrow.path_conditions.clone(),
                         ),
+                        "connect_outliving_projections",
                         false,
                     )
                     .into(),
@@ -285,17 +287,29 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    fn unlabel_blocked_region_projections(&mut self, expansion: &BorrowPcgExpansion<'tcx>) {
+    fn unlabel_blocked_region_projections(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+    ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
-                self.pcg
-                    .borrow
-                    .label_region_projection(&rp, None, self.ctxt);
+                self.record_and_apply_action(
+                    BorrowPCGAction::label_region_projection(
+                        rp.into(),
+                        None,
+                        "unlabel_blocked_region_projections",
+                    )
+                    .into(),
+                )?;
             }
         }
+        Ok(())
     }
 
-    fn redirect_blocked_nodes_to_base(&mut self, expansion: &BorrowPcgExpansion<'tcx>) {
+    fn redirect_blocked_nodes_to_base(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+    ) -> Result<(), PcgError> {
         for node in expansion.expansion() {
             for to_redirect in self
                 .pcg
@@ -307,15 +321,126 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             {
                 // TODO: Due to a bug ignore other expansions to this place for now
                 if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
-                    self.pcg.borrow.graph.redirect_edge(
-                        to_redirect,
-                        *node,
-                        expansion.base,
-                        self.ctxt,
-                    )
+                    self.record_and_apply_action(
+                        BorrowPCGAction::redirect_edge(
+                            to_redirect,
+                            *node,
+                            expansion.base,
+                            "redirect_blocked_nodes_to_base",
+                        )
+                        .into(),
+                    )?;
                 }
             }
         }
+        Ok(())
+    }
+
+    fn any_reachable_reverse(
+        &self,
+        node: PCGNode<'tcx>,
+        predicate: impl Fn(&PCGNode<'tcx>) -> bool,
+    ) -> bool {
+        let mut stack = vec![node];
+        let mut seen = HashSet::default();
+        while let Some(node) = stack.pop() {
+            if seen.contains(&node) {
+                continue;
+            }
+            seen.insert(node);
+            if predicate(&node) {
+                return true;
+            }
+            if let Some(local_node) = node.try_to_local_node(self.ctxt) {
+                let blocked_by = self
+                    .pcg
+                    .borrow
+                    .graph()
+                    .nodes_blocked_by(local_node, self.ctxt);
+                tracing::info!(
+                    "Checking nodes blocked by {}",
+                    node.to_short_string(self.ctxt)
+                );
+                for node in blocked_by {
+                    if !seen.contains(&(node.into())) {
+                        tracing::info!("Pushing {} to stack", node.to_short_string(self.ctxt));
+                        stack.push(node.into());
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    fn reconnect_current_rps(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
+        let frozen_graph = self.pcg.borrow.graph().frozen_graph();
+        let leaf_nodes = frozen_graph
+            .leaf_nodes(self.ctxt)
+            .filter_map(|node| {
+                if let PCGNode::RegionProjection(rp) = node {
+                    Some(rp)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let label = RegionProjectionLabel::Location(SnapshotLocation::before(self.location));
+        let mut to_add_actions = vec![];
+        let mut leaf_nodes_to_label = HashSet::default();
+        for place_rp in place.region_projections(self.ctxt) {
+            if frozen_graph.contains(place_rp.into(), self.ctxt) {
+                continue;
+            }
+            let ctxt = self.ctxt;
+            for leaf_node in leaf_nodes.iter().copied() {
+                if self.any_reachable_reverse(leaf_node.into(), |node| {
+                    if let PCGNode::RegionProjection(rp) = node {
+                        rp.base == place_rp.base.into() && rp.region(ctxt) == place_rp.region(ctxt)
+                    } else {
+                        false
+                    }
+                }) {
+                    leaf_nodes_to_label.insert(leaf_node.into());
+                    to_add_actions.push(BorrowPCGAction::add_edge(
+                        BorrowPcgEdge::new(
+                            BorrowFlowEdge::new(
+                                leaf_node
+                                    .to_pcg_node(self.ctxt)
+                                    .try_into_region_projection()
+                                    .unwrap()
+                                    .with_label(Some(label), self.ctxt),
+                                place_rp.into(),
+                                BorrowFlowEdgeKind::UpdateNestedRefs,
+                                self.ctxt,
+                            )
+                            .into(),
+                            self.pcg.borrow.path_conditions.clone(),
+                        ),
+                        format!(
+                            "{}: Reconnect Region Projections: {} is an ancestor of leaf node {}",
+                            context,
+                            place_rp.to_short_string(self.ctxt),
+                            leaf_node.to_short_string(self.ctxt),
+                        ),
+                        false,
+                    ));
+                }
+            }
+        }
+        for leaf_node in leaf_nodes_to_label {
+            self.record_and_apply_action(
+                BorrowPCGAction::label_region_projection(
+                    leaf_node,
+                    Some(label),
+                    "reconnect_current_rps",
+                )
+                .into(),
+            )?;
+        }
+        for action in to_add_actions {
+            self.record_and_apply_action(action.into())?;
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, edge, location))]
@@ -335,11 +460,28 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
             if expansion.is_mutable_deref(self.ctxt) {
-                self.unlabel_blocked_region_projections(expansion);
+                self.unlabel_blocked_region_projections(expansion)?;
             }
-            self.redirect_blocked_nodes_to_base(expansion);
+            self.redirect_blocked_nodes_to_base(expansion)?;
         }
-        self.remove_rp_labels_from_leaf_edges();
+        if matches!(
+            edge.kind(),
+            BorrowPcgEdgeKind::BorrowPcgExpansion(_) | BorrowPcgEdgeKind::Borrow(_)
+        ) {
+            for blocked_node in edge.blocked_nodes(self.ctxt) {
+                if let Some(local_node) = blocked_node.try_to_local_node(self.ctxt) {
+                    match local_node {
+                        PCGNode::RegionProjection(rp) => {
+                            self.reconnect_current_rps(rp.base.place(), context)?;
+                        }
+                        PCGNode::Place(place) => {
+                            self.reconnect_current_rps(place.place(), context)?;
+                        }
+                    }
+                }
+            }
+        }
+        // self.remove_rp_labels_from_leaf_edges();
         Ok(())
     }
 
@@ -504,16 +646,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             for place in blocked_place.iter_places(self.ctxt) {
                 for rp in place.region_projections(self.ctxt).into_iter() {
                     if rp.can_be_labelled(self.ctxt) {
-                        self.pcg.borrow.label_region_projection(
-                            &rp.into(),
-                            Some(self.location.into()),
-                            self.ctxt,
-                        );
+                        self.record_and_apply_action(
+                            BorrowPCGAction::label_region_projection(
+                                rp.into(),
+                                None,
+                                "perform_borrow_initial_pre_operand_actions",
+                            )
+                            .into(),
+                        )?;
                     }
                 }
             }
         }
-        self.remove_rp_labels_from_leaf_edges();
+        // self.remove_rp_labels_from_leaf_edges();
         Ok(())
     }
 }

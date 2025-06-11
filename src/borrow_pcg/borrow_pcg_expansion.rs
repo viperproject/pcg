@@ -232,6 +232,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
         }
         if self.base.place().is_mut_ref(ctxt)
             && projection.label() == self.deref_blocked_region_projection_label
+            && self.base == projection.base.into()
         {
             self.deref_blocked_region_projection_label = label;
         }

@@ -38,105 +38,107 @@ impl PcgVisitor<'_, '_, '_> {
         &mut self,
         location: Location,
     ) -> Result<(), PcgError> {
-        let mut num_edges_prev = self.pcg.borrow.graph().num_edges();
-        loop {
-            fn go<'slf, 'mir: 'slf, 'bc: 'slf, 'tcx>(
-                slf: &'slf mut Pcg<'tcx>,
-                ctxt: CompilerCtxt<'mir, 'tcx>,
-                location: Location,
-            ) -> Vec<(BorrowPcgEdge<'tcx>, String)> {
-                let fg = slf.borrow.graph().frozen_graph();
+        let mut iteration = 0;
+        fn go<'slf, 'mir: 'slf, 'bc: 'slf, 'tcx>(
+            slf: &'slf mut Pcg<'tcx>,
+            ctxt: CompilerCtxt<'mir, 'tcx>,
+            location: Location,
+        ) -> Vec<(BorrowPcgEdge<'tcx>, String)> {
+            let fg = slf.borrow.graph().frozen_graph();
 
-                enum ShouldKillNode {
-                    Yes { reason: String },
-                    No,
-                }
+            enum ShouldKillNode {
+                Yes { reason: String },
+                No,
+            }
 
-                let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
-                    let place = match p {
-                        PCGNode::Place(p) => p,
-                        PCGNode::RegionProjection(rp) => rp.place(),
-                    };
-                    if place.is_old() {
-                        return ShouldKillNode::Yes {
-                            reason: "Place is old".to_string(),
-                        };
-                    }
-
-                    if ctxt.is_arg(place.local()) {
-                        return ShouldKillNode::No;
-                    }
-
-                    if !place.place().projection.is_empty()
-                        && !fg.has_edge_blocking(place.into(), ctxt)
-                    {
-                        return ShouldKillNode::Yes {
-                            reason: "Node's associated place has a non-empty projection and is not blocked by an edge".to_string(),
-                        };
-                    }
-
-                    if ctxt.bc.is_dead(p.into(), location, true) {
-                        return ShouldKillNode::Yes {
-                            reason: "Place is dead".to_string(),
-                        };
-                    }
-
-                    ShouldKillNode::No
+            let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
+                let place = match p {
+                    PCGNode::Place(p) => p,
+                    PCGNode::RegionProjection(rp) => rp.place(),
                 };
-
-                enum ShouldPackEdge {
-                    Yes { reason: String },
-                    No,
+                if place.is_old() {
+                    return ShouldKillNode::Yes {
+                        reason: "Place is old".to_string(),
+                    };
                 }
 
-                let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                        if expansion.expansion().iter().all(|node| {
-                            node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
-                        }) {
+                if ctxt.is_arg(place.local()) {
+                    return ShouldKillNode::No;
+                }
+
+                if p.is_place()
+                    && !place.place().projection.is_empty()
+                    && !fg.has_edge_blocking(place.into(), ctxt)
+                {
+                    return ShouldKillNode::Yes {
+                            reason: "Node is a place with a non-empty projection and is not blocked by an edge".to_string(),
+                        };
+                }
+
+                if ctxt.bc.is_dead(p.into(), location, true) {
+                    return ShouldKillNode::Yes {
+                        reason: "Borrow-checker reports node as dead".to_string(),
+                    };
+                }
+
+                ShouldKillNode::No
+            };
+
+            enum ShouldPackEdge {
+                Yes { reason: String },
+                No,
+            }
+
+            let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
+                BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
+                    if expansion.expansion().iter().all(|node| {
+                        node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
+                    }) {
+                        ShouldPackEdge::Yes {
+                            reason: "Expansion is old or dead".to_string(),
+                        }
+                    } else {
+                        if expansion.is_packable(slf.capabilities()) {
                             ShouldPackEdge::Yes {
-                                reason: "Expansion is old or dead".to_string(),
+                                reason: "Expansion is packable".to_string(),
                             }
                         } else {
-                            if expansion.is_packable(slf.capabilities()) {
-                                ShouldPackEdge::Yes {
-                                    reason: "Expansion is packable".to_string(),
-                                }
-                            } else {
-                                ShouldPackEdge::No
-                            }
+                            ShouldPackEdge::No
                         }
-                    }
-                    _ => {
-                        let mut why_killed_reasons = Vec::new();
-                        for node in edge.blocked_by_nodes(ctxt) {
-                            if let ShouldKillNode::Yes { reason } = should_kill_node(node, &fg) {
-                                why_killed_reasons.push(format!(
-                                    "{}: {}",
-                                    node.to_short_string(ctxt),
-                                    reason
-                                ));
-                            } else {
-                                return ShouldPackEdge::No;
-                            }
-                        }
-                        ShouldPackEdge::Yes {
-                            reason: format!(
-                                "Edge is blocked by nodes that should be killed: {}",
-                                why_killed_reasons.join(", ")
-                            ),
-                        }
-                    }
-                };
-
-                let mut edges_to_trim = Vec::new();
-                for edge in fg.leaf_edges(ctxt).into_iter().map(|e| e.to_owned_edge()) {
-                    if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
-                        edges_to_trim.push((edge, reason));
                     }
                 }
-                edges_to_trim
+                _ => {
+                    let mut why_killed_reasons = Vec::new();
+                    for node in edge.blocked_by_nodes(ctxt) {
+                        if let ShouldKillNode::Yes { reason } = should_kill_node(node, &fg) {
+                            why_killed_reasons.push(format!(
+                                "{}: {}",
+                                node.to_short_string(ctxt),
+                                reason
+                            ));
+                        } else {
+                            return ShouldPackEdge::No;
+                        }
+                    }
+                    ShouldPackEdge::Yes {
+                        reason: format!(
+                            "Edge is blocked by nodes that should be killed: {}",
+                            why_killed_reasons.join(", ")
+                        ),
+                    }
+                }
+            };
+
+            let mut edges_to_trim = Vec::new();
+            for edge in fg.leaf_edges(ctxt).into_iter().map(|e| e.to_owned_edge()) {
+                if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
+                    edges_to_trim.push((edge, reason));
+                }
             }
+            edges_to_trim
+        }
+        loop {
+            iteration += 1;
             let edges_to_trim = go(self.pcg, self.ctxt, location);
             if edges_to_trim.is_empty() {
                 break Ok(());
@@ -145,12 +147,9 @@ impl PcgVisitor<'_, '_, '_> {
                 self.remove_edge_and_perform_associated_state_updates(
                     edge,
                     location,
-                    &format!("Trim Old Leaves: {}", reason),
+                    &format!("Trim Old Leaves (iteration {}): {}", iteration, reason),
                 )?
             }
-            let new_num_edges = self.pcg.borrow.graph().num_edges();
-            assert!(new_num_edges <= num_edges_prev);
-            num_edges_prev = new_num_edges;
         }
     }
 

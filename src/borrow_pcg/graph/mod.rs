@@ -126,19 +126,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
-    pub(crate) fn redirect_edge(
-        &mut self,
-        mut edge: BorrowPcgEdgeKind<'tcx>,
-        from: LocalNode<'tcx>,
-        to: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        let conditions = self.edges.remove(&edge).unwrap();
-        if edge.redirect(from, to, ctxt) {
-            self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
-        }
-    }
-
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
         &self,
         node: T,
@@ -227,11 +214,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             })
                             .collect::<Vec<_>>()
                             .into();
-                        graph.add_edge(
-                            &inputs,
-                            &outputs,
-                            std::iter::once(edge.kind).collect(),
-                        );
+                        graph.add_edge(&inputs, &outputs, std::iter::once(edge.kind).collect());
                     }
                     BorrowPcgEdgeKind::BorrowPcgExpansion(e)
                         if e.is_owned_expansion(ctxt)
@@ -376,13 +359,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: T,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.contains(node.into(), ctxt) && match node.into().as_local_node(ctxt) {
-            Some(node) => match node {
-                PCGNode::Place(place) if place.is_owned(ctxt) => true,
-                _ => !self.has_edge_blocked_by(node, ctxt),
-            },
-            None => true,
-        }
+        self.contains(node.into(), ctxt)
+            && match node.into().as_local_node(ctxt) {
+                Some(node) => match node {
+                    PCGNode::Place(place) if place.is_owned(ctxt) => true,
+                    _ => !self.has_edge_blocked_by(node, ctxt),
+                },
+                None => true,
+            }
     }
 
     pub(crate) fn has_edge_blocked_by<'slf>(
@@ -400,10 +384,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub fn edges_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc> {
         self.edges()
-            .filter(move |edge| edge.blocked_by_nodes(repacker).contains(&node))
+            .filter(move |edge| edge.blocked_by_nodes(ctxt).contains(&node))
+    }
+
+    pub(crate) fn nodes_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph>(
+        &'graph self,
+        node: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Vec<PCGNode<'tcx>> {
+        self.edges_blocked_by(node, ctxt)
+            .flat_map(|edge| edge.blocked_nodes(ctxt).collect::<Vec<_>>())
+            .collect()
     }
 
     /// Returns true iff `edge` connects two nodes within an abstraction edge
@@ -458,8 +452,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges_blocking(node, repacker).collect()
     }
 
-    pub(crate) fn remove(&mut self, edge: &BorrowPcgEdgeKind<'tcx>) -> bool {
-        self.edges.remove(edge).is_some()
+    pub(crate) fn remove(&mut self, edge: &BorrowPcgEdgeKind<'tcx>) -> Option<PathConditions> {
+        self.edges.remove(edge)
     }
 }
 

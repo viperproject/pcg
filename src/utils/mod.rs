@@ -25,6 +25,7 @@ pub use place_snapshot::*;
 pub use repacker::*;
 pub(crate) mod domain_data;
 pub(crate) mod repacker;
+pub(crate) mod data_structures;
 
 #[cfg(test)]
 #[rustversion::since(2025-05-24)]

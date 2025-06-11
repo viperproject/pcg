@@ -114,9 +114,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 rp.to_short_string(self.ctxt),
                 self.location
             );
-            self.pcg
-                .borrow
-                .label_region_projection(&rp, Some(self.location.into()), self.ctxt);
+            self.record_and_apply_action(
+                BorrowPCGAction::label_region_projection(
+                    rp.into(),
+                    Some(self.location.into()),
+                    "add_deref_expansion",
+                )
+                .into(),
+            )?;
         }
 
         let action = BorrowPCGAction::add_edge(
@@ -124,6 +129,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                 self.pcg.borrow.path_conditions.clone(),
             ),
+            "add_deref_expansion",
             obtain_type.capability().is_read(),
         );
         self.record_and_apply_action(action.into())
@@ -186,28 +192,28 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                             self.pcg.borrow.path_conditions.clone(),
                         ),
+                        "expand_region_projections_one_level",
                         obtain_type.capability().is_read(),
                     )
                     .into(),
                 )?;
                 if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
                     tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
-                    self.pcg.borrow.label_region_projection(
-                        &rp,
-                        Some(SnapshotLocation::before(self.location).into()),
-                        self.ctxt,
-                    );
+                    self.record_and_apply_action(
+                        BorrowPCGAction::label_region_projection(
+                            rp.into(),
+                            Some(SnapshotLocation::before(self.location).into()),
+                            "expand_region_projections_one_level",
+                        )
+                        .into(),
+                    )?;
                 }
             }
         }
         Ok(())
     }
 
-    fn expand_to(
-        &mut self,
-        place: Place<'tcx>,
-        obtain_type: ObtainType,
-    ) -> Result<(), PcgError> {
+    fn expand_to(&mut self, place: Place<'tcx>, obtain_type: ObtainType) -> Result<(), PcgError> {
         for (base, _) in place.iter_projections(self.ctxt) {
             let base = base.with_inherent_region(self.ctxt);
             let expansion = base.expand_one_level(place, self.ctxt)?;

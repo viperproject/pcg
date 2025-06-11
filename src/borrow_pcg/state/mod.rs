@@ -3,10 +3,8 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
-    has_pcs_elem::LabelRegionProjection,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_projection::RegionProjectionLabel,
     visitor::extract_regions,
 };
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -59,15 +57,6 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn label_region_projection(
-        &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.graph
-            .mut_edges(|edge| edge.label_region_projection(projection, label, repacker));
-    }
     fn introduce_initial_borrows(
         &mut self,
         local: mir::Local,
@@ -80,6 +69,7 @@ impl<'tcx> BorrowsState<'tcx> {
             let _ = self.apply_action(
                 BorrowPCGAction::add_edge(
                     BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
+                    "Introduce initial borrows",
                     false,
                 ),
                 capabilities,
@@ -114,6 +104,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             .into(),
                             PathConditions::new(),
                         ),
+                        "Introduce initial borrows",
                         false,
                     ),
                     capabilities,
@@ -147,7 +138,7 @@ impl<'tcx> BorrowsState<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let removed = self.graph.remove(edge.kind());
+        let removed = self.graph.remove(edge.kind()).is_some();
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker)

@@ -6,8 +6,7 @@ use serde_json::json;
 
 use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
-    abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode,
-    visitor::extract_regions,
+    abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
@@ -169,7 +168,7 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.is_mutable(ctxt),
-            MaybeRemoteRegionProjectionBase::Const(_) => false
+            MaybeRemoteRegionProjectionBase::Const(_) => false,
         }
     }
     pub(crate) fn base_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
@@ -247,7 +246,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
-pub(crate) enum RegionProjectionLabel {
+pub enum RegionProjectionLabel {
     Location(SnapshotLocation),
     Placeholder,
 }
@@ -347,7 +346,11 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         }
     }
 
-    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    fn remove_rp_label(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         if self.base == place.into() {
             self.label = None;
             true

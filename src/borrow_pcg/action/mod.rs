@@ -4,12 +4,17 @@ use tracing::instrument;
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use super::edge::kind::BorrowPcgEdgeKind;
 use super::state::BorrowsState;
+use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use crate::borrow_pcg::graph::BorrowsGraph;
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
+use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
@@ -27,8 +32,23 @@ pub struct BorrowPCGAction<'tcx> {
 impl<'tcx> BorrowPCGAction<'tcx> {
     pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match &self.kind {
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                format!(
+                    "Redirect Edge: {} from {} to {}",
+                    edge.to_short_string(repacker),
+                    from.to_short_string(repacker),
+                    to.to_short_string(repacker)
+                )
+            }
             BorrowPcgActionKind::AddEdge { edge, .. } => {
                 format!("Add Edge: {}", edge.to_short_string(repacker))
+            }
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                format!(
+                    "Label Region Projection: {} with {:?}",
+                    rp.to_short_string(repacker),
+                    label
+                )
             }
             BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPcgActionKind::Restore(restore_capability) => {
@@ -92,10 +112,37 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         }
     }
 
-    pub(crate) fn add_edge(edge: BorrowPcgEdge<'tcx>, for_read: bool) -> Self {
+    pub(crate) fn redirect_edge(
+        edge: BorrowPcgEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        context: impl Into<String>,
+    ) -> Self {
+        BorrowPCGAction {
+            kind: BorrowPcgActionKind::RedirectEdge { edge, from, to },
+            debug_context: Some(context.into()),
+        }
+    }
+
+    pub(crate) fn add_edge(
+        edge: BorrowPcgEdge<'tcx>,
+        context: impl Into<String>,
+        for_read: bool,
+    ) -> Self {
         BorrowPCGAction {
             kind: BorrowPcgActionKind::AddEdge { edge, for_read },
-            debug_context: None,
+            debug_context: Some(context.into()),
+        }
+    }
+
+    pub(crate) fn label_region_projection(
+        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        context: impl Into<String>,
+    ) -> Self {
+        BorrowPCGAction {
+            kind: BorrowPcgActionKind::LabelRegionProjection(projection, label),
+            debug_context: Some(context.into()),
         }
     }
 
@@ -125,6 +172,15 @@ pub enum MakePlaceOldReason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPcgActionKind<'tcx> {
+    RedirectEdge {
+        edge: BorrowPcgEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+    },
+    LabelRegionProjection(
+        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        Option<RegionProjectionLabel>,
+    ),
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
     MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
@@ -139,6 +195,21 @@ pub enum BorrowPcgActionKind<'tcx> {
 impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgActionKind<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                format!(
+                    "Redirect Edge: {} from {} to {}",
+                    edge.to_short_string(repacker),
+                    from.to_short_string(repacker),
+                    to.to_short_string(repacker)
+                )
+            }
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                format!(
+                    "Label Region Projection: {} with {:?}",
+                    rp.to_short_string(repacker),
+                    label
+                )
+            }
             BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(repacker),
             BorrowPcgActionKind::Restore(restore_capability) => {
                 restore_capability.debug_line(repacker)
@@ -180,12 +251,26 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
                 debug_context.to_string().into(),
             );
         } else {
-            map.insert(
-                "debug_context".to_string(),
-                serde_json::Value::Null,
-            );
+            map.insert("debug_context".to_string(), serde_json::Value::Null);
         }
         map.into()
+    }
+}
+
+impl<'tcx> BorrowsGraph<'tcx> {
+    #[must_use]
+    fn redirect_edge(
+        &mut self,
+        mut edge: BorrowPcgEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let conditions = self.remove(&edge).unwrap();
+        if edge.redirect(from, to, ctxt) {
+            self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
+        }
+        true
     }
 }
 
@@ -198,6 +283,9 @@ impl<'tcx> BorrowsState<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                self.graph.redirect_edge(edge, from, to, ctxt)
+            }
             BorrowPcgActionKind::Restore(restore) => {
                 let restore_place = restore.place();
                 if let Some(cap) = capabilities.get(restore_place) {
@@ -223,8 +311,21 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgActionKind::AddEdge { edge, for_read } => {
                 self.handle_add_edge(edge, for_read, capabilities, ctxt)?
             }
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                self.label_region_projection(&rp, label, ctxt)
+            }
         };
         Ok(result)
+    }
+
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph
+            .mut_edges(|edge| edge.label_region_projection(projection, label, ctxt))
     }
 
     #[instrument(skip(self, edge, capabilities, ctxt), fields(edge = edge.to_short_string(ctxt)))]

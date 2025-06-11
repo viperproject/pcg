@@ -86,6 +86,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 .into(),
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
+                            "assign_post_main",
                             false,
                         )
                         .into(),
@@ -120,6 +121,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 .into(),
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
+                            "assign_post_main",
                             false,
                         )
                         .into(),
@@ -147,18 +149,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     self.ctxt,
                 );
                 for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
-                    let source_proj = if kind.mutability().is_mut()
-                        && source_proj.can_be_labelled(self.ctxt)
-                    {
-                        self.pcg.borrow.label_region_projection(
-                            &source_proj.into(),
-                            Some(location.into()),
-                            self.ctxt,
-                        );
-                        source_proj.with_label(Some(location.into()), self.ctxt)
-                    } else {
-                        source_proj
-                    };
+                    let source_proj =
+                        if kind.mutability().is_mut() && source_proj.can_be_labelled(self.ctxt) {
+                            self.record_and_apply_action(
+                                BorrowPCGAction::label_region_projection(
+                                    source_proj.into(),
+                                    Some(location.into()),
+                                    "assign_post_main",
+                                )
+                                .into(),
+                            )?;
+                            source_proj.with_label(Some(location.into()), self.ctxt)
+                        } else {
+                            source_proj
+                        };
                     let source_region = source_proj.region(self.ctxt);
                     for target_proj in target.region_projections(self.ctxt).into_iter() {
                         let target_region = target_proj.region(self.ctxt);
@@ -177,6 +181,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                         .into(),
                                         self.pcg.borrow.path_conditions.clone(),
                                     ),
+                                    "assign_post_main",
                                     false,
                                 )
                                 .into(),
