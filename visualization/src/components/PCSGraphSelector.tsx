@@ -1,6 +1,6 @@
 import React from "react";
 
-export type Selection = number;
+export type Selection = number | null;
 
 export function PCGGraphSelector({
   iterations,

@@ -23,7 +23,6 @@ import {
   MirGraphEdge,
   MirGraphNode,
   getGraphData,
-  getPathData,
   getPcgProgramPointData,
   getPaths,
   PcgBlockDotGraphs,
@@ -46,6 +45,14 @@ import {
 import BorrowCheckerGraphs from "./BorrowCheckerGraphs";
 import { LatestDisplay } from "./LatestDisplay";
 
+const getActionGraphFilename = (
+  selectedFunction: string,
+  actionGraphFilenames: string[],
+  actionIndex: number
+): string | null => {
+  return `data/${selectedFunction}/${actionGraphFilenames[actionIndex]}`;
+};
+
 function getPCGDotGraphFilename(
   currentPoint: CurrentPoint,
   selectedFunction: string,
@@ -55,6 +62,17 @@ function getPCGDotGraphFilename(
   if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
     return null;
   }
+  const selectedAction = getSelectedAction(currentPoint);
+  if (selectedAction) {
+    const iterationActions = getIterationActions(iterations, currentPoint);
+    const actionGraphFilenames = iterationActions[selectedAction.phase];
+    return getActionGraphFilename(
+      selectedFunction,
+      actionGraphFilenames,
+      selectedAction.index
+    );
+  }
+
   const stmtIterations = iterations[currentPoint.stmt].iterations.flatMap(
     (phases) => phases.at_phase
   );
@@ -175,25 +193,6 @@ export const App: React.FC<AppProps> = ({
     }
   }
 
-  async function loadSpecificPCGDotGraph(filename: string) {
-    const dotGraph = document.getElementById("pcg-graph");
-    if (!dotGraph) {
-      console.error("Dot graph element not found");
-      return;
-    }
-
-    try {
-      const dotData = await fetchDotFile(filename);
-      Viz.instance().then(function (viz) {
-        dotGraph.innerHTML = "";
-        dotGraph.appendChild(viz.renderSVGElement(dotData));
-      });
-    } catch (error) {
-      console.error("Error loading specific PCG dot graph:", error);
-      dotGraph.innerHTML = "<p>Error loading graph</p>";
-    }
-  }
-
   useEffect(() => {
     const graph = document.getElementById("pcg-graph");
     if (showPCG) {
@@ -271,14 +270,23 @@ export const App: React.FC<AppProps> = ({
     [paths, selectedPath]
   );
 
-  const pcsGraphSelector =
-    currentPoint.type === "stmt" && iterations.length > currentPoint.stmt ? (
+  const pcgGraphSelector =
+    showPCGSelector &&
+    currentPoint.type === "stmt" &&
+    iterations.length > currentPoint.stmt ? (
       <PCGGraphSelector
         iterations={iterations[currentPoint.stmt].iterations.flatMap(
           (iteration) => iteration.at_phase
         )}
-        selected={selected}
-        onSelect={setSelected}
+        // If there's a selected action, we're not currently associated with a phase
+        selected={getSelectedAction(currentPoint) === null ? selected : null}
+        onSelect={(newIdx) => {
+          setCurrentPoint({
+            ...currentPoint,
+            selectedAction: null,
+          });
+          setSelected(newIdx);
+        }}
       />
     ) : null;
 
@@ -407,9 +415,7 @@ export const App: React.FC<AppProps> = ({
           <>
             <PCGOps
               data={pcgProgramPointData}
-              iterationActions={getIterationActions(iterations, currentPoint)}
               selectedFunction={selectedFunction}
-              onShowGraph={loadSpecificPCGDotGraph}
               selectedAction={getSelectedAction(currentPoint)}
               setSelectedAction={(selectedAction) => {
                 if (currentPoint.type === "stmt") {
@@ -432,17 +438,7 @@ export const App: React.FC<AppProps> = ({
             <Assertions assertions={assertions} />
           </div>
         )}
-        {pcsGraphSelector &&
-          showPCGSelector &&
-          currentPoint.type === "stmt" && (
-            <PCGGraphSelector
-              iterations={iterations[currentPoint.stmt].iterations.flatMap(
-                (iteration) => iteration.at_phase
-              )}
-              selected={selected}
-              onSelect={setSelected}
-            />
-          )}
+        {pcgGraphSelector}
       </div>
 
       {/* Draggable divider */}
