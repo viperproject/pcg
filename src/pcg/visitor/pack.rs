@@ -91,9 +91,11 @@ impl PcgVisitor<'_, '_, '_> {
 
             let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                    if expansion.expansion().iter().all(|node| {
-                        node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
-                    }) {
+                    if expansion.base.is_place()
+                        && expansion.expansion().iter().all(|node| {
+                            node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
+                        })
+                    {
                         ShouldPackEdge::Yes {
                             reason: "Expansion is old or dead".to_string(),
                         }
