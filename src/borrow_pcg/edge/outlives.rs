@@ -115,10 +115,6 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
         self.long.check_validity(ctxt)?;
         self.short.check_validity(ctxt)?;
         if self.long.to_pcg_node(ctxt) == self.short.effective().to_pcg_node(ctxt) {
-            panic!(
-                "BorrowFlowEdge: long and short are the same node: {}",
-                self.to_short_string(ctxt)
-            );
             return Err(format!(
                 "BorrowFlowEdge: long and short are the same node: {}",
                 self.to_short_string(ctxt)

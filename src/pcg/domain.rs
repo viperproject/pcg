@@ -542,6 +542,11 @@ impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> 
             }
         };
         if self.debug_data.is_some() {
+            tracing::info!("Joining blocks {:?} and {:?}", self_block, other_block);
+            self.register_new_debug_iteration(mir::Location {
+                block: self_block,
+                statement_index: 0,
+            });
             self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         }
         result

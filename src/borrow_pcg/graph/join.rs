@@ -216,7 +216,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         // Add any edges that are missing in either graph
         for (blocked, assigned, to_remove) in unique_edges.iter() {
-            tracing::info!(
+            tracing::debug!(
                 "Adding edge {} -> {}",
                 blocked.to_short_string(ctxt),
                 assigned.to_short_string(ctxt)

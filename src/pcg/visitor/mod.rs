@@ -357,13 +357,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .borrow
                     .graph()
                     .nodes_blocked_by(local_node, self.ctxt);
-                tracing::info!(
-                    "Checking nodes blocked by {}",
-                    node.to_short_string(self.ctxt)
-                );
                 for node in blocked_by {
                     if !seen.contains(&(node.into())) {
-                        tracing::info!("Pushing {} to stack", node.to_short_string(self.ctxt));
                         stack.push(node.into());
                     }
                 }
@@ -562,7 +557,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .capabilities
                             .insert((*base_place).into(), retained_cap);
                         capability_projections.expansions.remove(base_place);
-                        self.remove_rp_labels_from_leaf_edges();
+                        // self.remove_rp_labels_from_leaf_edges();
                         true
                     }
                     _ => unreachable!(),
@@ -582,37 +577,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         );
         self.actions.push(action);
         Ok(result)
-    }
-
-    fn remove_rp_labels_from_leaf_edges(&mut self) {
-        let leaf_edges = self
-            .pcg
-            .borrow
-            .graph()
-            .frozen_graph()
-            .leaf_edges(self.ctxt)
-            .into_iter()
-            .map(|edge| edge.to_owned_edge())
-            .collect::<Vec<_>>();
-        for edge in leaf_edges {
-            self.remove_rp_labels_from_leaf_edge(edge);
-        }
-    }
-
-    pub(crate) fn remove_rp_labels_from_leaf_edge(&mut self, edge: BorrowPcgEdge<'tcx>) {
-        let mut new_edge = edge.clone();
-        let mut changed = false;
-        for node in edge.blocked_by_nodes(self.ctxt) {
-            if let PCGNode::RegionProjection(rp) = node {
-                if rp.base.is_current() && self.pcg.capabilities.get(rp.base.place()).is_some() {
-                    changed |= new_edge.remove_rp_label(rp.base, self.ctxt);
-                }
-            }
-        }
-        if changed {
-            self.pcg.borrow.graph.remove(&edge.kind());
-            self.pcg.borrow.graph.insert(new_edge, self.ctxt);
-        }
     }
 
     #[tracing::instrument(skip(self))]

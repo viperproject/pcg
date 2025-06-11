@@ -301,7 +301,7 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
     /// operation, the indices of the nodes may change.
     pub(crate) fn merge_sccs(&mut self) {
         if self.is_acyclic() {
-            tracing::info!("Graph is already acyclic");
+            tracing::debug!("Graph is already acyclic");
             return;
         }
 

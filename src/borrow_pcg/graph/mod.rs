@@ -6,8 +6,7 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph,
-        util::ExploreFrom,
+        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph, region_projection::RegionProjection, util::ExploreFrom
     },
     pcg::PCGNode,
     rustc_interface::{
@@ -15,9 +14,7 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        display::{DebugLines, DisplayWithCompilerCtxt},
-        validity::HasValidityCheck,
-        BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT,
+        display::{DebugLines, DisplayWithCompilerCtxt}, maybe_old::MaybeOldPlace, validity::HasValidityCheck, HasPlace, BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT
     },
 };
 use frozen::{CachedBlockingEdges, CachedLeafEdges, FrozenGraphRef};
@@ -112,6 +109,51 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
         common_edges
+    }
+
+
+    pub(crate) fn identify_placeholder_target(
+        &self,
+        from: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> FxHashSet<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+        let mut result = FxHashSet::default();
+        let mut blocking: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
+            .region_projections_blocked_by(from.into(), ctxt)
+            .into_iter()
+            .flat_map(|rp| rp.try_into())
+            .collect();
+        while let Some(node) = blocking.pop() {
+            let place = node.base().place();
+            if place.is_deref() {
+                let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
+                    .region_projections_blocked_by(node.into(), ctxt)
+                    .into_iter()
+                    .flat_map(|rp| rp.try_into())
+                    .collect();
+                blocking.extend(to_add);
+            } else {
+                result.insert(node);
+            }
+        }
+        result
+    }
+
+
+    fn region_projections_blocked_by(
+        &self,
+        from: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> FxHashSet<RegionProjection<'tcx>> {
+        let mut result = FxHashSet::default();
+        for edge in self.edges_blocked_by(from, ctxt) {
+            for node in edge.blocked_nodes(ctxt) {
+                if let PCGNode::RegionProjection(rp) = node {
+                    result.insert(rp);
+                }
+            }
+        }
+        result
     }
 
     pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {

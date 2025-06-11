@@ -119,67 +119,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
 
-        let future_subgraph = self.get_future_subgraph(&labelled_rps);
-
-        self.pcg
-            .render_debug_graph(self.ctxt, location, "future constructed from");
-
-        future_subgraph.render_debug_graph(
-            self.ctxt,
-            &format!(
-                "future_subgraph from {}",
-                labelled_rps.to_short_string(self.ctxt)
-            ),
-        );
-
-        pcg_validity_assert!(
-            future_subgraph.frozen_graph().is_acyclic(self.ctxt),
-            "{:?}: Future subgraph is not acyclic",
-            self.ctxt.body().span
-        );
-
-        for node in future_subgraph.nodes(self.ctxt) {
-            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt)
-                && rp.is_placeholder()
-            {
-                let base_node: LocalRegionProjection<'tcx> =
-                    RegionProjection::new(rp.region(self.ctxt), rp.base, None, self.ctxt).unwrap();
-                self.record_and_apply_action(
-                    BorrowPCGAction::label_region_projection(
-                        base_node.into(),
-                        Some(SnapshotLocation::before(location).into()),
-                        "make_function_call_abstraction",
-                    )
-                    .into(),
-                )?;
-            }
-        }
-
-        let placeholder_targets = future_subgraph
-            .roots(self.ctxt)
-            .into_iter()
-            .map(|root| {
-                root.try_to_local_node(self.ctxt)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Root {:?} of future subgraph is not a local node",
-                            root.to_short_string(self.ctxt)
-                        )
-                    })
-                    .try_into_region_projection()
-                    .unwrap()
+        let placeholder_targets = labelled_rps
+            .iter()
+            .flat_map(|rp| {
+                self.pcg
+                    .borrow
+                    .graph()
+                    .identify_placeholder_target(*rp, self.ctxt)
             })
-            .collect::<Vec<_>>();
-
-        for edge in future_subgraph.into_edges() {
-            if edge.blocked_by_nodes(self.ctxt).any(|p| match p {
-                PCGNode::RegionProjection(rp) => labelled_rps.contains(&rp),
-                _ => false,
-            }) {
-                continue;
-            }
-            self.pcg.borrow.graph.insert(edge, self.ctxt);
-        }
+            .collect::<FxHashSet<_>>();
 
         // The set of region projections that contain borrows that could be
         // moved into the labelled rps (as they are seen after the function call)
