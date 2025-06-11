@@ -52,6 +52,12 @@ function getPCGDotGraphFilename(
   const stmtIterations = iterations[currentPoint.stmt].iterations.flatMap(
     (phases) => phases.at_phase
   );
+
+  // Handle deselection case
+  if (selected < 0) {
+    return null;
+  }
+
   const filename =
     selected >= stmtIterations.length
       ? stmtIterations[stmtIterations.length - 1][1]
@@ -153,6 +159,29 @@ export const App: React.FC<AppProps> = ({
         dotGraph.appendChild(viz.renderSVGElement(dotData));
       });
     }
+  }
+
+  async function loadSpecificPCGDotGraph(filename: string) {
+    const dotGraph = document.getElementById("pcg-graph");
+    if (!dotGraph) {
+      console.error("Dot graph element not found");
+      return;
+    }
+
+    try {
+      const dotData = await fetchDotFile(filename);
+      Viz.instance().then(function (viz) {
+        dotGraph.innerHTML = "";
+        dotGraph.appendChild(viz.renderSVGElement(dotData));
+      });
+    } catch (error) {
+      console.error("Error loading specific PCG dot graph:", error);
+      dotGraph.innerHTML = "<p>Error loading graph</p>";
+    }
+  }
+
+  function deselectPCG() {
+    setSelected(-1); // Set to invalid selection to deselect
   }
 
   useEffect(() => {
@@ -375,6 +404,8 @@ export const App: React.FC<AppProps> = ({
                   : undefined
               }
               selectedFunction={selectedFunction}
+              onShowGraph={loadSpecificPCGDotGraph}
+              onDeselectPcg={deselectPCG}
             />
             {"latest" in pcgProgramPointData && (
               <LatestDisplay latest={pcgProgramPointData.latest} />

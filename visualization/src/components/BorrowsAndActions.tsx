@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   PathData,
   Borrow,
@@ -112,11 +112,19 @@ function PcgActionsDisplay({
   stmtIteration,
   selectedFunction,
   phase,
+  onShowGraph,
+  onDeselectPcg,
+  selectedAction,
+  onActionSelect,
 }: {
   actions: PcgActions;
   stmtIteration?: { iterations: PcgIteration[] };
   selectedFunction?: string;
   phase: string;
+  onShowGraph?: (filename: string) => void;
+  onDeselectPcg?: () => void;
+  selectedAction?: { phase: string; index: number };
+  onActionSelect?: (phase: string, index: number) => void;
 }) {
   const getActionGraphFilename = (actionIndex: number): string | null => {
     if (!stmtIteration || stmtIteration.iterations.length === 0 || !selectedFunction) {
@@ -146,29 +154,37 @@ function PcgActionsDisplay({
     return `data/${selectedFunction}/${phaseActions[actionIndex]}`;
   };
 
+  const handleActionClick = (index: number) => {
+    const graphFilename = getActionGraphFilename(index);
+    if (graphFilename && onShowGraph && onDeselectPcg && onActionSelect) {
+      onDeselectPcg(); // Unselect any currently selected PCG
+      onShowGraph(graphFilename); // Show the graph in main view
+      onActionSelect(phase, index); // Mark this action as selected
+    }
+  };
+
   return (
     <ul>
       {actions.map((action, index) => {
         const graphFilename = getActionGraphFilename(index);
+        const isSelected = selectedAction?.phase === phase && selectedAction?.index === index;
         return (
           <li key={`action-${index}`} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span>{action}</span>
-            {graphFilename && (
-              <button
-                style={{
-                  fontSize: "12px",
-                  padding: "2px 6px",
-                  backgroundColor: "#e6f3ff",
-                  border: "1px solid #007acc",
-                  borderRadius: "3px",
-                  cursor: "pointer",
-                }}
-                onClick={() => openDotGraphInNewWindow(graphFilename)}
-                title="Show graph after this action"
-              >
-                Show Graph
-              </button>
-            )}
+            <span
+              style={{
+                cursor: graphFilename ? "pointer" : "default",
+                padding: "4px 8px",
+                borderRadius: "4px",
+                backgroundColor: isSelected ? "#007acc" : "transparent",
+                color: isSelected ? "white" : "inherit",
+                border: isSelected ? "1px solid #007acc" : "1px solid transparent",
+                flex: 1,
+              }}
+              onClick={() => graphFilename && handleActionClick(index)}
+              title={graphFilename ? "Click to show graph in main view" : undefined}
+            >
+              {action}
+            </span>
           </li>
         );
       })}
@@ -180,11 +196,102 @@ export default function PCGOps({
   data,
   stmtIteration,
   selectedFunction,
+  onShowGraph,
+  onDeselectPcg,
 }: {
   data: PcgProgramPointData;
   stmtIteration?: { iterations: PcgIteration[] };
   selectedFunction?: string;
+  onShowGraph?: (filename: string) => void;
+  onDeselectPcg?: () => void;
 }) {
+  const [selectedAction, setSelectedAction] = useState<{ phase: string; index: number } | undefined>(undefined);
+
+  // Collect all actions with their phase info for keyboard navigation
+  const getAllActions = () => {
+    const allActions: Array<{ action: string; index: number; phase: string }> = [];
+
+    if ("latest" in data) {
+      const phases = ["pre_operands", "post_operands", "pre_main", "post_main"] as const;
+      phases.forEach((phase) => {
+        data.actions[phase].forEach((action, index) => {
+          allActions.push({ action, index, phase });
+        });
+      });
+    } else {
+      data.actions.forEach((action, index) => {
+        allActions.push({ action, index, phase: "actions" });
+      });
+    }
+
+    return allActions;
+  };
+
+  const allActions = getAllActions();
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'q' || event.key === 'a') {
+        event.preventDefault();
+
+        if (allActions.length === 0) return;
+
+        let newGlobalIndex: number;
+        if (!selectedAction) {
+          newGlobalIndex = event.key === 'q' ? allActions.length - 1 : 0;
+        } else {
+          const currentGlobalIndex = allActions.findIndex(
+            (actionData) => actionData.phase === selectedAction.phase && actionData.index === selectedAction.index
+          );
+
+          if (event.key === 'q') {
+            newGlobalIndex = currentGlobalIndex > 0 ? currentGlobalIndex - 1 : allActions.length - 1;
+          } else {
+            newGlobalIndex = currentGlobalIndex < allActions.length - 1 ? currentGlobalIndex + 1 : 0;
+          }
+        }
+
+        const actionData = allActions[newGlobalIndex];
+        setSelectedAction({ phase: actionData.phase, index: actionData.index });
+
+        // Get the graph filename for this action
+        const getActionGraphFilename = (actionIndex: number, phase: string): string | null => {
+          if (!stmtIteration || stmtIteration.iterations.length === 0 || !selectedFunction) {
+            return null;
+          }
+
+          const mostRecentIteration = stmtIteration.iterations[stmtIteration.iterations.length - 1];
+          const phaseMapping: Record<string, string> = {
+            "pre_operands": "PreOperands",
+            "post_operands": "PostOperands",
+            "pre_main": "PreMain",
+            "post_main": "PostMain",
+            "actions": "actions"
+          };
+
+          const iterationPhaseName = phaseMapping[phase] || phase;
+          const phaseActions = mostRecentIteration.actions[iterationPhaseName];
+
+          if (!phaseActions || !(actionIndex in phaseActions)) {
+            return null;
+          }
+
+          return `data/${selectedFunction}/${phaseActions[actionIndex]}`;
+        };
+
+        const graphFilename = getActionGraphFilename(actionData.index, actionData.phase);
+        if (graphFilename && onShowGraph && onDeselectPcg) {
+          onDeselectPcg();
+          onShowGraph(graphFilename);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedAction, allActions, stmtIteration, selectedFunction, onShowGraph, onDeselectPcg]);
+
   let content;
   if ("latest" in data) {
     content = (
@@ -202,6 +309,10 @@ export default function PCGOps({
               stmtIteration={stmtIteration}
               selectedFunction={selectedFunction}
               phase={key}
+              onShowGraph={onShowGraph}
+              onDeselectPcg={onDeselectPcg}
+              selectedAction={selectedAction}
+              onActionSelect={(phase, index) => setSelectedAction({ phase, index })}
             />
           </div>
         ))}
@@ -216,6 +327,10 @@ export default function PCGOps({
           stmtIteration={stmtIteration}
           selectedFunction={selectedFunction}
           phase="actions"
+          onShowGraph={onShowGraph}
+          onDeselectPcg={onDeselectPcg}
+          selectedAction={selectedAction}
+          onActionSelect={(phase, index) => setSelectedAction({ phase, index })}
         />
       </>
     );
@@ -235,6 +350,9 @@ export default function PCGOps({
       }}
     >
       {content}
+      <div style={{ marginTop: "10px", fontSize: "12px", color: "#666" }}>
+        Press 'q'/'a' to navigate between actions
+      </div>
     </div>
   );
 }
