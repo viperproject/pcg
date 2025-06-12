@@ -6,7 +6,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg_validity_assert;
-use crate::rustc_interface::middle::mir::{Location, Statement, StatementKind};
+use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self};
@@ -17,9 +17,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn perform_statement_actions(
         &mut self,
         statement: &Statement<'tcx>,
-        location: Location,
     ) -> Result<(), PcgError> {
-        self.super_statement_fallable(statement, location)?;
+        self.super_statement_fallable(statement, self.location)?;
         match self.phase {
             EvalStmtPhase::PreMain => {
                 match &statement.kind {
@@ -98,7 +97,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     BorrowPcgEdgeKind::BorrowPcgExpansion(_)
                                 );
                                 if should_remove {
-                                    self.remove_edge_and_perform_associated_state_updates(edge, location, "Assign")?;
+                                    self.remove_edge_and_perform_associated_state_updates(edge, "Assign")?;
                                 }
                             }
                         }
@@ -107,7 +106,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
             EvalStmtPhase::PostMain => {
-                self.stmt_post_main(statement, location)?;
+                self.stmt_post_main(statement)?;
             }
             _ => {}
         }
@@ -117,11 +116,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     fn stmt_post_main(
         &mut self,
         statement: &Statement<'tcx>,
-        location: Location,
     ) -> Result<(), PcgError> {
         assert!(self.phase == EvalStmtPhase::PostMain);
         if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
-            self.assign_post_main((*target).into(), rvalue, location)?;
+            self.assign_post_main((*target).into(), rvalue)?;
         }
         Ok(())
     }

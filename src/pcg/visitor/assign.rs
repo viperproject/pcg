@@ -4,7 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
-use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue};
+use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils;
@@ -17,10 +17,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         target: utils::Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
-        location: Location,
     ) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            BorrowPcgAction::set_latest(target, location, "Target of Assignment").into(),
+            BorrowPcgAction::set_latest(target, self.location, "Target of Assignment").into(),
         )?;
         self.pcg
             .capabilities
@@ -48,7 +47,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             source_proj.base,
                             Some(self.pcg.borrow.get_latest(source_proj.base, self.ctxt)),
                         ));
-                        self.connect_outliving_projections(source_proj, target, location, |_| {
+                        self.connect_outliving_projections(source_proj, target, |_| {
                             BorrowFlowEdgeKind::Aggregate {
                                 field_idx,
                                 target_rp_index: source_rp_idx,
@@ -143,7 +142,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     blocked_place.into(),
                     target,
                     *kind,
-                    location,
+                    self.location,
                     *borrow_region,
                     &mut self.pcg.capabilities,
                     self.ctxt,
@@ -154,12 +153,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             self.record_and_apply_action(
                                 BorrowPcgAction::label_region_projection(
                                     source_proj.into(),
-                                    Some(location.into()),
+                                    Some(self.location.into()),
                                     "assign_post_main",
                                 )
                                 .into(),
                             )?;
-                            source_proj.with_label(Some(location.into()), self.ctxt)
+                            source_proj.with_label(Some(self.location.into()), self.ctxt)
                         } else {
                             source_proj
                         };

@@ -48,7 +48,6 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         &mut self,
         source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         target: Place<'tcx>,
-        _location: Location,
         kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) -> Result<(), PcgError> {
         for target_proj in target.region_projections(self.ctxt).into_iter() {
@@ -116,7 +115,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         statement: &Statement<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.perform_statement_actions(statement, location)?;
+        self.perform_statement_actions(statement)?;
         self.pcg.assert_validity_at_location(self.ctxt, location);
         Ok(())
     }
@@ -235,7 +234,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     fn update_latest_for_blocked_places(
         &mut self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
-        location: Location,
         context: &str,
     ) -> Result<(), PcgError> {
         for place in edge.blocked_places(self.ctxt) {
@@ -244,7 +242,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 && place.has_location_dependent_value(self.ctxt)
             {
                 self.record_and_apply_action(
-                    BorrowPcgAction::set_latest(place, location, context).into(),
+                    BorrowPcgAction::set_latest(place, self.location, context).into(),
                 )?;
             }
         }
@@ -463,14 +461,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, edge, location))]
+    #[tracing::instrument(skip(self, edge))]
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
         edge: impl BorrowPcgEdgeLike<'tcx>,
-        location: Location,
         context: &str,
     ) -> Result<(), PcgError> {
-        self.update_latest_for_blocked_places(&edge, location, context)?;
+        self.update_latest_for_blocked_places(&edge, context)?;
 
         self.record_and_apply_action(
             BorrowPcgAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
