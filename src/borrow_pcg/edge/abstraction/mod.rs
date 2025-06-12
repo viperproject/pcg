@@ -168,20 +168,6 @@ impl<'tcx, Input: LabelRegionProjection<'tcx> + PCGNodeLike<'tcx>> LabelRegionPr
         changed
     }
 
-    fn remove_rp_label(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        for input in &mut self.inputs {
-            changed |= input.remove_rp_label(place, ctxt);
-        }
-        for output in &mut self.outputs {
-            changed |= output.remove_rp_label(place, ctxt);
-        }
-        changed
-    }
 }
 
 trait AbstractionInputLike<'tcx>: Sized + Clone {

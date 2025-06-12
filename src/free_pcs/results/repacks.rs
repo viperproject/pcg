@@ -68,8 +68,8 @@ pub enum RepackOp<'tcx> {
     RegainLoanedCapability(Place<'tcx>, CapabilityKind),
 }
 
-impl<'tcx> RepackOp<'tcx> {
-    pub(crate) fn debug_line(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RepackOp<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
             RepackOp::RegainLoanedCapability(place, capability_kind) => {
                 format!(
@@ -81,9 +81,11 @@ impl<'tcx> RepackOp<'tcx> {
             _ => format!("{self:?}"),
         }
     }
+}
 
+impl<'tcx> RepackOp<'tcx> {
     pub(crate) fn to_json(self, ctxt: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        serde_json::Value::String(self.debug_line(ctxt))
+        serde_json::Value::String(self.to_short_string(ctxt))
     }
 
     pub(crate) fn expand(

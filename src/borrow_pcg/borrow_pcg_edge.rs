@@ -74,14 +74,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
         self.kind
             .label_region_projection(projection, label, repacker)
     }
-
-    fn remove_rp_label(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.kind.remove_rp_label(place, ctxt)
-    }
 }
 
 pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {

@@ -34,13 +34,6 @@ impl<'tcx> LoopAbstraction<'tcx> {
 }
 
 impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
-    fn remove_rp_label(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edge.remove_rp_label(place, ctxt)
-    }
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,

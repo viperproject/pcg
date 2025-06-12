@@ -9,10 +9,9 @@ use std::{alloc::Allocator, rc::Rc};
 use derive_more::Deref;
 
 use crate::{
-    action::PcgActions,
+    action::{BorrowPcgAction, OwnedPcgAction, PcgActions},
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        action::{BorrowPCGAction, BorrowPcgActionKind},
         borrow_pcg_edge::{BorrowPCGEdgeRef, BorrowPcgEdge},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
@@ -145,7 +144,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                 for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
-                            BorrowPCGAction::add_edge(
+                            BorrowPcgAction::add_edge(
                                 BorrowPcgEdge::new(
                                     abstraction.value.clone().into(),
                                     abstraction.conditions,
@@ -158,7 +157,12 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                     }
                 }
 
-                let mut actions: PcgActions<'tcx> = owned_bridge.into();
+                let mut actions: PcgActions<'tcx> = PcgActions(
+                    owned_bridge
+                        .into_iter()
+                        .map(|r| OwnedPcgAction::new(r, None).into())
+                        .collect(),
+                );
                 actions.extend(borrow_actions.into());
 
                 Ok(PcgSuccessor::new(

@@ -1,5 +1,5 @@
-use crate::action::PcgAction;
-use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
+use crate::action::{BorrowPcgAction, PcgAction};
+use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
@@ -56,7 +56,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         for target_proj in target.region_projections(self.ctxt).into_iter() {
             if self.outlives(source_proj.region(self.ctxt), target_proj.region(self.ctxt)) {
                 self.record_and_apply_action(
-                    BorrowPCGAction::add_edge(
+                    BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
                                 source_proj.into(),
@@ -134,7 +134,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         {
             let place: utils::Place<'tcx> = (*place).into();
             self.record_and_apply_action(
-                BorrowPCGAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
+                BorrowPcgAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
             )?;
         }
         Ok(())
@@ -157,7 +157,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         {
             let destination: utils::Place<'tcx> = (*destination).into();
             self.record_and_apply_action(
-                BorrowPCGAction::set_latest(destination, location, "Destination of Function Call")
+                BorrowPcgAction::set_latest(destination, location, "Destination of Function Call")
                     .into(),
             )?;
             self.make_function_call_abstraction(
@@ -246,14 +246,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 && place.has_location_dependent_value(self.ctxt)
             {
                 self.record_and_apply_action(
-                    BorrowPCGAction::set_latest(place, location, context).into(),
+                    BorrowPcgAction::set_latest(place, location, context).into(),
                 )?;
             }
         }
         Ok(())
     }
 
-    fn restore_capabilities_for_removed_edge(
+    fn update_unblocked_node_capabilities_and_remove_placeholder_projections(
         &mut self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
     ) -> Result<(), PcgError> {
@@ -282,6 +282,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         "restore_capabilities_for_removed_edge",
                         self.ctxt,
                     ))?;
+                    for rp in place.region_projections(self.ctxt) {
+                        let placeholder_rp =
+                            rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt);
+                        self.record_and_apply_action(
+                            BorrowPcgAction::label_region_projection(
+                                placeholder_rp.into(),
+                                None,
+                                "update_unblocked_node_capabilities_and_remove_placeholder_projections",
+                            )
+                            .into(),
+                        )?;
+                    }
                 }
             }
         }
@@ -295,7 +307,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
                 self.record_and_apply_action(
-                    BorrowPCGAction::label_region_projection(
+                    BorrowPcgAction::label_region_projection(
                         rp.into(),
                         None,
                         "unlabel_blocked_region_projections",
@@ -323,7 +335,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 // TODO: Due to a bug ignore other expansions to this place for now
                 if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
                     self.record_and_apply_action(
-                        BorrowPCGAction::redirect_edge(
+                        BorrowPcgAction::redirect_edge(
                             to_redirect,
                             *node,
                             expansion.base,
@@ -411,7 +423,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         leaf_nodes_to_label.insert(leaf_node.into());
                         edge_leaf_node = edge_leaf_node.with_label(Some(label), self.ctxt);
                     }
-                    to_add_actions.push(BorrowPCGAction::add_edge(
+                    to_add_actions.push(BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
                                 edge_leaf_node.into(),
@@ -435,7 +447,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
         for leaf_node in leaf_nodes_to_label {
             self.record_and_apply_action(
-                BorrowPCGAction::label_region_projection(
+                BorrowPcgAction::label_region_projection(
                     leaf_node,
                     Some(label),
                     format!(
@@ -463,10 +475,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         self.update_latest_for_blocked_places(&edge, location, context)?;
 
         self.record_and_apply_action(
-            BorrowPCGAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
+            BorrowPcgAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
         )?;
 
-        self.restore_capabilities_for_removed_edge(&edge)?;
+        self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
         if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
             if expansion.is_mutable_deref(self.ctxt) {
@@ -503,21 +515,21 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &mut self.pcg.capabilities,
                     self.ctxt,
                 )?,
-                PcgAction::Owned(owned_action) => match owned_action {
+                PcgAction::Owned(owned_action) => match owned_action.kind {
                     RepackOp::RegainLoanedCapability(place, capability_kind) => self
                         .pcg
                         .capabilities
-                        .insert((*place).into(), *capability_kind),
+                        .insert((*place).into(), capability_kind),
                     RepackOp::Expand(from, to, capability) => {
-                        let target_places = from.expand_one_level(*to, self.ctxt)?.expansion();
+                        let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
                         let capability_projections =
                             self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
                         capability_projections.insert_expansion(
-                            *from,
+                            from,
                             PlaceExpansion::from_places(target_places.clone(), self.ctxt),
                         );
                         let source_cap = if capability.is_read() {
-                            *capability
+                            capability
                         } else {
                             self.pcg.capabilities.get((*from).into()).unwrap()
                         };
@@ -540,11 +552,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         true
                     }
                     RepackOp::DerefShallowInit(from, to) => {
-                        let target_places = from.expand_one_level(*to, self.ctxt)?.expansion();
+                        let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
                         let capability_projections =
                             self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
                         capability_projections.insert_expansion(
-                            *from,
+                            from,
                             PlaceExpansion::from_places(target_places.clone(), self.ctxt),
                         );
                         for target_place in target_places {
@@ -558,7 +570,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         let capability_projections =
                             self.pcg.owned.locals_mut()[base_place.local].get_allocated_mut();
                         let expansion_places = base_place
-                            .expand_one_level(*proj_place, self.ctxt)?
+                            .expand_one_level(proj_place, self.ctxt)?
                             .expansion();
                         let retained_cap = expansion_places.iter().fold(
                             CapabilityKind::Exclusive,
@@ -570,8 +582,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         self.pcg
                             .capabilities
                             .insert((*base_place).into(), retained_cap);
-                        capability_projections.expansions.remove(base_place);
-                        // self.remove_rp_labels_from_leaf_edges();
+                        capability_projections.expansions.remove(&base_place);
                         true
                     }
                     _ => unreachable!(),
@@ -612,7 +623,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .graph()
                 .contains(borrow.deref_place(self.ctxt), self.ctxt)
             {
-                let upgrade_action = BorrowPCGAction::restore_capability(
+                let upgrade_action = BorrowPcgAction::restore_capability(
                     borrow.deref_place(self.ctxt).place().into(),
                     CapabilityKind::Exclusive,
                     "perform_borrow_initial_pre_operand_actions",
@@ -626,7 +637,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 for rp in place.region_projections(self.ctxt).into_iter() {
                     if rp.can_be_labelled(self.ctxt) {
                         self.record_and_apply_action(
-                            BorrowPCGAction::label_region_projection(
+                            BorrowPcgAction::label_region_projection(
                                 rp.into(),
                                 None,
                                 "perform_borrow_initial_pre_operand_actions",
@@ -637,7 +648,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         }
-        // self.remove_rp_labels_from_leaf_edges();
         Ok(())
     }
 }

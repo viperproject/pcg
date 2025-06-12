@@ -1,6 +1,7 @@
 use super::PcgVisitor;
 
-use crate::borrow_pcg::action::{BorrowPCGAction, MakePlaceOldReason};
+use crate::action::BorrowPcgAction;
+use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
@@ -25,7 +26,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     StatementKind::StorageDead(local) => {
                         let place: utils::Place<'tcx> = (*local).into();
                         self.record_and_apply_action(
-                            BorrowPCGAction::make_place_old(place, MakePlaceOldReason::StorageDead)
+                            BorrowPcgAction::make_place_old(place, MakePlaceOldReason::StorageDead)
                                 .into(),
                         )?;
                     }
@@ -43,7 +44,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 == Some(CapabilityKind::Read)
                             {
                                 self.record_and_apply_action(
-                                    BorrowPCGAction::restore_capability(
+                                    BorrowPcgAction::restore_capability(
                                         target.into(),
                                         CapabilityKind::Exclusive,
                                         "Assign: restore capability to exclusive",
@@ -66,7 +67,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     //     CapabilityKind::Write
                                     // );
                                     self.record_and_apply_action(
-                                        BorrowPCGAction::weaken(
+                                        BorrowPcgAction::weaken(
                                             target,
                                             target_cap,
                                             Some(CapabilityKind::Write),

@@ -1,5 +1,4 @@
 use super::{
-    action::BorrowPCGAction,
     borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
@@ -7,7 +6,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_pcg::edge::{
@@ -67,7 +66,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
             let _ = self.apply_action(
-                BorrowPCGAction::add_edge(
+                BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
                     "Introduce initial borrows",
                     false,
@@ -81,7 +80,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
             assert!(self
                 .apply_action(
-                    BorrowPCGAction::add_edge(
+                    BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
                                 RegionProjection::new(
@@ -165,9 +164,14 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let mut changed = false;
         let loop_usage = LoopUsage::new(self.latest.clone(), &other.latest);
-        changed |= self
-            .graph
-            .join(&other.graph, self_block, other_block, &loop_usage, capabilities, ctxt);
+        changed |= self.graph.join(
+            &other.graph,
+            self_block,
+            other_block,
+            &loop_usage,
+            capabilities,
+            ctxt,
+        );
         changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions

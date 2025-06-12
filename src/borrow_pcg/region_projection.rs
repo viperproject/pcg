@@ -345,19 +345,6 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
             false
         }
     }
-
-    fn remove_rp_label(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        if self.base == place.into() {
-            self.label = None;
-            true
-        } else {
-            false
-        }
-    }
 }
 
 impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>

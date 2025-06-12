@@ -1,5 +1,5 @@
 use super::PcgVisitor;
-use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
@@ -20,7 +20,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            BorrowPCGAction::set_latest(target, location, "Target of Assignment").into(),
+            BorrowPcgAction::set_latest(target, location, "Target of Assignment").into(),
         )?;
         self.pcg
             .capabilities
@@ -62,7 +62,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     && let ty::TyKind::Ref(target_region, _, _) = target.ty(self.ctxt).ty.kind()
                 {
                     self.record_and_apply_action(
-                        BorrowPCGAction::add_edge(
+                        BorrowPcgAction::add_edge(
                             BorrowPcgEdge::new(
                                 BorrowFlowEdge::new(
                                     RegionProjection::new(
@@ -110,7 +110,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .zip(target.region_projections(self.ctxt).into_iter())
                 {
                     self.record_and_apply_action(
-                        BorrowPCGAction::add_edge(
+                        BorrowPcgAction::add_edge(
                             BorrowPcgEdge::new(
                                 BorrowFlowEdge::new(
                                     source_proj.into(),
@@ -152,7 +152,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     let source_proj =
                         if kind.mutability().is_mut() && source_proj.can_be_labelled(self.ctxt) {
                             self.record_and_apply_action(
-                                BorrowPCGAction::label_region_projection(
+                                BorrowPcgAction::label_region_projection(
                                     source_proj.into(),
                                     Some(location.into()),
                                     "assign_post_main",
@@ -170,7 +170,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             let regions_equal =
                                 self.ctxt.bc.same_region(source_region, target_region);
                             self.record_and_apply_action(
-                                BorrowPCGAction::add_edge(
+                                BorrowPcgAction::add_edge(
                                     BorrowPcgEdge::new(
                                         BorrowFlowEdge::new(
                                             source_proj.into(),

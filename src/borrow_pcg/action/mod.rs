@@ -4,6 +4,7 @@ use tracing::instrument;
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use super::edge::kind::BorrowPcgEdgeKind;
 use super::state::BorrowsState;
+use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
@@ -20,58 +21,7 @@ use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
 
-/// An action that is applied to a `BorrowsState` during the dataflow analysis
-/// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
-/// their own effect (e.g. for an unblock, applying a magic wand).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BorrowPCGAction<'tcx> {
-    pub(crate) kind: BorrowPcgActionKind<'tcx>,
-    debug_context: Option<String>,
-}
-
-impl<'tcx> BorrowPCGAction<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        match &self.kind {
-            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
-                format!(
-                    "Redirect Edge: {} from {} to {}",
-                    edge.to_short_string(repacker),
-                    from.to_short_string(repacker),
-                    to.to_short_string(repacker)
-                )
-            }
-            BorrowPcgActionKind::AddEdge { edge, .. } => {
-                format!("Add Edge: {}", edge.to_short_string(repacker))
-            }
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
-                format!(
-                    "Label Region Projection: {} with {:?}",
-                    rp.to_short_string(repacker),
-                    label
-                )
-            }
-            BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(repacker),
-            BorrowPcgActionKind::Restore(restore_capability) => {
-                restore_capability.debug_line(repacker)
-            }
-            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
-                format!(
-                    "Make {} an old place ({:?})",
-                    place.to_short_string(repacker),
-                    reason
-                )
-            }
-            BorrowPcgActionKind::SetLatest(place, location) => format!(
-                "Set Latest of {} to {:?}",
-                place.to_short_string(repacker),
-                location
-            ),
-            BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
-                format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
-            }
-        }
-    }
-
+impl<'tcx> BorrowPcgAction<'tcx> {
     pub fn kind(&self) -> &BorrowPcgActionKind<'tcx> {
         &self.kind
     }
@@ -81,7 +31,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         capability: CapabilityKind,
         debug_context: impl Into<String>,
     ) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability)),
             debug_context: Some(debug_context.into()),
         }
@@ -92,7 +42,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         from: CapabilityKind,
         to: Option<CapabilityKind>,
     ) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to)),
             debug_context: None,
         }
@@ -103,14 +53,14 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         location: Location,
         context: impl Into<String>,
     ) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::SetLatest(place, location),
             debug_context: Some(context.into()),
         }
     }
 
     pub(crate) fn remove_edge(edge: BorrowPcgEdge<'tcx>, context: impl Into<String>) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::RemoveEdge(edge),
             debug_context: Some(context.into()),
         }
@@ -122,7 +72,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         to: LocalNode<'tcx>,
         context: impl Into<String>,
     ) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::RedirectEdge { edge, from, to },
             debug_context: Some(context.into()),
         }
@@ -133,7 +83,7 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         context: impl Into<String>,
         for_read: bool,
     ) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::AddEdge { edge, for_read },
             debug_context: Some(context.into()),
         }
@@ -144,14 +94,14 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         label: Option<RegionProjectionLabel>,
         context: impl Into<String>,
     ) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::LabelRegionProjection(projection, label),
             debug_context: Some(context.into()),
         }
     }
 
     pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
-        BorrowPCGAction {
+        BorrowPcgAction {
             kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
             debug_context: None,
         }
@@ -233,25 +183,6 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgActionKind<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        let mut map = Map::new();
-        map.insert(
-            "kind".to_string(),
-            self.kind.to_short_string(repacker).into(),
-        );
-        if let Some(debug_context) = &self.debug_context {
-            map.insert(
-                "debug_context".to_string(),
-                debug_context.to_string().into(),
-            );
-        } else {
-            map.insert("debug_context".to_string(), serde_json::Value::Null);
-        }
-        map.into()
-    }
-}
-
 impl<'tcx> BorrowsGraph<'tcx> {
     #[must_use]
     fn redirect_edge(
@@ -273,7 +204,7 @@ impl<'tcx> BorrowsState<'tcx> {
     #[instrument(skip(self, action, capabilities, ctxt))]
     pub(crate) fn apply_action(
         &mut self,
-        action: BorrowPCGAction<'tcx>,
+        action: BorrowPcgAction<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {

@@ -1,13 +1,13 @@
 use derive_more::{Deref, DerefMut, From};
+use serde_json::Map;
 
 use crate::{
     borrow_pcg::{
-        action::{actions::BorrowPCGActions, BorrowPCGAction, BorrowPcgActionKind},
+        action::{actions::BorrowPCGActions, BorrowPcgActionKind},
         unblock_graph::BorrowPCGUnblockAction,
     },
     free_pcs::{CapabilityKind, RepackOp},
-    utils::{json::ToJsonWithCompilerCtxt, CompilerCtxt, Place},
-    RestoreCapability,
+    utils::{display::DisplayWithCompilerCtxt, json::ToJsonWithCompilerCtxt, CompilerCtxt, Place},
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, From, Default, Deref, DerefMut)]
@@ -25,8 +25,8 @@ impl<'tcx> From<BorrowPCGActions<'tcx>> for PcgActions<'tcx> {
     }
 }
 
-impl<'tcx> From<Vec<RepackOp<'tcx>>> for PcgActions<'tcx> {
-    fn from(actions: Vec<RepackOp<'tcx>>) -> Self {
+impl<'tcx> From<Vec<OwnedPcgAction<'tcx>>> for PcgActions<'tcx> {
+    fn from(actions: Vec<OwnedPcgAction<'tcx>>) -> Self {
         PcgActions(actions.into_iter().map(|a| a.into()).collect::<Vec<_>>())
     }
 }
@@ -52,7 +52,7 @@ impl<'tcx> PcgActions<'tcx> {
         self.0.iter()
     }
 
-    pub fn owned_pcg_actions(&self) -> Vec<&RepackOp<'tcx>> {
+    pub fn owned_pcg_actions(&self) -> Vec<&OwnedPcgAction<'tcx>> {
         self.0
             .iter()
             .filter_map(|action| match action {
@@ -66,7 +66,7 @@ impl<'tcx> PcgActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action {
-                PcgAction::Borrow(BorrowPCGAction {
+                PcgAction::Borrow(BorrowPcgAction {
                     kind: BorrowPcgActionKind::RemoveEdge(edge),
                     ..
                 }) => Some(edge.clone().into()),
@@ -76,11 +76,58 @@ impl<'tcx> PcgActions<'tcx> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActionKindWithDebugCtxt<T> {
+    pub(crate) kind: T,
+    pub(crate) debug_context: Option<String>,
+}
+
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> ActionKindWithDebugCtxt<T> {
+    pub(crate) fn new(kind: T, debug_context: Option<String>) -> Self {
+        Self {
+            kind,
+            debug_context,
+        }
+    }
+
+    pub(crate) fn debug_line(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        self.kind.to_short_string(ctxt)
+    }
+}
+
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx>
+    for ActionKindWithDebugCtxt<T>
+{
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+        let mut map = Map::new();
+        map.insert(
+            "kind".to_string(),
+            self.kind.to_short_string(repacker).into(),
+        );
+        if let Some(debug_context) = &self.debug_context {
+            map.insert(
+                "debug_context".to_string(),
+                debug_context.to_string().into(),
+            );
+        } else {
+            map.insert("debug_context".to_string(), serde_json::Value::Null);
+        }
+        map.into()
+    }
+}
+
+pub type OwnedPcgAction<'tcx> = ActionKindWithDebugCtxt<RepackOp<'tcx>>;
+
+/// An action that is applied to a `BorrowsState` during the dataflow analysis
+/// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
+/// their own effect (e.g. for an unblock, applying a magic wand).
+pub type BorrowPcgAction<'tcx> = ActionKindWithDebugCtxt<BorrowPcgActionKind<'tcx>>;
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Debug, From)]
 pub enum PcgAction<'tcx> {
-    Borrow(BorrowPCGAction<'tcx>),
-    Owned(RepackOp<'tcx>),
+    Borrow(BorrowPcgAction<'tcx>),
+    Owned(OwnedPcgAction<'tcx>),
 }
 
 impl<'tcx> PcgAction<'tcx> {
@@ -91,9 +138,15 @@ impl<'tcx> PcgAction<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         if place.is_owned(ctxt) {
-            PcgAction::Owned(RepackOp::RegainLoanedCapability(place, capability))
+            PcgAction::Owned(
+                OwnedPcgAction {
+                    kind: RepackOp::RegainLoanedCapability(place, capability),
+                    debug_context: Some(debug_context.into()),
+                }
+                .into(),
+            )
         } else {
-            BorrowPCGAction::restore_capability(place, capability, debug_context).into()
+            BorrowPcgAction::restore_capability(place, capability, debug_context).into()
         }
     }
 

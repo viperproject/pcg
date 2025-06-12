@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use itertools::Itertools;
 
+use crate::action::{BorrowPcgAction, OwnedPcgAction};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, LocalNode};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
@@ -10,7 +11,7 @@ use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::{borrow_pcg::action::BorrowPCGAction, utils::ShallowExpansion};
+use crate::utils::ShallowExpansion;
 
 use crate::utils::place::HasPlace;
 use crate::utils::{Place, ProjectionKind, SnapshotLocation};
@@ -19,7 +20,7 @@ use super::{PcgError, PcgVisitor};
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            BorrowPCGAction::restore_capability(
+            BorrowPcgAction::restore_capability(
                 place.into(),
                 CapabilityKind::Exclusive,
                 "upgrade_read_to_exclusive",
@@ -36,7 +37,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         while self.pcg.capabilities.get(current.into()) == Some(CapabilityKind::Read) {
             self.record_and_apply_action(
-                BorrowPCGAction::weaken(current, CapabilityKind::Read, None).into(),
+                BorrowPcgAction::weaken(current, CapabilityKind::Read, None).into(),
             )?;
             let parent = match current.parent_place() {
                 Some(parent) => parent,
@@ -120,7 +121,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.location
             );
             self.record_and_apply_action(
-                BorrowPCGAction::label_region_projection(
+                BorrowPcgAction::label_region_projection(
                     rp.into(),
                     Some(self.location.into()),
                     "add_deref_expansion",
@@ -129,7 +130,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             )?;
         }
 
-        let action = BorrowPCGAction::add_edge(
+        let action = BorrowPcgAction::add_edge(
             BorrowPcgEdge::new(
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                 self.pcg.borrow.path_conditions.clone(),
@@ -158,15 +159,21 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 return Ok(false);
             } else if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
                 self.record_and_apply_action(
-                    RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place)
-                        .into(),
+                    OwnedPcgAction::new(
+                        RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
+                        None,
+                    )
+                    .into(),
                 )?;
             } else {
                 self.record_and_apply_action(
-                    RepackOp::Expand(
-                        expansion.base_place(),
-                        expansion.target_place,
-                        obtain_type.capability(),
+                    OwnedPcgAction::new(
+                        RepackOp::Expand(
+                            expansion.base_place(),
+                            expansion.target_place,
+                            obtain_type.capability(),
+                        ),
+                        None,
                     )
                     .into(),
                 )?;
@@ -192,7 +199,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     BorrowPcgExpansion::new(rp.into(), place_expansion, None, self.ctxt)?;
                 tracing::debug!("Adding edge {}", expansion.to_short_string(self.ctxt));
                 self.record_and_apply_action(
-                    BorrowPCGAction::add_edge(
+                    BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                             self.pcg.borrow.path_conditions.clone(),
@@ -205,7 +212,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
                     tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
                     self.record_and_apply_action(
-                        BorrowPCGAction::label_region_projection(
+                        BorrowPcgAction::label_region_projection(
                             rp.into(),
                             Some(SnapshotLocation::before(self.location).into()),
                             "expand_region_projections_one_level",
@@ -245,8 +252,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .collect::<Vec<_>>();
         for (p, expansion) in expansions {
             self.record_and_apply_action(
-                RepackOp::Collapse(p, p.expansion_places(&expansion, self.ctxt)[0], capability)
-                    .into(),
+                OwnedPcgAction::new(
+                    RepackOp::Collapse(p, p.expansion_places(&expansion, self.ctxt)[0], capability),
+                    None,
+                )
+                .into(),
             )?;
         }
         Ok(())

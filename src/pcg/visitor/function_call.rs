@@ -1,5 +1,5 @@
 use super::PcgVisitor;
-use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
@@ -82,7 +82,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .into(),
                     path_conditions.clone(),
                 );
-                BorrowPCGAction::add_edge(edge, context, false)
+                BorrowPcgAction::add_edge(edge, context, false)
             };
 
         // The versions of the region projections for the function inputs just
@@ -107,7 +107,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         for arg in arg_region_projections.iter() {
             if arg.is_invariant_in_type(self.ctxt) {
                 self.record_and_apply_action(
-                    BorrowPCGAction::label_region_projection(
+                    BorrowPcgAction::label_region_projection(
                         arg.clone().into(),
                         Some(SnapshotLocation::before(location).into()),
                         format!(

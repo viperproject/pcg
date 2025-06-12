@@ -62,14 +62,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         changed
     }
 
-    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        if self.assigned_ref == place {
-            self.assigned_rp_snapshot = None;
-            true
-        } else {
-            false
-        }
-    }
 }
 
 impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
@@ -118,14 +110,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
         }
     }
 
-    fn remove_rp_label(&mut self, place: MaybeOldPlace<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        if self.assigned_ref == place {
-            self.rp_snapshot_location = None;
-            true
-        } else {
-            false
-        }
-    }
 }
 
 impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {

@@ -1,6 +1,6 @@
 use derive_more::{Deref, DerefMut};
 
-use crate::borrow_pcg::action::BorrowPCGAction;
+use crate::borrow_pcg::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
@@ -14,7 +14,7 @@ use crate::{pcg_validity_assert, validity_checks_enabled, Weaken};
 use super::BorrowPcgActionKind;
 
 #[derive(Clone, Deref, DerefMut, Debug, Default)]
-pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPCGAction<'tcx>>);
+pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPcgAction<'tcx>>);
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGActions<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
@@ -28,7 +28,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGActions<'tcx> {
 
 impl<'tcx> BorrowPCGActions<'tcx> {
     /// Actions applied to the PCG, in the order they occurred.
-    pub fn actions(&self) -> &[BorrowPCGAction<'tcx>] {
+    pub fn actions(&self) -> &[BorrowPcgAction<'tcx>] {
         &self.0
     }
 
@@ -77,11 +77,11 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 
 
-    pub(crate) fn last(&self) -> Option<&BorrowPCGAction<'tcx>> {
+    pub(crate) fn last(&self) -> Option<&BorrowPcgAction<'tcx>> {
         self.0.last()
     }
 
-    pub(crate) fn push(&mut self, action: BorrowPCGAction<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn push(&mut self, action: BorrowPcgAction<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) {
         if validity_checks_enabled()
             && let Some(last) = self.last() {
                 pcg_validity_assert!(last != &action, "Action {:?} to be pushed is the same as the last pushed action, this is probably a bug.", action);
