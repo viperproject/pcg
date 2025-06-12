@@ -95,7 +95,10 @@ impl PcgDotGraphsForBlock {
         &mut self,
         statement_index: usize,
     ) -> &mut PcgDotGraphsForIteration {
-        tracing::info!("Registering new iteration for statement {}", statement_index);
+        tracing::debug!(
+            "Registering new iteration for statement {}",
+            statement_index
+        );
         if self.0.len() <= statement_index {
             self.0
                 .resize_with(statement_index + 1, PcgDotGraphsForStmt::default);

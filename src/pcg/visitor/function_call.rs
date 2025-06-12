@@ -71,18 +71,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let path_conditions = self.pcg.borrow.path_conditions.clone();
         let ctxt = self.ctxt;
 
-        let mk_create_edge_action = |input: Vec<FunctionCallAbstractionInput<'tcx>>, output| {
-            let edge = BorrowPcgEdge::new(
-                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                    location,
-                    function_data,
-                    AbstractionBlockEdge::new(input, output, ctxt),
-                ))
-                .into(),
-                path_conditions.clone(),
-            );
-            BorrowPCGAction::add_edge(edge, "make_function_call_abstraction", false)
-        };
+        let mk_create_edge_action =
+            |input: Vec<FunctionCallAbstractionInput<'tcx>>, output, context: &str| {
+                let edge = BorrowPcgEdge::new(
+                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                        location,
+                        function_data,
+                        AbstractionBlockEdge::new(input, output, ctxt),
+                    ))
+                    .into(),
+                    path_conditions.clone(),
+                );
+                BorrowPCGAction::add_edge(edge, context, false)
+            };
 
         // The versions of the region projections for the function inputs just
         // before they were moved out, labelled with their last modification
@@ -109,7 +110,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     BorrowPCGAction::label_region_projection(
                         arg.clone().into(),
                         Some(SnapshotLocation::before(location).into()),
-                        "make_function_call_abstraction",
+                        format!(
+                            "Function call: {} is invariant in type {:?}; therefore it will be labelled as the set of borrows inside may be modified",
+                            arg.to_short_string(self.ctxt),
+                            arg.base.ty(self.ctxt).ty,
+                        ),
                     )
                     .into(),
                 )?;
@@ -155,9 +160,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .copied()
                 .filter(|rp| self.ctxt.bc.same_region(*this_region, rp.region(self.ctxt)))
                 .map(|rp| {
-                    self.maybe_futurize(rp.into()).try_into().unwrap()
-                    // rp.label = Some(RegionProjectionLabel::Placeholder);
-                    // rp
+                    // self.maybe_futurize(rp.into()).try_into().unwrap()
+                    rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
+                        .into()
                 })
                 .collect::<Vec<_>>();
             let result_projections: Vec<RegionProjection<MaybeOldPlace<'tcx>>> = destination
@@ -168,29 +173,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .collect();
             outputs.extend(result_projections);
             if !inputs.is_empty() && !outputs.is_empty() {
-                self.record_and_apply_action(mk_create_edge_action(inputs, outputs).into())?;
+                self.record_and_apply_action(
+                    mk_create_edge_action(
+                        inputs,
+                        outputs,
+                        "Function call: edges for nested borrows",
+                    )
+                    .into(),
+                )?;
             }
         }
         self.pcg
             .render_debug_graph(self.ctxt, location, "final borrow_graph");
         Ok(())
-    }
-
-    fn maybe_futurize(
-        &self,
-        rp: LocalRegionProjection<'tcx>,
-    ) -> RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>> {
-        let base_place = rp.base().place();
-        if self
-            .pcg
-            .capabilities
-            .has_capability_to_any_prefix(base_place, self.ctxt)
-        {
-            rp.with_label(None, self.ctxt).into()
-        } else {
-            rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
-                .into()
-        }
     }
 }
 

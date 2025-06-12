@@ -402,15 +402,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         false
                     }
                 }) {
-                    leaf_nodes_to_label.insert(leaf_node.into());
+                    let mut edge_leaf_node = leaf_node
+                        .to_pcg_node(self.ctxt)
+                        .try_into_region_projection()
+                        .unwrap();
+                    if !edge_leaf_node.is_placeholder() {
+                        leaf_nodes_to_label.insert(leaf_node.into());
+                        edge_leaf_node = edge_leaf_node.with_label(Some(label), self.ctxt);
+                    }
                     to_add_actions.push(BorrowPCGAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
-                                leaf_node
-                                    .to_pcg_node(self.ctxt)
-                                    .try_into_region_projection()
-                                    .unwrap()
-                                    .with_label(Some(label), self.ctxt),
+                                edge_leaf_node.into(),
                                 place_rp.into(),
                                 BorrowFlowEdgeKind::UpdateNestedRefs,
                                 self.ctxt,
