@@ -9,12 +9,16 @@ use std::{alloc::Allocator, rc::Rc};
 use derive_more::Deref;
 
 use crate::{
-    action::PcgActions, borrow_checker::BorrowCheckerInterface, borrow_pcg::{
-        action::BorrowPcgActionKind,
+    action::PcgActions,
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::{
+        action::{BorrowPCGAction, BorrowPcgActionKind},
         borrow_pcg_edge::{BorrowPCGEdgeRef, BorrowPcgEdge},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
-    }, pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor}, rustc_interface::{
+    },
+    pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
+    rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,
         index::IndexVec,
@@ -23,9 +27,10 @@ use crate::{
             ty::TyCtxt,
         },
         mir_dataflow::ResultsCursor,
-    }, utils::{
+    },
+    utils::{
         display::DebugLines, domain_data::DomainDataStates, validity::HasValidityCheck, Place,
-    }
+    },
 };
 
 use crate::borrow_pcg::action::actions::BorrowPCGActions;
@@ -140,14 +145,14 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                 for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
-                            BorrowPcgActionKind::AddEdge {
-                                edge: BorrowPcgEdge::new(
+                            BorrowPCGAction::add_edge(
+                                BorrowPcgEdge::new(
                                     abstraction.value.clone().into(),
                                     abstraction.conditions,
                                 ),
-                                for_read: false,
-                            }
-                            .into(),
+                                "terminator",
+                                false,
+                            ),
                             ctxt,
                         );
                     }

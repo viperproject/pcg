@@ -76,10 +76,14 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         &self.kind
     }
 
-    pub(crate) fn restore_capability(place: Place<'tcx>, capability: CapabilityKind) -> Self {
+    pub(crate) fn restore_capability(
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+        debug_context: impl Into<String>,
+    ) -> Self {
         BorrowPCGAction {
             kind: BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability)),
-            debug_context: None,
+            debug_context: Some(debug_context.into()),
         }
     }
 
@@ -149,15 +153,6 @@ impl<'tcx> BorrowPCGAction<'tcx> {
     pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
         BorrowPCGAction {
             kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
-            debug_context: None,
-        }
-    }
-}
-
-impl<'tcx> From<BorrowPcgActionKind<'tcx>> for BorrowPCGAction<'tcx> {
-    fn from(kind: BorrowPcgActionKind<'tcx>) -> Self {
-        BorrowPCGAction {
-            kind,
             debug_context: None,
         }
     }

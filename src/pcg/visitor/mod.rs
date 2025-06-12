@@ -279,6 +279,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,
+                        "restore_capabilities_for_removed_edge",
                         self.ctxt,
                     ))?;
                 }
@@ -490,7 +491,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         }
-        // self.remove_rp_labels_from_leaf_edges();
         Ok(())
     }
 
@@ -615,6 +615,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let upgrade_action = BorrowPCGAction::restore_capability(
                     borrow.deref_place(self.ctxt).place().into(),
                     CapabilityKind::Exclusive,
+                    "perform_borrow_initial_pre_operand_actions",
                 );
                 self.record_and_apply_action(upgrade_action.into())?;
             }

@@ -46,6 +46,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     BorrowPCGAction::restore_capability(
                                         target.into(),
                                         CapabilityKind::Exclusive,
+                                        "Assign: restore capability to exclusive",
                                     )
                                     .into(),
                                 )?;

@@ -6,9 +6,7 @@ use crate::{
         unblock_graph::BorrowPCGUnblockAction,
     },
     free_pcs::{CapabilityKind, RepackOp},
-    utils::{
-        json::ToJsonWithCompilerCtxt, CompilerCtxt, Place,
-    },
+    utils::{json::ToJsonWithCompilerCtxt, CompilerCtxt, Place},
     RestoreCapability,
 };
 
@@ -89,15 +87,13 @@ impl<'tcx> PcgAction<'tcx> {
     pub(crate) fn restore_capability(
         place: Place<'tcx>,
         capability: CapabilityKind,
+        debug_context: impl Into<String>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         if place.is_owned(ctxt) {
             PcgAction::Owned(RepackOp::RegainLoanedCapability(place, capability))
         } else {
-            PcgAction::Borrow(
-                BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability))
-                    .into(),
-            )
+            BorrowPCGAction::restore_capability(place, capability, debug_context).into()
         }
     }
 
@@ -110,10 +106,10 @@ impl<'tcx> PcgAction<'tcx> {
 }
 
 impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgAction<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         match self {
-            PcgAction::Borrow(action) => action.to_json(repacker),
-            PcgAction::Owned(action) => action.to_json(),
+            PcgAction::Borrow(action) => action.to_json(ctxt),
+            PcgAction::Owned(action) => action.to_json(ctxt),
         }
     }
 }

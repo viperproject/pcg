@@ -19,7 +19,12 @@ use super::{PcgError, PcgVisitor};
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            BorrowPCGAction::restore_capability(place.into(), CapabilityKind::Exclusive).into(),
+            BorrowPCGAction::restore_capability(
+                place.into(),
+                CapabilityKind::Exclusive,
+                "upgrade_read_to_exclusive",
+            )
+            .into(),
         )?;
         self.remove_read_permission_upwards(place)?;
         Ok(())

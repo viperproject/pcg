@@ -11,7 +11,7 @@ use rustc_interface::middle::mir::Local;
 use crate::{
     free_pcs::CapabilityKind,
     pcg_validity_assert, rustc_interface,
-    utils::{Place, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,32 +68,22 @@ pub enum RepackOp<'tcx> {
     RegainLoanedCapability(Place<'tcx>, CapabilityKind),
 }
 
-impl Display for RepackOp<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+impl<'tcx> RepackOp<'tcx> {
+    pub(crate) fn debug_line(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         match self {
-            RepackOp::StorageDead(place) => write!(f, "StorageDead({place:?})"),
-            RepackOp::IgnoreStorageDead(_) => write!(f, "IgnoreSD"),
-            RepackOp::Weaken(place, _, to) => {
-                write!(f, "Weaken({place:?}, {to:?})")
-            }
-            RepackOp::Collapse(to, _, kind) => write!(f, "CollapseTo({to:?}, {kind:?})"),
-            RepackOp::Expand(from, _, kind) => write!(f, "Expand({from:?}, {kind:?})"),
-            RepackOp::DerefShallowInit(from, _) => write!(f, "DerefShallowInit({from:?})"),
             RepackOp::RegainLoanedCapability(place, capability_kind) => {
-                write!(f, "RegainLoanedCapability({place:?}, {capability_kind:?})")
+                format!(
+                    "Restore capability {:?} to {}",
+                    capability_kind,
+                    place.to_short_string(ctxt),
+                )
             }
+            _ => format!("{self:?}"),
         }
     }
-}
 
-impl<'tcx> RepackOp<'tcx> {
-
-    pub(crate) fn debug_line(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!("{self:?}")
-    }
-
-    pub(crate) fn to_json(self) -> serde_json::Value {
-        serde_json::Value::String(format!("{self:?}"))
+    pub(crate) fn to_json(self, ctxt: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+        serde_json::Value::String(self.debug_line(ctxt))
     }
 
     pub(crate) fn expand(
