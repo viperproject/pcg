@@ -24,16 +24,6 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
-    pub(crate) fn has_capability_to_any_prefix(
-        &self,
-        place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        place
-            .iter_places(ctxt)
-            .iter()
-            .any(|p| self.get(*p).is_some())
-    }
 
     pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
         self.get(place.into())

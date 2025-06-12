@@ -4,8 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::fmt::{Display, Formatter, Result};
-
 use rustc_interface::middle::mir::Local;
 
 use crate::{
@@ -84,10 +82,6 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RepackOp<'tcx> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
-    pub(crate) fn to_json(self, ctxt: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        serde_json::Value::String(self.to_short_string(ctxt))
-    }
-
     pub(crate) fn expand(
         from: Place<'tcx>,
         to: Place<'tcx>,

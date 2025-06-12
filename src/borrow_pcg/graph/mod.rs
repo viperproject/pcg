@@ -189,6 +189,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn into_edges(self) -> impl Iterator<Item = BorrowPcgEdge<'tcx>> {
         self.edges
             .into_iter()

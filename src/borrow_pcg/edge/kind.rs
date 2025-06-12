@@ -23,6 +23,7 @@ impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPcgEdgeKind<'tcx> {
 }
 
 impl<'tcx> BorrowPcgEdgeKind<'tcx> {
+    #[allow(unused)]
     pub(crate) fn could_mutate(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             BorrowPcgEdgeKind::Borrow(borrow) => borrow.is_mut(repacker),

@@ -17,6 +17,7 @@ impl<Current: Copy, Connect: Copy> ExploreFrom<Current, Connect> {
         self.current
     }
 
+    #[allow(unused)]
     pub(crate) fn extend(&self, node: Current) -> Self {
         Self {
             current: node,

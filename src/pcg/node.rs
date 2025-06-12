@@ -25,6 +25,7 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 
 impl<'tcx> PCGNode<'tcx> {
     // TODO: Make this more precise
+    #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             PCGNode::Place(p) => p.is_mutable(ctxt),

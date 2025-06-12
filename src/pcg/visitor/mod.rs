@@ -4,8 +4,6 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};

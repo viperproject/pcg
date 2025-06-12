@@ -1,4 +1,3 @@
-use serde_json::Map;
 use tracing::instrument;
 
 use super::borrow_pcg_edge::BorrowPcgEdge;
@@ -14,7 +13,6 @@ use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};

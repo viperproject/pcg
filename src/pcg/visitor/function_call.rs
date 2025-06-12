@@ -1,19 +1,14 @@
 use super::PcgVisitor;
 use crate::action::BorrowPcgAction;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
-use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::region_projection::{
-    LocalRegionProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionProjection,
+    PcgRegion, RegionProjection,
     RegionProjectionBaseLike, RegionProjectionLabel,
 };
-use crate::borrow_pcg::util::ExploreFrom;
-use crate::pcg::{LocalNodeLike, PCGNode, PCGNodeLike, PCGUnsupportedError};
-use crate::pcg_validity_assert;
+use crate::pcg::PCGUnsupportedError;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -21,7 +16,7 @@ use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{self, CompilerCtxt, HasPlace, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{self, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 
 fn get_function_data<'tcx>(
     func: &Operand<'tcx>,
