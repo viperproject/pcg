@@ -9,6 +9,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
+use crate::pcg::PCGNodeLike;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::ShallowExpansion;
@@ -201,7 +202,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.record_and_apply_action(
                     BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
-                            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
+                            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion.clone()),
                             self.pcg.borrow.path_conditions.clone(),
                         ),
                         "expand_region_projections_one_level",
@@ -211,14 +212,26 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?;
                 if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
                     tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
+                    let label = SnapshotLocation::before(self.location).into();
                     self.record_and_apply_action(
                         BorrowPcgAction::label_region_projection(
                             rp.into(),
-                            Some(SnapshotLocation::before(self.location).into()),
+                            Some(label),
                             "expand_region_projections_one_level",
                         )
                         .into(),
                     )?;
+                    let old_rp_base = rp.with_label(Some(label), self.ctxt);
+                    let expansion_rps = expansion
+                        .expansion()
+                        .iter()
+                        .map(|node| {
+                            node.to_pcg_node(self.ctxt)
+                                .try_into_region_projection()
+                                .unwrap()
+                        })
+                        .collect::<Vec<_>>();
+                    self.add_and_update_placeholder_edges(old_rp_base, &expansion_rps)?;
                 }
             }
         }

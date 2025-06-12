@@ -432,6 +432,14 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
 }
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     #[must_use]
+    pub(crate) fn with_placeholder_label(
+        self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> RegionProjection<'tcx, T> {
+        self.with_label(Some(RegionProjectionLabel::Placeholder), ctxt)
+    }
+
+    #[must_use]
     pub(crate) fn with_label(
         self,
         label: Option<RegionProjectionLabel>,

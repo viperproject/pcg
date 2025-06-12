@@ -163,6 +163,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             source_proj
                         };
                     let source_region = source_proj.region(self.ctxt);
+                    let mut nested_ref_mut_targets = vec![];
                     for target_proj in target.region_projections(self.ctxt).into_iter() {
                         let target_region = target_proj.region(self.ctxt);
                         if self.ctxt.bc.outlives(source_region, target_region) {
@@ -185,8 +186,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 )
                                 .into(),
                             )?;
+                            if regions_equal {
+                                nested_ref_mut_targets.push(target_proj.into());
+                            }
                         }
                     }
+                    self.add_and_update_placeholder_edges(source_proj.into(), &nested_ref_mut_targets)?;
                 }
             }
             _ => {}

@@ -6,8 +6,8 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace};
+use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -56,6 +56,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+
     fn introduce_initial_borrows(
         &mut self,
         local: mir::Local,

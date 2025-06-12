@@ -26,6 +26,7 @@ mod assign;
 mod function_call;
 mod obtain;
 mod pack;
+mod placeholder_bookkeeping;
 mod stmt;
 mod triple;
 
@@ -231,7 +232,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(self.actions)
     }
 
-    fn update_latest_for_blocked_places(
+    fn update_latest_for_unblocked_places(
         &mut self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
         context: &str,
@@ -467,7 +468,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         edge: impl BorrowPcgEdgeLike<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        self.update_latest_for_blocked_places(&edge, context)?;
+        self.update_latest_for_unblocked_places(&edge, context)?;
 
         self.record_and_apply_action(
             BorrowPcgAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
@@ -480,20 +481,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.unlabel_blocked_region_projections(expansion)?;
             }
             self.redirect_blocked_nodes_to_base(expansion)?;
-        }
-        if matches!(
-            edge.kind(),
-            BorrowPcgEdgeKind::BorrowPcgExpansion(_) | BorrowPcgEdgeKind::Borrow(_)
-        ) {
-            for blocked_node in edge.blocked_nodes(self.ctxt) {
-                if let Some(local_node) = blocked_node.try_to_local_node(self.ctxt) {
-                    match local_node {
-                        PCGNode::RegionProjection(rp) => {
-                            self.reconnect_current_rps(rp.base.place(), context)?;
-                        }
-                        PCGNode::Place(place) => {
-                            self.reconnect_current_rps(place.place(), context)?;
-                        }
+            for exp_node in expansion.expansion() {
+                if let PCGNode::Place(place) = exp_node {
+                    for rp in place.region_projections(self.ctxt) {
+                        self.record_and_apply_action(
+                            BorrowPcgAction::label_region_projection(
+                                rp.into(),
+                                Some(RegionProjectionLabel::Location(SnapshotLocation::before(
+                                    self.location,
+                                ))),
+                                context,
+                            )
+                            .into(),
+                        )?;
                     }
                 }
             }
