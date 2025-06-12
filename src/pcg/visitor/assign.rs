@@ -186,12 +186,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 )
                                 .into(),
                             )?;
-                            if regions_equal {
+                            if regions_equal && kind.mutability().is_mut() {
                                 nested_ref_mut_targets.push(target_proj.into());
                             }
                         }
                     }
-                    self.add_and_update_placeholder_edges(source_proj.into(), &nested_ref_mut_targets)?;
+                    self.add_and_update_placeholder_edges(
+                        source_proj.into(),
+                        &nested_ref_mut_targets,
+                        "assign",
+                    )?;
                 }
             }
             _ => {}

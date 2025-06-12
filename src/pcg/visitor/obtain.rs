@@ -210,7 +210,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     )
                     .into(),
                 )?;
-                if rp.can_be_labelled(self.ctxt) && obtain_type.should_label_rp() {
+                if rp.base.is_current()
+                    && rp.can_be_labelled(self.ctxt)
+                    && obtain_type.should_label_rp()
+                {
                     tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
                     let label = SnapshotLocation::before(self.location).into();
                     self.record_and_apply_action(
@@ -231,7 +234,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 .unwrap()
                         })
                         .collect::<Vec<_>>();
-                    self.add_and_update_placeholder_edges(old_rp_base, &expansion_rps)?;
+                    self.add_and_update_placeholder_edges(old_rp_base, &expansion_rps, "obtain")?;
                 }
             }
         }
