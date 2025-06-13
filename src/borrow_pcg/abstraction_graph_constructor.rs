@@ -138,8 +138,7 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
     pub(crate) fn merge(
         &mut self,
         other: &Self,
-        #[allow(unused)]
-        loop_usage: &LoopUsage<'tcx, '_>,
+        #[allow(unused)] loop_usage: &LoopUsage<'tcx, '_>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         self.inner.join(&other.inner);
@@ -419,7 +418,9 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
 fn without_old<'tcx>(
     coupled: &Coupled<AbstractionGraphNode<'tcx>>,
 ) -> Coupled<AbstractionGraphNode<'tcx>> {
-    let mut filtered = coupled.clone();
-    filtered.retain(|n| !n.is_old());
-    filtered
+    // TODO: What if all nodes are old?
+    coupled
+        .clone()
+        .retain(|n| !n.is_old())
+        .unwrap_or_else(|| coupled.clone())
 }

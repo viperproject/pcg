@@ -19,9 +19,13 @@ use crate::{
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<T: Copy + Eq> Coupled<T> {
-    pub(crate) fn retain(&mut self, f: impl Fn(&T) -> bool) {
+    pub(crate) fn retain(mut self, f: impl Fn(&T) -> bool) -> Option<Self> {
         self.0.retain(|x| f(x));
-        pcg_validity_assert!(!self.0.is_empty())
+        if self.0.is_empty() {
+            None
+        } else {
+            Some(self)
+        }
     }
 
     pub(crate) fn all_elements_distinct(&self) -> bool {
@@ -79,7 +83,9 @@ impl<'tcx, T: HasValidityCheck<'tcx> + Copy + Eq> HasValidityCheck<'tcx> for Cou
     }
 }
 
-impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> DisplayWithCompilerCtxt<'tcx, BC> for Coupled<T> {
+impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> DisplayWithCompilerCtxt<'tcx, BC>
+    for Coupled<T>
+{
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!(
             "{{{}}}",

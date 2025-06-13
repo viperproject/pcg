@@ -108,7 +108,7 @@ pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBo
         let body: BodyWithBorrowckFacts<'static> = std::mem::transmute(body);
         BODIES.with(|state| {
             let mut map = state.borrow_mut();
-            tracing::info!(
+            tracing::debug!(
                 "Inserting body for {}",
                 tcx.def_path_str(def_id.to_def_id())
             );

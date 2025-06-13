@@ -444,7 +444,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         } else {
                             self.pcg.capabilities.get((*from).into()).unwrap()
                         };
-                        tracing::info!("source_cap for {:?}: {:?}", owned_action, source_cap);
+                        tracing::debug!("source_cap for {:?}: {:?}", owned_action, source_cap);
                         for target_place in target_places {
                             self.pcg
                                 .capabilities
