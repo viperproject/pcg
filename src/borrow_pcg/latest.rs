@@ -23,13 +23,13 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Latest<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for Latest<'tcx> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!(self
             .0
             .iter()
             .map(|(p, l)| {
-                let ty = p.ty(repacker).ty;
+                let ty = p.ty(ctxt).ty;
                 let ty_str = if let ty::TyKind::Ref(region, ty, mutbl) = ty.kind() {
                     format!(
                         "&{}{} {}",
@@ -41,7 +41,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
                     format!("{ty}")
                 };
                 (
-                    format!("{}: {}", p.to_short_string(repacker), ty_str),
+                    format!("{}: {}", p.to_short_string(ctxt), ty_str),
                     format!("{l:?}"),
                 )
             })
@@ -82,7 +82,8 @@ impl<'tcx> Latest<'tcx> {
     }
 
     pub fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation {
-        self.get_opt(place, ctxt).unwrap_or(SnapshotLocation::start())
+        self.get_opt(place, ctxt)
+            .unwrap_or(SnapshotLocation::start())
     }
 
     pub(super) fn insert(&mut self, place: Place<'tcx>, location: SnapshotLocation) -> bool {

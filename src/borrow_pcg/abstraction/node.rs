@@ -1,6 +1,7 @@
 use derive_more::{Deref, DerefMut};
 
 use crate::{
+    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         has_pcs_elem::HasPcgElems,
         region_projection::{RegionProjection, RegionProjectionLabel},
@@ -8,7 +9,8 @@ use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt, Place, SnapshotLocation
+        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt, Place,
+        SnapshotLocation,
     },
 };
 
@@ -18,6 +20,7 @@ pub(crate) struct AbstractionGraphNode<'tcx>(
 );
 
 impl<'tcx> AbstractionGraphNode<'tcx> {
+    #[allow(unused)]
     pub(crate) fn related_current_place(&self) -> Option<Place<'tcx>> {
         match self.0 {
             PCGNode::Place(p) => p.as_current_place(),
@@ -32,7 +35,7 @@ impl<'tcx> AbstractionGraphNode<'tcx> {
     }
 
     pub(crate) fn to_pcg_node(
-        &self,
+        self,
     ) -> PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>> {
         self.0
     }
@@ -86,8 +89,13 @@ where
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionGraphNode<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for AbstractionGraphNode<'tcx>
+{
+    fn to_short_string(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         self.0.to_short_string(repacker)
     }
 }

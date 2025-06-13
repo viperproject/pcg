@@ -160,7 +160,7 @@ impl<'tcx> Pcg<'tcx> {
             if validity_checks_warn_only() {
                 tracing::error!("Validity check failed: {}", err.to_string());
             } else {
-                panic!("Validity check failed: {}", err.to_string());
+                panic!("Validity check failed: {}", err);
             }
         }
     }
@@ -264,13 +264,13 @@ pub struct PcgDomainData<'tcx, A: Allocator> {
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
-impl<'tcx, A: Allocator> PartialEq for PcgDomainData<'tcx, A> {
+impl<A: Allocator> PartialEq for PcgDomainData<'_, A> {
     fn eq(&self, other: &Self) -> bool {
         self.pcg == other.pcg
     }
 }
 
-impl<'tcx, A: Allocator + Clone> PcgDomainData<'tcx, A> {
+impl<A: Allocator + Clone> PcgDomainData<'_, A> {
     pub(crate) fn new(arena: A) -> Self {
         let pcg = ArenaRef::new_in(Pcg::default(), arena);
         Self {
@@ -289,7 +289,7 @@ pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     pub(crate) reachable: bool,
 }
 
-impl<'a, 'tcx, A: Allocator + Debug> Debug for PcgDomain<'a, 'tcx, A> {
+impl<A: Allocator + Debug> Debug for PcgDomain<'_, '_, A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.data)
     }
@@ -475,15 +475,15 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
     }
 }
 
-impl<'a, 'tcx, A: Allocator + Clone> Eq for PcgDomain<'a, 'tcx, A> {}
+impl<A: Allocator + Clone> Eq for PcgDomain<'_, '_, A> {}
 
-impl<'a, 'tcx, A: Allocator + Clone> PartialEq for PcgDomain<'a, 'tcx, A> {
+impl<A: Allocator + Clone> PartialEq for PcgDomain<'_, '_, A> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a, 'tcx, A: Allocator + Clone> JoinSemiLattice for PcgDomain<'a, 'tcx, A> {
+impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;

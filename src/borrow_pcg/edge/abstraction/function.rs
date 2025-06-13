@@ -1,4 +1,5 @@
 use crate::{
+    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::{BlockedNode, LocalNode},
         domain::{AbstractionOutputTarget, FunctionCallAbstractionInput},
@@ -9,7 +10,10 @@ use crate::{
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
     pcg::PCGNode,
-    rustc_interface::{hir::def_id::DefId, middle::mir::Location, middle::ty::GenericArgsRef},
+    rustc_interface::{
+        hir::def_id::DefId,
+        middle::{mir::Location, ty::GenericArgsRef},
+    },
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
         CompilerCtxt,
@@ -84,19 +88,19 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
         self.edge.blocks_node(node, repacker)
     }
 
-    fn blocked_nodes<'slf>(
+    fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
-        self.edge.blocked_nodes(repacker)
+        self.edge.blocked_nodes(ctxt)
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -111,8 +115,13 @@ impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for FunctionCallAbstraction<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         format!(
             "call{} at {:?}: {}",
             if let Some(function_data) = &self.function_data {

@@ -40,7 +40,7 @@ where
 
     #[rustversion::before(2025-05-24)]
     pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
-        &self.results.entry_set_for_block(block)
+        self.results.entry_set_for_block(block)
     }
 
     #[rustversion::before(2025-05-24)]

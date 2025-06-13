@@ -66,8 +66,8 @@ pub enum RepackOp<'tcx> {
     RegainLoanedCapability(Place<'tcx>, CapabilityKind),
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RepackOp<'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RepackOp<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         match self {
             RepackOp::RegainLoanedCapability(place, capability_kind) => {
                 format!(

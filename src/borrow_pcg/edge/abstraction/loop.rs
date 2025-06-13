@@ -1,4 +1,5 @@
 use super::AbstractionBlockEdge;
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, LocalNode, ToBorrowsEdge};
 use crate::borrow_pcg::domain::AbstractionOutputTarget;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
@@ -9,9 +10,9 @@ use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::pcg::PCGNode;
+use crate::rustc_interface::middle::mir::{BasicBlock, Location};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::rustc_interface::middle::mir::{BasicBlock, Location};
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 
@@ -48,9 +49,9 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.edge.blocks_node(node, repacker)
     }
-    fn blocked_nodes<'slf>(
+    fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -58,9 +59,9 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
         self.edge.blocked_nodes(repacker)
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -94,12 +95,17 @@ impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LoopAbstraction<'tcx> {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for LoopAbstraction<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         format!(
             "Loop({:?}): {}",
             self.block,
-            self.edge.to_short_string(_repacker)
+            self.edge.to_short_string(ctxt)
         )
     }
 }

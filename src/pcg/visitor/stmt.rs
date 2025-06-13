@@ -39,12 +39,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             // The permission to the target may have been Read originally.
                             // Now, because it's been made old, the non-old place should be a leaf,
                             // and its permission should be Exclusive.
-                            if self.pcg.capabilities.get(target.into())
+                            if self.pcg.capabilities.get(target)
                                 == Some(CapabilityKind::Read)
                             {
                                 self.record_and_apply_action(
                                     BorrowPcgAction::restore_capability(
-                                        target.into(),
+                                        target,
                                         CapabilityKind::Exclusive,
                                         "Assign: restore capability to exclusive",
                                     )
@@ -54,7 +54,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         }
 
                         if !target.is_owned(self.ctxt) {
-                            if let Some(target_cap) = self.pcg.capabilities.get(target.into()) {
+                            if let Some(target_cap) = self.pcg.capabilities.get(target) {
                                 if target_cap != CapabilityKind::Write {
                                     // TODO
                                     // pcg_validity_assert!(

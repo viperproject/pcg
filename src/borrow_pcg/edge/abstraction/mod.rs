@@ -3,6 +3,7 @@ pub(crate) mod r#loop;
 pub(crate) mod r#type;
 
 use crate::{
+    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::BlockedNode,
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
@@ -89,7 +90,12 @@ impl<'tcx, T: LabelPlace<'tcx>> LabelEdgePlaces<'tcx> for AbstractionBlockEdge<'
     }
 }
 
-impl<'tcx, Input: PCGNodeLike<'tcx>> AbstractionBlockEdge<'tcx, Input> {
+impl<
+        'tcx: 'a,
+        'a,
+        Input: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > AbstractionBlockEdge<'tcx, Input>
+{
     pub(crate) fn redirect(
         &mut self,
         from: AbstractionOutputTarget<'tcx>,
@@ -120,8 +126,13 @@ impl<'tcx, Input: PCGNodeLike<'tcx>> AbstractionBlockEdge<'tcx, Input> {
     }
 }
 
-impl<'tcx, Input: LabelRegionProjection<'tcx> + PCGNodeLike<'tcx>> LabelRegionProjection<'tcx>
-    for AbstractionBlockEdge<'tcx, Input>
+impl<
+        'tcx: 'a,
+        'a,
+        Input: LabelRegionProjection<'tcx>
+            + PCGNodeLike<'tcx>
+            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx, Input>
 {
     fn label_region_projection(
         &mut self,
@@ -167,7 +178,6 @@ impl<'tcx, Input: LabelRegionProjection<'tcx> + PCGNodeLike<'tcx>> LabelRegionPr
         self.assert_validity(ctxt);
         changed
     }
-
 }
 
 trait AbstractionInputLike<'tcx>: Sized + Clone {
@@ -227,21 +237,11 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
 impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBlockEdge<'tcx, Input> {
     fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         Input::inputs_block(&self.inputs, node, ctxt)
-        // match node {
-        //     PCGNode::Place(p) => self.inputs.contains(&p.into()),
-        //     PCGNode::RegionProjection(region_projection) => match region_projection.base {
-        //         MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => self.inputs.contains(
-        //             &region_projection
-        //                 .with_base(maybe_remote_place, repacker)
-        //                 .into(),
-        //         ),
-        //         MaybeRemoteRegionProjectionBase::Const(_) => false,
-        //     },
-        // }
     }
-    fn blocked_nodes<'slf>(
+
+    fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -253,9 +253,9 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBloc
         )
     }
 
-    fn blocked_by_nodes<'slf, 'mir>(
+    fn blocked_by_nodes<'slf, 'mir, BC: Copy + 'slf>(
         &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -269,26 +269,35 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBloc
     }
 }
 
-impl<'tcx, Input: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx>
+impl<'tcx, 'a, Input: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>>
+    DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for AbstractionBlockEdge<'tcx, Input>
 {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         format!(
             "[{}] -> [{}]",
             self.inputs
                 .iter()
-                .map(|i| i.to_short_string(repacker))
+                .map(|i| i.to_short_string(ctxt))
                 .join(", "),
             self.outputs
                 .iter()
-                .map(|o| o.to_short_string(repacker))
+                .map(|o| o.to_short_string(ctxt))
                 .join(", ")
         )
     }
 }
 
-impl<'tcx, Input: HasValidityCheck<'tcx> + PCGNodeLike<'tcx>> HasValidityCheck<'tcx>
-    for AbstractionBlockEdge<'tcx, Input>
+impl<
+        'tcx: 'a,
+        'a,
+        Input: HasValidityCheck<'tcx>
+            + PCGNodeLike<'tcx>
+            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx, Input>
 {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         for input in self.inputs.iter() {
@@ -301,8 +310,8 @@ impl<'tcx, Input: HasValidityCheck<'tcx> + PCGNodeLike<'tcx>> HasValidityCheck<'
             for output in self.outputs.iter() {
                 if input.to_pcg_node(ctxt) == output.effective().to_pcg_node(ctxt) {
                     return Err(format!(
-                        "Input {} and output {:?} are the same node",
-                        input.to_short_string(ctxt),
+                        "Input {:?} and output {:?} are the same node",
+                        input,
                         output,
                     ));
                 }
@@ -312,8 +321,14 @@ impl<'tcx, Input: HasValidityCheck<'tcx> + PCGNodeLike<'tcx>> HasValidityCheck<'
     }
 }
 
-
-impl<'tcx, Input: Clone + PCGNodeLike<'tcx>> AbstractionBlockEdge<'tcx, Input> {
+impl<
+        'tcx: 'a,
+        'a,
+        Input: Clone
+            + PCGNodeLike<'tcx>
+            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > AbstractionBlockEdge<'tcx, Input>
+{
     pub(crate) fn new(
         inputs: Vec<Input>,
         outputs: Vec<AbstractionOutputTarget<'tcx>>,

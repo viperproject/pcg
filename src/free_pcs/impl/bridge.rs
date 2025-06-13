@@ -110,7 +110,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                         repacks.extend(from.expand(
                             place,
                             CorrectedPlace::new(expand_to, repacker),
-                            self_place_capabilities.get(place.into()).unwrap(),
+                            self_place_capabilities.get(place).unwrap(),
                             &mut self_place_capabilities,
                             repacker,
                         )?);
@@ -135,7 +135,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 repacks.extend(from.expand(
                     *place,
                     CorrectedPlace::new(place.expansion_places(expansion, repacker)[0], repacker),
-                    self_place_capabilities.get((*place).into()).unwrap(),
+                    self_place_capabilities.get(*place).unwrap(),
                     &mut self_place_capabilities,
                     repacker,
                 )?);

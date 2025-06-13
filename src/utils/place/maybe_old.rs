@@ -28,7 +28,9 @@ pub enum MaybeOldPlace<'tcx> {
 
 impl<'tcx> MaybeOldPlace<'tcx> {
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.place().is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt).is_ok()
+        self.place()
+            .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt)
+            .is_ok()
     }
 }
 
@@ -91,8 +93,8 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         match self {
             MaybeOldPlace::Current { place } => place.to_json(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.to_json(repacker),
@@ -192,8 +194,8 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let p = self.place().to_short_string(repacker);
         format!(
             "{}{}",
@@ -307,7 +309,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         matches!(self, MaybeOldPlace::Current { .. })
     }
 
-    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    pub fn to_json<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place().to_json(repacker),
             "at": self.location().map(|loc| format!("{loc:?}")),

@@ -80,7 +80,6 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
         self.collapse_if_equal();
         changed
     }
-
 }
 
 impl<E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {
@@ -93,8 +92,10 @@ impl<E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {
     }
 }
 
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for MaybeRedirected<T> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> DisplayWithCompilerCtxt<'tcx, BC>
+    for MaybeRedirected<T>
+{
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         if let Some(r) = &self.redirected {
             r.to_short_string(ctxt).to_string()
         } else {

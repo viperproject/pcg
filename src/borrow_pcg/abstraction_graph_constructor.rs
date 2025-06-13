@@ -138,6 +138,7 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
     pub(crate) fn merge(
         &mut self,
         other: &Self,
+        #[allow(unused)]
         loop_usage: &LoopUsage<'tcx, '_>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
@@ -216,14 +217,14 @@ struct DebugRecursiveCallHistory<T> {
 }
 
 #[cfg(debug_assertions)]
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DebugRecursiveCallHistory<T> {
+impl<'tcx, T> DebugRecursiveCallHistory<T> {
     fn new() -> Self {
         Self { history: vec![] }
     }
 
-    fn add(&mut self, action: T, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String>
+    fn add<BC: Copy>(&mut self, action: T, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> Result<(), String>
     where
-        T: std::cmp::Eq + std::fmt::Display,
+        T: std::cmp::Eq + std::fmt::Display + DisplayWithCompilerCtxt<'tcx, BC>,
     {
         if self.history.contains(&action) {
             return Err(format!(
@@ -266,8 +267,13 @@ struct AddEdgeHistory<'a, 'tcx> {
     upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AddEdgeHistory<'_, 'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for AddEdgeHistory<'_, 'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         format!(
             "bottom: {{{}}}, upper: {{{}}}",
             self.bottom_connect.to_short_string(ctxt),
@@ -358,7 +364,7 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
             } else {
                 self.graph.add_edge(
                     &without_old(&coupled),
-                    &without_old(&bottom_connect),
+                    &without_old(bottom_connect),
                     weight.clone(),
                     self.ctxt,
                 );

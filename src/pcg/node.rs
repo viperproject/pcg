@@ -1,3 +1,4 @@
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
@@ -29,7 +30,7 @@ impl<'tcx> PCGNode<'tcx> {
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             PCGNode::Place(p) => p.is_mutable(ctxt),
-            PCGNode::RegionProjection(rp) => rp.base().as_local_place().map_or(false, |p| {
+            PCGNode::RegionProjection(rp) => rp.base().as_local_place().is_some_and(|p| {
                 p.ty(ctxt).ty.ref_mutability() != Some(Mutability::Not)
             }),
         }
@@ -73,7 +74,6 @@ impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
             false
         }
     }
-
 }
 
 impl<T, U> From<T> for PCGNode<'_, T, U> {
@@ -122,10 +122,14 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityC
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
-    for PCGNode<'tcx, T, U>
+impl<
+        'tcx,
+        'a,
+        T: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+        U: RegionProjectionBaseLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGNode<'tcx, T, U>
 {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> String {
         match self {
             PCGNode::Place(p) => p.to_short_string(repacker),
             PCGNode::RegionProjection(rp) => rp.to_short_string(repacker),
@@ -133,10 +137,14 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithC
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithCompilerCtxt<'tcx>
-    for PCGNode<'tcx, T, U>
+impl<
+        'tcx,
+        BC: Copy,
+        T: PCGNodeLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
+        U: RegionProjectionBaseLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
+    > ToJsonWithCompilerCtxt<'tcx, BC> for PCGNode<'tcx, T, U>
 {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()
     }
 }
@@ -157,15 +165,7 @@ impl<'tcx, T: MaybeHasLocation, U: RegionProjectionBaseLike<'tcx> + MaybeHasLoca
 }
 
 pub trait PCGNodeLike<'tcx>:
-    Clone
-    + Copy
-    + std::fmt::Debug
-    + Eq
-    + PartialEq
-    + std::hash::Hash
-    + HasValidityCheck<'tcx>
-    + DisplayWithCompilerCtxt<'tcx>
-    + ToJsonWithCompilerCtxt<'tcx>
+    Clone + Copy + std::fmt::Debug + Eq + PartialEq + std::hash::Hash + HasValidityCheck<'tcx>
 {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx>;
 

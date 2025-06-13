@@ -21,7 +21,7 @@ pub struct Coupled<T>(SmallVec<[T; 4]>);
 impl<T: Copy + Eq> Coupled<T> {
     pub(crate) fn retain(&mut self, f: impl Fn(&T) -> bool) {
         self.0.retain(|x| f(x));
-        pcg_validity_assert!(self.0.len() > 0)
+        pcg_validity_assert!(!self.0.is_empty())
     }
 
     pub(crate) fn all_elements_distinct(&self) -> bool {
@@ -32,7 +32,7 @@ impl<T: Copy + Eq> Coupled<T> {
                 }
             }
         }
-        return true;
+        true
     }
 
     pub(crate) fn is_disjoint(&self, other: &Self) -> bool {
@@ -79,13 +79,13 @@ impl<'tcx, T: HasValidityCheck<'tcx> + Copy + Eq> HasValidityCheck<'tcx> for Cou
     }
 }
 
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Coupled<T> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> DisplayWithCompilerCtxt<'tcx, BC> for Coupled<T> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!(
             "{{{}}}",
             self.0
                 .iter()
-                .map(|t| t.to_short_string(repacker))
+                .map(|t| t.to_short_string(ctxt))
                 .collect::<Vec<_>>()
                 .join(", ")
         )

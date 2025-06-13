@@ -14,7 +14,7 @@ use crate::{
 
 use super::PcgVisitor;
 
-impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn add_and_update_placeholder_edges(
         &mut self,
         labelled_rp: LocalRegionProjection<'tcx>,
@@ -34,7 +34,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                 BorrowPcgEdge::new(
                     BorrowFlowEdge::new(
                         labelled_rp.into(),
-                        future_rp.into(),
+                        future_rp,
                         BorrowFlowEdgeKind::UpdateNestedRefs,
                         self.ctxt,
                     )
@@ -52,7 +52,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                     BorrowPcgEdge::new(
                         BorrowFlowEdge::new(
                             *expansion_rp,
-                            future_rp.into(),
+                            future_rp,
                             BorrowFlowEdgeKind::UpdateNestedRefs,
                             self.ctxt,
                         )
@@ -73,7 +73,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
             .filter_map(|edge| {
                 if let BorrowPcgEdgeKind::BorrowFlow(bf_edge) = edge.kind {
                     if bf_edge.kind == BorrowFlowEdgeKind::UpdateNestedRefs
-                        && bf_edge.short() != future_rp.into()
+                        && bf_edge.short() != future_rp
                     {
                         return Some((
                             edge.to_owned_edge(),

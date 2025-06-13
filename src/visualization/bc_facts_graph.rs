@@ -20,8 +20,13 @@ use super::{
     node::IdLookup,
 };
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PoloniusRegionVid {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for PoloniusRegionVid
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         let region: RegionVid = (*self).into();
         region.to_short_string(ctxt)
     }
@@ -30,9 +35,9 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PoloniusRegionVid {
 fn get_id<
     'a,
     'tcx: 'a,
-    'bc,
-    T: Clone + Eq + DisplayWithCompilerCtxt<'tcx>,
-    BC: BorrowCheckerInterface<'tcx> + ?Sized,
+    'bc: 'a,
+    T: Clone + Eq + DisplayWithCompilerCtxt<'tcx, &'a BC>,
+    BC: BorrowCheckerInterface<'tcx> + ?Sized + 'a,
 >(
     elem: &T,
     nodes: &mut IdLookup<T>,
@@ -43,10 +48,7 @@ fn get_id<
         id.to_string()
     } else {
         let id = nodes.node_id(elem);
-        graph_nodes.push(DotNode::simple(
-            id.to_string(),
-            elem.to_short_string(ctxt.as_dyn()),
-        ));
+        graph_nodes.push(DotNode::simple(id.to_string(), elem.to_short_string(ctxt)));
         id.to_string()
     }
 }
@@ -62,9 +64,9 @@ pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
     let mut nodes = IdLookup::new('n');
     for loc in ctxt.bc.output_facts.subset.values() {
         for (sup, subs) in loc {
-            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt);
+            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
             for sub in subs {
-                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt);
+                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
                 let edge = DotEdge {
                     from: sup_node.to_string(),
                     to: sub_node.to_string(),
@@ -127,9 +129,9 @@ fn get_all_regions<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> Vec<Region
         .collect()
 }
 
-fn compute_region_sccs<'tcx>(
+fn compute_region_sccs(
     regions: Vec<RegionVid>,
-    region_infer_ctxt: &RegionInferenceContext<'tcx>,
+    region_infer_ctxt: &RegionInferenceContext<'_>,
 ) -> petgraph::Graph<Vec<RegionVid>, ()> {
     let mut graph = petgraph::Graph::new();
     let indices: BTreeMap<RegionVid, NodeIndex> = regions
@@ -195,7 +197,7 @@ pub fn subset_at_location<'a, 'tcx: 'a, 'bc>(
         for (sup, subs) in subset {
             let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
             for sub in subs {
-                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt);
+                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
                 graph.edges.push(DotEdge {
                     from: sup_node.to_string(),
                     to: sub_node.to_string(),

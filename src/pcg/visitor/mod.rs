@@ -239,7 +239,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         for place in edge.blocked_places(self.ctxt) {
             if let Some(place) = place.as_current_place()
-                && self.pcg.capabilities.get(place.into()) != Some(CapabilityKind::Read)
+                && self.pcg.capabilities.get(place) != Some(CapabilityKind::Read)
                 && place.has_location_dependent_value(self.ctxt)
             {
                 self.record_and_apply_action(
@@ -305,7 +305,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::label_region_projection(
-                        rp.into(),
+                        rp,
                         None,
                         "unlabel_blocked_region_projections",
                     )
@@ -346,6 +346,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
+    #[allow(unused)]
     fn any_reachable_reverse(
         &self,
         node: PCGNode<'tcx>,
@@ -368,98 +369,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .graph()
                     .nodes_blocked_by(local_node, self.ctxt);
                 for node in blocked_by {
-                    if !seen.contains(&(node.into())) {
-                        stack.push(node.into());
+                    if !seen.contains(&node) {
+                        stack.push(node);
                     }
                 }
             }
         }
-        return false;
-    }
-
-    fn reconnect_current_rps(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
-        let frozen_graph = self.pcg.borrow.graph().frozen_graph();
-        let leaf_nodes = frozen_graph
-            .leaf_nodes(self.ctxt)
-            .filter_map(|node| {
-                if let PCGNode::RegionProjection(rp) = node {
-                    Some(rp)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let label = RegionProjectionLabel::Location(SnapshotLocation::before(self.location));
-        let mut to_add_actions = vec![];
-        let mut leaf_nodes_to_label = HashSet::default();
-        for place_rp in place.region_projections(self.ctxt) {
-            if frozen_graph.contains(place_rp.into(), self.ctxt) {
-                continue;
-            }
-            let ctxt = self.ctxt;
-            for leaf_node in leaf_nodes.iter().copied() {
-                if !self
-                    .ctxt
-                    .bc
-                    .outlives(leaf_node.region(self.ctxt), place_rp.region(self.ctxt))
-                {
-                    continue;
-                }
-                if self.any_reachable_reverse(leaf_node.into(), |node| {
-                    if let PCGNode::RegionProjection(rp) = node {
-                        rp.base == place_rp.base.into() && rp.region(ctxt) == place_rp.region(ctxt)
-                    } else {
-                        false
-                    }
-                }) {
-                    let mut edge_leaf_node = leaf_node
-                        .to_pcg_node(self.ctxt)
-                        .try_into_region_projection()
-                        .unwrap();
-                    if !edge_leaf_node.is_placeholder() {
-                        leaf_nodes_to_label.insert(leaf_node.into());
-                        edge_leaf_node = edge_leaf_node.with_label(Some(label), self.ctxt);
-                    }
-                    to_add_actions.push(BorrowPcgAction::add_edge(
-                        BorrowPcgEdge::new(
-                            BorrowFlowEdge::new(
-                                edge_leaf_node.into(),
-                                place_rp.into(),
-                                BorrowFlowEdgeKind::UpdateNestedRefs,
-                                self.ctxt,
-                            )
-                            .into(),
-                            self.pcg.borrow.path_conditions.clone(),
-                        ),
-                        format!(
-                            "{}: Reconnect Region Projections: {} is an ancestor of leaf node {}",
-                            context,
-                            place_rp.to_short_string(self.ctxt),
-                            leaf_node.to_short_string(self.ctxt),
-                        ),
-                        false,
-                    ));
-                }
-            }
-        }
-        for leaf_node in leaf_nodes_to_label {
-            self.record_and_apply_action(
-                BorrowPcgAction::label_region_projection(
-                    leaf_node,
-                    Some(label),
-                    format!(
-                        "{}: Reconnect Region Projections for place {}",
-                        context,
-                        place.to_short_string(self.ctxt)
-                    ),
-                )
-                .into(),
-            )?;
-        }
-        for action in to_add_actions {
-            self.record_and_apply_action(action.into())?;
-        }
-        Ok(())
+        false
     }
 
     #[tracing::instrument(skip(self, edge))]
@@ -486,7 +402,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     for rp in place.region_projections(self.ctxt) {
                         self.record_and_apply_action(
                             BorrowPcgAction::label_region_projection(
-                                rp.into(),
+                                rp,
                                 Some(RegionProjectionLabel::Location(SnapshotLocation::before(
                                     self.location,
                                 ))),
@@ -532,7 +448,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         for target_place in target_places {
                             self.pcg
                                 .capabilities
-                                .insert(target_place.into(), source_cap);
+                                .insert(target_place, source_cap);
                         }
                         // if source_cap > *capability {
                         //     self.pcg.capabilities.insert((*to).into(), *capability);
@@ -557,7 +473,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         for target_place in target_places {
                             self.pcg
                                 .capabilities
-                                .insert(target_place.into(), CapabilityKind::Read);
+                                .insert(target_place, CapabilityKind::Read);
                         }
                         true
                     }
@@ -569,7 +485,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .expansion();
                         let retained_cap = expansion_places.iter().fold(
                             CapabilityKind::Exclusive,
-                            |acc, place| match self.pcg.capabilities.remove((*place).into()) {
+                            |acc, place| match self.pcg.capabilities.remove(*place) {
                                 Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                 None => acc,
                             },
@@ -619,7 +535,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .contains(borrow.deref_place(self.ctxt), self.ctxt)
             {
                 let upgrade_action = BorrowPcgAction::restore_capability(
-                    borrow.deref_place(self.ctxt).place().into(),
+                    borrow.deref_place(self.ctxt).place(),
                     CapabilityKind::Exclusive,
                     "perform_borrow_initial_pre_operand_actions",
                 );

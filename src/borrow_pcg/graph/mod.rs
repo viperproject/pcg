@@ -375,11 +375,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn nodes<'slf>(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
+    pub(crate) fn nodes<BC: Copy>(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
+    ) -> FxHashSet<PCGNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
-                edge.blocked_nodes(repacker)
-                    .chain(edge.blocked_by_nodes(repacker).map(|node| node.into()))
+                edge.blocked_nodes(ctxt)
+                    .chain(edge.blocked_by_nodes(ctxt).map(|node| node.into()))
                     .collect::<Vec<_>>()
             })
             .collect()
@@ -420,7 +423,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
     }
 
-    pub(crate) fn has_edge_blocked_by<'slf>(
+    pub(crate) fn has_edge_blocked_by(
         &self,
         node: LocalNode<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -432,15 +435,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges.len()
     }
 
-    pub fn edges_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph>(
+    pub fn edges_blocked_by<'graph, 'mir: 'graph, BC: Copy>(
         &'graph self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, 'bc> {
+        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
+    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, BC> {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(ctxt).contains(&node))
     }
 
+    #[allow(unused)]
     pub(crate) fn nodes_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
@@ -520,8 +524,10 @@ impl<T> Conditioned<T> {
     }
 }
 
-impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for Conditioned<T> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx, BC>, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC>
+    for Conditioned<T>
+{
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "conditions": self.conditions.to_json(repacker),
             "value": self.value.to_json(repacker)

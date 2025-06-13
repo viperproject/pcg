@@ -11,19 +11,19 @@ use std::{
 };
 
 use rustc_interface::{
+    data_structures::fx::FxHashSet,
     middle::{
         mir::{
             PlaceElem, PlaceRef, ProjectionElem, VarDebugInfo, VarDebugInfoContents, RETURN_PLACE,
         },
         ty::{AdtKind, TyKind},
     },
-    data_structures::fx::FxHashSet,
     span::Span,
 };
 
 use crate::rustc_interface;
 
-use super::{Place, CompilerCtxt};
+use super::{CompilerCtxt, Place};
 
 #[derive(Clone)]
 pub enum PlaceDisplay<'tcx> {
@@ -46,12 +46,14 @@ impl PlaceDisplay<'_> {
     }
 }
 
-pub trait DisplayWithCompilerCtxt<'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String;
+pub trait DisplayWithCompilerCtxt<'tcx, BC: Copy> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String;
 }
 
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Vec<T> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx, BC>, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC>
+    for Vec<T>
+{
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let comma_sep = self
             .iter()
             .map(|t| t.to_short_string(ctxt))
@@ -61,8 +63,10 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for V
     }
 }
 
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for FxHashSet<T> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, T: DisplayWithCompilerCtxt<'tcx, BC>, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC>
+    for FxHashSet<T>
+{
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let comma_sep = self
             .iter()
             .map(|t| t.to_short_string(ctxt))
@@ -72,8 +76,8 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for F
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for Place<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for Place<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         match self.to_string(repacker) {
             PlaceDisplay::Temporary(p) => format!("{p:?}"),
             PlaceDisplay::User(_p, s) => s,
@@ -82,11 +86,11 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub(crate) fn to_json(self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        serde_json::Value::String(self.to_short_string(repacker))
+    pub(crate) fn to_json<BC: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
+        serde_json::Value::String(self.to_short_string(ctxt))
     }
 
-    pub fn to_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> PlaceDisplay<'tcx> {
+    pub fn to_string<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> PlaceDisplay<'tcx> {
         // Get the local's debug name from the Body's VarDebugInfo
         let local_name = if self.local == RETURN_PLACE {
             Cow::Borrowed("RETURN")

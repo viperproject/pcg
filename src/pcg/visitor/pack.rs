@@ -99,14 +99,12 @@ impl PcgVisitor<'_, '_, '_> {
                         ShouldPackEdge::Yes {
                             reason: "Expansion is old or dead".to_string(),
                         }
-                    } else {
-                        if expansion.is_packable(slf.capabilities()) {
-                            ShouldPackEdge::Yes {
-                                reason: "Expansion is packable".to_string(),
-                            }
-                        } else {
-                            ShouldPackEdge::No
+                    } else if expansion.is_packable(slf.capabilities()) {
+                        ShouldPackEdge::Yes {
+                            reason: "Expansion is packable".to_string(),
                         }
+                    } else {
+                        ShouldPackEdge::No
                     }
                 }
                 _ => {
@@ -175,18 +173,18 @@ impl PcgVisitor<'_, '_, '_> {
                     .iter()
                     .all(|p| !self.pcg.borrow.graph().contains(*p, self.ctxt))
                     && let Some(candidate_cap) =
-                        self.pcg.capabilities.get(expansion_places[0].into())
+                        self.pcg.capabilities.get(expansion_places[0])
                     && expansion_places
                         .iter()
-                        .all(|p| self.pcg.capabilities.get((*p).into()) == Some(candidate_cap))
+                        .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
                 {
                     self.collapse(base, candidate_cap)?;
                     if base.projection.is_empty()
-                        && self.pcg.capabilities.get(base.into()) == Some(CapabilityKind::Read)
+                        && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
                     {
                         self.pcg
                             .capabilities
-                            .insert(base.into(), CapabilityKind::Exclusive);
+                            .insert(base, CapabilityKind::Exclusive);
                     }
                 }
             }

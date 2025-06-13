@@ -55,14 +55,14 @@ pub struct Weaken<'tcx> {
 }
 
 impl<'tcx> Weaken<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line<BC: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let to_str = match self.to {
             Some(to) => format!("{to:?}"),
             None => "None".to_string(),
         };
         format!(
             "Weaken {} from {:?} to {}",
-            self.place.to_short_string(repacker),
+            self.place.to_short_string(ctxt),
             self.from,
             to_str
         )
@@ -106,16 +106,16 @@ pub struct RestoreCapability<'tcx> {
     capability: CapabilityKind,
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RestoreCapability<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for RestoreCapability<'tcx> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
-            "place": self.place.to_json(repacker),
+            "place": self.place.to_json(ctxt),
             "capability": format!("{:?}", self.capability),
         })
     }
 }
 impl<'tcx> RestoreCapability<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!(
             "Restore {} to {:?}",
             self.place.to_short_string(repacker),
@@ -136,8 +136,8 @@ impl<'tcx> RestoreCapability<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Weaken<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for Weaken<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "old": format!("{:?}", self.from),
@@ -188,7 +188,7 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
@@ -196,8 +196,8 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 't
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
             "actions": self.actions.to_json(repacker),

@@ -23,8 +23,10 @@ pub(crate) struct NodeData<N, E> {
     inner_edges: FxHashSet<E>,
 }
 
-impl<'tcx, N: DisplayWithCompilerCtxt<'tcx>, E> DisplayWithCompilerCtxt<'tcx> for NodeData<N, E> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy, N: DisplayWithCompilerCtxt<'tcx, BC>, E> DisplayWithCompilerCtxt<'tcx, BC>
+    for NodeData<N, E>
+{
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         self.nodes.to_short_string(repacker)
     }
 }
@@ -113,9 +115,9 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
         })
     }
 
-    fn to_dot(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String
+    fn to_dot<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String
     where
-        N: DisplayWithCompilerCtxt<'tcx>,
+        N: DisplayWithCompilerCtxt<'tcx, BC>,
     {
         let arena = bumpalo::Bump::new();
         let to_render: petgraph::Graph<&str, ()> = self.inner.clone().map(
@@ -144,18 +146,14 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
         lines.join("\n")
     }
 
-    pub(crate) fn render_with_imgcat(&self, repacker: CompilerCtxt<'_, 'tcx>, msg: &str)
-    where
-        N: DisplayWithCompilerCtxt<'tcx>,
+    pub(crate) fn render_with_imgcat<BC: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
+        msg: &str,
+    ) where
+        N: DisplayWithCompilerCtxt<'tcx, BC>,
     {
         let dot = self.to_dot(repacker);
-        // let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_string());
-        // let timestamp = std::time::SystemTime::now()
-        //     .duration_since(std::time::UNIX_EPOCH)
-        //     .unwrap()
-        //     .as_nanos();
-        // let dot_file = format!("/pcs/dotfiles/{crate_name}_{timestamp}.dot");
-        // std::fs::write(&dot_file, &dot).unwrap();
         DotGraph::render_with_imgcat(&dot, msg).unwrap_or_else(|e| {
             eprintln!("Error rendering graph: {e}");
         });
@@ -216,12 +214,10 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
         N: std::fmt::Debug,
     {
         match self.get_node_indices(nodes) {
-            GetNodeIndicesResult::AlreadyJoined(node_index) => {
-                JoinNodesResult {
-                    index: node_index,
-                    performed_merge: false,
-                }
-            }
+            GetNodeIndicesResult::AlreadyJoined(node_index) => JoinNodesResult {
+                index: node_index,
+                performed_merge: false,
+            },
             GetNodeIndicesResult::NoneExist => {
                 let idx = self.inner.add_node(NodeData {
                     nodes: nodes.clone(),

@@ -95,8 +95,8 @@ impl BranchChoices {
     }
 }
 
-impl DisplayWithCompilerCtxt<'_> for BranchChoices {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, '_>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for BranchChoices {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let successors = effective_successors(self.from, ctxt.body());
         if self.chosen.len() == 1 {
             format!(
@@ -132,14 +132,14 @@ impl Default for PathConditions {
     }
 }
 
-impl ToJsonWithCompilerCtxt<'_> for PathConditions {
-    fn to_json(&self, _ctxt: CompilerCtxt<'_, '_>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PathConditions {
+    fn to_json(&self, _ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()
     }
 }
 
-impl DisplayWithCompilerCtxt<'_> for PathConditions {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, '_>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PathConditions {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         self.all_branch_choices()
             .map(|bc| bc.to_short_string(ctxt))
             .collect::<Vec<_>>()

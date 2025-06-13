@@ -84,7 +84,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if ctxt.is_back_edge(other_block, self_block) {
             self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
-            self.join_loop(&other, self_block, other_block, &loop_usage, ctxt);
+            self.join_loop(other, self_block, other_block, loop_usage, ctxt);
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -153,7 +153,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     eprintln!("Error rendering old self graph: {e}");
                 });
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, &other) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, other) {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {e}");
                 });
@@ -180,7 +180,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .construct_abstraction_graph(&old_self, ctxt.bc);
         // `loop_head` is the correct block to use here
         let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
-            .construct_abstraction_graph(&other, ctxt.bc);
+            .construct_abstraction_graph(other, ctxt.bc);
 
         if coupling_imgcat_debug() {
             self_abstraction_graph
@@ -196,7 +196,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         // First only keep edges present in both graphs (remove other edges from `self`)
-        let to_keep = self.common_edges(&other);
+        let to_keep = self.common_edges(other);
         self.edges
             .retain(|edge_kind, _| to_keep.contains(edge_kind));
 

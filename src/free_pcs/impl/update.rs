@@ -63,7 +63,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(repacker) {
-                    if let Some(current_cap) = capabilities.get(place.into()) {
+                    if let Some(current_cap) = capabilities.get(place) {
                         pcg_validity_assert!(
                             matches!(
                                 current_cap.partial_cmp(&required_cap),
@@ -95,7 +95,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         match post {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::RemoveCapability(place) => {
-                place_capabilities.remove(place.into());
+                place_capabilities.remove(place);
             }
             PlaceCondition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;
@@ -105,10 +105,10 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 place_capabilities.insert(local.into(), CapabilityKind::Write);
             }
             PlaceCondition::Capability(place, cap) => {
-                place_capabilities.insert(place.into(), cap);
+                place_capabilities.insert(place, cap);
             }
             PlaceCondition::ExpandTwoPhase(place) => {
-                place_capabilities.insert(place.into(), CapabilityKind::Read);
+                place_capabilities.insert(place, CapabilityKind::Read);
             }
         }
     }

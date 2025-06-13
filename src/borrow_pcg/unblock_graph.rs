@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::pcg::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
@@ -28,8 +29,13 @@ impl<'tcx> BorrowPCGUnblockAction<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGUnblockAction<'tcx> {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for BorrowPCGUnblockAction<'tcx>
+{
+    fn to_json(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         serde_json::json!({
             "edge": format!("{:?}", self.edge)
         })

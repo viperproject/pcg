@@ -26,7 +26,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 impl<'tcx> PlaceCapabilities<'tcx> {
 
     pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
-        self.get(place.into())
+        self.get(place)
             .map(|c| c == CapabilityKind::Exclusive)
             .unwrap_or(false)
     }

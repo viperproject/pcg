@@ -8,7 +8,6 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     rustc_interface::{
-        borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,
         index::Idx,
         middle::{
@@ -127,14 +126,6 @@ impl ProjectionKind {
 }
 
 #[derive(Copy, Clone)]
-pub struct CompilerExtra<'a, 'tcx> {
-    #[allow(unused)]
-    pub(crate) region_infer_ctxt: &'a RegionInferenceContext<'tcx>,
-    #[allow(unused)]
-    pub(crate) polonius_output: Option<&'a PoloniusOutput>,
-}
-
-#[derive(Copy, Clone)]
 pub struct CompilerCtxt<'a, 'tcx, T = &'a dyn BorrowCheckerInterface<'tcx>> {
     pub(super) mir: &'a Body<'tcx>,
     pub(super) tcx: TyCtxt<'tcx>,
@@ -183,7 +174,7 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
     }
 }
 
-impl<'tcx> CompilerCtxt<'_, 'tcx> {
+impl CompilerCtxt<'_, '_> {
     pub(crate) fn is_arg(self, local: Local) -> bool {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
@@ -203,7 +194,7 @@ impl<'tcx> CompilerCtxt<'_, 'tcx> {
     }
 
     #[rustversion::before(2024-12-14)]
-    pub fn always_live_locals(self) -> BitSet<Local> {
+    pub fn always_live_locals(self) -> RustBitSet<Local> {
         mir_dataflow::storage::always_storage_live_locals(self.mir)
     }
 

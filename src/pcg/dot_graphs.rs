@@ -9,24 +9,19 @@ use crate::visualization::write_pcg_dot_graph_to_file;
 use crate::RECORD_PCG;
 
 #[derive(Clone, Serialize)]
+#[derive(Default)]
 pub(crate) struct PcgDotGraphsForBlock(Vec<PcgDotGraphsForStmt>);
 
 #[derive(Clone, Serialize)]
+#[derive(Default)]
 pub(crate) struct PcgDotGraphsForIteration {
     at_phase: Vec<(DataflowStmtPhase, String)>,
     actions: BTreeMap<EvalStmtPhase, Vec<String>>,
 }
 
-impl Default for PcgDotGraphsForIteration {
-    fn default() -> Self {
-        Self {
-            at_phase: vec![],
-            actions: BTreeMap::new(),
-        }
-    }
-}
 
 #[derive(Clone, Serialize)]
+#[derive(Default)]
 struct PcgDotGraphsForStmt {
     iterations: Vec<PcgDotGraphsForIteration>,
 }
@@ -37,17 +32,7 @@ impl PcgDotGraphsForStmt {
     }
 }
 
-impl Default for PcgDotGraphsForStmt {
-    fn default() -> Self {
-        Self { iterations: vec![] }
-    }
-}
 
-impl Default for PcgDotGraphsForBlock {
-    fn default() -> Self {
-        Self(vec![])
-    }
-}
 
 impl PcgDotGraphsForBlock {
     pub(crate) fn relative_filename(
@@ -128,7 +113,7 @@ impl PcgDotGraphsForBlock {
         filename: String,
     ) {
         let top = self.last_iteration_mut(statement_index);
-        let within_phase = top.actions.entry(phase).or_insert_with(Vec::new);
+        let within_phase = top.actions.entry(phase).or_default();
         assert_eq!(within_phase.len(), action_idx);
         within_phase.push(filename);
     }
@@ -176,7 +161,7 @@ pub(crate) fn generate_dot_graph<'tcx>(
             ToGraph::Action(phase, action_idx) => {
                 debug_data.dot_graphs.borrow_mut().insert_for_action(
                     statement_index,
-                    phase.try_into().unwrap(),
+                    phase,
                     action_idx,
                     relative_filename,
                 );

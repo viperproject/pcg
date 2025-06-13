@@ -4,6 +4,7 @@ use super::borrow_pcg_edge::BorrowPcgEdge;
 use super::edge::kind::BorrowPcgEdgeKind;
 use super::state::BorrowsState;
 use crate::action::BorrowPcgAction;
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
@@ -20,10 +21,6 @@ use crate::{RestoreCapability, Weaken};
 pub mod actions;
 
 impl<'tcx> BorrowPcgAction<'tcx> {
-    pub fn kind(&self) -> &BorrowPcgActionKind<'tcx> {
-        &self.kind
-    }
-
     pub(crate) fn restore_capability(
         place: Place<'tcx>,
         capability: CapabilityKind,
@@ -135,46 +132,49 @@ pub enum BorrowPcgActionKind<'tcx> {
     },
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgActionKind<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for BorrowPcgActionKind<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         match self {
             BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
                 format!(
                     "Redirect Edge: {} from {} to {}",
-                    edge.to_short_string(repacker),
-                    from.to_short_string(repacker),
-                    to.to_short_string(repacker)
+                    edge.to_short_string(ctxt),
+                    from.to_short_string(ctxt),
+                    to.to_short_string(ctxt)
                 )
             }
             BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
                 format!(
                     "Label Region Projection: {} with {:?}",
-                    rp.to_short_string(repacker),
+                    rp.to_short_string(ctxt),
                     label
                 )
             }
-            BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(repacker),
-            BorrowPcgActionKind::Restore(restore_capability) => {
-                restore_capability.debug_line(repacker)
-            }
+            BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(ctxt),
+            BorrowPcgActionKind::Restore(restore_capability) => restore_capability.debug_line(ctxt),
             BorrowPcgActionKind::MakePlaceOld(place, reason) => {
                 format!(
                     "Make {} an old place ({:?})",
-                    place.to_short_string(repacker),
+                    place.to_short_string(ctxt),
                     reason
                 )
             }
             BorrowPcgActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
-                place.to_short_string(repacker),
+                place.to_short_string(ctxt),
                 location
             ),
             BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
-                format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
+                format!("Remove Edge {}", borrow_pcgedge.to_short_string(ctxt))
             }
             BorrowPcgActionKind::AddEdge { edge, for_read } => format!(
                 "Add Edge: {}; for read: {}",
-                edge.to_short_string(repacker),
+                edge.to_short_string(ctxt),
                 for_read
             ),
         }
@@ -267,7 +267,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 // for expanding region projections
                 if changed && expansion.base.is_place() {
                     let base = expansion.base;
-                    let base_capability = capabilities.get(base.place().into());
+                    let base_capability = capabilities.get(base.place());
                     let expanded_capability = if for_read {
                         CapabilityKind::Read
                     } else if let Some(capability) = base_capability {
@@ -284,9 +284,9 @@ impl<'tcx> BorrowsState<'tcx> {
                     };
 
                     if for_read {
-                        changed |= capabilities.insert(base.place().into(), CapabilityKind::Read);
+                        changed |= capabilities.insert(base.place(), CapabilityKind::Read);
                     } else {
-                        changed |= capabilities.remove(base.place().into()).is_some();
+                        changed |= capabilities.remove(base.place()).is_some();
                     }
 
                     for p in expansion.expansion.iter() {
@@ -296,7 +296,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 expanded_capability,
                                 p.place().to_short_string(ctxt)
                             );
-                            changed |= capabilities.insert(p.place().into(), expanded_capability);
+                            changed |= capabilities.insert(p.place(), expanded_capability);
                         }
                     }
                 }

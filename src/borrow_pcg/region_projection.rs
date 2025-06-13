@@ -8,6 +8,7 @@ use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::latest::Latest;
@@ -43,7 +44,7 @@ pub enum PcgRegion {
     ReLateParam(ty::LateParamRegion),
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RegionVid {
+impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>> for RegionVid {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
         if let Some(string) = ctxt.bc.override_region_debug_string(*self) {
             string.to_string()
@@ -114,9 +115,12 @@ impl PcgRegion {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PcgRegion {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        self.to_string(Some(repacker))
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PcgRegion {
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        self.to_string(Some(ctxt))
     }
 }
 
@@ -204,19 +208,29 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for MaybeRemoteRegionProjectionBase<'tcx>
+{
+    fn to_json(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.to_json(repacker),
+            MaybeRemoteRegionProjectionBase::Place(p) => p.to_json(ctxt),
             MaybeRemoteRegionProjectionBase::Const(_) => todo!(),
         }
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for MaybeRemoteRegionProjectionBase<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.to_short_string(repacker),
+            MaybeRemoteRegionProjectionBase::Place(p) => p.to_short_string(ctxt),
             MaybeRemoteRegionProjectionBase::Const(c) => format!("{c}"),
         }
     }
@@ -289,7 +303,7 @@ impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
     }
 }
 
-impl<'tcx, P> RegionProjection<'tcx, P> {
+impl<P> RegionProjection<'_, P> {
     pub(crate) fn is_placeholder(&self) -> bool {
         self.label == Some(RegionProjectionLabel::Placeholder)
     }
@@ -366,7 +380,7 @@ struct TyVarianceVisitor<'mir, 'tcx> {
     found: bool,
 }
 
-impl<'mir, 'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'mir, 'tcx> {
+impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'_, 'tcx> {
     fn visit_ty(&mut self, t: ty::Ty<'tcx>) {
         if self.found {
             return;
@@ -383,13 +397,10 @@ impl<'mir, 'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'mir, 'tcx>
                 }
             }
             TyKind::RawPtr(ty, mutbl) | TyKind::Ref(_, ty, mutbl) => {
-                if mutbl.is_mut() {
-                    if extract_regions(*ty, self.ctxt)
+                if mutbl.is_mut() && extract_regions(*ty, self.ctxt)
                         .iter()
-                        .any(|r| self.target == *r)
-                    {
-                        self.found = true;
-                    }
+                        .any(|r| self.target == *r) {
+                    self.found = true;
                 }
                 // Otherwise, this is an immutable reference, don't check under
                 // here since nothing will be mutable
@@ -402,7 +413,7 @@ impl<'mir, 'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'mir, 'tcx>
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn can_be_labelled(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn can_be_labelled<BC: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, BC>) -> bool {
         true
     }
     pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
@@ -440,16 +451,16 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     }
 
     #[must_use]
-    pub(crate) fn with_label(
+    pub(crate) fn with_label<BC: Copy>(
         self,
         label: Option<RegionProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> RegionProjection<'tcx, T> {
         if label.is_some() {
             pcg_validity_assert!(
                 self.can_be_labelled(ctxt),
-                "{} is not mutable and shouldn't be labelled",
-                self.to_short_string(ctxt)
+                "{:?} is not mutable and shouldn't be labelled",
+                self,
             );
         }
         RegionProjection {
@@ -520,13 +531,7 @@ impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
 }
 
 pub trait RegionProjectionBaseLike<'tcx>:
-    Copy
-    + std::fmt::Debug
-    + std::hash::Hash
-    + Eq
-    + PartialEq
-    + ToJsonWithCompilerCtxt<'tcx>
-    + DisplayWithCompilerCtxt<'tcx>
+    Copy + std::fmt::Debug + std::hash::Hash + Eq + PartialEq
 {
     fn regions<C: Copy>(
         &self,
@@ -536,10 +541,18 @@ pub trait RegionProjectionBaseLike<'tcx>:
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
+impl<
+        'tcx,
+        'a,
+        T: RegionProjectionBaseLike<'tcx>
+            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for RegionProjection<'tcx, T>
 {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         let label_part = match self.label {
             Some(RegionProjectionLabel::Location(location)) => format!(" {location}"),
             Some(RegionProjectionLabel::Placeholder) => " FUTURE".to_string(),
@@ -547,20 +560,28 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
         };
         format!(
             "{}↓{}{}",
-            self.base.to_short_string(repacker),
-            self.region(repacker).to_short_string(repacker),
+            self.base.to_short_string(ctxt),
+            self.region(ctxt).to_short_string(ctxt),
             label_part
         )
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> ToJsonWithCompilerCtxt<'tcx>
+impl<
+        'tcx,
+        'a,
+        T: RegionProjectionBaseLike<'tcx>
+            + ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for RegionProjection<'tcx, T>
 {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         json!({
-            "place": self.base.to_json(repacker),
-            "region": self.region(repacker).to_string(Some(repacker)),
+            "place": self.base.to_json(ctxt),
+            "region": self.region(ctxt).to_string(Some(ctxt)),
         })
     }
 }
@@ -767,13 +788,13 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         self,
         base: U,
     ) -> RegionProjection<'tcx, U> {
-        let result = RegionProjection {
+        
+        RegionProjection {
             base,
             region_idx: self.region_idx,
             label: self.label,
             phantom: PhantomData,
-        };
-        result
+        }
     }
 }
 

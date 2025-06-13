@@ -14,9 +14,7 @@ use super::{
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
 use crate::{
-    borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
-    utils::json::ToJsonWithCompilerCtxt,
+    borrow_checker::BorrowCheckerInterface, borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate}, pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation}, utils::json::ToJsonWithCompilerCtxt
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -222,14 +220,19 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for BorrowPcgExpansion<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         format!(
             "{{{}}} -> {{{}}}",
-            self.base.to_short_string(repacker),
+            self.base.to_short_string(ctxt),
             self.expansion
                 .iter()
-                .map(|p| p.to_short_string(repacker))
+                .map(|p| p.to_short_string(ctxt))
                 .join(", ")
         )
     }
@@ -255,24 +258,24 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
 
     // `return` is needed because both branches have different types
     #[allow(clippy::needless_return)]
-    fn blocked_nodes<'slf>(
+    fn blocked_nodes<'slf, BC: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
         let iter = std::iter::once(self.base.into());
-        if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
+        if let Some(blocked_rp) = self.deref_blocked_region_projection(ctxt) {
             return Box::new(iter.chain(std::iter::once(blocked_rp)));
         } else {
             return Box::new(iter);
         }
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy>(
         &'slf self,
-        _ctxt: CompilerCtxt<'mir, 'tcx>,
+        _ctxt: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -332,9 +335,9 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn deref_blocked_region_projection(
+    pub(crate) fn deref_blocked_region_projection<BC: Copy>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Option<PCGNode<'tcx>> {
         if let BlockingNode::Place(p) = self.base
             && let Some(projection) = p.base_region_projection(ctxt)
@@ -427,8 +430,8 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for BorrowPcgExpansion<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "base": self.base.to_json(repacker),
             "expansion": self.expansion.iter().map(|p| p.to_json(repacker)).collect::<Vec<_>>(),

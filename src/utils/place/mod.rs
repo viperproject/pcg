@@ -89,8 +89,8 @@ impl Ord for Place<'_> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Place<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for Place<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         serde_json::Value::String(self.to_short_string(repacker))
     }
 }

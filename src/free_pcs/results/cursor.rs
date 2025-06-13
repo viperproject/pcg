@@ -10,7 +10,6 @@ use derive_more::Deref;
 
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgActions},
-    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeRef, BorrowPcgEdge},
         latest::Latest,
@@ -256,9 +255,8 @@ impl<'tcx> PcgBasicBlocks<'tcx> {
         place: mir::Place<'tcx>,
         body: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
-        bc: &dyn BorrowCheckerInterface<'tcx>,
     ) -> FxHashSet<mir::Place<'tcx>> {
-        self.aggregate(|stmt| stmt.aliases(place, body, tcx, bc))
+        self.aggregate(|stmt| stmt.aliases(place, body, tcx))
     }
 }
 
@@ -334,11 +332,10 @@ impl<'tcx> PcgLocation<'tcx> {
         place: impl Into<Place<'tcx>>,
         body: &'mir Body<'tcx>,
         tcx: TyCtxt<'tcx>,
-        bc: &dyn BorrowCheckerInterface<'tcx>,
     ) -> FxHashSet<mir::Place<'tcx>> {
         let place: Place<'tcx> = place.into();
         // let place = place.with_inherent_region(ctxt);
-        let ctxt = CompilerCtxt::new(body, tcx, bc);
+        let ctxt = CompilerCtxt::new(body, tcx, ());
         self.states[EvalStmtPhase::PostMain]
             .borrow
             .graph()

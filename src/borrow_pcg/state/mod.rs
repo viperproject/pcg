@@ -144,7 +144,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 if !self.graph.contains(node, repacker)
                     && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
                 {
-                    let _ = capabilities.remove(place.into());
+                    let _ = capabilities.remove(place);
                 }
             }
         }

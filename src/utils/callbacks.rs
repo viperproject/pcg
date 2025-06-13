@@ -141,10 +141,10 @@ fn hir_body_owners(tcx: TyCtxt<'_>) -> impl std::iter::Iterator<Item = LocalDefI
 
 /// # Safety
 /// The originally saved body must come from the same `tcx`
-pub(crate) unsafe fn take_stored_body<'tcx>(
-    tcx: TyCtxt<'tcx>,
+pub(crate) unsafe fn take_stored_body(
+    tcx: TyCtxt<'_>,
     def_id: LocalDefId,
-) -> BodyWithBorrowckFacts<'tcx> {
+) -> BodyWithBorrowckFacts<'_> {
     BODIES.with(|state| {
         let mut map = state.borrow_mut();
         // SAFETY: The originally saved body comes from the same `tcx`
@@ -171,7 +171,7 @@ fn is_primary_crate() -> bool {
 /// # Safety
 ///
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
-pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
+pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
     tracing::info!("Running PCG on all functions");
     if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package

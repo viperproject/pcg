@@ -3,6 +3,7 @@ use std::rc::Rc;
 use serde_json::json;
 
 use crate::action::PcgActions;
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::state::BorrowsState;
@@ -44,8 +45,10 @@ impl<'tcx> PcgSuccessor<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessor<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for PcgSuccessor<'tcx>
+{
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> serde_json::Value {
         json!({
             "block": self.block().index(),
             "actions": self.actions.to_json(repacker),

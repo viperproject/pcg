@@ -15,14 +15,14 @@ pub struct RemotePlace {
     pub(crate) local: mir::Local,
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RemotePlace {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for RemotePlace {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemotePlace {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RemotePlace {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!("Remote({:?})", self.local)
     }
 }

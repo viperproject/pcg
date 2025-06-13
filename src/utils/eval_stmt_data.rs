@@ -24,13 +24,13 @@ impl<T> EvalStmtData<T> {
     }
 }
 
-impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for EvalStmtData<T> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy, T: ToJsonWithCompilerCtxt<'tcx, BC>> ToJsonWithCompilerCtxt<'tcx, BC> for EvalStmtData<T> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
-            "pre_operands": self.pre_operands.to_json(repacker),
-            "post_operands": self.post_operands.to_json(repacker),
-            "pre_main": self.pre_main.to_json(repacker),
-            "post_main": self.post_main.to_json(repacker),
+            "pre_operands": self.pre_operands.to_json(ctxt),
+            "post_operands": self.post_operands.to_json(ctxt),
+            "pre_main": self.pre_main.to_json(ctxt),
+            "post_main": self.post_main.to_json(ctxt),
         })
     }
 }

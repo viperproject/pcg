@@ -103,7 +103,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if arg.is_invariant_in_type(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::label_region_projection(
-                        arg.clone().into(),
+                        *arg,
                         Some(SnapshotLocation::before(location).into()),
                         format!(
                             "Function call: {} is invariant in type {:?}; therefore it will be labelled as the set of borrows inside may be modified",
@@ -157,7 +157,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .map(|rp| {
                     // self.maybe_futurize(rp.into()).try_into().unwrap()
                     rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
-                        .into()
                 })
                 .collect::<Vec<_>>();
             let result_projections: Vec<RegionProjection<MaybeOldPlace<'tcx>>> = destination

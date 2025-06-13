@@ -22,7 +22,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
         self.record_and_apply_action(
             BorrowPcgAction::restore_capability(
-                place.into(),
+                place,
                 CapabilityKind::Exclusive,
                 "upgrade_read_to_exclusive",
             )
@@ -36,7 +36,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         mut current: Place<'tcx>,
     ) -> Result<(), PcgError> {
-        while self.pcg.capabilities.get(current.into()) == Some(CapabilityKind::Read) {
+        while self.pcg.capabilities.get(current) == Some(CapabilityKind::Read) {
             self.record_and_apply_action(
                 BorrowPcgAction::weaken(current, CapabilityKind::Read, None).into(),
             )?;
@@ -55,7 +55,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         let mut expand_root = place;
         loop {
-            if let Some(cap) = self.pcg.capabilities.get(expand_root.into()) {
+            if let Some(cap) = self.pcg.capabilities.get(expand_root) {
                 if cap.is_read() {
                     self.upgrade_read_to_exclusive(expand_root)?;
                 }
@@ -73,7 +73,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let mut current = place;
         let capability_projs = self.pcg.owned.locals()[place.local].get_allocated();
         loop {
-            if self.pcg.capabilities.get(current.into()).is_some() {
+            if self.pcg.capabilities.get(current).is_some() {
                 return current;
             }
             if capability_projs.contains_expansion_to(current, self.ctxt) {
@@ -123,7 +123,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             );
             self.record_and_apply_action(
                 BorrowPcgAction::label_region_projection(
-                    rp.into(),
+                    rp,
                     Some(self.location.into()),
                     "add_deref_expansion",
                 )
@@ -218,7 +218,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     let label = SnapshotLocation::before(self.location).into();
                     self.record_and_apply_action(
                         BorrowPcgAction::label_region_projection(
-                            rp.into(),
+                            rp,
                             Some(label),
                             "expand_region_projections_one_level",
                         )
@@ -291,7 +291,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.upgrade_closest_root_to_exclusive(place)?;
         }
 
-        let current_cap = self.pcg.capabilities.get(place.into());
+        let current_cap = self.pcg.capabilities.get(place);
 
         if current_cap.is_none()
             || matches!(

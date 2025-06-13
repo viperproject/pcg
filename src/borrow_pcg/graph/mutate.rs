@@ -34,30 +34,24 @@ impl<'tcx> BorrowsGraph<'tcx> {
             for edge in blocking_edges {
                 tracing::debug!("adding blocking edge: {}", edge.to_short_string(ctxt));
                 subgraph.insert(edge.to_owned_edge(), ctxt);
-                match edge.kind {
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(_) => {
-                        for node in edge.blocked_by_nodes(ctxt) {
-                            tracing::debug!("adding root: {}", node.to_short_string(ctxt));
-                            place_roots.push(node);
-                        }
+                if let BorrowPcgEdgeKind::BorrowPcgExpansion(_) = edge.kind {
+                    for node in edge.blocked_by_nodes(ctxt) {
+                        tracing::debug!("adding root: {}", node.to_short_string(ctxt));
+                        place_roots.push(node);
                     }
-                    _ => {}
                 }
             }
 
-            let blocked_edges = self.edges_blocked_by(root.into(), ctxt);
+            let blocked_edges = self.edges_blocked_by(root, ctxt);
             for edge in blocked_edges {
                 tracing::debug!("adding blocked-by edge: {}", edge.to_short_string(ctxt));
                 subgraph.insert(edge.to_owned_edge(), ctxt);
-                match edge.kind {
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(_) => {
-                        for node in edge.blocked_nodes(ctxt) {
-                            if let Some(node) = node.as_local_node(ctxt) {
-                                place_roots.push(node);
-                            }
+                if let BorrowPcgEdgeKind::BorrowPcgExpansion(_) = edge.kind {
+                    for node in edge.blocked_nodes(ctxt) {
+                        if let Some(node) = node.as_local_node(ctxt) {
+                            place_roots.push(node);
                         }
                     }
-                    _ => {}
                 }
             }
         }

@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::display::DisplayWithCompilerCtxt;
-use super::{validity::HasValidityCheck, Place, CompilerCtxt};
+use super::{validity::HasValidityCheck, CompilerCtxt, Place};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
@@ -71,7 +71,10 @@ impl std::fmt::Display for SnapshotLocation {
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         self.place.regions(repacker)
     }
 
@@ -104,14 +107,14 @@ impl std::fmt::Display for PlaceSnapshot<'_> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!("{} at {:?}", self.place.to_short_string(repacker), self.at)
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "at": self.at.to_json(),

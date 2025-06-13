@@ -23,7 +23,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         )?;
         self.pcg
             .capabilities
-            .insert(target.into(), CapabilityKind::Exclusive);
+            .insert(target, CapabilityKind::Exclusive);
         match rvalue {
             Rvalue::Aggregate(
                 box (mir::AggregateKind::Adt(..)
@@ -139,7 +139,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     return Ok(());
                 }
                 self.pcg.borrow.add_borrow(
-                    blocked_place.into(),
+                    blocked_place,
                     target,
                     *kind,
                     self.location,

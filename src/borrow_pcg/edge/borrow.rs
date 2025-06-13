@@ -1,4 +1,5 @@
 use crate::{
+    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{LabelPlace, LabelRegionProjection},
@@ -61,7 +62,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         }
         changed
     }
-
 }
 
 impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
@@ -109,7 +109,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
             false
         }
     }
-
 }
 
 impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
@@ -151,9 +150,9 @@ impl<'tcx> RemoteBorrow<'tcx> {
         self.assigned_ref
     }
 
-    pub(crate) fn assigned_region_projection(
+    pub(crate) fn assigned_region_projection<BC: Copy>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
         let rp = self.assigned_ref.base_region_projection(ctxt).unwrap();
         if let Some(location) = self.rp_snapshot_location {
@@ -168,13 +167,17 @@ impl<'tcx> RemoteBorrow<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemoteBorrow<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for RemoteBorrow<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         format!(
             "{} -> {}",
-            self.blocked_place().to_short_string(repacker),
-            self.assigned_region_projection(repacker)
-                .to_short_string(repacker)
+            self.blocked_place().to_short_string(ctxt),
+            self.assigned_region_projection(ctxt).to_short_string(ctxt)
         )
     }
 }
@@ -198,9 +201,9 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         }
     }
 
-    fn blocked_nodes<'slf>(
+    fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
-        _repacker: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -208,9 +211,9 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         Box::new(std::iter::once(self.blocked_place().into()))
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -311,8 +314,8 @@ impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for LocalBorrow<'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for LocalBorrow<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let rp_part = if let Some(rp) = self.assigned_rp_snapshot {
             format!(" <{}>", rp)
         } else {
@@ -359,9 +362,9 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         }
     }
 
-    fn blocked_nodes<'slf>(
+    fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
-        _repacker: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn Iterator<Item = BlockedNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -369,9 +372,9 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         Box::new(std::iter::once(self.blocked_place.into()))
     }
 
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,

@@ -14,11 +14,14 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::borrow_pcg::{
-    edge::kind::BorrowPcgEdgeKind,
-    edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-};
 use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::{
+        edge::kind::BorrowPcgEdgeKind,
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    },
+};
 use crate::{
     borrow_pcg::abstraction::node::AbstractionGraphNode,
     utils::place::maybe_remote::MaybeRemotePlace,
@@ -136,8 +139,13 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
     }
 }
 
-impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> DisplayWithCompilerCtxt<'tcx> for T {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a, T: BorrowPcgEdgeLike<'tcx>>
+    DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for T
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         if self.conditions().is_empty() {
             self.kind().to_short_string(ctxt)
         } else {
@@ -441,9 +449,9 @@ impl<'tcx> BorrowPcgEdge<'tcx> {
 }
 
 impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
-    fn blocked_by_nodes<'slf, 'mir: 'slf>(
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
         &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
@@ -451,9 +459,9 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
         self.kind().blocked_by_nodes(ctxt)
     }
 
-    fn blocked_nodes<'slf>(
+    fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -487,8 +495,13 @@ edgedata_enum!(
     BorrowFlow(BorrowFlowEdge<'tcx>),
 );
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for &BorrowPcgEdgeKind<'tcx> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for &BorrowPcgEdgeKind<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         (*self).to_short_string(ctxt)
     }
 }
