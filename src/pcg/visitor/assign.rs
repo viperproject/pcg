@@ -155,16 +155,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
                     let source_proj =
                         if kind.mutability().is_mut() && source_proj.can_be_labelled(self.ctxt) {
-                            let label = SnapshotLocation::before(self.location).into();
+                            let label = self.current_snapshot_location();
                             self.record_and_apply_action(
                                 BorrowPcgAction::label_region_projection(
                                     source_proj.into(),
-                                    Some(label),
+                                    Some(label.into()),
                                     "assign_post_main",
                                 )
                                 .into(),
                             )?;
-                            source_proj.with_label(Some(label), self.ctxt)
+                            source_proj.with_label(Some(label.into()), self.ctxt)
                         } else {
                             source_proj
                         };

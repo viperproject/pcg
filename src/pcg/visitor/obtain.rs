@@ -93,7 +93,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             base.into(),
             place_expansion,
             if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
-                Some(SnapshotLocation::before(self.location).into())
+                Some(self.current_snapshot_location().into())
             } else {
                 None
             },
@@ -124,11 +124,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.record_and_apply_action(
                 BorrowPcgAction::label_region_projection(
                     rp,
-                    Some(if self.phase.is_operands_stage() {
-                        SnapshotLocation::before(self.location).into()
-                    } else {
-                        SnapshotLocation::Mid(self.location).into()
-                    }),
+                    Some(self.current_snapshot_location().into()),
                     "add_deref_expansion",
                 )
                 .into(),
@@ -189,6 +185,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(true)
     }
 
+    pub(crate) fn current_snapshot_location(&self) -> SnapshotLocation {
+        if self.phase.is_operands_stage() {
+            SnapshotLocation::before(self.location)
+        } else {
+            SnapshotLocation::Mid(self.location)
+        }
+    }
+
     fn expand_region_projections_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -219,16 +223,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     && obtain_type.should_label_rp()
                 {
                     tracing::debug!("Expand and label {}", rp.to_short_string(self.ctxt));
-                    let label = SnapshotLocation::before(self.location).into();
+                    let label = self.current_snapshot_location();
                     self.record_and_apply_action(
                         BorrowPcgAction::label_region_projection(
                             rp,
-                            Some(label),
+                            Some(label.into()),
                             "expand_region_projections_one_level",
                         )
                         .into(),
                     )?;
-                    let old_rp_base = rp.with_label(Some(label), self.ctxt);
+                    let old_rp_base = rp.with_label(Some(label.into()), self.ctxt);
                     let expansion_rps = expansion
                         .expansion()
                         .iter()
