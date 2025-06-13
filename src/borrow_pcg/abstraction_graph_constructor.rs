@@ -6,8 +6,11 @@ use super::{
     region_projection::PcgRegion,
 };
 use crate::{
-    borrow_checker::BorrowCheckerInterface, borrow_pcg::abstraction::node::AbstractionGraphNode,
-    coupling::{coupled::Coupled, AddEdgeResult}, utils::loop_usage::LoopUsage, validity_checks_enabled,
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::abstraction::node::AbstractionGraphNode,
+    coupling::{coupled::Coupled, AddEdgeResult},
+    utils::{data_structures::HashSet, loop_usage::LoopUsage},
+    validity_checks_enabled,
 };
 use crate::{
     coupling,
@@ -17,8 +20,6 @@ use crate::{
     rustc_interface::middle::mir::{BasicBlock, Location},
     utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
-
-
 
 #[derive(Clone)]
 pub(crate) struct AbstractionGraph<'tcx, 'graph> {
@@ -48,15 +49,6 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
         }
     }
 
-    pub(crate) fn add_edge(
-        &mut self,
-        from: &Coupled<AbstractionGraphNode<'tcx>>,
-        to: &Coupled<AbstractionGraphNode<'tcx>>,
-        weight: FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>>,
-    ) {
-        self.inner.add_edge(from, to, weight);
-    }
-
     pub(crate) fn render_with_imgcat(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
         self.inner.render_with_imgcat(ctxt, comment);
     }
@@ -73,7 +65,7 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
         self.inner.edges()
     }
 
-    pub(crate) fn add_edge_with_ctxt(
+    pub(crate) fn add_edge(
         &mut self,
         from: &Coupled<AbstractionGraphNode<'tcx>>,
         to: &Coupled<AbstractionGraphNode<'tcx>>,
@@ -173,14 +165,14 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
                     }
                     let blocked_data = self.inner.inner().node_weight(blocked).unwrap();
                     let blocking_data = self.inner.inner().node_weight(blocking).unwrap();
-                    if !blocking_data
-                        .nodes
-                        .iter()
-                        .flat_map(|n| n.related_current_place())
-                        .any(|p| loop_usage.used_in_loop(p, ctxt))
-                    {
-                        continue;
-                    }
+                    // if !blocking_data
+                    //     .nodes
+                    //     .iter()
+                    //     .flat_map(|n| n.related_current_place())
+                    //     .any(|p| loop_usage.used_in_loop(p, ctxt))
+                    // {
+                    //     continue;
+                    // }
                     if let Some(blocked_region) = blocked_data.nodes.region_repr(ctxt)
                         && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
                         && !blocking_data.nodes.is_remote()
@@ -212,7 +204,6 @@ impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
         }
     }
 }
-
 
 /// Records a history of actions for debugging purpose;
 /// used to detect infinite recursion
@@ -334,6 +325,7 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         }
         let upper_candidate = upper_candidate.clone();
         let endpoints = bg.inner.parents(&upper_candidate);
+
         for (coupled, edge_weight) in endpoints {
             let mut weight = incoming_weight.clone();
             weight.extend(edge_weight);
@@ -364,9 +356,9 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
                     history.clone(),
                 );
             } else {
-                self.graph.add_edge_with_ctxt(
-                    &coupled,
-                    &bottom_connect.clone(),
+                self.graph.add_edge(
+                    &without_old(&coupled),
+                    &without_old(&bottom_connect),
                     weight.clone(),
                     self.ctxt,
                 );
@@ -398,12 +390,12 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.graph.inner.insert_endpoint(node.clone());
+            self.graph.inner.insert_endpoint(without_old(&node));
             self.add_edges_from(
                 &full_graph,
                 &node,
                 &node,
-                FxHashSet::default(),
+                HashSet::default(),
                 borrow_checker,
                 DebugRecursiveCallHistory::new(),
             );
@@ -416,4 +408,12 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
         });
         self.graph
     }
+}
+
+fn without_old<'tcx>(
+    coupled: &Coupled<AbstractionGraphNode<'tcx>>,
+) -> Coupled<AbstractionGraphNode<'tcx>> {
+    let mut filtered = coupled.clone();
+    filtered.retain(|n| !n.is_old());
+    filtered
 }

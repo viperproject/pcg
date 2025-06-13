@@ -6,7 +6,8 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph, region_projection::RegionProjection, util::ExploreFrom
+        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph,
+        region_projection::RegionProjection, util::ExploreFrom,
     },
     pcg::PCGNode,
     rustc_interface::{
@@ -14,7 +15,10 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        display::{DebugLines, DisplayWithCompilerCtxt}, maybe_old::MaybeOldPlace, validity::HasValidityCheck, HasPlace, BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT
+        display::{DebugLines, DisplayWithCompilerCtxt},
+        maybe_old::MaybeOldPlace,
+        validity::HasValidityCheck,
+        HasPlace, BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedBlockingEdges, CachedLeafEdges, FrozenGraphRef};
@@ -111,7 +115,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         common_edges
     }
 
-
     pub(crate) fn identify_placeholder_target(
         &self,
         from: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -138,7 +141,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         result
     }
-
 
     fn region_projections_blocked_by(
         &self,
@@ -257,7 +259,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             })
                             .collect::<Vec<_>>()
                             .into();
-                        graph.add_edge(&inputs, &outputs, std::iter::once(edge.kind).collect());
+                        graph.add_edge(
+                            &inputs,
+                            &outputs,
+                            std::iter::once(edge.kind).collect(),
+                            ctxt,
+                        );
                     }
                     BorrowPcgEdgeKind::BorrowPcgExpansion(e)
                         if e.is_owned_expansion(ctxt)
@@ -284,6 +291,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                     )]
                                     .into(),
                                     std::iter::once(edge.kind).collect(),
+                                    ctxt,
                                 );
                             }
                         }

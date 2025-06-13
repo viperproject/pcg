@@ -19,6 +19,11 @@ use crate::{
 pub struct Coupled<T>(SmallVec<[T; 4]>);
 
 impl<T: Copy + Eq> Coupled<T> {
+    pub(crate) fn retain(&mut self, f: impl Fn(&T) -> bool) {
+        self.0.retain(|x| f(x));
+        pcg_validity_assert!(self.0.len() > 0)
+    }
+
     pub(crate) fn all_elements_distinct(&self) -> bool {
         for (i, x) in self.0.iter().enumerate() {
             for y in self.0.iter().skip(i + 1) {

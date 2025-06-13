@@ -8,7 +8,7 @@ impl List {
         let mut i = 0;
         let mut current = self;
         while i < n {
-// PCG: Terminator(bb1): Add Edge: Loop(bb1): [Remote(_1)] -> [current↓'?13]
+// PCG: Terminator(bb1): Add Edge: Loop(bb1): [Remote(_1)] -> [current↓'?13]; for read: false
 // ~PCG: bb1[0] pre_operands: (*_12) at After(bb7[2]) -> current↓'?13
 // PCG: bb1[0] pre_operands: Loop(bb1): [Remote(_1)] -> [current↓'?13]
 // PCG: bb1[0] pre_operands: Loop(bb1): [Remote(_1)↓'?11] -> [current↓'?13]
