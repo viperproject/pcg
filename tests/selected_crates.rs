@@ -17,6 +17,26 @@ fn test_selected_crates() {
     //     },
     // );
 
+    let _visualization_env_vars = vec![
+        (
+            "PCG_VISUALIZATION_DATA_DIR".to_string(),
+            "../../visualization/data".to_string(),
+        ),
+        ("PCG_VISUALIZATION".to_string(), "true".to_string()),
+    ];
+
+    common::run_on_crate(
+        "serde_yaml",
+        "0.9.34+deprecated",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("libyaml::emitter::Emitter::<'a>::flush"),
+            extra_env_vars: vec![],
+        },
+    );
+
     common::run_on_crate(
         "predicates-tree",
         "1.0.12",

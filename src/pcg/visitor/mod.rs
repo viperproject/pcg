@@ -175,6 +175,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         _location: Location,
     ) -> Result<(), PcgError> {
         if place.contains_unsafe_deref(self.ctxt) {
+            tracing::error!("DerefUnsafePtr: {}", place.to_short_string(self.ctxt));
             return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
         }
         Ok(())

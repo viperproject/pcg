@@ -13,7 +13,12 @@ use crate::{
     borrow_checker::{
         r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
         BorrowCheckerInterface,
-    }, borrow_pcg::region_projection::{PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
+    },
+    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
+    free_pcs::PcgAnalysis,
+    pcg::{self, BodyWithBorrowckFacts},
+    run_pcg,
+    rustc_interface::{
         borrowck::{self, BorrowIndex, LocationTable, RichLocation},
         data_structures::fx::{FxHashMap, FxHashSet},
         driver::{self, Compilation},
@@ -27,7 +32,9 @@ use crate::{
         },
         session::Session,
         span::SpanSnippetError,
-    }, utils::MAX_BASIC_BLOCKS, PcgOutput
+    },
+    utils::MAX_BASIC_BLOCKS,
+    PcgOutput,
 };
 
 #[rustversion::before(2024-11-09)]
@@ -205,6 +212,13 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
                 .expect("Failed to delete visualization directory contents");
         }
         std::fs::create_dir_all(path).expect("Failed to create visualization directory");
+
+        // Log the absolute path after directory creation
+        if let Ok(absolute_path) = std::fs::canonicalize(path) {
+            tracing::info!("Visualization directory: {:?}", absolute_path);
+        } else {
+            tracing::info!("Visualization directory: {:?}", path);
+        }
     }
 
     for def_id in hir_body_owners(tcx) {
@@ -216,7 +230,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
         if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
             && function != item_name
         {
-            tracing::info!(
+            tracing::debug!(
                 "Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}"
             );
             continue;

@@ -46,7 +46,11 @@ pub fn cargo_clean_in_dir(dir: &Path) {
         .current_dir(dir)
         .status()
         .unwrap_or_else(|_| panic!("Failed to clean cargo in {}", dir.display()));
-    assert!(cargo_clean.success(), "Failed to clean cargo in {}", dir.display());
+    assert!(
+        cargo_clean.success(),
+        "Failed to clean cargo in {}",
+        dir.display()
+    );
 }
 
 #[allow(dead_code)]
@@ -290,7 +294,9 @@ pub fn run_on_crate(name: &str, version: &str, date: Option<&str>, options: RunO
             std::fs::copy(dirname.join("Cargo.lock"), &cargo_lock_file).unwrap();
         }
     }
-    std::fs::remove_dir_all(dirname).unwrap();
+    std::fs::remove_dir_all(&dirname).unwrap_or_else(|e| {
+        panic!("Failed to remove directory {}: {}", dirname.display(), e);
+    });
 }
 
 #[allow(dead_code)]
