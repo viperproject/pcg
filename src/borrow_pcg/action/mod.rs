@@ -12,7 +12,6 @@ use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLab
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
-use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
@@ -45,7 +44,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
 
     pub(crate) fn set_latest(
         place: Place<'tcx>,
-        location: Location,
+        location: SnapshotLocation,
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
@@ -124,7 +123,7 @@ pub enum BorrowPcgActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
     MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
-    SetLatest(Place<'tcx>, Location),
+    SetLatest(Place<'tcx>, SnapshotLocation),
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,

@@ -24,7 +24,7 @@ use crate::{
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::{
-            mir::{self, Const, Local, PlaceElem},
+            mir::{Const, Local, PlaceElem},
             ty::{
                 self, DebruijnIndex, RegionVid, TyKind, TypeSuperVisitable, TypeVisitable,
                 TypeVisitor,
@@ -274,12 +274,6 @@ impl std::fmt::Display for RegionProjectionLabel {
     }
 }
 
-impl From<mir::Location> for RegionProjectionLabel {
-    fn from(location: mir::Location) -> Self {
-        RegionProjectionLabel::Location(location.into())
-    }
-}
-
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
@@ -397,9 +391,11 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'_, 'tcx> {
                 }
             }
             TyKind::RawPtr(ty, mutbl) | TyKind::Ref(_, ty, mutbl) => {
-                if mutbl.is_mut() && extract_regions(*ty, self.ctxt)
+                if mutbl.is_mut()
+                    && extract_regions(*ty, self.ctxt)
                         .iter()
-                        .any(|r| self.target == *r) {
+                        .any(|r| self.target == *r)
+                {
                     self.found = true;
                 }
                 // Otherwise, this is an immutable reference, don't check under
@@ -788,7 +784,6 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         self,
         base: U,
     ) -> RegionProjection<'tcx, U> {
-        
         RegionProjection {
             base,
             region_idx: self.region_idx,

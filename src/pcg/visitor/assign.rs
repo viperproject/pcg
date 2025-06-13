@@ -7,8 +7,8 @@ use crate::free_pcs::CapabilityKind;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils;
 use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::{self, SnapshotLocation};
 
 use super::{PCGUnsupportedError, PcgError};
 
@@ -19,7 +19,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         rvalue: &Rvalue<'tcx>,
     ) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            BorrowPcgAction::set_latest(target, self.location, "Target of Assignment").into(),
+            BorrowPcgAction::set_latest(
+                target,
+                SnapshotLocation::After(self.location),
+                "Target of Assignment",
+            )
+            .into(),
         )?;
         self.pcg
             .capabilities
@@ -150,15 +155,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
                     let source_proj =
                         if kind.mutability().is_mut() && source_proj.can_be_labelled(self.ctxt) {
+                            let label = SnapshotLocation::before(self.location).into();
                             self.record_and_apply_action(
                                 BorrowPcgAction::label_region_projection(
                                     source_proj.into(),
-                                    Some(self.location.into()),
+                                    Some(label),
                                     "assign_post_main",
                                 )
                                 .into(),
                             )?;
-                            source_proj.with_label(Some(self.location.into()), self.ctxt)
+                            source_proj.with_label(Some(label), self.ctxt)
                         } else {
                             source_proj
                         };

@@ -65,6 +65,10 @@ impl Serialize for EvalStmtPhase {
 }
 
 impl EvalStmtPhase {
+    pub fn is_operands_stage(&self) -> bool {
+        matches!(self, EvalStmtPhase::PreOperands | EvalStmtPhase::PostOperands)
+    }
+
     pub fn phases() -> [EvalStmtPhase; 4] {
         [
             EvalStmtPhase::PreOperands,
@@ -544,7 +548,6 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             }
         };
         if self.debug_data.is_some() {
-            tracing::info!("Joining blocks {:?} and {:?}", self_block, other_block);
             self.register_new_debug_iteration(mir::Location {
                 block: self_block,
                 statement_index: 0,

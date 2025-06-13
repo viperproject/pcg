@@ -155,8 +155,12 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         {
             let destination: utils::Place<'tcx> = (*destination).into();
             self.record_and_apply_action(
-                BorrowPcgAction::set_latest(destination, location, "Destination of Function Call")
-                    .into(),
+                BorrowPcgAction::set_latest(
+                    destination,
+                    SnapshotLocation::After(location),
+                    "Destination of Function Call",
+                )
+                .into(),
             )?;
             self.make_function_call_abstraction(
                 func,
@@ -244,7 +248,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 && place.has_location_dependent_value(self.ctxt)
             {
                 self.record_and_apply_action(
-                    BorrowPcgAction::set_latest(place, self.location, context).into(),
+                    BorrowPcgAction::set_latest(
+                        place,
+                        SnapshotLocation::After(self.location),
+                        context,
+                    )
+                    .into(),
                 )?;
             }
         }
@@ -447,9 +456,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         };
                         tracing::debug!("source_cap for {:?}: {:?}", owned_action, source_cap);
                         for target_place in target_places {
-                            self.pcg
-                                .capabilities
-                                .insert(target_place, source_cap);
+                            self.pcg.capabilities.insert(target_place, source_cap);
                         }
                         // if source_cap > *capability {
                         //     self.pcg.capabilities.insert((*to).into(), *capability);

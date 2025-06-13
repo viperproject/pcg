@@ -13,7 +13,7 @@ impl List {
         while i < n {
             // PCG: bb1[0] post_main: Loop(bb1): [Remote(_1)] -> [current↓'?17]
             // PCG: bb1[0] post_main: Loop(bb1): [Remote(_1)↓'?13] -> [current↓'?17]
-            // PCG: bb1[0] post_main: borrow: y <after bb0[8]> = &mut  x
+            // PCG: bb1[0] post_main: borrow: y <after bb0[7]> = &mut  x
             // PCG: bb1[0] post_main: borrow: z = &mut  *y
             current = match current.tail {
                 Some(ref mut tail) => tail,

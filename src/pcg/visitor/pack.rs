@@ -101,7 +101,10 @@ impl PcgVisitor<'_, '_, '_> {
                         }
                     } else if expansion.is_packable(slf.capabilities()) {
                         ShouldPackEdge::Yes {
-                            reason: "Expansion is packable".to_string(),
+                            reason: format!(
+                                "Expansion {} is packable",
+                                expansion.to_short_string(ctxt)
+                            ),
                         }
                     } else {
                         ShouldPackEdge::No
@@ -172,8 +175,7 @@ impl PcgVisitor<'_, '_, '_> {
                 if expansion_places
                     .iter()
                     .all(|p| !self.pcg.borrow.graph().contains(*p, self.ctxt))
-                    && let Some(candidate_cap) =
-                        self.pcg.capabilities.get(expansion_places[0])
+                    && let Some(candidate_cap) = self.pcg.capabilities.get(expansion_places[0])
                     && expansion_places
                         .iter()
                         .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))

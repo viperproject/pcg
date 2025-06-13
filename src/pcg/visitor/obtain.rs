@@ -93,7 +93,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             base.into(),
             place_expansion,
             if base.is_mut_ref(self.ctxt) && obtain_type.should_label_rp() {
-                Some(self.location.into())
+                Some(SnapshotLocation::before(self.location).into())
             } else {
                 None
             },
@@ -124,7 +124,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.record_and_apply_action(
                 BorrowPcgAction::label_region_projection(
                     rp,
-                    Some(self.location.into()),
+                    Some(if self.phase.is_operands_stage() {
+                        SnapshotLocation::before(self.location).into()
+                    } else {
+                        SnapshotLocation::Mid(self.location).into()
+                    }),
                     "add_deref_expansion",
                 )
                 .into(),
