@@ -14,7 +14,10 @@ use super::{
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
 use crate::{
-    borrow_checker::BorrowCheckerInterface, borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate}, pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation}, utils::json::ToJsonWithCompilerCtxt
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
+    utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -320,6 +323,20 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
+    pub(crate) fn redirect(
+        &mut self,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        for p in &mut self.expansion {
+            if *p == from {
+                *p = to;
+                return true;
+            }
+        }
+        false
+    }
     pub(crate) fn is_mutable_deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         if let BlockingNode::Place(p) = self.base {
             p.place().is_mut_ref(ctxt)
@@ -381,7 +398,7 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
                             .place()
                             .place()
                             .is_prefix_exact(p_rp.place().place())
-                        // && p_rp.label() == base_rp.label()
+                        && p_rp.label() == base_rp.label()
                 } else {
                     false
                 }

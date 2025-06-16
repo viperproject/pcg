@@ -182,7 +182,11 @@ impl PcgVisitor<'_, '_, '_> {
                         .iter()
                         .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
                 {
-                    self.collapse(base, candidate_cap)?;
+                    self.collapse(
+                        base,
+                        candidate_cap,
+                        format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
+                    )?;
                     if base.projection.is_empty()
                         && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
                     {

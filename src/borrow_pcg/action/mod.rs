@@ -251,11 +251,7 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(result)
     }
 
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    fn make_place_old(&mut self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.graph.make_place_old(place, &self.latest, ctxt)
     }
 
@@ -313,7 +309,8 @@ impl<'tcx> BorrowsState<'tcx> {
                                 expanded_capability,
                                 p.place().to_short_string(ctxt)
                             );
-                            changed |= capabilities.insert(p.place(), expanded_capability);
+                            changed |=
+                                capabilities.insert(p.place(), expanded_capability);
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
@@ -131,6 +131,23 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
             && let Operand::Move(place) = operand
         {
             let place: utils::Place<'tcx> = (*place).into();
+            let future_edges = self.pcg.borrow.graph.future_edges();
+            for edge in future_edges {
+                if let MaybeOldPlace::Current { place: edge_place } = edge.value.short().place() {
+                    if edge_place.is_prefix(place) || place.is_prefix(edge_place) {
+                        self.record_and_apply_action(
+                            BorrowPcgAction::remove_edge(
+                                BorrowPcgEdge::new(
+                                    BorrowPcgEdgeKind::BorrowFlow(edge.value),
+                                    edge.conditions,
+                                ),
+                                "Future place has became old",
+                            )
+                            .into(),
+                        )?;
+                    }
+                }
+            }
             self.record_and_apply_action(
                 BorrowPcgAction::make_place_old(place, MakePlaceOldReason::MoveOut).into(),
             )?;
@@ -346,29 +363,35 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
     fn redirect_blocked_nodes_to_base(
         &mut self,
-        expansion: &BorrowPcgExpansion<'tcx>,
+        base: LocalNode<'tcx>,
+        expansion: &[LocalNode<'tcx>],
     ) -> Result<(), PcgError> {
-        for node in expansion.expansion() {
-            for to_redirect in self
+        for node in expansion.iter() {
+            let edges_to_redirect = self
                 .pcg
                 .borrow
                 .graph()
                 .edges_blocked_by(*node, self.ctxt)
                 .map(|e| e.kind.clone())
-                .collect::<Vec<_>>()
-            {
+                .collect::<Vec<_>>();
+            tracing::debug!(
+                "redirecting {} edges to base {}",
+                edges_to_redirect.len(),
+                base.to_short_string(self.ctxt)
+            );
+            for to_redirect in edges_to_redirect {
                 // TODO: Due to a bug ignore other expansions to this place for now
-                if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
+                // if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
                     self.record_and_apply_action(
                         BorrowPcgAction::redirect_edge(
                             to_redirect,
                             *node,
-                            expansion.base,
+                            base,
                             "redirect_blocked_nodes_to_base",
                         )
                         .into(),
                     )?;
-                }
+                // }
             }
         }
         Ok(())
@@ -421,14 +444,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
         if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
-            self.redirect_blocked_nodes_to_base(expansion)?;
+            self.redirect_blocked_nodes_to_base(expansion.base, expansion.expansion())?;
             if expansion.is_mutable_deref(self.ctxt) {
                 self.unlabel_blocked_region_projections(expansion)?;
             }
             for exp_node in expansion.expansion() {
                 if let PCGNode::Place(place) = exp_node {
                     for rp in place.region_projections(self.ctxt) {
-                        tracing::info!(
+                        tracing::debug!(
                             "labeling region projection: {}",
                             rp.to_short_string(self.ctxt)
                         );

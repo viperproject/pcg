@@ -264,6 +264,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
+        context: String,
     ) -> Result<(), PcgError> {
         let capability_projs = self.pcg.owned.locals_mut()[place.local].get_allocated_mut();
         let expansions = capability_projs
@@ -278,10 +279,26 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
                     RepackOp::Collapse(p, p.expansion_places(&expansion, self.ctxt)[0], capability),
-                    None,
+                    Some(context.clone()),
                 )
                 .into(),
             )?;
+            for rp in p.region_projections(self.ctxt) {
+                let rp_expansion: Vec<LocalNode<'tcx>> = p
+                    .expansion_places(&expansion, self.ctxt)
+                    .into_iter()
+                    .flat_map(|ep| {
+                        ep.region_projections(self.ctxt)
+                            .into_iter()
+                            .filter(|erp| erp.region(self.ctxt) == rp.region(self.ctxt))
+                            .map(|erp| erp.into())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                if rp_expansion.len() > 1 {
+                    self.redirect_blocked_nodes_to_base(rp.into(), &rp_expansion)?;
+                }
+            }
         }
         Ok(())
     }
@@ -308,7 +325,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             )
         {
             let collapse_to = self.place_to_collapse_to(place);
-            self.collapse(collapse_to, obtain_type.capability())?;
+            self.collapse(
+                collapse_to,
+                obtain_type.capability(),
+                format!("Obtain {}", place.to_short_string(self.ctxt)),
+            )?;
         }
 
         // if obtain_type.capability().is_write() {
