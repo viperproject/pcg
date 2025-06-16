@@ -146,10 +146,6 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.ctxt),
             },
             &RawPtr(mutbl, place) => {
-                let place: Place<'tcx> = place.into();
-                if place.contains_unsafe_deref(self.ctxt) {
-                    return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
-                }
                 #[rustversion::since(2025-03-02)]
                 if matches!(mutbl, RawPtrKind::Mut) {
                     PlaceCondition::exclusive(place, self.ctxt)
@@ -284,10 +280,14 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
 
     fn visit_place_fallable(
         &mut self,
-        _place: Place<'tcx>,
+        place: Place<'tcx>,
         _context: mir::visit::PlaceContext,
         _location: mir::Location,
     ) -> Result<(), PcgError> {
+        let place: Place<'tcx> = place.into();
+        if place.contains_unsafe_deref(self.ctxt) {
+            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+        }
         Ok(())
     }
 }

@@ -26,6 +26,18 @@ fn test_selected_crates() {
     ];
 
     common::run_on_crate(
+        "linked-hash-map",
+        "0.5.6",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("LinkedHashMap::<K, V, S>::get_refresh"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
         "serde_yaml",
         "0.9.34+deprecated",
         Some("2025-03-13"),
