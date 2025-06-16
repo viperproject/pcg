@@ -293,7 +293,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         self.record_and_apply_action(
                             BorrowPcgAction::remove_region_projection_label(
                                 rp.with_placeholder_label(self.ctxt).into(),
-                                "update_unblocked_node_capabilities_and_remove_placeholder_projections",
+                                format!(
+                                    "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
+                                    place.to_short_string(self.ctxt)
+                                ),
                             )
                             .into(),
                         )?;
@@ -310,13 +313,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
-                self.record_and_apply_action(
-                    BorrowPcgAction::remove_region_projection_label(
-                        rp,
-                        "unlabel_blocked_region_projections",
-                    )
-                    .into(),
-                )?;
+                if !self.pcg.borrow.graph.contains(rp.unlabelled(), self.ctxt) {
+                    self.record_and_apply_action(
+                        BorrowPcgAction::remove_region_projection_label(
+                            rp,
+                            "unlabel_blocked_region_projections",
+                        )
+                        .into(),
+                    )?;
+                }
             }
         }
         Ok(())

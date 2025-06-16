@@ -381,7 +381,7 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
                             .place()
                             .place()
                             .is_prefix_exact(p_rp.place().place())
-                        && p_rp.label() == base_rp.label()
+                        // && p_rp.label() == base_rp.label()
                 } else {
                     false
                 }

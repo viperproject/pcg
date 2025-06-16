@@ -8,7 +8,7 @@ import React, {
 import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "../dot_graph";
 
-import PCGOps from "./BorrowsAndActions";
+import PCGOps from "./PcgActionsDisplay";
 import {
   CurrentPoint,
   PathData,

@@ -6,7 +6,6 @@ import {
   PcgProgramPointData,
   SelectedAction,
 } from "../types";
-import { IterationActions, PcgIteration } from "../api";
 
 function PcgActionsDisplay({
   actions,
@@ -72,6 +71,12 @@ export default function PCGOps({
   selectedAction: SelectedAction | null;
   setSelectedAction: (action: SelectedAction) => void;
 }) {
+  // Drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [initialized, setInitialized] = useState(false);
+
   // Collect all actions with their phase info for keyboard navigation
   const getAllActions = () => {
     const allActions: Array<{
@@ -98,6 +103,51 @@ export default function PCGOps({
   };
 
   const allActions = getAllActions();
+
+  // Initialize position on first render
+  useEffect(() => {
+    if (!initialized) {
+      setPosition({
+        x: window.innerWidth - 320,
+        y: window.innerHeight - 200,
+      });
+      setInitialized(true);
+    }
+  }, [initialized]);
+
+  // Drag handlers
+  const handleMouseDown = (event: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({
+      x: event.clientX - position.x,
+      y: event.clientY - position.y,
+    });
+  };
+
+  const handleMouseMove = (event: MouseEvent) => {
+    if (isDragging) {
+      setPosition({
+        x: event.clientX - dragStart.x,
+        y: event.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Mouse event listeners for dragging
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+      return () => {
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+    }
+  }, [isDragging, dragStart]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -182,15 +232,18 @@ export default function PCGOps({
     <div
       style={{
         position: "fixed",
-        bottom: "20px",
-        right: "20px",
+        top: `${position.y}px`,
+        left: `${position.x}px`,
         backgroundColor: "white",
         boxShadow: "0 0 10px rgba(0,0,0,0.1)",
         padding: "10px",
         maxWidth: "300px",
         overflowY: "auto",
         maxHeight: "80vh",
+        cursor: isDragging ? "grabbing" : "grab",
+        userSelect: "none",
       }}
+      onMouseDown={handleMouseDown}
     >
       {content}
       <div style={{ marginTop: "10px", fontSize: "12px", color: "#666" }}>

@@ -233,7 +233,7 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -
         }
         mir::StatementKind::ConstEvalCounter => todo!(),
         mir::StatementKind::Nop => todo!(),
-        mir::StatementKind::BackwardIncompatibleDropHint {..} => todo!(),
+        mir::StatementKind::BackwardIncompatibleDropHint { .. } => todo!(),
     }
 }
 
