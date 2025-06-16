@@ -8,7 +8,6 @@ use crate::{
     borrow_pcg::{
         abstraction::node::AbstractionGraphNode,
         abstraction_graph_constructor::AbstractionGraph,
-        edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         region_projection::RegionProjection,
         util::ExploreFrom,
     },
@@ -193,20 +192,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges
             .into_iter()
             .map(|(kind, conditions)| BorrowPcgEdge { kind, conditions })
-    }
-
-    pub(crate) fn future_edges(&self) -> Vec<Conditioned<BorrowFlowEdge<'tcx>>> {
-        self.edges()
-            .flat_map(|edge| match edge.kind {
-                BorrowPcgEdgeKind::BorrowFlow(bf) if bf.kind() == BorrowFlowEdgeKind::Future => {
-                    Some(Conditioned {
-                        conditions: edge.conditions().clone(),
-                        value: bf.clone(),
-                    })
-                }
-                _ => None,
-            })
-            .collect()
     }
 
     pub fn edges<'slf>(&'slf self) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + 'slf {

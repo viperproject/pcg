@@ -232,17 +232,25 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         )
                         .into(),
                     )?;
-                    let old_rp_base = rp.with_label(Some(label.into()), self.ctxt);
-                    let expansion_rps = expansion
-                        .expansion()
-                        .iter()
-                        .map(|node| {
-                            node.to_pcg_node(self.ctxt)
-                                .try_into_region_projection()
-                                .unwrap()
-                        })
-                        .collect::<Vec<_>>();
-                    self.add_and_update_placeholder_edges(old_rp_base, &expansion_rps, "obtain")?;
+
+                    // Don't add placeholder edges for owned expansions, unless its a deref
+                    if !base.is_owned(self.ctxt) || base.is_mut_ref(self.ctxt) {
+                        let old_rp_base = rp.with_label(Some(label.into()), self.ctxt);
+                        let expansion_rps = expansion
+                            .expansion()
+                            .iter()
+                            .map(|node| {
+                                node.to_pcg_node(self.ctxt)
+                                    .try_into_region_projection()
+                                    .unwrap()
+                            })
+                            .collect::<Vec<_>>();
+                        self.add_and_update_placeholder_edges(
+                            old_rp_base,
+                            &expansion_rps,
+                            "obtain",
+                        )?;
+                    }
                 }
             }
         }
