@@ -184,7 +184,7 @@ pub enum BorrowFlowEdgeKind {
     InitialBorrows,
     CopyRef,
     Move,
-    UpdateNestedRefs,
+    Future,
 }
 
 impl std::fmt::Display for BorrowFlowEdgeKind {
@@ -207,7 +207,7 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::InitialBorrows => write!(f, "InitialBorrows"),
             BorrowFlowEdgeKind::CopyRef => write!(f, "CopyRef"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
-            BorrowFlowEdgeKind::UpdateNestedRefs => write!(f, "UpdateNestedRefs"),
+            BorrowFlowEdgeKind::Future => write!(f, "Future"),
         }
     }
 }
@@ -221,7 +221,7 @@ impl BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::InitialBorrows => true,
             BorrowFlowEdgeKind::CopyRef => false,
             BorrowFlowEdgeKind::Move => true,
-            BorrowFlowEdgeKind::UpdateNestedRefs => true,
+            BorrowFlowEdgeKind::Future => true,
         }
     }
 }

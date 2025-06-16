@@ -53,8 +53,8 @@ impl SnapshotLocation {
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct PlaceSnapshot<'tcx> {
-    pub place: Place<'tcx>,
-    pub at: SnapshotLocation,
+    pub(crate) place: Place<'tcx>,
+    pub(crate) at: SnapshotLocation,
 }
 
 impl std::fmt::Display for SnapshotLocation {

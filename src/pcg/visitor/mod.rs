@@ -290,12 +290,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         self.ctxt,
                     ))?;
                     for rp in place.region_projections(self.ctxt) {
-                        let placeholder_rp =
-                            rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt);
                         self.record_and_apply_action(
-                            BorrowPcgAction::label_region_projection(
-                                placeholder_rp.into(),
-                                None,
+                            BorrowPcgAction::remove_region_projection_label(
+                                rp.with_placeholder_label(self.ctxt).into(),
                                 "update_unblocked_node_capabilities_and_remove_placeholder_projections",
                             )
                             .into(),
@@ -314,9 +311,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
                 self.record_and_apply_action(
-                    BorrowPcgAction::label_region_projection(
+                    BorrowPcgAction::remove_region_projection_label(
                         rp,
-                        None,
                         "unlabel_blocked_region_projections",
                     )
                     .into(),
@@ -403,20 +399,24 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
         if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
+            self.redirect_blocked_nodes_to_base(expansion)?;
             if expansion.is_mutable_deref(self.ctxt) {
                 self.unlabel_blocked_region_projections(expansion)?;
             }
-            self.redirect_blocked_nodes_to_base(expansion)?;
             for exp_node in expansion.expansion() {
                 if let PCGNode::Place(place) = exp_node {
                     for rp in place.region_projections(self.ctxt) {
+                        tracing::info!(
+                            "labeling region projection: {}",
+                            rp.to_short_string(self.ctxt)
+                        );
                         self.record_and_apply_action(
                             BorrowPcgAction::label_region_projection(
                                 rp,
                                 Some(RegionProjectionLabel::Location(SnapshotLocation::before(
                                     self.location,
                                 ))),
-                                context,
+                                format!("{}: {}", context, "Label region projections of expansion"),
                             )
                             .into(),
                         )?;

@@ -35,7 +35,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     BorrowFlowEdge::new(
                         labelled_rp.into(),
                         future_rp,
-                        BorrowFlowEdgeKind::UpdateNestedRefs,
+                        BorrowFlowEdgeKind::Future,
                         self.ctxt,
                     )
                     .into(),
@@ -53,7 +53,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         BorrowFlowEdge::new(
                             *expansion_rp,
                             future_rp,
-                            BorrowFlowEdgeKind::UpdateNestedRefs,
+                            BorrowFlowEdgeKind::Future,
                             self.ctxt,
                         )
                         .into(),
@@ -72,7 +72,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .into_iter()
             .filter_map(|edge| {
                 if let BorrowPcgEdgeKind::BorrowFlow(bf_edge) = edge.kind {
-                    if bf_edge.kind == BorrowFlowEdgeKind::UpdateNestedRefs
+                    if bf_edge.kind == BorrowFlowEdgeKind::Future
                         && bf_edge.short() != future_rp
                     {
                         return Some((
@@ -81,7 +81,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 BorrowFlowEdge::new(
                                     future_rp.into(),
                                     bf_edge.short(),
-                                    BorrowFlowEdgeKind::UpdateNestedRefs,
+                                    BorrowFlowEdgeKind::Future,
                                     self.ctxt,
                                 )
                                 .into(),

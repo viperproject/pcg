@@ -27,7 +27,7 @@ pub enum MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
-    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.place()
             .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt)
             .is_ok()

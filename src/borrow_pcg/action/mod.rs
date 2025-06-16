@@ -83,6 +83,16 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
+    pub(crate) fn remove_region_projection_label(
+        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        context: impl Into<String>,
+    ) -> Self {
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::LabelRegionProjection(projection, None),
+            debug_context: Some(context.into()),
+        }
+    }
+
     pub(crate) fn label_region_projection(
         projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         label: Option<RegionProjectionLabel>,
