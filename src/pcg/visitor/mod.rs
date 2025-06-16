@@ -307,12 +307,29 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
+    /// As an optimzization, for expansions of the form {y, y|'y at l} -> *y,
+    /// if *y doesn't contain any borrows, we currently don't introduce placeholder
+    /// projections for y|'y: the set of borrows is guaranteed not to change as long as *y
+    /// is in the graph.
+    ///
+    /// Accordingly, when we want to remove *y in such cases, we just remove the
+    /// label rather than use the normal logic (of renaming the placeholder
+    /// projection to the current one).
+    ///
+    /// This should be called *after* renaming any placeholder projections to
+    /// current projections. (If there is a current projection, it means that
+    /// there was originally a placeholder projection that was renamed to the
+    /// current one).
+    ///
+    /// **TODO**: The above check is something of a hack, perhaps a better solution
+    /// is to check for the presence of lifetimes in the expansion?
     fn unlabel_blocked_region_projections(
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
     ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
+                // See the doc comment above for why we do this.
                 if !self.pcg.borrow.graph.contains(rp.unlabelled(), self.ctxt) {
                     self.record_and_apply_action(
                         BorrowPcgAction::remove_region_projection_label(
