@@ -26,6 +26,18 @@ fn test_selected_crates() {
     ];
 
     common::run_on_crate(
+        "pest",
+        "2.7.15",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("parser_state::ParserState::<'i, R>::match_char_by"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
         "linked-hash-map",
         "0.5.6",
         Some("2025-03-13"),

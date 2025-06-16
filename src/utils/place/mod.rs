@@ -370,7 +370,6 @@ impl<'tcx> Place<'tcx> {
         self.region_projections(repacker)[idx]
     }
 
-    #[tracing::instrument(skip(ctxt))]
     pub fn regions<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,

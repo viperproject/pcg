@@ -128,7 +128,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .into_iter()
             .flat_map(|rp| rp.try_into())
             .collect();
+        let mut seen = FxHashSet::default();
         while let Some(node) = blocking.pop() {
+            if seen.contains(&node) {
+                continue;
+            }
+            seen.insert(node);
             let place = node.base().place();
             if place.is_deref() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
