@@ -37,6 +37,18 @@ fn test_selected_crates() {
         },
     );
 
+    // common::run_on_crate(
+    //     "brotli-decompressor",
+    //     "4.0.2",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("<MemPool<'a, T> as core::default::Default>::default"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
     common::run_on_crate(
         "predicates-tree",
         "1.0.12",

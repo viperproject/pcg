@@ -309,13 +309,4 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         }
     }
-
-    #[must_use]
-    pub(crate) fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.make_place_old(place, &self.latest, ctxt)
-    }
 }

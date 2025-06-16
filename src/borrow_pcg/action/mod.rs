@@ -251,6 +251,14 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(result)
     }
 
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph.make_place_old(place, &self.latest, ctxt)
+    }
+
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,

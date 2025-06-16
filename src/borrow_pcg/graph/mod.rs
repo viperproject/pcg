@@ -185,12 +185,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn new() -> Self {
-        Self {
-            edges: FxHashMap::default(),
-        }
-    }
-
     #[allow(unused)]
     pub(crate) fn into_edges(self) -> impl Iterator<Item = BorrowPcgEdge<'tcx>> {
         self.edges

@@ -311,9 +311,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.collapse(collapse_to, obtain_type.capability())?;
         }
 
-        if obtain_type.capability().is_write() {
-            let _ = self.pcg.borrow.make_place_old(place, self.ctxt);
-        }
+        // if obtain_type.capability().is_write() {
+        //     let _ = self.record_and_apply_action(
+        //         BorrowPcgAction::make_place_old(place, MakePlaceOldReason::ReAssign).into(),
+        //     );
+        // }
 
         self.expand_to(place, obtain_type)?;
 

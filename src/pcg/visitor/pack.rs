@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use itertools::Itertools;
 
 use super::PcgVisitor;
@@ -43,11 +45,11 @@ impl PcgVisitor<'_, '_, '_> {
             slf: &'slf mut Pcg<'tcx>,
             ctxt: CompilerCtxt<'mir, 'tcx>,
             location: Location,
-        ) -> Vec<(BorrowPcgEdge<'tcx>, String)> {
+        ) -> Vec<(BorrowPcgEdge<'tcx>, Cow<'static, str>)> {
             let fg = slf.borrow.graph().frozen_graph();
 
             enum ShouldKillNode {
-                Yes { reason: String },
+                Yes { reason: Cow<'static, str> },
                 No,
             }
 
@@ -58,7 +60,7 @@ impl PcgVisitor<'_, '_, '_> {
                 };
                 if place.is_old() {
                     return ShouldKillNode::Yes {
-                        reason: "Place is old".to_string(),
+                        reason: "Place is old".into(),
                     };
                 }
 
@@ -71,13 +73,13 @@ impl PcgVisitor<'_, '_, '_> {
                     && !fg.has_edge_blocking(place.into(), ctxt)
                 {
                     return ShouldKillNode::Yes {
-                            reason: "Node is a place with a non-empty projection and is not blocked by an edge".to_string(),
+                            reason: "Node is a place with a non-empty projection and is not blocked by an edge".into(),
                         };
                 }
 
                 if ctxt.bc.is_dead(p.into(), location, true) {
                     return ShouldKillNode::Yes {
-                        reason: "Borrow-checker reports node as dead".to_string(),
+                        reason: "Borrow-checker reports node as dead".into(),
                     };
                 }
 
@@ -85,26 +87,25 @@ impl PcgVisitor<'_, '_, '_> {
             };
 
             enum ShouldPackEdge {
-                Yes { reason: String },
+                Yes { reason: Cow<'static, str> },
                 No,
             }
 
             let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                    if
-                    /*expansion.base.is_place() */
-                    expansion.expansion().iter().all(|node| {
+                    if expansion.expansion().iter().all(|node| {
                         node.is_old() || ctxt.bc.is_dead(node.place().into(), location, true)
                     }) {
                         ShouldPackEdge::Yes {
-                            reason: "Expansion is old or dead".to_string(),
+                            reason: "Expansion is old or dead".into(),
                         }
                     } else if expansion.is_packable(slf.capabilities()) {
                         ShouldPackEdge::Yes {
                             reason: format!(
                                 "Expansion {} is packable",
                                 expansion.to_short_string(ctxt)
-                            ),
+                            )
+                            .into(),
                         }
                     } else {
                         ShouldPackEdge::No
@@ -127,7 +128,8 @@ impl PcgVisitor<'_, '_, '_> {
                         reason: format!(
                             "Edge is blocked by nodes that should be killed: {}",
                             why_killed_reasons.join(", ")
-                        ),
+                        )
+                        .into(),
                     }
                 }
             };
