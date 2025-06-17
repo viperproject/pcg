@@ -1,8 +1,9 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     marker::PhantomData,
 };
 
+use derive_more::From;
 use itertools::Itertools;
 use serde_json::json;
 
@@ -16,26 +17,25 @@ use super::{
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    free_pcs::RepackGuide,
     pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
     utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
-    rustc_interface::{
+    rustc_interface::
         middle::{
-            mir::{Local, PlaceElem},
+            mir::PlaceElem,
             ty,
-        },
-        span::Symbol,
-    },
+        }
+    ,
     utils::{
-        display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, ConstantIndex,
-        HasPlace, Place,
+        display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, HasPlace, Place,
     },
 };
 use crate::{
-    rustc_interface::{FieldIdx, VariantIdx},
+    rustc_interface::FieldIdx,
     utils::place::maybe_old::MaybeOldPlace,
 };
 
@@ -45,7 +45,7 @@ use crate::{
 /// it enables a more reasonable notion of equality between expansions. Directly
 /// storing the place elements in a `Vec` could lead to different representations
 /// for the same expansion, e.g. `{*x.f.a, *x.f.b}` and `{*x.f.b, *x.f.a}`.
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, From)]
 pub enum PlaceExpansion<'tcx> {
     /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
     /// Note that for region projections, not every field of the base type may
@@ -58,16 +58,9 @@ pub enum PlaceExpansion<'tcx> {
     /// The projection of `s↓'a` contains only `{s.x↓'a}` because nothing under
     /// `'a` is accessible via `s.y`.
     Fields(BTreeMap<FieldIdx, ty::Ty<'tcx>>),
-    /// See [`PlaceElem::Downcast`]
-    Downcast(Option<Symbol>, VariantIdx),
     /// See [`PlaceElem::Deref`]
     Deref,
-    /// See [`PlaceElem::Index`]
-    Index(Local),
-    /// See [`PlaceElem::ConstantIndex`]
-    ConstantIndices(BTreeSet<ConstantIndex>),
-    /// See [`PlaceElem::Subslice`]
-    Subslice { from: u64, to: u64, from_end: bool },
+    Guided(RepackGuide),
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
@@ -77,14 +70,15 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> PlaceExpansion<'tcx> {
-    #[allow(unused)]
-    pub(crate) fn is_deref(&self) -> bool {
-        matches!(self, PlaceExpansion::Deref)
+    pub(crate) fn guide(&self) -> Option<RepackGuide> {
+        match self {
+            PlaceExpansion::Guided(guide) => Some(*guide),
+            _ => None,
+        }
     }
 
     pub(crate) fn from_places(places: Vec<Place<'tcx>>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
-        let mut constant_indices = BTreeSet::new();
 
         for place in places {
             let corrected_place = CorrectedPlace::new(place, repacker);
@@ -94,37 +88,19 @@ impl<'tcx> PlaceExpansion<'tcx> {
                     PlaceElem::Field(field_idx, ty) => {
                         fields.insert(field_idx, ty);
                     }
-                    PlaceElem::ConstantIndex {
-                        offset,
-                        min_length,
-                        from_end,
-                    } => {
-                        constant_indices.insert(ConstantIndex {
-                            offset,
-                            min_length,
-                            from_end,
-                        });
-                    }
                     PlaceElem::Deref => return PlaceExpansion::Deref,
-                    PlaceElem::Downcast(symbol, variant_idx) => {
-                        return PlaceExpansion::Downcast(symbol, variant_idx);
+                    other => {
+                        let repack_guide: RepackGuide = other
+                            .try_into()
+                            .unwrap_or_else(|_| todo!("unsupported place elem: {:?}", other));
+                        return PlaceExpansion::Guided(repack_guide);
                     }
-                    PlaceElem::Index(idx) => {
-                        return PlaceExpansion::Index(idx);
-                    }
-                    PlaceElem::Subslice { from, to, from_end } => {
-                        return PlaceExpansion::Subslice { from, to, from_end };
-                    }
-                    _ => todo!(),
                 }
             }
         }
 
         if !fields.is_empty() {
-            assert!(constant_indices.is_empty());
             PlaceExpansion::Fields(fields)
-        } else if !constant_indices.is_empty() {
-            PlaceExpansion::ConstantIndices(constant_indices)
         } else {
             unreachable!()
         }
@@ -138,26 +114,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
                 .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
                 .collect(),
             PlaceExpansion::Deref => vec![PlaceElem::Deref],
-            PlaceExpansion::Downcast(symbol, variant_idx) => {
-                vec![PlaceElem::Downcast(*symbol, *variant_idx)]
-            }
-            PlaceExpansion::Index(idx) => vec![PlaceElem::Index(*idx)],
-            PlaceExpansion::ConstantIndices(constant_indices) => constant_indices
-                .iter()
-                .sorted_by_key(|a| a.offset)
-                .map(|c| PlaceElem::ConstantIndex {
-                    offset: c.offset,
-                    min_length: c.min_length,
-                    from_end: c.from_end,
-                })
-                .collect(),
-            PlaceExpansion::Subslice { from, to, from_end } => {
-                vec![PlaceElem::Subslice {
-                    from: *from,
-                    to: *to,
-                    from_end: *from_end,
-                }]
-            }
+            PlaceExpansion::Guided(guided) => vec![(*guided).into()],
         }
     }
 }

@@ -171,10 +171,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             } else {
                 self.record_and_apply_action(
                     OwnedPcgAction::new(
-                        RepackOp::Expand(
+                        RepackOp::expand(
                             expansion.base_place(),
-                            expansion.target_place,
+                            expansion.guide(),
                             obtain_type.capability(),
+                            self.ctxt,
                         ),
                         None,
                     )
@@ -288,7 +289,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         for (p, expansion) in expansions {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
-                    RepackOp::Collapse(p, p.expansion_places(&expansion, self.ctxt)[0], capability),
+                    RepackOp::collapse(p, expansion.guide(), capability),
                     Some(context.clone()),
                 )
                 .into(),

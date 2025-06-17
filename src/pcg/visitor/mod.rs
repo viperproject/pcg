@@ -467,18 +467,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         .pcg
                         .capabilities
                         .insert((*place).into(), capability_kind),
-                    RepackOp::Expand(from, to, capability) => {
-                        let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
+                    RepackOp::Expand(expand) => {
+                        let target_places = expand.target_places(self.ctxt);
                         let capability_projections =
-                            self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
+                            self.pcg.owned.locals_mut()[expand.local()].get_allocated_mut();
                         capability_projections.insert_expansion(
-                            from,
+                            expand.from,
                             PlaceExpansion::from_places(target_places.clone(), self.ctxt),
                         );
-                        let source_cap = if capability.is_read() {
-                            capability
+                        let source_cap = if expand.capability.is_read() {
+                            expand.capability
                         } else {
-                            self.pcg.capabilities.get((*from).into()).unwrap()
+                            self.pcg.capabilities.get((expand.from).into()).unwrap()
                         };
                         tracing::debug!("source_cap for {:?}: {:?}", owned_action, source_cap);
                         for target_place in target_places {
@@ -487,12 +487,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         // if source_cap > *capability {
                         //     self.pcg.capabilities.insert((*to).into(), *capability);
                         // }
-                        if capability.is_read() {
+                        if expand.capability.is_read() {
                             self.pcg
                                 .capabilities
-                                .insert((*from).into(), CapabilityKind::Read);
+                                .insert((expand.from).into(), CapabilityKind::Read);
                         } else {
-                            self.pcg.capabilities.remove((*from).into());
+                            self.pcg.capabilities.remove((expand.from).into());
                         }
                         true
                     }
@@ -511,12 +511,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         }
                         true
                     }
-                    RepackOp::Collapse(base_place, proj_place, _) => {
+                    RepackOp::Collapse(collapse) => {
                         let capability_projections =
-                            self.pcg.owned.locals_mut()[base_place.local].get_allocated_mut();
-                        let expansion_places = base_place
-                            .expand_one_level(proj_place, self.ctxt)?
-                            .expansion();
+                            self.pcg.owned.locals_mut()[collapse.local()].get_allocated_mut();
+                        let expansion_places = collapse.expansion_places(self.ctxt);
                         let retained_cap = expansion_places.iter().fold(
                             CapabilityKind::Exclusive,
                             |acc, place| match self.pcg.capabilities.remove(*place) {
@@ -526,8 +524,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         );
                         self.pcg
                             .capabilities
-                            .insert((*base_place).into(), retained_cap);
-                        capability_projections.expansions.remove(&base_place);
+                            .insert((collapse.to).into(), retained_cap);
+                        capability_projections.expansions.remove(&collapse.to);
                         true
                     }
                     _ => unreachable!(),

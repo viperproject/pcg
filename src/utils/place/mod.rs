@@ -15,6 +15,7 @@ use derive_more::{Deref, DerefMut};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    free_pcs::RepackGuide,
     pcg::{PCGUnsupportedError, PcgError},
     rustc_interface::{
         ast::Mutability,
@@ -127,7 +128,10 @@ impl<'tcx> From<Place<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
-    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), std::string::String> {
+    fn check_validity(
+        &self,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<(), std::string::String> {
         Ok(())
     }
 }
@@ -163,8 +167,7 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
         elem: PlaceElem<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> std::result::Result<Self, PcgError> {
-        self.project_deeper(elem, repacker)
-            .map_err(PcgError::unsupported)
+        Place::project_deeper(*self, elem, repacker).map_err(PcgError::unsupported)
     }
 
     fn iter_projections<C: Copy>(
@@ -199,8 +202,8 @@ impl<'tcx> Place<'tcx> {
     /// Returns an error if the projection would be illegal
     ///
     /// ```
-    fn project_deeper<C: Copy>(
-        &self,
+    pub(crate) fn project_deeper<C: Copy>(
+        self,
         elem: PlaceElem<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> std::result::Result<Self, PCGUnsupportedError> {
@@ -278,6 +281,42 @@ impl<'tcx> Place<'tcx> {
     #[cfg(not(feature = "debug_info"))]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
         Self(PlaceRef { local, projection })
+    }
+
+    pub(crate) fn expansion(
+        self,
+        guide: Option<RepackGuide>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> PlaceExpansion<'tcx> {
+        if let Some(guide) = guide {
+            guide.into()
+        } else if self.ty(ctxt).ty.is_box() {
+            PlaceExpansion::Deref
+        } else {
+            match self.ty(ctxt).ty.kind() {
+                ty::TyKind::Adt(adt_def, substs) => {
+                    let variant = match self.ty(ctxt).variant_index {
+                        Some(v) => adt_def.variant(v),
+                        None => adt_def.non_enum_variant(),
+                    };
+                    PlaceExpansion::Fields(
+                        variant
+                            .fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, field)| (i.into(), field.ty(ctxt.tcx(), substs)))
+                            .collect(),
+                    )
+                }
+                ty::TyKind::Tuple(tys) => PlaceExpansion::Fields(
+                    tys.iter()
+                        .enumerate()
+                        .map(|(i, ty)| (i.into(), ty))
+                        .collect(),
+                ),
+                _ => unreachable!("Unexpected type: {:?}", self.ty(ctxt).ty),
+            }
+        }
     }
 
     pub(crate) fn expansion_places(

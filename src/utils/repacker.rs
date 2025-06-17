@@ -7,6 +7,7 @@
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    free_pcs::RepackGuide,
     rustc_interface::{
         data_structures::fx::FxHashSet,
         index::Idx,
@@ -40,6 +41,7 @@ pub enum ProjectionKind {
     Other,
 }
 
+#[derive(Clone)]
 pub struct ShallowExpansion<'tcx> {
     pub(crate) target_place: Place<'tcx>,
 
@@ -65,6 +67,15 @@ impl<'tcx> ShallowExpansion<'tcx> {
 
     pub(crate) fn base_place(&self) -> Place<'tcx> {
         self.target_place.last_projection().unwrap().0
+    }
+
+    pub(crate) fn guide(&self) -> Option<RepackGuide> {
+        self.target_place
+            .last_projection()
+            .unwrap()
+            .1
+            .try_into()
+            .ok()
     }
 
     pub fn expansion(&self) -> Vec<Place<'tcx>> {
@@ -268,13 +279,9 @@ impl<'tcx> Place<'tcx> {
         );
         let mut expanded = Vec::new();
         while self.projection.len() < to.projection.len() {
-            let ShallowExpansion {
-                target_place,
-                other_places,
-                kind,
-            } = self.expand_one_level(to, repacker)?;
-            expanded.push(ShallowExpansion::new(target_place, other_places, kind));
-            self = target_place;
+            let expansion = self.expand_one_level(to, repacker)?;
+            self = expansion.target_place;
+            expanded.push(expansion);
         }
         Ok(DeepExpansion::new(expanded))
     }
