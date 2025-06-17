@@ -227,10 +227,7 @@ fn cursor_contains_local(
 }
 
 impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
-    pub fn new<T: BodyAndBorrows<'tcx>>(
-        tcx: ty::TyCtxt<'tcx>,
-        body: &'mir T,
-    ) -> Self {
+    pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
         Self {
@@ -279,7 +276,6 @@ impl BorrowCheckerImpl<'_, '_> {
 }
 
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
-
     #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
@@ -312,6 +308,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         };
         let place_is_live = self.local_is_live_before(local, location);
         if place_is_live {
+            tracing::info!("local is live: {:?}", local);
             return true;
         } else if is_leaf {
             // Place is not live, and its a leaf, so the node is not live

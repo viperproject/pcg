@@ -478,7 +478,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         let source_cap = if expand.capability.is_read() {
                             expand.capability
                         } else {
-                            self.pcg.capabilities.get((expand.from).into()).unwrap()
+                            self.pcg.capabilities.get(expand.from).unwrap()
                         };
                         tracing::debug!("source_cap for {:?}: {:?}", owned_action, source_cap);
                         for target_place in target_places {
@@ -490,9 +490,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         if expand.capability.is_read() {
                             self.pcg
                                 .capabilities
-                                .insert((expand.from).into(), CapabilityKind::Read);
+                                .insert(expand.from, CapabilityKind::Read);
                         } else {
-                            self.pcg.capabilities.remove((expand.from).into());
+                            self.pcg.capabilities.remove(expand.from);
                         }
                         true
                     }
@@ -524,7 +524,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         );
                         self.pcg
                             .capabilities
-                            .insert((collapse.to).into(), retained_cap);
+                            .insert(collapse.to, retained_cap);
                         capability_projections.expansions.remove(&collapse.to);
                         true
                     }
@@ -547,49 +547,57 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(result)
     }
 
+    fn activate_twophase_borrow_created_at(
+        &mut self,
+        created_location: Location,
+    ) -> Result<(), PcgError> {
+        let borrow = match self.pcg.borrow.graph().borrow_created_at(created_location) {
+            Some(borrow) => borrow,
+            None => return Ok(()),
+        };
+        tracing::debug!(
+            "activate twophase borrow: {}",
+            borrow.to_short_string(self.ctxt)
+        );
+        let blocked_place = borrow.blocked_place.place();
+        if self
+            .pcg
+            .borrow
+            .graph()
+            .contains(borrow.deref_place(self.ctxt), self.ctxt)
+        {
+            let upgrade_action = BorrowPcgAction::restore_capability(
+                borrow.deref_place(self.ctxt).place(),
+                CapabilityKind::Exclusive,
+                "perform_borrow_initial_pre_operand_actions",
+            );
+            self.record_and_apply_action(upgrade_action.into())?;
+        }
+        if !blocked_place.is_owned(self.ctxt) {
+            self.remove_read_permission_upwards(blocked_place)?;
+        }
+        // for place in blocked_place.iter_places(self.ctxt) {
+        //     for rp in place.region_projections(self.ctxt).into_iter() {
+        //         if rp.can_be_labelled(self.ctxt) {
+        //             self.record_and_apply_action(
+        //                 BorrowPcgAction::label_region_projection(
+        //                     rp.into(),
+        //                     None,
+        //                     "Activate two-phase borrow",
+        //                 )
+        //                 .into(),
+        //             )?;
+        //         }
+        //     }
+        // }
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self))]
     fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
         self.pack_old_and_dead_borrow_leaves()?;
         for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
-            let borrow = match self.pcg.borrow.graph().borrow_created_at(created_location) {
-                Some(borrow) => borrow,
-                None => continue,
-            };
-            tracing::debug!(
-                "activate twophase borrow: {}",
-                borrow.to_short_string(self.ctxt)
-            );
-            let blocked_place = borrow.blocked_place.place();
-            if self
-                .pcg
-                .borrow
-                .graph()
-                .contains(borrow.deref_place(self.ctxt), self.ctxt)
-            {
-                let upgrade_action = BorrowPcgAction::restore_capability(
-                    borrow.deref_place(self.ctxt).place(),
-                    CapabilityKind::Exclusive,
-                    "perform_borrow_initial_pre_operand_actions",
-                );
-                self.record_and_apply_action(upgrade_action.into())?;
-            }
-            if !blocked_place.is_owned(self.ctxt) {
-                self.remove_read_permission_upwards(blocked_place)?;
-            }
-            for place in blocked_place.iter_places(self.ctxt) {
-                for rp in place.region_projections(self.ctxt).into_iter() {
-                    if rp.can_be_labelled(self.ctxt) {
-                        self.record_and_apply_action(
-                            BorrowPcgAction::label_region_projection(
-                                rp.into(),
-                                None,
-                                "perform_borrow_initial_pre_operand_actions",
-                            )
-                            .into(),
-                        )?;
-                    }
-                }
-            }
+            self.activate_twophase_borrow_created_at(created_location)?;
         }
         Ok(())
     }

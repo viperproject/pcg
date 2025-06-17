@@ -5,17 +5,17 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
-    // common::run_on_crate(
-    //     "rustls",
-    //     "0.23.23",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: None,
-    //         extra_env_vars: vec![],
-    //     },
-    // );
+    common::run_on_crate(
+        "yaml-rust",
+        "0.4.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("parser::Parser::<T>::stream_start"),
+            extra_env_vars: vec![],
+        },
+    );
 
     let _warn_only_vars = vec![(
         "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),

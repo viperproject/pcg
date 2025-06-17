@@ -55,6 +55,24 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
     }
 
+    fn restore_capability_to_leaf_places(&mut self) -> Result<(), PcgError> {
+        let leaf_places = self.pcg.leaf_places(self.ctxt);
+        for place in leaf_places {
+            if let Some(CapabilityKind::Read) = self.pcg.capabilities.get(place)
+                && !place.projects_shared_ref(self.ctxt)
+            {
+                let action = PcgAction::restore_capability(
+                    place,
+                    CapabilityKind::Exclusive,
+                    "restore capability to leaf place",
+                    self.ctxt,
+                );
+                self.record_and_apply_action(action)?;
+            }
+        }
+        Ok(())
+    }
+
     fn pack_iteration<'slf>(&'slf mut self) -> Result<EdgesToTrim<'tcx>, PcgError> {
         enum ShouldKillNode {
             Yes { reason: Cow<'static, str> },
@@ -105,20 +123,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
 
         let mut edges_to_trim = Vec::new();
-        let leaf_places = self.pcg.leaf_places(self.ctxt);
-        for place in leaf_places {
-            if let Some(CapabilityKind::Read) = self.pcg.capabilities.get(place)
-                && !place.projects_shared_ref(self.ctxt)
-            {
-                let action = PcgAction::restore_capability(
-                    place,
-                    CapabilityKind::Exclusive,
-                    "restore capability to leaf place",
-                    self.ctxt,
-                );
-                self.record_and_apply_action(action)?;
-            }
-        }
+        self.restore_capability_to_leaf_places()?;
         let fg = self.pcg.borrow.graph().frozen_graph();
         let location = self.location;
         let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {

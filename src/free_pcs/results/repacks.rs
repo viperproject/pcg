@@ -20,9 +20,9 @@ pub enum RepackGuide {
     Subslice { from: u64, to: u64, from_end: bool },
 }
 
-impl<'tcx> Into<PlaceElem<'tcx>> for RepackGuide {
-    fn into(self) -> PlaceElem<'tcx> {
-        match self {
+impl From<RepackGuide> for PlaceElem<'_> {
+    fn from(val: RepackGuide) -> Self {
+        match val {
             RepackGuide::Index(local) => PlaceElem::Index(local),
             RepackGuide::Downcast(symbol, variant_idx) => PlaceElem::Downcast(symbol, variant_idx),
             RepackGuide::ConstantIndex(constant_index) => PlaceElem::ConstantIndex {
@@ -208,7 +208,7 @@ impl<'tcx> RepackOp<'tcx> {
         Self::Collapse(RepackCollapse {
             to,
             guide,
-            capability: capability,
+            capability,
         })
     }
 
