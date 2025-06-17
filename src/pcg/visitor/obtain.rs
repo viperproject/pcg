@@ -28,7 +28,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             )
             .into(),
         )?;
-        self.remove_read_permission_upwards(place)?;
+        if let Some(parent) = place.parent_place() {
+            self.remove_read_permission_upwards(parent)?;
+        }
         Ok(())
     }
 

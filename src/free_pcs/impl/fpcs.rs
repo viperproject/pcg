@@ -12,7 +12,7 @@ use crate::{
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
-    },
+    }, utils::{data_structures::HashSet, Place},
 };
 use derive_more::{Deref, DerefMut};
 
@@ -28,6 +28,10 @@ pub struct FreePlaceCapabilitySummary<'tcx> {
 }
 
 impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.data.as_ref().unwrap().leaf_places(ctxt)
+    }
+
     pub fn locals(&self) -> &CapabilityLocals<'tcx> {
         self.data.as_ref().unwrap()
     }
@@ -103,6 +107,13 @@ impl Debug for CapabilityLocals<'_> {
 }
 
 impl<'tcx> CapabilityLocals<'tcx> {
+    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.0
+            .iter()
+            .filter(|c| !c.is_unallocated())
+            .flat_map(|c| c.get_allocated().leaves(ctxt))
+            .collect()
+    }
     pub(crate) fn capability_projections(&self) -> Vec<&CapabilityProjections<'tcx>> {
         self.0
             .iter()

@@ -330,6 +330,15 @@ impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<
     }
 }
 
+impl<'tcx> LocalNode<'tcx> {
+    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+        match self {
+            LocalNode::Place(MaybeOldPlace::Current { place }) => Some(place),
+            _ => None,
+        }
+    }
+}
+
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {

@@ -280,17 +280,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityKind::Exclusive
                 };
 
-                if blocked_cap.is_none()
-                    || (blocked_cap.unwrap().is_read() && place.place().projection.is_empty())
-                {
+                if blocked_cap.is_none() {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,
                         "restore_capabilities_for_removed_edge",
                         self.ctxt,
                     ))?;
-                    for rp in place.region_projections(self.ctxt) {
-                        self.record_and_apply_action(
+                }
+                for rp in place.region_projections(self.ctxt) {
+                    self.record_and_apply_action(
                             BorrowPcgAction::remove_region_projection_label(
                                 rp.with_placeholder_label(self.ctxt).into(),
                                 format!(
@@ -300,7 +299,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             )
                             .into(),
                         )?;
-                    }
                 }
             }
         }
@@ -553,7 +551,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
     #[tracing::instrument(skip(self))]
     fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
-        self.pack_old_and_dead_borrow_leaves(self.location)?;
+        self.pack_old_and_dead_borrow_leaves()?;
         for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
             let borrow = match self.pcg.borrow.graph().borrow_created_at(created_location) {
                 Some(borrow) => borrow,

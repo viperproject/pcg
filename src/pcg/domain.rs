@@ -28,11 +28,12 @@ use crate::{
     },
     utils::{
         arena::ArenaRef,
+        data_structures::HashSet,
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
         validity::HasValidityCheck,
-        CompilerCtxt,
+        CompilerCtxt, Place,
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
@@ -66,7 +67,10 @@ impl Serialize for EvalStmtPhase {
 
 impl EvalStmtPhase {
     pub fn is_operands_stage(&self) -> bool {
-        matches!(self, EvalStmtPhase::PreOperands | EvalStmtPhase::PostOperands)
+        matches!(
+            self,
+            EvalStmtPhase::PreOperands | EvalStmtPhase::PostOperands
+        )
     }
 
     pub fn phases() -> [EvalStmtPhase; 4] {
@@ -150,6 +154,22 @@ pub struct Pcg<'tcx> {
 }
 
 impl<'tcx> Pcg<'tcx> {
+    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        let mut places: HashSet<Place<'tcx>> = self
+            .borrow
+            .leaf_nodes(ctxt)
+            .into_iter()
+            .flat_map(|node| node.as_current_place())
+            .collect();
+
+        for place in self.owned.leaf_places(ctxt) {
+            if !self.borrow.graph().contains(place, ctxt) {
+                places.insert(place);
+            }
+        }
+
+        places
+    }
     pub(crate) fn assert_validity_at_location(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx>,

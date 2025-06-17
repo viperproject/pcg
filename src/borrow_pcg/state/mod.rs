@@ -6,8 +6,11 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace};
 use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
+use crate::{
+    borrow_pcg::borrow_pcg_edge::LocalNode,
+    utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace},
+};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -56,6 +59,12 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> BorrowsState<'tcx> {
+    pub(crate) fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
+        self.graph
+            .frozen_graph()
+            .leaf_nodes(ctxt)
+            .collect()
+    }
 
     fn introduce_initial_borrows(
         &mut self,
