@@ -22,6 +22,15 @@ pub enum MaybeRemotePlace<'tcx> {
     Remote(RemotePlace),
 }
 
+impl<'tcx> MaybeRemotePlace<'tcx> {
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            MaybeRemotePlace::Local(p) => p.is_mutable(ctxt),
+            MaybeRemotePlace::Remote(_) => false,
+        }
+    }
+}
+
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
         match self {
@@ -47,8 +56,8 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeRemotePlace<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         match self {
             MaybeRemotePlace::Local(p) => p.to_short_string(repacker),
             MaybeRemotePlace::Remote(rp) => format!("{rp}"),
@@ -56,8 +65,8 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeRemotePlace<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
             MaybeRemotePlace::Remote(rp) => format!("{rp}").into(),
@@ -118,6 +127,13 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         }
     }
 
+    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
+        match self {
+            MaybeRemotePlace::Local(p) => Some(p),
+            MaybeRemotePlace::Remote(_) => None,
+        }
+    }
+
     pub fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(*p),
@@ -160,7 +176,7 @@ impl RemotePlace {
         self.local
     }
 
-    pub(crate) fn ty<'tcx>(&self, repacker: CompilerCtxt<'_, 'tcx>) -> ty::Ty<'tcx> {
+    pub(crate) fn ty<'tcx, C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
             ty::TyKind::Ref(_, ty, _) => *ty,

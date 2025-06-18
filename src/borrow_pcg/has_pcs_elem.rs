@@ -1,8 +1,8 @@
 use super::latest::Latest;
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::{validity::HasValidityCheck, Place, CompilerCtxt};
-use crate::validity_checks_enabled;
+use crate::utils::CompilerCtxt;
 
 pub(crate) trait HasPcgElems<T> {
     fn pcg_elems(&mut self) -> Vec<&mut T>;
@@ -13,36 +13,15 @@ pub(crate) trait LabelRegionProjection<'tcx> {
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
         label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
 
-pub(crate) trait MakePlaceOld<'tcx> {
-    fn make_place_old(
+pub(crate) trait LabelPlace<'tcx> {
+    fn label_place(
         &mut self,
-        place: Place<'tcx>,
+        predicate: &LabelPlacePredicate<'tcx>,
         latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
-}
-
-pub(crate) fn default_make_place_old<
-    'tcx,
-    T: HasPcgElems<MaybeOldPlace<'tcx>> + HasValidityCheck<'tcx>,
->(
-    this: &mut T,
-    place: Place<'tcx>,
-    latest: &Latest<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
-) -> bool {
-    let mut changed = false;
-    for p in this.pcg_elems() {
-        if p.make_place_old(place, latest) {
-            changed = true;
-        }
-    }
-    if validity_checks_enabled() {
-        this.assert_validity(repacker);
-    }
-    changed
 }

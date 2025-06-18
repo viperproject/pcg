@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::BorrowPCGEdgeLike,
+        borrow_pcg_edge::BorrowPcgEdgeLike,
         edge::kind::BorrowPcgEdgeKind,
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
@@ -8,13 +8,16 @@ use crate::{
     free_pcs::CapabilityKind,
     pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
-    utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, CompilerCtxt, HasPlace},
+    utils::{
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
+        CompilerCtxt, HasPlace, Place,
+    },
 };
 
 use super::{graph_constructor::GraphConstructor, GraphEdge, NodeId};
 
 pub(super) trait CapabilityGetter<'tcx> {
-    fn get(&self, node: MaybeOldPlace<'tcx>) -> Option<CapabilityKind>;
+    fn get(&self, node: Place<'tcx>) -> Option<CapabilityKind>;
 }
 
 pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
@@ -68,10 +71,11 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     }
     fn draw_borrow_pcg_edge(
         &mut self,
-        edge: impl BorrowPCGEdgeLike<'tcx>,
+        edge: impl BorrowPcgEdgeLike<'tcx>,
         capabilities: &impl CapabilityGetter<'tcx>,
         edge_idx: usize,
     ) {
+        let path_conditions = edge.conditions().to_short_string(self.ctxt());
         match edge.kind() {
             BorrowPcgEdgeKind::BorrowPcgExpansion(deref_expansion) => {
                 for blocked in deref_expansion.blocked_nodes(self.ctxt()) {
@@ -81,7 +85,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                         self.constructor().edges.insert(GraphEdge::DerefExpansion {
                             source: blocked_graph_node,
                             target: blocking_graph_node,
-                            path_conditions: format!("{}", edge.conditions()),
+                            path_conditions: path_conditions.clone(),
                         });
                     }
                 }
@@ -90,7 +94,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                 let borrowed_place = self.insert_maybe_remote_place(borrow.blocked_place());
                 let assigned_region_projection = borrow
                     .assigned_region_projection(self.ctxt())
-                    .to_region_projection(self.ctxt());
+                    .to_region_projection();
                 let assigned_rp_node = self
                     .constructor()
                     .insert_region_projection_node(assigned_region_projection);
@@ -105,7 +109,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                     assigned_region_projection: assigned_rp_node,
                     location: borrow.reserve_location(),
                     region: borrow.borrow_region().map(|r| format!("{r:?}")),
-                    path_conditions: format!("{}", edge.conditions()),
+                    path_conditions,
                     kind,
                 });
             }
@@ -117,10 +121,10 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                 let input_node = self.insert_pcg_node(member.long().into());
                 let output_node = self.insert_pcg_node(member.short().to_pcg_node(self.ctxt()));
                 self.constructor().edges.insert(GraphEdge::BorrowFlow {
-                            source: input_node,
-                            target: output_node,
-                            kind: member.kind
-                        });
+                    source: input_node,
+                    target: output_node,
+                    kind: member.kind,
+                });
             }
         }
     }

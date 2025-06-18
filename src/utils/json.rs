@@ -1,13 +1,13 @@
 use crate::utils::CompilerCtxt;
 
-pub trait ToJsonWithCompilerCtxt<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value;
+pub trait ToJsonWithCompilerCtxt<'tcx, BC> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value;
 }
 
-impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for Vec<T> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy, T: ToJsonWithCompilerCtxt<'tcx, BC>> ToJsonWithCompilerCtxt<'tcx, BC> for Vec<T> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         self.iter()
-            .map(|a| a.to_json(repacker))
+            .map(|a| a.to_json(ctxt))
             .collect::<Vec<_>>()
             .into()
     }

@@ -1,17 +1,18 @@
 use std::collections::HashSet;
 
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::pcg::PCGInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
-use super::borrow_pcg_edge::BorrowPCGEdgeLike;
-use super::borrow_pcg_edge::{BlockedNode, BorrowPCGEdge};
+use super::borrow_pcg_edge::BorrowPcgEdgeLike;
+use super::borrow_pcg_edge::{BlockedNode, BorrowPcgEdge};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{edge_data::EdgeData, state::BorrowsState},
     utils::CompilerCtxt,
 };
 
-type UnblockEdge<'tcx> = BorrowPCGEdge<'tcx>;
+type UnblockEdge<'tcx> = BorrowPcgEdge<'tcx>;
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
@@ -19,25 +20,30 @@ pub struct UnblockGraph<'tcx> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowPCGUnblockAction<'tcx> {
-    pub(super) edge: BorrowPCGEdge<'tcx>,
+    pub(super) edge: BorrowPcgEdge<'tcx>,
 }
 
 impl<'tcx> BorrowPCGUnblockAction<'tcx> {
-    pub fn edge(&self) -> &BorrowPCGEdge<'tcx> {
+    pub fn edge(&self) -> &BorrowPcgEdge<'tcx> {
         &self.edge
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGUnblockAction<'tcx> {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for BorrowPCGUnblockAction<'tcx>
+{
+    fn to_json(
+        &self,
+        _repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         serde_json::json!({
             "edge": format!("{:?}", self.edge)
         })
     }
 }
 
-impl<'tcx> From<BorrowPCGEdge<'tcx>> for BorrowPCGUnblockAction<'tcx> {
-    fn from(edge: BorrowPCGEdge<'tcx>) -> Self {
+impl<'tcx> From<BorrowPcgEdge<'tcx>> for BorrowPCGUnblockAction<'tcx> {
+    fn from(edge: BorrowPcgEdge<'tcx>) -> Self {
         Self { edge }
     }
 }
@@ -63,8 +69,9 @@ impl<'tcx> UnblockGraph<'tcx> {
         self.edges.is_empty()
     }
 
-    pub fn filter_for_path(&mut self, path: &[BasicBlock]) {
-        self.edges.retain(|edge| edge.valid_for_path(path));
+    pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, '_>) {
+        self.edges
+            .retain(|edge| edge.valid_for_path(path, ctxt.body()));
     }
 
     /// Returns an ordered list of actions to unblock the edges in the graph.
@@ -82,9 +89,8 @@ impl<'tcx> UnblockGraph<'tcx> {
         while !edges.is_empty() {
             let mut to_keep = edges.clone();
 
-            let should_kill_edge = |edge: &BorrowPCGEdge<'tcx>| {
+            let should_kill_edge = |edge: &BorrowPcgEdge<'tcx>| {
                 edge.blocked_by_nodes(repacker)
-                    .into_iter()
                     .all(|node| edges.iter().all(|e| !e.blocks_node(node.into(), repacker)))
             };
             for edge in edges.iter() {
@@ -109,7 +115,7 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     pub(crate) fn kill_edge(
         &mut self,
-        edge: impl BorrowPCGEdgeLike<'tcx>,
+        edge: impl BorrowPcgEdgeLike<'tcx>,
         borrows: &BorrowsState<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {

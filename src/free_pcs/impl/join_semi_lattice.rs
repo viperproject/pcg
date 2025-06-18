@@ -109,16 +109,16 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
                     tracing::debug!("other: {:?}", other);
                     self.insert_expansion(*place, other_expansion.clone());
-                    if let Some(cap) = other_place_capabilities.get((*place).into()) {
-                        self_place_capabilities.insert((*place).into(), cap);
+                    if let Some(cap) = other_place_capabilities.get(*place) {
+                        self_place_capabilities.insert(*place, cap);
                     } else {
-                        self_place_capabilities.remove((*place).into());
+                        self_place_capabilities.remove(*place);
                     }
                     for place in place.expansion_places(other_expansion, repacker) {
-                        if let Some(cap) = other_place_capabilities.get(place.into()) {
-                            self_place_capabilities.insert(place.into(), cap);
+                        if let Some(cap) = other_place_capabilities.get(place) {
+                            self_place_capabilities.insert(place, cap);
                         } else {
-                            self_place_capabilities.remove(place.into());
+                            self_place_capabilities.remove(place);
                         }
                     }
                     changed = true;

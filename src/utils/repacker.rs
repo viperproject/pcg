@@ -6,8 +6,9 @@
 
 use crate::{
     borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    free_pcs::RepackGuide,
     rustc_interface::{
-        borrowck::{PoloniusOutput, RegionInferenceContext},
         data_structures::fx::FxHashSet,
         index::Idx,
         middle::{
@@ -20,9 +21,6 @@ use crate::{
         FieldIdx, PlaceTy, RustBitSet,
     },
 };
-
-#[rustversion::before(2025-03-02)]
-use crate::rustc_interface::index::bit_set::BitSet;
 
 use crate::rustc_interface::mir_dataflow;
 
@@ -43,6 +41,7 @@ pub enum ProjectionKind {
     Other,
 }
 
+#[derive(Clone)]
 pub struct ShallowExpansion<'tcx> {
     pub(crate) target_place: Place<'tcx>,
 
@@ -70,11 +69,49 @@ impl<'tcx> ShallowExpansion<'tcx> {
         self.target_place.last_projection().unwrap().0
     }
 
+    pub(crate) fn guide(&self) -> Option<RepackGuide> {
+        self.target_place
+            .last_projection()
+            .unwrap()
+            .1
+            .try_into()
+            .ok()
+    }
+
     pub fn expansion(&self) -> Vec<Place<'tcx>> {
         let mut expansion = self.other_places.clone();
         self.kind
             .insert_target_into_expansion(self.target_place, &mut expansion);
         expansion
+    }
+
+    fn dest_places_for_region(
+        &self,
+        region: PcgRegion,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<Place<'tcx>> {
+        self.expansion()
+            .iter()
+            .filter(|e| {
+                e.region_projections(ctxt)
+                    .into_iter()
+                    .any(|child_rp| region == child_rp.region(ctxt))
+            })
+            .copied()
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn place_expansion_for_region(
+        &self,
+        region: PcgRegion,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<PlaceExpansion<'tcx>> {
+        let dest_places = self.dest_places_for_region(region, ctxt);
+        if dest_places.is_empty() {
+            None
+        } else {
+            Some(PlaceExpansion::from_places(dest_places, ctxt))
+        }
     }
 }
 
@@ -97,14 +134,6 @@ impl ProjectionKind {
             }
         }
     }
-}
-
-#[derive(Copy, Clone)]
-pub struct CompilerExtra<'a, 'tcx> {
-    #[allow(unused)]
-    pub(crate) region_infer_ctxt: &'a RegionInferenceContext<'tcx>,
-    #[allow(unused)]
-    pub(crate) polonius_output: Option<&'a PoloniusOutput>,
 }
 
 #[derive(Copy, Clone)]
@@ -156,14 +185,15 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
     }
 }
 
-impl<'tcx> CompilerCtxt<'_, 'tcx> {
+impl CompilerCtxt<'_, '_> {
     pub(crate) fn is_arg(self, local: Local) -> bool {
         local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
     }
 
-    /// Returns `true` iff the edge from `from` to `to` is a back edge.
+    /// Returns `true` iff the edge from `from` to `to` is a back edge (i.e.
+    /// `to` dominates `from`).
     pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
-        from > to
+        self.mir.basic_blocks.dominators().dominates(to, from)
     }
 
     pub fn num_args(self) -> usize {
@@ -175,7 +205,7 @@ impl<'tcx> CompilerCtxt<'_, 'tcx> {
     }
 
     #[rustversion::before(2024-12-14)]
-    pub fn always_live_locals(self) -> BitSet<Local> {
+    pub fn always_live_locals(self) -> RustBitSet<Local> {
         mir_dataflow::storage::always_storage_live_locals(self.mir)
     }
 
@@ -249,13 +279,9 @@ impl<'tcx> Place<'tcx> {
         );
         let mut expanded = Vec::new();
         while self.projection.len() < to.projection.len() {
-            let ShallowExpansion {
-                target_place,
-                other_places,
-                kind,
-            } = self.expand_one_level(to, repacker)?;
-            expanded.push(ShallowExpansion::new(target_place, other_places, kind));
-            self = target_place;
+            let expansion = self.expand_one_level(to, repacker)?;
+            self = expansion.target_place;
+            expanded.push(expansion);
         }
         Ok(DeepExpansion::new(expanded))
     }

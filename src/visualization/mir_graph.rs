@@ -122,6 +122,7 @@ fn format_raw_ptr<'tcx>(
     format!("*{} {}", kind, format_place(place, ctxt))
 }
 
+#[allow(unreachable_patterns)]
 fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
     match rvalue {
         Rvalue::Use(operand) => format_operand(operand, ctxt),
@@ -226,6 +227,12 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -
             format!("PlaceMention({})", format_place(place, repacker))
         }
         mir::StatementKind::AscribeUserType(_, _) => "AscribeUserType(...)".to_string(),
+        mir::StatementKind::Coverage(_) => todo!(),
+        mir::StatementKind::Intrinsic(non_diverging_intrinsic) => {
+            format!("Intrinsic({:?})", non_diverging_intrinsic)
+        }
+        mir::StatementKind::ConstEvalCounter => todo!(),
+        mir::StatementKind::Nop => todo!(),
         _ => todo!(),
     }
 }

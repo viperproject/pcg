@@ -8,21 +8,21 @@ use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::{Place, CompilerCtxt};
+use crate::utils::{CompilerCtxt, Place};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub struct RemotePlace {
     pub(crate) local: mir::Local,
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RemotePlace {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for RemotePlace {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for RemotePlace {
-    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RemotePlace {
+    fn to_short_string(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!("Remote({:?})", self.local)
     }
 }
@@ -38,14 +38,17 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for RemotePlace {
         MaybeRemoteRegionProjectionBase::Place((*self).into())
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         let place: Place<'_> = self.local.into();
         extract_regions(place.ty(repacker).ty, repacker)
     }
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for RemotePlace {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }

@@ -1,5 +1,7 @@
+#![feature(rustc_private)]
 use chrono::Local;
 use derive_more::Deref;
+use pcg::utils::MAX_BASIC_BLOCKS;
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -21,8 +23,18 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .build_global()
         .unwrap();
     let top_crates: Vec<_> = Crates::top(n, date).to_vec();
+
+    let extra_env_vars = if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
+        vec![(
+            "PCG_MAX_BASIC_BLOCKS".to_string(),
+            max_basic_blocks.to_string(),
+        )]
+    } else {
+        vec![]
+    };
     top_crates
         .into_par_iter()
+        .panic_fuse()
         .enumerate()
         .for_each(|(i, krate)| {
             let version = krate.version();
@@ -35,7 +47,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                     target: Target::Release,
                     validity_checks: true,
                     function: None,
-                    extra_env_vars: vec![],
+                    extra_env_vars: extra_env_vars.clone(),
                 },
             );
             println!("Finished: {i} ({})", krate.name);

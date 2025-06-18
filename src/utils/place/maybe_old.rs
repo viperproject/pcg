@@ -1,10 +1,12 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
 };
+use crate::borrow_pcg::visitor::extract_regions;
 use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -14,8 +16,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::borrow_pcg::visitor::extract_regions;
-use crate::utils::{HasPlace, Place, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasPlace, Place, PlaceSnapshot, SnapshotLocation};
 use derive_more::{From, TryInto};
 use serde_json::json;
 
@@ -23,6 +24,14 @@ use serde_json::json;
 pub enum MaybeOldPlace<'tcx> {
     Current { place: Place<'tcx> },
     OldPlace(PlaceSnapshot<'tcx>),
+}
+
+impl<'tcx> MaybeOldPlace<'tcx> {
+    pub fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.place()
+            .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt)
+            .is_ok()
+    }
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for MaybeOldPlace<'tcx> {
@@ -42,7 +51,10 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
         }
     }
 
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         match self {
             MaybeOldPlace::Current { place } => place.regions(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.place.regions(repacker),
@@ -73,16 +85,16 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         match self {
-            MaybeOldPlace::Current { place } => place.check_validity(repacker),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.check_validity(repacker),
+            MaybeOldPlace::Current { place } => place.check_validity(ctxt),
+            MaybeOldPlace::OldPlace(snapshot) => snapshot.check_validity(ctxt),
         }
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         match self {
             MaybeOldPlace::Current { place } => place.to_json(repacker),
             MaybeOldPlace::OldPlace(snapshot) => snapshot.to_json(repacker),
@@ -182,8 +194,8 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let p = self.place().to_short_string(repacker);
         format!(
             "{}{}",
@@ -231,7 +243,7 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     ) -> Option<RegionProjection<'tcx, Self>> {
         self.place()
             .base_region_projection(repacker)
-            .map(|rp| rp.with_base(*self, repacker))
+            .map(|rp| rp.with_base(*self))
     }
 
     pub(crate) fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
@@ -297,22 +309,36 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         matches!(self, MaybeOldPlace::Current { .. })
     }
 
-    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    pub fn to_json<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place().to_json(repacker),
             "at": self.location().map(|loc| format!("{loc:?}")),
         })
     }
+}
 
-    pub(crate) fn make_place_old(&mut self, place: Place<'tcx>, latest: &Latest<'tcx>) -> bool {
-        if self.is_current() && (place.is_prefix(self.place()) || self.place().is_prefix(place)) {
-            *self = MaybeOldPlace::OldPlace(PlaceSnapshot {
-                place: self.place(),
-                at: latest.get(self.place()),
-            });
-            true
-        } else {
-            false
+impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        match self {
+            MaybeOldPlace::Current { place } => match predicate {
+                LabelPlacePredicate::PrefixOrPostfix(p2) => {
+                    if place.is_prefix(*p2) || p2.is_prefix(*place) {
+                        *self = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                            *place,
+                            latest.get(*place, ctxt),
+                        ));
+                        true
+                    } else {
+                        false
+                    }
+                }
+            },
+            _ => false,
         }
     }
 }

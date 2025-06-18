@@ -1,23 +1,27 @@
 use derive_more::{Deref, DerefMut, From};
+use serde_json::Map;
 
 use crate::{
+    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        action::{actions::BorrowPCGActions, BorrowPCGAction, BorrowPCGActionKind},
+        action::{actions::BorrowPCGActions, BorrowPcgActionKind},
         unblock_graph::BorrowPCGUnblockAction,
     },
     free_pcs::{CapabilityKind, RepackOp},
-    utils::{
-        json::ToJsonWithCompilerCtxt, maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace,
-    },
-    RestoreCapability,
+    utils::{display::DisplayWithCompilerCtxt, json::ToJsonWithCompilerCtxt, CompilerCtxt, Place},
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, From, Default, Deref, DerefMut)]
 pub struct PcgActions<'tcx>(pub(crate) Vec<PcgAction<'tcx>>);
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgActions<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        self.0.iter().map(|a| a.to_json(repacker)).collect()
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for PcgActions<'tcx>
+{
+    fn to_json(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
+        self.0.iter().map(|a| a.to_json(ctxt)).collect()
     }
 }
 
@@ -27,8 +31,8 @@ impl<'tcx> From<BorrowPCGActions<'tcx>> for PcgActions<'tcx> {
     }
 }
 
-impl<'tcx> From<Vec<RepackOp<'tcx>>> for PcgActions<'tcx> {
-    fn from(actions: Vec<RepackOp<'tcx>>) -> Self {
+impl<'tcx> From<Vec<OwnedPcgAction<'tcx>>> for PcgActions<'tcx> {
+    fn from(actions: Vec<OwnedPcgAction<'tcx>>) -> Self {
         PcgActions(actions.into_iter().map(|a| a.into()).collect::<Vec<_>>())
     }
 }
@@ -54,7 +58,7 @@ impl<'tcx> PcgActions<'tcx> {
         self.0.iter()
     }
 
-    pub fn owned_pcg_actions(&self) -> Vec<&RepackOp<'tcx>> {
+    pub fn owned_pcg_actions(&self) -> Vec<&OwnedPcgAction<'tcx>> {
         self.0
             .iter()
             .filter_map(|action| match action {
@@ -68,8 +72,8 @@ impl<'tcx> PcgActions<'tcx> {
         self.0
             .iter()
             .filter_map(|action| match action {
-                PcgAction::Borrow(BorrowPCGAction {
-                    kind: BorrowPCGActionKind::RemoveEdge(edge),
+                PcgAction::Borrow(BorrowPcgAction {
+                    kind: BorrowPcgActionKind::RemoveEdge(edge),
                     ..
                 }) => Some(edge.clone().into()),
                 _ => None,
@@ -78,25 +82,80 @@ impl<'tcx> PcgActions<'tcx> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActionKindWithDebugCtxt<T> {
+    pub(crate) kind: T,
+    pub(crate) debug_context: Option<String>,
+}
+
+impl<T> ActionKindWithDebugCtxt<T> {
+    pub fn kind(&self) -> &T {
+        &self.kind
+    }
+
+    pub(crate) fn new(kind: T, debug_context: Option<String>) -> Self {
+        Self {
+            kind,
+            debug_context,
+        }
+    }
+
+    pub(crate) fn debug_line<'tcx, BC: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String
+    where
+        T: DisplayWithCompilerCtxt<'tcx, BC>,
+    {
+        self.kind.to_short_string(ctxt)
+    }
+}
+
+impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> ToJsonWithCompilerCtxt<'tcx, BC>
+    for ActionKindWithDebugCtxt<T>
+{
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
+        let mut map = Map::new();
+        map.insert("kind".to_string(), self.kind.to_short_string(ctxt).into());
+        if let Some(debug_context) = &self.debug_context {
+            map.insert(
+                "debug_context".to_string(),
+                debug_context.to_string().into(),
+            );
+        } else {
+            map.insert("debug_context".to_string(), serde_json::Value::Null);
+        }
+        map.into()
+    }
+}
+
+pub type OwnedPcgAction<'tcx> = ActionKindWithDebugCtxt<RepackOp<'tcx>>;
+
+/// An action that is applied to a `BorrowsState` during the dataflow analysis
+/// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
+/// their own effect (e.g. for an unblock, applying a magic wand).
+pub type BorrowPcgAction<'tcx> = ActionKindWithDebugCtxt<BorrowPcgActionKind<'tcx>>;
+
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Debug, From)]
 pub enum PcgAction<'tcx> {
-    Borrow(BorrowPCGAction<'tcx>),
-    Owned(RepackOp<'tcx>),
+    Borrow(BorrowPcgAction<'tcx>),
+    Owned(OwnedPcgAction<'tcx>),
 }
 
 impl<'tcx> PcgAction<'tcx> {
     pub(crate) fn restore_capability(
-        place: MaybeOldPlace<'tcx>,
+        place: Place<'tcx>,
         capability: CapabilityKind,
+        debug_context: impl Into<String>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         if place.is_owned(ctxt) {
-            PcgAction::Owned(RepackOp::RegainLoanedCapability(place.place(), capability))
-        } else {
-            PcgAction::Borrow(
-                BorrowPCGActionKind::Restore(RestoreCapability::new(place, capability))
-                    .into(),
+            PcgAction::Owned(
+                OwnedPcgAction {
+                    kind: RepackOp::RegainLoanedCapability(place, capability),
+                    debug_context: Some(debug_context.into()),
+                },
             )
+        } else {
+            BorrowPcgAction::restore_capability(place, capability, debug_context).into()
         }
     }
 
@@ -108,11 +167,16 @@ impl<'tcx> PcgAction<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgAction<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx: 'a, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for PcgAction<'tcx>
+{
+    fn to_json(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         match self {
-            PcgAction::Borrow(action) => action.to_json(repacker),
-            PcgAction::Owned(action) => action.to_json(),
+            PcgAction::Borrow(action) => action.to_json(ctxt),
+            PcgAction::Owned(action) => action.to_json(ctxt),
         }
     }
 }

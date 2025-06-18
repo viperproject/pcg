@@ -1,4 +1,5 @@
 pub mod action;
+pub(crate) mod abstraction;
 pub mod borrow_pcg_edge;
 pub mod borrow_pcg_expansion;
 pub mod domain;
@@ -13,3 +14,4 @@ pub mod latest;
 pub mod path_condition;
 pub mod region_projection;
 pub mod unblock_graph;
+pub(crate) mod util;

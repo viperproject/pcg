@@ -1,24 +1,27 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use crate::{rustc_interface::middle::mir, utils::display::DisplayWithCompilerCtxt};
+use bit_set::BitSet;
+use itertools::Itertools;
+use smallvec::SmallVec;
 
-use serde_json::json;
-
-use crate::{
-    pcg_validity_assert,
-    rustc_interface::middle::mir::{BasicBlock, START_BLOCK},
-    utils::CompilerCtxt,
-};
+use crate::{rustc_interface::middle::mir::BasicBlock, utils::CompilerCtxt};
 
 use crate::utils::json::ToJsonWithCompilerCtxt;
 
 #[derive(Copy, PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct PathCondition {
-    pub from: BasicBlock,
-    pub to: BasicBlock,
+    from: BasicBlock,
+    to: BasicBlock,
 }
 
 impl PathCondition {
     pub fn new(from: BasicBlock, to: BasicBlock) -> Self {
         Self { from, to }
+    }
+    pub fn from(&self) -> BasicBlock {
+        self.from
+    }
+    pub fn to(&self) -> BasicBlock {
+        self.to
     }
 }
 
@@ -44,244 +47,239 @@ impl Path {
 }
 
 #[derive(PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
-pub struct PCGraph(BTreeSet<PathCondition>);
+struct BranchChoices {
+    from: BasicBlock,
+    chosen: BitSet<u8>,
+}
 
-impl std::fmt::Display for PCGraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for pc in self.0.iter() {
-            write!(f, "{:?} -> {:?},", pc.from, pc.to)?;
+enum BranchChoicesJoinResult {
+    CoversAllChoices,
+    Changed,
+    Unchanged,
+}
+
+impl BranchChoices {
+    fn new(from: BasicBlock, num_successors: usize) -> Self {
+        let mut chosen = BitSet::default();
+        chosen.reserve_len_exact(num_successors);
+        Self { from, chosen }
+    }
+
+    fn insert(&mut self, idx: usize) {
+        assert!(self.chosen.len() <= idx);
+        self.chosen.insert(idx);
+    }
+
+    fn includes_successor(&self, successor: BasicBlock, body: &mir::Body<'_>) -> bool {
+        let successors = effective_successors(self.from, body);
+        let pos = successors.iter().position(|s| s == &successor);
+        if let Some(pos) = pos {
+            self.chosen.contains(pos)
+        } else {
+            false
         }
-        Ok(())
+    }
+
+    fn join(&mut self, other: &Self, body: &mir::Body<'_>) -> BranchChoicesJoinResult {
+        assert_eq!(self.from, other.from);
+        let old_len = self.chosen.len();
+        let successors = effective_successors(self.from, body);
+        self.chosen.union_with(&other.chosen);
+        if self.chosen.len() == old_len {
+            BranchChoicesJoinResult::Unchanged
+        } else if self.chosen.len() == successors.len() {
+            BranchChoicesJoinResult::CoversAllChoices
+        } else {
+            BranchChoicesJoinResult::Changed
+        }
     }
 }
 
-impl PCGraph {
-    pub(crate) fn remove(&mut self, other: &Self) -> bool {
-        pcg_validity_assert!(self != other);
-        let mut changed = false;
-        for pc in other.0.iter() {
-            if self.0.remove(pc) {
-                changed = true;
-            }
-        }
-        changed
-    }
-
-    pub(crate) fn edges_to(&self, block: BasicBlock) -> BTreeSet<PathCondition> {
-        self.0.iter().filter(|pc| pc.to == block).copied().collect()
-    }
-
-    pub(crate) fn roots(&self) -> HashSet<BasicBlock> {
-        self.0
-            .iter()
-            .filter(|pc| !self.has_path_to_block(pc.from))
-            .map(|pc| pc.from)
-            .collect()
-    }
-
-    pub(crate) fn end(&self) -> Option<BasicBlock> {
-        let ends = self
-            .0
-            .iter()
-            .filter(|pc| !self.has_path_from_block(pc.to))
-            .map(|pc| pc.to)
-            .collect::<Vec<_>>();
-        if ends.len() == 1 {
-            Some(ends[0])
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for BranchChoices {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
+        let successors = effective_successors(self.from, ctxt.body());
+        if self.chosen.len() == 1 {
+            format!(
+                "{:?} -> {:?}",
+                self.from,
+                successors[self.chosen.iter().next().unwrap()]
+            )
         } else {
-            None
+            let chosen_successors = successors
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.chosen.contains(*i))
+                .map(|(_, s)| s)
+                .collect::<Vec<_>>();
+            format!(
+                "{:?} -> {{ {} }}",
+                self.from,
+                chosen_successors
+                    .iter()
+                    .map(|s| format!("{s:?}"))
+                    .join(", ")
+            )
         }
-    }
-
-    pub(crate) fn singleton(pc: PathCondition) -> Self {
-        Self(BTreeSet::from([pc]))
-    }
-
-    pub(crate) fn join(&mut self, other: &Self) -> bool {
-        let mut changed = false;
-        for pc in other.0.iter() {
-            if self.insert(*pc) {
-                changed = true;
-            }
-        }
-        changed
-    }
-
-    pub(crate) fn has_path_to_block(&self, block: BasicBlock) -> bool {
-        self.0.iter().any(|pc| pc.to == block)
-    }
-
-    pub(crate) fn has_path_from_block(&self, block: BasicBlock) -> bool {
-        self.0.iter().any(|pc| pc.from == block)
-    }
-
-    /// Returns `true` iff for any root `bb_r` of the graph, there is a suffix
-    /// of `path` [bb_r, ..., bb_l] such that there is a path from `bb_r` to
-    /// `bb_l` in the graph.
-    pub(crate) fn has_suffix_of(&self, path: &[BasicBlock]) -> bool {
-        let check_path = |path: &[BasicBlock]| {
-            let mut i = 0;
-            while i < path.len() - 1 {
-                let f = path[i];
-                let t = path[i + 1];
-                if !self.0.contains(&PathCondition::new(f, t)) {
-                    return false;
-                }
-                i += 1
-            }
-            true
-        };
-        for root in self.roots() {
-            let root_idx = path.iter().position(|b| *b == root).unwrap_or(0);
-            let path = &path[root_idx..];
-            if check_path(path) {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub(crate) fn insert(&mut self, pc: PathCondition) -> bool {
-        self.0.insert(pc)
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
-pub enum PathConditions {
-    AtBlock(BasicBlock),
-    Paths(PCGraph),
-}
+pub struct PathConditions(SmallVec<[BranchChoices; 8]>);
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PathConditions {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        match self {
-            PathConditions::AtBlock(b) => json!({
-                "type": "AtBlock",
-                "block": format!("{:?}", b)
-            }),
-            PathConditions::Paths(p) => json!({
-                "type": "Paths",
-                "paths": p.0.iter().map(|pc| format!("{:?} -> {:?}", pc.from, pc.to)).collect::<Vec<_>>()
-            }),
-        }
+impl Default for PathConditions {
+    fn default() -> Self {
+        Self(SmallVec::new())
     }
 }
 
-impl std::fmt::Display for PathConditions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PathConditions::AtBlock(b) => write!(f, "{b:?}"),
-            PathConditions::Paths(p) => write!(f, "{p}"),
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PathConditions {
+    fn to_json(&self, _ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
+        todo!()
+    }
+}
+
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PathConditions {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
+        self.all_branch_choices()
+            .map(|bc| bc.to_short_string(ctxt))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+fn effective_successors(from: BasicBlock, body: &mir::Body<'_>) -> Vec<BasicBlock> {
+    let terminator = body.basic_blocks[from].terminator();
+    match terminator.kind {
+        mir::TerminatorKind::Call { target, .. } => target.into_iter().collect(),
+        mir::TerminatorKind::Drop { target, .. } => vec![target],
+        mir::TerminatorKind::FalseUnwind { real_target, .. }
+        | mir::TerminatorKind::FalseEdge { real_target, .. } => {
+            vec![real_target]
         }
+        _ => terminator.successors().collect(),
     }
 }
 
 impl PathConditions {
-    pub fn new(block: BasicBlock) -> Self {
-        Self::AtBlock(block)
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
-    pub(crate) fn remove(&mut self, other: &Self) -> bool {
-        debug_assert_ne!(self, other);
-        match (self, other) {
-            (PathConditions::Paths(ref mut p), PathConditions::Paths(other)) => p.remove(other),
-            _ => todo!(),
-        }
+    pub(crate) fn new() -> Self {
+        Self(SmallVec::new())
     }
 
-    pub fn start() -> Self {
-        Self::AtBlock(START_BLOCK)
+    fn all_branch_choices(&self) -> impl Iterator<Item = &BranchChoices> {
+        self.0.iter()
     }
 
-    pub fn roots(&self) -> HashSet<BasicBlock> {
-        match self {
-            PathConditions::AtBlock(b) => HashSet::from([*b]),
-            PathConditions::Paths(p) => p.roots(),
-        }
+    fn branch_choices_for(&mut self, from: BasicBlock) -> Option<&mut BranchChoices> {
+        self.0.iter_mut().find(|c| c.from == from)
     }
 
-    pub fn end(&self) -> Option<BasicBlock> {
-        match self {
-            PathConditions::AtBlock(b) => Some(*b),
-            PathConditions::Paths(p) => p.end(),
-        }
+    fn delete_branch_choices(&mut self, from: BasicBlock) {
+        self.0.retain(|c| c.from != from);
     }
 
-    pub fn join(&mut self, other: &Self) -> bool {
-        match (&mut *self, other) {
-            (PathConditions::AtBlock(b1), PathConditions::AtBlock(b2)) => {
-                assert!(*b1 == *b2);
-                false
-            }
-            (PathConditions::Paths(p1), PathConditions::Paths(p2)) => p1.join(p2),
-            (PathConditions::AtBlock(_b), PathConditions::Paths(p)) => {
-                *self = PathConditions::Paths(p.clone());
-                true
-            }
-            (PathConditions::Paths(_), PathConditions::AtBlock(_b)) => false,
-        }
-    }
-
-    pub fn insert(&mut self, pc: PathCondition) -> bool {
-        match self {
-            PathConditions::AtBlock(b) => {
-                assert!(
-                    *b == pc.from,
-                    "Path condition {:?} can't arise from block {:?}",
-                    pc,
-                    *b
-                );
-                *self = PathConditions::Paths(PCGraph::singleton(pc));
-                true
-            }
-            PathConditions::Paths(p) => p.insert(pc),
-        }
-    }
-
-    /// Returns `true` iff for any root `bb_r` of the graph, there is a suffix
-    /// of `path` [bb_r, ..., bb_l] such that there is a path from `bb_r` to
-    /// `bb_l` in the graph.
-    pub fn valid_for_path(&self, path: &[BasicBlock]) -> bool {
-        match self {
-            PathConditions::AtBlock(b) => path.last() == Some(b),
-            PathConditions::Paths(p) => p.has_suffix_of(path),
-        }
-    }
-
-    pub fn paths(&self) -> Option<HashSet<Vec<PathCondition>>> {
-        match self {
-            PathConditions::AtBlock(_b) => None,
-            PathConditions::Paths(p) => {
-                let end = self.end()?;
-                let mut paths = self
-                    .roots()
-                    .into_iter()
-                    .map(|b| (b, HashSet::default()))
-                    .collect::<HashMap<_, _>>();
-                let mut change = true;
-                while change {
-                    change = false;
-                    for edge in p.0.iter() {
-                        assert_ne!(edge.from, edge.to);
-                        let to_paths = paths.entry(edge.to).or_insert_with(HashSet::default);
-                        // SAFETY: different entries in the map
-                        let to_paths: &mut HashSet<_> = unsafe { &mut *(to_paths as *mut _) };
-                        let Some(from_paths) = paths.get(&edge.from) else {
-                            continue;
-                        };
-                        let to_paths_len = to_paths.len();
-                        if from_paths.is_empty() {
-                            to_paths.insert(vec![*edge]);
-                        } else {
-                            to_paths.extend(from_paths.iter().map(|p: &Vec<_>| {
-                                p.iter().copied().chain([*edge].iter().copied()).collect()
-                            }));
-                        }
-                        change |= to_paths.len() != to_paths_len;
+    pub(crate) fn join(&mut self, other: &Self, body: &mir::Body<'_>) -> bool {
+        let mut changed = false;
+        for other_branch_choices in other.all_branch_choices() {
+            if let Some(existing) = self.branch_choices_for(other_branch_choices.from) {
+                match existing.join(other_branch_choices, body) {
+                    BranchChoicesJoinResult::CoversAllChoices => {
+                        self.delete_branch_choices(other_branch_choices.from);
+                        changed = true;
                     }
+                    BranchChoicesJoinResult::Changed => {
+                        changed = true;
+                    }
+                    _ => {}
                 }
-                paths.remove(&end)
             }
         }
+        changed
     }
+
+    pub(crate) fn insert(&mut self, pc: PathCondition, body: &mir::Body<'_>) -> bool {
+        tracing::debug!("inserting pc for {:?} -> {:?}", pc.from, pc.to);
+        let successors = effective_successors(pc.from, body);
+        if successors.len() == 1 {
+            return false;
+        }
+        assert!(self.branch_choices_for(pc.from).is_none());
+        let bc_index = self
+            .all_branch_choices()
+            .enumerate()
+            .find(|(_, bc)| bc.from > pc.from)
+            .map(|(i, _)| i)
+            .unwrap_or(self.all_branch_choices().count());
+        let mut bc = BranchChoices::new(pc.from, successors.len());
+        bc.insert(successors.iter().position(|s| *s == pc.to).unwrap());
+        self.0.insert(bc_index, bc);
+        tracing::debug!("After insert, {:?}", self);
+        true
+    }
+}
+
+impl PathConditions {
+    pub fn valid_for_path(&self, path: &[BasicBlock], body: &mir::Body<'_>) -> bool {
+        let get_successor_of_block_in_path = |block: BasicBlock| {
+            let block_pos = path.iter().position(|b| *b == block);
+            if let Some(block_pos) = block_pos {
+                if block_pos == path.len() - 1 {
+                    None
+                } else {
+                    Some(path[block_pos + 1])
+                }
+            } else {
+                None
+            }
+        };
+
+        for pc in self.all_branch_choices() {
+            if let Some(choice) = get_successor_of_block_in_path(pc.from)
+                && !pc.includes_successor(choice, body)
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    // pub fn paths(&self) -> Option<HashSet<Vec<PathCondition>>> {
+    //     match self {
+    //         PathConditions::AtBlock(_b) => None,
+    //         PathConditions::Paths(p) => {
+    //             let end = self.end()?;
+    //             let mut paths = self
+    //                 .roots()
+    //                 .into_iter()
+    //                 .map(|b| (b, HashSet::default()))
+    //                 .collect::<HashMap<_, _>>();
+    //             let mut change = true;
+    //             while change {
+    //                 change = false;
+    //                 for edge in p.0.iter() {
+    //                     assert_ne!(edge.from, edge.to);
+    //                     let to_paths = paths.entry(edge.to).or_insert_with(HashSet::default);
+    //                     // SAFETY: different entries in the map
+    //                     let to_paths: &mut HashSet<_> = unsafe { &mut *(to_paths as *mut _) };
+    //                     let Some(from_paths) = paths.get(&edge.from) else {
+    //                         continue;
+    //                     };
+    //                     let to_paths_len = to_paths.len();
+    //                     if from_paths.is_empty() {
+    //                         to_paths.insert(vec![*edge]);
+    //                     } else {
+    //                         to_paths.extend(from_paths.iter().map(|p: &Vec<_>| {
+    //                             p.iter().copied().chain([*edge].iter().copied()).collect()
+    //                         }));
+    //                     }
+    //                     change |= to_paths.len() != to_paths_len;
+    //                 }
+    //             }
+    //             paths.remove(&end)
+    //         }
+    //     }
+    // }
 }

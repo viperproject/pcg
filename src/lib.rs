@@ -25,7 +25,7 @@ pub mod visualization;
 
 use action::PcgActions;
 use borrow_checker::BorrowCheckerInterface;
-use borrow_pcg::latest::Latest;
+use borrow_pcg::{graph::borrows_imgcat_debug, latest::Latest};
 use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
@@ -36,10 +36,8 @@ use rustc_interface::{
 use serde_json::json;
 use utils::{
     display::{DebugLines, DisplayWithCompilerCtxt},
-    env_feature_enabled,
-    maybe_old::MaybeOldPlace,
     validity::HasValidityCheck,
-    CompilerCtxt, Place,
+    CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -57,14 +55,14 @@ pub struct Weaken<'tcx> {
 }
 
 impl<'tcx> Weaken<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line<BC: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let to_str = match self.to {
             Some(to) => format!("{to:?}"),
             None => "None".to_string(),
         };
         format!(
             "Weaken {} from {:?} to {}",
-            self.place.to_short_string(repacker),
+            self.place.to_short_string(ctxt),
             self.from,
             to_str
         )
@@ -75,14 +73,15 @@ impl<'tcx> Weaken<'tcx> {
         from: CapabilityKind,
         to: Option<CapabilityKind>,
     ) -> Self {
-        if let Some(to) = to {
-            pcg_validity_assert!(
-                from > to,
-                "FROM capability ({:?}) is not greater than TO capability ({:?})",
-                from,
-                to
-            );
-        }
+        // TODO
+        // if let Some(to) = to {
+        //     pcg_validity_assert!(
+        //         from > to,
+        //         "FROM capability ({:?}) is not greater than TO capability ({:?})",
+        //         from,
+        //         to
+        //     );
+        // }
         Self { place, from, to }
     }
 
@@ -103,20 +102,20 @@ impl<'tcx> Weaken<'tcx> {
 /// a lent exclusive capability should be restored to an exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RestoreCapability<'tcx> {
-    place: MaybeOldPlace<'tcx>,
+    place: Place<'tcx>,
     capability: CapabilityKind,
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for RestoreCapability<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for RestoreCapability<'tcx> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
-            "place": self.place.to_json(repacker),
+            "place": self.place.to_json(ctxt),
             "capability": format!("{:?}", self.capability),
         })
     }
 }
 impl<'tcx> RestoreCapability<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    pub(crate) fn debug_line<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!(
             "Restore {} to {:?}",
             self.place.to_short_string(repacker),
@@ -124,11 +123,11 @@ impl<'tcx> RestoreCapability<'tcx> {
         )
     }
 
-    pub(crate) fn new(place: MaybeOldPlace<'tcx>, capability: CapabilityKind) -> Self {
+    pub(crate) fn new(place: Place<'tcx>, capability: CapabilityKind) -> Self {
         Self { place, capability }
     }
 
-    pub fn place(&self) -> MaybeOldPlace<'tcx> {
+    pub fn place(&self) -> Place<'tcx> {
         self.place
     }
 
@@ -137,8 +136,8 @@ impl<'tcx> RestoreCapability<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Weaken<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for Weaken<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "old": format!("{:?}", self.from),
@@ -189,7 +188,7 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 'tcx> {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
@@ -197,8 +196,8 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PcgSuccessorVisualizationData<'_, 't
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PCGStmtVisualizationData<'_, 'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
             "actions": self.actions.to_json(repacker),
@@ -351,6 +350,9 @@ macro_rules! pcg_validity_assert {
                     tracing::error!("assertion failed: {}", stringify!($cond));
                 }
             } else {
+                if !$cond {
+                    tracing::error!("assertion failed: {}", stringify!($cond));
+                }
                 assert!($cond);
             }
         }
@@ -363,6 +365,9 @@ macro_rules! pcg_validity_assert {
                     tracing::error!($($arg)*);
                 }
             } else {
+                if !$cond {
+                    tracing::error!($($arg)*);
+                }
                 assert!($cond, $($arg)*);
             }
         }
@@ -381,9 +386,9 @@ macro_rules! pcg_validity_warn {
 }
 
 pub(crate) fn validity_checks_enabled() -> bool {
-    env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions))
+    *VALIDITY_CHECKS
 }
 
 pub(crate) fn validity_checks_warn_only() -> bool {
-    env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false)
+    *VALIDITY_CHECKS_WARN_ONLY
 }

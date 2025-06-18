@@ -24,13 +24,13 @@ impl<T> EvalStmtData<T> {
     }
 }
 
-impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx>> ToJsonWithCompilerCtxt<'tcx> for EvalStmtData<T> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy, T: ToJsonWithCompilerCtxt<'tcx, BC>> ToJsonWithCompilerCtxt<'tcx, BC> for EvalStmtData<T> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
-            "pre_operands": self.pre_operands.to_json(repacker),
-            "post_operands": self.post_operands.to_json(repacker),
-            "pre_main": self.pre_main.to_json(repacker),
-            "post_main": self.post_main.to_json(repacker),
+            "pre_operands": self.pre_operands.to_json(ctxt),
+            "post_operands": self.post_operands.to_json(ctxt),
+            "pre_main": self.pre_main.to_json(ctxt),
+            "post_main": self.post_main.to_json(ctxt),
         })
     }
 }
@@ -47,11 +47,11 @@ impl<T: Default> Default for EvalStmtData<T> {
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.pre_operands.check_validity(repacker)?;
-        self.post_operands.check_validity(repacker)?;
-        self.pre_main.check_validity(repacker)?;
-        self.post_main.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.pre_operands.check_validity(ctxt)?;
+        self.post_operands.check_validity(ctxt)?;
+        self.pre_main.check_validity(ctxt)?;
+        self.post_main.check_validity(ctxt)
     }
 }
 impl<T> EvalStmtData<T> {

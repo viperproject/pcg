@@ -1,15 +1,12 @@
-use rustc_interface::{
-    data_structures::fx::FxHashSet,
-    middle::mir::{self, BasicBlock, PlaceElem},
-};
+use itertools::Itertools;
+use rustc_interface::middle::mir::{self, BasicBlock, PlaceElem};
 
 use super::{
     borrow_pcg_expansion::BorrowPcgExpansion,
-    abstraction_graph_constructor::AbstractionGraphNode,
-    edge::{borrow::RemoteBorrow, outlives::BorrowFlowEdge},
+    edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{default_make_place_old, HasPcgElems, LabelRegionProjection, MakePlaceOld},
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     region_projection::{
@@ -17,9 +14,18 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::{
+        edge::kind::BorrowPcgEdgeKind,
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    },
+};
+use crate::{
+    borrow_pcg::abstraction::node::AbstractionGraphNode,
+    utils::place::maybe_remote::MaybeRemotePlace,
+};
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
@@ -36,12 +42,32 @@ pub struct BorrowPCGEdgeRef<'tcx, 'graph> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BorrowPCGEdge<'tcx> {
+pub struct BorrowPcgEdge<'tcx> {
     pub(crate) conditions: PathConditions,
     pub(crate) kind: BorrowPcgEdgeKind<'tcx>,
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
+impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgEdge<'tcx> {
+    fn label_blocked_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.kind.label_blocked_places(predicate, latest, ctxt)
+    }
+
+    fn label_blocked_by_places(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.kind.label_blocked_by_places(predicate, latest, ctxt)
+    }
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     fn label_region_projection(
         &mut self,
         projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
@@ -53,48 +79,30 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPCGEdge<'tcx> {
     }
 }
 
-impl<'tcx> MakePlaceOld<'tcx> for BorrowPCGEdge<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.kind.make_place_old(place, latest, repacker)
-    }
-}
-
-impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPCGEdge<'tcx> {
-    fn from(borrow: RemoteBorrow<'tcx>) -> Self {
-        BorrowPCGEdge::new(
-            borrow.into(),
-            PathConditions::AtBlock((mir::Location::START).block),
-        )
-    }
-}
-
-pub trait BorrowPCGEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
+pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPcgEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
-    fn to_owned_edge(self) -> BorrowPCGEdge<'tcx>;
+    fn to_owned_edge(self) -> BorrowPcgEdge<'tcx>;
 
     /// true iff any of the blocked places can be mutated via the blocking places
     fn is_shared_borrow(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.kind().is_shared_borrow(repacker)
     }
 
-    fn blocked_places<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<MaybeRemotePlace<'tcx>> {
-        self.blocked_nodes(repacker)
-            .into_iter()
+    fn blocked_places<'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> impl Iterator<Item = MaybeRemotePlace<'tcx>> + 'slf
+    where
+        'tcx: 'slf,
+    {
+        self.blocked_nodes(ctxt)
             .flat_map(|node| node.as_place())
-            .collect()
+            .unique()
     }
 }
 
-impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
+impl<'tcx> BorrowPcgEdgeLike<'tcx> for BorrowPcgEdge<'tcx> {
     fn kind(&self) -> &BorrowPcgEdgeKind<'tcx> {
         &self.kind
     }
@@ -103,13 +111,13 @@ impl<'tcx> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdge<'tcx> {
         &self.conditions
     }
 
-    fn to_owned_edge(self) -> BorrowPCGEdge<'tcx> {
+    fn to_owned_edge(self) -> BorrowPcgEdge<'tcx> {
         self
     }
 }
 
-impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
-    fn kind(&self) -> &'graph BorrowPcgEdgeKind<'tcx> {
+impl<'tcx, 'graph> BorrowPcgEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
+    fn kind<'baz>(&'baz self) -> &'graph BorrowPcgEdgeKind<'tcx> {
         self.kind
     }
 
@@ -117,27 +125,36 @@ impl<'tcx, 'graph> BorrowPCGEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
         self.conditions
     }
 
-    fn to_owned_edge(self) -> BorrowPCGEdge<'tcx> {
-        BorrowPCGEdge {
+    fn to_owned_edge(self) -> BorrowPcgEdge<'tcx> {
+        BorrowPcgEdge {
             conditions: self.conditions.clone(),
             kind: self.kind.clone(),
         }
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.kind().check_validity(repacker)
+impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> HasValidityCheck<'tcx> for T {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.kind().check_validity(ctxt)
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> DisplayWithCompilerCtxt<'tcx> for T {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!(
-            "{} under conditions {}",
-            self.kind().to_short_string(repacker),
-            self.conditions()
-        )
+impl<'tcx, 'a, T: BorrowPcgEdgeLike<'tcx>>
+    DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for T
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        if self.conditions().is_empty() {
+            self.kind().to_short_string(ctxt)
+        } else {
+            format!(
+                "{} under conditions {}",
+                self.kind().to_short_string(ctxt),
+                self.conditions().to_short_string(ctxt)
+            )
+        }
     }
 }
 
@@ -155,14 +172,17 @@ impl LocalNode<'_> {
 /// node other than a [`RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
-impl<'tcx> MakePlaceOld<'tcx> for LocalNode<'tcx> {
-    fn make_place_old(
+impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
+    fn label_place(
         &mut self,
-        place: Place<'tcx>,
+        predicate: &LabelPlacePredicate<'tcx>,
         latest: &Latest<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
+        match self {
+            LocalNode::Place(p) => p.label_place(predicate, latest, repacker),
+            LocalNode::RegionProjection(rp) => rp.base.label_place(predicate, latest, repacker),
+        }
     }
 }
 
@@ -264,7 +284,7 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
-    fn check_validity<C: Copy>(&self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }
@@ -310,31 +330,42 @@ impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<
     }
 }
 
+impl<'tcx> LocalNode<'tcx> {
+    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+        match self {
+            LocalNode::Place(MaybeOldPlace::Current { place }) => Some(place),
+            _ => None,
+        }
+    }
+}
+
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
     pub(crate) fn as_abstraction_graph_node(
         self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        block: mir::BasicBlock,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<AbstractionGraphNode<'tcx>> {
         match self {
             // Places are allowed only if they are roots of the borrow graph
             PCGNode::Place(place) => match place {
                 MaybeRemotePlace::Local(maybe_old_place) => {
-                    if maybe_old_place.is_owned(repacker) {
-                        Some(PCGNode::Place(place).into())
+                    if maybe_old_place.is_owned(ctxt) {
+                        Some(AbstractionGraphNode::place(place))
                     } else {
                         None
                     }
                 }
                 MaybeRemotePlace::Remote(remote_place) => {
-                    Some(PCGNode::Place(remote_place.into()).into())
+                    Some(AbstractionGraphNode::place(remote_place.into()))
                 }
             },
-            PCGNode::RegionProjection(rp) => {
-                let rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>> = rp.try_into().ok()?;
-                Some(PCGNode::RegionProjection(rp).into())
-            }
+            PCGNode::RegionProjection(rp) => Some(AbstractionGraphNode::from_region_projection(
+                rp.try_into().ok()?,
+                block,
+                ctxt,
+            )),
         }
     }
     pub(crate) fn as_blocking_node(
@@ -344,10 +375,7 @@ impl<'tcx> PCGNode<'tcx> {
         self.as_local_node(repacker)
     }
 
-    pub(crate) fn as_local_node<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<LocalNode<'tcx>> {
+    pub(crate) fn as_local_node(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
         match self {
             PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
@@ -355,7 +383,7 @@ impl<'tcx> PCGNode<'tcx> {
             PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
             PCGNode::RegionProjection(rp) => {
                 let place = rp.place().as_local_place()?;
-                Some(LocalNode::RegionProjection(rp.with_base(place, repacker)))
+                Some(LocalNode::RegionProjection(rp.with_base(place)))
             }
         }
     }
@@ -407,17 +435,17 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
     }
 }
 
-impl<'tcx> BorrowPCGEdge<'tcx> {
-    pub fn insert_path_condition(&mut self, pc: PathCondition) -> bool {
-        self.conditions.insert(pc)
+impl<'tcx> BorrowPcgEdge<'tcx> {
+    pub fn insert_path_condition(&mut self, pc: PathCondition, body: &mir::Body<'_>) -> bool {
+        self.conditions.insert(pc, body)
     }
 
     pub fn conditions(&self) -> &PathConditions {
         &self.conditions
     }
 
-    pub fn valid_for_path(&self, path: &[BasicBlock]) -> bool {
-        self.conditions.valid_for_path(path)
+    pub fn valid_for_path(&self, path: &[BasicBlock], body: &mir::Body<'_>) -> bool {
+        self.conditions.valid_for_path(path, body)
     }
 
     pub fn kind(&self) -> &BorrowPcgEdgeKind<'tcx> {
@@ -429,39 +457,37 @@ impl<'tcx> BorrowPCGEdge<'tcx> {
     }
 }
 
-impl<'tcx, T: BorrowPCGEdgeLike<'tcx>> EdgeData<'tcx> for T {
-    fn blocked_by_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<LocalNode<'tcx>> {
-        self.kind().blocked_by_nodes(repacker)
+impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
+    fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
+    ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
+    where
+        'tcx: 'mir,
+    {
+        self.kind().blocked_by_nodes(ctxt)
     }
 
-    fn blocked_nodes<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> FxHashSet<BlockedNode<'tcx>> {
+    fn blocked_nodes<'slf, BC: Copy>(
+        &'slf self,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
         self.kind().blocked_nodes(repacker)
     }
 
-    fn blocks_node<C: Copy>(
-        &self,
-        node: BlockedNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> bool {
+    fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.kind().blocks_node(node, repacker)
     }
 
-    fn is_blocked_by<C: Copy>(
-        &self,
-        node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> bool {
+    fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.kind().is_blocked_by(node, repacker)
     }
 }
 
-impl<'tcx, T> HasPcgElems<T> for BorrowPCGEdge<'tcx>
+impl<'tcx, T> HasPcgElems<T> for BorrowPcgEdge<'tcx>
 where
     BorrowPcgEdgeKind<'tcx>: HasPcgElems<T>,
 {
@@ -478,13 +504,24 @@ edgedata_enum!(
     BorrowFlow(BorrowFlowEdge<'tcx>),
 );
 
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for &BorrowPcgEdgeKind<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        (*self).to_short_string(ctxt)
+    }
+}
+
 pub(crate) trait ToBorrowsEdge<'tcx> {
-    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx>;
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPcgEdge<'tcx>;
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for BorrowPcgExpansion<'tcx, LocalNode<'tcx>> {
-    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
-        BorrowPCGEdge {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
+        BorrowPcgEdge {
             conditions,
             kind: BorrowPcgEdgeKind::BorrowPcgExpansion(self),
         }
@@ -492,8 +529,8 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowPcgExpansion<'tcx, LocalNode<'tcx>> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionType<'tcx> {
-    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
-        BorrowPCGEdge {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
+        BorrowPcgEdge {
             conditions,
             kind: BorrowPcgEdgeKind::Abstraction(self),
         }
@@ -501,8 +538,8 @@ impl<'tcx> ToBorrowsEdge<'tcx> for AbstractionType<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
-    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
-        BorrowPCGEdge {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
+        BorrowPcgEdge {
             conditions,
             kind: BorrowPcgEdgeKind::Borrow(self),
         }
@@ -510,15 +547,15 @@ impl<'tcx> ToBorrowsEdge<'tcx> for BorrowEdge<'tcx> {
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for BorrowFlowEdge<'tcx> {
-    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPCGEdge<'tcx> {
-        BorrowPCGEdge {
+    fn to_borrow_pcg_edge(self, conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
+        BorrowPcgEdge {
             conditions,
             kind: BorrowPcgEdgeKind::BorrowFlow(self),
         }
     }
 }
 
-impl<'tcx, T: ToBorrowsEdge<'tcx>> From<Conditioned<T>> for BorrowPCGEdge<'tcx> {
+impl<'tcx, T: ToBorrowsEdge<'tcx>> From<Conditioned<T>> for BorrowPcgEdge<'tcx> {
     fn from(val: Conditioned<T>) -> Self {
         val.value.to_borrow_pcg_edge(val.conditions)
     }

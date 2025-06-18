@@ -23,6 +23,15 @@ impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPcgEdgeKind<'tcx> {
 }
 
 impl<'tcx> BorrowPcgEdgeKind<'tcx> {
+    #[allow(unused)]
+    pub(crate) fn could_mutate(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            BorrowPcgEdgeKind::Borrow(borrow) => borrow.is_mut(repacker),
+            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.is_mut(repacker),
+            _ => true,
+        }
+    }
+
     pub(crate) fn is_shared_borrow(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             BorrowPcgEdgeKind::Borrow(reborrow) => !reborrow.is_mut(repacker),
@@ -30,17 +39,29 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
         }
     }
 
-    pub(crate) fn redirect(&mut self, from: LocalNode<'tcx>, to: LocalNode<'tcx>) {
+    /// Returns true if the edge could be redirected, false if it would create a self edge.
+    #[must_use]
+    pub(crate) fn redirect(
+        &mut self,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
-            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to),
+            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
+                expansion.redirect(from, to, ctxt)
+            }
+            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to, ctxt),
             BorrowPcgEdgeKind::Abstraction(edge) => {
                 let from: Option<AbstractionOutputTarget<'tcx>> = from.try_into().ok();
                 let to: Option<AbstractionOutputTarget<'tcx>> = to.try_into().ok();
                 if let Some(from) = from
                     && let Some(to) = to
                 {
-                    edge.redirect(from, to);
+                    edge.redirect(from, to, ctxt);
                 }
+                // TODO
+                true
             }
             other => panic!("Cannot redirect this edge kind: {other:?}"),
         }

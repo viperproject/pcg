@@ -15,10 +15,13 @@ use bit_set::BitSet;
 use derive_more::From;
 
 use super::{
-    domain::PcgDomain, visitor::PcgVisitor, DataflowStmtPhase, DotGraphs, ErrorState,
-    EvalStmtPhase, PCGDebugData, PcgError,
+    domain::PcgDomain, visitor::PcgVisitor, DataflowStmtPhase, ErrorState, EvalStmtPhase,
+    PcgDebugData, PcgError,
 };
-use crate::utils::{arena::ArenaRef, CompilerCtxt};
+use crate::{
+    pcg::dot_graphs::PcgDotGraphsForBlock,
+    utils::{arena::ArenaRef, CompilerCtxt},
+};
 use crate::{
     pcg::triple::TripleWalker,
     rustc_interface::{
@@ -113,7 +116,7 @@ impl<'tcx> From<borrowck::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts
 
 struct PCGEngineDebugData {
     debug_output_dir: String,
-    dot_graphs: IndexVec<BasicBlock, Rc<RefCell<DotGraphs>>>,
+    dot_graphs: IndexVec<BasicBlock, Rc<RefCell<PcgDotGraphsForBlock>>>,
 }
 
 type Block = usize;
@@ -174,7 +177,7 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
 }
 
 impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
-    fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<DotGraphs>>> {
+    fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
         self.debug_data
             .as_ref()
             .map(|data| data.dot_graphs[block].clone())
@@ -199,7 +202,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         assert!(state.is_initialized());
     }
 
-    #[tracing::instrument(skip(self, state, object, location))]
+    #[tracing::instrument(skip(self, state, object))]
     fn analyze(
         &mut self,
         state: &mut PcgDomain<'a, 'tcx, A>,
@@ -219,6 +222,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         }
 
         self.initialize(state, location.block);
+        state.register_new_debug_iteration(location);
 
         let pcg_data = state.data.as_mut().unwrap();
 
@@ -227,6 +231,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             pcg.entry_state = pcg.states.0.post_main.clone();
         }
         pcg.states.0.pre_operands = pcg.entry_state.clone();
+
 
         let mut tw = TripleWalker::new(self.ctxt);
         match object {
@@ -240,8 +245,15 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
 
         for phase in EvalStmtPhase::phases() {
             let curr = ArenaRef::make_mut(&mut pcg.states.0[phase]);
-            pcg_data.actions[phase] =
-                PcgVisitor::visit(curr, self.ctxt, &tw, phase, object, location)?;
+            pcg_data.actions[phase] = PcgVisitor::visit(
+                curr,
+                self.ctxt,
+                &tw,
+                phase,
+                object,
+                location,
+                state.debug_data.clone(),
+            )?;
             if let Some(next_phase) = phase.next() {
                 pcg.states.0[next_phase] = pcg.states.0[phase].clone();
             }
@@ -266,7 +278,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             }
             create_dir_all(dir_path).expect("Failed to create directory for DOT files");
             let dot_graphs = IndexVec::from_fn_n(
-                |_| Rc::new(RefCell::new(DotGraphs::new())),
+                |_| Rc::new(RefCell::new(PcgDotGraphsForBlock::default())),
                 ctxt.body().basic_blocks.len(),
             );
             PCGEngineDebugData {
@@ -311,7 +323,7 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
         let curr_block = self.curr_block.get();
         let (block, debug_data) = if curr_block.as_usize() < body.basic_blocks.len() {
             self.curr_block.set(curr_block.plus(1));
-            let debug_data = self.debug_output_dir().map(|dir| PCGDebugData {
+            let debug_data = self.debug_output_dir().map(|dir| PcgDebugData {
                 dot_output_dir: dir,
                 dot_graphs: self.dot_graphs(curr_block).unwrap(),
             });

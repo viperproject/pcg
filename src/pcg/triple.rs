@@ -4,7 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
     self, BorrowKind, Local, Location, MutBorrowKind, Operand, Rvalue, Statement, StatementKind,
@@ -41,6 +40,11 @@ impl<'tcx> Triple<'tcx> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum PlaceCondition<'tcx> {
+    /// Similar to read capability, but indicates that the place is expanded as part of a two-phase borrow.
+    /// For example, if `let y = &mut *x` is a two-phase borrow, then we have `ExpandTwoPhase(*x)` as condition.
+    /// This distinction is relevant for expanding lifetime projections: the lifetime projection base of *x will
+    /// be labelled, similarly to the situation where the borrow was exclusive.
+    ExpandTwoPhase(Place<'tcx>),
     Capability(Place<'tcx>, CapabilityKind),
     RemoveCapability(Place<'tcx>),
     AllocateOrDeallocate(Local),
@@ -80,7 +84,7 @@ pub(crate) struct TripleWalker<'a, 'tcx: 'a> {
     pub(crate) operand_triples: Vec<Triple<'tcx>>,
     /// Evaluate all other statements/terminators
     pub(crate) main_triples: Vec<Triple<'tcx>>,
-    pub(crate) repacker: CompilerCtxt<'a, 'tcx>,
+    pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
 impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
@@ -88,7 +92,7 @@ impl<'a, 'tcx> TripleWalker<'a, 'tcx> {
         Self {
             operand_triples: Vec::new(),
             main_triples: Vec::new(),
-            repacker,
+            ctxt: repacker,
         }
     }
 }
@@ -105,7 +109,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 post: None,
             },
             Operand::Move(place) => Triple {
-                pre: PlaceCondition::exclusive(place, self.repacker),
+                pre: PlaceCondition::exclusive(place, self.ctxt),
                 post: Some(PlaceCondition::write(place)),
             },
             Operand::Constant(..) => return Ok(()),
@@ -114,6 +118,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
         Ok(())
     }
 
+    #[allow(unreachable_patterns)]
     fn visit_rvalue_fallable(
         &mut self,
         rvalue: &mir::Rvalue<'tcx>,
@@ -133,28 +138,30 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             | ShallowInitBox(_, _) => return Ok(()),
 
             &Ref(_, kind, place) => match kind {
-                BorrowKind::Shared
-                | BorrowKind::Mut {
+                BorrowKind::Shared => PlaceCondition::read(place),
+                BorrowKind::Mut {
                     kind: MutBorrowKind::TwoPhaseBorrow,
-                } => PlaceCondition::read(place),
+                } => PlaceCondition::ExpandTwoPhase(place.into()),
                 BorrowKind::Fake(..) => return Ok(()),
-                BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.repacker),
+                BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.ctxt),
             },
             &RawPtr(mutbl, place) => {
                 #[rustversion::since(2025-03-02)]
                 if matches!(mutbl, RawPtrKind::Mut) {
-                    PlaceCondition::exclusive(place, self.repacker)
+                    PlaceCondition::exclusive(place, self.ctxt)
                 } else {
                     PlaceCondition::read(place)
                 }
                 #[rustversion::before(2025-03-02)]
                 if matches!(mutbl, Mutability::Mut) {
-                    PlaceCondition::exclusive(place, self.repacker)
+                    PlaceCondition::exclusive(place, self.ctxt)
                 } else {
                     PlaceCondition::read(place)
                 }
             }
-            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => PlaceCondition::read(place),
+            &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
+                PlaceCondition::read(place)
+            }
             _ => todo!(),
         };
         tracing::debug!("Pre: {pre:?}");
@@ -183,11 +190,11 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             // Looking into `rustc` it seems that `PlaceMention` is effectively ignored.
             PlaceMention(_) => return Ok(()),
             SetDiscriminant { box place, .. } => Triple {
-                pre: PlaceCondition::exclusive(place, self.repacker),
+                pre: PlaceCondition::exclusive(place, self.ctxt),
                 post: None,
             },
             Deinit(box place) => Triple {
-                pre: PlaceCondition::exclusive(place, self.repacker),
+                pre: PlaceCondition::exclusive(place, self.ctxt),
                 post: Some(PlaceCondition::write(place)),
             },
             StorageLive(local) => Triple {
@@ -199,7 +206,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 post: Some(PlaceCondition::Unalloc(local)),
             },
             Retag(_, box place) => Triple {
-                pre: PlaceCondition::exclusive(place, self.repacker),
+                pre: PlaceCondition::exclusive(place, self.ctxt),
                 post: None,
             },
             _ => return Ok(()),
@@ -214,12 +221,12 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 BorrowKind::Fake(..) => return Ok(()),
                 BorrowKind::Mut { kind } => {
                     let post = if matches!(kind, MutBorrowKind::TwoPhaseBorrow) {
-                        Some(PlaceCondition::read(*place))
+                        Some(PlaceCondition::ExpandTwoPhase((*place).into()))
                     } else {
                         Some(PlaceCondition::RemoveCapability((*place).into()))
                     };
                     Triple {
-                        pre: PlaceCondition::exclusive(*place, self.repacker),
+                        pre: PlaceCondition::exclusive(*place, self.ctxt),
                         post,
                     }
                 }
@@ -256,11 +263,11 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             },
             &Call { destination, .. } => Triple {
                 pre: PlaceCondition::write(destination),
-                post: Some(PlaceCondition::exclusive(destination, self.repacker)),
+                post: Some(PlaceCondition::exclusive(destination, self.ctxt)),
             },
             &Yield { resume_arg, .. } => Triple {
                 pre: PlaceCondition::write(resume_arg),
-                post: Some(PlaceCondition::exclusive(resume_arg, self.repacker)),
+                post: Some(PlaceCondition::exclusive(resume_arg, self.ctxt)),
             },
             InlineAsm { .. } => {
                 return Err(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));
@@ -273,10 +280,13 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
 
     fn visit_place_fallable(
         &mut self,
-        _place: Place<'tcx>,
+        place: Place<'tcx>,
         _context: mir::visit::PlaceContext,
         _location: mir::Location,
     ) -> Result<(), PcgError> {
+        if place.contains_unsafe_deref(self.ctxt) {
+            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+        }
         Ok(())
     }
 }
@@ -286,6 +296,7 @@ trait ProducesCapability {
 }
 
 impl ProducesCapability for Rvalue<'_> {
+    #[allow(unreachable_patterns)]
     fn capability(&self) -> Option<CapabilityKind> {
         use Rvalue::*;
         match self {

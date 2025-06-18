@@ -15,9 +15,9 @@ pub mod mir_graph;
 mod node;
 
 use crate::{
-    borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph, state::BorrowsState},
-    free_pcs::{CapabilityKind, CapabilityLocals},
-    pcg::place_capabilities::PlaceCapabilities,
+    borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph},
+    free_pcs::CapabilityKind,
+    pcg::Pcg,
     rustc_interface::middle::mir::Location,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
@@ -61,6 +61,7 @@ pub struct GraphNode {
 }
 
 impl GraphNode {
+    #[allow(unused)]
     #[cfg(test)]
     fn label(&self) -> String {
         self.node_type.label()
@@ -122,16 +123,19 @@ impl GraphNode {
                 label,
                 loans,
                 base_ty: place_ty,
-            } => DotNode {
-                id: self.id.to_string(),
-                label: DotLabel::Text(label.clone()),
-                color: DotStringAttr("blue".to_string()),
-                font_color: DotStringAttr("blue".to_string()),
-                shape: DotStringAttr("octagon".to_string()),
-                style: None,
-                penwidth: None,
-                tooltip: Some(DotStringAttr(format!("{place_ty}\\\n{loans}"))),
-            },
+            } => {
+                let label = escape_html(label);
+                DotNode {
+                    id: self.id.to_string(),
+                    label: DotLabel::Html(label.clone()),
+                    color: DotStringAttr("blue".to_string()),
+                    font_color: DotStringAttr("blue".to_string()),
+                    shape: DotStringAttr("octagon".to_string()),
+                    style: None,
+                    penwidth: None,
+                    tooltip: Some(DotStringAttr(format!("{place_ty}\\\n{loans}"))),
+                }
+            }
         }
     }
 }
@@ -291,15 +295,13 @@ impl GraphEdge {
                 source,
                 target,
                 label,
-            } => {
-                DotEdge {
-                    from: source.to_string(),
-                    to: target.to_string(),
-                    options: EdgeOptions::undirected()
-                        .with_style("dashed".to_string())
-                        .with_label(label.clone()),
-                }
-            }
+            } => DotEdge {
+                from: source.to_string(),
+                to: target.to_string(),
+                options: EdgeOptions::undirected()
+                    .with_style("dashed".to_string())
+                    .with_label(label.clone()),
+            },
         }
     }
 }
@@ -314,6 +316,7 @@ impl Graph {
         Self { nodes, edges }
     }
 
+    #[allow(unused)]
     #[cfg(test)]
     pub(crate) fn edge_between_labelled_nodes(
         &self,
@@ -348,9 +351,8 @@ impl Graph {
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
     repacker: CompilerCtxt<'a, 'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
-    location: Location,
 ) -> io::Result<String> {
-    let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker, location);
+    let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
     let graph = constructor.construct_graph();
     let mut buf = vec![];
     let drawer = GraphDrawer::new(&mut buf);
@@ -358,16 +360,26 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
     Ok(String::from_utf8(buf).unwrap())
 }
 
-pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a, 'bc>(
-    repacker: CompilerCtxt<'a, 'tcx>,
-    summary: &'pcg CapabilityLocals<'tcx>,
-    borrows_domain: &'pcg BorrowsState<'tcx>,
-    capabilities: &'pcg PlaceCapabilities<'tcx>,
+pub(crate) fn generate_pcg_dot_graph<'a, 'tcx: 'a>(
+    pcg: &Pcg<'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
+    location: Location,
+) -> io::Result<String> {
+    let constructor = PcgGraphConstructor::new(pcg, ctxt, location);
+    let graph = constructor.construct_graph();
+    let mut buf = vec![];
+    let drawer = GraphDrawer::new(&mut buf);
+    drawer.draw(graph)?;
+    Ok(String::from_utf8(buf).unwrap())
+}
+
+pub(crate) fn write_pcg_dot_graph_to_file<'a, 'tcx: 'a>(
+    pcg: &Pcg<'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
     location: Location,
     file_path: &str,
 ) -> io::Result<()> {
-    let constructor =
-        PcgGraphConstructor::new(summary, repacker, borrows_domain, capabilities, location);
+    let constructor = PcgGraphConstructor::new(pcg, ctxt, location);
     let graph = constructor.construct_graph();
     let drawer = GraphDrawer::new(File::create(file_path).unwrap_or_else(|e| {
         panic!("Failed to create file at path: {file_path}: {e}");

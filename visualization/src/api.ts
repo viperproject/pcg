@@ -1,5 +1,9 @@
 import { Assertion } from "./components/Assertions";
-import { CurrentPoint, PcgProgramPointData, PCGStmtVisualizationData } from "./types";
+import {
+  CurrentPoint,
+  PcgProgramPointData,
+  PCGStmtVisualizationData,
+} from "./types";
 
 export type MirStmt = {
   stmt: string;
@@ -25,7 +29,15 @@ type MirGraph = {
   edges: MirGraphEdge[];
 };
 
-export type PCSIterations = [string, string][][][];
+export type IterationActions = Record<string, string[]>;
+
+export type PcgIteration = {
+  at_phase: [string, string][];
+  actions: IterationActions;
+};
+
+export type PcgStmtIterations = { iterations: PcgIteration[] };
+export type PcgBlockDotGraphs = PcgStmtIterations[];
 
 const fetchJsonFile = async (filePath: string) => {
   const response = await fetch(filePath);
@@ -35,7 +47,7 @@ const fetchJsonFile = async (filePath: string) => {
 export async function getPCSIterations(
   functionName: string,
   block: number
-): Promise<PCSIterations> {
+): Promise<PcgBlockDotGraphs> {
   const iterations = await fetchJsonFile(
     `data/${functionName}/block_${block}_iterations.json`
   );

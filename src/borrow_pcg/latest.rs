@@ -7,7 +7,7 @@ use crate::rustc_interface::{
     middle::{mir::BasicBlock, ty},
 };
 use crate::utils::display::{DebugLines, DisplayWithCompilerCtxt};
-use crate::utils::{Place, CompilerCtxt, SnapshotLocation};
+use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 
 use crate::utils::json::ToJsonWithCompilerCtxt;
 
@@ -23,13 +23,13 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Latest<'tcx> {
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for Latest<'tcx> {
+    fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!(self
             .0
             .iter()
             .map(|(p, l)| {
-                let ty = p.ty(repacker).ty;
+                let ty = p.ty(ctxt).ty;
                 let ty_str = if let ty::TyKind::Ref(region, ty, mutbl) = ty.kind() {
                     format!(
                         "&{}{} {}",
@@ -41,7 +41,7 @@ impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for Latest<'tcx> {
                     format!("{ty}")
                 };
                 (
-                    format!("{}: {}", p.to_short_string(repacker), ty_str),
+                    format!("{}: {}", p.to_short_string(ctxt), ty_str),
                     format!("{l:?}"),
                 )
             })
@@ -64,12 +64,16 @@ impl<'tcx> Latest<'tcx> {
         self.0.get(&place).copied()
     }
 
-    fn get_opt(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
+    fn get_opt(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<SnapshotLocation> {
         if let Some(location) = self.get_exact(place) {
             Some(location)
         } else {
-            for (place, _) in place.iter_projections().rev() {
-                if let Some(location) = self.get_exact(place.into()) {
+            for p in place.iter_places(ctxt).into_iter().rev() {
+                if let Some(location) = self.get_exact(p) {
                     return Some(location);
                 }
             }
@@ -77,15 +81,12 @@ impl<'tcx> Latest<'tcx> {
         }
     }
 
-    pub fn get(&self, place: Place<'tcx>) -> SnapshotLocation {
-        self.get_opt(place).unwrap_or(SnapshotLocation::start())
+    pub fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation {
+        self.get_opt(place, ctxt)
+            .unwrap_or(SnapshotLocation::start())
     }
 
-    pub (super) fn insert(
-        &mut self,
-        place: Place<'tcx>,
-        location: SnapshotLocation,
-    ) -> bool {
+    pub(super) fn insert(&mut self, place: Place<'tcx>, location: SnapshotLocation) -> bool {
         self.insert_unchecked(place, location)
     }
 
@@ -95,7 +96,6 @@ impl<'tcx> Latest<'tcx> {
         }
 
         self.0.retain(|existing, loc| {
-
             // After insertion of this place, if we were to lookup `existing`,
             // we'd get this location for `place`. For example if existing is `x.f.g`
             // and place is `x.f`, then `Latest::get_opt(x.f.g)` would not find `x.f.g` and
@@ -117,11 +117,7 @@ impl<'tcx> Latest<'tcx> {
         true
     }
 
-    pub fn join(
-        &mut self,
-        other: &Self,
-        block: BasicBlock,
-    ) -> bool {
+    pub fn join(&mut self, other: &Self, block: BasicBlock, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         if self.0.is_empty() {
             if other.0.is_empty() {
                 return false;
@@ -132,7 +128,7 @@ impl<'tcx> Latest<'tcx> {
         }
         let mut changed = false;
         for (place, other_loc) in other.0.iter() {
-            if let Some(self_loc) = self.get_opt(*place) {
+            if let Some(self_loc) = self.get_opt(*place, ctxt) {
                 if self_loc != *other_loc {
                     self.insert_unchecked(*place, SnapshotLocation::Start(block));
                     changed = true;

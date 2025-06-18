@@ -1,8 +1,6 @@
-use crate::borrow_pcg::domain::AbstractionInputTarget;
-use crate::borrow_pcg::has_pcs_elem::{
-    default_make_place_old, LabelRegionProjection, MakePlaceOld,
-};
-use crate::borrow_pcg::latest::Latest;
+use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::domain::LoopAbstractionInput;
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -16,6 +14,7 @@ use crate::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
+    rustc_interface::hir::Mutability,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
@@ -25,11 +24,37 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
     RegionProjection(RegionProjection<'tcx, U>),
 }
 
-impl<'tcx> From<AbstractionInputTarget<'tcx>> for PCGNode<'tcx> {
-    fn from(target: AbstractionInputTarget<'tcx>) -> Self {
+impl<'tcx> PCGNode<'tcx> {
+    // TODO: Make this more precise
+    #[allow(unused)]
+    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            PCGNode::Place(p) => p.is_mutable(ctxt),
+            PCGNode::RegionProjection(rp) => rp.base().as_local_place().is_some_and(|p| {
+                p.ty(ctxt).ty.ref_mutability() != Some(Mutability::Not)
+            }),
+        }
+    }
+}
+
+impl<'tcx, T, U> PCGNode<'tcx, T, U> {
+    pub(crate) fn is_place(&self) -> bool {
+        matches!(self, PCGNode::Place(_))
+    }
+
+    pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
+        match self {
+            PCGNode::RegionProjection(rp) => Ok(rp),
+            _ => Err(self),
+        }
+    }
+}
+
+impl<'tcx> From<LoopAbstractionInput<'tcx>> for PCGNode<'tcx> {
+    fn from(target: LoopAbstractionInput<'tcx>) -> Self {
         match target {
-            AbstractionInputTarget::Place(p) => PCGNode::Place(p),
-            AbstractionInputTarget::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
+            LoopAbstractionInput::Place(p) => PCGNode::Place(p),
+            LoopAbstractionInput::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
         }
     }
 }
@@ -48,17 +73,6 @@ impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         } else {
             false
         }
-    }
-}
-
-impl<'tcx> MakePlaceOld<'tcx> for PCGNode<'tcx> {
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        latest: &Latest<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        default_make_place_old(self, place, latest, repacker)
     }
 }
 
@@ -100,18 +114,22 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> PCGNodeLike<
 impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx>
     for PCGNode<'tcx, T, U>
 {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         match self {
-            PCGNode::Place(p) => p.check_validity(repacker),
-            PCGNode::RegionProjection(rp) => rp.check_validity(repacker),
+            PCGNode::Place(p) => p.check_validity(ctxt),
+            PCGNode::RegionProjection(rp) => rp.check_validity(ctxt),
         }
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithCompilerCtxt<'tcx>
-    for PCGNode<'tcx, T, U>
+impl<
+        'tcx,
+        'a,
+        T: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+        U: RegionProjectionBaseLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGNode<'tcx, T, U>
 {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> String {
         match self {
             PCGNode::Place(p) => p.to_short_string(repacker),
             PCGNode::RegionProjection(rp) => rp.to_short_string(repacker),
@@ -119,10 +137,14 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> DisplayWithC
     }
 }
 
-impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> ToJsonWithCompilerCtxt<'tcx>
-    for PCGNode<'tcx, T, U>
+impl<
+        'tcx,
+        BC: Copy,
+        T: PCGNodeLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
+        U: RegionProjectionBaseLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
+    > ToJsonWithCompilerCtxt<'tcx, BC> for PCGNode<'tcx, T, U>
 {
-    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+    fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()
     }
 }
@@ -143,15 +165,7 @@ impl<'tcx, T: MaybeHasLocation, U: RegionProjectionBaseLike<'tcx> + MaybeHasLoca
 }
 
 pub trait PCGNodeLike<'tcx>:
-    Clone
-    + Copy
-    + std::fmt::Debug
-    + Eq
-    + PartialEq
-    + std::hash::Hash
-    + HasValidityCheck<'tcx>
-    + DisplayWithCompilerCtxt<'tcx>
-    + ToJsonWithCompilerCtxt<'tcx>
+    Clone + Copy + std::fmt::Debug + Eq + PartialEq + std::hash::Hash + HasValidityCheck<'tcx>
 {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx>;
 
@@ -169,10 +183,9 @@ pub trait PCGNodeLike<'tcx>:
             PCGNode::RegionProjection(rp) => match rp.base() {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
-                        MaybeRemotePlace::Local(maybe_old_place) => Some(
-                            rp.with_base(maybe_old_place, repacker)
-                                .to_local_node(repacker),
-                        ),
+                        MaybeRemotePlace::Local(maybe_old_place) => {
+                            Some(rp.with_base(maybe_old_place).to_local_node(repacker))
+                        }
                         MaybeRemotePlace::Remote(_) => None,
                     }
                 }

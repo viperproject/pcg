@@ -6,6 +6,7 @@
 
 mod engine;
 mod domain;
+mod dot_graphs;
 mod node;
 mod successor;
 

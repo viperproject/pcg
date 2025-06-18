@@ -15,17 +15,18 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
-use pcg::utils::callbacks::{in_cargo_crate, PcgCallbacks};
+use pcg::utils::{callbacks::{in_cargo_crate, PcgCallbacks}, DUMP_MIR_DATAFLOW, POLONIUS};
 
 #[rustversion::since(2025-03-02)]
 use pcg::rustc_interface::driver::run_compiler;
+
+#[rustversion::before(2025-03-02)]
+use pcg::rustc_interface::driver;
 
 use tracing::trace;
 
 #[rustversion::before(2024-11-09)]
 use pcg::rustc_interface::interface::Queries;
-
-use pcg::utils::env_feature_enabled;
 
 #[rustversion::before(2024-12-14)]
 fn go(args: Vec<String>) {
@@ -81,16 +82,20 @@ fn setup_rustc_args() -> Vec<String> {
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());
     }
-    if env_feature_enabled("PCG_POLONIUS").unwrap_or(false) {
+    if *POLONIUS {
         rustc_args.push("-Zpolonius".to_string());
     }
-    if env_feature_enabled("PCG_DUMP_MIR_DATAFLOW").unwrap_or(false) {
+    if *DUMP_MIR_DATAFLOW {
         rustc_args.push("-Zdump-mir=all".to_string());
         rustc_args.push("-Zdump-mir-dataflow".to_string());
     }
     if !in_cargo_crate() {
         rustc_args.push("-Zno-codegen".to_string());
     }
+
+    // http crate for OOPSLA top crates eval on 2025-05-25.
+    // rustc_args.push("-Adangerous_implicit_autorefs".to_string());
+
     rustc_args.extend(std::env::args().skip(1));
 
     let args_str = rustc_args

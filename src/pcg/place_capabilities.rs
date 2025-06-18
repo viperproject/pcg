@@ -5,13 +5,12 @@ use crate::{
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeOldPlace,
         CompilerCtxt, Place,
     },
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<MaybeOldPlace<'tcx>, CapabilityKind>);
+pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<Place<'tcx>, CapabilityKind>);
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
@@ -25,8 +24,9 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+
     pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
-        self.get(place.into())
+        self.get(place)
             .map(|c| c == CapabilityKind::Exclusive)
             .unwrap_or(false)
     }
@@ -34,11 +34,10 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn owned_capabilities<'mir: 'slf, 'slf, 'bc: 'slf>(
         &'slf mut self,
         local: mir::Local,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir>
-    {
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> impl Iterator<Item = (Place<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir> {
         self.0.iter_mut().filter_map(move |(place, capability)| {
-            if place.local() == local && place.is_owned(repacker) {
+            if place.local == local && place.is_owned(ctxt) {
                 Some((*place, capability))
             } else {
                 None
@@ -47,23 +46,20 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     }
 
     /// Returns true iff the capability was changed.
-    pub(crate) fn insert(
-        &mut self,
-        place: MaybeOldPlace<'tcx>,
-        capability: CapabilityKind,
-    ) -> bool {
+    pub(crate) fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool {
+        tracing::debug!("inserting {:?} with {:?}", place, capability);
         self.0.insert(place, capability) != Some(capability)
     }
 
-    pub(crate) fn remove(&mut self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+    pub(crate) fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
         self.0.remove(&place)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (MaybeOldPlace<'tcx>, CapabilityKind)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
         self.0.iter().map(|(k, v)| (*k, *v))
     }
 
-    pub(crate) fn get(&self, place: MaybeOldPlace<'tcx>) -> Option<CapabilityKind> {
+    pub(crate) fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
         self.0.get(&place).copied()
     }
 

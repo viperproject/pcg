@@ -11,6 +11,54 @@ use super::{
     },
     mir_dataflow,
 };
+
+#[rustversion::since(2025-05-24)]
+pub struct AnalysisAndResults<'tcx, A>
+where
+    A: mir_dataflow::Analysis<'tcx>,
+{
+    analysis: A,
+    results: mir_dataflow::Results<A::Domain>,
+}
+
+impl<'tcx, A> AnalysisAndResults<'tcx, A>
+where
+    A: mir_dataflow::Analysis<'tcx>,
+{
+    #[rustversion::since(2025-05-24)]
+    pub fn into_results_cursor<'mir>(
+        self,
+        body: &'mir Body<'tcx>,
+    ) -> mir_dataflow::ResultsCursor<'mir, 'tcx, A> {
+        mir_dataflow::ResultsCursor::new_owning(body, self.analysis, self.results)
+    }
+
+    #[rustversion::since(2025-05-24)]
+    pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
+        &self.results[block]
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
+        self.results.entry_set_for_block(block)
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn into_results_cursor<'mir>(
+        self,
+        body: &'mir Body<'tcx>,
+    ) -> mir_dataflow::ResultsCursor<'mir, 'tcx, A> {
+        self.results.into_results_cursor(body)
+    }
+}
+
+#[rustversion::before(2025-05-24)]
+pub struct AnalysisAndResults<'tcx, A>
+where
+    A: mir_dataflow::Analysis<'tcx>,
+{
+    results: mir_dataflow::Results<'tcx, A>,
+}
 pub trait Analysis<'tcx> {
     const NAME: &'static str;
     type Domain: mir_dataflow::JoinSemiLattice + Clone;
@@ -56,25 +104,44 @@ pub(crate) fn compute_fixpoint<'tcx, T: mir_dataflow::Analysis<'tcx>>(
     analysis: T,
     tcx: ty::TyCtxt<'tcx>,
     body: &Body<'tcx>,
-) -> mir_dataflow::Results<'tcx, T>
+) -> AnalysisAndResults<'tcx, T>
 where
     T: Sized,
     <T as mir_dataflow::AnalysisDomain<'tcx>>::Domain: mir_dataflow::fmt::DebugWithContext<T>,
 {
     let engine = mir_dataflow::Engine::new_generic(tcx, body, analysis);
-    engine.pass_name("pcg").iterate_to_fixpoint()
+    let results = engine.pass_name("pcg").iterate_to_fixpoint();
+    AnalysisAndResults { results }
 }
 
-#[rustversion::since(2024-11-14)]
+#[rustversion::all(before(2025-05-24), since(2024-11-14))]
 pub(crate) fn compute_fixpoint<'tcx, T: Sized + mir_dataflow::Analysis<'tcx>>(
     analysis: T,
     tcx: ty::TyCtxt<'tcx>,
     body: &Body<'tcx>,
-) -> mir_dataflow::Results<'tcx, T>
+) -> AnalysisAndResults<'tcx, T>
 where
     <T as mir_dataflow::Analysis<'tcx>>::Domain: mir_dataflow::fmt::DebugWithContext<T>,
 {
-    MirAnalysis::iterate_to_fixpoint(analysis, tcx, body, None)
+    AnalysisAndResults {
+        results: MirAnalysis::iterate_to_fixpoint(analysis, tcx, body, None),
+    }
+}
+
+#[rustversion::all(since(2025-05-24))]
+pub(crate) fn compute_fixpoint<'tcx, T: Sized + mir_dataflow::Analysis<'tcx>>(
+    analysis: T,
+    tcx: ty::TyCtxt<'tcx>,
+    body: &Body<'tcx>,
+) -> AnalysisAndResults<'tcx, T>
+where
+    <T as mir_dataflow::Analysis<'tcx>>::Domain: mir_dataflow::fmt::DebugWithContext<T>,
+{
+    let results = MirAnalysis::iterate_to_fixpoint(analysis, tcx, body, None);
+    AnalysisAndResults {
+        analysis: results.analysis,
+        results: results.results,
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

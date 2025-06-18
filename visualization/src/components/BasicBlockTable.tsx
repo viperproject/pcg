@@ -53,6 +53,7 @@ export default function BasicBlockTable({
                   type: "stmt",
                   block: data.block,
                   stmt: i,
+                  selectedAction: null,
                 })
               }
               title={tooltip}
@@ -77,6 +78,7 @@ export default function BasicBlockTable({
               type: "stmt",
               block: data.block,
               stmt: data.stmts.length,
+              selectedAction: null,
             })
           }
         >
@@ -90,14 +92,12 @@ export default function BasicBlockTable({
   );
 }
 
-export function computeTableHeight(
-  data: BasicBlockData,
-): number {
+export function computeTableHeight(data: BasicBlockData): number {
   const container = document.createElement("div");
   container.innerHTML = ReactDOMServer.renderToString(
     BasicBlockTable({
       isOnSelectedPath: false,
-      currentPoint: { type: "stmt", block: 0, stmt: 0 },
+      currentPoint: { type: "stmt", block: 0, stmt: 0, selectedAction: null },
       data: {
         block: data.block,
         stmts: data.stmts,

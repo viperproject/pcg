@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::display::DisplayWithCompilerCtxt;
-use super::{validity::HasValidityCheck, Place, CompilerCtxt};
+use super::{validity::HasValidityCheck, CompilerCtxt, Place};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
@@ -18,6 +18,7 @@ use crate::{
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub enum SnapshotLocation {
+    Mid(Location),
     After(Location),
     Start(BasicBlock),
 }
@@ -39,31 +40,38 @@ impl SnapshotLocation {
     pub(crate) fn to_json(self) -> serde_json::Value {
         self.to_string().into()
     }
-}
 
-impl From<Location> for SnapshotLocation {
-    fn from(loc: Location) -> Self {
-        SnapshotLocation::After(loc)
+    #[allow(unused)]
+    pub(crate) fn block(&self) -> BasicBlock {
+        match self {
+            SnapshotLocation::After(loc) => loc.block,
+            SnapshotLocation::Start(bb) => *bb,
+            SnapshotLocation::Mid(loc) => loc.block,
+        }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct PlaceSnapshot<'tcx> {
-    pub place: Place<'tcx>,
-    pub at: SnapshotLocation,
+    pub(crate) place: Place<'tcx>,
+    pub(crate) at: SnapshotLocation,
 }
 
 impl std::fmt::Display for SnapshotLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SnapshotLocation::After(loc) => write!(f, "after {loc:?}"),
+            SnapshotLocation::Mid(loc) => write!(f, "mid {loc:?}"),
             SnapshotLocation::Start(bb) => write!(f, "start {bb:?}"),
         }
     }
 }
 
 impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
-    fn regions<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> IndexVec<RegionIdx, PcgRegion> {
+    fn regions<C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, PcgRegion> {
         self.place.regions(repacker)
     }
 
@@ -85,8 +93,8 @@ impl<'tcx> LocalNodeLike<'tcx> for PlaceSnapshot<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.place.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.place.check_validity(ctxt)
     }
 }
 
@@ -96,14 +104,14 @@ impl std::fmt::Display for PlaceSnapshot<'_> {
     }
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
+    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!("{} at {:?}", self.place.to_short_string(repacker), self.at)
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for PlaceSnapshot<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
+    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
             "at": self.at.to_json(),

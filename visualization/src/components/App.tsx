@@ -8,8 +8,13 @@ import React, {
 import * as Viz from "@viz-js/viz";
 import { fetchDotFile, openDotGraphInNewWindow } from "../dot_graph";
 
-import PCGOps from "./BorrowsAndActions";
-import { CurrentPoint, PathData, PcgProgramPointData } from "../types";
+import PCGOps from "./PcgActionsDisplay";
+import {
+  CurrentPoint,
+  PathData,
+  PcgProgramPointData,
+  SelectedAction,
+} from "../types";
 import SymbolicHeap from "./SymbolicHeap";
 import PathConditions from "./PathConditions";
 import MirGraph from "./MirGraph";
@@ -18,10 +23,10 @@ import {
   MirGraphEdge,
   MirGraphNode,
   getGraphData,
-  getPathData,
   getPcgProgramPointData,
   getPaths,
-  PCSIterations,
+  PcgBlockDotGraphs,
+  IterationActions,
 } from "../api";
 import {
   filterNodesAndEdges,
@@ -40,18 +45,43 @@ import {
 import BorrowCheckerGraphs from "./BorrowCheckerGraphs";
 import { LatestDisplay } from "./LatestDisplay";
 
+const getActionGraphFilename = (
+  selectedFunction: string,
+  actionGraphFilenames: string[],
+  actionIndex: number
+): string | null => {
+  return `data/${selectedFunction}/${actionGraphFilenames[actionIndex]}`;
+};
+
 function getPCGDotGraphFilename(
   currentPoint: CurrentPoint,
   selectedFunction: string,
   selected: number,
-  iterations: PCSIterations
+  iterations: PcgBlockDotGraphs
 ): string | null {
   if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
     return null;
   }
-  const stmtIterations = iterations[currentPoint.stmt].flatMap(
-    (phases) => phases
+  const selectedAction = getSelectedAction(currentPoint);
+  if (selectedAction) {
+    const iterationActions = getIterationActions(iterations, currentPoint);
+    const actionGraphFilenames = iterationActions[selectedAction.phase];
+    return getActionGraphFilename(
+      selectedFunction,
+      actionGraphFilenames,
+      selectedAction.index
+    );
+  }
+
+  const stmtIterations = iterations[currentPoint.stmt].iterations.flatMap(
+    (phases) => phases.at_phase
   );
+
+  // Handle deselection case
+  if (selected < 0) {
+    return null;
+  }
+
   const filename =
     selected >= stmtIterations.length
       ? stmtIterations[stmtIterations.length - 1][1]
@@ -67,6 +97,13 @@ interface AppProps {
   initialPath?: number;
 }
 
+function getSelectedAction(currentPoint: CurrentPoint): SelectedAction | null {
+  if (currentPoint.type !== "stmt") {
+    return null;
+  }
+  return currentPoint.selectedAction;
+}
+
 export const App: React.FC<AppProps> = ({
   initialFunction,
   initialPaths,
@@ -74,7 +111,7 @@ export const App: React.FC<AppProps> = ({
   functions,
   initialPath = 0,
 }) => {
-  const [iterations, setIterations] = useState<PCSIterations>([]);
+  const [iterations, setIterations] = useState<PcgBlockDotGraphs>([]);
   const [selected, setSelected] = useState<Selection>(999); // HACK - always show last iteration
   const [pathData, setPathData] = useState<PathData | null>(null);
   const [pcgProgramPointData, setPcgProgramPointData] =
@@ -83,6 +120,7 @@ export const App: React.FC<AppProps> = ({
     type: "stmt",
     block: 0,
     stmt: 0,
+    selectedAction: null,
   });
 
   const [selectedFunction, setSelectedFunction] = useState<string>(
@@ -232,12 +270,23 @@ export const App: React.FC<AppProps> = ({
     [paths, selectedPath]
   );
 
-  const pcsGraphSelector =
-    currentPoint.type === "stmt" && iterations.length > currentPoint.stmt ? (
+  const pcgGraphSelector =
+    showPCGSelector &&
+    currentPoint.type === "stmt" &&
+    iterations.length > currentPoint.stmt ? (
       <PCGGraphSelector
-        iterations={iterations[currentPoint.stmt].flatMap((phases) => phases)}
-        selected={selected}
-        onSelect={setSelected}
+        iterations={iterations[currentPoint.stmt].iterations.flatMap(
+          (iteration) => iteration.at_phase
+        )}
+        // If there's a selected action, we're not currently associated with a phase
+        selected={getSelectedAction(currentPoint) === null ? selected : null}
+        onSelect={(newIdx) => {
+          setCurrentPoint({
+            ...currentPoint,
+            selectedAction: null,
+          });
+          setSelected(newIdx);
+        }}
       />
     ) : null;
 
@@ -364,7 +413,19 @@ export const App: React.FC<AppProps> = ({
         />
         {pcgProgramPointData && showPCGOps && (
           <>
-            <PCGOps data={pcgProgramPointData} />
+            <PCGOps
+              data={pcgProgramPointData}
+              selectedFunction={selectedFunction}
+              selectedAction={getSelectedAction(currentPoint)}
+              setSelectedAction={(selectedAction) => {
+                if (currentPoint.type === "stmt") {
+                  setCurrentPoint({
+                    ...currentPoint,
+                    selectedAction,
+                  });
+                }
+              }}
+            />
             {"latest" in pcgProgramPointData && (
               <LatestDisplay latest={pcgProgramPointData.latest} />
             )}
@@ -377,17 +438,7 @@ export const App: React.FC<AppProps> = ({
             <Assertions assertions={assertions} />
           </div>
         )}
-        {pcsGraphSelector &&
-          showPCGSelector &&
-          currentPoint.type === "stmt" && (
-            <PCGGraphSelector
-              iterations={iterations[currentPoint.stmt].flatMap(
-                (phases) => phases
-              )}
-              selected={selected}
-              onSelect={setSelected}
-            />
-          )}
+        {pcgGraphSelector}
       </div>
 
       {/* Draggable divider */}
@@ -421,3 +472,15 @@ export const App: React.FC<AppProps> = ({
     </div>
   );
 };
+
+function getIterationActions(
+  dotGraphs: PcgBlockDotGraphs,
+  currentPoint: CurrentPoint
+): IterationActions {
+  if (currentPoint.type !== "stmt" || dotGraphs.length <= currentPoint.stmt) {
+    return {};
+  }
+  const iterations = dotGraphs[currentPoint.stmt].iterations;
+  console.log(iterations);
+  return iterations[iterations.length - 1].actions;
+}

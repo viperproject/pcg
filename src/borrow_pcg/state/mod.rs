@@ -1,16 +1,16 @@
 use super::{
-    action::BorrowPCGAction,
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdge, BorrowPCGEdgeRef, ToBorrowsEdge},
+    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
-    has_pcs_elem::LabelRegionProjection,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
-    region_projection::RegionProjectionLabel,
     visitor::extract_regions,
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
+use crate::{
+    borrow_pcg::borrow_pcg_edge::LocalNode,
+    utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace},
+};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -29,10 +29,7 @@ use crate::{
     validity_checks_enabled,
 };
 use crate::{
-    borrow_pcg::{
-        edge::outlives::BorrowFlowEdge,
-        region_projection::RegionProjection,
-    },
+    borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::RegionProjection},
     utils::remote::RemotePlace,
 };
 use crate::{
@@ -44,6 +41,7 @@ use crate::{
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     pub(crate) graph: BorrowsGraph<'tcx>,
+    pub(crate) path_conditions: PathConditions,
 }
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
@@ -55,21 +53,19 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.graph.check_validity(repacker)
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.graph.check_validity(ctxt)
     }
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn label_region_projection(
-        &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        label: Option<RegionProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) {
+    pub(crate) fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
         self.graph
-            .mut_edges(|edge| edge.label_region_projection(projection, label, repacker));
+            .frozen_graph()
+            .leaf_nodes(ctxt)
+            .collect()
     }
+
     fn introduce_initial_borrows(
         &mut self,
         local: mir::Local,
@@ -80,7 +76,11 @@ impl<'tcx> BorrowsState<'tcx> {
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
             let _ = self.apply_action(
-                BorrowPCGAction::add_edge(RemoteBorrow::new(local).into(), true),
+                BorrowPcgAction::add_edge(
+                    BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
+                    "Introduce initial borrows",
+                    false,
+                ),
                 capabilities,
                 repacker,
             );
@@ -90,8 +90,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
             assert!(self
                 .apply_action(
-                    BorrowPCGAction::add_edge(
-                        BorrowPCGEdge::new(
+                    BorrowPcgAction::add_edge(
+                        BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
                                 RegionProjection::new(
                                     region,
@@ -111,9 +111,10 @@ impl<'tcx> BorrowsState<'tcx> {
                                 repacker,
                             )
                             .into(),
-                            PathConditions::AtBlock((Location::START).block),
+                            PathConditions::new(),
                         ),
-                        true,
+                        "Introduce initial borrows",
+                        false,
                     ),
                     capabilities,
                     repacker,
@@ -132,23 +133,28 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub(crate) fn insert(&mut self, edge: BorrowPCGEdge<'tcx>) -> bool {
-        self.graph.insert(edge)
+    pub(crate) fn insert(
+        &mut self,
+        edge: BorrowPcgEdge<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph.insert(edge, ctxt)
     }
 
     pub(super) fn remove(
         &mut self,
-        edge: &BorrowPCGEdge<'tcx>,
+        edge: &BorrowPcgEdge<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let removed = self.graph.remove(edge);
+        let removed = self.graph.remove(edge.kind()).is_some();
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !self.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node {
-                        let _ = capabilities.remove(place.into());
-                    }
+                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+                {
+                    let _ = capabilities.remove(place);
+                }
             }
         }
         removed
@@ -163,22 +169,42 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
+        let loop_usage = LoopUsage::new(self.latest.clone(), &other.latest);
+        changed |= self.graph.join(
+            &other.graph,
+            self_block,
+            other_block,
+            &loop_usage,
+            capabilities,
+            ctxt,
+        );
+        changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
-            .graph
-            .join(&other.graph, self_block, other_block, repacker);
-        changed |= self.latest.join(&other.latest, self_block);
+            .path_conditions
+            .join(&other.path_conditions, ctxt.body());
         changed
     }
 
-    pub(crate) fn add_path_condition(&mut self, pc: PathCondition) -> bool {
-        self.graph.add_path_condition(pc)
+    pub(crate) fn add_cfg_edge(
+        &mut self,
+        from: BasicBlock,
+        to: BasicBlock,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        if ctxt.is_back_edge(from, to) {
+            return false;
+        }
+        let pc = PathCondition::new(from, to);
+        self.path_conditions.insert(pc, ctxt.body());
+        self.graph.add_path_condition(pc, ctxt)
     }
 
-    pub fn filter_for_path(&mut self, path: &[BasicBlock]) {
-        self.graph.filter_for_path(path);
+    pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
+        self.graph.filter_for_path(path, ctxt);
     }
 
     /// Returns the place that blocks `place` if:
@@ -200,7 +226,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if edges.len() != 1 {
             return None;
         }
-        let nodes = edges[0].blocked_by_nodes(repacker);
+        let nodes = edges[0].blocked_by_nodes(repacker).collect::<Vec<_>>();
         if nodes.len() != 1 {
             return None;
         }
@@ -219,41 +245,45 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker).collect()
     }
 
-    pub(crate) fn get_latest(&self, place: Place<'tcx>) -> SnapshotLocation {
-        self.latest.get(place)
+    pub(crate) fn get_latest(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> SnapshotLocation {
+        self.latest.get(place, ctxt)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(
         &mut self,
-        blocked_place: MaybeOldPlace<'tcx>,
+        blocked_place: Place<'tcx>,
         assigned_place: Place<'tcx>,
         kind: BorrowKind,
         location: Location,
         region: ty::Region<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         assert!(
-            assigned_place.ty(repacker).ty.ref_mutability().is_some(),
+            assigned_place.ty(ctxt).ty.ref_mutability().is_some(),
             "{:?}:{:?} Assigned place {:?} is not a reference. Ty: {:?}",
-            repacker.body().source.def_id(),
+            ctxt.body().source.def_id(),
             location,
             assigned_place,
-            assigned_place.ty(repacker).ty
+            assigned_place.ty(ctxt).ty
         );
         let borrow_edge = LocalBorrow::new(
-            blocked_place,
+            blocked_place.into(),
             assigned_place.into(),
             kind,
             location,
             region,
-            repacker,
+            ctxt,
         );
         // capabilities.insert(rp.place(), assigned_cap);
         assert!(self.graph.insert(
-            BorrowEdge::Local(borrow_edge)
-                .to_borrow_pcg_edge(PathConditions::AtBlock(location.block))
+            BorrowEdge::Local(borrow_edge).to_borrow_pcg_edge(self.path_conditions.clone()),
+            ctxt
         ));
 
         match kind {
@@ -287,14 +317,5 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
             }
         }
-    }
-
-    #[must_use]
-    pub(crate) fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.make_place_old(place, &self.latest, repacker)
     }
 }

@@ -4,15 +4,134 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::fmt::{Display, Formatter, Result};
-
-use rustc_interface::middle::mir::Local;
+use rustc_interface::middle::mir::{Local, PlaceElem};
 
 use crate::{
     free_pcs::CapabilityKind,
-    pcg_validity_assert, rustc_interface,
-    utils::{Place, CompilerCtxt},
+    rustc_interface::{self, VariantIdx, span::Symbol},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, ConstantIndex, Place},
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum RepackGuide {
+    Downcast(Option<Symbol>, VariantIdx),
+    ConstantIndex(ConstantIndex),
+    Index(Local),
+    Subslice { from: u64, to: u64, from_end: bool },
+}
+
+impl From<RepackGuide> for PlaceElem<'_> {
+    fn from(val: RepackGuide) -> Self {
+        match val {
+            RepackGuide::Index(local) => PlaceElem::Index(local),
+            RepackGuide::Downcast(symbol, variant_idx) => PlaceElem::Downcast(symbol, variant_idx),
+            RepackGuide::ConstantIndex(constant_index) => PlaceElem::ConstantIndex {
+                offset: constant_index.offset,
+                min_length: constant_index.min_length,
+                from_end: constant_index.from_end,
+            },
+            RepackGuide::Subslice { from, to, from_end } => {
+                PlaceElem::Subslice { from, to, from_end }
+            }
+        }
+    }
+}
+
+impl TryFrom<PlaceElem<'_>> for RepackGuide {
+    type Error = ();
+    fn try_from(elem: PlaceElem<'_>) -> Result<Self, Self::Error> {
+        match elem {
+            PlaceElem::Index(local) => Ok(RepackGuide::Index(local)),
+            PlaceElem::Downcast(symbol, variant_idx) => {
+                Ok(RepackGuide::Downcast(symbol, variant_idx))
+            }
+            PlaceElem::ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            } => Ok(RepackGuide::ConstantIndex(ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            })),
+            PlaceElem::Subslice { from, to, from_end } => {
+                Ok(RepackGuide::Subslice { from, to, from_end })
+            }
+            _ => {
+                tracing::info!("elem: {elem:?}");
+                Err(())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RepackExpand<'tcx> {
+    pub(crate) from: Place<'tcx>,
+    pub(crate) guide: Option<RepackGuide>,
+    pub(crate) capability: CapabilityKind,
+}
+
+impl<'tcx> RepackExpand<'tcx> {
+    pub fn capability(&self) -> CapabilityKind {
+        self.capability
+    }
+
+    pub fn from(&self) -> Place<'tcx> {
+        self.from
+    }
+
+    pub(crate) fn local(&self) -> Local {
+        self.from.local
+    }
+
+    pub fn target_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
+        let expansion = self.from.expansion(self.guide, ctxt);
+        self.from.expansion_places(&expansion, ctxt)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RepackCollapse<'tcx> {
+    pub(crate) to: Place<'tcx>,
+    pub(crate) guide: Option<RepackGuide>,
+    pub(crate) capability: CapabilityKind,
+}
+
+impl<'tcx> RepackCollapse<'tcx> {
+    pub fn downcast_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
+        if let Some(guide @ RepackGuide::Downcast(_, _)) = self.guide {
+            self.to.project_deeper(guide.into(), ctxt).ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn box_deref_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
+        if self.to.ty(ctxt).ty.is_box() {
+            self.to.project_deeper(PlaceElem::Deref, ctxt).ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn to(&self) -> Place<'tcx> {
+        self.to
+    }
+
+    pub fn capability(&self) -> CapabilityKind {
+        self.capability
+    }
+
+    pub(crate) fn local(&self) -> Local {
+        self.to.local
+    }
+
+    pub (crate) fn expansion_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
+        let expansion = self.to.expansion(self.guide, ctxt);
+        self.to.expansion_places(&expansion, ctxt)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RepackOp<'tcx> {
@@ -43,21 +162,18 @@ pub enum RepackOp<'tcx> {
     /// the same capability. It can also appear at basic block join points, where one branch has
     /// a weaker capability than the other.
     Weaken(Place<'tcx>, CapabilityKind, CapabilityKind),
-    /// Instructs that one should unpack the first place with the capability.
+    /// Instructs that one should unpack `place` with the capability.
     /// We guarantee that the current state holds exactly the given capability for the given place.
-    /// The second place is the guide, denoting e.g. the enum variant to unpack to. One can use
+    /// `guide` denotes e.g. the enum variant to unpack to. One can use
     /// [`Place::expand_one_level(_.0, _.1, ..)`](Place::expand_one_level) to get the set of all
     /// places (except as noted in the documentation for that fn) which will be obtained by unpacking.
-    ///
-    /// Until rust-lang/rust#21232 lands, we guarantee that this will only have
-    /// [`CapabilityKind::Exclusive`].
-    Expand(Place<'tcx>, Place<'tcx>, CapabilityKind),
-    /// Instructs that one should pack up to the given (first) place with the given capability.
-    /// The second place is the guide, denoting e.g. the enum variant to pack from. One can use
+    Expand(RepackExpand<'tcx>),
+    /// Instructs that one should pack up `place` with the given capability.
+    /// `guide` denotes e.g. the enum variant to pack from. One can use
     /// [`Place::expand_one_level(_.0, _.1, ..)`](Place::expand_one_level) to get the set of all
     /// places which should be packed up. We guarantee that the current state holds exactly the
     /// given capability for all places in this set.
-    Collapse(Place<'tcx>, Place<'tcx>, CapabilityKind),
+    Collapse(RepackCollapse<'tcx>),
     /// TODO
     DerefShallowInit(Place<'tcx>, Place<'tcx>),
     /// This place should have its capability changed from `Lent` (for mutably
@@ -68,54 +184,53 @@ pub enum RepackOp<'tcx> {
     RegainLoanedCapability(Place<'tcx>, CapabilityKind),
 }
 
-impl Display for RepackOp<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RepackOp<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         match self {
-            RepackOp::StorageDead(place) => write!(f, "StorageDead({place:?})"),
-            RepackOp::IgnoreStorageDead(_) => write!(f, "IgnoreSD"),
-            RepackOp::Weaken(place, _, to) => {
-                write!(f, "Weaken({place:?}, {to:?})")
-            }
-            RepackOp::Collapse(to, _, kind) => write!(f, "CollapseTo({to:?}, {kind:?})"),
-            RepackOp::Expand(from, _, kind) => write!(f, "Expand({from:?}, {kind:?})"),
-            RepackOp::DerefShallowInit(from, _) => write!(f, "DerefShallowInit({from:?})"),
             RepackOp::RegainLoanedCapability(place, capability_kind) => {
-                write!(f, "RegainLoanedCapability({place:?}, {capability_kind:?})")
+                format!(
+                    "Restore capability {:?} to {}",
+                    capability_kind,
+                    place.to_short_string(ctxt),
+                )
             }
+            _ => format!("{self:?}"),
         }
     }
 }
 
 impl<'tcx> RepackOp<'tcx> {
-
-    pub(crate) fn debug_line(&self, _repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!("{self:?}")
-    }
-
-    pub(crate) fn to_json(self) -> serde_json::Value {
-        serde_json::Value::String(format!("{self:?}"))
+    pub(crate) fn collapse(
+        to: Place<'tcx>,
+        guide: Option<RepackGuide>,
+        capability: CapabilityKind,
+    ) -> Self {
+        Self::Collapse(RepackCollapse {
+            to,
+            guide,
+            capability,
+        })
     }
 
     pub(crate) fn expand(
         from: Place<'tcx>,
-        to: Place<'tcx>,
+        guide: Option<RepackGuide>,
         for_cap: CapabilityKind,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        pcg_validity_assert!(
-            to.is_owned(repacker),
-            "Expansion to borrowed place {:?}",
-            to
-        );
-        Self::Expand(from, to, for_cap)
+        Self::Expand(RepackExpand {
+            from,
+            guide,
+            capability: for_cap,
+        })
     }
 
     pub fn affected_place(&self) -> Place<'tcx> {
         match *self {
             RepackOp::StorageDead(local) | RepackOp::IgnoreStorageDead(local) => local.into(),
             RepackOp::Weaken(place, _, _)
-            | RepackOp::Collapse(place, _, _)
-            | RepackOp::Expand(place, _, _)
+            | RepackOp::Collapse(RepackCollapse { to: place, .. })
+            | RepackOp::Expand(RepackExpand { from: place, .. })
             | RepackOp::RegainLoanedCapability(place, _)
             | RepackOp::DerefShallowInit(place, _) => place,
         }

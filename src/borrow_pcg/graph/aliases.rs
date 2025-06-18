@@ -6,7 +6,7 @@ use crate::{
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{CompilerCtxt, HasPlace},
+    utils::{data_structures::HashSet, CompilerCtxt, HasPlace},
 };
 
 use super::BorrowsGraph;
@@ -18,10 +18,10 @@ struct Alias<'tcx> {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph, 'bc: 'graph, C: Copy>(
+    pub(crate) fn ancestor_edges<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
         let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
@@ -40,29 +40,30 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         result
     }
-    pub(crate) fn aliases<C: Copy>(
+    pub(crate) fn aliases<BC: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut result: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
         result.insert(node.into());
         let mut stack = vec![node];
         while let Some(node) = stack.pop() {
-            for alias in self.aliases_all_projections(node, repacker) {
+            for alias in self.aliases_all_projections(node, ctxt) {
                 if result.insert(alias)
-                    && let Some(local_node) = alias.try_to_local_node(repacker) {
-                        stack.push(local_node);
-                    }
+                    && let Some(local_node) = alias.try_to_local_node(ctxt)
+                {
+                    stack.push(local_node);
+                }
             }
         }
         result
     }
 
-    pub(crate) fn aliases_all_projections<C: Copy>(
+    pub(crate) fn aliases_all_projections<BC: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> FxHashSet<PCGNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(ctxt) {
@@ -96,14 +97,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 {
                     for node in self.nodes(ctxt) {
                         if let Some(PCGNode::RegionProjection(p)) = node.try_to_local_node(ctxt)
-                            && p.base() == rp.base() && p.region_idx == rp.region_idx {
-                                results.extend(self.direct_aliases(
-                                    p.to_local_node(ctxt),
-                                    ctxt,
-                                    &mut FxHashSet::default(),
-                                    true,
-                                ));
-                            }
+                            && p.base() == rp.base()
+                            && p.region_idx == rp.region_idx
+                        {
+                            results.extend(self.direct_aliases(
+                                p.to_local_node(ctxt),
+                                ctxt,
+                                &mut FxHashSet::default(),
+                                true,
+                            ));
+                        }
                     }
                 }
             }
@@ -112,14 +115,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     #[tracing::instrument(skip(self, repacker, seen, direct))]
-    fn direct_aliases<C: Copy>(
+    fn direct_aliases<'slf, BC: Copy>(
         &self,
         node: LocalNode<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
         seen: &mut FxHashSet<PCGNode<'tcx>>,
         direct: bool,
     ) -> FxHashSet<Alias<'tcx>> {
-        let mut result = FxHashSet::default();
+        let mut result = HashSet::default();
         result.insert(Alias {
             node: node.into(),
             exact_alias: direct,
@@ -189,6 +192,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 }
 
+#[rustversion::since(2025-05-24)]
 #[cfg(test)]
 #[test]
 fn test_aliases() {

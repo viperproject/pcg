@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::{fs, io};
 
 use crate::free_pcs::PcgAnalysis;
-use crate::rustc_interface::driver::{self, run_compiler, Compilation};
+#[rustversion::since(2025-05-24)]
+use crate::rustc_interface::driver::run_compiler;
+use crate::rustc_interface::driver::{self, Compilation};
 use crate::rustc_interface::hir::def::DefKind;
 use crate::rustc_interface::interface::{interface::Compiler, Config};
 use crate::rustc_interface::middle::ty::TyCtxt;
@@ -12,6 +14,7 @@ use crate::utils::callbacks::set_mir_borrowck;
 
 use super::callbacks::{in_cargo_crate, run_pcg_on_fn, take_stored_body};
 
+#[allow(unused)]
 pub struct TestCallbacks {
     input: String,
     callback: Option<
@@ -42,6 +45,7 @@ impl FileLoader for StringLoader {
 /// # Safety
 ///
 /// Stored bodies must come from the same `tcx`.
+#[rustversion::since(2025-05-24)]
 unsafe fn run_pcg_on_first_fn<'tcx>(
     tcx: TyCtxt<'tcx>,
     callback: impl for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)
@@ -58,6 +62,7 @@ unsafe fn run_pcg_on_first_fn<'tcx>(
     run_pcg_on_fn(def_id, &body, tcx, false, None, Some(&callback));
 }
 
+#[rustversion::since(2025-05-24)]
 impl driver::Callbacks for TestCallbacks {
     fn config(&mut self, config: &mut Config) {
         assert!(config.override_queries.is_none());
@@ -81,6 +86,7 @@ impl driver::Callbacks for TestCallbacks {
 }
 
 #[cfg(test)]
+#[rustversion::since(2025-05-24)]
 pub(crate) fn run_pcg_on_str(
     input: &str,
     callback: impl for<'mir, 'tcx, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)

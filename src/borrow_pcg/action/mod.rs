@@ -1,68 +1,33 @@
 use tracing::instrument;
 
-use super::borrow_pcg_edge::BorrowPCGEdge;
+use super::borrow_pcg_edge::BorrowPcgEdge;
 use super::edge::kind::BorrowPcgEdgeKind;
 use super::state::BorrowsState;
+use crate::action::BorrowPcgAction;
+use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use crate::borrow_pcg::graph::BorrowsGraph;
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilities;
 use crate::pcg::PcgError;
-use crate::rustc_interface::{ast::Mutability, middle::mir::Location};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
 
-/// An action that is applied to a `BorrowsState` during the dataflow analysis
-/// of `BorrowsVisitor`, for which consumers (e.g. Prusti) may wish to perform
-/// their own effect (e.g. for an unblock, applying a magic wand).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BorrowPCGAction<'tcx> {
-    pub(crate) kind: BorrowPCGActionKind<'tcx>,
-    debug_context: Option<String>,
-}
-
-impl<'tcx> BorrowPCGAction<'tcx> {
-    pub(crate) fn debug_line(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        match &self.kind {
-            BorrowPCGActionKind::AddEdge { edge, .. } => {
-                format!("Add Edge: {}", edge.to_short_string(repacker))
-            }
-            BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
-            BorrowPCGActionKind::Restore(restore_capability) => {
-                restore_capability.debug_line(repacker)
-            }
-            BorrowPCGActionKind::MakePlaceOld(place, reason) => {
-                format!(
-                    "Make {} an old place ({:?})",
-                    place.to_short_string(repacker),
-                    reason
-                )
-            }
-            BorrowPCGActionKind::SetLatest(place, location) => format!(
-                "Set Latest of {} to {:?}",
-                place.to_short_string(repacker),
-                location
-            ),
-            BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
-                format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
-            }
-        }
-    }
-
-    pub fn kind(&self) -> &BorrowPCGActionKind<'tcx> {
-        &self.kind
-    }
-
+impl<'tcx> BorrowPcgAction<'tcx> {
     pub(crate) fn restore_capability(
-        place: MaybeOldPlace<'tcx>,
+        place: Place<'tcx>,
         capability: CapabilityKind,
+        debug_context: impl Into<String>,
     ) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::Restore(RestoreCapability::new(place, capability)),
-            debug_context: None,
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::Restore(RestoreCapability::new(place, capability)),
+            debug_context: Some(debug_context.into()),
         }
     }
 
@@ -71,52 +36,77 @@ impl<'tcx> BorrowPCGAction<'tcx> {
         from: CapabilityKind,
         to: Option<CapabilityKind>,
     ) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::Weaken(Weaken::new(place, from, to)),
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to)),
             debug_context: None,
         }
     }
 
     pub(crate) fn set_latest(
         place: Place<'tcx>,
-        location: Location,
+        location: SnapshotLocation,
         context: impl Into<String>,
     ) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::SetLatest(place, location),
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::SetLatest(place, location),
             debug_context: Some(context.into()),
         }
     }
 
-    pub(crate) fn remove_edge(edge: BorrowPCGEdge<'tcx>, context: impl Into<String>) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::RemoveEdge(edge),
+    pub(crate) fn remove_edge(edge: BorrowPcgEdge<'tcx>, context: impl Into<String>) -> Self {
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::RemoveEdge(edge),
             debug_context: Some(context.into()),
         }
     }
 
-    pub(crate) fn add_edge(edge: BorrowPCGEdge<'tcx>, for_exclusive: bool) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::AddEdge {
-                edge,
-                for_exclusive,
-            },
-            debug_context: None,
+    pub(crate) fn redirect_edge(
+        edge: BorrowPcgEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        context: impl Into<String>,
+    ) -> Self {
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::RedirectEdge { edge, from, to },
+            debug_context: Some(context.into()),
+        }
+    }
+
+    pub(crate) fn add_edge(
+        edge: BorrowPcgEdge<'tcx>,
+        context: impl Into<String>,
+        for_read: bool,
+    ) -> Self {
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::AddEdge { edge, for_read },
+            debug_context: Some(context.into()),
+        }
+    }
+
+    pub(crate) fn remove_region_projection_label(
+        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        context: impl Into<String>,
+    ) -> Self {
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::LabelRegionProjection(projection, None),
+            debug_context: Some(context.into()),
+        }
+    }
+
+    pub(crate) fn label_region_projection(
+        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        context: impl Into<String>,
+    ) -> Self {
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::LabelRegionProjection(projection, label),
+            debug_context: Some(context.into()),
         }
     }
 
     pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
-        BorrowPCGAction {
-            kind: BorrowPCGActionKind::MakePlaceOld(place, reason),
-            debug_context: None,
-        }
-    }
-}
-
-impl<'tcx> From<BorrowPCGActionKind<'tcx>> for BorrowPCGAction<'tcx> {
-    fn from(kind: BorrowPCGActionKind<'tcx>) -> Self {
-        BorrowPCGAction {
-            kind,
+        BorrowPcgAction {
+            kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
             debug_context: None,
         }
     }
@@ -130,69 +120,107 @@ pub enum MakePlaceOldReason {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BorrowPCGActionKind<'tcx> {
+pub enum BorrowPcgActionKind<'tcx> {
+    RedirectEdge {
+        edge: BorrowPcgEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+    },
+    LabelRegionProjection(
+        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        Option<RegionProjectionLabel>,
+    ),
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
     MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
-    SetLatest(Place<'tcx>, Location),
-    RemoveEdge(BorrowPCGEdge<'tcx>),
+    SetLatest(Place<'tcx>, SnapshotLocation),
+    RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
-        edge: BorrowPCGEdge<'tcx>,
-        for_exclusive: bool,
+        edge: BorrowPcgEdge<'tcx>,
+        for_read: bool,
     },
 }
 
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for BorrowPCGActionKind<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for BorrowPcgActionKind<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         match self {
-            BorrowPCGActionKind::Weaken(weaken) => weaken.debug_line(repacker),
-            BorrowPCGActionKind::Restore(restore_capability) => {
-                restore_capability.debug_line(repacker)
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                format!(
+                    "Redirect Edge: {} from {} to {}",
+                    edge.to_short_string(ctxt),
+                    from.to_short_string(ctxt),
+                    to.to_short_string(ctxt)
+                )
             }
-            BorrowPCGActionKind::MakePlaceOld(place, reason) => {
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                format!(
+                    "Label Region Projection: {} with {:?}",
+                    rp.to_short_string(ctxt),
+                    label
+                )
+            }
+            BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(ctxt),
+            BorrowPcgActionKind::Restore(restore_capability) => restore_capability.debug_line(ctxt),
+            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
                 format!(
                     "Make {} an old place ({:?})",
-                    place.to_short_string(repacker),
+                    place.to_short_string(ctxt),
                     reason
                 )
             }
-            BorrowPCGActionKind::SetLatest(place, location) => format!(
+            BorrowPcgActionKind::SetLatest(place, location) => format!(
                 "Set Latest of {} to {:?}",
-                place.to_short_string(repacker),
+                place.to_short_string(ctxt),
                 location
             ),
-            BorrowPCGActionKind::RemoveEdge(borrow_pcgedge) => {
-                format!("Remove Edge {}", borrow_pcgedge.to_short_string(repacker))
+            BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
+                format!("Remove Edge {}", borrow_pcgedge.to_short_string(ctxt))
             }
-            BorrowPCGActionKind::AddEdge {
-                edge,
-                for_exclusive,
-            } => format!(
-                "Add Edge: {}; for exclusive: {}",
-                edge.to_short_string(repacker),
-                for_exclusive
+            BorrowPcgActionKind::AddEdge { edge, for_read } => format!(
+                "Add Edge: {}; for read: {}",
+                edge.to_short_string(ctxt),
+                for_read
             ),
         }
     }
 }
 
-impl<'tcx> ToJsonWithCompilerCtxt<'tcx> for BorrowPCGAction<'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
-        self.kind.to_short_string(repacker).into()
+impl<'tcx> BorrowsGraph<'tcx> {
+    #[must_use]
+    fn redirect_edge(
+        &mut self,
+        mut edge: BorrowPcgEdgeKind<'tcx>,
+        from: LocalNode<'tcx>,
+        to: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let conditions = self.remove(&edge).unwrap();
+        if edge.redirect(from, to, ctxt) {
+            self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
+        }
+        true
     }
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    #[instrument(skip(self, repacker), fields(action))]
+    #[instrument(skip(self, action, capabilities, ctxt))]
     pub(crate) fn apply_action(
         &mut self,
-        action: BorrowPCGAction<'tcx>,
+        action: BorrowPcgAction<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
-            BorrowPCGActionKind::Restore(restore) => {
-                let restore_place: MaybeOldPlace<'tcx> = restore.place();
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                self.graph.redirect_edge(edge, from, to, ctxt)
+            }
+            BorrowPcgActionKind::Restore(restore) => {
+                let restore_place = restore.place();
                 if let Some(cap) = capabilities.get(restore_place) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
@@ -201,8 +229,8 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 true
             }
-            BorrowPCGActionKind::Weaken(weaken) => {
-                let weaken_place: MaybeOldPlace<'tcx> = weaken.place().into();
+            BorrowPcgActionKind::Weaken(weaken) => {
+                let weaken_place = weaken.place();
                 assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
                 match weaken.to {
                     Some(to) => assert!(capabilities.insert(weaken_place, to)),
@@ -210,53 +238,79 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 true
             }
-            BorrowPCGActionKind::MakePlaceOld(place, _) => self.make_place_old(place, repacker),
-            BorrowPCGActionKind::SetLatest(place, location) => self.set_latest(place, location),
-            BorrowPCGActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, repacker),
-            BorrowPCGActionKind::AddEdge {
-                edge,
-                for_exclusive,
-            } => self.handle_add_edge(edge, for_exclusive, capabilities, repacker)?,
+            BorrowPcgActionKind::MakePlaceOld(place, _) => self.make_place_old(place, ctxt),
+            BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location),
+            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
+            BorrowPcgActionKind::AddEdge { edge, for_read } => {
+                self.handle_add_edge(edge, for_read, capabilities, ctxt)?
+            }
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                self.label_region_projection(&rp, label, ctxt)
+            }
         };
         Ok(result)
     }
 
-    #[tracing::instrument(skip(self, capabilities, repacker))]
+    fn make_place_old(&mut self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.graph.make_place_old(place, &self.latest, ctxt)
+    }
+
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph
+            .mut_edges(|edge| edge.label_region_projection(projection, label, ctxt))
+    }
+
+    #[instrument(skip(self, edge, capabilities, ctxt), fields(edge = edge.to_short_string(ctxt)))]
     fn handle_add_edge(
         &mut self,
-        edge: BorrowPCGEdge<'tcx>,
-        for_exclusive: bool,
+        edge: BorrowPcgEdge<'tcx>,
+        for_read: bool,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let mut changed = self.insert(edge.clone());
+        let mut changed = self.insert(edge.clone(), ctxt);
         Ok(match edge.kind {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                if changed {
+                // We only want to change capability for expanding x -> *x, not
+                // for expanding region projections
+                if changed && expansion.base.is_place() {
                     let base = expansion.base;
-                    let expanded_capability = if expansion.is_owned_expansion(repacker) {
-                        match expansion.base.place().ty(repacker).ty.ref_mutability() {
-                            Some(Mutability::Mut) => CapabilityKind::Exclusive,
-                            Some(Mutability::Not) => CapabilityKind::Read,
-                            None => unreachable!(),
-                        }
-                    } else if !for_exclusive {
+                    let base_capability = capabilities.get(base.place());
+                    let expanded_capability = if for_read {
                         CapabilityKind::Read
-                    } else if let Some(capability) = capabilities.get(base.place().into()) {
+                    } else if let Some(capability) = base_capability {
                         capability
                     } else {
+                        // TODO
+                        // pcg_validity_assert!(
+                        //     false,
+                        //     "Base capability for {} is not set",
+                        //     base.place().to_short_string(ctxt)
+                        // );
                         return Ok(true);
+                        // panic!("Base capability should be set");
                     };
 
-                    if for_exclusive {
-                        changed |= capabilities.remove(base.place().into()).is_some();
+                    if for_read {
+                        changed |= capabilities.insert(base.place(), CapabilityKind::Read);
                     } else {
-                        changed |= capabilities.insert(base.place().into(), CapabilityKind::Read);
+                        changed |= capabilities.remove(base.place()).is_some();
                     }
 
                     for p in expansion.expansion.iter() {
-                        if !p.place().is_owned(repacker) {
-                            changed |= capabilities.insert(p.place().into(), expanded_capability);
+                        if !p.place().is_owned(ctxt) {
+                            tracing::debug!(
+                                "Inserting capability {:?} for {}",
+                                expanded_capability,
+                                p.place().to_short_string(ctxt)
+                            );
+                            changed |=
+                                capabilities.insert(p.place(), expanded_capability);
                         }
                     }
                 }

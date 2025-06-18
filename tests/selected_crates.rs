@@ -6,16 +6,197 @@ fn test_selected_crates() {
     std::fs::create_dir_all("tmp").unwrap();
 
     // common::run_on_crate(
-    //     "serde_derive",
-    //     "1.0.219",
+    //     "yaml-rust",
+    //     "0.4.5",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("parser::Parser::<T>::stream_start"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
+    let _warn_only_vars = vec![(
+        "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
+        "true".to_string(),
+    )];
+
+    let _visualization_env_vars = vec![
+        (
+            "PCG_VISUALIZATION_DATA_DIR".to_string(),
+            "../../visualization/data".to_string(),
+        ),
+        ("PCG_VISUALIZATION".to_string(), "true".to_string()),
+    ];
+
+    common::run_on_crate(
+        "flate2",
+        "1.1.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<gz::write::MultiGzDecoder<W> as std::io::Write>::write"),
+            extra_env_vars: vec![]
+        },
+    );
+
+    common::run_on_crate(
+        "pest",
+        "2.7.15",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("parser_state::ParserState::<'i, R>::match_char_by"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "linked-hash-map",
+        "0.5.6",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("LinkedHashMap::<K, V, S>::get_refresh"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "serde_yaml",
+        "0.9.34+deprecated",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("libyaml::emitter::Emitter::<'a>::flush"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // common::run_on_crate(
+    //     "brotli-decompressor",
+    //     "4.0.2",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("<MemPool<'a, T> as core::default::Default>::default"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
+    common::run_on_crate(
+        "predicates-tree",
+        "1.0.12",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "concurrent-queue",
+        "2.5.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
+    // common::run_on_crate(
+    //     "encoding_rs",
+    //     "0.8.35",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: None,
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
+    common::run_on_crate(
+        "syn",
+        "2.0.100",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<punctuated::Pairs<'a, T, P> as std::iter::Iterator>::next"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "encoding_rs",
+        "0.8.35",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("shift_jis::ShiftJisEncoder::encode_from_utf16_raw"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "cc",
+        "1.2.16",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("flags::RustcCodegenFlags::<'this>::cc_flags"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
+        "encoding_rs",
+        "0.8.35",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("iso_2022_jp::Iso2022JpDecoder::decode_to_utf16_raw"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // common::run_on_crate(
+    //     "encoding_rs",
+    //     "0.8.35",
     //     Some("2025-03-13"),
     //     common::RunOnCrateOptions::RunPCG {
     //         target: common::Target::Debug,
     //         validity_checks: false,
-    //         function: Some("internals::check::check_variant_skip_attrs"),
-    //         extra_env_vars: vec![("PCG_DUMP_MIR_DATAFLOW", "true")],
+    //         function: None,
+    //         extra_env_vars: vec![],
     //     },
     // );
+
+    common::run_on_crate(
+        "serde_derive",
+        "1.0.219",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("internals::attr::parse_lit_into_path"),
+            extra_env_vars: vec![],
+        },
+    );
 
     common::run_on_crate(
         "serde_derive",

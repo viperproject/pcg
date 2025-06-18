@@ -9,10 +9,9 @@ use std::{alloc::Allocator, rc::Rc};
 use derive_more::Deref;
 
 use crate::{
-    action::PcgActions,
+    action::{BorrowPcgAction, OwnedPcgAction, PcgActions},
     borrow_pcg::{
-        action::BorrowPCGActionKind,
-        borrow_pcg_edge::{BorrowPCGEdge, BorrowPCGEdgeRef},
+        borrow_pcg_edge::{BorrowPCGEdgeRef, BorrowPcgEdge},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
@@ -144,20 +143,25 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                 for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
-                            BorrowPCGActionKind::AddEdge {
-                                edge: BorrowPCGEdge::new(
+                            BorrowPcgAction::add_edge(
+                                BorrowPcgEdge::new(
                                     abstraction.value.clone().into(),
                                     abstraction.conditions,
                                 ),
-                                for_exclusive: true,
-                            }
-                            .into(),
+                                "terminator",
+                                false,
+                            ),
                             ctxt,
                         );
                     }
                 }
 
-                let mut actions: PcgActions<'tcx> = owned_bridge.into();
+                let mut actions: PcgActions<'tcx> = PcgActions(
+                    owned_bridge
+                        .into_iter()
+                        .map(|r| OwnedPcgAction::new(r, None).into())
+                        .collect(),
+                );
                 actions.extend(borrow_actions.into());
 
                 Ok(PcgSuccessor::new(
@@ -296,9 +300,9 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         // TODO
-        self.states.check_validity(repacker)
+        self.states.check_validity(ctxt)
     }
 }
 
@@ -310,10 +314,10 @@ impl<'tcx> PcgLocation<'tcx> {
         &self.actions[phase]
     }
 
-    pub fn ancestor_edges<'slf, 'mir: 'slf, 'bc: 'slf, C: Copy>(
+    pub fn ancestor_edges<'slf, 'mir: 'slf, 'bc: 'slf>(
         &'slf self,
         place: Place<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx, C>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
         let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
         let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);

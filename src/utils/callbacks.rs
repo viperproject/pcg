@@ -7,7 +7,7 @@ use std::{
 
 use bumpalo::Bump;
 use derive_more::From;
-use tracing::{debug, info, trace};
+use tracing::info;
 
 use crate::{
     borrow_checker::{
@@ -33,6 +33,7 @@ use crate::{
         session::Session,
         span::SpanSnippetError,
     },
+    utils::MAX_BASIC_BLOCKS,
     PcgOutput,
 };
 
@@ -54,6 +55,7 @@ pub(crate) fn set_mir_borrowck(_session: &Session, providers: &mut Providers) {
 
 impl driver::Callbacks for PcgCallbacks {
     fn config(&mut self, config: &mut Config) {
+        tracing::debug!("Setting mir_borrowck");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
     }
@@ -99,12 +101,12 @@ thread_local! {
 
 pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
     let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
-    debug!(
+    tracing::debug!(
         "Start mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
     let body_with_facts = borrowck::get_body_with_borrowck_facts(tcx, def_id, consumer_opts);
-    debug!(
+    tracing::debug!(
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
@@ -113,7 +115,7 @@ pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBo
         let body: BodyWithBorrowckFacts<'static> = std::mem::transmute(body);
         BODIES.with(|state| {
             let mut map = state.borrow_mut();
-            trace!(
+            tracing::debug!(
                 "Inserting body for {}",
                 tcx.def_path_str(def_id.to_def_id())
             );
@@ -146,10 +148,10 @@ fn hir_body_owners(tcx: TyCtxt<'_>) -> impl std::iter::Iterator<Item = LocalDefI
 
 /// # Safety
 /// The originally saved body must come from the same `tcx`
-pub(crate) unsafe fn take_stored_body<'tcx>(
-    tcx: TyCtxt<'tcx>,
+pub(crate) unsafe fn take_stored_body(
+    tcx: TyCtxt<'_>,
     def_id: LocalDefId,
-) -> BodyWithBorrowckFacts<'tcx> {
+) -> BodyWithBorrowckFacts<'_> {
     BODIES.with(|state| {
         let mut map = state.borrow_mut();
         // SAFETY: The originally saved body comes from the same `tcx`
@@ -161,11 +163,24 @@ pub(crate) unsafe fn take_stored_body<'tcx>(
     })
 }
 
+fn should_check_body(body: &Body<'_>) -> bool {
+    if let Some(len) = *MAX_BASIC_BLOCKS {
+        body.basic_blocks.len() <= len
+    } else {
+        true
+    }
+}
+
+fn is_primary_crate() -> bool {
+    std::env::var("CARGO_PRIMARY_PACKAGE").is_ok()
+}
+
 /// # Safety
 ///
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
-pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool) {
-    if in_cargo_crate() && std::env::var("CARGO_PRIMARY_PACKAGE").is_err() {
+pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
+    tracing::info!("Running PCG on all functions");
+    if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
         return;
@@ -197,6 +212,13 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
                 .expect("Failed to delete visualization directory contents");
         }
         std::fs::create_dir_all(path).expect("Failed to create visualization directory");
+
+        // Log the absolute path after directory creation
+        if let Ok(absolute_path) = std::fs::canonicalize(path) {
+            tracing::info!("Visualization directory: {:?}", absolute_path);
+        } else {
+            tracing::info!("Visualization directory: {:?}", path);
+        }
     }
 
     for def_id in hir_body_owners(tcx) {
@@ -208,17 +230,22 @@ pub(crate) unsafe fn run_pcg_on_all_fns<'tcx>(tcx: TyCtxt<'tcx>, polonius: bool)
         if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
             && function != item_name
         {
-            tracing::info!(
+            tracing::debug!(
                 "Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}"
             );
             continue;
         }
         let body = take_stored_body(tcx, def_id);
 
+        if !should_check_body(&body.body) {
+            continue;
+        }
+
         info!(
-            "{}Running PCG on function: {}",
+            "{}Running PCG on function: {} with {} basic blocks",
             cargo_crate_name().map_or("".to_string(), |name| format!("{name}: ")),
-            item_name
+            item_name,
+            body.body.basic_blocks.len()
         );
         tracing::info!("Path: {:?}", body.body.span);
         tracing::debug!("Number of basic blocks: {}", body.body.basic_blocks.len());
@@ -331,6 +358,7 @@ impl From<&str> for LifetimeRenderAnnotation {
 }
 
 #[derive(From)]
+#[allow(clippy::large_enum_variant)]
 enum BorrowChecker<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
     Impl(BorrowCheckerImpl<'mir, 'tcx>),
@@ -418,10 +446,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(
-    item_name: String,
-    output: &mut PcgOutput<'_, '_, &bumpalo::Bump>,
-) {
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
     let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
     let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
 

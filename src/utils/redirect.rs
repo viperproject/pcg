@@ -1,5 +1,7 @@
 use crate::borrow_pcg::{
-    has_pcs_elem::{HasPcgElems, LabelRegionProjection},
+    edge_data::LabelPlacePredicate,
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+    latest::Latest,
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
 
@@ -12,6 +14,21 @@ use super::{
 pub(crate) struct MaybeRedirected<T, U = T> {
     original: T,
     redirected: Option<U>,
+}
+
+impl<'tcx, T: LabelPlace<'tcx>> LabelPlace<'tcx> for MaybeRedirected<T> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = self.original.label_place(predicate, latest, ctxt);
+        if let Some(r) = &mut self.redirected {
+            changed |= r.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
 }
 
 impl<T> From<T> for MaybeRedirected<T> {
@@ -75,8 +92,10 @@ impl<E, T: HasPcgElems<E>> HasPcgElems<E> for MaybeRedirected<T> {
     }
 }
 
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for MaybeRedirected<T> {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> DisplayWithCompilerCtxt<'tcx, BC>
+    for MaybeRedirected<T>
+{
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         if let Some(r) = &self.redirected {
             r.to_short_string(ctxt).to_string()
         } else {
@@ -86,10 +105,10 @@ impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for M
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for MaybeRedirected<T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        self.original.check_validity(repacker)?;
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.original.check_validity(ctxt)?;
         if let Some(r) = &self.redirected {
-            r.check_validity(repacker)?;
+            r.check_validity(ctxt)?;
         }
         Ok(())
     }

@@ -1,14 +1,28 @@
 import { MirStmt } from "./api";
 
-export type CurrentPoint = {
-  type: "stmt";
-  block: number;
-  stmt: number;
-} | {
-  type: "terminator";
-  block1: number;
-  block2: number;
+export type EvalStmtPhase =
+  | "pre_operands"
+  | "post_operands"
+  | "pre_main"
+  | "post_main";
+
+export type SelectedAction = {
+  phase: EvalStmtPhase;
+  index: number;
 };
+
+export type CurrentPoint =
+  | {
+      type: "stmt";
+      block: number;
+      stmt: number;
+      selectedAction: SelectedAction | null;
+    }
+  | {
+      type: "terminator";
+      block1: number;
+      block2: number;
+    };
 
 export type BasicBlockData = {
   block: number;
@@ -41,10 +55,12 @@ export type DagreNode<T> = {
 
 export type Place = string;
 
-export type MaybeOldPlace = Place | {
-  place: Place;
-  at?: string;
-};
+export type MaybeOldPlace =
+  | Place
+  | {
+      place: Place;
+      at?: string;
+    };
 
 export type Borrow = {
   assigned_place: MaybeOldPlace;
@@ -76,25 +92,25 @@ export type ReborrowAction =
 
 export type Conditioned<T> = {
   value: T;
-  conditions: any
+  conditions: any;
 };
 
 export type PlaceExpand = {
-  base: PCGNode<MaybeOldPlace>,
-  expansion: PCGNode<MaybeOldPlace>[]
-}
+  base: PCGNode<MaybeOldPlace>;
+  expansion: PCGNode<MaybeOldPlace>[];
+};
 
 export type Weaken = {
   place: string;
   old: string;
   new: string;
-}
+};
 
 export type MaybeRemotePlace = string | MaybeOldPlace;
 
 export type RegionProjection<T> = {
-  place: T,
-  region: string
+  place: T;
+  region: string;
 };
 
 export type PCGNode<T> = RegionProjection<T> | T;
@@ -103,7 +119,7 @@ export type LocalNode = PCGNode<MaybeOldPlace>;
 export type RegionProjectionMember = {
   inputs: PCGNode<MaybeRemotePlace>[];
   outputs: LocalNode[];
-}
+};
 
 type BorrowPCGEdge = string;
 
@@ -111,7 +127,14 @@ export type BorrowPCGUnblockAction = {
   edge: BorrowPCGEdge;
 };
 
-export type PcgActions = string[];
+export type PcgAction =
+  | string
+  | {
+      kind: string;
+      debug_context: string | null;
+    };
+
+export type PcgActions = PcgAction[];
 
 export type PathData = {
   heap: Record<string, { value: string; ty: string; old: boolean }>;
@@ -127,7 +150,9 @@ export type PcgSuccessorVisualizationData = {
   actions: string[];
 };
 
-export type PcgProgramPointData = PCGStmtVisualizationData | PcgSuccessorVisualizationData;
+export type PcgProgramPointData =
+  | PCGStmtVisualizationData
+  | PcgSuccessorVisualizationData;
 
 type EvalStmtData<T> = {
   pre_operands: T;

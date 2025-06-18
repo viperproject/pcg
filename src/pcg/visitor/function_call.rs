@@ -1,15 +1,16 @@
 use super::PcgVisitor;
-use crate::borrow_pcg::action::BorrowPCGAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPCGEdge;
-use crate::borrow_pcg::domain::AbstractionInputTarget;
-use crate::borrow_pcg::edge::abstraction::{
-    AbstractionBlockEdge, AbstractionType, FunctionCallAbstraction, FunctionData,
-};
-use crate::borrow_pcg::path_condition::PathConditions;
+use crate::action::BorrowPcgAction;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
+use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
+use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
+use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::region_projection::{
-    PcgRegion, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
+    PcgRegion, RegionProjection,
+    RegionProjectionBaseLike, RegionProjectionLabel,
 };
+use crate::pcg::PCGUnsupportedError;
 use crate::rustc_interface::middle::mir::{Location, Operand};
+use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
@@ -29,6 +30,7 @@ fn get_function_data<'tcx>(
 }
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+    #[tracing::instrument(skip(self, func, args, destination))]
     pub(super) fn make_function_call_abstraction(
         &mut self,
         func: &Operand<'tcx>,
@@ -36,6 +38,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
+        for arg in args.iter() {
+            if let Some(arg_place) = arg.place() {
+                let arg_place: utils::Place<'tcx> = arg_place.into();
+                if arg_place
+                    .iter_places(self.ctxt)
+                    .iter()
+                    .any(|p| p.is_raw_ptr(self.ctxt))
+                {
+                    return Err(PcgError::unsupported(
+                        PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
+                    ));
+                }
+            }
+        }
         // This is just a performance optimization
         if self
             .pcg
@@ -47,18 +63,22 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
         let function_data = get_function_data(func, self.ctxt);
 
-        let mk_create_edge_action = |input, output| {
-            let edge = BorrowPCGEdge::new(
-                AbstractionType::FunctionCall(FunctionCallAbstraction::new(
-                    location,
-                    function_data,
-                    AbstractionBlockEdge::new(input, output),
-                ))
-                .into(),
-                PathConditions::AtBlock(location.block),
-            );
-            BorrowPCGAction::add_edge(edge, true)
-        };
+        let path_conditions = self.pcg.borrow.path_conditions.clone();
+        let ctxt = self.ctxt;
+
+        let mk_create_edge_action =
+            |input: Vec<FunctionCallAbstractionInput<'tcx>>, output, context: &str| {
+                let edge = BorrowPcgEdge::new(
+                    AbstractionType::FunctionCall(FunctionCallAbstraction::new(
+                        location,
+                        function_data,
+                        AbstractionBlockEdge::new(input, output, ctxt),
+                    ))
+                    .into(),
+                    path_conditions.clone(),
+                );
+                BorrowPcgAction::add_edge(edge, context, false)
+            };
 
         // The versions of the region projections for the function inputs just
         // before they were moved out, labelled with their last modification
@@ -70,22 +90,32 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let input_place: utils::Place<'tcx> = mir_place.into();
                 let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                     input_place,
-                    self.pcg.borrow.get_latest(input_place),
+                    self.pcg.borrow.get_latest(input_place, self.ctxt),
                 ));
                 input_place.region_projections(self.ctxt)
             })
             .collect::<Vec<_>>();
 
+        // The subset of the argument region projections that are nested
+        // (and labelled, since the set of borrows inside may be modified)
         let mut labelled_rps = FxHashSet::default();
         for arg in arg_region_projections.iter() {
-            if arg.is_nested_in_local_ty(self.ctxt) {
-                self.pcg.borrow.label_region_projection(
-                    arg,
-                    Some(SnapshotLocation::before(location).into()),
-                    self.ctxt,
+            if arg.is_invariant_in_type(self.ctxt) {
+                self.record_and_apply_action(
+                    BorrowPcgAction::label_region_projection(
+                        *arg,
+                        Some(SnapshotLocation::before(location).into()),
+                        format!(
+                            "Function call: {} is invariant in type {:?}; therefore it will be labelled as the set of borrows inside may be modified",
+                            arg.to_short_string(self.ctxt),
+                            arg.base.ty(self.ctxt).ty,
+                        ),
+                    )
+                    .into(),
+                )?;
+                labelled_rps.insert(
+                    arg.with_label(Some(SnapshotLocation::before(location).into()), self.ctxt),
                 );
-                labelled_rps
-                    .insert(arg.label_projection(SnapshotLocation::before(location).into()));
             }
         }
 
@@ -99,11 +129,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<FxHashSet<_>>();
 
+        // The set of region projections that contain borrows that could be
+        // moved into the labelled rps (as they are seen after the function call)
         let source_arg_projections = arg_region_projections
             .iter()
             .map(|rp| {
-                if rp.is_nested_in_local_ty(self.ctxt) {
-                    (*rp).label_projection(SnapshotLocation::before(location).into())
+                if rp.is_invariant_in_type(self.ctxt) {
+                    (*rp).with_label(Some(SnapshotLocation::before(location).into()), self.ctxt)
                 } else {
                     *rp
                 }
@@ -113,18 +145,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let disjoint_lifetime_sets = get_disjoint_lifetime_sets(&arg_region_projections, self.ctxt);
         for ls in disjoint_lifetime_sets.iter() {
             let this_region = ls.iter().next().unwrap();
-            let inputs: Vec<AbstractionInputTarget<'tcx>> = source_arg_projections
+            let inputs: Vec<FunctionCallAbstractionInput<'tcx>> = source_arg_projections
                 .iter()
                 .filter(|rp| self.ctxt.bc.outlives(rp.region(self.ctxt), *this_region))
-                .map(|rp| (*rp).into())
+                .copied()
                 .collect::<Vec<_>>();
             let mut outputs = placeholder_targets
                 .iter()
                 .copied()
                 .filter(|rp| self.ctxt.bc.same_region(*this_region, rp.region(self.ctxt)))
-                .map(|mut rp| {
-                    rp.label = Some(RegionProjectionLabel::Placeholder);
-                    rp
+                .map(|rp| {
+                    // self.maybe_futurize(rp.into()).try_into().unwrap()
+                    rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
                 })
                 .collect::<Vec<_>>();
             let result_projections: Vec<RegionProjection<MaybeOldPlace<'tcx>>> = destination
@@ -135,9 +167,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .collect();
             outputs.extend(result_projections);
             if !inputs.is_empty() && !outputs.is_empty() {
-                self.record_and_apply_action(mk_create_edge_action(inputs, outputs).into())?;
+                self.record_and_apply_action(
+                    mk_create_edge_action(
+                        inputs,
+                        outputs,
+                        "Function call: edges for nested borrows",
+                    )
+                    .into(),
+                )?;
             }
         }
+        self.pcg
+            .render_debug_graph(self.ctxt, location, "final borrow_graph");
         Ok(())
     }
 }

@@ -173,7 +173,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             *to
         );
 
-        let from_cap = if let Some(cap) = capabilities.get(from.into()) {
+        let from_cap = if let Some(cap) = capabilities.get(from) {
             cap
         } else {
             let err = format!("No capability for {}", from.to_short_string(repacker));
@@ -183,10 +183,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let expansion = from.expand(*to, repacker)?;
 
         for place in expansion.other_expansions() {
-            capabilities.insert(
-                place.into(),
-                if for_cap.is_read() { for_cap } else { from_cap },
-            );
+            capabilities.insert(place, if for_cap.is_read() { for_cap } else { from_cap });
         }
 
         let mut ops = Vec::new();
@@ -197,9 +194,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
             if for_cap.is_read() {
-                capabilities.insert(expansion.base_place().into(), for_cap);
+                capabilities.insert(expansion.base_place(), for_cap);
             } else {
-                capabilities.remove(expansion.base_place().into());
+                capabilities.remove(expansion.base_place());
             }
             if expansion.kind.is_box() && from_cap.is_shallow_exclusive() {
                 ops.push(RepackOp::DerefShallowInit(
@@ -209,14 +206,14 @@ impl<'tcx> CapabilityProjections<'tcx> {
             } else {
                 ops.push(RepackOp::expand(
                     expansion.base_place(),
-                    expansion.target_place,
+                    expansion.guide(),
                     for_cap,
                     repacker,
                 ));
             }
         }
 
-        capabilities.insert((*to).into(), for_cap);
+        capabilities.insert(*to, for_cap);
 
         Ok(ops)
     }
@@ -244,14 +241,14 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     expansion_places
                         .iter()
                         .fold(CapabilityKind::Exclusive, |acc, place| {
-                            match capabilities.remove((*place).into()) {
+                            match capabilities.remove(*place) {
                                 Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                 None => acc,
                             }
                         });
-                capabilities.insert(p.into(), retained_cap);
+                capabilities.insert(p, retained_cap);
                 self.expansions.remove(&p);
-                RepackOp::Collapse(p, expansion_places[0], retained_cap)
+                RepackOp::collapse(p, expansion.guide(), retained_cap)
             })
             .collect();
         Ok(ops)

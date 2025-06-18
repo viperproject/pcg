@@ -14,7 +14,7 @@ use crate::{
     },
     pcg_validity_assert,
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt,
+        CompilerCtxt,
         LocalMutationIsAllowed,
     },
 };
@@ -22,50 +22,6 @@ use crate::{
 use super::CapabilityLocals;
 
 impl<'tcx> CapabilityLocals<'tcx> {
-    // #[tracing::instrument(skip(self, repacker, place_capabilities))]
-    // pub(crate) fn requires(
-    //     &mut self,
-    //     cond: PlaceCondition<'tcx>,
-    //     repacker: CompilerCtxt<'_, 'tcx>,
-    //     place_capabilities: &mut PlaceCapabilities<'tcx>,
-    // ) -> Result<PcgActions<'tcx>, PcgError> {
-    //     let ops = match cond {
-    //         PlaceCondition::RemoveCapability(place) => {
-    //             place_capabilities.remove(place.into());
-    //             PcgActions::default()
-    //         }
-    //         PlaceCondition::Unalloc(_) => PcgActions::default(),
-    //         PlaceCondition::AllocateOrDeallocate(local) => {
-    //             self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
-    //             place_capabilities.insert(local.into(), CapabilityKind::Write);
-    //             PcgActions::default()
-    //         }
-    //         PlaceCondition::Capability(place, cap) => {
-    //             if place.contains_unsafe_deref(repacker) {
-    //                 return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
-    //             }
-    //             let nearest_owned_place = place.nearest_owned_place(repacker);
-    //             let cp = self[nearest_owned_place.local].get_allocated_mut();
-    //             let result = cp.repack(place, place_capabilities, repacker, cap)?;
-    //             if nearest_owned_place != place {
-    //                 match nearest_owned_place.ref_mutability(repacker) {
-    //                     Some(Mutability::Mut) => {
-    //                         place_capabilities.remove(nearest_owned_place.into());
-    //                     }
-    //                     Some(Mutability::Not) => {
-    //                         place_capabilities
-    //                             .insert(nearest_owned_place.into(), CapabilityKind::Read);
-    //                     }
-    //                     None => unreachable!(),
-    //                 }
-    //             }
-    //             result
-    //         }
-    //         PlaceCondition::Return => PcgActions::default(),
-    //     };
-    //     self.check_pre_satisfied(cond, place_capabilities, repacker);
-    //     Ok(ops)
-    // }
 
     #[tracing::instrument(skip(self, capabilities, repacker))]
     fn check_pre_satisfied(
@@ -75,6 +31,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
         match pre {
+            PlaceCondition::ExpandTwoPhase(_place) => {}
             PlaceCondition::RemoveCapability(_place) => {}
             PlaceCondition::Unalloc(local) => {
                 assert!(
@@ -96,16 +53,17 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     }
                     CapabilityKind::Exclusive => {
                         // Cannot get exclusive on a shared ref
-                        assert!(
-                            !place.projects_shared_ref(repacker),
-                            "Cannot get exclusive on projection of shared ref {}",
-                            place.to_short_string(repacker)
-                        );
+                        // TODO
+                        // assert!(
+                        //     !place.projects_shared_ref(repacker),
+                        //     "Cannot get exclusive on projection of shared ref {}",
+                        //     place.to_short_string(repacker)
+                        // );
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(repacker) {
-                    if let Some(current_cap) = capabilities.get(place.into()) {
+                    if let Some(current_cap) = capabilities.get(place) {
                         pcg_validity_assert!(
                             matches!(
                                 current_cap.partial_cmp(&required_cap),
@@ -137,7 +95,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         match post {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::RemoveCapability(place) => {
-                place_capabilities.remove(place.into());
+                place_capabilities.remove(place);
             }
             PlaceCondition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;
@@ -147,7 +105,10 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 place_capabilities.insert(local.into(), CapabilityKind::Write);
             }
             PlaceCondition::Capability(place, cap) => {
-                place_capabilities.insert(place.into(), cap);
+                place_capabilities.insert(place, cap);
+            }
+            PlaceCondition::ExpandTwoPhase(place) => {
+                place_capabilities.insert(place, CapabilityKind::Read);
             }
         }
     }

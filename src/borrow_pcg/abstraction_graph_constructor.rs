@@ -1,20 +1,16 @@
-use std::collections::BTreeSet;
-
-use derive_more::{Deref, DerefMut, From};
 use petgraph::algo::has_path_connecting;
-use smallvec::SmallVec;
 
 use super::{
-    domain::AbstractionOutputTarget,
     edge::kind::BorrowPcgEdgeKind,
     graph::{coupling_imgcat_debug, BorrowsGraph},
-    has_pcs_elem::HasPcgElems,
-    region_projection::{PcgRegion, RegionProjectionLabel},
+    region_projection::PcgRegion,
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,
-    coupling::{AddEdgeResult, JoinNodesResult},
-    utils::place::maybe_remote::MaybeRemotePlace,
+    borrow_pcg::abstraction::node::AbstractionGraphNode,
+    coupling::{coupled::Coupled, AddEdgeResult},
+    utils::{data_structures::HashSet, loop_usage::LoopUsage},
+    validity_checks_enabled,
 };
 use crate::{
     coupling,
@@ -22,97 +18,96 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::data_structures::fx::FxHashSet,
     rustc_interface::middle::mir::{BasicBlock, Location},
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
 
-/// A collection of coupled PCG nodes. They will expire at the same time, and only one
-/// node in the set will be alive.
-///
-/// These nodes are introduced for loops: place `a` may borrow from `b` or place
-/// `b` may borrow from `a` depending on the number of loop iterations. Therefore,
-/// `a` and `b` are coupled and only one can be accessed.
-///
-/// Internally, the nodes are stored in a `Vec` to allow for mutation
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Coupled<T>(SmallVec<[T; 4]>);
-
-impl<T: Copy + Eq> Coupled<T> {
-    pub(crate) fn empty() -> Self {
-        Self(SmallVec::new())
-    }
-
-    pub(crate) fn insert(&mut self, item: T) {
-        if !self.0.contains(&item) {
-            self.0.push(item);
-        }
-    }
-
-    pub(crate) fn merge(&mut self, other: &Self) {
-        for item in other.0.iter() {
-            self.insert(*item);
-        }
-    }
+#[derive(Clone)]
+pub(crate) struct AbstractionGraph<'tcx, 'graph> {
+    inner: coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, &'graph BorrowPcgEdgeKind<'tcx>>,
 }
-
-impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for Coupled<T> {
-    fn check_validity<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Result<(), String> {
-        for t in self.0.iter() {
-            t.check_validity(repacker)?;
-        }
-        Ok(())
-    }
-}
-
-impl<'tcx, T: DisplayWithCompilerCtxt<'tcx>> DisplayWithCompilerCtxt<'tcx> for Coupled<T> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        format!(
-            "{{{}}}",
-            self.0
-                .iter()
-                .map(|t| t.to_short_string(repacker))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
-}
-
-// pub(crate) type AbstractionGraph<'tcx> = coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, FxHashSet<BorrowPCGEdge<'tcx>>>;
-pub(crate) type AbstractionGraph<'tcx> =
-    coupling::DisjointSetGraph<AbstractionGraphNode<'tcx>, BorrowPcgEdgeKind<'tcx>>;
 
 impl<'tcx> Coupled<AbstractionGraphNode<'tcx>> {
     pub(crate) fn region_repr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<PcgRegion> {
-        self.iter().find_map(|n| match n.0 {
+        self.iter().find_map(|n| match n.to_pcg_node() {
             PCGNode::RegionProjection(rp) => Some(rp.region(ctxt)),
             _ => None,
         })
     }
 
     pub(crate) fn is_remote(&self) -> bool {
-        self.iter().any(|n| match n.0 {
+        self.iter().any(|n| match n.to_pcg_node() {
             PCGNode::Place(p) => p.is_remote(),
             PCGNode::RegionProjection(rp) => rp.base().is_remote(),
         })
     }
 }
 
-impl<'tcx> AbstractionGraph<'tcx> {
+impl<'tcx, 'graph> AbstractionGraph<'tcx, 'graph> {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: coupling::DisjointSetGraph::new(),
+        }
+    }
+
+    pub(crate) fn render_with_imgcat(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
+        self.inner.render_with_imgcat(ctxt, comment);
+    }
+
+    pub(crate) fn edges(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            Coupled<AbstractionGraphNode<'tcx>>,
+            Coupled<AbstractionGraphNode<'tcx>>,
+            FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>>,
+        ),
+    > + '_ {
+        self.inner.edges()
+    }
+
+    pub(crate) fn add_edge(
+        &mut self,
+        from: &Coupled<AbstractionGraphNode<'tcx>>,
+        to: &Coupled<AbstractionGraphNode<'tcx>>,
+        weight: FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        pcg_validity_assert!(
+            from.is_disjoint(to),
+            "Non-disjoint edges: {} and {}",
+            from.to_short_string(ctxt),
+            to.to_short_string(ctxt)
+        );
+        self.inner.add_edge(from, to, weight);
+    }
+
     pub(crate) fn transitive_reduction(
         &mut self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<BorrowPcgEdgeKind<'tcx>> {
+    ) -> FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>> {
         pcg_validity_assert!(
-            self.is_acyclic(),
+            self.inner.is_acyclic(),
             "Graph contains cycles after SCC computation"
         );
 
-        let toposort = petgraph::algo::toposort(&self.inner(), None).unwrap();
+        if validity_checks_enabled() {
+            for (source, target, _) in self.inner.edges() {
+                pcg_validity_assert!(
+                    source.is_disjoint(&target),
+                    "Non-disjoint edges: {} and {}",
+                    source.to_short_string(ctxt),
+                    target.to_short_string(ctxt)
+                );
+            }
+        }
+
+        let toposort = petgraph::algo::toposort(&self.inner.inner(), None).unwrap();
         let (g, revmap) =
-            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner(), &toposort);
+            petgraph::algo::tred::dag_to_toposorted_adjacency_list(&self.inner.inner(), &toposort);
 
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure::<_, u32>(&g);
         let mut removed_edges = FxHashSet::default();
-        self.retain_edges(|slf, ei| {
+        self.inner.retain_edges(|slf, ei| {
             let endpoints = slf.edge_endpoints(ei).unwrap();
             let should_keep =
                 tred.contains_edge(revmap[endpoints.0.index()], revmap[endpoints.1.index()]);
@@ -128,168 +123,84 @@ impl<'tcx> AbstractionGraph<'tcx> {
             }
             should_keep
         });
+        if validity_checks_enabled() {
+            for (source, target, _) in self.inner.edges() {
+                pcg_validity_assert!(
+                    source.is_disjoint(&target),
+                    "Non-disjoint edges: {} and {}",
+                    source.to_short_string(ctxt),
+                    target.to_short_string(ctxt)
+                );
+            }
+        }
         removed_edges
     }
-    pub(crate) fn merge(&mut self, other: &Self, ctxt: CompilerCtxt<'_, 'tcx>) {
-        for (source, target, weight) in other.edges() {
-            let JoinNodesResult {
-                index: mut source_idx,
-                ..
-            } = self.join_nodes(&source, ctxt);
-            let JoinNodesResult {
-                index: target_idx,
-                performed_merge,
-            } = self.join_nodes(&target, ctxt);
-            if performed_merge {
-                source_idx = self.lookup(*source.iter().next().unwrap()).unwrap();
+    pub(crate) fn merge(
+        &mut self,
+        other: &Self,
+        #[allow(unused)] loop_usage: &LoopUsage<'tcx, '_>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.inner.join(&other.inner);
+        if validity_checks_enabled() {
+            for (source, target, _) in self.inner.edges() {
+                pcg_validity_assert!(
+                    source.is_disjoint(&target),
+                    "Non-disjoint edges: {} and {}",
+                    source.to_short_string(ctxt),
+                    target.to_short_string(ctxt)
+                );
             }
-            let _ = self.add_edge_via_indices(source_idx, target_idx, weight, ctxt);
+        }
+
+        if coupling_imgcat_debug() {
+            self.inner.render_with_imgcat(ctxt, "After base merge");
         }
 
         'top: loop {
-            for blocked in self.inner().node_indices() {
-                for blocking in self.inner().node_indices() {
-                    if has_path_connecting(&self.inner(), blocked, blocking, None) {
+            for blocked in self.inner.inner().node_indices() {
+                for blocking in self.inner.inner().node_indices() {
+                    if has_path_connecting(&self.inner.inner(), blocked, blocking, None) {
                         continue;
                     }
-                    let blocked_data = self.inner().node_weight(blocked).unwrap();
-                    let blocking_data = self.inner().node_weight(blocking).unwrap();
+                    let blocked_data = self.inner.inner().node_weight(blocked).unwrap();
+                    let blocking_data = self.inner.inner().node_weight(blocking).unwrap();
+                    // if !blocking_data
+                    //     .nodes
+                    //     .iter()
+                    //     .flat_map(|n| n.related_current_place())
+                    //     .any(|p| loop_usage.used_in_loop(p, ctxt))
+                    // {
+                    //     continue;
+                    // }
                     if let Some(blocked_region) = blocked_data.nodes.region_repr(ctxt)
                         && let Some(blocking_region) = blocking_data.nodes.region_repr(ctxt)
                         && !blocking_data.nodes.is_remote()
                         && ctxt.bc.outlives(blocked_region, blocking_region)
-                        // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
+                    // && !ctxt.bc.outlives(blocking_region, blocked_region) // TODO: We don't want this
                     {
                         tracing::debug!(
                             "Adding edge {} -> {} because of outlives",
                             blocked_data.to_short_string(ctxt),
                             blocking_data.to_short_string(ctxt)
                         );
-                        match self.add_edge_via_indices(blocked, blocking, Default::default(), ctxt)
+                        match self
+                            .inner
+                            .add_edge_via_indices(blocked, blocking, Default::default())
                         {
                             AddEdgeResult::DidNotMergeNodes => {
                                 let edges = self.transitive_reduction(ctxt);
-                                self.update_inner_edge(blocked, blocking, edges);
-                                if coupling_imgcat_debug() {
-                                    self.render_with_imgcat(ctxt, "Post add");
-                                }
+                                self.inner.update_inner_edge(blocked, blocking, edges);
                             }
                             AddEdgeResult::MergedNodes => {
-                                if coupling_imgcat_debug() {
-                                    self.render_with_imgcat(ctxt, "Post add");
-                                }
                                 continue 'top;
                             }
                         }
                     }
                 }
             }
-            pcg_validity_assert!(self.is_acyclic(), "Resulting graph contains cycles");
+            pcg_validity_assert!(self.inner.is_acyclic(), "Resulting graph contains cycles");
             return;
-        }
-    }
-}
-
-impl<T: Clone> Coupled<T> {
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn singleton(item: T) -> Self {
-        let mut sv = SmallVec::new();
-        sv.push(item);
-        Self(sv)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.0.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.0.iter_mut()
-    }
-}
-
-impl<T> IntoIterator for Coupled<T> {
-    type Item = T;
-    type IntoIter = <SmallVec<[T; 4]> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<T: Ord> Coupled<T> {
-    pub fn elems_btree_set(&self) -> BTreeSet<&T> {
-        self.0.iter().collect()
-    }
-
-    pub fn contains(&self, item: &T) -> bool {
-        self.0.contains(item)
-    }
-}
-
-impl<T> From<BTreeSet<T>> for Coupled<T> {
-    fn from(set: BTreeSet<T>) -> Self {
-        Self(set.into_iter().collect())
-    }
-}
-
-impl<T: Ord> From<Vec<T>> for Coupled<T> {
-    fn from(vec: Vec<T>) -> Self {
-        let mut bts = BTreeSet::new();
-        for item in vec {
-            bts.insert(item);
-        }
-        Self(bts.into_iter().collect())
-    }
-}
-
-#[derive(From, Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) struct AbstractionGraphNode<'tcx>(
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
-);
-
-impl<'tcx, T> HasPcgElems<T> for AbstractionGraphNode<'tcx>
-where
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.0.pcg_elems()
-    }
-}
-
-impl<'tcx> DisplayWithCompilerCtxt<'tcx> for AbstractionGraphNode<'tcx> {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx>) -> String {
-        self.0.to_short_string(repacker)
-    }
-}
-
-impl<'tcx> From<AbstractionOutputTarget<'tcx>> for AbstractionGraphNode<'tcx> {
-    fn from(target: AbstractionOutputTarget<'tcx>) -> Self {
-        AbstractionGraphNode(PCGNode::RegionProjection(target.into()))
-    }
-}
-
-impl<'tcx> From<AbstractionGraphNode<'tcx>> for PCGNode<'tcx> {
-    fn from(node: AbstractionGraphNode<'tcx>) -> Self {
-        match node.0 {
-            PCGNode::Place(p) => p.into(),
-            PCGNode::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
-        }
-    }
-}
-impl AbstractionGraphNode<'_> {
-    pub(crate) fn is_old(&self) -> bool {
-        match self.0 {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(rp) => {
-                rp.base().is_old() || matches!(rp.label, Some(RegionProjectionLabel::Location(_)))
-            }
         }
     }
 }
@@ -305,27 +216,28 @@ struct DebugRecursiveCallHistory<T> {
 }
 
 #[cfg(debug_assertions)]
-impl<T> DebugRecursiveCallHistory<T> {
+impl<'tcx, T> DebugRecursiveCallHistory<T> {
     fn new() -> Self {
         Self { history: vec![] }
     }
 
-    fn add(&mut self, action: T)
+    fn add<BC: Copy>(&mut self, action: T, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> Result<(), String>
     where
-        T: std::cmp::Eq + std::fmt::Display,
+        T: std::cmp::Eq + std::fmt::Display + DisplayWithCompilerCtxt<'tcx, BC>,
     {
         if self.history.contains(&action) {
-            panic!(
+            return Err(format!(
                 "Infinite recursion adding:\n{}, to path:\n{}",
-                action,
+                action.to_short_string(ctxt),
                 self.history
                     .iter()
-                    .map(|a| format!("{a}"))
+                    .map(|a| a.to_short_string(ctxt))
                     .collect::<Vec<_>>()
                     .join("\n")
-            );
+            ));
         }
         self.history.push(action);
+        Ok(())
     }
 }
 
@@ -337,14 +249,15 @@ impl<T> DebugRecursiveCallHistory<T> {
         }
     }
 
-    fn add(&mut self, _action: T) {}
+    fn add(&mut self, _action: T, _ctxt: CompilerCtxt<'_, '_>) -> Result<(), String> {
+        Ok(())
+    }
 }
 
-pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx> {
-    repacker: CompilerCtxt<'mir, 'tcx>,
-    #[allow(unused)]
-    block: BasicBlock,
-    graph: AbstractionGraph<'tcx>,
+pub(crate) struct AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
+    ctxt: CompilerCtxt<'mir, 'tcx>,
+    loop_head_block: BasicBlock,
+    graph: AbstractionGraph<'tcx, 'graph>,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -353,6 +266,20 @@ struct AddEdgeHistory<'a, 'tcx> {
     upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
 }
 
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for AddEdgeHistory<'_, 'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        format!(
+            "bottom: {{{}}}, upper: {{{}}}",
+            self.bottom_connect.to_short_string(ctxt),
+            self.upper_candidate.to_short_string(ctxt)
+        )
+    }
+}
 impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -372,30 +299,38 @@ impl std::fmt::Display for AddEdgeHistory<'_, '_> {
     }
 }
 
-impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
-    pub(crate) fn new(repacker: CompilerCtxt<'mir, 'tcx>, block: BasicBlock) -> Self {
+impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph> {
+    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>, loop_head_block: BasicBlock) -> Self {
         Self {
-            repacker,
-            block,
-            graph: AbstractionGraph::new(),
+            ctxt,
+            loop_head_block,
+            graph: AbstractionGraph {
+                inner: coupling::DisjointSetGraph::new(),
+            },
         }
     }
 
     fn add_edges_from<'a>(
         &mut self,
-        bg: &AbstractionGraph<'tcx>,
+        bg: &AbstractionGraph<'tcx, 'graph>,
         bottom_connect: &'a Coupled<AbstractionGraphNode<'tcx>>,
         upper_candidate: &'a Coupled<AbstractionGraphNode<'tcx>>,
-        incoming_weight: FxHashSet<BorrowPcgEdgeKind<'tcx>>,
+        incoming_weight: FxHashSet<&'graph BorrowPcgEdgeKind<'tcx>>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
         mut history: DebugRecursiveCallHistory<AddEdgeHistory<'a, 'tcx>>,
     ) {
-        history.add(AddEdgeHistory {
-            bottom_connect,
-            upper_candidate,
-        });
+        if let Err(e) = history.add(
+            AddEdgeHistory {
+                bottom_connect,
+                upper_candidate,
+            },
+            self.ctxt,
+        ) {
+            panic!("Infinite recursion adding edge: {e}");
+        }
         let upper_candidate = upper_candidate.clone();
-        let endpoints = bg.parents(&upper_candidate);
+        let endpoints = bg.inner.parents(&upper_candidate);
+
         for (coupled, edge_weight) in endpoints {
             let mut weight = incoming_weight.clone();
             weight.extend(edge_weight);
@@ -403,13 +338,13 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
                 coupled != upper_candidate,
                 "Coupling graph should be acyclic"
             );
-            let is_root = bg.is_root(&coupled) && !coupled.iter().any(|n| n.is_old());
+            let is_root = bg.inner.is_root(&coupled) && !coupled.iter().any(|n| n.is_old());
             let should_include = is_root
                 || coupled.iter().any(|n| {
                     let is_live = borrow_checker.is_live(
-                        (*n).into(),
+                        (*n).to_pcg_node().into(),
                         Location {
-                            block: self.block,
+                            block: self.loop_head_block,
                             statement_index: 0,
                         },
                         false, // TODO: Maybe actually check if this is a leaf
@@ -427,10 +362,10 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
                 );
             } else {
                 self.graph.add_edge(
-                    &coupled,
-                    &bottom_connect.clone(),
+                    &without_old(&coupled),
+                    &without_old(bottom_connect),
                     weight.clone(),
-                    self.repacker,
+                    self.ctxt,
                 );
                 self.add_edges_from(
                     bg,
@@ -446,29 +381,46 @@ impl<'mir, 'tcx> AbstractionGraphConstructor<'mir, 'tcx> {
 
     pub(crate) fn construct_abstraction_graph(
         mut self,
-        bg: &BorrowsGraph<'tcx>,
+        bg: &'graph BorrowsGraph<'tcx>,
         borrow_checker: &dyn BorrowCheckerInterface<'tcx>,
-    ) -> AbstractionGraph<'tcx> {
+    ) -> AbstractionGraph<'tcx, 'graph> {
         tracing::debug!("Construct abstraction graph start");
-        let full_graph = bg.base_abstraction_graph(self.repacker);
+        let full_graph = bg.base_abstraction_graph(self.loop_head_block, self.ctxt);
         if coupling_imgcat_debug() {
-            full_graph.render_with_imgcat(self.repacker, "Base abstraction graph");
+            full_graph
+                .inner
+                .render_with_imgcat(self.ctxt, "Base abstraction graph");
         }
-        let leaf_nodes = full_graph.leaf_nodes();
+        let leaf_nodes = full_graph.inner.leaf_nodes();
         let num_leaf_nodes = leaf_nodes.len();
         for (i, node) in leaf_nodes.into_iter().enumerate() {
             tracing::debug!("Inserting leaf node {} / {}", i, num_leaf_nodes);
-            self.graph.insert_endpoint(node.clone(), self.repacker);
+            self.graph.inner.insert_endpoint(without_old(&node));
             self.add_edges_from(
                 &full_graph,
                 &node,
                 &node,
-                FxHashSet::default(),
+                HashSet::default(),
                 borrow_checker,
                 DebugRecursiveCallHistory::new(),
             );
         }
         tracing::debug!("Construct coupling graph end");
+        self.graph.inner.mut_leaf_nodes(|node| {
+            node.nodes.mutate(|n| {
+                n.remove_rp_label_if_present();
+            });
+        });
         self.graph
     }
+}
+
+fn without_old<'tcx>(
+    coupled: &Coupled<AbstractionGraphNode<'tcx>>,
+) -> Coupled<AbstractionGraphNode<'tcx>> {
+    // TODO: What if all nodes are old?
+    coupled
+        .clone()
+        .retain(|n| !n.is_old())
+        .unwrap_or_else(|| coupled.clone())
 }

@@ -1,3 +1,4 @@
+#[allow(unused)]
 use rayon::prelude::*;
 use std::path::PathBuf;
 
@@ -19,11 +20,11 @@ fn check_test_files() {
         a_lines.cmp(&b_lines)
     });
 
-    test_files.par_iter().for_each(|test_file| {
-        common::run_pcg_on_file(test_file);
-    });
-
-    // test_files.iter().for_each(|test_file| {
+    // test_files.par_iter().panic_fuse().for_each(|test_file| {
     //     common::run_pcg_on_file(test_file);
     // });
+
+    test_files.iter().for_each(|test_file| {
+        common::run_pcg_on_file(test_file);
+    });
 }
