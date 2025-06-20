@@ -154,22 +154,44 @@ pub struct Pcg<'tcx> {
 }
 
 impl<'tcx> Pcg<'tcx> {
-    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub(crate) fn leaf_places_where(
+        &self,
+        predicate: impl Fn(Place<'tcx>) -> bool,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> HashSet<Place<'tcx>> {
         let mut places: HashSet<Place<'tcx>> = self
             .borrow
             .leaf_nodes(ctxt)
             .into_iter()
             .flat_map(|node| node.as_current_place())
+            .filter(|p| predicate(*p))
             .collect();
 
-        for place in self.owned.leaf_places(ctxt) {
-            if !self.borrow.graph().contains(place, ctxt) {
+        let mut owned_leaf_places = self
+            .owned
+            .leaf_places(ctxt)
+            .into_iter()
+            .filter(|p| predicate(*p))
+            .peekable();
+
+        if owned_leaf_places.peek().is_none() {
+            return places;
+        }
+
+        let owned_places_in_borrow_pcg = self
+            .borrow
+            .graph()
+            .owned_places(ctxt);
+
+        for place in owned_leaf_places {
+            if !owned_places_in_borrow_pcg.contains(&place) {
                 places.insert(place);
             }
         }
 
         places
     }
+
     pub(crate) fn assert_validity_at_location(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx>,

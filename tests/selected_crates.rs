@@ -5,17 +5,35 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
-    // common::run_on_crate(
-    //     "yaml-rust",
-    //     "0.4.5",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("parser::Parser::<T>::stream_start"),
-    //         extra_env_vars: vec![],
-    //     },
-    // );
+    common::run_on_crate(
+        "bindgen",
+        "0.71.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: None,
+            extra_env_vars: vec![(
+                "PCG_SKIP_FUNCTION".to_string(),
+                "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string(),
+            )],
+        },
+    );
+
+    // Polonius also works, checking variable liveness alone isn't sufficient
+    // for determining if a lifetime projection is live at a point.
+    #[cfg(feature = "custom-rust-toolchain")]
+    common::run_on_crate(
+        "yaml-rust",
+        "0.4.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("parser::Parser::<T>::stream_start"),
+            extra_env_vars: vec![],
+        },
+    );
 
     let _warn_only_vars = vec![(
         "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
@@ -38,7 +56,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<gz::write::MultiGzDecoder<W> as std::io::Write>::write"),
-            extra_env_vars: vec![]
+            extra_env_vars: vec![],
         },
     );
 
