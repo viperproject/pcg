@@ -293,6 +293,13 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     }
 
     fn is_live(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
+        #[cfg(feature="custom-rust-toolchain")]
+        if let PCGNode::RegionProjection(region_projection) = node {
+            let region = region_projection.region(self.ctxt());
+            if !self.ctxt().bc.region_infer_ctxt().has_sub_region_live_at(region.vid().unwrap(), location) {
+                return false;
+            }
+        }
         let local = match node {
             PCGNode::RegionProjection(rp) => {
                 if let Some(local) = rp.local() {
@@ -308,7 +315,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         };
         let place_is_live = self.local_is_live_before(local, location);
         if place_is_live {
-            tracing::info!("local is live: {:?}", local);
             return true;
         } else if is_leaf {
             // Place is not live, and its a leaf, so the node is not live

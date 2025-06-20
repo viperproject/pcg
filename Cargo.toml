@@ -11,6 +11,7 @@ memory_profiling = [
     "tokio",
     "jemalloc_pprof",
 ]
+custom-rust-toolchain = []
 visualization = []
 debug_info = []
 default = ["visualization"]
