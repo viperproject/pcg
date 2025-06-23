@@ -6,7 +6,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
 use crate::borrow_pcg::graph::Conditioned;
-use crate::borrow_pcg::unblock_graph::BorrowPCGUnblockAction;
+use crate::borrow_pcg::unblock_graph::BorrowPcgUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
@@ -15,10 +15,10 @@ use crate::{pcg_validity_assert, validity_checks_enabled, Weaken};
 use super::BorrowPcgActionKind;
 
 #[derive(Clone, Deref, DerefMut, Debug, Default)]
-pub struct BorrowPCGActions<'tcx>(pub(crate) Vec<BorrowPcgAction<'tcx>>);
+pub struct BorrowPcgActions<'tcx>(pub(crate) Vec<BorrowPcgAction<'tcx>>);
 
 impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for BorrowPCGActions<'tcx>
+    for BorrowPcgActions<'tcx>
 {
     fn to_json(
         &self,
@@ -32,7 +32,7 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
     }
 }
 
-impl<'tcx> BorrowPCGActions<'tcx> {
+impl<'tcx> BorrowPcgActions<'tcx> {
     /// Actions applied to the PCG, in the order they occurred.
     pub fn actions(&self) -> &[BorrowPcgAction<'tcx>] {
         &self.0
@@ -66,7 +66,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
             .collect()
     }
 
-    pub fn unblock_actions(&self) -> Vec<BorrowPCGUnblockAction<'tcx>> {
+    pub fn unblock_actions(&self) -> Vec<BorrowPcgUnblockAction<'tcx>> {
         self.0
             .iter()
             .filter_map(|action| match action.kind() {
@@ -77,7 +77,7 @@ impl<'tcx> BorrowPCGActions<'tcx> {
     }
 }
 
-impl<'tcx> BorrowPCGActions<'tcx> {
+impl<'tcx> BorrowPcgActions<'tcx> {
     pub(crate) fn new() -> Self {
         Self(vec![])
     }

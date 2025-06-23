@@ -2,7 +2,7 @@ use derive_more::From;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPCGEdgeRef},
+        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef},
         edge::kind::BorrowPcgEdgeKind,
     },
     pcg::PCGNode,
@@ -24,7 +24,7 @@ pub(crate) enum SyntheticEdge<'tcx> {
 
 #[derive(From)]
 pub(crate) enum MaterializedEdge<'tcx, 'graph> {
-    Real(BorrowPCGEdgeRef<'tcx, 'graph>),
+    Real(BorrowPcgEdgeRef<'tcx, 'graph>),
     Synthetic(SyntheticEdge<'tcx>),
 }
 

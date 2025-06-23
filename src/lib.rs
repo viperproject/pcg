@@ -146,7 +146,7 @@ impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for Weaken<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPCGActions<'tcx> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPcgActions<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.0
             .iter()
@@ -155,7 +155,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPCGActions<'tcx> {
     }
 }
 
-use borrow_pcg::action::actions::BorrowPCGActions;
+use borrow_pcg::action::actions::BorrowPcgActions;
 use std::{alloc::Allocator, sync::Mutex};
 use utils::eval_stmt_data::EvalStmtData;
 

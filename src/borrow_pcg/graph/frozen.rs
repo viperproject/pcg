@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
+        borrow_pcg_edge::{BorrowPcgEdgeRef, LocalNode},
         edge_data::EdgeData,
     },
     pcg::PCGNode,
@@ -16,16 +16,16 @@ use crate::{
 use super::BorrowsGraph;
 
 #[derive(Deref, Clone, IntoIterator)]
-pub struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPCGEdgeRef<'tcx, 'graph>>);
+pub struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPcgEdgeRef<'tcx, 'graph>>);
 
 impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
-    fn new(edges: Vec<BorrowPCGEdgeRef<'tcx, 'graph>>) -> Self {
+    fn new(edges: Vec<BorrowPcgEdgeRef<'tcx, 'graph>>) -> Self {
         Self(edges)
     }
 }
 
-type CachedBlockedEdges<'graph, 'tcx> = Vec<BorrowPCGEdgeRef<'tcx, 'graph>>;
-pub(crate) type CachedLeafEdges<'graph, 'tcx> = Vec<BorrowPCGEdgeRef<'tcx, 'graph>>;
+type CachedBlockedEdges<'graph, 'tcx> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
+pub(crate) type CachedLeafEdges<'graph, 'tcx> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
 
 pub struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
@@ -62,12 +62,12 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         }
 
         #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-        struct Path<'tcx, 'graph>(Vec<BorrowPCGEdgeRef<'tcx, 'graph>>);
+        struct Path<'tcx, 'graph>(Vec<BorrowPcgEdgeRef<'tcx, 'graph>>);
 
         impl<'tcx, 'graph> Path<'tcx, 'graph> {
             fn try_push(
                 mut self,
-                edge: BorrowPCGEdgeRef<'tcx, 'graph>,
+                edge: BorrowPcgEdgeRef<'tcx, 'graph>,
                 _ctxt: CompilerCtxt<'_, 'tcx>,
             ) -> PushResult<'tcx, 'graph> {
                 if self.0.contains(&edge) {
@@ -78,11 +78,11 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 }
             }
 
-            fn last(&self) -> BorrowPCGEdgeRef<'tcx, 'graph> {
+            fn last(&self) -> BorrowPcgEdgeRef<'tcx, 'graph> {
                 *self.0.last().unwrap()
             }
 
-            fn new(edge: BorrowPCGEdgeRef<'tcx, 'graph>) -> Self {
+            fn new(edge: BorrowPcgEdgeRef<'tcx, 'graph>) -> Self {
                 Self(vec![edge])
             }
 

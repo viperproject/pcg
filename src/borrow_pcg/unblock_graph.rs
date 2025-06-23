@@ -19,18 +19,18 @@ pub struct UnblockGraph<'tcx> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BorrowPCGUnblockAction<'tcx> {
+pub struct BorrowPcgUnblockAction<'tcx> {
     pub(super) edge: BorrowPcgEdge<'tcx>,
 }
 
-impl<'tcx> BorrowPCGUnblockAction<'tcx> {
+impl<'tcx> BorrowPcgUnblockAction<'tcx> {
     pub fn edge(&self) -> &BorrowPcgEdge<'tcx> {
         &self.edge
     }
 }
 
 impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for BorrowPCGUnblockAction<'tcx>
+    for BorrowPcgUnblockAction<'tcx>
 {
     fn to_json(
         &self,
@@ -42,7 +42,7 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
     }
 }
 
-impl<'tcx> From<BorrowPcgEdge<'tcx>> for BorrowPCGUnblockAction<'tcx> {
+impl<'tcx> From<BorrowPcgEdge<'tcx>> for BorrowPcgUnblockAction<'tcx> {
     fn from(edge: BorrowPcgEdge<'tcx>) -> Self {
         Self { edge }
     }
@@ -82,7 +82,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     pub fn actions(
         self,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<BorrowPCGUnblockAction<'tcx>>, PCGInternalError> {
+    ) -> Result<Vec<BorrowPcgUnblockAction<'tcx>>, PCGInternalError> {
         let mut edges = self.edges;
         let mut actions = vec![];
 
@@ -95,7 +95,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
-                    actions.push(BorrowPCGUnblockAction { edge: edge.clone() });
+                    actions.push(BorrowPcgUnblockAction { edge: edge.clone() });
                     to_keep.remove(edge);
                 }
             }

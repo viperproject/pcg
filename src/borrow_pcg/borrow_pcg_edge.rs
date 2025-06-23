@@ -36,7 +36,7 @@ use crate::{
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BorrowPCGEdgeRef<'tcx, 'graph> {
+pub struct BorrowPcgEdgeRef<'tcx, 'graph> {
     pub(crate) kind: &'graph BorrowPcgEdgeKind<'tcx>,
     pub(crate) conditions: &'graph PathConditions,
 }
@@ -116,7 +116,7 @@ impl<'tcx> BorrowPcgEdgeLike<'tcx> for BorrowPcgEdge<'tcx> {
     }
 }
 
-impl<'tcx, 'graph> BorrowPcgEdgeLike<'tcx> for BorrowPCGEdgeRef<'tcx, 'graph> {
+impl<'tcx, 'graph> BorrowPcgEdgeLike<'tcx> for BorrowPcgEdgeRef<'tcx, 'graph> {
     fn kind<'baz>(&'baz self) -> &'graph BorrowPcgEdgeKind<'tcx> {
         self.kind
     }

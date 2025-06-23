@@ -11,7 +11,7 @@ use derive_more::Deref;
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgActions},
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPCGEdgeRef, BorrowPcgEdge},
+        borrow_pcg_edge::{BorrowPcgEdgeRef, BorrowPcgEdge},
         latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
@@ -31,7 +31,7 @@ use crate::{
     },
 };
 
-use crate::borrow_pcg::action::actions::BorrowPCGActions;
+use crate::borrow_pcg::action::actions::BorrowPcgActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
     free_pcs::{CapabilityLocals, RepackOp},
@@ -139,7 +139,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                     .bridge(&to.entry_state.owned, &from_post_main.capabilities, ctxt)
                     .unwrap();
 
-                let mut borrow_actions = BorrowPCGActions::new();
+                let mut borrow_actions = BorrowPcgActions::new();
                 for abstraction in to.entry_state.borrow.graph().abstraction_edges() {
                     if !self_abstraction_edges.contains(&abstraction) {
                         borrow_actions.push(
@@ -307,7 +307,7 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
 }
 
 impl<'tcx> PcgLocation<'tcx> {
-    pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> BorrowPCGActions<'tcx> {
+    pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> BorrowPcgActions<'tcx> {
         self.actions[phase].borrow_pcg_actions()
     }
     pub fn actions(&self, phase: EvalStmtPhase) -> &PcgActions<'tcx> {
@@ -318,7 +318,7 @@ impl<'tcx> PcgLocation<'tcx> {
         &'slf self,
         place: Place<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'slf>> {
+    ) -> FxHashSet<BorrowPcgEdgeRef<'tcx, 'slf>> {
         let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
         let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);
         for rp in place.region_projections(repacker) {
