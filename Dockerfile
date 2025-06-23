@@ -28,7 +28,7 @@ ENV PATH="/usr/local/cargo/bin:${PATH}"
 ENV RUSTUP_HOME="/usr/local/rustup"
 ENV CARGO_HOME="/usr/local/cargo"
 
-FROM rust-deps as rust-builder
+FROM rust-deps as rust-pcg-server-builder
 
 # Build PCG binary
 RUN cargo build --release
@@ -89,3 +89,10 @@ EXPOSE 4000
 EXPOSE 4444
 
 CMD ["./pcg-server"]
+
+FROM rust-deps as rust-artifact
+
+RUN cargo build
+
+COPY --from=node-builder /usr/src/app/visualization/dist ./visualization/dist/
+COPY --from=node-builder /usr/src/app/visualization/index.html ./visualization/
