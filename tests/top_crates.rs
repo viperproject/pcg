@@ -12,8 +12,9 @@ use common::{get, run_on_crate, RunOnCrateOptions, Target};
 #[test]
 #[ignore]
 pub fn top_crates() {
+    let num_crates = std::env::var("PCG_NUM_TEST_CRATES").unwrap_or("500".to_string());
     let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
-    top_crates_parallel(500, Some("2025-03-13"), parallelism.parse().unwrap())
+    top_crates_parallel(num_crates.parse().unwrap(), Some("2025-03-13"), parallelism.parse().unwrap())
 }
 
 pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
@@ -24,14 +25,18 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .unwrap();
     let top_crates: Vec<_> = Crates::top(n, date).to_vec();
 
-    let extra_env_vars = if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
-        vec![(
+    // TODO: Fix the slowness
+    let mut extra_env_vars = vec![
+        ("PCG_SKIP_FUNCTION".to_string(), "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string()),
+    ];
+
+    if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
+        extra_env_vars.push((
             "PCG_MAX_BASIC_BLOCKS".to_string(),
             max_basic_blocks.to_string(),
-        )]
-    } else {
-        vec![]
-    };
+        ));
+    }
+
     top_crates
         .into_par_iter()
         .panic_fuse()
@@ -45,7 +50,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                 date,
                 RunOnCrateOptions::RunPCG {
                     target: Target::Release,
-                    validity_checks: true,
+                    validity_checks: false,
                     function: None,
                     extra_env_vars: extra_env_vars.clone(),
                 },

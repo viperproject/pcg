@@ -235,6 +235,14 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             );
             continue;
         }
+        if let Ok(function) = std::env::var("PCG_SKIP_FUNCTION")
+            && function == item_name
+        {
+            tracing::info!(
+                "Skipping function: {item_name} because PCG_SKIP_FUNCTION is set to {function}"
+            );
+            continue;
+        }
         let body = take_stored_body(tcx, def_id);
 
         if !should_check_body(&body.body) {

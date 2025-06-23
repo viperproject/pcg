@@ -1,0 +1,4 @@
+[toolchain]
+channel = "pcg-toolchain-2024-12-15"
+# components = [ "rustc-dev", "llvm-tools-preview", "rust-std", "rustfmt", "clippy" ]
+# profile = "minimal"

@@ -165,7 +165,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
                 return edges.as_ref().unwrap().clone();
             }
         }
-        let edges: CachedLeafEdges<'graph, 'tcx> = self.graph.leaf_edges_set(repacker, Some(self));
+        let edges: CachedLeafEdges<'graph, 'tcx> = self.graph.leaf_edges_set(repacker, self);
         self.leaf_edges_cache.replace(Some(edges.clone()));
         edges
     }

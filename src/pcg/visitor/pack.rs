@@ -39,7 +39,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     /// the Prusti purified encoding for accessing the final value of a
     /// reference-typed function argument in its postcondition.
     pub(crate) fn pack_old_and_dead_borrow_leaves(&mut self) -> Result<(), PcgError> {
+        let debug_iteration_limit = 10000;
         let mut iteration = 0;
+        self.restore_capability_to_leaf_places()?;
         loop {
             iteration += 1;
             let edges_to_trim = self.pack_iteration()?;
@@ -52,23 +54,36 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &format!("Trim Old Leaves (iteration {}): {}", iteration, reason),
                 )?
             }
+            if iteration % 10 == 0 {
+                tracing::info!(
+                    "Packing old and dead borrow leaves: iteration {}",
+                    iteration
+                );
+            }
+            if iteration > debug_iteration_limit {
+                panic!(
+                    "Packing old and dead borrow leaves took more than {debug_iteration_limit} iterations"
+                );
+            }
         }
     }
 
     fn restore_capability_to_leaf_places(&mut self) -> Result<(), PcgError> {
-        let leaf_places = self.pcg.leaf_places(self.ctxt);
+        let leaf_places = self.pcg.leaf_places_where(
+            |p| {
+                self.pcg.capabilities.get(p) == Some(CapabilityKind::Read)
+                    && !p.projects_shared_ref(self.ctxt)
+            },
+            self.ctxt,
+        );
         for place in leaf_places {
-            if let Some(CapabilityKind::Read) = self.pcg.capabilities.get(place)
-                && !place.projects_shared_ref(self.ctxt)
-            {
-                let action = PcgAction::restore_capability(
-                    place,
-                    CapabilityKind::Exclusive,
-                    "restore capability to leaf place",
-                    self.ctxt,
-                );
-                self.record_and_apply_action(action)?;
-            }
+            let action = PcgAction::restore_capability(
+                place,
+                CapabilityKind::Exclusive,
+                "restore capability to leaf place",
+                self.ctxt,
+            );
+            self.record_and_apply_action(action)?;
         }
         Ok(())
     }
@@ -123,7 +138,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
 
         let mut edges_to_trim = Vec::new();
-        self.restore_capability_to_leaf_places()?;
         let fg = self.pcg.borrow.graph().frozen_graph();
         let location = self.location;
         let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {

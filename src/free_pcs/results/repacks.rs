@@ -58,7 +58,6 @@ impl TryFrom<PlaceElem<'_>> for RepackGuide {
                 Ok(RepackGuide::Subslice { from, to, from_end })
             }
             _ => {
-                tracing::info!("elem: {elem:?}");
                 Err(())
             }
         }

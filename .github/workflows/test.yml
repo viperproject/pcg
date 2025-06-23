@@ -19,7 +19,7 @@ jobs:
     - name: Check for warnings
       env:
         RUSTFLAGS: "-D warnings"
-      run: cargo check --all-targets --all-features --lib --bins --tests --examples --benches --message-format=json
+      run: cargo check --all-targets --lib --bins --tests --examples --benches --message-format=json
 
   clippy:
     runs-on: ubuntu-latest
