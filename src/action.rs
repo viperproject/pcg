@@ -4,8 +4,8 @@ use serde_json::Map;
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        action::{actions::BorrowPCGActions, BorrowPcgActionKind},
-        unblock_graph::BorrowPCGUnblockAction,
+        action::{actions::BorrowPcgActions, BorrowPcgActionKind},
+        unblock_graph::BorrowPcgUnblockAction,
     },
     free_pcs::{CapabilityKind, RepackOp},
     utils::{display::DisplayWithCompilerCtxt, json::ToJsonWithCompilerCtxt, CompilerCtxt, Place},
@@ -25,8 +25,8 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
     }
 }
 
-impl<'tcx> From<BorrowPCGActions<'tcx>> for PcgActions<'tcx> {
-    fn from(actions: BorrowPCGActions<'tcx>) -> Self {
+impl<'tcx> From<BorrowPcgActions<'tcx>> for PcgActions<'tcx> {
+    fn from(actions: BorrowPcgActions<'tcx>) -> Self {
         PcgActions(actions.0.into_iter().map(|a| a.into()).collect::<Vec<_>>())
     }
 }
@@ -42,8 +42,8 @@ impl<'tcx> PcgActions<'tcx> {
         self.0.extend(actions.0);
     }
 
-    pub fn borrow_pcg_actions(&self) -> BorrowPCGActions<'tcx> {
-        BorrowPCGActions(
+    pub fn borrow_pcg_actions(&self) -> BorrowPcgActions<'tcx> {
+        BorrowPcgActions(
             self.0
                 .iter()
                 .filter_map(|action| match action {
@@ -68,7 +68,7 @@ impl<'tcx> PcgActions<'tcx> {
             .collect()
     }
 
-    pub fn borrow_pcg_unblock_actions(&self) -> Vec<BorrowPCGUnblockAction<'tcx>> {
+    pub fn borrow_pcg_unblock_actions(&self) -> Vec<BorrowPcgUnblockAction<'tcx>> {
         self.0
             .iter()
             .filter_map(|action| match action {

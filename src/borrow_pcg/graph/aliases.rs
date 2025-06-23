@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPCGEdgeRef, LocalNode},
+        borrow_pcg_edge::{BorrowPcgEdgeRef, LocalNode},
         edge::{kind::BorrowPcgEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
     },
@@ -22,8 +22,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> {
-        let mut result: FxHashSet<BorrowPCGEdgeRef<'tcx, 'graph>> = FxHashSet::default();
+    ) -> FxHashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
+        let mut result: FxHashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
         let mut seen: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
         while let Some(node) = stack.pop() {

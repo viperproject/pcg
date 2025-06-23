@@ -1,5 +1,5 @@
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
+    borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
     latest::Latest,
@@ -241,7 +241,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &'slf self,
         node: BlockedNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
+    ) -> Vec<BorrowPcgEdgeRef<'tcx, 'slf>> {
         self.graph.edges_blocking(node, repacker).collect()
     }
 

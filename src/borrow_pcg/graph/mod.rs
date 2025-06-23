@@ -28,7 +28,7 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPCGEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
+    borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -199,10 +199,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .map(|(kind, conditions)| BorrowPcgEdge { kind, conditions })
     }
 
-    pub fn edges<'slf>(&'slf self) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + 'slf {
+    pub fn edges<'slf>(&'slf self) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'slf>> + 'slf {
         self.edges
             .iter()
-            .map(|(kind, conditions)| BorrowPCGEdgeRef { kind, conditions })
+            .map(|(kind, conditions)| BorrowPcgEdgeRef { kind, conditions })
     }
 
     pub(crate) fn base_abstraction_graph<'graph, 'mir: 'graph>(
@@ -440,7 +440,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx, BC>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, BC> {
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, BC> {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(ctxt).contains(&node))
     }
@@ -495,7 +495,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'slf self,
         node: BlockedNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPCGEdgeRef<'tcx, 'slf>> + use<'tcx, 'slf, 'mir, 'bc> {
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'slf>> + use<'tcx, 'slf, 'mir, 'bc> {
         self.edges()
             .filter(move |edge| edge.blocks_node(node, repacker))
     }
@@ -504,7 +504,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'slf self,
         node: BlockedNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> Vec<BorrowPCGEdgeRef<'tcx, 'slf>> {
+    ) -> Vec<BorrowPcgEdgeRef<'tcx, 'slf>> {
         self.edges_blocking(node, repacker).collect()
     }
 

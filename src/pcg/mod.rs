@@ -10,7 +10,7 @@ mod dot_graphs;
 mod node;
 mod successor;
 
-pub(crate) mod place_capabilities;
+pub mod place_capabilities;
 pub(crate) mod triple;
 pub(crate) mod visitor;
 
