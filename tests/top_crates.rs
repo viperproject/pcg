@@ -24,14 +24,18 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .unwrap();
     let top_crates: Vec<_> = Crates::top(n, date).to_vec();
 
-    let extra_env_vars = if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
-        vec![(
+    // TODO: Fix the slowness
+    let mut extra_env_vars = vec![
+        ("PCG_SKIP_FUNCTION".to_string(), "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string()),
+    ];
+
+    if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
+        extra_env_vars.push((
             "PCG_MAX_BASIC_BLOCKS".to_string(),
             max_basic_blocks.to_string(),
-        )]
-    } else {
-        vec![]
-    };
+        ));
+    }
+
     top_crates
         .into_par_iter()
         .panic_fuse()
