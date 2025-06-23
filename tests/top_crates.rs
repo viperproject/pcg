@@ -12,8 +12,9 @@ use common::{get, run_on_crate, RunOnCrateOptions, Target};
 #[test]
 #[ignore]
 pub fn top_crates() {
+    let num_crates = std::env::var("PCG_NUM_TEST_CRATES").unwrap_or("500".to_string());
     let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
-    top_crates_parallel(500, Some("2025-03-13"), parallelism.parse().unwrap())
+    top_crates_parallel(num_crates.parse().unwrap(), Some("2025-03-13"), parallelism.parse().unwrap())
 }
 
 pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
