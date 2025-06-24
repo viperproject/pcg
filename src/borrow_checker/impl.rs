@@ -124,7 +124,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
     fn override_region_debug_string(&self, _region: ty::RegionVid) -> Option<&str> {
         None
     }
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location, _is_leaf: bool) -> bool {
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let regions: Vec<_> = match node {
             PCGNode::Place(place) => place.regions(self.ctxt()).into_iter().collect(),
             PCGNode::RegionProjection(region_projection) => {
@@ -201,11 +201,14 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+    #[allow(unused)]
     out_of_scope_borrows: FxIndexMap<Location, Vec<BorrowIndex>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
     location_table: &'mir LocationTable,
+    #[allow(unused)]
     body: &'mir mir::Body<'tcx>,
+    #[allow(unused)]
     tcx: ty::TyCtxt<'tcx>,
     #[cfg(feature = "visualization")]
     pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
@@ -251,6 +254,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
         }
     }
 
+    #[allow(unused)]
     fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &dyn BorrowCheckerInterface<'tcx>> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
@@ -292,11 +296,16 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         outlives(self.region_cx, sup, sub)
     }
 
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
-        #[cfg(feature="custom-rust-toolchain")]
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        #[cfg(feature = "custom-rust-toolchain")]
         if let PCGNode::RegionProjection(region_projection) = node {
             let region = region_projection.region(self.ctxt());
-            if !self.ctxt().bc.region_infer_ctxt().has_sub_region_live_at(region.vid().unwrap(), location) {
+            if !self
+                .ctxt()
+                .bc
+                .region_infer_ctxt()
+                .has_sub_region_live_at(region.vid().unwrap(), location)
+            {
                 return false;
             }
         }
@@ -314,36 +323,35 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             }
         };
         let place_is_live = self.local_is_live_before(local, location);
-        if place_is_live {
-            return true;
-        } else if is_leaf {
-            // Place is not live, and its a leaf, so the node is not live
-            return false;
-        }
+        return place_is_live;
+        // if place_is_live {
+        //     tracing::info!("Local {:?} is live at {:?}", local, location);
+        //     return true;
+        // }
 
-        if let PCGNode::RegionProjection(region_projection) = node {
-            let out_of_scope_borrows = self
-                .out_of_scope_borrows
-                .get(&location)
-                .cloned()
-                .unwrap_or_default();
-            let out_of_scope_borrow_regions = out_of_scope_borrows
-                .iter()
-                .map(|idx| self.borrow_index_to_region(*idx))
-                .collect::<BTreeSet<_>>();
-            let in_scope_borrows = self
-                .location_map()
-                .values()
-                .filter(|borrow| !out_of_scope_borrow_regions.contains(&get_region(borrow)))
-                .collect::<Vec<_>>();
-            let region = region_projection.region(self.ctxt());
-            for borrow in in_scope_borrows {
-                if self.outlives(region, get_region(borrow).into()) {
-                    return true;
-                }
-            }
-        }
-        false
+        // if let PCGNode::RegionProjection(region_projection) = node {
+        //     let out_of_scope_borrows = self
+        //         .out_of_scope_borrows
+        //         .get(&location)
+        //         .cloned()
+        //         .unwrap_or_default();
+        //     let out_of_scope_borrow_regions = out_of_scope_borrows
+        //         .iter()
+        //         .map(|idx| self.borrow_index_to_region(*idx))
+        //         .collect::<BTreeSet<_>>();
+        //     let in_scope_borrows = self
+        //         .location_map()
+        //         .values()
+        //         .filter(|borrow| !out_of_scope_borrow_regions.contains(&get_region(borrow)))
+        //         .collect::<Vec<_>>();
+        //     let region = region_projection.region(self.ctxt());
+        //     for borrow in in_scope_borrows {
+        //         if self.outlives(region, get_region(borrow).into()) {
+        //             return true;
+        //         }
+        //     }
+        // }
+        // false
     }
 
     fn twophase_borrow_activations(
@@ -422,6 +430,7 @@ fn get_activation_map<'a, 'tcx>(
 }
 
 #[rustversion::since(2024-12-14)]
+#[allow(unused)]
 fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
     borrow.region()
 }

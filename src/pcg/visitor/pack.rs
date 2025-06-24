@@ -44,7 +44,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         self.restore_capability_to_leaf_places()?;
         loop {
             iteration += 1;
-            let edges_to_trim = self.pack_iteration()?;
+            let edges_to_trim = self.identify_edges_to_trim()?;
             if edges_to_trim.is_empty() {
                 break Ok(());
             }
@@ -88,7 +88,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    fn pack_iteration<'slf>(&'slf mut self) -> Result<EdgesToTrim<'tcx>, PcgError> {
+    fn identify_edges_to_trim<'slf>(&'slf mut self) -> Result<EdgesToTrim<'tcx>, PcgError> {
         enum ShouldKillNode {
             Yes { reason: Cow<'static, str> },
             No,
@@ -123,7 +123,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 };
             }
 
-            if ctxt.bc.is_dead(p.into(), location, true) {
+            if ctxt.bc.is_dead(p.into(), location) {
                 return ShouldKillNode::Yes {
                     reason: "Borrow-checker reports node as dead".into(),
                 };
@@ -143,7 +143,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                 if expansion.expansion().iter().all(|node| {
-                    node.is_old() || self.ctxt.bc.is_dead(node.place().into(), location, true)
+                    node.is_old() || self.ctxt.bc.is_dead(node.place().into(), location)
                 }) {
                     ShouldPackEdge::Yes {
                         reason: "Expansion is old or dead".into(),
@@ -170,6 +170,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             reason
                         ));
                     } else {
+                        tracing::debug!(
+                            "Node {} will not be killed",
+                            node.to_short_string(self.ctxt)
+                        );
                         return ShouldPackEdge::No;
                     }
                 }
@@ -188,6 +192,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .map(|e| e.to_owned_edge())
         {
             if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
+                tracing::debug!("Checking edge: {}", edge.to_short_string(self.ctxt));
                 edges_to_trim.push((edge, reason));
             }
         }

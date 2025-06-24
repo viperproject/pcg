@@ -347,7 +347,6 @@ impl<'mir: 'graph, 'tcx, 'graph> AbstractionGraphConstructor<'mir, 'tcx, 'graph>
                             block: self.loop_head_block,
                             statement_index: 0,
                         },
-                        false, // TODO: Maybe actually check if this is a leaf
                     );
                     is_live && !n.is_old()
                 });
