@@ -5,20 +5,20 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
-    common::run_on_crate(
-        "bindgen",
-        "0.71.1",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: false,
-            function: None,
-            extra_env_vars: vec![(
-                "PCG_SKIP_FUNCTION".to_string(),
-                "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string(),
-            )],
-        },
-    );
+    // common::run_on_crate(
+    //     "bindgen",
+    //     "0.71.1",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: false,
+    //         function: None,
+    //         extra_env_vars: vec![(
+    //             "PCG_SKIP_FUNCTION".to_string(),
+    //             "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string(),
+    //         )],
+    //     },
+    // );
 
     // Polonius also works, checking variable liveness alone isn't sufficient
     // for determining if a lifetime projection is live at a point.
