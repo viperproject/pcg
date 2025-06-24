@@ -322,36 +322,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
                 return true;
             }
         };
-        let place_is_live = self.local_is_live_before(local, location);
-        return place_is_live;
-        // if place_is_live {
-        //     tracing::info!("Local {:?} is live at {:?}", local, location);
-        //     return true;
-        // }
-
-        // if let PCGNode::RegionProjection(region_projection) = node {
-        //     let out_of_scope_borrows = self
-        //         .out_of_scope_borrows
-        //         .get(&location)
-        //         .cloned()
-        //         .unwrap_or_default();
-        //     let out_of_scope_borrow_regions = out_of_scope_borrows
-        //         .iter()
-        //         .map(|idx| self.borrow_index_to_region(*idx))
-        //         .collect::<BTreeSet<_>>();
-        //     let in_scope_borrows = self
-        //         .location_map()
-        //         .values()
-        //         .filter(|borrow| !out_of_scope_borrow_regions.contains(&get_region(borrow)))
-        //         .collect::<Vec<_>>();
-        //     let region = region_projection.region(self.ctxt());
-        //     for borrow in in_scope_borrows {
-        //         if self.outlives(region, get_region(borrow).into()) {
-        //             return true;
-        //         }
-        //     }
-        // }
-        // false
+        self.local_is_live_before(local, location)
     }
 
     fn twophase_borrow_activations(

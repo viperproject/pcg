@@ -458,14 +458,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if self.ctxt.bc.is_dead(
                     borrow
                         .assigned_region_projection(self.ctxt)
-                        .to_pcg_node(self.ctxt)
-                        .into(),
+                        .to_pcg_node(self.ctxt),
                     self.location,
                 ) {
                     if let MaybeOldPlace::Current { place } = borrow.assigned_ref() {
                         self.record_and_apply_action(
                             BorrowPcgAction::weaken(
-                                place.into(),
+                                place,
                                 self.pcg.capabilities.get(place).unwrap(),
                                 Some(CapabilityKind::Write),
                             )
