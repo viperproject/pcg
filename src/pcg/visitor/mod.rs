@@ -19,7 +19,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
-    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, PCGUnsupportedError, Pcg, PcgError,
+    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, PcgUnsupportedError, Pcg, PcgError,
 };
 
 mod assign;
@@ -180,7 +180,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         if place.contains_unsafe_deref(self.ctxt) {
             tracing::error!("DerefUnsafePtr: {}", place.to_short_string(self.ctxt));
-            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+            return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
         }
         Ok(())
     }

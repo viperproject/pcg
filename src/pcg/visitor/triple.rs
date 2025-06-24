@@ -3,7 +3,7 @@ use crate::{
     pcg::{
         triple::{PlaceCondition, Triple},
         visitor::obtain::ObtainType,
-        PCGUnsupportedError, PcgError,
+        PcgUnsupportedError, PcgError,
     },
 };
 
@@ -15,13 +15,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         match triple.pre() {
             PlaceCondition::ExpandTwoPhase(place) => {
                 if place.contains_unsafe_deref(self.ctxt) {
-                    return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+                    return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
                 self.obtain(place, ObtainType::TwoPhaseExpand)?;
             }
             PlaceCondition::Capability(place, capability) => {
                 if place.contains_unsafe_deref(self.ctxt) {
-                    return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+                    return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
                 self.obtain(place, ObtainType::Capability(capability))?;
             }

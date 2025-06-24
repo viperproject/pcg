@@ -16,7 +16,7 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
-    pcg::{PCGUnsupportedError, PcgError},
+    pcg::{PcgUnsupportedError, PcgError},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHasher,
@@ -206,14 +206,14 @@ impl<'tcx> Place<'tcx> {
         self,
         elem: PlaceElem<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> std::result::Result<Self, PCGUnsupportedError> {
+    ) -> std::result::Result<Self, PcgUnsupportedError> {
         let base_ty = self.ty(repacker);
         if matches!(
             elem,
             ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. }
         ) && base_ty.ty.builtin_index().is_none()
         {
-            return Err(PCGUnsupportedError::IndexingNonIndexableType);
+            return Err(PcgUnsupportedError::IndexingNonIndexableType);
         }
         let corrected_elem = if let ProjectionElem::Field(field_idx, proj_ty) = elem {
             let expected_ty = match base_ty.ty.kind() {
@@ -243,6 +243,7 @@ impl<'tcx> Place<'tcx> {
     }
 
     #[rustversion::before(2025-05-24)]
+    #[allow(unused)]
     pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.ty(ctxt).ty.is_unsafe_ptr()
     }

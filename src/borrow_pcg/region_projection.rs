@@ -12,7 +12,7 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::latest::Latest;
-use crate::pcg::{PCGInternalError, PcgError};
+use crate::pcg::{PcgInternalError, PcgError};
 use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -735,7 +735,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         base: T,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<Self, PCGInternalError> {
+    ) -> Result<Self, PcgInternalError> {
         let region_idx = base
             .regions(ctxt)
             .into_iter_enumerated()
@@ -744,7 +744,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         let region_idx = match region_idx {
             Some(region_idx) => region_idx,
             None => {
-                return Err(PCGInternalError::new(format!(
+                return Err(PcgInternalError::new(format!(
                     "Region {region} not found in place {base:?}"
                 )));
             }

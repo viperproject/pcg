@@ -19,7 +19,7 @@ use crate::rustc_interface::middle::mir::RawPtrKind;
 use crate::utils::visitor::FallableVisitor;
 use crate::{
     free_pcs::CapabilityKind,
-    pcg::{PCGUnsupportedError, PcgError},
+    pcg::{PcgUnsupportedError, PcgError},
     utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
@@ -270,7 +270,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
                 post: Some(PlaceCondition::exclusive(resume_arg, self.ctxt)),
             },
             InlineAsm { .. } => {
-                return Err(PcgError::unsupported(PCGUnsupportedError::InlineAssembly));
+                return Err(PcgError::unsupported(PcgUnsupportedError::InlineAssembly));
             }
             _ => todo!("{terminator:?}"),
         };
@@ -285,7 +285,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
         _location: mir::Location,
     ) -> Result<(), PcgError> {
         if place.contains_unsafe_deref(self.ctxt) {
-            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+            return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
         }
         Ok(())
     }

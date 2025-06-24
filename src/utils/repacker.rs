@@ -26,7 +26,7 @@ use crate::rustc_interface::mir_dataflow;
 
 use crate::{
     borrow_pcg::region_projection::PcgRegion,
-    pcg::{PCGUnsupportedError, PcgError},
+    pcg::{PcgUnsupportedError, PcgError},
 };
 
 use super::Place;
@@ -458,7 +458,7 @@ impl<'tcx> Place<'tcx> {
             }
             TyKind::Alias(..) => {
                 return Err(PcgError::unsupported(
-                    PCGUnsupportedError::ExpansionOfAliasType,
+                    PcgUnsupportedError::ExpansionOfAliasType,
                 ));
             }
             _ => unreachable!("ty={:?} ({self:?})", typ),
