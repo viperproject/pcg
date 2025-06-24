@@ -55,7 +55,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?
             }
             if iteration % 10 == 0 {
-                tracing::info!(
+                tracing::debug!(
                     "Packing old and dead borrow leaves: iteration {}",
                     iteration
                 );
