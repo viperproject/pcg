@@ -25,10 +25,15 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .unwrap();
     let top_crates: Vec<_> = Crates::top(n, date).to_vec();
 
+    let mut extra_env_vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("PCG_"))
+        .collect();
+
     // TODO: Fix the slowness
-    let mut extra_env_vars = vec![
-        ("PCG_SKIP_FUNCTION".to_string(), "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string()),
-    ];
+    extra_env_vars.push((
+        "PCG_SKIP_FUNCTION".to_string(),
+        "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string(),
+    ));
 
     if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
         extra_env_vars.push((
