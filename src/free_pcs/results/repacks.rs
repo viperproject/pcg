@@ -8,7 +8,7 @@ use rustc_interface::middle::mir::{Local, PlaceElem};
 
 use crate::{
     free_pcs::CapabilityKind,
-    rustc_interface::{self, VariantIdx, span::Symbol},
+    rustc_interface::{self, span::Symbol, VariantIdx},
     utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, ConstantIndex, Place},
 };
 
@@ -57,9 +57,7 @@ impl TryFrom<PlaceElem<'_>> for RepackGuide {
             PlaceElem::Subslice { from, to, from_end } => {
                 Ok(RepackGuide::Subslice { from, to, from_end })
             }
-            _ => {
-                Err(())
-            }
+            _ => Err(()),
         }
     }
 }
@@ -126,7 +124,7 @@ impl<'tcx> RepackCollapse<'tcx> {
         self.to.local
     }
 
-    pub (crate) fn expansion_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
+    pub fn expansion_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
         let expansion = self.to.expansion(self.guide, ctxt);
         self.to.expansion_places(&expansion, ctxt)
     }
