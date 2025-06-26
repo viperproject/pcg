@@ -460,19 +460,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         .assigned_region_projection(self.ctxt)
                         .to_pcg_node(self.ctxt),
                     self.location,
-                ) {
-                    if let MaybeOldPlace::Current { place } = borrow.assigned_ref()
-                        && let Some(existing_cap) = self.pcg.capabilities.get(place)
-                    {
-                        self.record_and_apply_action(
-                            BorrowPcgAction::weaken(
-                                place,
-                                existing_cap,
-                                Some(CapabilityKind::Write),
-                            )
+                ) && let MaybeOldPlace::Current { place } = borrow.assigned_ref()
+                    && let Some(existing_cap) = self.pcg.capabilities.get(place)
+                {
+                    self.record_and_apply_action(
+                        BorrowPcgAction::weaken(place, existing_cap, Some(CapabilityKind::Write))
                             .into(),
-                        )?;
-                    }
+                    )?;
                 }
             }
             _ => {}
