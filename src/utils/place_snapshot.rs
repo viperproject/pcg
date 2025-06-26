@@ -127,6 +127,14 @@ impl<'tcx> PlaceSnapshot<'tcx> {
         }
     }
 
+    pub fn place(&self) -> Place<'tcx> {
+        self.place
+    }
+
+    pub fn at(&self) -> SnapshotLocation {
+        self.at
+    }
+
     pub(crate) fn with_inherent_region(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,

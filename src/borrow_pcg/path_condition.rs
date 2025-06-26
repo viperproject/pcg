@@ -47,7 +47,7 @@ impl Path {
 }
 
 #[derive(PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
-struct BranchChoices {
+pub struct BranchChoices {
     from: BasicBlock,
     chosen: BitSet<u8>,
 }
@@ -68,6 +68,14 @@ impl BranchChoices {
     fn insert(&mut self, idx: usize) {
         assert!(self.chosen.len() <= idx);
         self.chosen.insert(idx);
+    }
+
+    pub fn from(&self) -> BasicBlock {
+        self.from
+    }
+
+    pub fn successors(&self, body: &mir::Body<'_>) -> Vec<BasicBlock> {
+        effective_successors(self.from, body)
     }
 
     fn includes_successor(&self, successor: BasicBlock, body: &mir::Body<'_>) -> bool {
@@ -169,7 +177,7 @@ impl PathConditions {
         Self(SmallVec::new())
     }
 
-    fn all_branch_choices(&self) -> impl Iterator<Item = &BranchChoices> {
+    pub fn all_branch_choices(&self) -> impl Iterator<Item = &BranchChoices> {
         self.0.iter()
     }
 
