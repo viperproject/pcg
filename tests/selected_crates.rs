@@ -5,6 +5,18 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
+    common::run_on_crate(
+        "chrono",
+        "0.4.40",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("format::scan::timezone_offset_2822"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // common::run_on_crate(
     //     "bindgen",
     //     "0.71.1",

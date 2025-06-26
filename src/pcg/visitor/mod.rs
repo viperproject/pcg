@@ -461,11 +461,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         .to_pcg_node(self.ctxt),
                     self.location,
                 ) {
-                    if let MaybeOldPlace::Current { place } = borrow.assigned_ref() {
+                    if let MaybeOldPlace::Current { place } = borrow.assigned_ref()
+                        && let Some(existing_cap) = self.pcg.capabilities.get(place)
+                    {
                         self.record_and_apply_action(
                             BorrowPcgAction::weaken(
                                 place,
-                                self.pcg.capabilities.get(place).unwrap(),
+                                existing_cap,
                                 Some(CapabilityKind::Write),
                             )
                             .into(),
