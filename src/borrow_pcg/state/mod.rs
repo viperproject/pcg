@@ -280,7 +280,6 @@ impl<'tcx> BorrowsState<'tcx> {
             region,
             ctxt,
         );
-        // capabilities.insert(rp.place(), assigned_cap);
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge).to_borrow_pcg_edge(self.path_conditions.clone()),
             ctxt

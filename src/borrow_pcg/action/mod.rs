@@ -233,8 +233,12 @@ impl<'tcx> BorrowsState<'tcx> {
                 let weaken_place = weaken.place();
                 assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
                 match weaken.to {
-                    Some(to) => assert!(capabilities.insert(weaken_place, to)),
-                    None => assert!(capabilities.remove(weaken_place).is_some()),
+                    Some(to) => {
+                        capabilities.insert(weaken_place, to);
+                    }
+                    None => {
+                        assert!(capabilities.remove(weaken_place).is_some());
+                    }
                 }
                 true
             }
@@ -309,8 +313,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 expanded_capability,
                                 p.place().to_short_string(ctxt)
                             );
-                            changed |=
-                                capabilities.insert(p.place(), expanded_capability);
+                            changed |= capabilities.insert(p.place(), expanded_capability);
                         }
                     }
                 }

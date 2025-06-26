@@ -178,10 +178,7 @@ impl<'tcx> Pcg<'tcx> {
             return places;
         }
 
-        let owned_places_in_borrow_pcg = self
-            .borrow
-            .graph()
-            .owned_places(ctxt);
+        let owned_places_in_borrow_pcg = self.borrow.graph().owned_places(ctxt);
 
         for place in owned_leaf_places {
             if !owned_places_in_borrow_pcg.contains(&place) {
@@ -365,8 +362,8 @@ pub struct PcgError {
 // Deprecated: use PcgError instead
 pub type PCGError = PcgError;
 
-impl From<PCGUnsupportedError> for PcgError {
-    fn from(e: PCGUnsupportedError) -> Self {
+impl From<PcgUnsupportedError> for PcgError {
+    fn from(e: PcgUnsupportedError) -> Self {
         Self::new(PCGErrorKind::Unsupported(e), vec![])
     }
 }
@@ -379,19 +376,19 @@ impl PcgError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PCGErrorKind {
-    Unsupported(PCGUnsupportedError),
-    Internal(PCGInternalError),
+    Unsupported(PcgUnsupportedError),
+    Internal(PcgInternalError),
 }
 
 impl PcgError {
     pub(crate) fn internal(msg: String) -> Self {
         Self {
-            kind: PCGErrorKind::Internal(PCGInternalError::new(msg)),
+            kind: PCGErrorKind::Internal(PcgInternalError::new(msg)),
             context: vec![],
         }
     }
 
-    pub(crate) fn unsupported(err: PCGUnsupportedError) -> Self {
+    pub(crate) fn unsupported(err: PcgUnsupportedError) -> Self {
         Self {
             kind: PCGErrorKind::Unsupported(err),
             context: vec![],
@@ -400,22 +397,22 @@ impl PcgError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PCGInternalError(String);
+pub struct PcgInternalError(String);
 
-impl PCGInternalError {
+impl PcgInternalError {
     pub(crate) fn new(msg: String) -> Self {
         Self(msg)
     }
 }
 
-impl From<PCGInternalError> for PcgError {
-    fn from(e: PCGInternalError) -> Self {
+impl From<PcgInternalError> for PcgError {
+    fn from(e: PcgInternalError) -> Self {
         PcgError::new(PCGErrorKind::Internal(e), vec![])
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PCGUnsupportedError {
+pub enum PcgUnsupportedError {
     AssignBorrowToNonReferenceType,
     DerefUnsafePtr,
     ExpansionOfAliasType,

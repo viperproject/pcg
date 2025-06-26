@@ -19,7 +19,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
-    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, PCGUnsupportedError, Pcg, PcgError,
+    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
 };
 
 mod assign;
@@ -180,7 +180,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         if place.contains_unsafe_deref(self.ctxt) {
             tracing::error!("DerefUnsafePtr: {}", place.to_short_string(self.ctxt));
-            return Err(PcgError::unsupported(PCGUnsupportedError::DerefUnsafePtr));
+            return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
         }
         Ok(())
     }
@@ -424,37 +424,63 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
-        if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) = edge.kind() {
-            self.redirect_blocked_nodes_to_base(expansion.base, expansion.expansion())?;
-            if expansion.is_mutable_deref(self.ctxt) {
-                self.unlabel_blocked_region_projections(expansion)?;
+        match edge.kind() {
+            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
+                self.redirect_blocked_nodes_to_base(expansion.base, expansion.expansion())?;
+                if expansion.is_mutable_deref(self.ctxt) {
+                    self.unlabel_blocked_region_projections(expansion)?;
+                }
+                for exp_node in expansion.expansion() {
+                    if let PCGNode::Place(place) = exp_node {
+                        for rp in place.region_projections(self.ctxt) {
+                            tracing::debug!(
+                                "labeling region projection: {}",
+                                rp.to_short_string(self.ctxt)
+                            );
+                            self.record_and_apply_action(
+                                BorrowPcgAction::label_region_projection(
+                                    rp,
+                                    Some(RegionProjectionLabel::Location(
+                                        SnapshotLocation::before(self.location),
+                                    )),
+                                    format!(
+                                        "{}: {}",
+                                        context, "Label region projections of expansion"
+                                    ),
+                                )
+                                .into(),
+                            )?;
+                        }
+                    }
+                }
             }
-            for exp_node in expansion.expansion() {
-                if let PCGNode::Place(place) = exp_node {
-                    for rp in place.region_projections(self.ctxt) {
-                        tracing::debug!(
-                            "labeling region projection: {}",
-                            rp.to_short_string(self.ctxt)
-                        );
+            BorrowPcgEdgeKind::Borrow(borrow) => {
+                if self.ctxt.bc.is_dead(
+                    borrow
+                        .assigned_region_projection(self.ctxt)
+                        .to_pcg_node(self.ctxt),
+                    self.location,
+                ) {
+                    if let MaybeOldPlace::Current { place } = borrow.assigned_ref() {
                         self.record_and_apply_action(
-                            BorrowPcgAction::label_region_projection(
-                                rp,
-                                Some(RegionProjectionLabel::Location(SnapshotLocation::before(
-                                    self.location,
-                                ))),
-                                format!("{}: {}", context, "Label region projections of expansion"),
+                            BorrowPcgAction::weaken(
+                                place,
+                                self.pcg.capabilities.get(place).unwrap(),
+                                Some(CapabilityKind::Write),
                             )
                             .into(),
                         )?;
                     }
                 }
             }
+            _ => {}
         }
         Ok(())
     }
 
     #[tracing::instrument(skip(self, action))]
     fn record_and_apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
+        tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
         let result =
             match &action {
                 PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
@@ -484,9 +510,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         for target_place in target_places {
                             self.pcg.capabilities.insert(target_place, source_cap);
                         }
-                        // if source_cap > *capability {
-                        //     self.pcg.capabilities.insert((*to).into(), *capability);
-                        // }
                         if expand.capability.is_read() {
                             self.pcg
                                 .capabilities
@@ -522,9 +545,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 None => acc,
                             },
                         );
-                        self.pcg
-                            .capabilities
-                            .insert(collapse.to, retained_cap);
+                        self.pcg.capabilities.insert(collapse.to, retained_cap);
                         capability_projections.expansions.remove(&collapse.to);
                         true
                     }
@@ -576,20 +597,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         if !blocked_place.is_owned(self.ctxt) {
             self.remove_read_permission_upwards(blocked_place)?;
         }
-        // for place in blocked_place.iter_places(self.ctxt) {
-        //     for rp in place.region_projections(self.ctxt).into_iter() {
-        //         if rp.can_be_labelled(self.ctxt) {
-        //             self.record_and_apply_action(
-        //                 BorrowPcgAction::label_region_projection(
-        //                     rp.into(),
-        //                     None,
-        //                     "Activate two-phase borrow",
-        //                 )
-        //                 .into(),
-        //             )?;
-        //         }
-        //     }
-        // }
         Ok(())
     }
 

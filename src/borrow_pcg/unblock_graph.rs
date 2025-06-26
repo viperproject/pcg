@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::pcg::PCGInternalError;
+use crate::pcg::PcgInternalError;
 use crate::rustc_interface::middle::mir::BasicBlock;
 
 use super::borrow_pcg_edge::BorrowPcgEdgeLike;
@@ -82,7 +82,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     pub fn actions(
         self,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<BorrowPcgUnblockAction<'tcx>>, PCGInternalError> {
+    ) -> Result<Vec<BorrowPcgUnblockAction<'tcx>>, PcgInternalError> {
         let mut edges = self.edges;
         let mut actions = vec![];
 
@@ -100,7 +100,7 @@ impl<'tcx> UnblockGraph<'tcx> {
                 }
             }
             if to_keep.len() >= edges.len() {
-                return Err(PCGInternalError::new(format!(
+                return Err(PcgInternalError::new(format!(
                     "Didn't remove any leaves {edges:#?}"
                 )));
             }

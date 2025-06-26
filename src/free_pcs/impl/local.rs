@@ -15,7 +15,7 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{PCGInternalError, PcgError},
+    pcg::{PcgInternalError, PcgError},
     utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
@@ -224,7 +224,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         _for_cap: Option<CapabilityKind>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PCGInternalError> {
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError> {
         let expansions = self
             .expansions
             .iter()

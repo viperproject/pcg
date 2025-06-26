@@ -19,11 +19,11 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// be set to true if the node is a leaf node at this point: in this case,
     /// we can approximate using liveness information of the place (if the place
     /// is not live, then the node is definitely not live).
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool;
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
 
     /// See [`BorrowCheckerInterface::is_live`].
-    fn is_dead(&self, node: PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
-        !self.is_live(node, location, is_leaf)
+    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+        !self.is_live(node, location)
     }
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
 

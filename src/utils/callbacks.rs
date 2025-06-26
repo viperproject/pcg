@@ -383,10 +383,10 @@ impl<'mir, 'tcx> BorrowChecker<'mir, 'tcx> {
 }
 
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
-    fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location, is_leaf: bool) -> bool {
+    fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
         match self {
-            BorrowChecker::Polonius(bc) => bc.is_live(node, location, is_leaf),
-            BorrowChecker::Impl(bc) => bc.is_live(node, location, is_leaf),
+            BorrowChecker::Polonius(bc) => bc.is_live(node, location),
+            BorrowChecker::Impl(bc) => bc.is_live(node, location),
         }
     }
 

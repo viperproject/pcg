@@ -10,7 +10,7 @@ use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{self, SnapshotLocation};
 
-use super::{PCGUnsupportedError, PcgError};
+use super::{PcgUnsupportedError, PcgError};
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn assign_post_main(
@@ -137,7 +137,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let blocked_place = blocked_place.with_inherent_region(self.ctxt);
                 if !target.ty(self.ctxt).ty.is_ref() {
                     return Err(PcgError::unsupported(
-                        PCGUnsupportedError::AssignBorrowToNonReferenceType,
+                        PcgUnsupportedError::AssignBorrowToNonReferenceType,
                     ));
                 }
                 if matches!(kind, mir::BorrowKind::Fake(_)) {

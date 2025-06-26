@@ -5,10 +5,8 @@ use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::region_projection::{
-    PcgRegion, RegionProjection,
-    RegionProjectionBaseLike, RegionProjectionLabel,
+    RegionProjection, RegionProjectionLabel,
 };
-use crate::pcg::PCGUnsupportedError;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -38,20 +36,21 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        for arg in args.iter() {
-            if let Some(arg_place) = arg.place() {
-                let arg_place: utils::Place<'tcx> = arg_place.into();
-                if arg_place
-                    .iter_places(self.ctxt)
-                    .iter()
-                    .any(|p| p.is_raw_ptr(self.ctxt))
-                {
-                    return Err(PcgError::unsupported(
-                        PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
-                    ));
-                }
-            }
-        }
+        // TODO: Check whether this logic makes sense
+        // for arg in args.iter() {
+        //     if let Some(arg_place) = arg.place() {
+        //         let arg_place: utils::Place<'tcx> = arg_place.into();
+        //         if arg_place
+        //             .iter_places(self.ctxt)
+        //             .iter()
+        //             .any(|p| p.is_raw_ptr(self.ctxt))
+        //         {
+        //             return Err(PcgError::unsupported(
+        //                 PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
+        //             ));
+        //         }
+        //     }
+        // }
         // This is just a performance optimization
         if self
             .pcg
@@ -67,12 +66,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let ctxt = self.ctxt;
 
         let mk_create_edge_action =
-            |input: Vec<FunctionCallAbstractionInput<'tcx>>, output, context: &str| {
+            |input: FunctionCallAbstractionInput<'tcx>, output, context: &str| {
                 let edge = BorrowPcgEdge::new(
                     AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                         location,
                         function_data,
-                        AbstractionBlockEdge::new(input, output, ctxt),
+                        AbstractionBlockEdge::new(vec![input], output, ctxt),
                     ))
                     .into(),
                     path_conditions.clone(),
@@ -142,34 +141,25 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<Vec<_>>();
 
-        let disjoint_lifetime_sets = get_disjoint_lifetime_sets(&arg_region_projections, self.ctxt);
-        for ls in disjoint_lifetime_sets.iter() {
-            let this_region = ls.iter().next().unwrap();
-            let inputs: Vec<FunctionCallAbstractionInput<'tcx>> = source_arg_projections
-                .iter()
-                .filter(|rp| self.ctxt.bc.outlives(rp.region(self.ctxt), *this_region))
-                .copied()
-                .collect::<Vec<_>>();
+        for arg_rp in source_arg_projections {
+            let this_region = arg_rp.region(self.ctxt);
             let mut outputs = placeholder_targets
                 .iter()
                 .copied()
-                .filter(|rp| self.ctxt.bc.same_region(*this_region, rp.region(self.ctxt)))
-                .map(|rp| {
-                    // self.maybe_futurize(rp.into()).try_into().unwrap()
-                    rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
-                })
+                .filter(|rp| self.ctxt.bc.same_region(this_region, rp.region(self.ctxt)))
+                .map(|rp| rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt))
                 .collect::<Vec<_>>();
             let result_projections: Vec<RegionProjection<MaybeOldPlace<'tcx>>> = destination
                 .region_projections(self.ctxt)
                 .iter()
-                .filter(|rp| self.ctxt.bc.outlives(*this_region, rp.region(self.ctxt)))
+                .filter(|rp| self.ctxt.bc.outlives(this_region, rp.region(self.ctxt)))
                 .map(|rp| (*rp).into())
                 .collect();
             outputs.extend(result_projections);
-            if !inputs.is_empty() && !outputs.is_empty() {
+            if !outputs.is_empty() {
                 self.record_and_apply_action(
                     mk_create_edge_action(
-                        inputs,
+                        arg_rp,
                         outputs,
                         "Function call: edges for nested borrows",
                     )
@@ -181,26 +171,4 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .render_debug_graph(self.ctxt, location, "final borrow_graph");
         Ok(())
     }
-}
-
-fn get_disjoint_lifetime_sets<'tcx, T: RegionProjectionBaseLike<'tcx>>(
-    arg_region_projections: &[RegionProjection<'tcx, T>],
-    ctxt: CompilerCtxt<'_, 'tcx>,
-) -> Vec<FxHashSet<PcgRegion>> {
-    let regions = arg_region_projections
-        .iter()
-        .map(|rp| rp.region(ctxt))
-        .collect::<FxHashSet<_>>();
-    let mut disjoin_lifetime_sets: Vec<FxHashSet<PcgRegion>> = vec![];
-    for region in regions.iter() {
-        let candidate = disjoin_lifetime_sets
-            .iter_mut()
-            .find(|ls| ctxt.bc.same_region(*region, *ls.iter().next().unwrap()));
-        if let Some(ls) = candidate {
-            ls.insert(*region);
-        } else {
-            disjoin_lifetime_sets.push(FxHashSet::from_iter([*region]));
-        }
-    }
-    disjoin_lifetime_sets
 }
