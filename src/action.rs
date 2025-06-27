@@ -45,6 +45,7 @@ impl<'tcx> PcgActions<'tcx> {
         self.0.extend(actions.0);
     }
 
+    /// The subset of actions applied to the Borrow PCG.
     pub fn borrow_pcg_actions(&self) -> BorrowPcgActions<'tcx> {
         BorrowPcgActions(
             self.0
@@ -61,6 +62,7 @@ impl<'tcx> PcgActions<'tcx> {
         self.0.iter()
     }
 
+    /// The subset of actions applied to the Owned PCG.
     pub fn owned_pcg_actions(&self) -> Vec<&OwnedPcgAction<'tcx>> {
         self.0
             .iter()
@@ -71,6 +73,7 @@ impl<'tcx> PcgActions<'tcx> {
             .collect()
     }
 
+    /// The subset of actions that unblock nodes in the Borrow PCG.
     pub fn borrow_pcg_unblock_actions(&self) -> Vec<BorrowPcgUnblockAction<'tcx>> {
         self.0
             .iter()
@@ -141,6 +144,7 @@ pub type OwnedPcgAction<'tcx> = ActionKindWithDebugCtxt<RepackOp<'tcx>>;
 /// their own effect (e.g. for an unblock, applying a magic wand).
 pub type BorrowPcgAction<'tcx> = ActionKindWithDebugCtxt<BorrowPcgActionKind<'tcx>>;
 
+/// An action applied to the PCG during the PCG analysis.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Debug, From)]
 pub enum PcgAction<'tcx> {

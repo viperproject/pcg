@@ -22,6 +22,7 @@ use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+/// An interface to the results of the Polonius borrow-checker analysis.
 #[derive(Clone)]
 pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     location_table: &'mir LocationTable,
@@ -197,6 +198,7 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
     }
 }
 
+/// An interface to the results of the NLL borrow-checker analysis.
 #[derive(Clone)]
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,

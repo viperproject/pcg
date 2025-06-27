@@ -8,7 +8,7 @@ use super::{
     graph::Conditioned,
     has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
     latest::Latest,
-    path_condition::{PathCondition, PathConditions},
+    path_condition::PathConditions,
     region_projection::{
         LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
         RegionProjectionLabel,
@@ -34,12 +34,15 @@ use crate::{
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, Place},
 };
 
+/// A reference to an edge in the Borrow PCG
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPcgEdgeRef<'tcx, 'graph> {
     pub(crate) kind: &'graph BorrowPcgEdgeKind<'tcx>,
     pub(crate) conditions: &'graph PathConditions,
 }
 
+/// An edge in the Borrow PCG. This includes the kind of the edge as well as its
+/// associated validity conditions.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPcgEdge<'tcx> {
     pub(crate) conditions: PathConditions,
@@ -78,6 +81,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     }
 }
 
+/// Either a [`BorrowPcgEdge`] or a [`BorrowPcgEdgeRef`]
 pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPcgEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
@@ -339,6 +343,9 @@ impl<'tcx> LocalNode<'tcx> {
     }
 }
 
+/// A node that could potentially be blocked in the PCG. In principle any kind
+/// of PCG node could be blocked; however this type alias should be preferred to
+/// [`PCGNode`] in contexts where the blocking is relevant.
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
@@ -436,10 +443,8 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 }
 
 impl<'tcx> BorrowPcgEdge<'tcx> {
-    pub fn insert_path_condition(&mut self, pc: PathCondition, body: &mir::Body<'_>) -> bool {
-        self.conditions.insert(pc, body)
-    }
 
+    /// The conditions under which the edge is valid
     pub fn conditions(&self) -> &PathConditions {
         &self.conditions
     }

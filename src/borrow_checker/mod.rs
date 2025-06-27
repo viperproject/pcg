@@ -17,19 +17,34 @@ use crate::rustc_interface::data_structures::fx::FxIndexMap;
 
 pub mod r#impl;
 
+/// An interface to the results of the borrow-checker analysis. The PCG queries
+/// this interface as part of its analysis, for example, to identify when borrows
+/// expire.
 pub trait BorrowCheckerInterface<'tcx> {
-    /// Returns true if the node is live *before* `location`. `is_leaf` should
-    /// be set to true if the node is a leaf node at this point: in this case,
-    /// we can approximate using liveness information of the place (if the place
-    /// is not live, then the node is definitely not live).
+    /// Returns true iff the node is live *before* `location`. A node is live
+    /// iff:
+    /// - it is a place node, and the place is live
+    /// - it is a lifetime projection node, and the lifetime is live
+    ///
+    /// For lifetimes, we use the notion of liveness defined here in
+    /// <https://rust-lang.github.io/rfcs/2094-nll.html#liveness>:
+    ///
+    /// > A lifetime `L` is live at a point `P` if there is some variable `p` which is
+    /// > live at `P`, and `L` appears in the type of `p`
+    ///
+    /// However, as referenced in the above link, there are some subtleties
+    /// related to places that will be dropped. Follow the link for more details.
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
 
-    /// See [`BorrowCheckerInterface::is_live`].
+    /// A node is dead iff it is not live. See [`BorrowCheckerInterface::is_live`]
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         !self.is_live(node, location)
     }
+
+    /// Returns true iff `sup` outlives `sub`.
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
 
+    /// Returns true iff `reg1` outlives `reg2` and `reg2` outlives `reg1`.
     fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion) -> bool {
         self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
     }
@@ -69,6 +84,8 @@ pub trait BorrowCheckerInterface<'tcx> {
             .collect()
     }
 
+    /// For visualization purposes, this function can be implemented to provide
+    /// human-readable names for region variables.
     fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
 
     fn input_facts(&self) -> &PoloniusInput;
