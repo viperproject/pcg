@@ -1,3 +1,4 @@
+//! Data structures and algorithms related to [`UnblockGraph`].
 use std::collections::HashSet;
 
 use crate::borrow_checker::BorrowCheckerInterface;
@@ -12,11 +13,15 @@ use crate::{
 };
 
 type UnblockEdge<'tcx> = BorrowPcgEdge<'tcx>;
+
+/// A subgraph of the Borrow PCG including the edges that should be removed
+/// in order to unblock a given node.
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
 }
 
+/// An action that removes an edge from the Borrow PCG
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowPcgUnblockAction<'tcx> {
     pub(super) edge: BorrowPcgEdge<'tcx>,
@@ -121,7 +126,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     }
 
     #[tracing::instrument(skip(self, borrows, repacker))]
-    pub fn unblock_node(
+    pub(crate) fn unblock_node(
         &mut self,
         node: BlockedNode<'tcx>,
         borrows: &BorrowsState<'tcx>,

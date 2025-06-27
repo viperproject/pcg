@@ -32,7 +32,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
 
-    pub fn locals(&self) -> &CapabilityLocals<'tcx> {
+    pub(crate) fn locals(&self) -> &CapabilityLocals<'tcx> {
         self.data.as_ref().unwrap()
     }
 
@@ -96,8 +96,8 @@ impl Debug for FreePlaceCapabilitySummary<'_> {
     }
 }
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
-/// The free pcs of all locals
-pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
+/// The expansions of all locals.
+pub(crate) struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 
 impl Debug for CapabilityLocals<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -120,16 +120,5 @@ impl<'tcx> CapabilityLocals<'tcx> {
             .filter(|c| !c.is_unallocated())
             .map(|c| c.get_allocated())
             .collect()
-    }
-
-    pub fn default(local_count: usize) -> Self {
-        Self(IndexVec::from_fn_n(
-            |i| CapabilityLocal::Allocated(CapabilityProjections::new(i)),
-            local_count,
-        ))
-    }
-
-    pub fn empty() -> Self {
-        Self(IndexVec::new())
     }
 }

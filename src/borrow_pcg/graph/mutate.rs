@@ -20,7 +20,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         let predicate = &LabelPlacePredicate::PrefixOrPostfix(place);
 
-        
+
         self.mut_edges(|edge| {
             let mut c = edge.label_blocked_places(predicate, latest, ctxt);
             c |= edge.label_blocked_by_places(predicate, latest, ctxt);
@@ -57,7 +57,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub (crate) fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
         self.edges
             .retain(|_, conditions| conditions.valid_for_path(path, ctxt.body()));
     }

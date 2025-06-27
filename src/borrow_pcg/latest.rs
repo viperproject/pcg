@@ -1,3 +1,4 @@
+//! Logic related to storing "last-modified" locations for places in the PCG.
 use std::collections::BTreeMap;
 
 use serde_json::json;
@@ -11,6 +12,7 @@ use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 
 use crate::utils::json::ToJsonWithCompilerCtxt;
 
+/// A map from places to their last-modified locations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
 
@@ -81,6 +83,7 @@ impl<'tcx> Latest<'tcx> {
         }
     }
 
+    /// Get the last-modified location for a place
     pub fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation {
         self.get_opt(place, ctxt)
             .unwrap_or(SnapshotLocation::start())
@@ -117,7 +120,12 @@ impl<'tcx> Latest<'tcx> {
         true
     }
 
-    pub fn join(&mut self, other: &Self, block: BasicBlock, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn join(
+        &mut self,
+        other: &Self,
+        block: BasicBlock,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         if self.0.is_empty() {
             if other.0.is_empty() {
                 return false;

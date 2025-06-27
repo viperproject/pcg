@@ -1,3 +1,4 @@
+//! Data structures for lifetime projections.
 use std::hash::Hash;
 use std::{fmt, marker::PhantomData};
 
@@ -12,7 +13,7 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::latest::Latest;
-use crate::pcg::{PcgInternalError, PcgError};
+use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -51,34 +52,6 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>> for 
         } else {
             format!("{self:?}")
         }
-        // let origin = ctxt.bc.region_inference_ctxt().definitions[*self].origin;
-        // match origin {
-        //     RegionVariableOrigin::BoundRegion(span, BoundRegionKind::Named(_, symbol), _) => {
-        //         let span_str = if let Some(source_map) = get_source_map() {
-        //             source_map.span_to_string(span, FileNameDisplayPreference::Short)
-        //         } else {
-        //             format!("{:?}", span)
-        //         };
-        //         format!("{} at {}: {:?}", symbol, span_str, self)
-        //     }
-        //     RegionVariableOrigin::RegionParameterDefinition(_span, symbol) => symbol.to_string(),
-
-        //     // `MiscVariable` is used as a placeholder for uncategorized, so we just
-        //     // display it as normal
-        //     RegionVariableOrigin::MiscVariable(_) => {
-        //         format!("{:?}", self)
-        //     }
-
-        //     // Most NLL region variables have this origin, so just display it as normal
-        //     RegionVariableOrigin::Nll(NllRegionVariableOrigin::Existential {
-        //         from_forall: false,
-        //     }) => {
-        //         format!("{:?}", self)
-        //     }
-        //     other => {
-        //         format!("{:?}: {:?}", other, self)
-        //     }
-        // }
     }
 }
 
@@ -141,9 +114,7 @@ impl<'tcx> From<ty::Region<'tcx>> for PcgRegion {
     }
 }
 
-/// The index of a region within a type. We store the index instead of the
-/// region itself to appropriately maintain the same relative region for
-/// handling moves.
+/// The index of a region within a type.
 ///
 /// For example is `a` has type `A<'t>` and `b` has type `B<'u>`,
 /// an assignment e.g. `b = move a` will have region projections from `b`
@@ -161,6 +132,8 @@ impl Idx for RegionIdx {
     }
 }
 
+/// The most general base of a lifetime projection. Either a [`MaybeRemotePlace`]
+/// or a constant.
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Display, From, TryFrom)]
 pub enum MaybeRemoteRegionProjectionBase<'tcx> {
     Place(MaybeRemotePlace<'tcx>),
@@ -259,6 +232,15 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
     }
 }
 
+/// A lifetime projection label. A label can be either a [`SnapshotLocation`] or
+/// a special "Placeholder" label.
+///
+/// If a lifetime projection is labelled with a location, it corresponds to the
+/// memory of the projection at that point.
+///
+/// If it's labelled with the "Placeholder" label, it represents the memory that
+/// the projection will refer to once it becomes accessible.
+///
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
 pub enum RegionProjectionLabel {
     Location(SnapshotLocation),
@@ -274,6 +256,7 @@ impl std::fmt::Display for RegionProjectionLabel {
     }
 }
 
+/// A lifetime projection b↓r, where `b` is a base and `r` is a region.
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
@@ -526,6 +509,7 @@ impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     }
 }
 
+/// Something that can be converted to a [`MaybeRemoteRegionProjectionBase`].
 pub trait RegionProjectionBaseLike<'tcx>:
     Copy + std::fmt::Debug + std::hash::Hash + Eq + PartialEq
 {

@@ -337,7 +337,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
-    pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
+    pub fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
         FrozenGraphRef::new(self)
     }
 
@@ -518,8 +518,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub (crate) struct Conditioned<T> {
-    pub conditions: PathConditions,
-    pub value: T,
+    pub(crate) conditions: PathConditions,
+    pub(crate) value: T,
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx, BC>, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC>

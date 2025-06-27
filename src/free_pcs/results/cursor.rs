@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::{alloc::Allocator, rc::Rc};
+use std::alloc::Allocator;
 
 use derive_more::Deref;
 
@@ -34,7 +34,7 @@ use crate::{
 use crate::borrow_pcg::action::actions::BorrowPcgActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
 use crate::{
-    free_pcs::{CapabilityLocals, RepackOp},
+    free_pcs::RepackOp,
     utils::CompilerCtxt,
 };
 
@@ -283,8 +283,6 @@ impl<'tcx> PcgBasicBlock<'tcx> {
         result
     }
 }
-
-pub type CapabilitySummaries<'tcx> = EvalStmtData<Rc<CapabilityLocals<'tcx>>>;
 
 #[derive(Debug)]
 pub struct PcgLocation<'tcx> {

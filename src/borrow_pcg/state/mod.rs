@@ -1,3 +1,5 @@
+//! The data structure representing the state of the Borrow PCG.
+
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
@@ -37,6 +39,9 @@ use crate::{
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
 
+/// The state of the Borrow PCG, including the Borrow PCG graph, the latest
+/// locations of places, and the validity conditions associated with the current
+/// basic block.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
@@ -203,6 +208,8 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.add_path_condition(pc, ctxt)
     }
 
+    /// Remove all edges that are not valid for `path`, based on their validity
+    /// conditions.
     pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
         self.graph.filter_for_path(path, ctxt);
     }

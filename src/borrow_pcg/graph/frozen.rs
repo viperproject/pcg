@@ -16,7 +16,7 @@ use crate::{
 use super::BorrowsGraph;
 
 #[derive(Deref, Clone, IntoIterator)]
-pub(crate) struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPcgEdgeRef<'tcx, 'graph>>);
+pub struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPcgEdgeRef<'tcx, 'graph>>);
 
 impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
     fn new(edges: Vec<BorrowPcgEdgeRef<'tcx, 'graph>>) -> Self {
@@ -26,7 +26,11 @@ impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
 
 pub(crate) type CachedLeafEdges<'graph, 'tcx> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
 
-pub (crate) struct FrozenGraphRef<'graph, 'tcx> {
+/// A data structure used for querying the Borrow PCG
+///
+/// It contains a reference to a Borrow PCG and mutable data structures for
+/// caching intermediate query results.
+pub struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
     nodes_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
     edges_blocking_cache: RefCell<FxHashMap<PCGNode<'tcx>, CachedBlockingEdges<'graph, 'tcx>>>,
@@ -172,7 +176,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .flat_map(move |edge| edge.blocked_by_nodes(repacker).collect::<Vec<_>>())
     }
 
-    pub(crate) fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
+    pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         node: PCGNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
