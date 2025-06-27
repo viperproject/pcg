@@ -1,3 +1,4 @@
+//! Logic for generating debug visualizations of the PCG
 // © 2023, ETH Zurich
 //
 // This Source Code Form is subject to the terms of the Mozilla Public

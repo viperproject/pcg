@@ -15,7 +15,7 @@
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
-pub mod coupling;
+pub (crate) mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
 pub mod pcg;
@@ -43,6 +43,7 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithCompilerCtxt;
 
+/// The result of the PCG analysis.
 pub type PcgOutput<'mir, 'tcx, A> = free_pcs::PcgAnalysis<'mir, 'tcx, A>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
@@ -217,6 +218,10 @@ impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
     }
 }
 
+/// Exposes accessors to the body and borrow-checker data for a MIR function.
+/// Types that implement this trait are used as inputs to the PCG.
+///
+/// Note that [`borrowck::BodyWithBorrowckFacts`] from the Rust compiler implements this trait.
 pub trait BodyAndBorrows<'tcx> {
     fn body(&self) -> &Body<'tcx>;
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
@@ -245,6 +250,16 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
+/// The main entrypoint for running the PCG.
+///
+/// # Arguments
+///
+/// - `body`: The body of the MIR function to analyze.
+/// - `tcx`: The type context of the MIR function.
+/// - `bc`: The borrow-checker that the PCG should use.
+/// - `arena`: The arena to use for allocation. You can use [`std::alloc::Global`] if you don't
+///   care to use a custom allocator.
+/// - `visualization_output_path`: The path to output debug visualization to.
 pub fn run_pcg<
     'a,
     'tcx: 'a,
@@ -340,7 +355,6 @@ pub fn run_pcg<
     fpcs_analysis
 }
 
-#[macro_export]
 macro_rules! pcg_validity_assert {
     ($cond:expr) => {
         if $crate::validity_checks_enabled() {
@@ -374,16 +388,7 @@ macro_rules! pcg_validity_assert {
     };
 }
 
-#[macro_export]
-macro_rules! pcg_validity_warn {
-    ($cond:expr, $($arg:tt)*) => {
-        if $crate::validity_checks_enabled() {
-            if !$cond {
-                tracing::warn!($($arg)*);
-            }
-        }
-    };
-}
+pub(crate) use pcg_validity_assert;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

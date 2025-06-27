@@ -1,3 +1,6 @@
+//! Defines the interface for exposing borrow-checker information to the PCG.
+//!
+//! Also includes implementations for the Polonius and NLL borrow-checkers.
 
 use std::collections::BTreeSet;
 

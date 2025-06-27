@@ -1,3 +1,4 @@
+//! Interface to the Rust compiler.
 pub extern crate rustc_abi as abi;
 pub extern crate rustc_ast as ast;
 pub extern crate rustc_borrowck as rs_borrowck;

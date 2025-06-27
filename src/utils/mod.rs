@@ -1,3 +1,5 @@
+//! Utility functions and data structures.
+//!
 // © 2023, ETH Zurich
 //
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -6,7 +8,6 @@
 
 pub mod arena;
 pub mod callbacks;
-pub mod debug_info;
 pub mod display;
 pub mod eval_stmt_data;
 pub(crate) mod incoming_states;

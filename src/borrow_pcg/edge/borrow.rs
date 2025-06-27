@@ -1,12 +1,11 @@
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
-    edgedata_enum,
     pcg::PCGNode,
     rustc_interface::{
         ast::Mutability,

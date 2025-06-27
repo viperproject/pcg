@@ -14,7 +14,7 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{borrow_pcg::edge_data::edgedata_enum, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -29,7 +29,6 @@ use crate::{
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
-    edgedata_enum,
     pcg::PCGNode,
     rustc_interface,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, Place},
@@ -169,7 +168,7 @@ impl LocalNode<'_> {
 
 /// Any node in the PCG that is "local" in the sense that it can be named
 /// (include nodes that potentially refer to a past program point), i.e. any
-/// node other than a [`RemotePlace`]
+/// node other than a [`crate::utils::place::remote::RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
@@ -233,7 +232,8 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 }
 
 /// A node that could potentially block other nodes in the PCG, i.e. any node
-/// other than a [`RemotePlace`] (which are roots by definition)
+/// other than a [`crate::utils::place::remote::RemotePlace`] (which are roots
+/// by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {

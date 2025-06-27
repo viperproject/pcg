@@ -53,7 +53,6 @@ pub trait LabelEdgePlaces<'tcx> {
     ) -> bool;
 }
 
-#[macro_export]
 macro_rules! edgedata_enum {
     (
         $enum_name:ident < $tcx:lifetime >,
@@ -200,3 +199,4 @@ macro_rules! edgedata_enum {
             }
     }
 }
+pub(crate) use edgedata_enum;

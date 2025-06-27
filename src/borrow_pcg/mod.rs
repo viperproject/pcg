@@ -1,3 +1,4 @@
+//! Logic and data structures relating to the borrowed places in the PCG.
 pub mod action;
 pub(crate) mod abstraction;
 pub mod borrow_pcg_edge;

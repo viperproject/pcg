@@ -176,8 +176,6 @@ pub enum RepackOp<'tcx> {
     /// This place should have its capability changed from `Lent` (for mutably
     /// borrowed places) or `Read` (for shared borrow places), to the given
     /// capability, because it is no longer lent out.
-    /// TODO: This to some extent overlaps with [`UnblockAction::TerminateBorrow`];
-    /// if we merge the free and borrow PCG this should no longer be needed.
     RegainLoanedCapability(Place<'tcx>, CapabilityKind),
 }
 

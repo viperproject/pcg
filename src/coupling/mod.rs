@@ -439,15 +439,6 @@ pub struct HyperEdge<N> {
     rhs: BTreeSet<N>,
 }
 
-impl<N: Ord> HyperEdge<N> {
-    pub fn lhs(&self) -> &BTreeSet<N> {
-        &self.lhs
-    }
-    pub fn rhs(&self) -> &BTreeSet<N> {
-        &self.rhs
-    }
-}
-
 impl<N, E> fmt::Display for DisjointSetGraph<N, E>
 where
     N: Eq + Hash + Clone + fmt::Display + Copy + Ord + fmt::Debug,

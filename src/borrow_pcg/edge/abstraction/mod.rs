@@ -8,12 +8,11 @@ use crate::{
         borrow_pcg_edge::BlockedNode,
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
         edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
-    edgedata_enum,
     pcg::PCGNodeLike,
     utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected},
 };
