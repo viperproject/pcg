@@ -1,3 +1,4 @@
+//! Borrow edges
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -27,6 +28,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 
+/// A borrow that is explicit in the MIR (e.g. `let x = &mut y;`)
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LocalBorrow<'tcx> {
     /// The place that is blocked by the borrow, e.g. the y in `let x = &mut y;`
