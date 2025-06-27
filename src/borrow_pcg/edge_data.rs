@@ -33,11 +33,11 @@ pub trait EdgeData<'tcx> {
     }
 }
 
-pub enum LabelPlacePredicate<'tcx> {
+pub (crate) enum LabelPlacePredicate<'tcx> {
     PrefixOrPostfix(Place<'tcx>),
 }
 
-pub trait LabelEdgePlaces<'tcx> {
+pub (crate) trait LabelEdgePlaces<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,

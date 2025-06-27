@@ -1,3 +1,4 @@
+//! Borrow-flow edges
 use crate::{
     borrow_checker::BorrowCheckerInterface, borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -147,10 +148,12 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         }
     }
 
+    /// The blocked lifetime projection. Intuitively, it must outlive the `short()` projection.
     pub fn long(&self) -> RegionProjection<'tcx> {
         self.long
     }
 
+    /// The blocking lifetime projection. Intuitively, it must die before the `long()` projection.
     pub fn short(&self) -> LocalRegionProjection<'tcx> {
         self.short.effective()
     }

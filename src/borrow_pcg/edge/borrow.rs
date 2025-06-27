@@ -53,10 +53,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        // if self.blocked_region_projection(repacker) == *projection {
-        //     self.blocked_rp_snapshot = label;
-        //     changed = true;
-        // }
         if self.assigned_region_projection(repacker) == *projection {
             self.assigned_rp_snapshot = label;
             changed = true;
@@ -85,6 +81,9 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
     }
 }
 
+/// An (implied) borrow that connects a remote place to a reference-typed
+/// function input. Intuitively, the blocked place is not accessible to the
+/// function.
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
 pub struct RemoteBorrow<'tcx> {
     local: mir::Local,
