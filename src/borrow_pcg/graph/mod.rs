@@ -337,7 +337,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         graph
     }
 
-    pub fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
+    pub(crate) fn frozen_graph(&self) -> FrozenGraphRef<'_, 'tcx> {
         FrozenGraphRef::new(self)
     }
 
