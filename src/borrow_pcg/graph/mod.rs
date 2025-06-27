@@ -1,7 +1,7 @@
 //! Defines the Borrow PCG Graph
 pub(crate) mod aliases;
-pub mod frozen;
-pub mod join;
+pub(crate) mod frozen;
+pub(crate) mod join;
 pub(crate) mod materialize;
 mod mutate;
 
@@ -517,15 +517,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Conditioned<T> {
+pub (crate) struct Conditioned<T> {
     pub conditions: PathConditions,
     pub value: T,
-}
-
-impl<T> Conditioned<T> {
-    pub fn new(value: T, conditions: PathConditions) -> Self {
-        Self { conditions, value }
-    }
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx, BC>, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC>

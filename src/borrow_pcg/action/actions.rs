@@ -2,10 +2,6 @@ use derive_more::{Deref, DerefMut};
 
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::action::BorrowPcgAction;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
-use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::unblock_graph::BorrowPcgUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -38,24 +34,6 @@ impl<'tcx> BorrowPcgActions<'tcx> {
     /// Actions applied to the PCG, in the order they occurred.
     pub fn actions(&self) -> &[BorrowPcgAction<'tcx>] {
         &self.0
-    }
-
-    pub fn added_outlives_edges(&self) -> FxHashSet<Conditioned<BorrowFlowEdge<'tcx>>> {
-        self.0
-            .iter()
-            .filter_map(|action| match action.kind() {
-                BorrowPcgActionKind::AddEdge {
-                    edge:
-                        BorrowPcgEdge {
-                            kind: BorrowPcgEdgeKind::BorrowFlow(edge),
-                            conditions,
-                            ..
-                        },
-                    ..
-                } => Some(Conditioned::new(*edge, conditions.clone())),
-                _ => None,
-            })
-            .collect()
     }
 
     pub fn weakens(&self) -> FxHashSet<Weaken<'tcx>> {
