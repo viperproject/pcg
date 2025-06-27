@@ -22,6 +22,7 @@ use crate::{
     utils::CompilerCtxt,
 };
 
+/// The state of the Owned PCG.
 #[derive(Clone, Default)]
 pub struct FreePlaceCapabilitySummary<'tcx> {
     pub(crate) data: Option<CapabilityLocals<'tcx>>,
@@ -32,7 +33,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
 
-    pub(crate) fn locals(&self) -> &CapabilityLocals<'tcx> {
+    pub fn locals(&self) -> &CapabilityLocals<'tcx> {
         self.data.as_ref().unwrap()
     }
 
@@ -53,7 +54,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         )
     }
 
-    pub fn initialize_as_start_block(
+    pub(crate) fn initialize_as_start_block(
         &mut self,
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -97,7 +98,7 @@ impl Debug for FreePlaceCapabilitySummary<'_> {
 }
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
 /// The expansions of all locals.
-pub(crate) struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
+pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
 
 impl Debug for CapabilityLocals<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
