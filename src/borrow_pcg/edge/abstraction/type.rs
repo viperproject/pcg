@@ -1,5 +1,5 @@
 use crate::borrow_pcg::{
-    domain::{AbstractionInputTarget, AbstractionOutputTarget, LoopAbstractionInput},
+    domain::{AbstractionInputTarget, AbstractionOutputTarget},
     edge::abstraction::{AbstractionBlockEdge, AbstractionInputLike, AbstractionType},
 };
 use crate::rustc_interface::middle::mir::Location;
@@ -37,9 +37,5 @@ impl<'tcx> AbstractionType<'tcx> {
             },
             AbstractionType::Loop(c) => c.edge.clone(),
         }
-    }
-
-    pub fn has_input(&self, node: LoopAbstractionInput<'tcx>) -> bool {
-        self.inputs().contains(&node)
     }
 }

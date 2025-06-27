@@ -1,3 +1,4 @@
+//! Function and loop abstractions
 pub(crate) mod function;
 pub(crate) mod r#loop;
 pub(crate) mod r#type;
@@ -29,6 +30,7 @@ use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 use itertools::Itertools;
 
+/// Either a function call or a loop abstraction
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum AbstractionType<'tcx> {
     FunctionCall(FunctionCallAbstraction<'tcx>),
@@ -55,6 +57,7 @@ impl<'tcx> AbstractionType<'tcx> {
     }
 }
 
+/// A hyperedge for a function or loop abstraction
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct AbstractionBlockEdge<'tcx, Input> {
     inputs: Vec<Input>,

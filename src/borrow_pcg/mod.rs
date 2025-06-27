@@ -4,7 +4,7 @@ pub(crate) mod abstraction;
 pub(crate) mod abstraction_graph_constructor;
 pub mod borrow_pcg_edge;
 pub mod borrow_pcg_expansion;
-pub mod domain;
+pub(crate) mod domain;
 pub mod graph;
 pub mod state;
 pub(crate) mod visitor;
