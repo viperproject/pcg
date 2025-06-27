@@ -1,4 +1,5 @@
-pub mod aliases;
+//! Defines the Borrow PCG Graph
+pub(crate) mod aliases;
 pub mod frozen;
 pub mod join;
 pub(crate) mod materialize;
@@ -27,7 +28,7 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
+    borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -38,6 +39,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 
+/// The Borrow PCG Graph.
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashMap<BorrowPcgEdgeKind<'tcx>, PathConditions>,

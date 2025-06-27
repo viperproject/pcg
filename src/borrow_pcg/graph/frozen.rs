@@ -16,7 +16,7 @@ use crate::{
 use super::BorrowsGraph;
 
 #[derive(Deref, Clone, IntoIterator)]
-pub struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPcgEdgeRef<'tcx, 'graph>>);
+pub(crate) struct CachedBlockingEdges<'graph, 'tcx>(Vec<BorrowPcgEdgeRef<'tcx, 'graph>>);
 
 impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
     fn new(edges: Vec<BorrowPcgEdgeRef<'tcx, 'graph>>) -> Self {
@@ -190,7 +190,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .or_insert_with(|| self.graph.edges_blocked_by(node, ctxt).collect())
     }
 
-    pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
+    pub(crate) fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         node: PCGNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
