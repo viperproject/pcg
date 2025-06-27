@@ -1,3 +1,4 @@
+//! Definition of expansion edges in the Borrow PCG.
 use std::{
     collections::BTreeMap,
     marker::PhantomData,

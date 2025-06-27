@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::pcg::PcgInternalError;
-use crate::rustc_interface::middle::mir::BasicBlock;
 
 use super::borrow_pcg_edge::BorrowPcgEdgeLike;
 use super::borrow_pcg_edge::{BlockedNode, BorrowPcgEdge};
@@ -67,11 +66,6 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     pub fn is_empty(&self) -> bool {
         self.edges.is_empty()
-    }
-
-    pub (crate) fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, '_>) {
-        self.edges
-            .retain(|edge| edge.valid_for_path(path, ctxt.body()));
     }
 
     /// Returns an ordered list of actions to unblock the edges in the graph.

@@ -9,7 +9,7 @@ use crate::{
     utils::{maybe_remote::MaybeRemotePlace, place::maybe_old::MaybeOldPlace, CompilerCtxt},
 };
 
-pub type FunctionCallAbstractionInput<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
+pub (crate) type FunctionCallAbstractionInput<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn label_place(
@@ -26,7 +26,7 @@ impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
     }
 }
 
-pub type LoopAbstractionInput<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
+pub(crate) type LoopAbstractionInput<'tcx> = PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
 
 impl<'tcx> LabelPlace<'tcx> for LoopAbstractionInput<'tcx> {
     fn label_place(
@@ -60,6 +60,6 @@ impl<'tcx> TryFrom<LoopAbstractionInput<'tcx>> for RegionProjection<'tcx> {
     }
 }
 
-pub type AbstractionInputTarget<'tcx> =
+pub(crate) type AbstractionInputTarget<'tcx> =
     PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>;
-pub type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
+pub(crate) type AbstractionOutputTarget<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;

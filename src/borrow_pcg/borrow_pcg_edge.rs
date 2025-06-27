@@ -1,3 +1,4 @@
+//! Definitions of edges in the Borrow PCG.
 use itertools::Itertools;
 use rustc_interface::middle::mir::{self, BasicBlock, PlaceElem};
 
@@ -449,6 +450,8 @@ impl<'tcx> BorrowPcgEdge<'tcx> {
         &self.conditions
     }
 
+    /// Whether the edge is valid for a given path (depending on its associated
+    /// validity conditions)
     pub fn valid_for_path(&self, path: &[BasicBlock], body: &mir::Body<'_>) -> bool {
         self.conditions.valid_for_path(path, body)
     }
