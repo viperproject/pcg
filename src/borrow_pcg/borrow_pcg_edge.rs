@@ -1,3 +1,4 @@
+//! Definitions of edges in the Borrow PCG.
 use itertools::Itertools;
 use rustc_interface::middle::mir::{self, BasicBlock, PlaceElem};
 
@@ -8,13 +9,13 @@ use super::{
     graph::Conditioned,
     has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
     latest::Latest,
-    path_condition::{PathCondition, PathConditions},
+    path_condition::PathConditions,
     region_projection::{
         LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
         RegionProjectionLabel,
     },
 };
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::{borrow_pcg::edge_data::edgedata_enum, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -29,18 +30,20 @@ use crate::{
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
-    edgedata_enum,
     pcg::PCGNode,
     rustc_interface,
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, Place},
 };
 
+/// A reference to an edge in the Borrow PCG
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPcgEdgeRef<'tcx, 'graph> {
     pub(crate) kind: &'graph BorrowPcgEdgeKind<'tcx>,
     pub(crate) conditions: &'graph PathConditions,
 }
 
+/// An edge in the Borrow PCG. This includes the kind of the edge as well as its
+/// associated validity conditions.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowPcgEdge<'tcx> {
     pub(crate) conditions: PathConditions,
@@ -79,6 +82,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     }
 }
 
+/// Either a [`BorrowPcgEdge`] or a [`BorrowPcgEdgeRef`]
 pub trait BorrowPcgEdgeLike<'tcx>: EdgeData<'tcx> + Clone {
     fn kind(&self) -> &BorrowPcgEdgeKind<'tcx>;
     fn conditions(&self) -> &PathConditions;
@@ -169,7 +173,7 @@ impl LocalNode<'_> {
 
 /// Any node in the PCG that is "local" in the sense that it can be named
 /// (include nodes that potentially refer to a past program point), i.e. any
-/// node other than a [`RemotePlace`]
+/// node other than a [`crate::utils::place::remote::RemotePlace`]
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
@@ -233,7 +237,8 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 }
 
 /// A node that could potentially block other nodes in the PCG, i.e. any node
-/// other than a [`RemotePlace`] (which are roots by definition)
+/// other than a [`crate::utils::place::remote::RemotePlace`] (which are roots
+/// by definition)
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
@@ -339,6 +344,9 @@ impl<'tcx> LocalNode<'tcx> {
     }
 }
 
+/// A node that could potentially be blocked in the PCG. In principle any kind
+/// of PCG node could be blocked; however this type alias should be preferred to
+/// [`PCGNode`] in contexts where the blocking is relevant.
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
@@ -436,14 +444,14 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 }
 
 impl<'tcx> BorrowPcgEdge<'tcx> {
-    pub fn insert_path_condition(&mut self, pc: PathCondition, body: &mir::Body<'_>) -> bool {
-        self.conditions.insert(pc, body)
-    }
 
+    /// The conditions under which the edge is valid
     pub fn conditions(&self) -> &PathConditions {
         &self.conditions
     }
 
+    /// Whether the edge is valid for a given path (depending on its associated
+    /// validity conditions)
     pub fn valid_for_path(&self, path: &[BasicBlock], body: &mir::Body<'_>) -> bool {
         self.conditions.valid_for_path(path, body)
     }

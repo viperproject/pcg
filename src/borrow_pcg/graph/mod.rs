@@ -1,6 +1,7 @@
-pub mod aliases;
-pub mod frozen;
-pub mod join;
+//! Defines the Borrow PCG Graph
+pub(crate) mod aliases;
+pub(crate) mod frozen;
+pub(crate) mod join;
 pub(crate) mod materialize;
 mod mutate;
 
@@ -27,7 +28,7 @@ use itertools::Itertools;
 use serde_json::json;
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
+    borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
     path_condition::PathConditions,
@@ -38,6 +39,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 
+/// The Borrow PCG Graph.
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
     edges: FxHashMap<BorrowPcgEdgeKind<'tcx>, PathConditions>,
@@ -515,15 +517,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Conditioned<T> {
-    pub conditions: PathConditions,
-    pub value: T,
-}
-
-impl<T> Conditioned<T> {
-    pub fn new(value: T, conditions: PathConditions) -> Self {
-        Self { conditions, value }
-    }
+pub (crate) struct Conditioned<T> {
+    pub(crate) conditions: PathConditions,
+    pub(crate) value: T,
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx, BC>, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC>

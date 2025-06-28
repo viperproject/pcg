@@ -99,21 +99,7 @@ impl<'tcx, BC: Copy, T: DisplayWithCompilerCtxt<'tcx, BC>> DisplayWithCompilerCt
 }
 
 impl<T: Clone> Coupled<T> {
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn singleton(item: T) -> Self {
-        let mut sv = SmallVec::new();
-        sv.push(item);
-        Self(sv)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &T> {
         self.0.iter()
     }
 }
@@ -128,11 +114,7 @@ impl<T> IntoIterator for Coupled<T> {
 }
 
 impl<T: Ord> Coupled<T> {
-    pub fn elems_btree_set(&self) -> BTreeSet<&T> {
-        self.0.iter().collect()
-    }
-
-    pub fn contains(&self, item: &T) -> bool {
+    pub(crate) fn contains(&self, item: &T) -> bool {
         self.0.contains(item)
     }
 }

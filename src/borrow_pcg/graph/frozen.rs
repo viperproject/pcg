@@ -24,14 +24,16 @@ impl<'graph, 'tcx> CachedBlockingEdges<'graph, 'tcx> {
     }
 }
 
-type CachedBlockedEdges<'graph, 'tcx> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
 pub(crate) type CachedLeafEdges<'graph, 'tcx> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
 
+/// A data structure used for querying the Borrow PCG
+///
+/// It contains a reference to a Borrow PCG and mutable data structures for
+/// caching intermediate query results.
 pub struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
     nodes_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
     edges_blocking_cache: RefCell<FxHashMap<PCGNode<'tcx>, CachedBlockingEdges<'graph, 'tcx>>>,
-    edges_blocked_by_cache: RefCell<FxHashMap<LocalNode<'tcx>, CachedBlockedEdges<'graph, 'tcx>>>,
     leaf_edges_cache: RefCell<Option<CachedLeafEdges<'graph, 'tcx>>>,
     roots_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
 }
@@ -42,14 +44,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             graph,
             nodes_cache: RefCell::new(None),
             edges_blocking_cache: RefCell::new(FxHashMap::default()),
-            edges_blocked_by_cache: RefCell::new(FxHashMap::default()),
             leaf_edges_cache: RefCell::new(None),
             roots_cache: RefCell::new(None),
         }
-    }
-
-    pub fn contains(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.nodes(repacker).contains(&node)
     }
 
     pub(crate) fn is_acyclic<'mir: 'graph, 'bc: 'graph>(
@@ -177,17 +174,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         self.leaf_edges(repacker)
             .into_iter()
             .flat_map(move |edge| edge.blocked_by_nodes(repacker).collect::<Vec<_>>())
-    }
-
-    pub fn get_edges_blocked_by<'mir: 'graph, 'bc: 'graph>(
-        &mut self,
-        node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> &CachedBlockedEdges<'graph, 'tcx> {
-        self.edges_blocked_by_cache
-            .get_mut()
-            .entry(node)
-            .or_insert_with(|| self.graph.edges_blocked_by(node, ctxt).collect())
     }
 
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(

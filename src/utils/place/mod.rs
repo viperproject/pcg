@@ -381,7 +381,7 @@ impl<'tcx> Place<'tcx> {
     ///
     /// This function converts the Place into a canonical form by re-projecting the place
     /// from its local, and using types derived from the root place as the types associated
-    /// with Field region projections. For more details see [`Place::project_deeper`].
+    /// with Field region projections.
     pub fn with_inherent_region<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Self {
         let mut proj_iter = self.iter_projections(repacker).into_iter();
         let mut place = if let Some((place, elem)) = proj_iter.next() {

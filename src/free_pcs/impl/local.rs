@@ -57,54 +57,10 @@ impl<'tcx> CapabilityLocal<'tcx> {
     }
 }
 
-pub trait CheckValidityOnExpiry {
-    fn check_validity_on_expiry(&self);
-}
-
-pub struct DropGuard<'a, S: CheckValidityOnExpiry, T> {
-    source: *const S,
-    value: &'a mut T,
-}
-
-impl<S: CheckValidityOnExpiry, T> std::ops::Deref for DropGuard<'_, S, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.value
-    }
-}
-
-impl<S: CheckValidityOnExpiry, T> std::ops::DerefMut for DropGuard<'_, S, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.value
-    }
-}
-
-impl<'a, S: CheckValidityOnExpiry, T> DropGuard<'a, S, T> {
-    /// Caller must ensure that value borrows from `source`
-    #[allow(dead_code)]
-    pub(crate) unsafe fn new(source: *const S, value: &'a mut T) -> Self {
-        Self { source, value }
-    }
-}
-
-impl<S: CheckValidityOnExpiry, T> Drop for DropGuard<'_, S, T> {
-    fn drop(&mut self) {
-        // SAFETY: DropGuard::new ensures that `value` mutably borrows from `source`
-        // once the DropGuard is dropped, `source` will no longer have any mutable references
-        // and we can safely obtain a shared reference to it
-        unsafe { (*self.source).check_validity_on_expiry() };
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CapabilityProjections<'tcx> {
     local: Local,
     pub(crate) expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
-}
-
-impl CheckValidityOnExpiry for CapabilityProjections<'_> {
-    fn check_validity_on_expiry(&self) {}
 }
 
 impl<'tcx> CapabilityProjections<'tcx> {

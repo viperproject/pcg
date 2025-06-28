@@ -1,3 +1,4 @@
+//! Data structures for validity conditions.
 use crate::{rustc_interface::middle::mir, utils::display::DisplayWithCompilerCtxt};
 use bit_set::BitSet;
 use itertools::Itertools;
@@ -7,6 +8,7 @@ use crate::{rustc_interface::middle::mir::BasicBlock, utils::CompilerCtxt};
 
 use crate::utils::json::ToJsonWithCompilerCtxt;
 
+/// Represents transfer of control flow from the block `from` to the block `to`.
 #[derive(Copy, PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct PathCondition {
     from: BasicBlock,
@@ -25,6 +27,7 @@ impl PathCondition {
     }
 }
 
+/// Represents a path of execution in the code (a sequence of basic blocks)
 #[derive(PartialEq, Eq, Clone, Debug, Hash, PartialOrd, Ord)]
 pub struct Path(Vec<BasicBlock>);
 
@@ -46,6 +49,10 @@ impl Path {
     }
 }
 
+/// Represents a subset of the successors of a block. When checking whether a
+/// path satisfies the given validity conditions, it must be the case that for
+/// every b -> b' in the path, if from = b, then b' must be in one of the
+/// successors
 #[derive(PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct BranchChoices {
     from: BasicBlock,
@@ -131,6 +138,8 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for BranchChoices {
     }
 }
 
+/// Validity conditions describing the control-flow paths for which a given edge
+/// in the PCG applies.
 #[derive(PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
 pub struct PathConditions(SmallVec<[BranchChoices; 8]>);
 
@@ -177,6 +186,15 @@ impl PathConditions {
         Self(SmallVec::new())
     }
 
+    /// Returns an iterator over the [`BranchChoices`] for the validity conditions.
+    /// Each [`BranchChoices`] corresponds to a unique block `b` for which some
+    /// of `b`'s successors are *not* valid.
+    ///
+    /// Validity conditions are valid for a path if for each pair (b, b') in the
+    /// path, either:
+    /// - There is no branch choice for `b`
+    /// - `b'` is in the set of valid successors defined by the
+    ///   [`BranchChoices`] for `b`
     pub fn all_branch_choices(&self) -> impl Iterator<Item = &BranchChoices> {
         self.0.iter()
     }

@@ -1,8 +1,8 @@
+//! Data structures and algorithms related to [`UnblockGraph`].
 use std::collections::HashSet;
 
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::pcg::PcgInternalError;
-use crate::rustc_interface::middle::mir::BasicBlock;
 
 use super::borrow_pcg_edge::BorrowPcgEdgeLike;
 use super::borrow_pcg_edge::{BlockedNode, BorrowPcgEdge};
@@ -13,11 +13,15 @@ use crate::{
 };
 
 type UnblockEdge<'tcx> = BorrowPcgEdge<'tcx>;
+
+/// A subgraph of the Borrow PCG including the edges that should be removed
+/// in order to unblock a given node.
 #[derive(Clone, Debug)]
 pub struct UnblockGraph<'tcx> {
     edges: HashSet<UnblockEdge<'tcx>>,
 }
 
+/// An action that removes an edge from the Borrow PCG
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowPcgUnblockAction<'tcx> {
     pub(super) edge: BorrowPcgEdge<'tcx>,
@@ -67,11 +71,6 @@ impl<'tcx> UnblockGraph<'tcx> {
 
     pub fn is_empty(&self) -> bool {
         self.edges.is_empty()
-    }
-
-    pub fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, '_>) {
-        self.edges
-            .retain(|edge| edge.valid_for_path(path, ctxt.body()));
     }
 
     /// Returns an ordered list of actions to unblock the edges in the graph.
@@ -127,7 +126,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     }
 
     #[tracing::instrument(skip(self, borrows, repacker))]
-    pub fn unblock_node(
+    pub(crate) fn unblock_node(
         &mut self,
         node: BlockedNode<'tcx>,
         borrows: &BorrowsState<'tcx>,

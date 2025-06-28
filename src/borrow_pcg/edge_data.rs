@@ -33,11 +33,11 @@ pub trait EdgeData<'tcx> {
     }
 }
 
-pub enum LabelPlacePredicate<'tcx> {
+pub (crate) enum LabelPlacePredicate<'tcx> {
     PrefixOrPostfix(Place<'tcx>),
 }
 
-pub trait LabelEdgePlaces<'tcx> {
+pub (crate) trait LabelEdgePlaces<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
@@ -53,7 +53,6 @@ pub trait LabelEdgePlaces<'tcx> {
     ) -> bool;
 }
 
-#[macro_export]
 macro_rules! edgedata_enum {
     (
         $enum_name:ident < $tcx:lifetime >,
@@ -200,3 +199,4 @@ macro_rules! edgedata_enum {
             }
     }
 }
+pub(crate) use edgedata_enum;

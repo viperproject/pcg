@@ -1,12 +1,12 @@
+//! Borrow edges
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{LabelPlace, LabelRegionProjection},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
-    edgedata_enum,
     pcg::PCGNode,
     rustc_interface::{
         ast::Mutability,
@@ -28,6 +28,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 
+/// A borrow that is explicit in the MIR (e.g. `let x = &mut y;`)
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LocalBorrow<'tcx> {
     /// The place that is blocked by the borrow, e.g. the y in `let x = &mut y;`
@@ -52,10 +53,6 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        // if self.blocked_region_projection(repacker) == *projection {
-        //     self.blocked_rp_snapshot = label;
-        //     changed = true;
-        // }
         if self.assigned_region_projection(repacker) == *projection {
             self.assigned_rp_snapshot = label;
             changed = true;
@@ -84,6 +81,9 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
     }
 }
 
+/// An (implied) borrow that connects a remote place to a reference-typed
+/// function input. Intuitively, the blocked place is not accessible to the
+/// function.
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
 pub struct RemoteBorrow<'tcx> {
     local: mir::Local,

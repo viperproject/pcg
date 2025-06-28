@@ -1,3 +1,4 @@
+//! Describes the kind of Borrow PCG edges
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use crate::borrow_pcg::domain::AbstractionOutputTarget;
