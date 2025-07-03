@@ -202,7 +202,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
             PCGNode::Place(p) => inputs.contains(&p.into()),
             PCGNode::RegionProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
-                    inputs.contains(&region_projection.with_base(maybe_remote_place).into())
+                    inputs.contains(&(region_projection.with_base(maybe_remote_place).into()))
                 }
                 MaybeRemoteRegionProjectionBase::Const(_) => false,
             },
@@ -210,7 +210,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
     }
 
     fn to_abstraction_input(self) -> AbstractionInputTarget<'tcx> {
-        self
+        AbstractionInputTarget(self.0)
     }
 }
 
@@ -232,7 +232,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
     }
 
     fn to_abstraction_input(self) -> AbstractionInputTarget<'tcx> {
-        self.into()
+        AbstractionInputTarget(self.into())
     }
 }
 
@@ -248,26 +248,18 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>> EdgeData<'tcx> for AbstractionBloc
     where
         'tcx: 'slf,
     {
-        Box::new(
-            self.inputs()
-                .into_iter()
-                .map(|i| i.to_abstraction_input().into()),
-        )
+        Box::new(self.inputs().into_iter().map(|i| *i.to_abstraction_input()))
     }
 
     fn blocked_by_nodes<'slf, 'mir, BC: Copy + 'slf>(
         &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
+        _ctxt: CompilerCtxt<'mir, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = LocalNode<'tcx>> + 'slf>
     where
         'tcx: 'mir,
         'mir: 'slf,
     {
-        Box::new(
-            self.outputs()
-                .into_iter()
-                .map(move |o| o.to_local_node(ctxt)),
-        )
+        Box::new(self.outputs().into_iter().map(|o| *o))
     }
 }
 
@@ -313,8 +305,7 @@ impl<
                 if input.to_pcg_node(ctxt) == output.effective().to_pcg_node(ctxt) {
                     return Err(format!(
                         "Input {:?} and output {:?} are the same node",
-                        input,
-                        output,
+                        input, output,
                     ));
                 }
             }
@@ -359,9 +350,9 @@ impl<'tcx, Input: Clone> AbstractionBlockEdge<'tcx, Input> {
 
 impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for LoopAbstractionInput<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            LoopAbstractionInput::Place(p) => p.pcg_elems(),
-            LoopAbstractionInput::RegionProjection(rp) => rp.base.pcg_elems(),
+        match &mut self.0 {
+            PCGNode::Place(p) => p.pcg_elems(),
+            PCGNode::RegionProjection(rp) => rp.base.pcg_elems(),
         }
     }
 }

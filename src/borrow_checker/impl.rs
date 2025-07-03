@@ -92,7 +92,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
             .collect()
     }
 
-    pub fn origin_contains_loan_at(
+    pub fn origin_contains_loan_at_map(
         &self,
         location: RichLocation,
     ) -> Option<BTreeMap<ty::RegionVid, BTreeSet<BorrowIndex>>> {
@@ -196,6 +196,10 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
     fn input_facts(&self) -> &PoloniusInput {
         self.input_facts
     }
+
+    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
+        todo!()
+    }
 }
 
 /// An interface to the results of the NLL borrow-checker analysis.
@@ -203,7 +207,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
-    #[allow(unused)]
     out_of_scope_borrows: FxIndexMap<Location, Vec<BorrowIndex>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -352,6 +355,12 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
         self.borrows
+    }
+
+    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
+        self.out_of_scope_borrows
+            .get(&location)
+            .map_or(false, |borrows| borrows.contains(&borrow_index))
     }
 }
 

@@ -22,6 +22,7 @@ use crate::{
         dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
         triple::Triple,
     },
+    r#loop::LoopPlaceUsageAnalysis,
     rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
@@ -256,12 +257,13 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self.owned.locals_mut().ensures(t, &mut self.capabilities);
     }
 
-    #[tracing::instrument(skip(self, other, ctxt))]
+    #[tracing::instrument(skip(self, other, ctxt, loop_analysis))]
     pub(crate) fn join(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        loop_analysis: &LoopPlaceUsageAnalysis<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut res = self.owned.join(
@@ -279,6 +281,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             &other.borrow,
             self_block,
             other_block,
+            loop_analysis,
             &self.capabilities,
             ctxt,
         );
@@ -327,6 +330,7 @@ impl<A: Allocator + Clone> PcgDomainData<'_, A> {
 pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
+    pub(crate) loop_analysis: Rc<LoopPlaceUsageAnalysis<'tcx>>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
     pub(crate) debug_data: Option<PcgDebugData>,
     pub(crate) reachable: bool,
@@ -506,11 +510,13 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
         repacker: CompilerCtxt<'a, 'tcx>,
         block: Option<BasicBlock>,
         debug_data: Option<PcgDebugData>,
+        loop_analysis: Rc<LoopPlaceUsageAnalysis<'tcx>>,
         arena: A,
     ) -> Self {
         Self {
             ctxt: repacker,
             block,
+            loop_analysis,
             data: Ok(PcgDomainData::new(arena)),
             debug_data,
             reachable: false,
@@ -546,10 +552,11 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
 
         let seen = data.pcg.incoming_states.contains(other_block);
 
-        if seen && self.ctxt.is_back_edge(other_block, self_block) {
-            // It's a loop, but we've already joined it
+        if seen || self.ctxt.is_back_edge(other_block, self_block) {
             return false;
         }
+
+        let is_loop_head = self.loop_analysis.is_loop_head(self_block);
 
         let first_join = data.pcg.incoming_states.is_empty();
 
@@ -566,7 +573,10 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             entry_state_mut
                 .borrow
                 .add_cfg_edge(other_block, self_block, self.ctxt);
-            return true;
+
+            if !is_loop_head {
+                return true;
+            }
         } else {
             data.pcg.incoming_states.insert(other_block);
         }
@@ -578,6 +588,7 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
             self_block,
             other_block,
+            &self.loop_analysis,
             self.ctxt,
         ) {
             Ok(changed) => changed,

@@ -17,6 +17,14 @@ pub(crate) trait FallableVisitor<'tcx> {
         self.super_statement_fallable(statement, location)
     }
 
+    fn visit_operand_fallable(
+        &mut self,
+        operand: &mir::Operand<'tcx>,
+        location: mir::Location,
+    ) -> Result<(), PcgError> {
+        self.super_operand_fallable(operand, location)
+    }
+
     fn super_operand_fallable(
         &mut self,
         operand: &mir::Operand<'tcx>,
@@ -127,17 +135,13 @@ pub(crate) trait FallableVisitor<'tcx> {
         Ok(())
     }
 
-    fn visit_operand_fallable(
-        &mut self,
-        operand: &mir::Operand<'tcx>,
-        location: mir::Location,
-    ) -> Result<(), PcgError>;
-
     fn visit_terminator_fallable(
         &mut self,
         terminator: &mir::Terminator<'tcx>,
         location: mir::Location,
-    ) -> Result<(), PcgError>;
+    ) -> Result<(), PcgError> {
+        self.super_terminator_fallable(terminator, location)
+    }
 
     fn visit_place_fallable(
         &mut self,
@@ -150,7 +154,9 @@ pub(crate) trait FallableVisitor<'tcx> {
         &mut self,
         rvalue: &mir::Rvalue<'tcx>,
         location: mir::Location,
-    ) -> Result<(), PcgError>;
+    ) -> Result<(), PcgError> {
+        self.super_rvalue_fallable(rvalue, location)
+    }
 
     #[allow(unreachable_patterns)]
     fn super_rvalue_fallable(

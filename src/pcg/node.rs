@@ -25,14 +25,22 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx> PCGNode<'tcx> {
+    pub(crate) fn related_current_place(&self) -> Option<Place<'tcx>> {
+        match self {
+            PCGNode::Place(p) => p.as_current_place(),
+            PCGNode::RegionProjection(rp) => rp.base().as_current_place(),
+        }
+    }
+
     // TODO: Make this more precise
     #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             PCGNode::Place(p) => p.is_mutable(ctxt),
-            PCGNode::RegionProjection(rp) => rp.base().as_local_place().is_some_and(|p| {
-                p.ty(ctxt).ty.ref_mutability() != Some(Mutability::Not)
-            }),
+            PCGNode::RegionProjection(rp) => rp
+                .base()
+                .as_local_place()
+                .is_some_and(|p| p.ty(ctxt).ty.ref_mutability() != Some(Mutability::Not)),
         }
     }
 }
@@ -126,10 +134,14 @@ impl<
         'tcx,
         'a,
         T: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        U: RegionProjectionBaseLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+        U: RegionProjectionBaseLike<'tcx>
+            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
     > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGNode<'tcx, T, U>
 {
-    fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> String {
+    fn to_short_string(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         match self {
             PCGNode::Place(p) => p.to_short_string(repacker),
             PCGNode::RegionProjection(rp) => rp.to_short_string(repacker),
@@ -167,16 +179,16 @@ impl<'tcx, T: MaybeHasLocation, U: RegionProjectionBaseLike<'tcx> + MaybeHasLoca
 pub trait PCGNodeLike<'tcx>:
     Clone + Copy + std::fmt::Debug + Eq + PartialEq + std::hash::Hash + HasValidityCheck<'tcx>
 {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx>;
+    fn to_pcg_node<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx>;
 
     fn try_to_local_node<C: Copy>(
         self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<LocalNode<'tcx>> {
-        match self.to_pcg_node(repacker) {
+        match self.to_pcg_node(ctxt) {
             PCGNode::Place(p) => match p {
                 MaybeRemotePlace::Local(maybe_old_place) => {
-                    Some(maybe_old_place.to_local_node(repacker))
+                    Some(maybe_old_place.to_local_node(ctxt))
                 }
                 MaybeRemotePlace::Remote(_) => None,
             },
@@ -184,7 +196,7 @@ pub trait PCGNodeLike<'tcx>:
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
                         MaybeRemotePlace::Local(maybe_old_place) => {
-                            Some(rp.with_base(maybe_old_place).to_local_node(repacker))
+                            Some(rp.with_base(maybe_old_place).to_local_node(ctxt))
                         }
                         MaybeRemotePlace::Remote(_) => None,
                     }

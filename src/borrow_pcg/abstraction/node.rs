@@ -3,8 +3,11 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
+        abstraction_graph_constructor::AbstractionGraph,
         has_pcs_elem::HasPcgElems,
-        region_projection::{RegionProjection, RegionProjectionLabel},
+        region_projection::{
+            MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel,
+        },
     },
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
@@ -34,10 +37,8 @@ impl<'tcx> AbstractionGraphNode<'tcx> {
         }
     }
 
-    pub(crate) fn to_pcg_node(
-        self,
-    ) -> PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>> {
-        self.0
+    pub(crate) fn to_pcg_node(self, ctxt: CompilerCtxt<'_, 'tcx>) -> PCGNode<'tcx> {
+        self.0.to_pcg_node(ctxt)
     }
 
     pub(crate) fn is_old(&self) -> bool {
@@ -67,16 +68,34 @@ impl<'tcx> AbstractionGraphNode<'tcx> {
         block: mir::BasicBlock,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        let rp = match rp.try_to_local_node(ctxt) {
-            Some(_) => rp.with_label(
-                Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
-                    block,
-                ))),
-                ctxt,
-            ),
-            None => rp,
-        };
+        // let rp = match rp.try_to_local_node(ctxt) {
+        //     Some(_) => rp.with_label(
+        //         Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
+        //             block,
+        //         ))),
+        //         ctxt,
+        //     ),
+        //     None => rp,
+        // };
         Self(PCGNode::RegionProjection(rp))
+    }
+}
+
+impl<'tcx> TryFrom<PCGNode<'tcx>> for AbstractionGraphNode<'tcx> {
+    type Error = ();
+
+    fn try_from(value: PCGNode<'tcx>) -> Result<Self, Self::Error> {
+        match value {
+            PCGNode::Place(p) => Ok(Self(PCGNode::Place(p))),
+            PCGNode::RegionProjection(rp) => {
+                if let MaybeRemoteRegionProjectionBase::Place(p) = rp.base() {
+                    Ok(Self(PCGNode::RegionProjection(rp.with_base(p))))
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        }
     }
 }
 

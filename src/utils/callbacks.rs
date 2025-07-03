@@ -452,6 +452,13 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
             BorrowChecker::Impl(bc) => bc.override_region_debug_string(_region),
         }
     }
+
+    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.borrow_out_of_scope(location, borrow_index),
+            BorrowChecker::Impl(bc) => bc.borrow_out_of_scope(location, borrow_index),
+        }
+    }
 }
 
 fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
@@ -566,7 +573,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     bc_facts_file: &mut std::fs::File,
                     ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
-                    let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
+                    let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at_map(location);
                     writeln!(bc_facts_file, "{location:?} Origin contains loan at:").unwrap();
                     if let Some(origin_contains_loan_at) = origin_contains_loan_at {
                         write_loans(origin_contains_loan_at, bc_facts_file, ctxt);

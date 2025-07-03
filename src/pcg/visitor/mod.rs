@@ -9,6 +9,7 @@ use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::PcgDebugData;
+use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -37,6 +38,7 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
     phase: EvalStmtPhase,
     tw: &'pcg TripleWalker<'mir, 'tcx>,
     location: Location,
+    loop_place_usage_analysis: &'pcg LoopPlaceUsageAnalysis<'tcx>,
     debug_data: Option<PcgDebugData>,
 }
 
@@ -82,9 +84,10 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         phase: EvalStmtPhase,
         analysis_object: AnalysisObject<'_, 'tcx>,
         location: Location,
+        loop_place_usage_analysis: &'pcg LoopPlaceUsageAnalysis<'tcx>,
         debug_data: Option<PcgDebugData>,
     ) -> Result<PcgActions<'tcx>, PcgError> {
-        let visitor = Self::new(pcg, ctxt, tw, phase, location, debug_data);
+        let visitor = Self::new(pcg, ctxt, tw, phase, location, loop_place_usage_analysis, debug_data);
         let actions = visitor.apply(analysis_object)?;
         Ok(actions)
     }
@@ -95,6 +98,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         tw: &'pcg TripleWalker<'mir, 'tcx>,
         phase: EvalStmtPhase,
         location: Location,
+        loop_place_usage_analysis: &'pcg LoopPlaceUsageAnalysis<'tcx>,
         debug_data: Option<PcgDebugData>,
     ) -> Self {
         Self {
@@ -104,6 +108,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
             phase,
             tw,
             location,
+            loop_place_usage_analysis,
             debug_data,
         }
     }
@@ -548,10 +553,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     _ => unreachable!(),
                 },
             };
-        self.pcg.borrow.graph.render_debug_graph(
-            self.ctxt,
-            &format!("after {}", action.debug_line(self.ctxt)),
-        );
+        // self.pcg.borrow.graph.render_debug_graph(
+        //     self.ctxt,
+        //     &format!("after {}", action.debug_line(self.ctxt)),
+        // );
         generate_dot_graph(
             self.location.block,
             self.location.statement_index,

@@ -3,17 +3,23 @@
 //! Also includes implementations for the Polonius and NLL borrow-checkers.
 
 use std::collections::BTreeSet;
+use std::ops::ControlFlow;
 
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
-use crate::rustc_interface::middle::mir::Location;
-use crate::rustc_interface::middle::ty::RegionVid;
-use crate::rustc_interface::borrowck::{BorrowIndex, BorrowSet, LocationTable};
+use crate::rustc_interface::borrowck::BorrowData;
 use crate::rustc_interface::borrowck::PoloniusInput;
 use crate::rustc_interface::borrowck::PoloniusOutput;
 use crate::rustc_interface::borrowck::RegionInferenceContext;
-use crate::rustc_interface::borrowck::BorrowData;
+use crate::rustc_interface::borrowck::{
+    places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, RichLocation,
+};
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
+use crate::rustc_interface::middle::mir::{self, Body, Location};
+use crate::rustc_interface::middle::ty::{RegionVid, TyCtxt};
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::CompilerCtxt;
+use crate::utils::Place;
 
 pub mod r#impl;
 
@@ -39,6 +45,51 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// A node is dead iff it is not live. See [`BorrowCheckerInterface::is_live`]
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         !self.is_live(node, location)
+    }
+
+    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool;
+
+    fn blocks(
+        &self,
+        access_place: Place<'tcx>,
+        borrowed_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        struct S;
+        tracing::debug!(
+            "blocks: checking if {} blocks {}",
+            access_place.to_short_string(ctxt),
+            borrowed_place.to_short_string(ctxt)
+        );
+
+        let access_place_regions = access_place.regions(ctxt);
+        each_borrow_involving_path(
+            &mut S,
+            ctxt.tcx(),
+            ctxt.body(),
+            borrowed_place.to_rust_place(ctxt),
+            self.borrow_set(),
+            |borrow_index| !self.borrow_out_of_scope(location, borrow_index),
+            |this, borrow_index, borrow| {
+                if access_place_regions
+                    .iter()
+                    .any(|region| self.outlives(borrow.region().into(), *region))
+                {
+                    tracing::info!(
+                        "{} blocks {}",
+                        access_place.to_short_string(ctxt),
+                        borrowed_place.to_short_string(ctxt)
+                    );
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
     }
 
     /// Returns true iff `sup` outlives `sub`.
@@ -69,6 +120,19 @@ pub trait BorrowCheckerInterface<'tcx> {
     #[rustversion::before(2024-12-14)]
     fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
         &self.borrow_set().location_map
+    }
+
+    fn borrows_blocking(
+        &self,
+        place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<BorrowData<'tcx>> {
+        self.location_map()
+            .iter()
+            .filter(|(_, data)| data.borrowed_place() == place.to_rust_place(ctxt))
+            .map(|(_, data)| data.clone())
+            .collect()
     }
 
     fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {
@@ -105,4 +169,50 @@ pub trait BorrowCheckerInterface<'tcx> {
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
+}
+
+pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
+    s: &mut S,
+    tcx: TyCtxt<'tcx>,
+    body: &Body<'tcx>,
+    borrowed_place: mir::Place<'tcx>,
+    borrow_set: &BorrowSet<'tcx>,
+    is_candidate: I,
+    mut op: F,
+) where
+    F: FnMut(&mut S, BorrowIndex, &BorrowData<'tcx>) -> ControlFlow<()>,
+    I: Fn(BorrowIndex) -> bool,
+{
+    // The number of candidates can be large, but borrows for different locals cannot conflict with
+    // each other, so we restrict the working set a priori.
+    let Some(borrows_for_place_base) = borrow_set.local_map().get(&borrowed_place.local) else {
+        return;
+    };
+    tracing::debug!(
+        "Borrows for local {:?}: {:?}",
+        borrowed_place.local,
+        borrows_for_place_base
+    );
+
+    // check for loan restricting path P being used. Accounts for
+    // borrows of P, P.a.b, etc.
+    for &i in borrows_for_place_base {
+        if !is_candidate(i) {
+            continue;
+        }
+        let borrowed = &borrow_set[i];
+
+        if places_conflict(
+            tcx,
+            body,
+            borrowed.borrowed_place(),
+            borrowed_place,
+            PlaceConflictBias::Overlap,
+        ) {
+            let ctrl = op(s, i, borrowed);
+            if matches!(ctrl, ControlFlow::Break(_)) {
+                return;
+            }
+        }
+    }
 }

@@ -20,6 +20,7 @@ use super::{
 };
 use crate::{
     pcg::dot_graphs::PcgDotGraphsForBlock,
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     utils::{arena::ArenaRef, CompilerCtxt},
 };
 use crate::{
@@ -125,6 +126,7 @@ pub struct PcgEngine<'a, 'tcx: 'a, A: Allocator + Clone> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
+    loop_place_usage_analysis: LoopPlaceUsageAnalysis<'tcx>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
     pub(crate) arena: A,
@@ -232,7 +234,6 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         }
         pcg.states.0.pre_operands = pcg.entry_state.clone();
 
-
         let mut tw = TripleWalker::new(self.ctxt);
         match object {
             AnalysisObject::Statement(statement) => {
@@ -252,6 +253,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
                 phase,
                 object,
                 location,
+                &self.loop_place_usage_analysis,
                 state.debug_data.clone(),
             )?;
             if let Some(next_phase) = phase.next() {
@@ -289,12 +291,14 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         let mut reachable_blocks = BitSet::default();
         reachable_blocks.reserve_len(ctxt.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK.index());
+        let loop_analysis = LoopAnalysis::find_loops(ctxt.body());
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
             ctxt,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
+            loop_place_usage_analysis: LoopPlaceUsageAnalysis::new(ctxt.body(), &loop_analysis),
             arena,
         }
     }
@@ -332,7 +336,13 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
             // For results cursor, don't set block or consider debug data
             (None, None)
         };
-        PcgDomain::new(self.ctxt, block, debug_data, self.arena)
+        PcgDomain::new(
+            self.ctxt,
+            block,
+            debug_data,
+            Rc::new(self.loop_place_usage_analysis.clone()),
+            self.arena,
+        )
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {

@@ -359,11 +359,11 @@ impl<'tcx> PCGNode<'tcx> {
             // Places are allowed only if they are roots of the borrow graph
             PCGNode::Place(place) => match place {
                 MaybeRemotePlace::Local(maybe_old_place) => {
-                    if maybe_old_place.is_owned(ctxt) {
+                    // if maybe_old_place.is_owned(ctxt) {
                         Some(AbstractionGraphNode::place(place))
-                    } else {
-                        None
-                    }
+                    // } else {
+                    //     None
+                    // }
                 }
                 MaybeRemotePlace::Remote(remote_place) => {
                     Some(AbstractionGraphNode::place(remote_place.into()))

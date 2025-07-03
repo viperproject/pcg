@@ -35,7 +35,15 @@ impl<'tcx> AbstractionType<'tcx> {
                     .collect(),
                 outputs: c.edge().outputs.clone(),
             },
-            AbstractionType::Loop(c) => c.edge.clone(),
+            AbstractionType::Loop(c) => AbstractionBlockEdge {
+                inputs: c
+                    .edge
+                    .inputs
+                    .iter()
+                    .map(|i| *i.to_abstraction_input())
+                    .collect(),
+                outputs: c.edge.outputs.clone(),
+            },
         }
     }
 }

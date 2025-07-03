@@ -8,7 +8,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
+use crate::{action::BorrowPcgAction, r#loop::LoopPlaceUsageAnalysis, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
     utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace},
@@ -174,16 +174,16 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
+        loop_analysis: &LoopPlaceUsageAnalysis<'tcx>,
         capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        let loop_usage = LoopUsage::new(self.latest.clone(), &other.latest);
         changed |= self.graph.join(
             &other.graph,
             self_block,
             other_block,
-            &loop_usage,
+            loop_analysis,
             capabilities,
             ctxt,
         );

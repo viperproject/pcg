@@ -171,6 +171,12 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
             MaybeRemoteRegionProjectionBase::Const(_) => None,
         }
     }
+    pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(p) => p.as_current_place(),
+            MaybeRemoteRegionProjectionBase::Const(_) => None,
+        }
+    }
 }
 impl<'tcx> HasValidityCheck<'tcx> for MaybeRemoteRegionProjectionBase<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
@@ -477,7 +483,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemot
 }
 
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    type Error = ();
+    type Error = String;
     fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
         match rp.base {
             MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
@@ -486,7 +492,9 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
                 label: rp.label,
                 phantom: PhantomData,
             }),
-            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+            MaybeRemoteRegionProjectionBase::Const(_) => {
+                Err("Const cannot be converted to a region projection".to_string())
+            }
         }
     }
 }
@@ -592,11 +600,14 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldP
 }
 
 impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    type Error = ();
+    type Error = String;
     fn try_from(node: AbstractionGraphNode<'tcx>) -> Result<Self, Self::Error> {
         match *node {
             PCGNode::RegionProjection(rp) => rp.try_into(),
-            PCGNode::Place(_) => Err(()),
+            PCGNode::Place(p) => Err(format!(
+                "Place {:?} cannot be converted to a region projection",
+                p
+            )),
         }
     }
 }
@@ -604,7 +615,7 @@ impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeO
 impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
     for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
 {
-    type Error = ();
+    type Error = String;
     fn try_from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Result<Self, Self::Error> {
         Ok(RegionProjection {
             base: rp.base.try_into()?,
@@ -743,8 +754,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         Ok(result)
     }
 
-    pub(crate) fn region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgRegion {
-        let regions = self.base.regions(repacker);
+    pub(crate) fn region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgRegion {
+        let regions = self.base.regions(ctxt);
         if self.region_idx.index() >= regions.len() {
             unreachable!()
         } else {
@@ -800,6 +811,10 @@ impl<'tcx> LocalRegionProjection<'tcx> {
 impl<'tcx> RegionProjection<'tcx> {
     pub fn local(&self) -> Option<Local> {
         self.base.as_local_place().map(|p| p.local())
+    }
+
+    pub(crate) fn is_remote(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.as_local_region_projection().is_none()
     }
 
     fn as_local_region_projection(&self) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {

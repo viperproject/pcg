@@ -361,9 +361,9 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn ty_region<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<PcgRegion> {
-        match self.ty(repacker).ty.kind() {
+        match self.ty(ctxt).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
         }

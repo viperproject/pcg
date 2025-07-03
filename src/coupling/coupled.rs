@@ -68,6 +68,11 @@ impl<T: Copy + Eq> Coupled<T> {
             "Coupled elements are not distinct"
         );
     }
+    pub(crate) fn singleton(item: T) -> Self {
+        let mut coupled = Self::empty();
+        coupled.insert(item);
+        coupled
+    }
 }
 
 impl<'tcx, T: HasValidityCheck<'tcx> + Copy + Eq> HasValidityCheck<'tcx> for Coupled<T> {

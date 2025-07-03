@@ -37,6 +37,7 @@ use crate::{free_pcs::RepackOp, utils::CompilerCtxt};
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
+/// The result of the PCG analysis.
 pub struct PcgAnalysis<'mir, 'tcx: 'mir, A: Allocator + Copy> {
     pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
     curr_stmt: Option<Location>,
@@ -187,7 +188,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
         &self.cursor.analysis().0
     }
 
-    pub fn first_error(&self) -> Option<PcgError> {
+    pub(crate) fn first_error(&self) -> Option<PcgError> {
         self.analysis().first_error.error().cloned()
     }
 
@@ -220,6 +221,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
     }
 }
 
+/// The results of the PCG analysis for all basic blocks.
 #[derive(Deref)]
 pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
 
@@ -257,6 +259,7 @@ impl<'tcx> PcgBasicBlocks<'tcx> {
     }
 }
 
+/// The results of the PCG analysis for a basic block.
 pub struct PcgBasicBlock<'tcx> {
     pub statements: Vec<PcgLocation<'tcx>>,
     pub terminator: PcgTerminator<'tcx>,
@@ -281,6 +284,8 @@ impl<'tcx> PcgBasicBlock<'tcx> {
     }
 }
 
+/// The PCG state at a MIR location. Also contains associated actions performed
+/// when analysing the statement at that location.
 #[derive(Debug)]
 pub struct PcgLocation<'tcx> {
     pub location: Location,
