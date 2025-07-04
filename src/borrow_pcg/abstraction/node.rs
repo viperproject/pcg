@@ -4,6 +4,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         abstraction_graph_constructor::AbstractionGraph,
+        borrow_pcg_edge::LocalNode,
         has_pcs_elem::HasPcgElems,
         region_projection::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel,
@@ -19,7 +20,7 @@ use crate::{
 
 #[derive(Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct AbstractionGraphNode<'tcx>(
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
+    pub(crate) PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
 );
 
 impl<'tcx> AbstractionGraphNode<'tcx> {
@@ -52,32 +53,17 @@ impl<'tcx> AbstractionGraphNode<'tcx> {
         AbstractionGraphNode(PCGNode::Place(maybe_remote_place))
     }
 
-    pub(crate) fn from_pcg_node(
-        node: PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
-        block: mir::BasicBlock,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
-        match node {
-            PCGNode::Place(p) => Self::place(p),
-            PCGNode::RegionProjection(rp) => Self::from_region_projection(rp, block, ctxt),
-        }
-    }
+}
 
-    pub(crate) fn from_region_projection(
-        rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>,
-        block: mir::BasicBlock,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
-        // let rp = match rp.try_to_local_node(ctxt) {
-        //     Some(_) => rp.with_label(
-        //         Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
-        //             block,
-        //         ))),
-        //         ctxt,
-        //     ),
-        //     None => rp,
-        // };
-        Self(PCGNode::RegionProjection(rp))
+impl<'tcx> From<LocalNode<'tcx>> for AbstractionGraphNode<'tcx> {
+    fn from(node: LocalNode<'tcx>) -> Self {
+        match node {
+            LocalNode::Place(p) => Self(PCGNode::Place(p.into())),
+            LocalNode::RegionProjection(rp) => {
+                let rp = rp.with_base(rp.base().into());
+                Self(PCGNode::RegionProjection(rp))
+            }
+        }
     }
 }
 

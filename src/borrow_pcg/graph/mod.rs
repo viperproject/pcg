@@ -274,24 +274,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let inputs = abstraction_edge
                             .inputs()
                             .into_iter()
-                            .map(|node| {
-                                AbstractionGraphNode::from_pcg_node(
-                                    *node,
-                                    block,
-                                    ctxt,
-                                )
-                            })
+                            .map(|node| (*node).try_into().unwrap())
                             .collect::<Vec<_>>()
                             .into();
                         let outputs = abstraction_edge
                             .outputs()
                             .into_iter()
                             .map(|node| {
-                                AbstractionGraphNode::from_pcg_node(
-                                    node.to_pcg_node(ctxt),
-                                    block,
-                                    ctxt,
-                                )
+                                (*node).into()
                             })
                             .collect::<Vec<_>>()
                             .into();

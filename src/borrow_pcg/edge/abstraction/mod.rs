@@ -224,7 +224,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
             PCGNode::Place(_) => false,
             PCGNode::RegionProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(MaybeRemotePlace::Local(rp)) => {
-                    inputs.contains(&region_projection.with_base(rp))
+                    inputs.contains(&region_projection.with_base(rp).into())
                 }
                 _ => false,
             },
@@ -232,7 +232,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
     }
 
     fn to_abstraction_input(self) -> AbstractionInputTarget<'tcx> {
-        AbstractionInputTarget(self.into())
+        AbstractionInputTarget(self.0.into())
     }
 }
 

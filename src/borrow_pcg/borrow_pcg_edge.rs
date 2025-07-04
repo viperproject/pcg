@@ -369,11 +369,10 @@ impl<'tcx> PCGNode<'tcx> {
                     Some(AbstractionGraphNode::place(remote_place.into()))
                 }
             },
-            PCGNode::RegionProjection(rp) => Some(AbstractionGraphNode::from_region_projection(
-                rp.try_into().ok()?,
-                block,
-                ctxt,
-            )),
+            PCGNode::RegionProjection(rp) => {
+                let rp = rp.with_base(rp.base().try_into().ok()?);
+                Some(AbstractionGraphNode(PCGNode::RegionProjection(rp)))
+            }
         }
     }
     pub(crate) fn as_blocking_node(

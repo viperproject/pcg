@@ -60,10 +60,7 @@ impl<'tcx, T, U> PCGNode<'tcx, T, U> {
 
 impl<'tcx> From<LoopAbstractionInput<'tcx>> for PCGNode<'tcx> {
     fn from(target: LoopAbstractionInput<'tcx>) -> Self {
-        match target {
-            LoopAbstractionInput::Place(p) => PCGNode::Place(p),
-            LoopAbstractionInput::RegionProjection(rp) => PCGNode::RegionProjection(rp.into()),
-        }
+        target.0
     }
 }
 

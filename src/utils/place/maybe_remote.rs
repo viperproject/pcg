@@ -31,6 +31,18 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     }
 }
 
+impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeRemotePlace<'tcx> {
+    type Error = ();
+    fn try_from(value: MaybeRemoteRegionProjectionBase<'tcx>) -> Result<Self, Self::Error> {
+        match value {
+            MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
+                Ok(maybe_remote_place)
+            }
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+        }
+    }
+}
+
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
         match self {
