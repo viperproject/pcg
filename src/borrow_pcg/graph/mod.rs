@@ -10,7 +10,7 @@ use crate::{
         abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph,
         region_projection::RegionProjection, util::ExploreFrom,
     },
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
@@ -280,9 +280,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         let outputs = abstraction_edge
                             .outputs()
                             .into_iter()
-                            .map(|node| {
-                                (*node).into()
-                            })
+                            .map(|node| (*node).into())
                             .collect::<Vec<_>>()
                             .into();
                         graph.add_edge(
@@ -305,16 +303,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         for node in edge.blocked_by_nodes(ctxt) {
                             if let LocalNode::RegionProjection(rp) = node
                                 && let Some(source) = ef.connect()
-                                && source
-                                    != AbstractionGraphNode::from_pcg_node(rp.into(), block, ctxt)
+                                && source != rp.to_local_node(ctxt).into()
                             {
                                 graph.add_edge(
                                     &vec![source].into(),
-                                    &vec![AbstractionGraphNode::from_pcg_node(
-                                        rp.into(),
-                                        block,
-                                        ctxt,
-                                    )]
+                                    &vec![rp.to_local_node(ctxt).into()]
                                     .into(),
                                     std::iter::once(edge.kind.clone()).collect(),
                                     ctxt,

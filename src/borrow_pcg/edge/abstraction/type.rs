@@ -40,7 +40,7 @@ impl<'tcx> AbstractionType<'tcx> {
                     .edge
                     .inputs
                     .iter()
-                    .map(|i| *i.to_abstraction_input())
+                    .map(|i| i.to_abstraction_input())
                     .collect(),
                 outputs: c.edge.outputs.clone(),
             },

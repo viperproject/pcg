@@ -214,6 +214,12 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
     }
 }
 
+impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for LoopAbstractionInput<'tcx> {
+    fn from(value: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
+        LoopAbstractionInput(PCGNode::RegionProjection(value.into()))
+    }
+}
+
 impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn inputs_block<C: Copy>(
         inputs: &[Self],

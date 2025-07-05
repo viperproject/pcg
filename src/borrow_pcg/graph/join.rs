@@ -1,6 +1,7 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
+use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
@@ -247,11 +248,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for (blocked, assigned, to_remove) in abstracted_subgraph.edges() {
             let abstraction = LoopAbstraction::new(
                 AbstractionBlockEdge::new(
-                    blocked.clone().into_iter().map(|node| *node).collect(),
+                    blocked.clone().into_iter().map(|node| node.to_pcg_node(ctxt).into()).collect(),
                     assigned
                         .clone()
                         .into_iter()
-                        .map(|node| node.try_into().unwrap())
+                        .map(|node| node.0.try_to_local_node(ctxt).unwrap().into())
                         .collect(),
                     ctxt,
                 ),

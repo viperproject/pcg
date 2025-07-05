@@ -39,6 +39,17 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowFlowEdge<'tcx> {
     }
 }
 
+impl<'tcx> LabelPlace<'tcx> for LocalRegionProjection<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        todo!()
+    }
+}
+
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
     fn label_region_projection(
         &mut self,

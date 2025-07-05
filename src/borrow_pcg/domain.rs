@@ -6,8 +6,8 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
-        has_pcs_elem::{HasPcgElems, LabelPlace},
-        latest::Latest,
+        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+        latest::Latest, region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
     utils::{
@@ -20,6 +20,17 @@ use crate::{
 pub(crate) struct FunctionCallAbstractionInput<'tcx>(
     pub(crate) RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
 );
+
+impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstractionInput<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.0.label_region_projection(projection, label, ctxt)
+    }
+}
 
 impl<'tcx> PCGNodeLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
@@ -62,6 +73,17 @@ pub(crate) struct LoopAbstractionInput<'tcx>(pub(crate) PCGNode<'tcx>);
 impl<'tcx> From<MaybeRemotePlace<'tcx>> for LoopAbstractionInput<'tcx> {
     fn from(value: MaybeRemotePlace<'tcx>) -> Self {
         LoopAbstractionInput(value.into())
+    }
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionInput<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.0.label_region_projection(projection, label, ctxt)
     }
 }
 
@@ -122,3 +144,46 @@ pub(crate) struct AbstractionInputTarget<'tcx>(pub(crate) PCGNode<'tcx>);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub(crate) struct AbstractionOutputTarget<'tcx>(pub(crate) LocalNode<'tcx>);
+
+
+impl<'tcx> LabelPlace<'tcx> for AbstractionOutputTarget<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.0.label_place(predicate, latest, ctxt)
+    }
+}
+
+impl<'tcx> LabelRegionProjection<'tcx> for AbstractionOutputTarget<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.0.label_region_projection(projection, label, ctxt)
+    }
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for AbstractionOutputTarget<'tcx> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.0.check_validity(ctxt)
+    }
+}
+
+impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for AbstractionOutputTarget<'tcx> {
+    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
+        self.0.pcg_elems()
+    }
+}
+
+impl<'a, 'tcx> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for AbstractionOutputTarget<'tcx>
+{
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        self.0.to_short_string(ctxt)
+    }
+}
