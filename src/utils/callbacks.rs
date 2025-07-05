@@ -453,10 +453,16 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
         }
     }
 
-    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
+    fn blocks(
+        &self,
+        access_place: Place<'tcx>,
+        borrowed_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
-            BorrowChecker::Polonius(bc) => bc.borrow_out_of_scope(location, borrow_index),
-            BorrowChecker::Impl(bc) => bc.borrow_out_of_scope(location, borrow_index),
+            BorrowChecker::Polonius(bc) => bc.blocks(access_place, borrowed_place, location, ctxt),
+            BorrowChecker::Impl(bc) => bc.blocks(access_place, borrowed_place, location, ctxt),
         }
     }
 }

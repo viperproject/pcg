@@ -47,50 +47,13 @@ pub trait BorrowCheckerInterface<'tcx> {
         !self.is_live(node, location)
     }
 
-    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool;
-
     fn blocks(
         &self,
         access_place: Place<'tcx>,
         borrowed_place: Place<'tcx>,
         location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut conflict = false;
-        struct S;
-        tracing::debug!(
-            "blocks: checking if {} blocks {}",
-            access_place.to_short_string(ctxt),
-            borrowed_place.to_short_string(ctxt)
-        );
-
-        let access_place_regions = access_place.regions(ctxt);
-        each_borrow_involving_path(
-            &mut S,
-            ctxt.tcx(),
-            ctxt.body(),
-            borrowed_place.to_rust_place(ctxt),
-            self.borrow_set(),
-            |borrow_index| !self.borrow_out_of_scope(location, borrow_index),
-            |this, borrow_index, borrow| {
-                if access_place_regions
-                    .iter()
-                    .any(|region| self.outlives(borrow.region().into(), *region))
-                {
-                    tracing::info!(
-                        "{} blocks {}",
-                        access_place.to_short_string(ctxt),
-                        borrowed_place.to_short_string(ctxt)
-                    );
-                    conflict = true;
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                }
-            },
-        );
-        conflict
-    }
+    ) -> bool;
 
     /// Returns true iff `sup` outlives `sub`.
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;

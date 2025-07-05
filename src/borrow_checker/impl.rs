@@ -1,7 +1,7 @@
 extern crate polonius_engine;
 use polonius_engine::Output;
 
-use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_checker::{each_borrow_involving_path, BorrowCheckerInterface};
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
@@ -13,13 +13,15 @@ use crate::rustc_interface::dataflow::compute_fixpoint;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
-use crate::utils::CompilerCtxt;
+use crate::utils::{CompilerCtxt, Place};
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
 /// An interface to the results of the Polonius borrow-checker analysis.
@@ -197,8 +199,48 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
         self.input_facts
     }
 
-    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
-        todo!()
+    fn blocks(
+        &self,
+        access_place: Place<'tcx>,
+        borrowed_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        struct S;
+        tracing::debug!(
+            "blocks: checking if {} blocks {}",
+            access_place.to_short_string(ctxt),
+            borrowed_place.to_short_string(ctxt)
+        );
+
+        let access_place_regions = access_place.regions(ctxt);
+        each_borrow_involving_path(
+            &mut S,
+            ctxt.tcx(),
+            ctxt.body(),
+            borrowed_place.to_rust_place(ctxt),
+            self.borrow_set(),
+            |borrow_index| true,
+            |this, borrow_index, borrow| {
+                if access_place_regions.iter().any(|region| {
+                    self.origin_contains_loan_at_map(RichLocation::Start(location))
+                        .unwrap()
+                        .contains_key(&region.vid().unwrap())
+                }) {
+                    tracing::info!(
+                        "{} blocks {}",
+                        access_place.to_short_string(ctxt),
+                        borrowed_place.to_short_string(ctxt)
+                    );
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
     }
 }
 
@@ -266,6 +308,12 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl BorrowCheckerImpl<'_, '_> {
+    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
+        self.out_of_scope_borrows
+            .get(&location)
+            .map_or(false, |borrows| borrows.contains(&borrow_index))
+    }
+
     fn local_is_live_before(&self, local: mir::Local, mut location: Location) -> bool {
         // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
         // the statement at `location`. Therefore we need to decrement the statement
@@ -285,6 +333,48 @@ impl BorrowCheckerImpl<'_, '_> {
 }
 
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
+    fn blocks(
+        &self,
+        access_place: Place<'tcx>,
+        borrowed_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        struct S;
+        tracing::debug!(
+            "blocks: checking if {} blocks {}",
+            access_place.to_short_string(ctxt),
+            borrowed_place.to_short_string(ctxt)
+        );
+
+        let access_place_regions = access_place.regions(ctxt);
+        each_borrow_involving_path(
+            &mut S,
+            ctxt.tcx(),
+            ctxt.body(),
+            borrowed_place.to_rust_place(ctxt),
+            self.borrow_set(),
+            |borrow_index| !self.borrow_out_of_scope(location, borrow_index),
+            |this, borrow_index, borrow| {
+                if access_place_regions
+                    .iter()
+                    .any(|region| self.outlives(borrow.region().into(), *region))
+                {
+                    tracing::info!(
+                        "{} blocks {}",
+                        access_place.to_short_string(ctxt),
+                        borrowed_place.to_short_string(ctxt)
+                    );
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
+    }
     #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
@@ -355,12 +445,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
         self.borrows
-    }
-
-    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
-        self.out_of_scope_borrows
-            .get(&location)
-            .map_or(false, |borrows| borrows.contains(&borrow_index))
     }
 }
 

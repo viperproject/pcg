@@ -8,7 +8,7 @@ use crate::{
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     }, pcg::{PCGNode, PCGNodeLike}, pcg_validity_assert, utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
-        validity::HasValidityCheck, CompilerCtxt,
+        validity::HasValidityCheck, CompilerCtxt, HasPlace,
     }
 };
 
@@ -46,7 +46,7 @@ impl<'tcx> LabelPlace<'tcx> for LocalRegionProjection<'tcx> {
         latest: &Latest<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        todo!()
+        self.base.label_place(predicate, latest, ctxt)
     }
 }
 
