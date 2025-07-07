@@ -59,7 +59,7 @@ impl<T: Copy + Eq> Coupled<T> {
         }
     }
 
-    pub(crate) fn mutate(&mut self, f: impl Fn(&mut T)) {
+    pub(crate) fn mutate(&mut self, mut f: impl FnMut(&mut T)) {
         for item in self.0.iter_mut() {
             f(item);
         }

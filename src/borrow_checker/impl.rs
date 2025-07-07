@@ -2,14 +2,14 @@ extern crate polonius_engine;
 use polonius_engine::Output;
 
 use crate::borrow_checker::{each_borrow_involving_path, BorrowCheckerInterface};
-use crate::borrow_pcg::region_projection::PcgRegion;
+use crate::borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion};
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
     calculate_borrows_out_of_scope_at_location, BorrowData, BorrowIndex, BorrowSet, LocationTable,
     PoloniusInput, PoloniusOutput, RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
-use crate::rustc_interface::dataflow::compute_fixpoint;
+use crate::rustc_interface::dataflow::{compute_fixpoint, with_cursor_state};
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
@@ -201,38 +201,26 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
 
     fn blocks(
         &self,
-        access_place: Place<'tcx>,
+        candidate_blocker: LocalRegionProjection<'tcx>,
         borrowed_place: Place<'tcx>,
         location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut conflict = false;
         struct S;
-        tracing::debug!(
-            "blocks: checking if {} blocks {}",
-            access_place.to_short_string(ctxt),
-            borrowed_place.to_short_string(ctxt)
-        );
-
-        let access_place_regions = access_place.regions(ctxt);
         each_borrow_involving_path(
-            &mut S,
+            &mut (),
             ctxt.tcx(),
             ctxt.body(),
             borrowed_place.to_rust_place(ctxt),
             self.borrow_set(),
             |borrow_index| true,
             |this, borrow_index, borrow| {
-                if access_place_regions.iter().any(|region| {
-                    self.origin_contains_loan_at_map(RichLocation::Start(location))
-                        .unwrap()
-                        .contains_key(&region.vid().unwrap())
-                }) {
-                    tracing::info!(
-                        "{} blocks {}",
-                        access_place.to_short_string(ctxt),
-                        borrowed_place.to_short_string(ctxt)
-                    );
+                if self
+                    .origin_contains_loan_at_map(RichLocation::Start(location))
+                    .unwrap()
+                    .contains_key(&candidate_blocker.region(ctxt).vid().unwrap())
+                {
                     conflict = true;
                     ControlFlow::Break(())
                 } else {
@@ -260,20 +248,11 @@ pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     #[cfg(feature = "visualization")]
     pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
 }
-#[rustversion::before(2024-12-14)]
 fn cursor_contains_local(
     cursor: RefMut<'_, ResultsCursor<'_, '_, MaybeLiveLocals>>,
     local: mir::Local,
 ) -> bool {
-    cursor.contains(local)
-}
-
-#[rustversion::since(2024-12-14)]
-fn cursor_contains_local(
-    cursor: RefMut<'_, ResultsCursor<'_, '_, MaybeLiveLocals>>,
-    local: mir::Local,
-) -> bool {
-    cursor.get().contains(local)
+    with_cursor_state(cursor, |state| state.contains(local))
 }
 
 impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
@@ -335,20 +314,13 @@ impl BorrowCheckerImpl<'_, '_> {
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     fn blocks(
         &self,
-        access_place: Place<'tcx>,
+        candidate_blocker: LocalRegionProjection<'tcx>,
         borrowed_place: Place<'tcx>,
         location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut conflict = false;
         struct S;
-        tracing::debug!(
-            "blocks: checking if {} blocks {}",
-            access_place.to_short_string(ctxt),
-            borrowed_place.to_short_string(ctxt)
-        );
-
-        let access_place_regions = access_place.regions(ctxt);
         each_borrow_involving_path(
             &mut S,
             ctxt.tcx(),
@@ -357,15 +329,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             self.borrow_set(),
             |borrow_index| !self.borrow_out_of_scope(location, borrow_index),
             |this, borrow_index, borrow| {
-                if access_place_regions
-                    .iter()
-                    .any(|region| self.outlives(borrow.region().into(), *region))
-                {
-                    tracing::info!(
-                        "{} blocks {}",
-                        access_place.to_short_string(ctxt),
-                        borrowed_place.to_short_string(ctxt)
-                    );
+                if self.outlives(borrow.region().into(), candidate_blocker.region(ctxt)) {
                     conflict = true;
                     ControlFlow::Break(())
                 } else {

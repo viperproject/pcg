@@ -408,6 +408,13 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
             .collect()
     }
 
+    pub(crate) fn nodes(&self) -> Vec<Coupled<N>> {
+        self.inner
+            .node_indices()
+            .map(|idx| self.inner.node_weight(idx).unwrap().nodes.clone())
+            .collect()
+    }
+
     pub(crate) fn leaf_node_indices(&self) -> Vec<NodeIndex> {
         self.inner
             .node_indices()
@@ -419,6 +426,17 @@ impl<'tcx, N: Copy + Ord + Clone + Hash + std::fmt::Debug, E: Clone + Eq + Hash>
         self.leaf_node_indices()
             .into_iter()
             .for_each(|idx| f(self.inner.node_weight_mut(idx).unwrap()));
+    }
+
+    pub(crate) fn mut_non_leaf_nodes(&mut self, mut f: impl FnMut(&mut NodeData<N, E>)) {
+        let indices = self
+            .inner
+            .node_indices()
+            .filter(|idx| self.inner.neighbors(*idx).count() != 0)
+            .collect::<Vec<_>>();
+        for idx in indices {
+            f(self.inner.node_weight_mut(idx).unwrap());
+        }
     }
 
     pub(crate) fn parents(&self, node: &Coupled<N>) -> Vec<(Coupled<N>, FxHashSet<E>)> {

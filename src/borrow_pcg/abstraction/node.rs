@@ -3,18 +3,15 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        abstraction_graph_constructor::AbstractionGraph,
         borrow_pcg_edge::LocalNode,
         has_pcs_elem::HasPcgElems,
-        region_projection::{
-            MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionLabel,
-        },
+        region_projection::
+            MaybeRemoteRegionProjectionBase
+        ,
     },
     pcg::{PCGNode, PCGNodeLike},
-    rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt, Place,
-        SnapshotLocation,
+        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt,
     },
 };
 
@@ -24,14 +21,6 @@ pub(crate) struct AbstractionGraphNode<'tcx>(
 );
 
 impl<'tcx> AbstractionGraphNode<'tcx> {
-    #[allow(unused)]
-    pub(crate) fn related_current_place(&self) -> Option<Place<'tcx>> {
-        match self.0 {
-            PCGNode::Place(p) => p.as_current_place(),
-            PCGNode::RegionProjection(rp) => rp.base().as_current_place(),
-        }
-    }
-
     pub(crate) fn remove_rp_label_if_present(&mut self) {
         if let PCGNode::RegionProjection(rp) = &mut self.0 {
             self.0 = PCGNode::RegionProjection(rp.unlabelled());
@@ -52,7 +41,6 @@ impl<'tcx> AbstractionGraphNode<'tcx> {
     pub(crate) fn place(maybe_remote_place: MaybeRemotePlace<'tcx>) -> Self {
         AbstractionGraphNode(PCGNode::Place(maybe_remote_place))
     }
-
 }
 
 impl<'tcx> From<LocalNode<'tcx>> for AbstractionGraphNode<'tcx> {

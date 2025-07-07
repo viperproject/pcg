@@ -16,7 +16,7 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
-    pcg::{PcgUnsupportedError, PcgError},
+    pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHasher,
@@ -359,10 +359,7 @@ impl<'tcx> Place<'tcx> {
         false
     }
 
-    pub(crate) fn ty_region<C: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<PcgRegion> {
+    pub(crate) fn ty_region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {
         match self.ty(ctxt).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
@@ -643,6 +640,10 @@ impl<'tcx> Place<'tcx> {
             }
         }
         unreachable!()
+    }
+
+    pub(crate) fn conflicts_with(self, other: Self) -> bool {
+        self.is_prefix(other) || other.is_prefix(self)
     }
 
     #[cfg(feature = "debug_info")]

@@ -3,10 +3,10 @@ struct List {
     tail: Option<Box<List>>,
 }
 
-fn foo<'a: 'a>(l: &'a mut List) {
-    let mut c = &mut l.tail;
-    while let Some(tail) = c {
-        c = &mut tail.tail;
+fn foo<'a: 'a>(list: &'a mut List) {
+    let mut c = &mut list.tail;
+    while let Some(c_tail) = c {
+        c = &mut c_tail.tail;
     }
 }
 

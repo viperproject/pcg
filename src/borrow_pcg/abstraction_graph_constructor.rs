@@ -8,7 +8,7 @@ use super::{
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::abstraction::node::AbstractionGraphNode,
-    coupling::{coupled::Coupled, AddEdgeResult},
+    coupling::{coupled::Coupled, AddEdgeResult, NodeData},
     utils::{data_structures::HashSet, loop_usage::LoopUsage},
     validity_checks_enabled,
 };
@@ -47,6 +47,17 @@ impl<'tcx> AbstractionGraph<'tcx> {
         Self {
             inner: coupling::DisjointSetGraph::new(),
         }
+    }
+
+    pub(crate) fn nodes(&self) -> Vec<Coupled<AbstractionGraphNode<'tcx>>> {
+        self.inner.nodes()
+    }
+
+    pub(crate) fn mut_non_leaf_nodes(
+        &mut self,
+        f: impl FnMut(&mut NodeData<AbstractionGraphNode<'tcx>, BorrowPcgEdgeKind<'tcx>>),
+    ) {
+        self.inner.mut_non_leaf_nodes(f);
     }
 
     pub(crate) fn render_with_imgcat(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {

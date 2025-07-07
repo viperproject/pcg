@@ -162,11 +162,17 @@ impl<'tcx, 'a, T: BorrowPcgEdgeLike<'tcx>>
     }
 }
 
-impl LocalNode<'_> {
+impl<'tcx> LocalNode<'tcx> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
             PCGNode::Place(p) => p.is_old(),
             PCGNode::RegionProjection(region_projection) => region_projection.place().is_old(),
+        }
+    }
+    pub(crate) fn related_current_place(self) -> Option<Place<'tcx>> {
+        match self {
+            PCGNode::Place(p) => p.as_current_place(),
+            PCGNode::RegionProjection(rp) => rp.base().as_current_place(),
         }
     }
 }

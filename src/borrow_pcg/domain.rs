@@ -7,7 +7,8 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
         has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
-        latest::Latest, region_projection::RegionProjectionLabel,
+        latest::Latest,
+        region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
     utils::{
@@ -144,7 +145,6 @@ pub(crate) struct AbstractionInputTarget<'tcx>(pub(crate) PCGNode<'tcx>);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub(crate) struct AbstractionOutputTarget<'tcx>(pub(crate) LocalNode<'tcx>);
-
 
 impl<'tcx> LabelPlace<'tcx> for AbstractionOutputTarget<'tcx> {
     fn label_place(

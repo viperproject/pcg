@@ -33,6 +33,7 @@ use crate::{
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
+        liveness::PlaceLiveness,
         validity::HasValidityCheck,
         CompilerCtxt, Place,
     },
@@ -257,13 +258,14 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self.owned.locals_mut().ensures(t, &mut self.capabilities);
     }
 
-    #[tracing::instrument(skip(self, other, ctxt, loop_analysis))]
+    #[tracing::instrument(skip(self, other, ctxt, loop_analysis, place_liveness))]
     pub(crate) fn join(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
         loop_analysis: &LoopPlaceUsageAnalysis<'tcx>,
+        place_liveness: &PlaceLiveness<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut res = self.owned.join(
@@ -282,6 +284,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             self_block,
             other_block,
             loop_analysis,
+            place_liveness,
             &self.capabilities,
             ctxt,
         );
@@ -331,6 +334,7 @@ pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
     pub(crate) loop_analysis: Rc<LoopPlaceUsageAnalysis<'tcx>>,
+    pub(crate) place_liveness: Rc<PlaceLiveness<'a, 'tcx>>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
     pub(crate) debug_data: Option<PcgDebugData>,
     pub(crate) reachable: bool,
@@ -511,12 +515,15 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
         block: Option<BasicBlock>,
         debug_data: Option<PcgDebugData>,
         loop_analysis: Rc<LoopPlaceUsageAnalysis<'tcx>>,
+        place_liveness: Rc<PlaceLiveness<'a, 'tcx>>,
         arena: A,
     ) -> Self {
+        let _ = place_liveness;
         Self {
             ctxt: repacker,
             block,
             loop_analysis,
+            place_liveness,
             data: Ok(PcgDomainData::new(arena)),
             debug_data,
             reachable: false,
@@ -589,6 +596,7 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             self_block,
             other_block,
             &self.loop_analysis,
+            &self.place_liveness,
             self.ctxt,
         ) {
             Ok(changed) => changed,

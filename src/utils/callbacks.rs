@@ -14,7 +14,7 @@ use crate::{
         r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
         BorrowCheckerInterface,
     },
-    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
+    borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion, RegionIdx},
     free_pcs::PcgAnalysis,
     pcg::{self, BodyWithBorrowckFacts},
     run_pcg,
@@ -455,14 +455,16 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
 
     fn blocks(
         &self,
-        access_place: Place<'tcx>,
+        candidate_blocker: LocalRegionProjection<'tcx>,
         borrowed_place: Place<'tcx>,
         location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            BorrowChecker::Polonius(bc) => bc.blocks(access_place, borrowed_place, location, ctxt),
-            BorrowChecker::Impl(bc) => bc.blocks(access_place, borrowed_place, location, ctxt),
+            BorrowChecker::Polonius(bc) => {
+                bc.blocks(candidate_blocker, borrowed_place, location, ctxt)
+            }
+            BorrowChecker::Impl(bc) => bc.blocks(candidate_blocker, borrowed_place, location, ctxt),
         }
     }
 }

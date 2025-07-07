@@ -1,7 +1,7 @@
 use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
-use crate::borrow_pcg::domain::LoopAbstractionInput;
+use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
@@ -11,6 +11,7 @@ use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::liveness::PlaceLiveness;
 use crate::utils::loop_usage::LoopUsage;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::maybe_remote::MaybeRemotePlace;
@@ -76,6 +77,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self_block: BasicBlock,
         other_block: BasicBlock,
         loop_usage: &LoopPlaceUsageAnalysis<'tcx>,
+        liveness: &PlaceLiveness<'mir, 'tcx>,
         capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
@@ -92,7 +94,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         if let Some(used_places) = loop_usage.get_used_places(self_block) {
             // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
-            self.join_loop(other, self_block, other_block, used_places, ctxt);
+
+            self.join_loop(other, self_block, other_block, used_places, liveness, ctxt);
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -175,97 +178,101 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         pre_block_state: &Self,
         loop_head: BasicBlock,
-        pre_block: BasicBlock,
+        back_block: BasicBlock,
         used_places: &HashSet<Place<'tcx>>, // L
+        liveness: &PlaceLiveness<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         tracing::info!("join_loop with places {:?}", used_places);
-        // E_Pre
-        let loop_places_subgraph = pre_block_state.get_subgraph_for_places(used_places, ctxt);
-        loop_places_subgraph
-            .render_debug_graph(ctxt, &format!("loop_places_subgraph: {loop_head:?}"));
-
-        let mut base_abstracted_subgraph =
-            loop_places_subgraph.base_abstraction_graph(loop_head, ctxt);
-
-        let mut maybe_borrowed_places = used_places.clone();
-        for root in loop_places_subgraph.roots(ctxt) {
-            if let PCGNode::Place(p) = root
-                && let Some(current_place) = p.as_current_place()
-            {
-                maybe_borrowed_places.insert(current_place);
-            }
-        }
-        let nodes_to_block_check = loop_places_subgraph
-            .nodes(ctxt)
+        let live_loop_places = used_places
             .into_iter()
-            .filter(|n| {
-                if let Some(p) = n.related_current_place() {
-                    !p.projects_shared_ref(ctxt)
-                } else {
-                    false
-                }
+            .copied()
+            .filter(|p| {
+                liveness.is_live(
+                    *p,
+                    mir::Location {
+                        block: loop_head,
+                        statement_index: 0,
+                    },
+                )
             })
-            .collect::<Vec<_>>();
-        base_abstracted_subgraph.render_with_imgcat(ctxt, "base_abstracted_subgraph (before)");
-        for n1 in nodes_to_block_check.iter() {
-            for n2 in nodes_to_block_check.iter() {
-                if n1 == n2 {
-                    continue;
+            .collect::<HashSet<_>>();
+
+        let pre_block_state_nodes = pre_block_state.nodes(ctxt);
+
+        // n_loop
+        let live_loop_nodes = live_loop_places
+            .into_iter()
+            .flat_map(|p| {
+                let mut nodes = pre_block_state_nodes
+                    .iter()
+                    .copied()
+                    .flat_map(|n| n.try_to_local_node(ctxt))
+                    .filter(|n| n.is_lifetime_projection() && n.related_current_place() == Some(p))
+                    .collect::<Vec<_>>();
+                if !p.is_owned(ctxt) {
+                    nodes.push(p.into())
                 }
-                if ctxt.bc().blocks(
-                    n1.related_current_place().unwrap(),
-                    n2.related_current_place().unwrap(),
+                nodes
+            })
+            .collect::<HashSet<_>>();
+
+        // n_roots
+        let live_roots = live_loop_nodes
+            .iter()
+            .flat_map(|p| {
+                pre_block_state.get_immediate_live_ancestors(
+                    *p,
+                    liveness,
                     mir::Location {
                         block: loop_head,
                         statement_index: 0,
                     },
                     ctxt,
-                ) {
-                    tracing::info!(
-                        "{} blocks {}",
-                        n1.to_short_string(ctxt),
-                        n2.to_short_string(ctxt)
-                    );
-                    base_abstracted_subgraph.add_edge(
-                        &Coupled::singleton(n2.as_abstraction_graph_node(loop_head, ctxt).unwrap()),
-                        &Coupled::singleton(n1.as_abstraction_graph_node(loop_head, ctxt).unwrap()),
-                        HashSet::default(),
-                        ctxt,
-                    );
-                }
-            }
-        }
-        // base_abstracted_subgraph.render_with_imgcat(ctxt, "base_abstracted_subgraph");
-        let abstracted_subgraph = AbstractionGraphConstructor::new(ctxt, loop_head)
-            .remove_intermediate_nodes(pre_block_state, base_abstracted_subgraph, ctxt.bc);
-        if borrows_imgcat_debug() {
-            abstracted_subgraph.render_with_imgcat(ctxt, "abstracted_subgraph");
-        }
+                )
+            })
+            .collect::<HashSet<_>>();
 
-        *self = pre_block_state.diff(&loop_places_subgraph, ctxt);
+        tracing::info!("live loop_nodes: {}", live_loop_nodes.to_short_string(ctxt));
+        tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
 
-        for (blocked, assigned, to_remove) in abstracted_subgraph.edges() {
-            let abstraction = LoopAbstraction::new(
-                AbstractionBlockEdge::new(
-                    blocked.clone().into_iter().map(|node| node.to_pcg_node(ctxt).into()).collect(),
-                    assigned
-                        .clone()
-                        .into_iter()
-                        .map(|node| node.0.try_to_local_node(ctxt).unwrap().into())
-                        .collect(),
+        let (abstraction_graph, to_label) =
+            self.get_loop_abstraction_graph(live_loop_nodes, live_roots, loop_head, ctxt);
+        for rp in to_label.iter() {
+            self.mut_edges(|edge| {
+                edge.label_region_projection(
+                    rp,
+                    Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
+                        loop_head,
+                    ))),
                     ctxt,
-                ),
-                loop_head,
-            )
-            .to_borrow_pcg_edge(PathConditions::new());
-
-            self.insert(abstraction, ctxt);
+                )
+            });
         }
-
-        // if borrows_imgcat_debug() {
-        //     self.render_debug_graph(ctxt, "done");
-        // }
-        tracing::debug!("join_loop {pre_block:?} {loop_head:?} end");
+        let abstraction_graph_pcg_nodes = abstraction_graph
+            .nodes()
+            .into_iter()
+            .flat_map(|n| n.iter().map(|n| n.to_pcg_node(ctxt)).collect::<Vec<_>>())
+            .collect::<HashSet<_>>();
+        let to_cut = self.identify_edges_to_cut(abstraction_graph_pcg_nodes, ctxt);
+        for edge in to_cut {
+            self.remove(&edge);
+        }
+        for (from, to, edges) in abstraction_graph.edges() {
+            let from_pcg_nodes: Vec<LoopAbstractionInput<'tcx>> = from
+                .iter()
+                .map(|n| n.to_pcg_node(ctxt).into())
+                .collect::<Vec<_>>();
+            let to_pcg_nodes: Vec<AbstractionOutputTarget<'tcx>> = to
+                .iter()
+                .map(|n| n.to_pcg_node(ctxt).try_to_local_node(ctxt).unwrap().into())
+                .collect::<Vec<_>>();
+            let asbtraction_edge = AbstractionBlockEdge::new(from_pcg_nodes, to_pcg_nodes, ctxt);
+            let loop_edge = LoopAbstraction::new(asbtraction_edge, loop_head);
+            self.insert(
+                loop_edge.to_borrow_pcg_edge(PathConditions::default()),
+                ctxt,
+            );
+        }
     }
 }

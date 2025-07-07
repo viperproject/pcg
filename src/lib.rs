@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#![feature(associated_type_defaults)]
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(if_let_guard, let_chains)]

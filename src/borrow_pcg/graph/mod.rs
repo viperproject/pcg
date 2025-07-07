@@ -2,6 +2,7 @@
 pub(crate) mod aliases;
 pub(crate) mod frozen;
 pub(crate) mod join;
+pub(crate) mod loop_abstraction;
 pub(crate) mod materialize;
 mod mutate;
 
@@ -18,6 +19,7 @@ use crate::{
     utils::{
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
+        liveness::PlaceLiveness,
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
         HasPlace, Place, BORROWS_DEBUG_IMGCAT, COUPLING_DEBUG_IMGCAT,
@@ -307,8 +309,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             {
                                 graph.add_edge(
                                     &vec![source].into(),
-                                    &vec![rp.to_local_node(ctxt).into()]
-                                    .into(),
+                                    &vec![rp.to_local_node(ctxt).into()].into(),
                                     std::iter::once(edge.kind.clone()).collect(),
                                     ctxt,
                                 );
@@ -518,45 +519,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn connect_to_current_place(
-        &mut self,
-        from: &Self,
-        edge: &BorrowPcgEdgeKind<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        for blocked in edge.blocked_nodes(ctxt) {
-            if let Some(local_node) = blocked.as_local_node(ctxt) {
-                if let PCGNode::Place(p) = local_node
-                    && p.is_current()
-                {
-                    continue;
-                }
-                for parent_edge in from.edges_blocked_by(local_node, ctxt) {
-                    if self.insert(parent_edge.to_owned_edge(), ctxt) {
-                        self.connect_to_current_place(from, parent_edge.kind(), ctxt);
-                    }
-                }
-            }
-        }
-    }
-
-    pub(crate) fn get_subgraph_for_places<'slf, 'mir: 'slf>(
-        &'slf self,
-        used_places: &HashSet<Place<'tcx>>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Self {
-        let mut result = Self::default();
-        for edge in self.edges() {
-            for place in used_places {
-                if edge.references_place(*place, ctxt) {
-                    result.insert(edge.to_owned_edge(), ctxt);
-                    result.connect_to_current_place(&self, edge.kind(), ctxt);
-                    break;
-                }
-            }
-        }
-        result
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

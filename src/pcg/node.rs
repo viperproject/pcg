@@ -14,7 +14,7 @@ use crate::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
-    rustc_interface::hir::Mutability,
+    rustc_interface::{hir::Mutability, middle::mir},
     utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
@@ -25,6 +25,10 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx> PCGNode<'tcx> {
+    pub(crate) fn related_local(&self) -> Option<mir::Local> {
+        self.related_current_place().map(|p| p.local)
+    }
+
     pub(crate) fn related_current_place(&self) -> Option<Place<'tcx>> {
         match self {
             PCGNode::Place(p) => p.as_current_place(),
@@ -48,6 +52,10 @@ impl<'tcx> PCGNode<'tcx> {
 impl<'tcx, T, U> PCGNode<'tcx, T, U> {
     pub(crate) fn is_place(&self) -> bool {
         matches!(self, PCGNode::Place(_))
+    }
+
+    pub(crate) fn is_lifetime_projection(&self) -> bool {
+        matches!(self, PCGNode::RegionProjection(_))
     }
 
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
@@ -206,6 +214,12 @@ pub trait PCGNodeLike<'tcx>:
 
 pub(crate) trait LocalNodeLike<'tcx> {
     fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx>;
+}
+
+impl<'tcx> LocalNodeLike<'tcx> for mir::Place<'tcx> {
+    fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
+        LocalNode::Place(self.into())
+    }
 }
 
 impl From<RemotePlace> for PCGNode<'_> {

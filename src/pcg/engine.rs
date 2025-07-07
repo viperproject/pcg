@@ -21,7 +21,7 @@ use super::{
 use crate::{
     pcg::dot_graphs::PcgDotGraphsForBlock,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
-    utils::{arena::ArenaRef, CompilerCtxt},
+    utils::{arena::ArenaRef, liveness::PlaceLiveness, CompilerCtxt},
 };
 use crate::{
     pcg::triple::TripleWalker,
@@ -36,6 +36,7 @@ use crate::{
             },
             ty::{self, GenericArgsRef},
         },
+        mir_dataflow::Forward,
     },
     utils::{domain_data::DomainDataIndex, visitor::FallableVisitor},
     BodyAndBorrows,
@@ -341,6 +342,7 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
             block,
             debug_data,
             Rc::new(self.loop_place_usage_analysis.clone()),
+            Rc::new(PlaceLiveness::new(self.ctxt)),
             self.arena,
         )
     }
@@ -389,4 +391,6 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
         }
         edges
     }
+
+    type Direction = Forward;
 }

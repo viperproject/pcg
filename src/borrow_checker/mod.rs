@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 use std::ops::ControlFlow;
 
+use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::BorrowData;
@@ -49,7 +50,7 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     fn blocks(
         &self,
-        access_place: Place<'tcx>,
+        candidate_blocker: LocalRegionProjection<'tcx>,
         borrowed_place: Place<'tcx>,
         location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,

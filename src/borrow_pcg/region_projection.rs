@@ -806,6 +806,9 @@ impl<'tcx> LocalRegionProjection<'tcx> {
     pub fn to_region_projection(&self) -> RegionProjection<'tcx> {
         self.with_base(self.base.into())
     }
+    pub(crate) fn related_local(&self) -> Local {
+        self.base.local()
+    }
 }
 
 impl<'tcx> RegionProjection<'tcx> {
