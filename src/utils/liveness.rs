@@ -140,10 +140,17 @@ impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
             )),
         }
     }
+
     pub(crate) fn is_live(&self, place: Place<'tcx>, location: mir::Location) -> bool {
         let mut cursor = self.cursor.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
         with_cursor_state(cursor, |state| state.contains(&place))
+    }
+
+    pub(crate) fn places_live_at(&self, location: mir::Location) -> HashSet<Place<'tcx>> {
+        let mut cursor = self.cursor.as_ref().borrow_mut();
+        cursor.seek_before_primary_effect(location);
+        with_cursor_state(cursor, |state| state.places.clone())
     }
 }
 

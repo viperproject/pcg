@@ -8,8 +8,7 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph,
-        region_projection::RegionProjection, util::ExploreFrom,
+        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph, has_pcs_elem::LabelRegionProjection, region_projection::{RegionProjection, RegionProjectionLabel}, util::ExploreFrom
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -99,6 +98,14 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn label_region_projection(
+        &mut self,
+        region_projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.mut_edges(|edge| edge.label_region_projection(region_projection, label, ctxt))
+    }
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut result = HashSet::default();
         for edge in self.edges() {
@@ -518,7 +525,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         result
     }
-
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

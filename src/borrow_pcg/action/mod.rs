@@ -7,6 +7,7 @@ use super::state::BorrowsState;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
@@ -246,7 +247,7 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge, for_read } => {
-                self.handle_add_edge(edge, for_read, capabilities, ctxt)?
+                self.graph.handle_add_edge(edge, for_read, capabilities, ctxt)?
             }
             BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
                 self.label_region_projection(&rp, label, ctxt)
@@ -266,11 +267,18 @@ impl<'tcx> BorrowsState<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph
-            .mut_edges(|edge| edge.label_region_projection(projection, label, ctxt))
+            .label_region_projection(projection, label, ctxt)
     }
 
-    #[instrument(skip(self, edge, capabilities, ctxt), fields(edge = edge.to_short_string(ctxt)))]
-    fn handle_add_edge(
+    #[must_use]
+    fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) -> bool {
+        let location = location.into();
+        self.latest.insert(place, location)
+    }
+}
+
+impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn handle_add_edge(
         &mut self,
         edge: BorrowPcgEdge<'tcx>,
         for_read: bool,
@@ -321,11 +329,5 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             _ => changed,
         })
-    }
-
-    #[must_use]
-    fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) -> bool {
-        let location = location.into();
-        self.latest.insert(place, location)
     }
 }

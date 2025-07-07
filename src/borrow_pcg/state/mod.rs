@@ -176,7 +176,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other_block: BasicBlock,
         loop_analysis: &LoopPlaceUsageAnalysis<'tcx>,
         liveness: &PlaceLiveness<'mir, 'tcx>,
-        capabilities: &PlaceCapabilities<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
@@ -187,6 +187,7 @@ impl<'tcx> BorrowsState<'tcx> {
             loop_analysis,
             liveness,
             capabilities,
+            self.path_conditions.clone(),
             ctxt,
         );
         changed |= self.latest.join(&other.latest, self_block, ctxt);

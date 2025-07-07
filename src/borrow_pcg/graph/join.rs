@@ -78,7 +78,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_block: BasicBlock,
         loop_usage: &LoopPlaceUsageAnalysis<'tcx>,
         liveness: &PlaceLiveness<'mir, 'tcx>,
-        capabilities: &PlaceCapabilities<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         tracing::info!("join {self_block:?} {other_block:?} start");
@@ -95,7 +96,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
 
-            self.join_loop(other, self_block, other_block, used_places, liveness, ctxt);
+            self.join_loop(
+                other,
+                self_block,
+                used_places,
+                capabilities,
+                path_conditions,
+                liveness,
+                ctxt,
+            );
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -178,33 +187,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &mut self,
         pre_block_state: &Self,
         loop_head: BasicBlock,
-        back_block: BasicBlock,
-        used_places: &HashSet<Place<'tcx>>, // L
+        used_places: &HashSet<Place<'tcx>>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        path_conditions: PathConditions,
         liveness: &PlaceLiveness<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
-        tracing::info!("join_loop with places {:?}", used_places);
-        let live_loop_places = used_places
-            .into_iter()
-            .copied()
-            .filter(|p| {
-                liveness.is_live(
-                    *p,
-                    mir::Location {
-                        block: loop_head,
-                        statement_index: 0,
-                    },
-                )
+        let live_loop_places = liveness
+            .places_live_at(mir::Location {
+                block: loop_head,
+                statement_index: 0,
             })
+            .into_iter()
+            .filter(|p| used_places.iter().any(|p2| p2.conflicts_with(*p)))
             .collect::<HashSet<_>>();
 
-        let pre_block_state_nodes = pre_block_state.nodes(ctxt);
+        self.unpack_places_for_abstraction(
+            loop_head,
+            &live_loop_places,
+            capabilities,
+            path_conditions,
+            ctxt,
+        );
+
+        let post_unpack_nodes = self.nodes(ctxt);
 
         // n_loop
         let live_loop_nodes = live_loop_places
             .into_iter()
             .flat_map(|p| {
-                let mut nodes = pre_block_state_nodes
+                let mut nodes = post_unpack_nodes
                     .iter()
                     .copied()
                     .flat_map(|n| n.try_to_local_node(ctxt))
@@ -221,7 +233,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let live_roots = live_loop_nodes
             .iter()
             .flat_map(|p| {
-                pre_block_state.get_immediate_live_ancestors(
+                self.get_immediate_live_ancestors(
                     *p,
                     liveness,
                     mir::Location {
@@ -238,6 +250,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let (abstraction_graph, to_label) =
             self.get_loop_abstraction_graph(live_loop_nodes, live_roots, loop_head, ctxt);
+
+        abstraction_graph.render_with_imgcat(ctxt, "Abstraction graph");
         for rp in to_label.iter() {
             self.mut_edges(|edge| {
                 edge.label_region_projection(
@@ -255,6 +269,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|n| n.iter().map(|n| n.to_pcg_node(ctxt)).collect::<Vec<_>>())
             .collect::<HashSet<_>>();
         let to_cut = self.identify_edges_to_cut(abstraction_graph_pcg_nodes, ctxt);
+        tracing::info!("to_cut: {}", to_cut.to_short_string(ctxt));
         for edge in to_cut {
             self.remove(&edge);
         }

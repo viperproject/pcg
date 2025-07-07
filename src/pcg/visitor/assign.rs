@@ -4,13 +4,14 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::obtain::Expander;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{self, SnapshotLocation};
 
-use super::{PcgUnsupportedError, PcgError};
+use super::{PcgError, PcgUnsupportedError};
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn assign_post_main(
@@ -201,6 +202,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         source_proj.into(),
                         &nested_ref_mut_targets,
                         "assign",
+                        self.ctxt
                     )?;
                 }
             }

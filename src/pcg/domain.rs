@@ -285,7 +285,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             other_block,
             loop_analysis,
             place_liveness,
-            &self.capabilities,
+            &mut self.capabilities,
             ctxt,
         );
         Ok(res)

@@ -27,7 +27,6 @@ mod assign;
 mod function_call;
 mod obtain;
 mod pack;
-mod placeholder_bookkeeping;
 mod stmt;
 mod triple;
 
