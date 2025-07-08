@@ -176,6 +176,22 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .flat_map(move |edge| edge.blocked_by_nodes(repacker).collect::<Vec<_>>())
     }
 
+    pub(crate) fn is_root<'slf, 'mir: 'graph, 'bc: 'graph>(
+        &'slf self,
+        node: PCGNode<'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
+    ) -> bool {
+        self.roots(repacker).contains(&node)
+    }
+
+    pub(crate) fn is_leaf<'slf, 'mir: 'graph, 'bc: 'graph>(
+        &'slf self,
+        node: LocalNode<'tcx>,
+        repacker: CompilerCtxt<'mir, 'tcx>,
+    ) -> bool {
+        self.leaf_nodes(repacker).contains(&node)
+    }
+
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         node: PCGNode<'tcx>,

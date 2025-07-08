@@ -3,7 +3,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface, borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     }, pcg::{PCGNode, PCGNodeLike}, pcg_validity_assert, utils::{
@@ -53,12 +53,12 @@ impl<'tcx> LabelPlace<'tcx> for LocalRegionProjection<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.long.label_region_projection(projection, label, ctxt);
-        changed |= self.short.label_region_projection(projection, label, ctxt);
+        let mut changed = self.long.label_region_projection(predicate, label, ctxt);
+        changed |= self.short.label_region_projection(predicate, label, ctxt);
         self.assert_validity(ctxt);
         changed
     }

@@ -1,8 +1,5 @@
 //! Definition of expansion edges in the Borrow PCG.
-use std::{
-    collections::BTreeMap,
-    marker::PhantomData,
-};
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use derive_more::From;
 use itertools::Itertools;
@@ -17,28 +14,26 @@ use super::{
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    borrow_pcg::{
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        has_pcs_elem::LabelRegionProjectionPredicate,
+    },
     free_pcs::RepackGuide,
-    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation},
+    pcg::{
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        MaybeHasLocation,
+    },
     utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
-    rustc_interface::
-        middle::{
-            mir::PlaceElem,
-            ty,
-        }
-    ,
+    rustc_interface::middle::{mir::PlaceElem, ty},
     utils::{
         display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, HasPlace, Place,
     },
 };
-use crate::{
-    rustc_interface::FieldIdx,
-    utils::place::maybe_old::MaybeOldPlace,
-};
+use crate::{rustc_interface::FieldIdx, utils::place::maybe_old::MaybeOldPlace};
 
 /// The projections resulting from an expansion of a place.
 ///
@@ -163,19 +158,33 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.base.label_region_projection(projection, label, ctxt);
+        let mut changed = self.base.label_region_projection(predicate, label, ctxt);
         for p in &mut self.expansion {
-            changed |= p.label_region_projection(projection, label, ctxt);
+            changed |= p.label_region_projection(predicate, label, ctxt);
         }
-        if self.base.place().is_mut_ref(ctxt)
-            && projection.label() == self.deref_blocked_region_projection_label
-            && self.base == projection.base.into()
-        {
-            self.deref_blocked_region_projection_label = label;
+        if let Some(base_rp) = self.base.place().base_region_projection(ctxt) {
+            match predicate {
+                LabelRegionProjectionPredicate::Equals(projection) => {
+                    if projection.label() == self.deref_blocked_region_projection_label
+                        && self.base == projection.base.into()
+                    {
+                        self.deref_blocked_region_projection_label = label;
+                    }
+                }
+                LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+                    if base_rp.region_idx == *region_idx
+                        && maybe_old_place
+                            .as_current_place()
+                            .map_or(false, |p| p == base_rp.place())
+                    {
+                        self.deref_blocked_region_projection_label = label;
+                    }
+                }
+            }
         }
         changed
     }

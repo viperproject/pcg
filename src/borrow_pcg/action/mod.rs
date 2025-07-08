@@ -9,10 +9,10 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use crate::borrow_pcg::graph::BorrowsGraph;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::place_capabilities::PlaceCapabilities;
+use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::PcgError;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -250,7 +250,11 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.graph.handle_add_edge(edge, for_read, capabilities, ctxt)?
             }
             BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
-                self.label_region_projection(&rp, label, ctxt)
+                self.label_region_projection(
+                    &LabelRegionProjectionPredicate::Equals(rp),
+                    label,
+                    ctxt,
+                )
             }
         };
         Ok(result)
@@ -262,12 +266,12 @@ impl<'tcx> BorrowsState<'tcx> {
 
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph
-            .label_region_projection(projection, label, ctxt)
+            .label_region_projection(predicate, label, ctxt)
     }
 
     #[must_use]

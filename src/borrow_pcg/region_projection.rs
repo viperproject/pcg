@@ -11,7 +11,7 @@ use super::{
 };
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::LabelPlace;
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
@@ -321,25 +321,30 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
 {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if label.is_some() {
-            pcg_validity_assert!(
-                projection.can_be_labelled(ctxt),
-                "{} is not mutable and shouldn't be labelled",
-                projection.to_short_string(ctxt)
-            );
-        }
-        if self.region_idx == projection.region_idx
-            && self.base == projection.base.into()
-            && self.label == projection.label
-        {
-            self.label = label;
-            true
-        } else {
-            false
+        match predicate {
+            LabelRegionProjectionPredicate::Equals(region_projection) => {
+                if self.region_idx == region_projection.region_idx
+                    && self.base == region_projection.base.into()
+                    && self.label == region_projection.label
+                {
+                    self.label = label;
+                    true
+                } else {
+                    false
+                }
+            }
+            LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+                if self.region_idx == *region_idx && self.base == (*maybe_old_place).into() {
+                    self.label = label;
+                    true
+                } else {
+                    false
+                }
+            }
         }
     }
 }

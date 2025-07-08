@@ -3,10 +3,10 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::coupling::coupled::Coupled;
-use crate::pcg::place_capabilities::PlaceCapabilities;
+use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{PCGNode, PCGNodeLike};
 use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::utils::data_structures::HashSet;
@@ -56,12 +56,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 if let MaybeOldPlace::Current { place } = local_rp.base
                     && capabilities.get(place).is_some()
                 {
-                    self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
+                    self.mut_edges(|edge| {
+                        edge.label_region_projection(
+                            &LabelRegionProjectionPredicate::Equals(local_rp),
+                            None,
+                            ctxt,
+                        )
+                    });
                 } else {
                     let orig_rp = local_rp.with_label(None, ctxt);
                     self.mut_edges(|edge| {
                         edge.label_region_projection(
-                            &orig_rp,
+                            &LabelRegionProjectionPredicate::Equals(orig_rp),
                             Some(RegionProjectionLabel::Placeholder),
                             ctxt,
                         )
@@ -206,7 +212,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             loop_head,
             &live_loop_places,
             capabilities,
-            path_conditions,
+            path_conditions.clone(),
             ctxt,
         );
 
@@ -248,10 +254,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         tracing::info!("live loop_nodes: {}", live_loop_nodes.to_short_string(ctxt));
         tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
 
-        let (abstraction_graph, to_label) =
-            self.get_loop_abstraction_graph(live_loop_nodes, live_roots, loop_head, ctxt);
+        let (abstraction_graph, to_label) = self.get_loop_abstraction_graph(
+            live_loop_nodes,
+            live_roots,
+            loop_head,
+            path_conditions.clone(),
+            ctxt,
+        );
 
-        abstraction_graph.render_with_imgcat(ctxt, "Abstraction graph");
         for rp in to_label.iter() {
             self.mut_edges(|edge| {
                 edge.label_region_projection(
@@ -263,31 +273,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 )
             });
         }
-        let abstraction_graph_pcg_nodes = abstraction_graph
-            .nodes()
-            .into_iter()
-            .flat_map(|n| n.iter().map(|n| n.to_pcg_node(ctxt)).collect::<Vec<_>>())
-            .collect::<HashSet<_>>();
-        let to_cut = self.identify_edges_to_cut(abstraction_graph_pcg_nodes, ctxt);
-        tracing::info!("to_cut: {}", to_cut.to_short_string(ctxt));
-        for edge in to_cut {
-            self.remove(&edge);
+
+        let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);
+        let to_cut = self.identify_subgraph_to_cut(abstraction_graph_pcg_nodes, ctxt);
+        to_cut.render_debug_graph(ctxt, "To cut");
+        for edge in to_cut.edges() {
+            self.remove(&edge.kind());
         }
-        for (from, to, edges) in abstraction_graph.edges() {
-            let from_pcg_nodes: Vec<LoopAbstractionInput<'tcx>> = from
-                .iter()
-                .map(|n| n.to_pcg_node(ctxt).into())
-                .collect::<Vec<_>>();
-            let to_pcg_nodes: Vec<AbstractionOutputTarget<'tcx>> = to
-                .iter()
-                .map(|n| n.to_pcg_node(ctxt).try_to_local_node(ctxt).unwrap().into())
-                .collect::<Vec<_>>();
-            let asbtraction_edge = AbstractionBlockEdge::new(from_pcg_nodes, to_pcg_nodes, ctxt);
-            let loop_edge = LoopAbstraction::new(asbtraction_edge, loop_head);
-            self.insert(
-                loop_edge.to_borrow_pcg_edge(PathConditions::default()),
-                ctxt,
-            );
+        for edge in abstraction_graph.into_edges() {
+            self.insert(edge, ctxt);
         }
     }
 }

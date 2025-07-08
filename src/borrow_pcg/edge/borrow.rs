@@ -3,7 +3,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection},
+        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
@@ -48,12 +48,12 @@ pub struct LocalBorrow<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if self.assigned_region_projection(repacker) == *projection {
+        if predicate.matches(self.assigned_region_projection(repacker)) {
             self.assigned_rp_snapshot = label;
             changed = true;
         }
@@ -98,11 +98,11 @@ pub struct RemoteBorrow<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
+        if predicate.matches(self.assigned_region_projection(repacker)) {
             self.rp_snapshot_location = label;
             true
         } else {

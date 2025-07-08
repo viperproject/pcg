@@ -15,7 +15,7 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::{borrow_pcg::edge_data::edgedata_enum, utils::place::maybe_old::MaybeOldPlace};
+use crate::{borrow_pcg::{edge_data::edgedata_enum, has_pcs_elem::LabelRegionProjectionPredicate}, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -73,12 +73,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgEdge<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.kind
-            .label_region_projection(projection, label, repacker)
+            .label_region_projection(predicate, label, repacker)
     }
 }
 

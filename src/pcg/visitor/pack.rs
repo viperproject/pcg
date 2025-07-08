@@ -10,6 +10,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::HasPlace;

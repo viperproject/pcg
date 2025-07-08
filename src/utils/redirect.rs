@@ -1,6 +1,8 @@
 use crate::borrow_pcg::{
     edge_data::LabelPlacePredicate,
-    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+    has_pcs_elem::{
+        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+    },
     latest::Latest,
     region_projection::{RegionProjection, RegionProjectionLabel},
 };
@@ -67,15 +69,15 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
 {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self
             .original
-            .label_region_projection(projection, label, repacker);
+            .label_region_projection(predicate, label, repacker);
         if let Some(r) = &mut self.redirected {
-            changed |= r.label_region_projection(projection, label, repacker);
+            changed |= r.label_region_projection(predicate, label, repacker);
         }
         self.collapse_if_equal();
         changed

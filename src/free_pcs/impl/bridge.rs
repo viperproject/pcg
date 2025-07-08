@@ -11,7 +11,7 @@ use crate::{
         CapabilityKind, CapabilityLocal, CapabilityLocals, CapabilityProjections, RepackOp,
     },
     pcg::{
-        place_capabilities::PlaceCapabilities,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         PcgError,
     },
     utils::{corrected::CorrectedPlace, CompilerCtxt},

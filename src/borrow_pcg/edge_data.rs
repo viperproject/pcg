@@ -172,13 +172,13 @@ macro_rules! edgedata_enum {
         impl<$tcx> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjection<$tcx> for $enum_name<$tcx> {
             fn label_region_projection(
                 &mut self,
-                projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+                predicate: &$crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate<'tcx>,
                 location: Option<$crate::borrow_pcg::region_projection::RegionProjectionLabel>,
                 repacker: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.label_region_projection(projection, location, repacker),
+                        $enum_name::$variant_name(inner) => inner.label_region_projection(predicate, location, repacker),
                     )+
                 }
             }

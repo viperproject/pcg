@@ -5,7 +5,7 @@ use crate::borrow_pcg::domain::AbstractionOutputTarget;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
+use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
@@ -37,7 +37,7 @@ impl<'tcx> LoopAbstraction<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {

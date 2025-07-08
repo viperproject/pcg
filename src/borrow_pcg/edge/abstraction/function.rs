@@ -5,7 +5,7 @@ use crate::{
         domain::{AbstractionOutputTarget, FunctionCallAbstractionInput},
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelRegionProjection},
+        has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate},
         latest::Latest,
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
@@ -54,12 +54,12 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edge
-            .label_region_projection(projection, label, repacker)
+            .label_region_projection(predicate, label, repacker)
     }
 }
 

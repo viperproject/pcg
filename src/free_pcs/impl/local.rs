@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    pcg::place_capabilities::PlaceCapabilities,
+    pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
 use itertools::Itertools;

@@ -10,6 +10,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::region_projection::RegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{Expander, ObtainType};
+use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::PCGNodeLike;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;

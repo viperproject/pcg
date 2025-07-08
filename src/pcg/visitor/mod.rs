@@ -7,6 +7,7 @@ use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
+use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::PcgDebugData;
 use crate::r#loop::LoopPlaceUsageAnalysis;
