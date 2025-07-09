@@ -22,10 +22,10 @@ use crate::{
         dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
         triple::Triple,
     },
-    r#loop::LoopPlaceUsageAnalysis,
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{fmt::DebugWithContext, JoinSemiLattice},
+        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
     },
     utils::{
         arena::ArenaRef,
@@ -33,13 +33,14 @@ use crate::{
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
+        initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
         validity::HasValidityCheck,
         CompilerCtxt, Place,
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
-    AnalysisEngine, DebugLines,
+    AnalysisEngine, DebugLines, PcgCtxt,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
@@ -258,14 +259,13 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self.owned.locals_mut().ensures(t, &mut self.capabilities);
     }
 
-    #[tracing::instrument(skip(self, other, ctxt, loop_analysis, place_liveness))]
+    #[tracing::instrument(skip(self, other, ctxt, body_analysis))]
     pub(crate) fn join(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        loop_analysis: &LoopPlaceUsageAnalysis<'tcx>,
-        place_liveness: &PlaceLiveness<'mir, 'tcx>,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut res = self.owned.join(
@@ -283,8 +283,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             &other.borrow,
             self_block,
             other_block,
-            loop_analysis,
-            place_liveness,
+            body_analysis,
             &mut self.capabilities,
             ctxt,
         );
@@ -330,11 +329,60 @@ impl<A: Allocator + Clone> PcgDomainData<'_, A> {
 }
 
 #[derive(Clone)]
+pub(crate) struct BodyAnalysis<'a, 'tcx> {
+    pub(crate) definitely_initialized: DefinitelyInitialized<'a, 'tcx>,
+    pub(crate) place_liveness: PlaceLiveness<'a, 'tcx>,
+    pub(crate) loop_analysis: LoopPlaceUsageAnalysis<'tcx>,
+}
+
+impl<'a, 'tcx> BodyAnalysis<'a, 'tcx> {
+    pub(crate) fn new(ctxt: CompilerCtxt<'a, 'tcx>, move_data: &'a MoveData<'tcx>) -> Self {
+        let definitely_initialized = DefinitelyInitialized::new(ctxt.tcx(), ctxt.body(), move_data);
+        let place_liveness = PlaceLiveness::new(ctxt);
+        let loop_analysis = LoopAnalysis::find_loops(ctxt.body());
+        let loop_place_analysis = LoopPlaceUsageAnalysis::new(ctxt.tcx(), ctxt.body(), &loop_analysis);
+        Self {
+            definitely_initialized,
+            place_liveness,
+            loop_analysis: loop_place_analysis,
+        }
+    }
+
+    pub(crate) fn is_loop_head(&self, block: BasicBlock) -> bool {
+        self.loop_analysis.is_loop_head(block)
+    }
+
+    pub(crate) fn get_places_used_in_loop(
+        &self,
+        loop_head: BasicBlock,
+    ) -> Option<&HashSet<Place<'tcx>>> {
+        self.loop_analysis.get_used_places(loop_head)
+    }
+
+    pub(crate) fn is_live_and_initialized_at(
+        &self,
+        location: mir::Location,
+        place: Place<'tcx>,
+    ) -> bool {
+        self.place_liveness.is_live(place, location)
+            && self.is_definitely_initialized_at(location, place)
+    }
+
+    pub(crate) fn is_definitely_initialized_at(
+        &self,
+        location: mir::Location,
+        place: Place<'tcx>,
+    ) -> bool {
+        self.definitely_initialized
+            .is_definitely_initialized(location, place)
+    }
+}
+
+#[derive(Clone)]
 pub struct PcgDomain<'a, 'tcx, A: Allocator> {
     ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) block: Option<BasicBlock>,
-    pub(crate) loop_analysis: Rc<LoopPlaceUsageAnalysis<'tcx>>,
-    pub(crate) place_liveness: Rc<PlaceLiveness<'a, 'tcx>>,
+    pub(crate) body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
     pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
     pub(crate) debug_data: Option<PcgDebugData>,
     pub(crate) reachable: bool,
@@ -429,63 +477,19 @@ pub enum PcgUnsupportedError {
     InlineAssembly,
 }
 
-impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
+impl<'tcx, A: Allocator> PcgDomain<'_, 'tcx, A> {
     pub(crate) fn has_error(&self) -> bool {
         self.data.is_err()
     }
-
-    pub(crate) fn error(&self) -> Option<&PcgError> {
-        self.data.as_ref().err()
-    }
-
-    pub(crate) fn record_error(&mut self, error: PcgError) {
-        self.data = Err(error);
-    }
-
-    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx, A>, PcgError> {
-        self.data.as_ref().map_err(|e| e.clone())
-    }
-
-    pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'tcx> {
-        match &mut self.data {
-            Ok(data) => ArenaRef::make_mut(&mut data.pcg[phase]),
-            Err(e) => panic!("PCG error: {e:?}"),
-        }
-    }
-    pub fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'tcx> {
-        match &self.data {
-            Ok(data) => &data.pcg[phase.into()],
-            Err(e) => panic!("PCG error: {e:?}"),
-        }
-    }
-
-    pub(crate) fn is_initialized(&self) -> bool {
-        self.block.is_some()
-    }
-
-    pub(crate) fn set_block(&mut self, block: BasicBlock) {
-        self.block = Some(block);
-    }
-
-    pub(crate) fn set_debug_data(
-        &mut self,
-        output_dir: String,
-        dot_graphs: Rc<RefCell<PcgDotGraphsForBlock>>,
-    ) {
-        self.debug_data = Some(PcgDebugData {
-            dot_output_dir: output_dir,
-            dot_graphs,
-        });
-    }
-
     pub(crate) fn block(&self) -> BasicBlock {
         self.block.unwrap()
     }
-
-    pub(crate) fn dot_graphs(&self) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
-        self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
+    pub(crate) fn is_initialized(&self) -> bool {
+        self.block.is_some()
     }
-
+    pub(crate) fn record_error(&mut self, error: PcgError) {
+        self.data = Err(error);
+    }
     pub(crate) fn register_new_debug_iteration(&mut self, location: mir::Location) {
         if let Some(debug_data) = &mut self.debug_data {
             debug_data
@@ -510,20 +514,60 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
         );
     }
 
+    pub(crate) fn set_debug_data(
+        &mut self,
+        output_dir: String,
+        dot_graphs: Rc<RefCell<PcgDotGraphsForBlock>>,
+    ) {
+        self.debug_data = Some(PcgDebugData {
+            dot_output_dir: output_dir,
+            dot_graphs,
+        });
+    }
+
+    pub fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'tcx> {
+        match &self.data {
+            Ok(data) => &data.pcg[phase.into()],
+            Err(e) => panic!("PCG error: {e:?}"),
+        }
+    }
+
+    pub(crate) fn set_block(&mut self, block: BasicBlock) {
+        self.block = Some(block);
+    }
+}
+
+impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
+    pub(crate) fn error(&self) -> Option<&PcgError> {
+        self.data.as_ref().err()
+    }
+
+    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx, A>, PcgError> {
+        self.data.as_ref().map_err(|e| e.clone())
+    }
+
+    pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'tcx> {
+        match &mut self.data {
+            Ok(data) => ArenaRef::make_mut(&mut data.pcg[phase]),
+            Err(e) => panic!("PCG error: {e:?}"),
+        }
+    }
+
+    pub(crate) fn dot_graphs(&self) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
+        self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
+    }
+
     pub(crate) fn new(
+        body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
         repacker: CompilerCtxt<'a, 'tcx>,
         block: Option<BasicBlock>,
         debug_data: Option<PcgDebugData>,
-        loop_analysis: Rc<LoopPlaceUsageAnalysis<'tcx>>,
-        place_liveness: Rc<PlaceLiveness<'a, 'tcx>>,
         arena: A,
     ) -> Self {
-        let _ = place_liveness;
         Self {
             ctxt: repacker,
             block,
-            loop_analysis,
-            place_liveness,
+            body_analysis,
             data: Ok(PcgDomainData::new(arena)),
             debug_data,
             reachable: false,
@@ -563,7 +607,7 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             return false;
         }
 
-        let is_loop_head = self.loop_analysis.is_loop_head(self_block);
+        let is_loop_head = self.body_analysis.is_loop_head(self_block);
 
         let first_join = data.pcg.incoming_states.is_empty();
 
@@ -595,8 +639,7 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
             self_block,
             other_block,
-            &self.loop_analysis,
-            &self.place_liveness,
+            &self.body_analysis,
             self.ctxt,
         ) {
             Ok(changed) => changed,

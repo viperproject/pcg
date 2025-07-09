@@ -17,6 +17,7 @@ mod mutable;
 pub mod place;
 pub mod place_snapshot;
 pub(crate) mod redirect;
+pub(crate) mod initialized;
 mod root_place;
 pub mod validity;
 pub mod visitor;

@@ -117,10 +117,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             ctxt,
         )?;
 
-        if expansion
-            .blocked_by_nodes(ctxt)
-            .all(|node| self.borrows_graph().contains(node, ctxt))
-        {
+        if self.borrows_graph().contains_deref_expansion_from(base, ctxt) {
             return Ok(false);
         }
 

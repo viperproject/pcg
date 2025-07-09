@@ -3,11 +3,12 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::coupling::coupled::Coupled;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike};
 use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -81,8 +82,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        loop_usage: &LoopPlaceUsageAnalysis<'tcx>,
-        liveness: &PlaceLiveness<'mir, 'tcx>,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -97,7 +97,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         let old_self = self.clone();
 
-        if let Some(used_places) = loop_usage.get_used_places(self_block) {
+        if let Some(used_places) = body_analysis.get_places_used_in_loop(self_block) {
             // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
 
@@ -106,7 +106,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 used_places,
                 capabilities,
                 path_conditions,
-                liveness,
+                body_analysis,
                 ctxt,
             );
             let result = *self != old_self;
@@ -193,25 +193,42 @@ impl<'tcx> BorrowsGraph<'tcx> {
         used_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         path_conditions: PathConditions,
-        liveness: &PlaceLiveness<'mir, 'tcx>,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
-        let live_loop_places = liveness
-            .places_live_at(mir::Location {
-                block: loop_head,
-                statement_index: 0,
+        tracing::info!("used_places: {}", used_places.to_short_string(ctxt));
+        let loop_places = used_places
+            .iter()
+            .copied()
+            .filter(|p| {
+                body_analysis.is_live_and_initialized_at(
+                    mir::Location {
+                        block: loop_head,
+                        statement_index: 0,
+                    },
+                    *p,
+                )
             })
-            .into_iter()
-            .filter(|p| used_places.iter().any(|p2| p2.conflicts_with(*p)))
             .collect::<HashSet<_>>();
 
-        tracing::info!(
-            "live loop places: {}",
-            live_loop_places.to_short_string(ctxt)
-        );
+        // let loop_places = used_places
+        //     .iter()
+        //     .filter(|p| {
+        //         body_analysis.is_definitely_initialized_at(
+        //             mir::Location {
+        //                 block: loop_head,
+        //                 statement_index: 0,
+        //             },
+        //             **p,
+        //         )
+        //     })
+        //     .copied()
+        //     .collect::<HashSet<_>>();
+
+        tracing::info!("live loop places: {}", loop_places.to_short_string(ctxt));
 
         // n_loop
-        let live_loop_nodes = live_loop_places
+        let live_loop_nodes = loop_places
             .iter()
             .flat_map(|p| {
                 let mut nodes = p
@@ -230,11 +247,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         self.unpack_places_for_abstraction(
             loop_head,
-            &live_loop_places,
+            &loop_places,
             capabilities,
             path_conditions.clone(),
             ctxt,
         );
+        self.render_debug_graph(ctxt, "G_Pre'");
 
         // n_roots
         let live_roots = live_loop_nodes
@@ -242,7 +260,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|p| {
                 self.get_immediate_live_ancestors(
                     *p,
-                    liveness,
+                    &body_analysis.place_liveness,
                     mir::Location {
                         block: loop_head,
                         statement_index: 0,
@@ -254,7 +272,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
 
-        let (abstraction_graph, to_label) = self.get_loop_abstraction_graph(
+        let ConstructAbstractionGraphResult {
+            graph: abstraction_graph,
+            to_label,
+            to_remove,
+        } = self.get_loop_abstraction_graph(
             live_loop_nodes,
             live_roots,
             loop_head,
@@ -274,6 +296,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ctxt,
                 )
             });
+        }
+
+        for place in to_remove {
+            capabilities.remove(place);
         }
 
         let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);

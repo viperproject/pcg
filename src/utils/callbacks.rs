@@ -13,15 +13,10 @@ use crate::{
     borrow_checker::{
         r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
         BorrowCheckerInterface,
-    },
-    borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion, RegionIdx},
-    free_pcs::PcgAnalysis,
-    pcg::{self, BodyWithBorrowckFacts},
-    run_pcg,
-    rustc_interface::{
+    }, borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
         borrowck::{self, BorrowIndex, LocationTable, RichLocation},
         data_structures::fx::{FxHashMap, FxHashSet},
-        driver::{self, Compilation, init_rustc_env_logger},
+        driver::{self, init_rustc_env_logger, Compilation},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{interface::Compiler, Config},
         middle::{
@@ -30,11 +25,9 @@ use crate::{
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::{Session, EarlyDiagCtxt, config::ErrorOutputType},
+        session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
         span::SpanSnippetError,
-    },
-    utils::MAX_BASIC_BLOCKS,
-    PcgOutput,
+    }, utils::MAX_BASIC_BLOCKS, PcgCtxt, PcgOutput
 };
 
 #[rustversion::before(2024-11-09)]
@@ -315,7 +308,8 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
     let arena = Bump::new();
-    let mut output = run_pcg(&body.body, tcx, &bc, &arena, item_dir.as_deref());
+    let pcg_ctxt = PcgCtxt::new(&body.body, tcx, &bc);
+    let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[rustversion::since(2024-12-14)]

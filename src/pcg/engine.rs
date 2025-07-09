@@ -19,9 +19,7 @@ use super::{
     PcgDebugData, PcgError,
 };
 use crate::{
-    pcg::dot_graphs::PcgDotGraphsForBlock,
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
-    utils::{arena::ArenaRef, liveness::PlaceLiveness, CompilerCtxt},
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis}, pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis}, utils::{arena::ArenaRef, initialized::DefinitelyInitialized, liveness::PlaceLiveness, CompilerCtxt}
 };
 use crate::{
     pcg::triple::TripleWalker,
@@ -36,7 +34,7 @@ use crate::{
             },
             ty::{self, GenericArgsRef},
         },
-        mir_dataflow::Forward,
+        mir_dataflow::{move_paths::MoveData, Forward},
     },
     utils::{domain_data::DomainDataIndex, visitor::FallableVisitor},
     BodyAndBorrows,
@@ -127,7 +125,8 @@ pub struct PcgEngine<'a, 'tcx: 'a, A: Allocator + Clone> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
-    loop_place_usage_analysis: LoopPlaceUsageAnalysis<'tcx>,
+    body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
+    move_data: &'a MoveData<'tcx>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
     pub(crate) arena: A,
@@ -190,7 +189,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, A>, block: BasicBlock) {
+    fn initialize<'md>(&self, state: &mut PcgDomain<'a, 'tcx, A>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -254,7 +253,6 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
                 phase,
                 object,
                 location,
-                &self.loop_place_usage_analysis,
                 state.debug_data.clone(),
             )?;
             if let Some(next_phase) = phase.next() {
@@ -272,6 +270,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
 
     pub(crate) fn new(
         ctxt: CompilerCtxt<'a, 'tcx>,
+        move_data: &'a MoveData<'tcx>,
         arena: A,
         debug_output_dir: Option<&str>,
     ) -> Self {
@@ -292,14 +291,14 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         let mut reachable_blocks = BitSet::default();
         reachable_blocks.reserve_len(ctxt.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK.index());
-        let loop_analysis = LoopAnalysis::find_loops(ctxt.body());
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
             ctxt,
+            move_data,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
-            loop_place_usage_analysis: LoopPlaceUsageAnalysis::new(ctxt.body(), &loop_analysis),
+            body_analysis: Rc::new(BodyAnalysis::new(ctxt, move_data)),
             arena,
         }
     }
@@ -338,11 +337,10 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
             (None, None)
         };
         PcgDomain::new(
+            self.body_analysis.clone(),
             self.ctxt,
             block,
             debug_data,
-            Rc::new(self.loop_place_usage_analysis.clone()),
-            Rc::new(PlaceLiveness::new(self.ctxt)),
             self.arena,
         )
     }

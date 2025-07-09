@@ -8,7 +8,11 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        abstraction::node::AbstractionGraphNode, abstraction_graph_constructor::AbstractionGraph, has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate}, region_projection::{RegionProjection, RegionProjectionLabel}, util::ExploreFrom
+        abstraction::node::AbstractionGraphNode,
+        abstraction_graph_constructor::AbstractionGraph,
+        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
+        region_projection::{RegionProjection, RegionProjectionLabel},
+        util::ExploreFrom,
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -106,6 +110,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> bool {
         self.mut_edges(|edge| edge.label_region_projection(predicate, label, ctxt))
     }
+
+    pub(crate) fn contains_deref_expansion_from(
+        &self,
+        base: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.edges_blocking(base.into(), ctxt).any(|edge| {
+            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind() {
+                e.is_owned_expansion(ctxt)
+            } else {
+                false
+            }
+        })
+    }
+
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut result = HashSet::default();
         for edge in self.edges() {

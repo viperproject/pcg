@@ -8,11 +8,23 @@
 
 mod loop_set;
 
+use derive_more::{Deref, DerefMut};
+
 use crate::{
+    compute_fixpoint,
     r#loop::loop_set::LoopSet,
     rustc_interface::{
+        dataflow::{Analysis, AnalysisEngine},
         index::{Idx, IndexVec},
-        middle::mir::{self, BasicBlock, Body, START_BLOCK},
+        middle::{
+            mir::{
+                self,
+                visit::{MutatingUseContext, PlaceContext},
+                BasicBlock, Body, START_BLOCK,
+            },
+            ty,
+        },
+        mir_dataflow::{fmt::DebugWithContext, Forward, JoinSemiLattice, ResultsCursor},
     },
     utils::{
         data_structures::{HashMap, HashSet},
@@ -140,6 +152,19 @@ impl Idx for LoopId {
 }
 const NO_LOOP: LoopId = LoopId(usize::MAX);
 
+#[derive(Clone, Debug, Deref, DerefMut, PartialEq, Eq)]
+struct LoopPlaceUsageDomain<'tcx> {
+    used_places: HashSet<Place<'tcx>>,
+}
+
+impl<'tcx> JoinSemiLattice for LoopPlaceUsageDomain<'tcx> {
+    fn join(&mut self, other: &Self) -> bool {
+        let old_len = self.used_places.len();
+        self.used_places.extend(other.used_places.iter().copied());
+        self.used_places.len() != old_len
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct LoopPlaceUsageAnalysis<'tcx> {
     /// This map contains, for each loop head, the set of places that are used in the loop.
@@ -151,65 +176,107 @@ pub(crate) struct LoopPlaceUsageAnalysis<'tcx> {
     loop_used_places: HashMap<BasicBlock, HashSet<Place<'tcx>>>,
 }
 
-struct UsageVisitor<'tcx> {
-    used_places: HashSet<Place<'tcx>>,
+struct UsageVisitor<'a, 'tcx> {
+    used_places: &'a mut LoopPlaceUsageDomain<'tcx>,
 }
 
-impl<'tcx> UsageVisitor<'tcx> {
-    fn new() -> Self {
-        Self {
-            used_places: HashSet::default(),
-        }
+impl<'a, 'tcx> UsageVisitor<'a, 'tcx> {
+    fn new(used_places: &'a mut LoopPlaceUsageDomain<'tcx>) -> Self {
+        Self { used_places }
     }
 }
 
-impl<'tcx> FallableVisitor<'tcx> for UsageVisitor<'tcx> {
+impl<'a, 'tcx> FallableVisitor<'tcx> for UsageVisitor<'a, 'tcx> {
     fn visit_place_fallable(
         &mut self,
         place: Place<'tcx>,
-        _context: mir::visit::PlaceContext,
-        _location: mir::Location,
+        context: mir::visit::PlaceContext,
+        location: mir::Location,
     ) -> Result<(), crate::pcg::PcgError> {
+        tracing::info!("{:?}: Used places: {:?}", location, self.used_places);
+        match context {
+            PlaceContext::MutatingUse(MutatingUseContext::Store) => {
+                tracing::info!("{:?}: store: {:?}", location, place);
+                self.used_places.retain(|p| !p.conflicts_with(place));
+            }
+            _ => {}
+        }
+        tracing::info!("{:?}: inserting place: {:?}", location, place);
         self.used_places.insert(place);
         Ok(())
     }
 }
+
+struct SingleLoopAnalysis<'loops> {
+    loop_id: LoopId,
+    loop_analysis: &'loops LoopAnalysis,
+}
+
+impl<'loops, 'tcx> Analysis<'tcx> for SingleLoopAnalysis<'loops> {
+    type Domain = LoopPlaceUsageDomain<'tcx>;
+    type Direction = Forward;
+
+    const NAME: &'static str = "SingleLoopAnalysis";
+
+    fn bottom_value(&self, body: &mir::Body<'tcx>) -> Self::Domain {
+        LoopPlaceUsageDomain {
+            used_places: HashSet::default(),
+        }
+    }
+
+    fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {}
+
+    fn apply_statement_effect(
+        &mut self,
+        state: &mut Self::Domain,
+        statement: &mir::Statement<'tcx>,
+        location: mir::Location,
+    ) {
+        if self.loop_analysis.in_loop(location.block, self.loop_id) {
+            let mut visitor = UsageVisitor::new(state);
+            visitor
+                .visit_statement_fallable(statement, location)
+                .unwrap();
+        }
+    }
+
+    fn apply_terminator_effect<'mir>(
+        &mut self,
+        state: &mut Self::Domain,
+        terminator: &'mir mir::Terminator<'tcx>,
+        location: mir::Location,
+    ) -> mir::TerminatorEdges<'mir, 'tcx> {
+        if self.loop_analysis.in_loop(location.block, self.loop_id) {
+            let mut visitor = UsageVisitor::new(state);
+            visitor
+                .visit_terminator_fallable(terminator, location)
+                .unwrap();
+        }
+        terminator.edges()
+    }
+}
+
+impl<'tcx, 'loops> DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'loops>>> for LoopPlaceUsageDomain<'tcx> {
+
+}
+
 
 impl<'tcx> LoopPlaceUsageAnalysis<'tcx> {
     pub(crate) fn is_loop_head(&self, block: BasicBlock) -> bool {
         self.loop_used_places.contains_key(&block)
     }
 
-    pub(crate) fn new(body: &Body<'tcx>, analysis: &LoopAnalysis) -> Self {
-        let mut used_places = IndexVec::from_elem_n(HashSet::default(), body.basic_blocks.len());
-        for (bb_idx, bb) in body.basic_blocks.iter().enumerate() {
-            let mut usage = UsageVisitor::new();
-            for (idx, stmt) in bb.statements.iter().enumerate() {
-                usage
-                    .visit_statement_fallable(
-                        stmt,
-                        mir::Location {
-                            block: bb_idx.into(),
-                            statement_index: idx,
-                        },
-                    )
-                    .unwrap();
-            }
-            used_places[bb_idx.into()] = usage.used_places;
-        }
-
+    pub(crate) fn new(tcx: ty::TyCtxt<'tcx>, body: &Body<'tcx>, analysis: &LoopAnalysis) -> Self {
         let mut loop_used_places: HashMap<BasicBlock, HashSet<Place<'tcx>>> = HashMap::default();
         for (loop_id, loop_head) in analysis.loop_heads.iter_enumerated() {
-            tracing::info!("loop head: {:?}", loop_head);
-            loop_used_places.insert(*loop_head, HashSet::default());
-            for (bb_idx, _) in body.basic_blocks.iter_enumerated() {
-                if analysis.in_loop(bb_idx, loop_id) {
-                    loop_used_places
-                        .get_mut(loop_head)
-                        .unwrap()
-                        .extend(used_places[bb_idx].iter().copied());
-                }
-            }
+            let analysis = SingleLoopAnalysis {
+                loop_id,
+                loop_analysis: analysis,
+            };
+            let results = compute_fixpoint(AnalysisEngine(analysis), tcx, body);
+            let mut cursor = results.into_results_cursor(body);
+            cursor.seek_to_block_start(*loop_head);
+            loop_used_places.insert(*loop_head, cursor.get().used_places.clone());
         }
         Self { loop_used_places }
     }

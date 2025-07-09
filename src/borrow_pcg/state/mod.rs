@@ -8,7 +8,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, r#loop::LoopPlaceUsageAnalysis, pcg::place_capabilities::PlaceCapabilitiesInterface, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
+use crate::{action::BorrowPcgAction, r#loop::LoopPlaceUsageAnalysis, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis}, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
     utils::{place::maybe_old::MaybeOldPlace},
@@ -174,8 +174,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        loop_analysis: &LoopPlaceUsageAnalysis<'tcx>,
-        liveness: &PlaceLiveness<'mir, 'tcx>,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
@@ -184,8 +183,7 @@ impl<'tcx> BorrowsState<'tcx> {
             &other.graph,
             self_block,
             other_block,
-            loop_analysis,
-            liveness,
+            body_analysis,
             capabilities,
             self.path_conditions.clone(),
             ctxt,
