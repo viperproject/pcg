@@ -193,15 +193,12 @@ impl<'a, 'tcx> FallableVisitor<'tcx> for UsageVisitor<'a, 'tcx> {
         context: mir::visit::PlaceContext,
         location: mir::Location,
     ) -> Result<(), crate::pcg::PcgError> {
-        tracing::info!("{:?}: Used places: {:?}", location, self.used_places);
         match context {
             PlaceContext::MutatingUse(MutatingUseContext::Store) => {
-                tracing::info!("{:?}: store: {:?}", location, place);
                 self.used_places.retain(|p| !p.conflicts_with(place));
             }
             _ => {}
         }
-        tracing::info!("{:?}: inserting place: {:?}", location, place);
         self.used_places.insert(place);
         Ok(())
     }

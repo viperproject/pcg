@@ -211,20 +211,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        // let loop_places = used_places
-        //     .iter()
-        //     .filter(|p| {
-        //         body_analysis.is_definitely_initialized_at(
-        //             mir::Location {
-        //                 block: loop_head,
-        //                 statement_index: 0,
-        //             },
-        //             **p,
-        //         )
-        //     })
-        //     .copied()
-        //     .collect::<HashSet<_>>();
-
         tracing::info!("live loop places: {}", loop_places.to_short_string(ctxt));
 
         // n_loop

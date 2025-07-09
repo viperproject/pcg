@@ -14,14 +14,14 @@ impl<T> List<T> {
     }
 }
 
-fn f<'a>(mut ol1: List<&'a mut i32>, mut ol2: List<&'a mut i32>) {
-    let mut l1 = &mut ol1;
-    let mut l2 = &mut ol2;
-    while true {
-        let h = l1.pop();
-        l2.push(h);
-    }
-}
+// fn f<'a>(mut ol1: List<&'a mut i32>, mut ol2: List<&'a mut i32>) {
+//     let mut l1 = &mut ol1;
+//     let mut l2 = &mut ol2;
+//     while true {
+//         let h = l1.pop();
+//         l2.push(h);
+//     }
+// }
 
 fn main() {
     let mut x = 0;

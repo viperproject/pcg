@@ -36,7 +36,7 @@ use crate::{
 };
 
 /// A region occuring in region projections
-#[derive(PartialEq, Eq, Clone, Copy, Hash, From)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, From, Debug)]
 pub enum PcgRegion {
     RegionVid(RegionVid),
     ReErased,
@@ -338,7 +338,10 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
                 }
             }
             LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
-                if self.region_idx == *region_idx && self.base == (*maybe_old_place).into() {
+                if self.region_idx == *region_idx
+                    && self.base == (*maybe_old_place).into()
+                    && !self.is_placeholder()
+                {
                     self.label = label;
                     true
                 } else {
@@ -823,6 +826,21 @@ impl<'tcx> LocalRegionProjection<'tcx> {
     }
     pub(crate) fn related_local(&self) -> Local {
         self.base.local()
+    }
+    pub(crate) fn nested_projections(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<LocalRegionProjection<'tcx>> {
+        let mut result = vec![];
+        for rp in self.base.region_projections(ctxt) {
+            if rp.region(ctxt) != self.region(ctxt)
+                && ctxt.bc.outlives(rp.region(ctxt), self.region(ctxt))
+                && rp.is_invariant_in_type(ctxt)
+            {
+                result.push(rp);
+            }
+        }
+        result
     }
 }
 

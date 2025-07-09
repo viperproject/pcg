@@ -213,10 +213,6 @@ pub(crate) trait Expander<'mir, 'tcx> {
         if expansion_rps.is_empty() {
             return Ok(());
         }
-        pcg_validity_assert!(matches!(
-            labelled_rp.label(),
-            Some(RegionProjectionLabel::Location(_))
-        ));
         let future_rp = labelled_rp.with_placeholder_label(ctxt);
         self.apply_action(
             BorrowPcgAction::add_edge(

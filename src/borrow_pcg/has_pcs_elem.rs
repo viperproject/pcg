@@ -27,6 +27,7 @@ impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
             LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
                 region_projection.region_idx == *region_idx
                     && region_projection.place() == *maybe_old_place
+                    && !region_projection.is_placeholder()
             }
         }
     }

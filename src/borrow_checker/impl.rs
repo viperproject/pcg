@@ -300,11 +300,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl BorrowCheckerImpl<'_, '_> {
-    fn borrow_out_of_scope(&self, location: Location, borrow_index: BorrowIndex) -> bool {
-        self.out_of_scope_borrows
-            .get(&location)
-            .map_or(false, |borrows| borrows.contains(&borrow_index))
-    }
 
     fn local_is_live_before(&self, local: mir::Local, mut location: Location) -> bool {
         // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
@@ -352,14 +347,17 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             ctxt.body(),
             borrowed_place.to_rust_place(ctxt),
             self.borrow_set(),
-            |borrow_index| {
-                self.borrow_in_scope_at(borrow_index, location)
-            },
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
             |this, borrow_index, borrow| {
                 if self.outlives(borrow.region().into(), candidate_blocker.region(ctxt)) {
                     conflict = true;
                     ControlFlow::Break(())
                 } else {
+                    tracing::info!(
+                        "region {:?} does not outlive {:?}",
+                        borrow.region(),
+                        candidate_blocker.region(ctxt)
+                    );
                     ControlFlow::Continue(())
                 }
             },
