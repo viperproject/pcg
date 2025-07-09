@@ -9,7 +9,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::abstraction::node::AbstractionGraphNode,
     coupling::{coupled::Coupled, AddEdgeResult, NodeData},
-    utils::{data_structures::HashSet, loop_usage::LoopUsage},
+    utils::{data_structures::HashSet},
     validity_checks_enabled,
 };
 use crate::{
@@ -149,7 +149,6 @@ impl<'tcx> AbstractionGraph<'tcx> {
     pub(crate) fn merge(
         &mut self,
         other: &Self,
-        #[allow(unused)] loop_usage: &LoopUsage<'tcx, '_>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         self.inner.join(&other.inner);

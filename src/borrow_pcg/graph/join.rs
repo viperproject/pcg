@@ -12,7 +12,6 @@ use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::liveness::PlaceLiveness;
-use crate::utils::loop_usage::LoopUsage;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
@@ -103,7 +102,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
 
             self.join_loop(
-                other,
                 self_block,
                 used_places,
                 capabilities,
@@ -191,7 +189,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn join_loop<'mir>(
         &mut self,
-        pre_block_state: &Self,
         loop_head: BasicBlock,
         used_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
@@ -208,6 +205,29 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .filter(|p| used_places.iter().any(|p2| p2.conflicts_with(*p)))
             .collect::<HashSet<_>>();
 
+        tracing::info!(
+            "live loop places: {}",
+            live_loop_places.to_short_string(ctxt)
+        );
+
+        // n_loop
+        let live_loop_nodes = live_loop_places
+            .iter()
+            .flat_map(|p| {
+                let mut nodes = p
+                    .region_projections(ctxt)
+                    .into_iter()
+                    .map(|rp| rp.into())
+                    .collect::<Vec<_>>();
+                if !p.is_owned(ctxt) {
+                    nodes.push((*p).into())
+                }
+                nodes
+            })
+            .collect::<HashSet<_>>();
+
+        tracing::info!("live loop_nodes: {}", live_loop_nodes.to_short_string(ctxt));
+
         self.unpack_places_for_abstraction(
             loop_head,
             &live_loop_places,
@@ -215,25 +235,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             path_conditions.clone(),
             ctxt,
         );
-
-        let post_unpack_nodes = self.nodes(ctxt);
-
-        // n_loop
-        let live_loop_nodes = live_loop_places
-            .into_iter()
-            .flat_map(|p| {
-                let mut nodes = post_unpack_nodes
-                    .iter()
-                    .copied()
-                    .flat_map(|n| n.try_to_local_node(ctxt))
-                    .filter(|n| n.is_lifetime_projection() && n.related_current_place() == Some(p))
-                    .collect::<Vec<_>>();
-                if !p.is_owned(ctxt) {
-                    nodes.push(p.into())
-                }
-                nodes
-            })
-            .collect::<HashSet<_>>();
 
         // n_roots
         let live_roots = live_loop_nodes
@@ -251,7 +252,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        tracing::info!("live loop_nodes: {}", live_loop_nodes.to_short_string(ctxt));
         tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
 
         let (abstraction_graph, to_label) = self.get_loop_abstraction_graph(
@@ -261,6 +261,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             path_conditions.clone(),
             ctxt,
         );
+
+        abstraction_graph.render_debug_graph(ctxt, "Abstraction graph");
 
         for rp in to_label.iter() {
             self.mut_edges(|edge| {
@@ -277,9 +279,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);
         let to_cut = self.identify_subgraph_to_cut(abstraction_graph_pcg_nodes, ctxt);
         to_cut.render_debug_graph(ctxt, "To cut");
+        self.render_debug_graph(ctxt, "Self before cut");
         for edge in to_cut.edges() {
             self.remove(&edge.kind());
         }
+        self.render_debug_graph(ctxt, "Self after cut");
         for edge in abstraction_graph.into_edges() {
             self.insert(edge, ctxt);
         }

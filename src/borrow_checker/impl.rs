@@ -5,8 +5,8 @@ use crate::borrow_checker::{each_borrow_involving_path, BorrowCheckerInterface};
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion};
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
-    calculate_borrows_out_of_scope_at_location, BorrowData, BorrowIndex, BorrowSet, LocationTable,
-    PoloniusInput, PoloniusOutput, RegionInferenceContext, RichLocation,
+    calculate_borrows_out_of_scope_at_location, BorrowData, BorrowIndex, BorrowSet, Borrows,
+    LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::{compute_fixpoint, with_cursor_state};
@@ -230,14 +230,19 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
         );
         conflict
     }
+
+    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex> {
+        todo!()
+    }
 }
 
 /// An interface to the results of the NLL borrow-checker analysis.
 #[derive(Clone)]
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,
-    cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+    live_locals: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     out_of_scope_borrows: FxIndexMap<Location, Vec<BorrowIndex>>,
+    in_scope_borrows: Rc<RefCell<ResultsCursor<'mir, 'tcx, Borrows<'mir, 'tcx>>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
     location_table: &'mir LocationTable,
@@ -262,9 +267,17 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
         Self {
             body: body.body(),
             tcx,
-            cursor: Rc::new(RefCell::new(
+            live_locals: Rc::new(RefCell::new(
                 compute_fixpoint(MaybeLiveLocals, tcx, body.body())
                     .into_results_cursor(body.body()),
+            )),
+            in_scope_borrows: Rc::new(RefCell::new(
+                compute_fixpoint(
+                    Borrows::new(tcx, body.body(), region_cx, borrows),
+                    tcx,
+                    body.body(),
+                )
+                .into_results_cursor(body.body()),
             )),
             region_cx,
             borrows,
@@ -305,9 +318,21 @@ impl BorrowCheckerImpl<'_, '_> {
             return true;
         }
 
-        let mut cursor = self.cursor.as_ref().borrow_mut();
+        let mut cursor = self.live_locals.as_ref().borrow_mut();
         cursor.seek_before_primary_effect(location);
         cursor_contains_local(cursor, local)
+    }
+}
+
+impl<'tcx> BorrowCheckerImpl<'_, 'tcx> {
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
+        self.in_scope_borrows
+            .borrow_mut()
+            .seek_before_primary_effect(location);
+        (*self.in_scope_borrows)
+            .borrow()
+            .get()
+            .contains(borrow_index)
     }
 }
 
@@ -327,7 +352,9 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             ctxt.body(),
             borrowed_place.to_rust_place(ctxt),
             self.borrow_set(),
-            |borrow_index| !self.borrow_out_of_scope(location, borrow_index),
+            |borrow_index| {
+                self.borrow_in_scope_at(borrow_index, location)
+            },
             |this, borrow_index, borrow| {
                 if self.outlives(borrow.region().into(), candidate_blocker.region(ctxt)) {
                     conflict = true;
@@ -409,6 +436,15 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
         self.borrows
+    }
+
+    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex> {
+        self.out_of_scope_borrows
+            .get(&location)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
     }
 }
 

@@ -11,7 +11,7 @@ use super::{
 use crate::{action::BorrowPcgAction, r#loop::LoopPlaceUsageAnalysis, pcg::place_capabilities::PlaceCapabilitiesInterface, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
-    utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace},
+    utils::{place::maybe_old::MaybeOldPlace},
 };
 use crate::{
     borrow_pcg::edge::{

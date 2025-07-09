@@ -112,6 +112,8 @@ pub trait BorrowCheckerInterface<'tcx> {
             .collect()
     }
 
+    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex>;
+
     /// For visualization purposes, this function can be implemented to provide
     /// human-readable names for region variables.
     fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;

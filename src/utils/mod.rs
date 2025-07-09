@@ -11,7 +11,6 @@ pub mod callbacks;
 pub mod display;
 pub mod eval_stmt_data;
 pub(crate) mod incoming_states;
-pub mod loop_usage;
 pub(crate) mod liveness;
 pub mod json;
 mod mutable;

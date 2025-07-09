@@ -532,6 +532,16 @@ pub trait RegionProjectionBaseLike<'tcx>:
     ) -> IndexVec<RegionIdx, PcgRegion>;
 
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
+
+    fn region_projections<C: Copy>(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+        self.regions(ctxt)
+            .into_iter()
+            .map(|region| RegionProjection::new(region, *self, None, ctxt).unwrap())
+            .collect()
+    }
 }
 
 impl<

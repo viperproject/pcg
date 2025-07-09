@@ -18,7 +18,8 @@ use crate::{
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         path_condition::PathConditions,
         region_projection::{
-            LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjectionLabel,
+            LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjectionBaseLike,
+            RegionProjectionLabel,
         },
     },
     coupling::coupled::Coupled,
@@ -83,37 +84,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             statement_index: 0,
         };
 
-        fn add_edges_for_blocked_node<'tcx>(
-            graph: &mut BorrowsGraph<'tcx>,
-            blocked_node: PCGNode<'tcx>,
-            all_blocker_candidates: &[LocalRegionProjection<'tcx>],
-            check_blocks: impl Fn(LocalRegionProjection<'tcx>) -> bool,
-            loop_head: mir::BasicBlock,
-            path_conditions: PathConditions,
-            ctxt: CompilerCtxt<'_, 'tcx>,
-        ) {
-            tracing::info!("blocked_node: {}", blocked_node.to_short_string(ctxt));
-            // RP_b
-            let candidate_blockers = all_blocker_candidates
-                .iter()
-                .filter(|rp| check_blocks(**rp))
-                .copied()
-                .collect::<Vec<_>>();
-            tracing::info!(
-                "candidate_blockers: {}",
-                candidate_blockers.to_short_string(ctxt)
-            );
-
-            for blocker in candidate_blockers {
-                let abstraction_block_edge = AbstractionBlockEdge::new(
-                    vec![blocked_node.to_pcg_node(ctxt).into()],
-                    vec![blocker.to_local_node(ctxt).into()],
-                    ctxt,
-                );
-                let loop_edge = LoopAbstraction::new(abstraction_block_edge, loop_head);
-                graph.insert(loop_edge.to_borrow_pcg_edge(path_conditions.clone()), ctxt);
-            }
-        }
         for borrow in ctxt.bc.borrow_set().location_map().values() {
             let borrowed_place: Place<'tcx> = borrow.borrowed_place().into();
             let longest_prefix_of_blocked_place = all_related_places
@@ -162,21 +132,37 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
         for root in live_roots.iter() {
-            if let PCGNode::RegionProjection(rp) = root
-                && rp.is_remote(ctxt)
-            {
-                add_edges_for_blocked_node(
-                    &mut graph,
-                    *root,
-                    &all_blocker_candidates,
-                    |candidate_blocker| {
-                        ctxt.bc
-                            .outlives(rp.region(ctxt), candidate_blocker.region(ctxt))
-                    },
-                    loop_head,
-                    path_conditions.clone(),
-                    ctxt,
-                );
+            match root {
+                PCGNode::RegionProjection(rp) if rp.is_remote(ctxt) => {
+                    add_edges_for_blocked_node(
+                        &mut graph,
+                        *root,
+                        &all_blocker_candidates,
+                        |candidate_blocker| {
+                            ctxt.bc
+                                .outlives(rp.region(ctxt), candidate_blocker.region(ctxt))
+                        },
+                        loop_head,
+                        path_conditions.clone(),
+                        ctxt,
+                    );
+                }
+                PCGNode::Place(MaybeRemotePlace::Remote(place)) => {
+                    add_edges_for_blocked_node(
+                        &mut graph,
+                        *root,
+                        &all_blocker_candidates,
+                        |candidate_blocker| {
+                            place.regions(ctxt).into_iter().any(|region| {
+                                ctxt.bc.outlives(region, candidate_blocker.region(ctxt))
+                            })
+                        },
+                        loop_head,
+                        path_conditions.clone(),
+                        ctxt,
+                    );
+                }
+                _ => {}
             }
         }
         let mut expander = AbsExpander {
@@ -303,13 +289,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        let mut seen = HashSet::default();
         while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
-            if seen.contains(&last_edge) {
+            if to_cut.contains(&last_edge) {
+                to_cut.extend(path);
                 continue;
             }
-            seen.insert(last_edge);
             let blocked_by_nodes = last_edge.blocked_by_nodes(ctxt).collect::<Vec<_>>();
             if blocked_by_nodes
                 .iter()
@@ -394,5 +379,37 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
 
     fn path_conditions(&self) -> PathConditions {
         self.path_conditions.clone()
+    }
+}
+
+fn add_edges_for_blocked_node<'tcx>(
+    graph: &mut BorrowsGraph<'tcx>,
+    blocked_node: PCGNode<'tcx>,
+    all_blocker_candidates: &[LocalRegionProjection<'tcx>],
+    check_blocks: impl Fn(LocalRegionProjection<'tcx>) -> bool,
+    loop_head: mir::BasicBlock,
+    path_conditions: PathConditions,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+) {
+    tracing::info!("blocked_node: {}", blocked_node.to_short_string(ctxt));
+    // RP_b
+    let candidate_blockers = all_blocker_candidates
+        .iter()
+        .filter(|rp| check_blocks(**rp))
+        .copied()
+        .collect::<Vec<_>>();
+    tracing::info!(
+        "candidate_blockers: {}",
+        candidate_blockers.to_short_string(ctxt)
+    );
+
+    for blocker in candidate_blockers {
+        let abstraction_block_edge = AbstractionBlockEdge::new(
+            vec![blocked_node.to_pcg_node(ctxt).into()],
+            vec![blocker.to_local_node(ctxt).into()],
+            ctxt,
+        );
+        let loop_edge = LoopAbstraction::new(abstraction_block_edge, loop_head);
+        graph.insert(loop_edge.to_borrow_pcg_edge(path_conditions.clone()), ctxt);
     }
 }

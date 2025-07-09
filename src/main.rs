@@ -16,6 +16,8 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 use pcg::utils::{callbacks::{in_cargo_crate, PcgCallbacks}, DUMP_MIR_DATAFLOW, POLONIUS};
+use pcg::rustc_interface::session::{EarlyDiagCtxt, config::ErrorOutputType};
+use pcg::rustc_interface::driver::{args,init_rustc_env_logger};
 
 #[rustversion::since(2025-03-02)]
 use pcg::rustc_interface::driver::run_compiler;
@@ -97,6 +99,9 @@ fn setup_rustc_args() -> Vec<String> {
     // rustc_args.push("-Adangerous_implicit_autorefs".to_string());
 
     rustc_args.extend(std::env::args().skip(1));
+
+    // let args = args::raw_args(&early_dcx);
+    // panic!("args: {:?}", args);
 
     let args_str = rustc_args
         .iter()

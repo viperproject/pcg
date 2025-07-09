@@ -21,7 +21,7 @@ use crate::{
     rustc_interface::{
         borrowck::{self, BorrowIndex, LocationTable, RichLocation},
         data_structures::fx::{FxHashMap, FxHashSet},
-        driver::{self, Compilation},
+        driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{interface::Compiler, Config},
         middle::{
@@ -30,7 +30,7 @@ use crate::{
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::Session,
+        session::{Session, EarlyDiagCtxt, config::ErrorOutputType},
         span::SpanSnippetError,
     },
     utils::MAX_BASIC_BLOCKS,
@@ -58,6 +58,8 @@ impl driver::Callbacks for PcgCallbacks {
         tracing::debug!("Setting mir_borrowck");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
+        let early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
+        init_rustc_env_logger(&early_dcx);
     }
 
     #[rustversion::before(2024-11-09)]
@@ -465,6 +467,13 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
                 bc.blocks(candidate_blocker, borrowed_place, location, ctxt)
             }
             BorrowChecker::Impl(bc) => bc.blocks(candidate_blocker, borrowed_place, location, ctxt),
+        }
+    }
+
+    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex> {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.borrows_out_of_scope_at(location),
+            BorrowChecker::Impl(bc) => bc.borrows_out_of_scope_at(location),
         }
     }
 }
