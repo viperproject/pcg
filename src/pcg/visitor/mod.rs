@@ -5,9 +5,9 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
-use crate::free_pcs::{CapabilityKind, RepackOp};
+use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
-use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::PcgDebugData;
 use crate::r#loop::LoopPlaceUsageAnalysis;
@@ -491,29 +491,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         .capabilities
                         .insert((*place).into(), capability_kind),
                     RepackOp::Expand(expand) => {
-                        let target_places = expand.target_places(self.ctxt);
-                        let capability_projections =
-                            self.pcg.owned.locals_mut()[expand.local()].get_allocated_mut();
-                        capability_projections.insert_expansion(
-                            expand.from,
-                            PlaceExpansion::from_places(target_places.clone(), self.ctxt),
-                        );
-                        let source_cap = if expand.capability.is_read() {
-                            expand.capability
-                        } else {
-                            self.pcg.capabilities.get(expand.from).unwrap()
-                        };
-                        tracing::debug!("source_cap for {:?}: {:?}", owned_action, source_cap);
-                        for target_place in target_places {
-                            self.pcg.capabilities.insert(target_place, source_cap);
-                        }
-                        if expand.capability.is_read() {
-                            self.pcg
-                                .capabilities
-                                .insert(expand.from, CapabilityKind::Read);
-                        } else {
-                            self.pcg.capabilities.remove(expand.from);
-                        }
+                        self.pcg.owned.perform_expand_action(
+                            expand,
+                            &mut self.pcg.capabilities,
+                            self.ctxt,
+                        )?;
                         true
                     }
                     RepackOp::DerefShallowInit(from, to) => {
@@ -602,6 +584,36 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         self.pack_old_and_dead_borrow_leaves()?;
         for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
             self.activate_twophase_borrow_created_at(created_location)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+    pub(crate) fn perform_expand_action(
+        &mut self,
+        expand: RepackExpand<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<(), PcgError> {
+        let target_places = expand.target_places(ctxt);
+        let capability_projections = self.locals_mut()[expand.local()].get_allocated_mut();
+        capability_projections.insert_expansion(
+            expand.from,
+            PlaceExpansion::from_places(target_places.clone(), ctxt),
+        );
+        let source_cap = if expand.capability.is_read() {
+            expand.capability
+        } else {
+            capabilities.get(expand.from).unwrap()
+        };
+        for target_place in target_places {
+            capabilities.insert(target_place, source_cap);
+        }
+        if expand.capability.is_read() {
+            capabilities.insert(expand.from, CapabilityKind::Read);
+        } else {
+            capabilities.remove(expand.from);
         }
         Ok(())
     }

@@ -8,7 +8,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, r#loop::LoopPlaceUsageAnalysis, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis}, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
+use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, r#loop::LoopPlaceUsageAnalysis, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis}, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
     utils::{place::maybe_old::MaybeOldPlace},
@@ -175,6 +175,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         let mut changed = false;
@@ -184,6 +185,7 @@ impl<'tcx> BorrowsState<'tcx> {
             other_block,
             body_analysis,
             capabilities,
+            owned,
             self.path_conditions.clone(),
             ctxt,
         );

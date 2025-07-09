@@ -191,6 +191,12 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for PcgVisitor<'_, 'mir, 'tcx> {
         self.record_and_apply_action(action.into())
     }
 
+    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
+        self.pcg.owned.locals()[base.local]
+            .get_allocated()
+            .contains_expansion_from(base)
+    }
+
     fn expand_owned_place_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -198,10 +204,10 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for PcgVisitor<'_, 'mir, 'tcx> {
         obtain_type: ObtainType,
         _ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let capability_projs = self.pcg.owned.locals_mut()[base.local].get_allocated_mut();
-        if capability_projs.contains_expansion_from(base) {
+        if self.contains_owned_expansion_from(base) {
             return Ok(false);
-        } else if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
+        }
+        if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
                     RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),

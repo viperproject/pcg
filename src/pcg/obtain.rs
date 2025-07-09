@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    action::{BorrowPcgAction, PcgAction},
+    action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
         borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
@@ -14,7 +14,7 @@ use crate::{
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
-    free_pcs::CapabilityKind,
+    free_pcs::{CapabilityKind, RepackOp},
     pcg::{PCGNodeLike, PcgError},
     pcg_validity_assert,
     utils::{
@@ -48,6 +48,11 @@ impl ObtainType {
 pub(crate) trait Expander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
+    fn contains_owned_expansion_from(
+        &self,
+        base: Place<'tcx>,
+    ) -> bool;
+
     fn expand_to(
         &mut self,
         place: Place<'tcx>,
@@ -69,8 +74,35 @@ pub(crate) trait Expander<'mir, 'tcx> {
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Result<bool, PcgError>;
+        ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        if self.contains_owned_expansion_from(base) {
+            return Ok(false);
+        }
+        if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
+            self.apply_action(
+                OwnedPcgAction::new(
+                    RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
+                    None,
+                )
+                .into(),
+            )?;
+        } else {
+            self.apply_action(
+                OwnedPcgAction::new(
+                    RepackOp::expand(
+                        expansion.base_place(),
+                        expansion.guide(),
+                        obtain_type.capability(),
+                        ctxt,
+                    ),
+                    None,
+                )
+                .into(),
+            )?;
+        }
+        Ok(true)
+    }
 
     fn expand_place_one_level(
         &mut self,
@@ -117,7 +149,10 @@ pub(crate) trait Expander<'mir, 'tcx> {
             ctxt,
         )?;
 
-        if self.borrows_graph().contains_deref_expansion_from(base, ctxt) {
+        if self
+            .borrows_graph()
+            .contains_deref_expansion_from(base, ctxt)
+        {
             return Ok(false);
         }
 

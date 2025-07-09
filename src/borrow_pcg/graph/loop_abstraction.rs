@@ -23,7 +23,7 @@ use crate::{
         },
     },
     coupling::coupled::Coupled,
-    free_pcs::CapabilityKind,
+    free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
         obtain::{Expander, ObtainType},
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -109,6 +109,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             capabilities: None,
             path_conditions: path_conditions.clone(),
             ctxt,
+            owned: None,
         };
 
         let mut handle_blocked_node =
@@ -145,7 +146,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         expander
                             .add_and_update_placeholder_edges(
                                 rp,
-                                &nested_rps.iter().map(|rp| rp.to_region_projection()).collect::<Vec<_>>(),
+                                &nested_rps
+                                    .iter()
+                                    .map(|rp| rp.to_region_projection())
+                                    .collect::<Vec<_>>(),
                                 "add_edges_for_blocked_node",
                                 ctxt,
                             )
@@ -327,6 +331,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         loop_head_block: mir::BasicBlock,
         live_loop_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
@@ -334,6 +339,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             loop_head_block,
             graph: self,
             capabilities: Some(capabilities),
+            owned: Some(owned),
             path_conditions,
             ctxt,
         };
@@ -393,6 +399,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     loop_head_block: mir::BasicBlock,
     graph: &'pcg mut BorrowsGraph<'tcx>,
     capabilities: Option<&'pcg mut PlaceCapabilities<'tcx>>,
+    owned: Option<&'pcg mut FreePlaceCapabilitySummary<'tcx>>,
     path_conditions: PathConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
@@ -425,18 +432,27 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
                 BorrowPcgActionKind::SetLatest(place, snapshot_location) => todo!(),
                 BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => Ok(true),
             },
-            PcgAction::Owned(action_kind_with_debug_ctxt) => unreachable!(),
+            PcgAction::Owned(action) => match action.kind {
+                RepackOp::StorageDead(local) => todo!(),
+                RepackOp::IgnoreStorageDead(local) => todo!(),
+                RepackOp::Weaken(place, capability_kind, capability_kind1) => todo!(),
+                RepackOp::Expand(repack_expand) => {
+                    if let Some(owned) = &mut self.owned {
+                        owned.perform_expand_action(
+                            repack_expand,
+                            self.capabilities.as_mut().unwrap(),
+                            self.ctxt,
+                        )?;
+                    } else {
+                        unreachable!()
+                    }
+                    Ok(true)
+                }
+                RepackOp::Collapse(repack_collapse) => todo!(),
+                RepackOp::DerefShallowInit(place, place1) => todo!(),
+                RepackOp::RegainLoanedCapability(place, capability_kind) => todo!(),
+            },
         }
-    }
-
-    fn expand_owned_place_one_level(
-        &mut self,
-        base: Place<'tcx>,
-        expansion: &crate::utils::ShallowExpansion<'tcx>,
-        obtain_type: crate::pcg::obtain::ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Result<bool, crate::pcg::PcgError> {
-        Ok(true)
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {
@@ -449,6 +465,17 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
 
     fn path_conditions(&self) -> PathConditions {
         self.path_conditions.clone()
+    }
+
+    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
+        if let Some(owned) = &self.owned {
+            owned.locals()[base.local]
+                .get_allocated()
+                .contains_expansion_from(base)
+        } else {
+            // Pretend we're always fully expanded in the local PCG
+            true
+        }
     }
 }
 

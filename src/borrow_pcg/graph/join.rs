@@ -7,6 +7,7 @@ use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::coupling::coupled::Coupled;
+use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike};
 use crate::r#loop::LoopPlaceUsageAnalysis;
@@ -84,6 +85,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
@@ -105,6 +107,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self_block,
                 used_places,
                 capabilities,
+                owned,
                 path_conditions,
                 body_analysis,
                 ctxt,
@@ -192,6 +195,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         loop_head: BasicBlock,
         used_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -235,6 +239,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             loop_head,
             &loop_places,
             capabilities,
+            owned,
             path_conditions.clone(),
             ctxt,
         );
