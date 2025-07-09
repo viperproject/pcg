@@ -11,7 +11,7 @@ pub(crate) trait HasPcgElems<T> {
     fn pcg_elems(&mut self) -> Vec<&mut T>;
 }
 
-#[derive(From, PartialEq, Eq, Hash)]
+#[derive(From, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum LabelRegionProjectionPredicate<'tcx> {
     Equals(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     AllNonPlaceHolder(MaybeOldPlace<'tcx>, RegionIdx),

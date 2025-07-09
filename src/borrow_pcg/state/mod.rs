@@ -68,7 +68,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph
             .frozen_graph()
             .leaf_nodes(ctxt)
-            .collect()
     }
 
     fn introduce_initial_borrows(

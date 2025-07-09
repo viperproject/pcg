@@ -178,6 +178,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 _ => {}
             }
         }
+        graph.render_debug_graph(ctxt, "Abstraction graph before expansion");
         let mut expander = AbsExpander {
             loop_head_block: loop_head,
             graph: &mut graph,
@@ -194,14 +195,30 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ctxt,
                 )
                 .unwrap();
+            expander
+                .graph
+                .render_debug_graph(ctxt, "Abstraction graph after expansion");
         }
         let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Start(loop_head));
         let mut to_label = HashSet::default();
         let frozen_graph = graph.frozen_graph();
+        tracing::info!(
+            "leaf edges: {}",
+            frozen_graph
+                .leaf_edges(ctxt)
+                .to_short_string(ctxt)
+        );
+        tracing::info!(
+            "leaf nodes: {}",
+            frozen_graph
+                .leaf_nodes(ctxt)
+                .to_short_string(ctxt)
+        );
         for node in graph.nodes(ctxt) {
             if let PCGNode::RegionProjection(rp) = node {
                 if let Some(local_rp) = rp.try_to_local_node(ctxt) {
                     if !frozen_graph.is_leaf(local_rp, ctxt) && !frozen_graph.is_root(node, ctxt) {
+                        tracing::info!("will label {}", local_rp.to_short_string(ctxt));
                         let local_rp = local_rp.try_into_region_projection().unwrap();
                         to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
                             local_rp.place().into(),
@@ -212,6 +229,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
         for rp in to_label.iter() {
+            tracing::info!("labeling {:?}", rp);
             graph.label_region_projection(rp, Some(loop_head_label), ctxt);
         }
         ConstructAbstractionGraphResult::new(graph, to_label, to_remove)

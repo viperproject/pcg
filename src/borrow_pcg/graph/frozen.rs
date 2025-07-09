@@ -8,7 +8,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdgeRef, LocalNode},
         edge_data::EdgeData,
     },
-    pcg::PCGNode,
+    pcg::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::{FxHashMap, FxHashSet},
     utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
@@ -170,10 +170,12 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     pub fn leaf_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = LocalNode<'tcx>> + use<'tcx, 'slf, 'mir, 'bc> {
-        self.leaf_edges(repacker)
-            .into_iter()
-            .flat_map(move |edge| edge.blocked_by_nodes(repacker).collect::<Vec<_>>())
+    ) -> Vec<LocalNode<'tcx>> {
+        self.nodes(repacker)
+            .iter()
+            .filter_map(|node| node.try_to_local_node(repacker))
+            .filter(|node| self.is_leaf(*node, repacker))
+            .collect()
     }
 
     pub(crate) fn is_root<'slf, 'mir: 'graph, 'bc: 'graph>(
@@ -189,7 +191,9 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         node: LocalNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
-        self.leaf_nodes(repacker).contains(&node)
+        self.graph
+            .edges()
+            .all(|edge| !edge.blocks_node(node.into(), repacker))
     }
 
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
