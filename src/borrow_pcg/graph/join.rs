@@ -44,7 +44,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        tracing::info!("join {self_block:?} {other_block:?} start");
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");

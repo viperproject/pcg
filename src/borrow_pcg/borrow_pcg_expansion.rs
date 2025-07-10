@@ -401,7 +401,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         P: Ord + HasPlace<'tcx>,
     {
         let place_ty = base.place().ty(ctxt);
-        if place_ty.ty.is_mutable_ptr() {
+        if place_ty.ty.is_unsafe_ptr() {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
         Ok(Self {

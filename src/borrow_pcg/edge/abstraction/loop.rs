@@ -1,7 +1,7 @@
 use super::AbstractionBlockEdge;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, LocalNode, ToBorrowsEdge};
-use crate::borrow_pcg::domain::AbstractionOutputTarget;
+use crate::borrow_pcg::domain::LoopAbstractionOutput;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
@@ -17,15 +17,15 @@ use crate::utils::CompilerCtxt;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    pub(crate) edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>>,
+    pub(crate) edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>,
     pub(crate) block: BasicBlock,
 }
 
 impl<'tcx> LoopAbstraction<'tcx> {
     pub(crate) fn redirect(
         &mut self,
-        from: AbstractionOutputTarget<'tcx>,
-        to: AbstractionOutputTarget<'tcx>,
+        from: LoopAbstractionOutput<'tcx>,
+        to: LoopAbstractionOutput<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         self.edge.redirect(from, to, ctxt);
@@ -111,7 +111,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 
 impl<'tcx, T> HasPcgElems<T> for LoopAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>>: HasPcgElems<T>,
+    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>: HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut T> {
         self.edge.pcg_elems()
@@ -129,7 +129,7 @@ impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
 
 impl<'tcx> LoopAbstraction<'tcx> {
     pub(crate) fn new(
-        edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>>,
+        edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>,
         block: BasicBlock,
     ) -> Self {
         Self { edge, block }

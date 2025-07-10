@@ -36,7 +36,7 @@ use crate::{
         initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
         validity::HasValidityCheck,
-        CompilerCtxt, Place,
+        CompilerCtxt, Place, PANIC_ON_ERROR,
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
@@ -341,7 +341,8 @@ impl<'a, 'tcx> BodyAnalysis<'a, 'tcx> {
         let definitely_initialized = DefinitelyInitialized::new(ctxt.tcx(), ctxt.body(), move_data);
         let place_liveness = PlaceLiveness::new(ctxt);
         let loop_analysis = LoopAnalysis::find_loops(ctxt.body());
-        let loop_place_analysis = LoopPlaceUsageAnalysis::new(ctxt.tcx(), ctxt.body(), &loop_analysis);
+        let loop_place_analysis =
+            LoopPlaceUsageAnalysis::new(ctxt.tcx(), ctxt.body(), &loop_analysis);
         Self {
             definitely_initialized,
             place_liveness,
@@ -405,6 +406,9 @@ impl ErrorState {
     }
 
     pub(crate) fn record_error(&mut self, error: PcgError) {
+        if *PANIC_ON_ERROR {
+            panic!("PCG Error: {:?}", error);
+        }
         tracing::error!("PCG Error: {:?}", error);
         self.error = Some(error);
     }
@@ -427,6 +431,9 @@ impl From<PcgUnsupportedError> for PcgError {
 
 impl PcgError {
     pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
+        if *PANIC_ON_ERROR {
+            panic!("PCG Error: {:?} ({})", kind, context.join(", "));
+        }
         Self { kind, context }
     }
 }

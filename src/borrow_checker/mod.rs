@@ -15,13 +15,31 @@ use crate::rustc_interface::borrowck::RegionInferenceContext;
 use crate::rustc_interface::borrowck::{
     places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias,
 };
-use crate::rustc_interface::data_structures::fx::FxIndexMap;
+use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
 use crate::rustc_interface::middle::mir::{self, Body, Location};
 use crate::rustc_interface::middle::ty::{RegionVid, TyCtxt};
 use crate::utils::CompilerCtxt;
 use crate::utils::Place;
 
 pub mod r#impl;
+
+pub(crate) trait BorrowLike<'tcx> {
+    fn get_borrowed_place(&self) -> Place<'tcx>;
+}
+
+#[rustversion::since(2024-10-17)]
+impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
+    fn get_borrowed_place(&self) -> Place<'tcx> {
+        self.borrowed_place().into()
+    }
+}
+
+#[rustversion::before(2024-10-17)]
+impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
+    fn get_borrowed_place(&self) -> Place<'tcx> {
+        self.borrowed_place.into()
+    }
+}
 
 /// An interface to the results of the borrow-checker analysis. The PCG queries
 /// this interface as part of its analysis, for example, to identify when borrows
@@ -89,11 +107,11 @@ pub trait BorrowCheckerInterface<'tcx> {
         &self,
         place: Place<'tcx>,
         _location: Location,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<BorrowData<'tcx>> {
         self.location_map()
             .iter()
-            .filter(|(_, data)| data.borrowed_place() == place.to_rust_place(ctxt))
+            .filter(|(_, data)| data.get_borrowed_place() == place)
             .map(|(_, data)| data.clone())
             .collect()
     }
@@ -134,6 +152,24 @@ pub trait BorrowCheckerInterface<'tcx> {
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
 }
 
+trait BorrowSetLike<'tcx> {
+    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>>;
+}
+
+#[rustversion::since(2024-10-17)]
+impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
+    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
+        self.local_map().get(&local)
+    }
+}
+
+#[rustversion::before(2024-10-17)]
+impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
+    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
+        self.local_map.get(&local)
+    }
+}
+
 pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
     s: &mut S,
     tcx: TyCtxt<'tcx>,
@@ -148,7 +184,7 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
 {
     // The number of candidates can be large, but borrows for different locals cannot conflict with
     // each other, so we restrict the working set a priori.
-    let Some(borrows_for_place_base) = borrow_set.local_map().get(&borrowed_place.local) else {
+    let Some(borrows_for_place_base) = borrow_set.get_borrows_for_local(borrowed_place.local) else {
         return;
     };
     tracing::debug!(
@@ -168,7 +204,7 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
         if places_conflict(
             tcx,
             body,
-            borrowed.borrowed_place(),
+            borrowed.get_borrowed_place().to_rust_place(CompilerCtxt::new(body, tcx, ())),
             borrowed_place,
             PlaceConflictBias::Overlap,
         ) {

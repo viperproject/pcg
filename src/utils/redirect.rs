@@ -33,6 +33,15 @@ impl<'tcx, T: LabelPlace<'tcx>> LabelPlace<'tcx> for MaybeRedirected<T> {
     }
 }
 
+impl<T> MaybeRedirected<T> {
+    pub(crate) fn map<U, F: Fn(T) -> U>(self, f: F) -> MaybeRedirected<U> {
+        MaybeRedirected {
+            original: f(self.original),
+            redirected: self.redirected.map(f),
+        }
+    }
+}
+
 impl<T> From<T> for MaybeRedirected<T> {
     fn from(original: T) -> Self {
         Self {

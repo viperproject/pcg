@@ -1,8 +1,7 @@
 use itertools::Itertools;
 
 use crate::{
-    action::PcgAction,
-    borrow_pcg::{
+    action::PcgAction, borrow_checker::BorrowLike, borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
@@ -16,19 +15,15 @@ use crate::{
         region_projection::{
             LocalRegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
         },
-    },
-    free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
-    pcg::{
+    }, free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp}, pcg::{
         obtain::{Expander, ObtainType},
         place_capabilities::PlaceCapabilities,
         LocalNodeLike, PCGNode, PCGNodeLike,
-    },
-    rustc_interface::middle::mir::{self},
-    utils::{
+    }, rustc_interface::middle::mir::{self}, utils::{
         data_structures::HashSet, display::DisplayWithCompilerCtxt, liveness::PlaceLiveness,
         maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, CompilerCtxt, HasPlace, Place,
         SnapshotLocation,
-    },
+    }
 };
 
 pub(crate) struct ConstructAbstractionGraphResult<'tcx> {
@@ -149,8 +144,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             };
 
-        for borrow in ctxt.bc.borrow_set().location_map().values() {
-            let borrowed_place: Place<'tcx> = borrow.borrowed_place().into();
+        for borrow in ctxt.bc.location_map().values() {
+            let borrowed_place: Place<'tcx> = borrow.get_borrowed_place();
             let longest_prefix_of_blocked_place = all_related_places
                 .iter()
                 .find(|p| p.is_prefix(borrowed_place))
@@ -164,9 +159,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 // N_b
                 let blocked_nodes = all_nodes
                     .iter()
-                    .filter(|node| {
-                        node.related_current_place() == Some(related_place)
-                    })
+                    .filter(|node| node.related_current_place() == Some(related_place))
                     .copied();
 
                 for blocked_node in blocked_nodes {
@@ -406,7 +399,14 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                     region_projection_label,
                     self.ctxt,
                 )),
-                _ => todo!(),
+                BorrowPcgActionKind::Weaken(_) => todo!(),
+                BorrowPcgActionKind::Restore(_) => todo!(),
+                BorrowPcgActionKind::MakePlaceOld(_, _) => todo!(),
+                BorrowPcgActionKind::SetLatest(_, _) => todo!(),
+                BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => {
+                    self.graph.remove(borrow_pcg_edge.kind());
+                    Ok(true)
+                }
             },
             PcgAction::Owned(action) => match action.kind {
                 RepackOp::StorageDead(_) => todo!(),

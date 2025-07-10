@@ -13,14 +13,21 @@ use crate::{
     pcg::{PCGNode, PCGNodeLike},
     utils::{
         display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace,
-        place::maybe_old::MaybeOldPlace, validity::HasValidityCheck, CompilerCtxt,
+        place::maybe_old::MaybeOldPlace, validity::HasValidityCheck, CompilerCtxt, Place,
     },
 };
+
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref, DerefMut)]
 pub struct FunctionCallAbstractionInput<'tcx>(
     pub(crate) RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
 );
+
+impl<'tcx> FunctionCallAbstractionInput<'tcx> {
+    pub(crate) fn new(region_projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
+        FunctionCallAbstractionInput(region_projection)
+    }
+}
 
 impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn label_region_projection(
@@ -70,6 +77,10 @@ impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub(crate) struct LoopAbstractionInput<'tcx>(pub(crate) PCGNode<'tcx>);
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
+pub(crate) struct LoopAbstractionOutput<'tcx>(pub(crate) LocalNode<'tcx>);
+
 
 impl<'tcx> From<MaybeRemotePlace<'tcx>> for LoopAbstractionInput<'tcx> {
     fn from(value: MaybeRemotePlace<'tcx>) -> Self {
@@ -140,6 +151,70 @@ impl<'tcx> TryFrom<LoopAbstractionInput<'tcx>> for RegionProjection<'tcx> {
     }
 }
 
+impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionOutput<'tcx> {
+    fn label_region_projection(
+        &mut self,
+        projection: &LabelRegionProjectionPredicate<'tcx>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.0.label_region_projection(projection, label, ctxt)
+    }
+}
+
+impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
+    for LoopAbstractionOutput<'tcx>
+{
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+        self.0.to_short_string(ctxt)
+    }
+}
+
+impl<'tcx> PCGNodeLike<'tcx> for LoopAbstractionOutput<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+        self.0.into()
+    }
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for LoopAbstractionOutput<'tcx> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.0.check_validity(ctxt)
+    }
+}
+
+impl<'tcx> LabelPlace<'tcx> for LoopAbstractionOutput<'tcx> {
+    fn label_place(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        latest: &Latest<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut changed = false;
+        let maybe_old_places: Vec<&mut MaybeOldPlace<'tcx>> = self.0.pcg_elems();
+        for p in maybe_old_places {
+            changed |= p.label_place(predicate, latest, ctxt);
+        }
+        changed
+    }
+}
+
+impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LoopAbstractionOutput<'tcx> {
+    fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
+        LoopAbstractionOutput(PCGNode::RegionProjection(value.into()))
+    }
+}
+
+impl<'tcx> TryFrom<LoopAbstractionOutput<'tcx>> for RegionProjection<'tcx> {
+    type Error = ();
+
+    fn try_from(value: LoopAbstractionOutput<'tcx>) -> Result<Self, Self::Error> {
+        match value.0 {
+            PCGNode::RegionProjection(rp) => Ok(rp.into()),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub struct AbstractionInputTarget<'tcx>(pub(crate) PCGNode<'tcx>);
 
@@ -187,3 +262,12 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
         self.0.to_short_string(ctxt)
     }
 }
+
+pub type FunctionCallAbstractionOutput<'tcx> = FunctionCallAbstractionInput<'tcx>;
+
+impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for FunctionCallAbstractionOutput<'tcx> {
+    fn from(value: RegionProjection<'tcx, Place<'tcx>>) -> Self {
+        FunctionCallAbstractionInput(value.into())
+    }
+}
+

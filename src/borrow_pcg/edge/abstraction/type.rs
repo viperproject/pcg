@@ -1,8 +1,13 @@
-use crate::borrow_pcg::{
-    domain::{AbstractionInputTarget, AbstractionOutputTarget},
-    edge::abstraction::{AbstractionBlockEdge, AbstractionInputLike, AbstractionType},
-};
+use std::marker::PhantomData;
+
+use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::Location;
+use crate::
+    borrow_pcg::{
+        domain::{AbstractionInputTarget, AbstractionOutputTarget, FunctionCallAbstractionOutput},
+        edge::abstraction::{AbstractionBlockEdge, AbstractionInputLike, AbstractionType},
+    }
+;
 
 impl<'tcx> AbstractionType<'tcx> {
     pub(crate) fn is_function_call(&self) -> bool {
@@ -24,26 +29,47 @@ impl<'tcx> AbstractionType<'tcx> {
         self.edge().outputs()
     }
 
-    pub fn edge(&self) -> AbstractionBlockEdge<'tcx, AbstractionInputTarget<'tcx>> {
+    pub fn edge(
+        &self,
+    ) -> AbstractionBlockEdge<'tcx, AbstractionInputTarget<'tcx>, AbstractionOutputTarget<'tcx>>
+    {
         match self {
             AbstractionType::FunctionCall(c) => AbstractionBlockEdge {
+                _phantom: PhantomData,
                 inputs: c
                     .edge()
                     .inputs
                     .iter()
                     .map(|i| i.to_abstraction_input())
                     .collect(),
-                outputs: c.edge().outputs.clone(),
+                outputs: c
+                    .edge()
+                    .outputs
+                    .iter()
+                    .map(|o| o.map(|o| o.into()))
+                    .collect(),
             },
             AbstractionType::Loop(c) => AbstractionBlockEdge {
+                _phantom: PhantomData,
                 inputs: c
                     .edge
                     .inputs
                     .iter()
                     .map(|i| i.to_abstraction_input())
                     .collect(),
-                outputs: c.edge.outputs.clone(),
+                outputs: c
+                    .edge
+                    .outputs
+                    .iter()
+                    .map(|o| o.map(|o| (*o).into()))
+                    .collect(),
             },
         }
+    }
+}
+
+impl<'tcx> From<FunctionCallAbstractionOutput<'tcx>> for AbstractionOutputTarget<'tcx> {
+    fn from(value: FunctionCallAbstractionOutput<'tcx>) -> Self {
+        AbstractionOutputTarget(PCGNode::RegionProjection(*value))
     }
 }

@@ -31,7 +31,7 @@ use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
-    middle::{mir::Body, ty::TyCtxt},
+    middle::{mir::Body, ty::{self, TyCtxt}},
     mir_dataflow::move_paths::MoveData,
 };
 use serde_json::json;
@@ -263,6 +263,16 @@ pub struct PcgCtxt<'mir, 'tcx> {
     move_data: MoveData<'tcx>,
 }
 
+#[rustversion::since(2024-10-17)]
+fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> MoveData<'tcx> {
+    MoveData::gather_moves(body, tcx, |_| true)
+}
+
+#[rustversion::before(2024-10-17)]
+fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> MoveData<'tcx> {
+    MoveData::gather_moves(body, tcx, ty::ParamEnv::empty(), |_| true)
+}
+
 impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
     pub fn new<BC: BorrowCheckerInterface<'tcx> + ?Sized>(
         body: &'mir Body<'tcx>,
@@ -272,7 +282,7 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
         let ctxt = CompilerCtxt::new(body, tcx, bc.as_dyn());
         Self {
             compiler_ctxt: ctxt,
-            move_data: MoveData::gather_moves(ctxt.body(), ctxt.tcx(), |_| true),
+            move_data: gather_moves(ctxt.body(), ctxt.tcx()),
         }
     }
 }

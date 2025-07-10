@@ -162,7 +162,9 @@ impl<'tcx, T: Analysis<'tcx>> mir_dataflow::AnalysisDomain<'tcx> for AnalysisEng
         self.0.initialize_start_block(body, state);
     }
 }
+
 impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T> {
+    #[rustversion::since(2024-11-14)]
     type Direction = T::Direction;
 
     #[rustversion::since(2024-11-14)]
@@ -274,15 +276,6 @@ impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T>
     }
 }
 
-#[rustversion::before(2024-12-14)]
-pub(crate) fn cursor_contains_local(
-    cursor: RefMut<'_, ResultsCursor<'_, '_, MaybeLiveLocals>>,
-    local: mir::Local,
-) -> bool {
-    cursor.contains(local)
-}
-
-#[rustversion::since(2024-12-14)]
 pub(crate) fn with_cursor_state<'tcx, A: mir_dataflow::Analysis<'tcx>, R>(
     cursor: RefMut<'_, ResultsCursor<'_, 'tcx, A>>,
     f: impl FnOnce(&A::Domain) -> R,

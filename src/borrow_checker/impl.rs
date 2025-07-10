@@ -320,6 +320,23 @@ impl BorrowCheckerImpl<'_, '_> {
     }
 }
 
+pub(crate) trait HasPcgRegion {
+    fn pcg_region(&self) -> PcgRegion;
+}
+
+#[rustversion::since(2024-10-17)]
+impl<'tcx> HasPcgRegion for BorrowData<'_> {
+    fn pcg_region(&self) -> PcgRegion {
+        self.region().into()
+    }
+}
+#[rustversion::before(2024-10-17)]
+impl<'tcx> HasPcgRegion for BorrowData<'_> {
+    fn pcg_region(&self) -> PcgRegion {
+        self.region.into()
+    }
+}
+
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     fn blocks(
         &self,
@@ -338,15 +355,10 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             self.borrow_set(),
             |borrow_index| self.borrow_in_scope_at(borrow_index, location),
             |_this, _borrow_index, borrow| {
-                if self.outlives(borrow.region().into(), candidate_blocker.region(ctxt)) {
+                if self.outlives(borrow.pcg_region(), candidate_blocker.region(ctxt)) {
                     conflict = true;
                     ControlFlow::Break(())
                 } else {
-                    tracing::info!(
-                        "region {:?} does not outlive {:?}",
-                        borrow.region(),
-                        candidate_blocker.region(ctxt)
-                    );
                     ControlFlow::Continue(())
                 }
             },

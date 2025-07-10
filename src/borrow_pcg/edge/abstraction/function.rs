@@ -2,7 +2,9 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::{BlockedNode, LocalNode},
-        domain::{AbstractionOutputTarget, FunctionCallAbstractionInput},
+        domain::{
+            FunctionCallAbstractionInput, FunctionCallAbstractionOutput,
+        },
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate},
@@ -14,10 +16,7 @@ use crate::{
         hir::def_id::DefId,
         middle::{mir::Location, ty::GenericArgsRef},
     },
-    utils::{
-        display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
-        CompilerCtxt,
-    },
+    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
@@ -37,14 +36,18 @@ pub struct FunctionCallAbstraction<'tcx> {
     location: Location,
     /// This may be `None` if the call is to a function pointer
     function_data: Option<FunctionData<'tcx>>,
-    edge: AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>>,
+    edge: AbstractionBlockEdge<
+        'tcx,
+        FunctionCallAbstractionInput<'tcx>,
+        FunctionCallAbstractionOutput<'tcx>,
+    >,
 }
 
 impl<'tcx> FunctionCallAbstraction<'tcx> {
     pub(crate) fn redirect(
         &mut self,
-        from: AbstractionOutputTarget<'tcx>,
-        to: AbstractionOutputTarget<'tcx>,
+        from: FunctionCallAbstractionOutput<'tcx>,
+        to: FunctionCallAbstractionOutput<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         self.edge.redirect(from, to, ctxt);
@@ -137,7 +140,11 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 
 impl<'tcx, T> HasPcgElems<T> for FunctionCallAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>>: HasPcgElems<T>,
+    AbstractionBlockEdge<
+        'tcx,
+        FunctionCallAbstractionInput<'tcx>,
+        FunctionCallAbstractionOutput<'tcx>,
+    >: HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut T> {
         self.edge.pcg_elems()
@@ -156,14 +163,24 @@ impl<'tcx> FunctionCallAbstraction<'tcx> {
         self.location
     }
 
-    pub fn edge(&self) -> &AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>> {
+    pub fn edge(
+        &self,
+    ) -> &AbstractionBlockEdge<
+        'tcx,
+        FunctionCallAbstractionInput<'tcx>,
+        FunctionCallAbstractionOutput<'tcx>,
+    > {
         &self.edge
     }
 
     pub fn new(
         location: Location,
         function_data: Option<FunctionData<'tcx>>,
-        edge: AbstractionBlockEdge<'tcx, FunctionCallAbstractionInput<'tcx>>,
+        edge: AbstractionBlockEdge<
+            'tcx,
+            FunctionCallAbstractionInput<'tcx>,
+            FunctionCallAbstractionOutput<'tcx>,
+        >,
     ) -> Self {
         Self {
             location,
