@@ -55,7 +55,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
 
             let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
-            run_on_crate(
+            if !run_on_crate(
                 &krate.name,
                 version,
                 date,
@@ -65,7 +65,9 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                     function: None,
                     extra_env_vars: extra_env_vars.clone(),
                 },
-            );
+            ) {
+                panic!("Failed: {i} ({}: {})", krate.name, version);
+            }
             println!("Finished: {i} ({})", krate.name);
         });
 }

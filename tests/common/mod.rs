@@ -54,7 +54,8 @@ pub fn cargo_clean_in_dir(dir: &Path) {
 }
 
 #[allow(dead_code)]
-pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
+#[must_use]
+pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) -> bool {
     let cwd = std::env::current_dir().unwrap();
     let build_args = match options.target() {
         Target::Release => vec!["--release"],
@@ -96,12 +97,7 @@ pub fn run_pcg_on_crate_in_dir(dir: &Path, options: RunOnCrateOptions) {
         .status()
         .unwrap_or_else(|_| panic!("Failed to execute cargo check on {}", dir.display()));
 
-    assert!(
-        exit.success(),
-        "PCG check failed for directory {} with status: {}",
-        dir.display(),
-        exit
-    );
+    exit.success()
 }
 
 pub fn is_polonius_test_file(file: &Path) -> bool {
@@ -280,14 +276,19 @@ impl RunOnCrateOptions {
     }
 }
 
-#[allow(dead_code)]
-pub fn run_on_crate(name: &str, version: &str, date: Option<&str>, options: RunOnCrateOptions) {
+#[must_use]
+pub fn run_on_crate(
+    name: &str,
+    version: &str,
+    date: Option<&str>,
+    options: RunOnCrateOptions,
+) -> bool {
     if let Err(e) = is_supported_crate(name, version) {
         eprintln!("{e}");
-        return;
+        return false;
     }
     let dirname = download_crate(name, version, date);
-    run_pcg_on_crate_in_dir(&dirname, options);
+    let result = run_pcg_on_crate_in_dir(&dirname, options);
     if let Some(date) = date {
         let cargo_lock_file = cached_cargo_lock_file(name, version, date);
         if !cargo_lock_file.exists() {
@@ -297,6 +298,18 @@ pub fn run_on_crate(name: &str, version: &str, date: Option<&str>, options: RunO
     std::fs::remove_dir_all(&dirname).unwrap_or_else(|e| {
         panic!("Failed to remove directory {}: {}", dirname.display(), e);
     });
+    result
+}
+
+#[allow(dead_code)]
+pub fn ensure_successful_run_on_crate(
+    name: &str,
+    version: &str,
+    date: Option<&str>,
+    options: RunOnCrateOptions,
+) {
+    let result = run_on_crate(name, version, date, options);
+    assert!(result, "PCG check failed for crate {name} {version}");
 }
 
 #[allow(dead_code)]
