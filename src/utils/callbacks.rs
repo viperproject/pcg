@@ -464,12 +464,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
         }
     }
 
-    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex> {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.borrows_out_of_scope_at(location),
-            BorrowChecker::Impl(bc) => bc.borrows_out_of_scope_at(location),
-        }
-    }
 }
 
 fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {

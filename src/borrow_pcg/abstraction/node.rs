@@ -9,7 +9,7 @@ use crate::{
             MaybeRemoteRegionProjectionBase
         ,
     },
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::PCGNode,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt,
     },
@@ -19,29 +19,6 @@ use crate::{
 pub(crate) struct AbstractionGraphNode<'tcx>(
     pub(crate) PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
 );
-
-impl<'tcx> AbstractionGraphNode<'tcx> {
-    pub(crate) fn remove_rp_label_if_present(&mut self) {
-        if let PCGNode::RegionProjection(rp) = &mut self.0 {
-            self.0 = PCGNode::RegionProjection(rp.unlabelled());
-        }
-    }
-
-    pub(crate) fn to_pcg_node(self, ctxt: CompilerCtxt<'_, 'tcx>) -> PCGNode<'tcx> {
-        self.0.to_pcg_node(ctxt)
-    }
-
-    pub(crate) fn is_old(&self) -> bool {
-        match self.0 {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(rp) => rp.base().is_old(),
-        }
-    }
-
-    pub(crate) fn place(maybe_remote_place: MaybeRemotePlace<'tcx>) -> Self {
-        AbstractionGraphNode(PCGNode::Place(maybe_remote_place))
-    }
-}
 
 impl<'tcx> From<LocalNode<'tcx>> for AbstractionGraphNode<'tcx> {
     fn from(node: LocalNode<'tcx>) -> Self {
@@ -68,7 +45,6 @@ impl<'tcx> TryFrom<PCGNode<'tcx>> for AbstractionGraphNode<'tcx> {
                     Err(())
                 }
             }
-            _ => Err(()),
         }
     }
 }

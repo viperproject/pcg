@@ -8,7 +8,7 @@ use crate::{
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     }, pcg::{PCGNode, PCGNodeLike}, pcg_validity_assert, utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
-        validity::HasValidityCheck, CompilerCtxt, HasPlace,
+        validity::HasValidityCheck, CompilerCtxt,
     }
 };
 

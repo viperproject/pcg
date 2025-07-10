@@ -19,7 +19,7 @@ use super::{
     PcgDebugData, PcgError,
 };
 use crate::{
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis}, pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis}, utils::{arena::ArenaRef, initialized::DefinitelyInitialized, liveness::PlaceLiveness, CompilerCtxt}
+    pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis}, utils::{arena::ArenaRef, CompilerCtxt}
 };
 use crate::{
     pcg::triple::TripleWalker,
@@ -126,7 +126,6 @@ pub struct PcgEngine<'a, 'tcx: 'a, A: Allocator + Clone> {
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
     body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
-    move_data: &'a MoveData<'tcx>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
     pub(crate) arena: A,
@@ -189,7 +188,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             .as_ref()
             .map(|data| data.debug_output_dir.clone())
     }
-    fn initialize<'md>(&self, state: &mut PcgDomain<'a, 'tcx, A>, block: BasicBlock) {
+    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, A>, block: BasicBlock) {
         if let Some(existing_block) = state.block {
             assert!(existing_block == block);
             return;
@@ -295,7 +294,6 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             first_error: ErrorState::default(),
             reachable_blocks,
             ctxt,
-            move_data,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
             body_analysis: Rc::new(BodyAnalysis::new(ctxt, move_data)),

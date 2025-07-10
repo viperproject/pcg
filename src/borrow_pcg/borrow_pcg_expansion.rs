@@ -178,8 +178,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
                 LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
                     if base_rp.region_idx == *region_idx
                         && maybe_old_place
-                            .as_current_place()
-                            .map_or(false, |p| p == base_rp.place())
+                            .as_current_place().is_some_and(|p| p == base_rp.place())
                     {
                         self.deref_blocked_region_projection_label = label;
                     }

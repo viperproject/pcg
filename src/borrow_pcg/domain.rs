@@ -18,7 +18,7 @@ use crate::{
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref, DerefMut)]
-pub(crate) struct FunctionCallAbstractionInput<'tcx>(
+pub struct FunctionCallAbstractionInput<'tcx>(
     pub(crate) RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
 );
 
@@ -45,7 +45,7 @@ impl<'tcx> HasValidityCheck<'tcx> for FunctionCallAbstractionInput<'tcx> {
     }
 }
 
-impl<'a, 'tcx> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
     for FunctionCallAbstractionInput<'tcx>
 {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
@@ -88,7 +88,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionInput<'tcx> {
     }
 }
 
-impl<'a, 'tcx> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
     for LoopAbstractionInput<'tcx>
 {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
@@ -134,17 +134,17 @@ impl<'tcx> TryFrom<LoopAbstractionInput<'tcx>> for RegionProjection<'tcx> {
 
     fn try_from(value: LoopAbstractionInput<'tcx>) -> Result<Self, Self::Error> {
         match value.0 {
-            PCGNode::RegionProjection(rp) => Ok(rp.into()),
+            PCGNode::RegionProjection(rp) => Ok(rp),
             _ => Err(()),
         }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
-pub(crate) struct AbstractionInputTarget<'tcx>(pub(crate) PCGNode<'tcx>);
+pub struct AbstractionInputTarget<'tcx>(pub(crate) PCGNode<'tcx>);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
-pub(crate) struct AbstractionOutputTarget<'tcx>(pub(crate) LocalNode<'tcx>);
+pub struct AbstractionOutputTarget<'tcx>(pub(crate) LocalNode<'tcx>);
 
 impl<'tcx> LabelPlace<'tcx> for AbstractionOutputTarget<'tcx> {
     fn label_place(
@@ -180,7 +180,7 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for AbstractionOutputTarget<'tcx> {
     }
 }
 
-impl<'a, 'tcx> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
     for AbstractionOutputTarget<'tcx>
 {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {

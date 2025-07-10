@@ -10,7 +10,6 @@ use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::PcgDebugData;
-use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;

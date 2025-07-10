@@ -178,14 +178,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             .collect()
     }
 
-    pub(crate) fn is_root<'slf, 'mir: 'graph, 'bc: 'graph>(
-        &'slf self,
-        node: PCGNode<'tcx>,
-        repacker: CompilerCtxt<'mir, 'tcx>,
-    ) -> bool {
-        self.roots(repacker).contains(&node)
-    }
-
     pub(crate) fn is_leaf<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         node: LocalNode<'tcx>,

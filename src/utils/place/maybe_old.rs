@@ -1,4 +1,3 @@
-use std::fmt::format;
 
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;

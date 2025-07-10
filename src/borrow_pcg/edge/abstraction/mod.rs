@@ -23,7 +23,7 @@ use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::pcg::{LocalNodeLike, PCGNode};
+use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;

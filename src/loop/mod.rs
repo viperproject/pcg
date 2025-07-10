@@ -24,7 +24,7 @@ use crate::{
             },
             ty,
         },
-        mir_dataflow::{fmt::DebugWithContext, Forward, JoinSemiLattice, ResultsCursor},
+        mir_dataflow::{fmt::DebugWithContext, Forward, JoinSemiLattice},
     },
     utils::{
         data_structures::{HashMap, HashSet},
@@ -157,7 +157,7 @@ struct LoopPlaceUsageDomain<'tcx> {
     used_places: HashSet<Place<'tcx>>,
 }
 
-impl<'tcx> JoinSemiLattice for LoopPlaceUsageDomain<'tcx> {
+impl JoinSemiLattice for LoopPlaceUsageDomain<'_> {
     fn join(&mut self, other: &Self) -> bool {
         let old_len = self.used_places.len();
         self.used_places.extend(other.used_places.iter().copied());
@@ -186,18 +186,15 @@ impl<'a, 'tcx> UsageVisitor<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> FallableVisitor<'tcx> for UsageVisitor<'a, 'tcx> {
+impl<'tcx> FallableVisitor<'tcx> for UsageVisitor<'_, 'tcx> {
     fn visit_place_fallable(
         &mut self,
         place: Place<'tcx>,
         context: mir::visit::PlaceContext,
-        location: mir::Location,
+        _location: mir::Location,
     ) -> Result<(), crate::pcg::PcgError> {
-        match context {
-            PlaceContext::MutatingUse(MutatingUseContext::Store) => {
-                self.used_places.retain(|p| !p.conflicts_with(place));
-            }
-            _ => {}
+        if let PlaceContext::MutatingUse(MutatingUseContext::Store) = context {
+            self.used_places.retain(|p| !p.conflicts_with(place));
         }
         self.used_places.insert(place);
         Ok(())
@@ -209,19 +206,19 @@ struct SingleLoopAnalysis<'loops> {
     loop_analysis: &'loops LoopAnalysis,
 }
 
-impl<'loops, 'tcx> Analysis<'tcx> for SingleLoopAnalysis<'loops> {
+impl<'tcx> Analysis<'tcx> for SingleLoopAnalysis<'_> {
     type Domain = LoopPlaceUsageDomain<'tcx>;
     type Direction = Forward;
 
     const NAME: &'static str = "SingleLoopAnalysis";
 
-    fn bottom_value(&self, body: &mir::Body<'tcx>) -> Self::Domain {
+    fn bottom_value(&self, _body: &mir::Body<'tcx>) -> Self::Domain {
         LoopPlaceUsageDomain {
             used_places: HashSet::default(),
         }
     }
 
-    fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {}
+    fn initialize_start_block(&self, _body: &Body<'tcx>, _state: &mut Self::Domain) {}
 
     fn apply_statement_effect(
         &mut self,
@@ -253,7 +250,7 @@ impl<'loops, 'tcx> Analysis<'tcx> for SingleLoopAnalysis<'loops> {
     }
 }
 
-impl<'tcx, 'loops> DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'loops>>> for LoopPlaceUsageDomain<'tcx> {
+impl DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'_>>> for LoopPlaceUsageDomain<'_> {
 
 }
 

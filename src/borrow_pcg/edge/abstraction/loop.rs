@@ -8,11 +8,10 @@ use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicat
 use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::path_condition::PathConditions;
-use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::{BasicBlock, Location};
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::validity::HasValidityCheck;
 use crate::utils::CompilerCtxt;
 

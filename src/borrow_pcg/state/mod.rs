@@ -8,7 +8,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, r#loop::LoopPlaceUsageAnalysis, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError}, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
+use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError}, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
     utils::{place::maybe_old::MaybeOldPlace},
@@ -137,14 +137,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub(crate) fn insert(
-        &mut self,
-        edge: BorrowPcgEdge<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.insert(edge, ctxt)
-    }
-
     pub(super) fn remove(
         &mut self,
         edge: &BorrowPcgEdge<'tcx>,
@@ -168,6 +160,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,

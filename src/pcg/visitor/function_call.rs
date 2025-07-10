@@ -4,7 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::domain::{AbstractionOutputTarget, FunctionCallAbstractionInput};
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
-use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::pcg::LocalNodeLike;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -70,7 +70,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     AbstractionType::FunctionCall(FunctionCallAbstraction::new(
                         location,
                         function_data,
-                        AbstractionBlockEdge::new(vec![input.into()], output, ctxt),
+                        AbstractionBlockEdge::new(vec![input], output, ctxt),
                     ))
                     .into(),
                     path_conditions.clone(),
@@ -157,7 +157,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .region_projections(self.ctxt)
                 .iter()
                 .filter(|rp| self.ctxt.bc.outlives(this_region, rp.region(self.ctxt)))
-                .map(|rp| AbstractionOutputTarget((*rp).to_local_node(self.ctxt).into()))
+                .map(|rp| AbstractionOutputTarget((*rp).to_local_node(self.ctxt)))
                 .collect();
             outputs.extend(result_projections);
             if !outputs.is_empty() {

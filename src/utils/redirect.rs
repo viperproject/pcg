@@ -4,11 +4,11 @@ use crate::borrow_pcg::{
         HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
     },
     latest::Latest,
-    region_projection::{RegionProjection, RegionProjectionLabel},
+    region_projection::RegionProjectionLabel,
 };
 
 use super::{
-    display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
+    display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
     CompilerCtxt,
 };
 

@@ -49,18 +49,12 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                expansion.redirect(from, to, ctxt)
-            }
+            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => expansion.redirect(from, to, ctxt),
             BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to, ctxt),
             BorrowPcgEdgeKind::Abstraction(edge) => {
-                let from: Option<AbstractionOutputTarget<'tcx>> = from.try_into().ok();
-                let to: Option<AbstractionOutputTarget<'tcx>> = to.try_into().ok();
-                if let Some(from) = from
-                    && let Some(to) = to
-                {
-                    edge.redirect(from, to, ctxt);
-                }
+                let from: AbstractionOutputTarget<'tcx> = from.into();
+                let to: AbstractionOutputTarget<'tcx> = to.into();
+                edge.redirect(from, to, ctxt);
                 // TODO
                 true
             }

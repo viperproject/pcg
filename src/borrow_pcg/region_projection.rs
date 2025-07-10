@@ -323,7 +323,7 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         &mut self,
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match predicate {
             LabelRegionProjectionPredicate::Equals(region_projection) => {
@@ -849,7 +849,7 @@ impl<'tcx> RegionProjection<'tcx> {
         self.base.as_local_place().map(|p| p.local())
     }
 
-    pub(crate) fn is_remote(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_remote(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.as_local_region_projection().is_none()
     }
 

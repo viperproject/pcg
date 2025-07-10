@@ -13,12 +13,11 @@ use crate::rustc_interface::borrowck::PoloniusInput;
 use crate::rustc_interface::borrowck::PoloniusOutput;
 use crate::rustc_interface::borrowck::RegionInferenceContext;
 use crate::rustc_interface::borrowck::{
-    places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, RichLocation,
+    places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::middle::mir::{self, Body, Location};
 use crate::rustc_interface::middle::ty::{RegionVid, TyCtxt};
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::utils::Place;
 
@@ -89,7 +88,7 @@ pub trait BorrowCheckerInterface<'tcx> {
     fn borrows_blocking(
         &self,
         place: Place<'tcx>,
-        location: Location,
+        _location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<BorrowData<'tcx>> {
         self.location_map()
@@ -111,8 +110,6 @@ pub trait BorrowCheckerInterface<'tcx> {
             .map(|(loan, _)| self.borrow_index_to_region(*loan))
             .collect()
     }
-
-    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex>;
 
     /// For visualization purposes, this function can be implemented to provide
     /// human-readable names for region variables.

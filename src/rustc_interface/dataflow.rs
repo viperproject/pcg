@@ -1,6 +1,6 @@
 use std::cell::RefMut;
 
-use super::mir_dataflow::{self, Forward, ResultsCursor};
+use super::mir_dataflow::{self, ResultsCursor};
 
 #[rustversion::since(2024-11-14)]
 use super::mir_dataflow::Analysis as MirAnalysis;

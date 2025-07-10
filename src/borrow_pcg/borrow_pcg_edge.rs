@@ -24,7 +24,6 @@ use crate::{
     },
 };
 use crate::{
-    borrow_pcg::abstraction::node::AbstractionGraphNode,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
@@ -356,31 +355,6 @@ impl<'tcx> LocalNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn as_abstraction_graph_node(
-        self,
-        block: mir::BasicBlock,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<AbstractionGraphNode<'tcx>> {
-        match self {
-            // Places are allowed only if they are roots of the borrow graph
-            PCGNode::Place(place) => match place {
-                MaybeRemotePlace::Local(maybe_old_place) => {
-                    // if maybe_old_place.is_owned(ctxt) {
-                        Some(AbstractionGraphNode::place(place))
-                    // } else {
-                    //     None
-                    // }
-                }
-                MaybeRemotePlace::Remote(remote_place) => {
-                    Some(AbstractionGraphNode::place(remote_place.into()))
-                }
-            },
-            PCGNode::RegionProjection(rp) => {
-                let rp = rp.with_base(rp.base().try_into().ok()?);
-                Some(AbstractionGraphNode(PCGNode::RegionProjection(rp)))
-            }
-        }
-    }
     pub(crate) fn as_blocking_node(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,

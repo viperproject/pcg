@@ -110,7 +110,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     &mut expander,
                     blocked_node,
                     &all_blocker_candidates,
-                    |rp| predicate(rp),
+                    predicate,
                 );
                 if !blockers.is_empty() {
                     if let Some(place) = blocked_node.related_current_place() {
@@ -165,8 +165,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 let blocked_nodes = all_nodes
                     .iter()
                     .filter(|node| {
-                        node.related_current_place()
-                            .map_or(false, |p| p == related_place)
+                        node.related_current_place() == Some(related_place)
                     })
                     .copied();
 
@@ -278,7 +277,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 .unwrap(),
                         );
                     } else {
-                        queue.push(borrow_edge.base.into());
+                        queue.push(borrow_edge.base);
                     }
                     continue;
                 }
@@ -384,7 +383,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
-impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
+impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
         tracing::info!("applying action: {}", action.debug_line(self.ctxt));
         match action {
@@ -398,7 +397,7 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
                         Ok(true)
                     }
                 }
-                BorrowPcgActionKind::RedirectEdge { edge, from, to } => todo!(),
+                BorrowPcgActionKind::RedirectEdge { .. } => todo!(),
                 BorrowPcgActionKind::LabelRegionProjection(
                     region_projection,
                     region_projection_label,
@@ -407,16 +406,12 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
                     region_projection_label,
                     self.ctxt,
                 )),
-                BorrowPcgActionKind::Weaken(weaken) => todo!(),
-                BorrowPcgActionKind::Restore(restore_capability) => todo!(),
-                BorrowPcgActionKind::MakePlaceOld(place, make_place_old_reason) => todo!(),
-                BorrowPcgActionKind::SetLatest(place, snapshot_location) => todo!(),
-                BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => Ok(true),
+                _ => todo!(),
             },
             PcgAction::Owned(action) => match action.kind {
-                RepackOp::StorageDead(local) => todo!(),
-                RepackOp::IgnoreStorageDead(local) => todo!(),
-                RepackOp::Weaken(place, capability_kind, capability_kind1) => todo!(),
+                RepackOp::StorageDead(_) => todo!(),
+                RepackOp::IgnoreStorageDead(_) => todo!(),
+                RepackOp::Weaken(_, _, _) => todo!(),
                 RepackOp::Expand(repack_expand) => {
                     if let Some(owned) = &mut self.owned {
                         owned.perform_expand_action(
@@ -429,9 +424,9 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
                     }
                     Ok(true)
                 }
-                RepackOp::Collapse(repack_collapse) => todo!(),
-                RepackOp::DerefShallowInit(place, place1) => todo!(),
-                RepackOp::RegainLoanedCapability(place, capability_kind) => todo!(),
+                RepackOp::Collapse(_) => todo!(),
+                RepackOp::DerefShallowInit(_, _) => todo!(),
+                RepackOp::RegainLoanedCapability(_, _) => todo!(),
             },
         }
     }

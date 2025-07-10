@@ -16,7 +16,6 @@
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
-pub(crate) mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
 pub mod pcg;
@@ -275,14 +274,6 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
             compiler_ctxt: ctxt,
             move_data: MoveData::gather_moves(ctxt.body(), ctxt.tcx(), |_| true),
         }
-    }
-
-    pub(crate) fn body(&self) -> &'mir Body<'tcx> {
-        self.compiler_ctxt.body()
-    }
-
-    pub(crate) fn tcx(&self) -> TyCtxt<'tcx> {
-        self.compiler_ctxt.tcx()
     }
 }
 

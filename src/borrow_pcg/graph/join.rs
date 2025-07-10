@@ -1,37 +1,25 @@
-use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
-use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
-use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
-use crate::coupling::coupled::Coupled;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
+use crate::pcg::{BodyAnalysis, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
-use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::liveness::PlaceLiveness;
-use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
-    borrow_pcg::{
-        borrow_pcg_edge::ToBorrowsEdge,
-        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
-        path_condition::PathConditions,
-    },
+    borrow_pcg::path_condition::PathConditions,
     rustc_interface::middle::{mir, mir::BasicBlock},
     utils::{display::DisplayDiff, validity::HasValidityCheck},
     validity_checks_enabled,
 };
 
-use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
+use super::{borrows_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
@@ -44,41 +32,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    fn apply_placeholder_labels<'mir>(
-        &mut self,
-        capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) {
-        let nodes = self.nodes(ctxt);
-        for node in nodes {
-            if let PCGNode::RegionProjection(rp) = node
-                && rp.is_placeholder()
-                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
-            {
-                if let MaybeOldPlace::Current { place } = local_rp.base
-                    && capabilities.get(place).is_some()
-                {
-                    self.mut_edges(|edge| {
-                        edge.label_region_projection(
-                            &LabelRegionProjectionPredicate::Equals(local_rp),
-                            None,
-                            ctxt,
-                        )
-                    });
-                } else {
-                    let orig_rp = local_rp.with_label(None, ctxt);
-                    self.mut_edges(|edge| {
-                        edge.label_region_projection(
-                            &LabelRegionProjectionPredicate::Equals(orig_rp),
-                            Some(RegionProjectionLabel::Placeholder),
-                            ctxt,
-                        )
-                    });
-                }
-            }
-        }
-    }
-
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
@@ -194,6 +148,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         Ok(changed)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn join_loop<'mir>(
         &mut self,
         loop_head: BasicBlock,
@@ -306,7 +261,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         to_cut.render_debug_graph(ctxt, "To cut");
         self.render_debug_graph(ctxt, "Self before cut");
         for edge in to_cut.edges() {
-            self.remove(&edge.kind());
+            self.remove(edge.kind());
         }
         self.render_debug_graph(ctxt, "Self after cut");
         for edge in abstraction_graph.into_edges() {

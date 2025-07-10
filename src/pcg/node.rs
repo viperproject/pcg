@@ -54,10 +54,6 @@ impl<'tcx, T, U> PCGNode<'tcx, T, U> {
         matches!(self, PCGNode::Place(_))
     }
 
-    pub(crate) fn is_lifetime_projection(&self) -> bool {
-        matches!(self, PCGNode::RegionProjection(_))
-    }
-
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
         match self {
             PCGNode::RegionProjection(rp) => Ok(rp),
@@ -217,7 +213,7 @@ pub(crate) trait LocalNodeLike<'tcx> {
 }
 
 impl<'tcx> LocalNodeLike<'tcx> for mir::Place<'tcx> {
-    fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
+    fn to_local_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
         LocalNode::Place(self.into())
     }
 }

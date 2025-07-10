@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-use derive_more::Deref;
 
 use crate::{
     compute_fixpoint,
@@ -78,12 +77,12 @@ impl<'tcx> GenKill<Place<'tcx>> for PlaceLivenessDomain<'tcx> {
     }
 }
 
-impl<'tcx> JoinSemiLattice for PlaceLivenessDomain<'tcx> {
+impl JoinSemiLattice for PlaceLivenessDomain<'_> {
     fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
         for place in other.places.iter() {
             if !self.places.contains(place) {
-                self.places.insert(place.clone());
+                self.places.insert(*place);
                 changed = true;
             }
         }
@@ -99,13 +98,13 @@ impl<'tcx> Analysis<'tcx> for PlaceLivenessAnalysis {
 
     const NAME: &'static str = "place_liveness";
 
-    fn bottom_value(&self, body: &mir::Body<'tcx>) -> Self::Domain {
+    fn bottom_value(&self, _body: &mir::Body<'tcx>) -> Self::Domain {
         PlaceLivenessDomain {
             places: Default::default(),
         }
     }
 
-    fn initialize_start_block(&self, _body: &mir::Body<'tcx>, state: &mut Self::Domain) {}
+    fn initialize_start_block(&self, _body: &mir::Body<'tcx>, _state: &mut Self::Domain) {}
 
     fn apply_statement_effect(
         &mut self,
@@ -132,7 +131,7 @@ pub(crate) struct PlaceLiveness<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, AnalysisEngine<PlaceLivenessAnalysis>>>>,
 }
 
-impl<'tcx> DebugWithContext<AnalysisEngine<PlaceLivenessAnalysis>> for PlaceLivenessDomain<'tcx> {}
+impl DebugWithContext<AnalysisEngine<PlaceLivenessAnalysis>> for PlaceLivenessDomain<'_> {}
 
 impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
     pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {

@@ -10,7 +10,7 @@ use crate::{
             ResultsCursor,
         },
     },
-    utils::{CompilerCtxt, Place},
+    utils::Place,
 };
 
 #[derive(Clone)]
@@ -38,7 +38,7 @@ impl<'a, 'tcx> DefinitelyInitialized<'a, 'tcx> {
         }
     }
 
-    pub(crate) fn is_definitely_initialized<'mir>(
+    pub(crate) fn is_definitely_initialized(
         &self,
         location: mir::Location,
         place: Place<'tcx>,

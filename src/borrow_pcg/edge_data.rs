@@ -1,5 +1,4 @@
 use crate::borrow_pcg::latest::Latest;
-use crate::borrow_pcg::region_projection::MaybeRemoteRegionProjectionBase;
 use crate::pcg::PCGNode;
 use crate::utils::{CompilerCtxt, Place};
 

@@ -5,7 +5,7 @@ use crate::borrow_checker::{each_borrow_involving_path, BorrowCheckerInterface};
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion};
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
-    calculate_borrows_out_of_scope_at_location, BorrowData, BorrowIndex, BorrowSet, Borrows,
+    BorrowData, BorrowIndex, BorrowSet, Borrows,
     LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::data_structures::fx::FxIndexMap;
@@ -206,15 +206,14 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut conflict = false;
-        struct S;
         each_borrow_involving_path(
             &mut (),
             ctxt.tcx(),
             ctxt.body(),
             borrowed_place.to_rust_place(ctxt),
             self.borrow_set(),
-            |borrow_index| true,
-            |this, borrow_index, borrow| {
+            |_borrow_index| true,
+            |_this, _borrow_index, _borrow| {
                 if self
                     .origin_contains_loan_at_map(RichLocation::Start(location))
                     .unwrap()
@@ -230,9 +229,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
         conflict
     }
 
-    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex> {
-        todo!()
-    }
 }
 
 /// An interface to the results of the NLL borrow-checker analysis.
@@ -240,7 +236,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
 pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,
     live_locals: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
-    out_of_scope_borrows: FxIndexMap<Location, Vec<BorrowIndex>>,
     in_scope_borrows: Rc<RefCell<ResultsCursor<'mir, 'tcx, Borrows<'mir, 'tcx>>>>,
     region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
@@ -282,11 +277,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
             borrows,
             location_table: body.location_table(),
             input_facts: body.input_facts(),
-            out_of_scope_borrows: calculate_borrows_out_of_scope_at_location(
-                body.body(),
-                region_cx,
-                borrows,
-            ),
             #[cfg(feature = "visualization")]
             pretty_printer: RegionPrettyPrinter::new(region_cx),
         }
@@ -318,7 +308,7 @@ impl BorrowCheckerImpl<'_, '_> {
     }
 }
 
-impl<'tcx> BorrowCheckerImpl<'_, 'tcx> {
+impl BorrowCheckerImpl<'_, '_> {
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
         self.in_scope_borrows
             .borrow_mut()
@@ -347,7 +337,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             borrowed_place.to_rust_place(ctxt),
             self.borrow_set(),
             |borrow_index| self.borrow_in_scope_at(borrow_index, location),
-            |this, borrow_index, borrow| {
+            |_this, _borrow_index, borrow| {
                 if self.outlives(borrow.region().into(), candidate_blocker.region(ctxt)) {
                     conflict = true;
                     ControlFlow::Break(())
@@ -435,14 +425,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         self.borrows
     }
 
-    fn borrows_out_of_scope_at(&self, location: Location) -> BTreeSet<BorrowIndex> {
-        self.out_of_scope_borrows
-            .get(&location)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect()
-    }
 }
 
 fn outlives(region_cx: &RegionInferenceContext<'_>, sup: PcgRegion, sub: PcgRegion) -> bool {

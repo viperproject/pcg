@@ -40,7 +40,7 @@ use crate::{
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
-    AnalysisEngine, DebugLines, PcgCtxt,
+    AnalysisEngine, DebugLines,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};

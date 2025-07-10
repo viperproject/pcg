@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
@@ -9,14 +8,12 @@ use crate::{
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
-        edge_data::EdgeData,
         graph::BorrowsGraph,
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
+        region_projection::{LocalRegionProjection, RegionProjection},
     },
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{PCGNodeLike, PcgError},
-    pcg_validity_assert,
     utils::{
         display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace, Place,
         ProjectionKind, ShallowExpansion, SnapshotLocation,
@@ -286,7 +283,6 @@ pub(crate) trait Expander<'mir, 'tcx> {
         let to_replace = self
             .borrows_graph()
             .edges_blocking(labelled_rp.into(), ctxt)
-            .into_iter()
             .filter_map(|edge| {
                 if let BorrowPcgEdgeKind::BorrowFlow(bf_edge) = edge.kind {
                     if bf_edge.kind == BorrowFlowEdgeKind::Future && bf_edge.short() != future_rp {

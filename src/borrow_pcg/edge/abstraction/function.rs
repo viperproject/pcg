@@ -7,7 +7,7 @@ use crate::{
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate},
         latest::Latest,
-        region_projection::{RegionProjection, RegionProjectionLabel},
+        region_projection::RegionProjectionLabel,
     },
     pcg::PCGNode,
     rustc_interface::{
@@ -15,7 +15,7 @@ use crate::{
         middle::{mir::Location, ty::GenericArgsRef},
     },
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
+        display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
         CompilerCtxt,
     },
 };

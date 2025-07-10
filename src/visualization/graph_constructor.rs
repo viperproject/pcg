@@ -1,6 +1,5 @@
 use crate::{
     borrow_pcg::{
-        domain::LoopAbstractionInput,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowsState,
@@ -9,8 +8,7 @@ use crate::{
     pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, Pcg},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
-        SnapshotLocation,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,
     },
 };
 
@@ -176,14 +174,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         };
         self.insert_node(node);
         id
-    }
-
-    pub(super) fn insert_abstraction_input_target(
-        &mut self,
-        node: LoopAbstractionInput<'tcx>,
-        capability: &impl CapabilityGetter<'tcx>,
-    ) -> NodeId {
-        self.insert_pcg_node(*node, capability)
     }
 
     pub(super) fn insert_abstraction(
@@ -433,14 +423,6 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
             last_node = node;
         }
         node
-    }
-
-    fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
-        self.insert_place_and_previous_projections(
-            place.place,
-            Some(place.at),
-            &NullCapabilityGetter,
-        )
     }
 
     pub fn construct_graph(mut self) -> Graph {
