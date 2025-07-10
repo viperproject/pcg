@@ -40,6 +40,10 @@ lazy_static! {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,
     };
+    pub static ref TEST_CRATES_START_FROM: Option<usize> = match std::env::var("PCG_TEST_CRATES_START_FROM") {
+        Ok(val) => Some(val.parse().unwrap()),
+        Err(_) => None,
+    };
     pub static ref VALIDITY_CHECKS: bool =
         env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions));
     pub static ref COUPLING_DEBUG_IMGCAT: bool =
