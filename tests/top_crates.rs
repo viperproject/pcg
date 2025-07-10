@@ -1,4 +1,5 @@
 #![feature(rustc_private)]
+#![feature(let_chains)]
 use chrono::Local;
 use derive_more::Deref;
 use pcg::utils::{MAX_BASIC_BLOCKS, TEST_CRATES_START_FROM};
@@ -23,11 +24,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .num_threads(parallelism)
         .build_global()
         .unwrap();
-    let mut top_crates: Vec<_> = Crates::top(n, date).to_vec();
-
-    if let Some(start_from) = *TEST_CRATES_START_FROM {
-        top_crates = top_crates[start_from..].to_vec();
-    }
+    let top_crates: Vec<_> = Crates::top(n, date).to_vec();
 
     let mut extra_env_vars: Vec<(String, String)> = std::env::vars()
         .filter(|(k, _)| k.starts_with("PCG_"))
@@ -51,6 +48,11 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .panic_fuse()
         .enumerate()
         .for_each(|(i, krate)| {
+            if let Some(start_from) = *TEST_CRATES_START_FROM && i < start_from {
+                println!("Skipping: {i} ({})", krate.name);
+                return;
+            }
+
             let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
             run_on_crate(
