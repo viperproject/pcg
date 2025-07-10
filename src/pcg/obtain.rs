@@ -57,7 +57,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             let base = base.with_inherent_region(ctxt);
             let expansion = base.expand_one_level(place, ctxt)?;
             if self.expand_place_one_level(base, &expansion, obtain_type, ctxt)? {
-                tracing::info!("expand region projections for {} one level", base.to_short_string(ctxt));
+                tracing::debug!("expand region projections for {} one level", base.to_short_string(ctxt));
                 self.expand_region_projections_one_level(base, &expansion, obtain_type, ctxt)?;
             }
         }
@@ -74,7 +74,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         if self.contains_owned_expansion_from(base) {
             return Ok(false);
         }
-        tracing::info!("New owned expansion from {}", base.to_short_string(ctxt));
+        tracing::debug!("New owned expansion from {}", base.to_short_string(ctxt));
         if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
             self.apply_action(
                 OwnedPcgAction::new(

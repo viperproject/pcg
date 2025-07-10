@@ -15,7 +15,7 @@ use crate::utils::{Place, SnapshotLocation};
 use super::{PcgError, PcgVisitor};
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
-        tracing::info!(
+        tracing::debug!(
             "upgrade_read_to_exclusive: {}",
             place.to_short_string(self.ctxt)
         );

@@ -80,7 +80,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .unique()
             .collect::<Vec<_>>();
-        tracing::info!(
+        tracing::debug!(
             "loop_lifetime_projections: {}",
             all_blocker_candidates.to_short_string(ctxt)
         );
@@ -125,7 +125,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         .unique()
                         .collect::<Vec<_>>();
                     for nested_rp in nested_rps.iter() {
-                        tracing::info!("nested_rp: {}", nested_rp.to_short_string(ctxt));
+                        tracing::debug!("nested_rp: {}", nested_rp.to_short_string(ctxt));
                         add_block_edge(&mut expander, blocked_node, *nested_rp, ctxt);
                     }
                     if !nested_rps.is_empty() {
@@ -151,7 +151,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 .find(|p| p.is_prefix(borrowed_place))
                 .copied();
             if let Some(related_place) = longest_prefix_of_blocked_place {
-                tracing::info!(
+                tracing::debug!(
                     "{} is related to blocked place {}",
                     related_place.to_short_string(ctxt),
                     borrowed_place.to_short_string(ctxt)
@@ -174,7 +174,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     });
                 }
             } else {
-                tracing::info!(
+                tracing::debug!(
                     "no related place found for borrow of {}",
                     borrowed_place.to_short_string(ctxt)
                 );
@@ -203,7 +203,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .graph
             .render_debug_graph(ctxt, "Abstraction graph before expansion");
         for place in all_related_places {
-            tracing::info!("expanding to {}", place.to_short_string(ctxt));
+            tracing::debug!("expanding to {}", place.to_short_string(ctxt));
             expander
                 .expand_to(
                     place,
@@ -217,16 +217,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .render_debug_graph(ctxt, "Abstraction graph after expansion");
         let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
         let frozen_graph = graph.frozen_graph();
-        tracing::info!(
+        tracing::debug!(
             "leaf edges: {}",
             frozen_graph.leaf_edges(ctxt).to_short_string(ctxt)
         );
-        tracing::info!(
+        tracing::debug!(
             "leaf nodes: {}",
             frozen_graph.leaf_nodes(ctxt).to_short_string(ctxt)
         );
         for rp in to_label.iter() {
-            tracing::info!("labeling {:?}", rp);
+            tracing::debug!("labeling {:?}", rp);
             graph.label_region_projection(rp, Some(loop_head_label), ctxt);
         }
         ConstructAbstractionGraphResult::new(graph, to_label, to_remove)
@@ -290,7 +290,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        tracing::info!(
+        tracing::debug!(
             "immediate live ancestors of {}: {}",
             node.to_short_string(ctxt),
             result.to_short_string(ctxt)
@@ -378,7 +378,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
 
 impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
-        tracing::info!("applying action: {}", action.debug_line(self.ctxt));
+        tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge, for_read } => {
@@ -480,14 +480,14 @@ fn add_edges_for_blocked_node<'tcx>(
     check_blocks: impl Fn(LocalRegionProjection<'tcx>) -> bool,
 ) -> Vec<LocalRegionProjection<'tcx>> {
     let ctxt = expander.ctxt;
-    tracing::info!("blocked_node: {}", blocked_node.to_short_string(ctxt));
+    tracing::debug!("blocked_node: {}", blocked_node.to_short_string(ctxt));
     // RP_b
     let candidate_blockers = all_blocker_candidates
         .iter()
         .filter(|rp| check_blocks(**rp))
         .copied()
         .collect::<Vec<_>>();
-    tracing::info!(
+    tracing::debug!(
         "candidate_blockers: {}",
         candidate_blockers.to_short_string(ctxt)
     );

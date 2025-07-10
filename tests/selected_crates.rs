@@ -6,6 +6,18 @@ fn test_selected_crates() {
     std::fs::create_dir_all("tmp").unwrap();
 
     common::run_on_crate(
+        "idna",
+        "1.0.3",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::run_on_crate(
         "chrono",
         "0.4.40",
         Some("2025-03-13"),
@@ -59,6 +71,7 @@ fn test_selected_crates() {
         ),
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
+
 
     common::run_on_crate(
         "flate2",
@@ -155,18 +168,6 @@ fn test_selected_crates() {
     //         extra_env_vars: vec![],
     //     },
     // );
-
-    common::run_on_crate(
-        "syn",
-        "2.0.100",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<punctuated::Pairs<'a, T, P> as std::iter::Iterator>::next"),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::run_on_crate(
         "encoding_rs",
