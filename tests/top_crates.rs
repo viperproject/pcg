@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 mod common;
 use common::{get, run_on_crate, RunOnCrateOptions, Target};
 
+use crate::common::RunOnCrateResult;
+
 #[test]
 #[ignore]
 pub fn top_crates() {
@@ -55,7 +57,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
 
             let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
-            if !run_on_crate(
+            let result = run_on_crate(
                 &krate.name,
                 version,
                 date,
@@ -65,7 +67,8 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                     function: None,
                     extra_env_vars: extra_env_vars.clone(),
                 },
-            ) {
+            );
+            if matches!(result, RunOnCrateResult::Failed) {
                 panic!("Failed: {i} ({}: {})", krate.name, version);
             }
             println!("Finished: {i} ({})", krate.name);

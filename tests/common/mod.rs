@@ -276,16 +276,22 @@ impl RunOnCrateOptions {
     }
 }
 
+pub enum RunOnCrateResult {
+    Success,
+    Skipped,
+    Failed
+}
+
 #[must_use]
 pub fn run_on_crate(
     name: &str,
     version: &str,
     date: Option<&str>,
     options: RunOnCrateOptions,
-) -> bool {
+) -> RunOnCrateResult {
     if let Err(e) = is_supported_crate(name, version) {
         eprintln!("{e}");
-        return false;
+        return RunOnCrateResult::Skipped;
     }
     let dirname = download_crate(name, version, date);
     let result = run_pcg_on_crate_in_dir(&dirname, options);
@@ -298,7 +304,11 @@ pub fn run_on_crate(
     std::fs::remove_dir_all(&dirname).unwrap_or_else(|e| {
         panic!("Failed to remove directory {}: {}", dirname.display(), e);
     });
-    result
+    if result {
+        RunOnCrateResult::Success
+    } else {
+        RunOnCrateResult::Failed
+    }
 }
 
 #[allow(dead_code)]
@@ -309,7 +319,7 @@ pub fn ensure_successful_run_on_crate(
     options: RunOnCrateOptions,
 ) {
     let result = run_on_crate(name, version, date, options);
-    assert!(result, "PCG check failed for crate {name} {version}");
+    assert!(matches!(result, RunOnCrateResult::Success), "PCG check failed for crate {name} {version}");
 }
 
 #[allow(dead_code)]
