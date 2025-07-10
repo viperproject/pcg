@@ -13,7 +13,6 @@ use crate::rustc_interface::dataflow::{compute_fixpoint, with_cursor_state};
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::{CompilerCtxt, Place};
 #[cfg(feature = "visualization")]

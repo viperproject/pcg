@@ -9,9 +9,9 @@ use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::coupling::coupled::Coupled;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike};
-use crate::r#loop::LoopPlaceUsageAnalysis;
+use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
+use crate::r#loop::LoopPlaceUsageAnalysis;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::liveness::PlaceLiveness;
@@ -89,14 +89,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> bool {
+    ) -> Result<bool, PcgError> {
         tracing::info!("join {self_block:?} {other_block:?} start");
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
         // }
         if ctxt.is_back_edge(other_block, self_block) {
-            return false;
+            return Ok(false);
         }
         let old_self = self.clone();
 
@@ -112,7 +112,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 path_conditions,
                 body_analysis,
                 ctxt,
-            );
+            )?;
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -133,7 +133,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
             // }
             // self.apply_placeholder_labels(capabilities, ctxt);
-            return result;
+            return Ok(result);
         }
         for other_edge in other.edges() {
             self.insert(other_edge.to_owned_edge(), ctxt);
@@ -151,7 +151,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        self.apply_placeholder_labels(capabilities, ctxt);
+        // self.apply_placeholder_labels(capabilities, ctxt);
 
         let changed = old_self != *self;
 
@@ -191,7 +191,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
             );
         }
-        changed
+        Ok(changed)
     }
 
     fn join_loop<'mir>(
@@ -203,7 +203,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         path_conditions: PathConditions,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) {
+    ) -> Result<(), PcgError> {
         tracing::info!("used_places: {}", used_places.to_short_string(ctxt));
         let loop_places = used_places
             .iter()
@@ -218,6 +218,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 )
             })
             .collect::<HashSet<_>>();
+
+        if loop_places.iter().any(|p| p.contains_unsafe_deref(ctxt)) {
+            return Err(PcgUnsupportedError::DerefUnsafePtr.into());
+        }
 
         tracing::info!("live loop places: {}", loop_places.to_short_string(ctxt));
 
@@ -309,5 +313,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.insert(edge, ctxt);
         }
         self.render_debug_graph(ctxt, "Final graph");
+        Ok(())
     }
 }

@@ -287,7 +287,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             &mut self.capabilities,
             &mut self.owned,
             ctxt,
-        );
+        )?;
         Ok(res)
     }
 

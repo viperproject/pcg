@@ -8,7 +8,7 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, r#loop::LoopPlaceUsageAnalysis, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis}, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
+use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, r#loop::LoopPlaceUsageAnalysis, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError}, utils::{liveness::PlaceLiveness, place::maybe_remote::MaybeRemotePlace}};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
     utils::{place::maybe_old::MaybeOldPlace},
@@ -177,7 +177,7 @@ impl<'tcx> BorrowsState<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> bool {
+    ) -> Result<bool, PcgError> {
         let mut changed = false;
         changed |= self.graph.join(
             &other.graph,
@@ -188,12 +188,12 @@ impl<'tcx> BorrowsState<'tcx> {
             owned,
             self.path_conditions.clone(),
             ctxt,
-        );
+        )?;
         changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions
             .join(&other.path_conditions, ctxt.body());
-        changed
+        Ok(changed)
     }
 
     pub(crate) fn add_cfg_edge(

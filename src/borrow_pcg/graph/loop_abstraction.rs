@@ -4,9 +4,7 @@ use crate::{
     action::PcgAction,
     borrow_pcg::{
         action::BorrowPcgActionKind,
-        borrow_pcg_edge::{
-            BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge,
-        },
+        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
             abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
             kind::BorrowPcgEdgeKind,
@@ -25,9 +23,7 @@ use crate::{
         place_capabilities::PlaceCapabilities,
         LocalNodeLike, PCGNode, PCGNodeLike,
     },
-    rustc_interface::
-        middle::mir::{self}
-    ,
+    rustc_interface::middle::mir::{self},
     utils::{
         data_structures::HashSet, display::DisplayWithCompilerCtxt, liveness::PlaceLiveness,
         maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, CompilerCtxt, HasPlace, Place,
@@ -267,12 +263,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
             for edge in blocked_edges {
                 if let BorrowPcgEdgeKind::BorrowPcgExpansion(borrow_edge) = edge.kind() {
                     if borrow_edge.is_owned_expansion(ctxt) {
-                        let deref_blocked_region_projection =
-                            borrow_edge.deref_blocked_region_projection(ctxt).unwrap();
-                        tracing::info!(
-                            "deref_blocked_region_projection: {}",
-                            deref_blocked_region_projection.to_short_string(ctxt)
-                        );
+                        let deref_blocked_region_projection = borrow_edge
+                            .deref_blocked_region_projection(ctxt)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "No deref blocked region projection for {}: {:?}",
+                                    borrow_edge.base.to_short_string(ctxt),
+                                    borrow_edge.base.related_current_place().unwrap().ty(ctxt)
+                                );
+                            });
                         queue.push(
                             deref_blocked_region_projection
                                 .try_to_local_node(ctxt)

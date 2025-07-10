@@ -153,7 +153,6 @@ pub(crate) trait Expander<'mir, 'tcx> {
         {
             return Ok(false);
         }
-        tracing::info!("No deref expansion from {}", base.to_short_string(ctxt));
 
         if base.is_mut_ref(ctxt) && obtain_type.should_label_rp() {
             let place: MaybeOldPlace<'tcx> = base.into();

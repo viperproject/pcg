@@ -21,7 +21,7 @@ use crate::{
     free_pcs::RepackGuide,
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
-        MaybeHasLocation,
+        MaybeHasLocation, PcgUnsupportedError,
     },
     utils::json::ToJsonWithCompilerCtxt,
 };
@@ -401,6 +401,10 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     where
         P: Ord + HasPlace<'tcx>,
     {
+        let place_ty = base.place().ty(ctxt);
+        if place_ty.ty.is_mutable_ptr() {
+            return Err(PcgUnsupportedError::DerefUnsafePtr.into());
+        }
         Ok(Self {
             base,
             expansion: expansion
