@@ -147,8 +147,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .filter(|rp| self.ctxt.bc.same_region(this_region, rp.region(self.ctxt)))
                 .map(|rp| {
                     FunctionCallAbstractionOutput::new(
-                        rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt)
-                            .into(),
+                        rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt),
                     )
                 })
                 .collect::<Vec<_>>();

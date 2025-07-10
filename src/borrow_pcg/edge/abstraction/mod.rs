@@ -369,7 +369,7 @@ impl<
     }
 }
 
-impl<'tcx, Input: Clone, Output: Copy> AbstractionBlockEdge<'tcx, Input, Output> {
+impl<Input: Clone, Output: Copy> AbstractionBlockEdge<'_, Input, Output> {
     pub fn outputs(&self) -> Vec<Output> {
         self.outputs.iter().map(|o| o.effective()).collect()
     }

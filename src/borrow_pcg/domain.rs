@@ -200,7 +200,7 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionOutput<'tcx> {
 
 impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LoopAbstractionOutput<'tcx> {
     fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        LoopAbstractionOutput(PCGNode::RegionProjection(value.into()))
+        LoopAbstractionOutput(PCGNode::RegionProjection(value))
     }
 }
 

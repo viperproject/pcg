@@ -325,13 +325,13 @@ pub(crate) trait HasPcgRegion {
 }
 
 #[rustversion::since(2024-10-17)]
-impl<'tcx> HasPcgRegion for BorrowData<'_> {
+impl HasPcgRegion for BorrowData<'_> {
     fn pcg_region(&self) -> PcgRegion {
         self.region().into()
     }
 }
 #[rustversion::before(2024-10-17)]
-impl<'tcx> HasPcgRegion for BorrowData<'_> {
+impl HasPcgRegion for BorrowData<'_> {
     fn pcg_region(&self) -> PcgRegion {
         self.region.into()
     }
