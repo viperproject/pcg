@@ -11,6 +11,7 @@ use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike};
 use crate::r#loop::LoopPlaceUsageAnalysis;
+use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::liveness::PlaceLiveness;
@@ -131,7 +132,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // if validity_checks_enabled() {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
             // }
-            self.apply_placeholder_labels(capabilities, ctxt);
+            // self.apply_placeholder_labels(capabilities, ctxt);
             return result;
         }
         for other_edge in other.edges() {
@@ -185,7 +186,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     eprintln!("Error rendering other graph: {e}");
                 });
             }
-            panic!("Graph became invalid after join. self: {self_block:?}, other: {other_block:?}");
+            pcg_validity_assert!(
+                false,
+                "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
+            );
         }
         changed
     }
@@ -304,5 +308,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for edge in abstraction_graph.into_edges() {
             self.insert(edge, ctxt);
         }
+        self.render_debug_graph(ctxt, "Final graph");
     }
 }

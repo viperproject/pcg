@@ -555,7 +555,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             Some(borrow) => borrow,
             None => return Ok(()),
         };
-        tracing::debug!(
+        tracing::info!(
             "activate twophase borrow: {}",
             borrow.to_short_string(self.ctxt)
         );

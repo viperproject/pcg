@@ -18,8 +18,8 @@ use crate::{
     pcg::{PCGNodeLike, PcgError},
     pcg_validity_assert,
     utils::{
-        maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion,
-        SnapshotLocation,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace, Place,
+        ProjectionKind, ShallowExpansion, SnapshotLocation,
     },
 };
 
@@ -48,10 +48,7 @@ impl ObtainType {
 pub(crate) trait Expander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
-    fn contains_owned_expansion_from(
-        &self,
-        base: Place<'tcx>,
-    ) -> bool;
+    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool;
 
     fn expand_to(
         &mut self,
@@ -63,6 +60,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             let base = base.with_inherent_region(ctxt);
             let expansion = base.expand_one_level(place, ctxt)?;
             if self.expand_place_one_level(base, &expansion, obtain_type, ctxt)? {
+                tracing::info!("expand region projections for {} one level", base.to_short_string(ctxt));
                 self.expand_region_projections_one_level(base, &expansion, obtain_type, ctxt)?;
             }
         }
@@ -79,6 +77,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         if self.contains_owned_expansion_from(base) {
             return Ok(false);
         }
+        tracing::info!("New owned expansion from {}", base.to_short_string(ctxt));
         if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
             self.apply_action(
                 OwnedPcgAction::new(
@@ -118,11 +117,10 @@ pub(crate) trait Expander<'mir, 'tcx> {
                 ProjectionKind::DerefRef(_) | ProjectionKind::DerefRawPtr(_)
             );
         if expansion_is_owned {
-            self.expand_owned_place_one_level(base, expansion, obtain_type, ctxt)?;
+            self.expand_owned_place_one_level(base, expansion, obtain_type, ctxt)
         } else {
-            self.add_deref_expansion(base, place_expansion, obtain_type, ctxt)?;
+            self.add_deref_expansion(base, place_expansion, obtain_type, ctxt)
         }
-        Ok(true)
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation;
@@ -155,6 +153,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         {
             return Ok(false);
         }
+        tracing::info!("No deref expansion from {}", base.to_short_string(ctxt));
 
         if base.is_mut_ref(ctxt) && obtain_type.should_label_rp() {
             let place: MaybeOldPlace<'tcx> = base.into();

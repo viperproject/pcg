@@ -74,6 +74,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             |p| {
                 self.pcg.capabilities.get(p) == Some(CapabilityKind::Read)
                     && !p.projects_shared_ref(self.ctxt)
+                    && p.parent_place()
+                        .is_none_or(|parent| self.pcg.capabilities.get(parent).is_none())
             },
             self.ctxt,
         );

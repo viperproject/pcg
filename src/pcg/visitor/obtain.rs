@@ -22,6 +22,10 @@ use crate::utils::{Place, ProjectionKind, SnapshotLocation};
 use super::{PcgError, PcgVisitor};
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
+        tracing::info!(
+            "upgrade_read_to_exclusive: {}",
+            place.to_short_string(self.ctxt)
+        );
         self.record_and_apply_action(
             BorrowPcgAction::restore_capability(
                 place,
@@ -57,9 +61,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         place: Place<'tcx>,
     ) -> Result<(), PcgError> {
+        tracing::debug!(
+            "upgrade_closest_root_to_exclusive: {}",
+            place.to_short_string(self.ctxt)
+        );
         let mut expand_root = place;
         loop {
             if let Some(cap) = self.pcg.capabilities.get(expand_root) {
+                tracing::debug!(
+                    "upgrade_closest_root_to_exclusive: found capability for {}: {:?}",
+                    expand_root.to_short_string(self.ctxt),
+                    cap
+                );
                 if cap.is_read() {
                     self.upgrade_read_to_exclusive(expand_root)?;
                 }
@@ -68,6 +81,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if let Some(parent) = expand_root.parent_place() {
                 expand_root = parent;
             } else {
+                tracing::info!(
+                    "upgrade_closest_root_to_exclusive: no parent for {}",
+                    place.to_short_string(self.ctxt)
+                );
                 return Ok(());
             }
         }

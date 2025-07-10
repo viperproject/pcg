@@ -1,13 +1,11 @@
 use itertools::Itertools;
 
 use crate::{
-    action::{BorrowPcgAction, PcgAction},
+    action::PcgAction,
     borrow_pcg::{
-        abstraction::node::AbstractionGraphNode,
-        abstraction_graph_constructor::AbstractionGraph,
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{
-            BorrowPcgEdge, BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge,
+            BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge,
         },
         edge::{
             abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
@@ -15,24 +13,21 @@ use crate::{
         },
         edge_data::EdgeData,
         graph::BorrowsGraph,
-        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
+        has_pcs_elem::LabelRegionProjectionPredicate,
         path_condition::PathConditions,
         region_projection::{
-            LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
-            RegionProjectionBaseLike, RegionProjectionLabel,
+            LocalRegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
         },
     },
-    coupling::coupled::Coupled,
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
         obtain::{Expander, ObtainType},
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::PlaceCapabilities,
         LocalNodeLike, PCGNode, PCGNodeLike,
     },
-    rustc_interface::{
-        data_structures::fx::{FxHashMap, FxHashSet},
-        middle::mir::{self},
-    },
+    rustc_interface::
+        middle::mir::{self}
+    ,
     utils::{
         data_structures::HashSet, display::DisplayWithCompilerCtxt, liveness::PlaceLiveness,
         maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, CompilerCtxt, HasPlace, Place,
@@ -228,11 +223,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ctxt,
                 )
                 .unwrap();
-            expander
-                .graph
-                .render_debug_graph(ctxt, "Abstraction graph after expansion");
         }
-        let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Start(loop_head));
+        expander
+            .graph
+            .render_debug_graph(ctxt, "Abstraction graph after expansion");
+        let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
         let frozen_graph = graph.frozen_graph();
         tracing::info!(
             "leaf edges: {}",
@@ -242,20 +237,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             "leaf nodes: {}",
             frozen_graph.leaf_nodes(ctxt).to_short_string(ctxt)
         );
-        // for node in graph.nodes(ctxt) {
-        //     if let PCGNode::RegionProjection(rp) = node {
-        //         if let Some(local_rp) = rp.try_to_local_node(ctxt) {
-        //             if !frozen_graph.is_leaf(local_rp, ctxt) {
-        //                 tracing::info!("will label {}", local_rp.to_short_string(ctxt));
-        //                 let local_rp = local_rp.try_into_region_projection().unwrap();
-        //                 to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
-        //                     local_rp.place().into(),
-        //                     local_rp.region_idx,
-        //                 ));
-        //             }
-        //         }
-        //     }
-        // }
         for rp in to_label.iter() {
             tracing::info!("labeling {:?}", rp);
             graph.label_region_projection(rp, Some(loop_head_label), ctxt);
@@ -406,6 +387,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
 
 impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
+        tracing::info!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge, for_read } => {
@@ -456,7 +438,7 @@ impl<'pcg, 'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'pcg, 'mir, 'tcx> {
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {
-        SnapshotLocation::Start(self.loop_head_block)
+        SnapshotLocation::Loop(self.loop_head_block)
     }
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
