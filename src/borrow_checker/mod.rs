@@ -41,6 +41,25 @@ impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
     }
 }
 
+trait HasPcgRegion {
+    fn pcg_region(&self) -> PcgRegion;
+}
+
+#[rustversion::since(2024-10-17)]
+impl HasPcgRegion for BorrowData<'_> {
+    fn pcg_region(&self) -> PcgRegion {
+        self.region().into()
+    }
+}
+
+#[rustversion::before(2024-10-17)]
+impl HasPcgRegion for BorrowData<'_> {
+    fn pcg_region(&self) -> PcgRegion {
+        self.region.into()
+    }
+}
+
+
 /// An interface to the results of the borrow-checker analysis. The PCG queries
 /// this interface as part of its analysis, for example, to identify when borrows
 /// expire.
@@ -156,7 +175,7 @@ pub trait BorrowCheckerInterface<'tcx> {
             .iter()
             .enumerate()
             .find_map(|(index, (_, data))| {
-                if data.region() == region.vid().unwrap() {
+                if data.pcg_region() == region {
                     Some(index.into())
                 } else {
                     None
