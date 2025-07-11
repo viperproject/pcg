@@ -318,13 +318,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn get_borrow_roots<'mir>(
         &self,
         node: Place<'tcx>,
+        loop_head_block: mir::BasicBlock,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> HashSet<PCGNode<'tcx>> {
         let mut result = HashSet::default();
         let mut queue: Vec<LocalNode<'tcx>> = node
             .region_projections(ctxt)
             .into_iter()
-            .map(|rp| rp.to_local_node(ctxt))
+            .flat_map(|rp| {
+                vec![
+                    rp.to_local_node(ctxt),
+                    rp.with_label(
+                        Some(
+                            RegionProjectionLabel::Location(
+                                SnapshotLocation::Loop(loop_head_block),
+                            ),
+                        ),
+                        ctxt,
+                    ).to_local_node(ctxt),
+                ]
+            })
             .collect();
         let mut seen = HashSet::default();
         while let Some(node) = queue.pop() {

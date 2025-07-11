@@ -235,7 +235,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         // p_roots
         let live_roots = live_loop_places
             .iter()
-            .flat_map(|p| self.get_borrow_roots(*p, ctxt))
+            .flat_map(|p| self.get_borrow_roots(*p, loop_head, ctxt))
             .collect::<HashSet<_>>();
 
         tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
