@@ -561,30 +561,33 @@ fn add_block_edges<'mir, 'tcx>(
             })
             .copied()
             .collect::<Vec<_>>();
-        let mut mut_rps = vec![];
-        flow_rps.retain(|rp| {
-            if rp.is_invariant_in_type(ctxt)
-                && ctxt.bc.outlives(rp.region(ctxt), blocked_rp.region(ctxt))
-            {
-                mut_rps.push(rp.to_pcg_node(ctxt).try_into_region_projection().unwrap());
-                false
-            } else {
-                true
+        if let Some(blocked_node) = blocked_rp.try_to_local_node(ctxt) {
+            let blocked_rp = blocked_node.try_into_region_projection().unwrap();
+            let mut mut_rps = vec![];
+            flow_rps.retain(|rp| {
+                if rp.is_invariant_in_type(ctxt)
+                    && ctxt.bc.outlives(rp.region(ctxt), blocked_rp.region(ctxt))
+                {
+                    mut_rps.push(rp.to_pcg_node(ctxt).try_into_region_projection().unwrap());
+                    false
+                } else {
+                    true
+                }
+            });
+            if !mut_rps.is_empty() {
+                expander
+                    .add_and_update_placeholder_edges(
+                        blocked_rp
+                            .try_to_local_node(ctxt)
+                            .unwrap()
+                            .try_into_region_projection()
+                            .unwrap(),
+                        &mut_rps,
+                        "mut rps",
+                        ctxt,
+                    )
+                    .unwrap();
             }
-        });
-        if !mut_rps.is_empty() {
-            expander
-                .add_and_update_placeholder_edges(
-                    blocked_rp
-                        .try_to_local_node(ctxt)
-                        .unwrap()
-                        .try_into_region_projection()
-                        .unwrap(),
-                    &mut_rps,
-                    "mut rps",
-                    ctxt,
-                )
-                .unwrap();
         }
         for flow_rp in flow_rps {
             add_block_edge(

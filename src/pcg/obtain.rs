@@ -235,7 +235,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
     }
     fn add_and_update_placeholder_edges(
         &mut self,
-        labelled_rp: LocalRegionProjection<'tcx>,
+        origin_rp: LocalRegionProjection<'tcx>,
         expansion_rps: &[RegionProjection<'tcx>],
         context: &str,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -243,12 +243,12 @@ pub(crate) trait Expander<'mir, 'tcx> {
         if expansion_rps.is_empty() {
             return Ok(());
         }
-        let future_rp = labelled_rp.with_placeholder_label(ctxt);
+        let future_rp = origin_rp.with_placeholder_label(ctxt);
         self.apply_action(
             BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(
                     BorrowFlowEdge::new(
-                        labelled_rp.into(),
+                        origin_rp.into(),
                         future_rp,
                         BorrowFlowEdgeKind::Future,
                         ctxt,
@@ -282,7 +282,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         }
         let to_replace = self
             .borrows_graph()
-            .edges_blocking(labelled_rp.into(), ctxt)
+            .edges_blocking(origin_rp.into(), ctxt)
             .filter_map(|edge| {
                 if let BorrowPcgEdgeKind::BorrowFlow(bf_edge) = edge.kind {
                     if bf_edge.kind == BorrowFlowEdgeKind::Future && bf_edge.short() != future_rp {
