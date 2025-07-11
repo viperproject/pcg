@@ -5,6 +5,11 @@ fn main() {
     let mut rx = &mut x;
     let mut ry = &mut y;
     let mut rz = &mut z;
+// PCG: bb1[0] pre_operands: Loop(bb1): [*rx] -> [ry↓'?10 loop bb1]
+// PCG: bb1[0] pre_operands: Loop(bb1): [*ry] -> [rz↓'?11]
+// PCG: bb1[0] pre_operands: Loop(bb1): [y] -> [ry↓'?10 loop bb1]
+// PCG: bb1[0] pre_operands: Loop(bb1): [y] -> [rz↓'?11]
+// PCG: bb1[0] pre_operands: Loop(bb1): [z] -> [rz↓'?11]
     while true {
         ry = &mut (*rx);
         rz = &mut (*ry);
