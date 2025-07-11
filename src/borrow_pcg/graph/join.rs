@@ -212,6 +212,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
+        tracing::info!(
+            "loop_blocker_places: {}",
+            loop_blocker_places.to_short_string(ctxt)
+        );
+
         let expand_places = loop_blocker_places
             .union(&loop_blocked_places)
             .copied()
