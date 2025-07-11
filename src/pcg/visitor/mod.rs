@@ -609,8 +609,9 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
                 .get(expand.from)
                 .unwrap_or_else(|| {
                     pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
+                    panic!("no cap for {}", expand.from.to_short_string(ctxt));
                     // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                    CapabilityKind::Exclusive
+                    // CapabilityKind::Exclusive
                 })
         };
         for target_place in target_places {

@@ -140,8 +140,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 tracing::debug!("other: {:?}", other);
                 let cap = self_place_capabilities.get(*place).unwrap_or_else(|| {
                     pcg_validity_assert!(false, "no cap for {}", place.to_short_string(repacker));
+                    panic!("no cap for {}", place.to_short_string(repacker));
                     // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                    CapabilityKind::Exclusive
+                    // CapabilityKind::Exclusive
                 });
                 repacks.extend(from.expand(
                     *place,

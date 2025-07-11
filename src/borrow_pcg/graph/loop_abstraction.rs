@@ -380,7 +380,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        'outer: while let Some(path) = paths.pop() {
+        while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
             if to_cut.contains(&last_edge) {
                 to_cut.extend(path);
@@ -398,8 +398,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for edge in self.edges_blocking(blocked_by_node.into(), ctxt) {
                     if path.contains(&edge) {
                         pcg_validity_assert!(false, "edge already in path");
+                        panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
-                        break 'outer;
+                        // break 'outer;
                     }
                     let mut next_path = path.clone();
                     next_path.push(edge);

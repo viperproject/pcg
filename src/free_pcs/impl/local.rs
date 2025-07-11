@@ -138,8 +138,9 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 "No capability for {}",
                 from.to_short_string(repacker)
             );
+            panic!("No capability for {}", from.to_short_string(repacker));
             // For debugging, assume exclusive, we can visualize the graph to see what's going on
-            CapabilityKind::Exclusive
+            // CapabilityKind::Exclusive
         };
         let expansion = from.expand(*to, repacker)?;
 
