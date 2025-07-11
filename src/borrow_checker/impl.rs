@@ -1,8 +1,8 @@
 extern crate polonius_engine;
 use polonius_engine::Output;
 
-use crate::borrow_checker::{each_borrow_involving_path, BorrowCheckerInterface};
-use crate::borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion};
+use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
     BorrowData, BorrowIndex, BorrowSet, Borrows, LocationTable, PoloniusInput, PoloniusOutput,
@@ -14,13 +14,12 @@ use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
 use crate::utils::maybe_remote::MaybeRemotePlace;
-use crate::utils::{CompilerCtxt, Place};
+use crate::utils::CompilerCtxt;
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::ControlFlow;
 use std::rc::Rc;
 
 /// An interface to the results of the Polonius borrow-checker analysis.
@@ -310,23 +309,6 @@ impl BorrowCheckerImpl<'_, '_> {
 
 impl BorrowCheckerImpl<'_, '_> {}
 
-pub(crate) trait HasPcgRegion {
-    fn pcg_region(&self) -> PcgRegion;
-}
-
-#[rustversion::since(2024-10-17)]
-impl HasPcgRegion for BorrowData<'_> {
-    fn pcg_region(&self) -> PcgRegion {
-        self.region().into()
-    }
-}
-#[rustversion::before(2024-10-17)]
-impl HasPcgRegion for BorrowData<'_> {
-    fn pcg_region(&self) -> PcgRegion {
-        self.region.into()
-    }
-}
-
 impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
@@ -425,7 +407,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
     ) -> bool {
         self.outlives(
             PcgRegion::RegionVid(self.borrow_index_to_region(loan)),
-            region
+            region,
         )
     }
 }

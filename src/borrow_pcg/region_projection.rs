@@ -840,33 +840,11 @@ impl<'tcx> LocalRegionProjection<'tcx> {
     pub fn to_region_projection(&self) -> RegionProjection<'tcx> {
         self.with_base(self.base.into())
     }
-    pub(crate) fn related_local(&self) -> Local {
-        self.base.local()
-    }
-    pub(crate) fn nested_projections(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<LocalRegionProjection<'tcx>> {
-        let mut result = vec![];
-        for rp in self.base.region_projections(ctxt) {
-            if rp.region(ctxt) != self.region(ctxt)
-                && ctxt.bc.outlives(rp.region(ctxt), self.region(ctxt))
-                && rp.is_invariant_in_type(ctxt)
-            {
-                result.push(rp);
-            }
-        }
-        result
-    }
 }
 
 impl<'tcx> RegionProjection<'tcx> {
     pub fn local(&self) -> Option<Local> {
         self.base.as_local_place().map(|p| p.local())
-    }
-
-    pub(crate) fn is_remote(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.as_local_region_projection().is_none()
     }
 
     fn as_local_region_projection(&self) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {

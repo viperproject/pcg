@@ -26,21 +26,11 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn related_local(&self) -> Option<mir::Local> {
-        self.related_current_place().map(|p| p.local)
-    }
 
     pub(crate) fn related_maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
         match self {
             PCGNode::Place(p) => p.maybe_remote_current_place(),
             PCGNode::RegionProjection(rp) => rp.base().maybe_remote_current_place(),
-        }
-    }
-
-    pub(crate) fn related_current_place(&self) -> Option<Place<'tcx>> {
-        match self {
-            PCGNode::Place(p) => p.as_current_place(),
-            PCGNode::RegionProjection(rp) => rp.base().as_current_place(),
         }
     }
 

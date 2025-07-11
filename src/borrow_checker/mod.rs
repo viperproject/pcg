@@ -5,7 +5,6 @@
 use std::collections::BTreeSet;
 use std::ops::ControlFlow;
 
-use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::BorrowData;
@@ -16,8 +15,8 @@ use crate::rustc_interface::borrowck::{
     places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias,
 };
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
-use crate::rustc_interface::middle::mir::{self, Body, Location};
-use crate::rustc_interface::middle::ty::{RegionVid, TyCtxt};
+use crate::rustc_interface::middle::mir::{self, Location};
+use crate::rustc_interface::middle::ty::RegionVid;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::utils::Place;

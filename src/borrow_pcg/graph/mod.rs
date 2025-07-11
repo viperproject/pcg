@@ -103,34 +103,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.mut_edges(|edge| edge.label_region_projection(predicate, label, ctxt))
     }
 
-    pub(crate) fn is_reachable_from(
-        &self,
-        from: PCGNode<'tcx>,
-        to: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        if from == to.into() {
-            return true;
-        }
-        let mut queue: Vec<BorrowPcgEdgeRef<'tcx, '_>> = self.edges_blocking(from, ctxt).collect();
-        let mut seen = HashSet::default();
-        while let Some(edge) = queue.pop() {
-            if seen.contains(&edge) {
-                continue;
-            }
-            seen.insert(edge);
-            if edge.is_blocked_by(to, ctxt) {
-                return true;
-            }
-            for node in edge.blocked_by_nodes(ctxt) {
-                for edge in self.edges_blocking(node.into(), ctxt) {
-                    queue.push(edge);
-                }
-            }
-        }
-        false
-    }
-
     pub(crate) fn contains_deref_expansion_from(
         &self,
         base: Place<'tcx>,

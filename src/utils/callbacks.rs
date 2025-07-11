@@ -13,7 +13,12 @@ use crate::{
     borrow_checker::{
         r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
         BorrowCheckerInterface,
-    }, borrow_pcg::region_projection::{LocalRegionProjection, PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
+    },
+    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
+    free_pcs::PcgAnalysis,
+    pcg::{self, BodyWithBorrowckFacts},
+    run_pcg,
+    rustc_interface::{
         borrowck::{self, BorrowIndex, LocationTable, RichLocation},
         data_structures::fx::{FxHashMap, FxHashSet},
         driver::{self, init_rustc_env_logger, Compilation},
@@ -27,7 +32,9 @@ use crate::{
         },
         session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
         span::SpanSnippetError,
-    }, utils::MAX_BASIC_BLOCKS, PcgCtxt, PcgOutput
+    },
+    utils::MAX_BASIC_BLOCKS,
+    PcgCtxt, PcgOutput,
 };
 
 #[rustversion::before(2024-11-09)]

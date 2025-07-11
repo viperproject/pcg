@@ -1,5 +1,4 @@
 use derive_more::From;
-use itertools::Itertools;
 
 use crate::{
     action::PcgAction,
@@ -15,10 +14,7 @@ use crate::{
         graph::BorrowsGraph,
         has_pcs_elem::LabelRegionProjectionPredicate,
         path_condition::PathConditions,
-        region_projection::{
-            LocalRegionProjection, PcgRegion, RegionIdx, RegionProjection,
-            RegionProjectionBaseLike, RegionProjectionLabel,
-        },
+        region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
@@ -27,14 +23,10 @@ use crate::{
         LocalNodeLike, PCGNode, PCGNodeLike,
     },
     pcg_validity_assert,
-    rustc_interface::{
-        index::IndexVec,
-        middle::mir::{self},
-    },
+    rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, liveness::PlaceLiveness,
-        maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, remote::RemotePlace,
-        CompilerCtxt, HasPlace, Place, SnapshotLocation,
+        data_structures::HashSet, display::DisplayWithCompilerCtxt, remote::RemotePlace,
+        CompilerCtxt, Place, SnapshotLocation,
     },
 };
 
@@ -203,85 +195,34 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             ));
                         }
                     }
-                } else {
-                    if root.is_remote() {
-                        add_rp_block_edges(&mut expander, *root, blocker, ctxt);
-                    }
+                } else if root.is_remote() {
+                    add_rp_block_edges(&mut expander, *root, blocker, ctxt);
                 }
             }
         }
 
-        let mut handle_blocked_place =
-            |blocked_place: MaybeRemoteCurrentPlace<'tcx>,
-             predicate: &dyn Fn(Place<'tcx>) -> bool| {
-                let blockers = add_edges_for_blocked_place(
-                    &mut expander,
-                    blocked_place,
-                    &candidate_blockers,
-                    predicate,
-                );
-                if !blockers.is_empty() {
-                    if let MaybeRemoteCurrentPlace::Local(place) = blocked_place {
-                        to_remove.insert(place);
-                        for rp in place.region_projections(ctxt) {
-                            to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
-                                place.into(),
-                                rp.region_idx,
-                            ));
-                        }
-                    }
-                }
-            };
-
-        for (index, borrow) in ctxt.bc.location_map().values().enumerate() {
-            let borrowed_place: Place<'tcx> = borrow.get_borrowed_place();
-            let blocked_places: Vec<MaybeRemoteCurrentPlace<'tcx>> =
-                if loop_places.contains(&borrowed_place) {
-                    vec![borrowed_place.into()]
-                } else {
-                    vec![]
-                    // root_places
-                    //     .iter()
-                    //     .filter(|p| {
-                    //         self.is_reachable_from(p.to_pcg_node(ctxt), borrowed_place.into(), ctxt)
-                    //     })
-                    //     .copied()
-                    //     .collect::<Vec<_>>()
-                };
-            tracing::info!(
-                "Blocked places for borrow bw{} of {} at {:?}: {}",
-                index,
-                borrowed_place.to_short_string(ctxt),
-                loop_head,
-                blocked_places.to_short_string(ctxt)
+        for borrow in ctxt.bc.location_map().values() {
+            let blocked_place: Place<'tcx> = borrow.get_borrowed_place();
+            let blockers = add_edges_for_blocked_place(
+                &mut expander,
+                blocked_place.into(),
+                &candidate_blockers,
+                |candidate_blocker| {
+                    ctxt.bc
+                        .blocks(candidate_blocker, blocked_place, loop_head_location, ctxt)
+                },
             );
-            for blocked_place in blocked_places {
-                handle_blocked_place(blocked_place, &|candidate_blocker| {
-                    let result =
-                        ctxt.bc
-                            .blocks(candidate_blocker, borrowed_place, loop_head_location, ctxt);
-                    if result {
-                        tracing::info!(
-                            "{} blocks {} at {:?}",
-                            candidate_blocker.to_short_string(ctxt),
-                            borrowed_place.to_short_string(ctxt),
-                            loop_head
-                        );
-                    } else {
-                        tracing::info!(
-                            "{} does not block {} at {:?}",
-                            candidate_blocker.to_short_string(ctxt),
-                            borrowed_place.to_short_string(ctxt),
-                            loop_head
-                        );
-                    }
-                    result
-                });
+
+            if !blockers.is_empty() {
+                to_remove.insert(blocked_place);
+                for rp in blocked_place.region_projections(ctxt) {
+                    to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
+                        blocked_place.into(),
+                        rp.region_idx,
+                    ));
+                }
             }
         }
-        // for root in root_places.iter() {
-        //     match root {}
-        // }
         expander
             .graph
             .render_debug_graph(ctxt, "Abstraction graph before expansion");
@@ -315,7 +256,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ConstructAbstractionGraphResult::new(graph, to_label, to_remove)
     }
 
-    pub(crate) fn get_borrow_roots<'mir>(
+    pub(crate) fn get_borrow_roots(
         &self,
         node: Place<'tcx>,
         loop_head_block: mir::BasicBlock,
@@ -329,13 +270,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 vec![
                     rp.to_local_node(ctxt),
                     rp.with_label(
-                        Some(
-                            RegionProjectionLabel::Location(
-                                SnapshotLocation::Loop(loop_head_block),
-                            ),
-                        ),
+                        Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
+                            loop_head_block,
+                        ))),
                         ctxt,
-                    ).to_local_node(ctxt),
+                    )
+                    .to_local_node(ctxt),
                 ]
             })
             .collect();
@@ -345,7 +285,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             seen.insert(node);
-            let mut blocked_edges = self.edges_blocked_by(node.into(), ctxt).peekable();
+            let mut blocked_edges = self.edges_blocked_by(node, ctxt).peekable();
             if blocked_edges.peek().is_none() {
                 result.insert(node.to_pcg_node(ctxt));
                 continue;

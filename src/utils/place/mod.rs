@@ -237,20 +237,6 @@ impl<'tcx> Place<'tcx> {
             .into())
     }
 
-    pub(crate) fn closest_deref_rp(
-        self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
-        for (place, projection_elem) in self.iter_projections(ctxt).into_iter().rev() {
-            if let ProjectionElem::Deref = projection_elem
-                && let Some(region) = place.ty_region(ctxt)
-            {
-                return Some(RegionProjection::new(region, place, None, ctxt).unwrap());
-            }
-        }
-        None
-    }
-
     #[rustversion::since(2025-05-24)]
     pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.ty(ctxt).ty.is_raw_ptr()
