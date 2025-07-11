@@ -85,11 +85,19 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
         }
     }
 
-    fn relevant_place_for_blocking(self) -> Place<'tcx> {
+    pub(crate) fn relevant_place_for_blocking(self) -> Place<'tcx> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place,
             MaybeRemoteCurrentPlace::Remote(place) => place.local.into(),
         }
+    }
+
+    pub(crate) fn is_local(self) -> bool {
+        matches!(self, MaybeRemoteCurrentPlace::Local(_))
+    }
+
+    pub(crate) fn is_remote(self) -> bool {
+        matches!(self, MaybeRemoteCurrentPlace::Remote(_))
     }
 
     fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<RegionProjection<'tcx>> {
@@ -128,12 +136,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             loop_places.to_short_string(ctxt)
         );
 
-        tracing::info!(
-            "root_places at {:?} : {}",
-            loop_head,
-            root_places.to_short_string(ctxt)
-        );
-
         let candidate_blockers = loop_places
             .iter()
             .filter(|place| !place.regions(ctxt).is_empty())
@@ -161,27 +163,51 @@ impl<'tcx> BorrowsGraph<'tcx> {
         };
 
         for blocker in blocker_places.into_iter() {
-            let ancestor_nodes = self.get_borrow_roots(blocker.into(), ctxt);
-            tracing::info!(
-                "immediate live ancestors of {}: {}",
-                blocker.to_short_string(ctxt),
-                ancestor_nodes.to_short_string(ctxt)
-            );
-            let root_places = ancestor_nodes
-                .into_iter()
-                .flat_map(|root| root.related_maybe_remote_current_place())
-                .filter(|p| match p {
-                    MaybeRemoteCurrentPlace::Local(place) => !loop_places.contains(place),
-                    MaybeRemoteCurrentPlace::Remote(_) => true,
-                })
-                .collect::<HashSet<_>>();
-            tracing::info!(
-                "immediate live place ancestors of {}: {}",
-                blocker.to_short_string(ctxt),
-                root_places.to_short_string(ctxt)
-            );
-            for root in root_places {
-                add_block_edges(&mut expander, root, blocker, ctxt);
+            // let ancestor_nodes = self.get_borrow_roots(blocker.into(), ctxt);
+            // tracing::info!(
+            //     "immediate live ancestors of {}: {}",
+            //     blocker.to_short_string(ctxt),
+            //     ancestor_nodes.to_short_string(ctxt)
+            // );
+            // let root_places = ancestor_nodes
+            //     .into_iter()
+            //     .flat_map(|root| root.related_maybe_remote_current_place())
+            //     .filter(|p| match p {
+            //         MaybeRemoteCurrentPlace::Local(place) => !loop_places.contains(place),
+            //         MaybeRemoteCurrentPlace::Remote(_) => true,
+            //     })
+            //     .collect::<HashSet<_>>();
+            // tracing::info!(
+            //     "immediate live place ancestors of {}: {}",
+            //     blocker.to_short_string(ctxt),
+            //     root_places.to_short_string(ctxt)
+            // );
+            for root in root_places.iter() {
+                let relevant_root = root.relevant_place_for_blocking();
+                if blocker == relevant_root
+                    || ctxt
+                        .bc
+                        .blocks(blocker, relevant_root, loop_head_location, ctxt)
+                {
+                    tracing::info!(
+                        "{} blocks root {}",
+                        blocker.to_short_string(ctxt),
+                        relevant_root.to_short_string(ctxt)
+                    );
+                    add_block_edges(&mut expander, *root, blocker, ctxt);
+                    if let MaybeRemoteCurrentPlace::Local(root) = root {
+                        for rp in root.region_projections(ctxt) {
+                            to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
+                                (*root).into(),
+                                rp.region_idx,
+                            ));
+                        }
+                    }
+                } else {
+                    if root.is_remote() {
+                        add_rp_block_edges(&mut expander, *root, blocker, ctxt);
+                    }
+                }
             }
         }
 
@@ -213,13 +239,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 if loop_places.contains(&borrowed_place) {
                     vec![borrowed_place.into()]
                 } else {
-                    root_places
-                        .iter()
-                        .filter(|p| {
-                            self.is_reachable_from(p.to_pcg_node(ctxt), borrowed_place.into(), ctxt)
-                        })
-                        .copied()
-                        .collect::<Vec<_>>()
+                    vec![]
+                    // root_places
+                    //     .iter()
+                    //     .filter(|p| {
+                    //         self.is_reachable_from(p.to_pcg_node(ctxt), borrowed_place.into(), ctxt)
+                    //     })
+                    //     .copied()
+                    //     .collect::<Vec<_>>()
                 };
             tracing::info!(
                 "Blocked places for borrow bw{} of {} at {:?}: {}",
@@ -446,7 +473,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
 
 impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
-        tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
+        tracing::info!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge, for_read } => {
@@ -537,6 +564,61 @@ fn add_block_edge<'tcx, 'mir>(
     );
 }
 
+fn add_rp_block_edges<'mir, 'tcx>(
+    expander: &mut AbsExpander<'_, 'mir, 'tcx>,
+    blocked_place: MaybeRemoteCurrentPlace<'tcx>,
+    blocker: Place<'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx>,
+) {
+    let blocker_rps = blocker.region_projections(ctxt);
+    for blocked_rp in blocked_place.region_projections(ctxt) {
+        let flow_rps = blocker_rps
+            .iter()
+            .filter(|blocker_rp| {
+                ctxt.bc
+                    .outlives(blocked_rp.region(ctxt), blocker_rp.region(ctxt))
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        if let Some(blocked_node) = blocked_rp.try_to_local_node(ctxt) {
+            let blocked_rp = blocked_node.try_into_region_projection().unwrap();
+            let mut_rps = flow_rps
+                .iter()
+                .filter_map(|rp| {
+                    if rp.is_invariant_in_type(ctxt)
+                        && ctxt.bc.outlives(rp.region(ctxt), blocked_rp.region(ctxt))
+                    {
+                        Some(rp.rebase())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if !mut_rps.is_empty() {
+                tracing::info!(
+                    "Mutable rps: {} -> {}",
+                    blocked_rp.to_short_string(ctxt),
+                    mut_rps.to_short_string(ctxt)
+                );
+                expander
+                    .add_and_update_placeholder_edges(blocked_rp, &mut_rps, "mut rps", ctxt)
+                    .unwrap();
+                expander
+                    .graph
+                    .render_debug_graph(ctxt, "Abstraction graph after adding mut rps");
+            }
+        }
+        for flow_rp in flow_rps {
+            add_block_edge(
+                expander,
+                blocked_rp.into(),
+                flow_rp.to_local_node(ctxt),
+                ctxt,
+            );
+        }
+    }
+}
+
 fn add_block_edges<'mir, 'tcx>(
     expander: &mut AbsExpander<'_, 'mir, 'tcx>,
     blocked_place: MaybeRemoteCurrentPlace<'tcx>,
@@ -552,52 +634,7 @@ fn add_block_edges<'mir, 'tcx>(
         blocker_rps[0.into()].to_local_node(ctxt),
         ctxt,
     );
-    for blocked_rp in blocked_place.region_projections(ctxt) {
-        let mut flow_rps = blocker_rps
-            .iter()
-            .filter(|blocker_rp| {
-                ctxt.bc
-                    .outlives(blocked_rp.region(ctxt), blocker_rp.region(ctxt))
-            })
-            .copied()
-            .collect::<Vec<_>>();
-        if let Some(blocked_node) = blocked_rp.try_to_local_node(ctxt) {
-            let blocked_rp = blocked_node.try_into_region_projection().unwrap();
-            let mut mut_rps = vec![];
-            flow_rps.retain(|rp| {
-                if rp.is_invariant_in_type(ctxt)
-                    && ctxt.bc.outlives(rp.region(ctxt), blocked_rp.region(ctxt))
-                {
-                    mut_rps.push(rp.to_pcg_node(ctxt).try_into_region_projection().unwrap());
-                    false
-                } else {
-                    true
-                }
-            });
-            if !mut_rps.is_empty() {
-                expander
-                    .add_and_update_placeholder_edges(
-                        blocked_rp
-                            .try_to_local_node(ctxt)
-                            .unwrap()
-                            .try_into_region_projection()
-                            .unwrap(),
-                        &mut_rps,
-                        "mut rps",
-                        ctxt,
-                    )
-                    .unwrap();
-            }
-        }
-        for flow_rp in flow_rps {
-            add_block_edge(
-                expander,
-                blocked_rp.into(),
-                flow_rp.to_local_node(ctxt),
-                ctxt,
-            );
-        }
-    }
+    add_rp_block_edges(expander, blocked_place, blocker, ctxt);
 }
 
 fn add_edges_for_blocked_place<'tcx>(

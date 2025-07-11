@@ -189,11 +189,14 @@ impl RemotePlace {
         self.local
     }
 
-    pub(crate) fn ty<'tcx, C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
+    pub(crate) fn ty<'tcx, C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<ty::Ty<'tcx>> {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
-            ty::TyKind::Ref(_, ty, _) => *ty,
-            _ => todo!(),
+            ty::TyKind::Ref(_, ty, _) => Some(*ty),
+            _ => None
         }
     }
 }

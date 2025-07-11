@@ -108,17 +108,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         let changed = old_self != *self;
 
-        if borrows_imgcat_debug()
-            && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
-        {
-            DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
-                .unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {e}");
-                });
-            if changed {
-                eprintln!("{}", old_self.fmt_diff(self, ctxt))
-            }
-        }
+        // if borrows_imgcat_debug()
+        //     && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
+        // {
+        //     DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
+        //         .unwrap_or_else(|e| {
+        //             eprintln!("Error rendering self graph: {e}");
+        //         });
+        //     if changed {
+        //         eprintln!("{}", old_self.fmt_diff(self, ctxt))
+        //     }
+        // }
 
         // For performance reasons we only check validity here if we are also producing debug graphs
         if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(ctxt) {
@@ -238,7 +238,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let root_places = live_roots
             .iter()
             .flat_map(|node| node.related_maybe_remote_current_place())
+            .filter(|p| {
+                !(p.is_local() && live_loop_places.contains(&p.relevant_place_for_blocking()))
+            })
             .collect::<HashSet<_>>();
+
+        tracing::info!("root places: {}", root_places.to_short_string(ctxt));
 
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
@@ -259,7 +264,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.mut_edges(|edge| {
                 edge.label_region_projection(
                     rp,
-                    Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
+                    Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
                         loop_head,
                     ))),
                     ctxt,
