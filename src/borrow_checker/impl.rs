@@ -424,8 +424,8 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         _location: Location,
     ) -> bool {
         self.outlives(
-            region,
             PcgRegion::RegionVid(self.borrow_index_to_region(loan)),
+            region
         )
     }
 }

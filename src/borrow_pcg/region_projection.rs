@@ -800,6 +800,15 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
         &mut self.base
     }
 
+    pub(crate) fn rebase<U: RegionProjectionBaseLike<'tcx> + From<T>>(
+        self,
+    ) -> RegionProjection<'tcx, U>
+    where
+        T: Copy,
+    {
+        self.with_base(self.base.into())
+    }
+
     pub(crate) fn with_base<U: RegionProjectionBaseLike<'tcx>>(
         self,
         base: U,

@@ -17,6 +17,7 @@ use crate::{
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::LabelRegionProjectionPredicate,
+        region_projection::LocalRegionProjection,
     },
     free_pcs::RepackGuide,
     pcg::{
@@ -178,7 +179,8 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
                 LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
                     if base_rp.region_idx == *region_idx
                         && maybe_old_place
-                            .as_current_place().is_some_and(|p| p == base_rp.place())
+                            .as_current_place()
+                            .is_some_and(|p| p == base_rp.place())
                     {
                         self.deref_blocked_region_projection_label = label;
                     }
@@ -219,7 +221,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
             return true;
         }
         if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
-            node == blocked_rp
+            node == blocked_rp.into()
         } else {
             false
         }
@@ -236,7 +238,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
     {
         let iter = std::iter::once(self.base.into());
         if let Some(blocked_rp) = self.deref_blocked_region_projection(ctxt) {
-            return Box::new(iter.chain(std::iter::once(blocked_rp)));
+            return Box::new(iter.chain(std::iter::once(blocked_rp.into())));
         } else {
             return Box::new(iter);
         }
@@ -321,15 +323,11 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     pub(crate) fn deref_blocked_region_projection<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Option<PCGNode<'tcx>> {
+    ) -> Option<LocalRegionProjection<'tcx>> {
         if let BlockingNode::Place(p) = self.base
             && let Some(projection) = p.base_region_projection(ctxt)
         {
-            Some(
-                projection
-                    .with_label(self.deref_blocked_region_projection_label, ctxt)
-                    .into(),
-            )
+            Some(projection.with_label(self.deref_blocked_region_projection_label, ctxt))
         } else {
             None
         }

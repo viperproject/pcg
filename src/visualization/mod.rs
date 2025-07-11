@@ -187,6 +187,7 @@ pub(crate) enum GraphEdge {
         location: Option<Location>,
         region: Option<String>,
         path_conditions: String,
+        borrow_index: Option<String>,
     },
     Projection {
         source: NodeId,
@@ -234,13 +235,19 @@ impl GraphEdge {
                 region,
                 kind,
                 path_conditions,
+                borrow_index,
             } => DotEdge {
                 to: assigned_place.to_string(),
                 from: borrowed_place.to_string(),
                 options: EdgeOptions::directed(EdgeDirection::Forward)
                     .with_color("orange".to_string())
                     .with_label(format!(
-                        "{} {}",
+                        "{}{} {}",
+                        if let Some(borrow_index) = borrow_index {
+                            format!("{borrow_index}: ")
+                        } else {
+                            "".to_string()
+                        },
                         kind,
                         region.as_ref().cloned().unwrap_or("".to_string())
                     ))

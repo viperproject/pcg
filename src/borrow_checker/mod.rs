@@ -78,32 +78,63 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
 
-    fn blocks(
+    fn is_directly_blocked(
         &self,
         blocked_place: Place<'tcx>,
-        blocking_place: Place<'tcx>,
         location: Location,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut conflict = false;
         each_borrow_involving_path(
             &mut (),
-            ctxt.tcx(),
-            ctxt.body(),
-            blocked_place.to_rust_place(ctxt),
+            ctxt,
+            blocked_place,
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            |_this, _borrow_index, borrow| {
+                if borrow.get_borrowed_place() == blocked_place {
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
+    }
+
+    fn blocks(
+        &self,
+        blocking_place: Place<'tcx>,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        each_borrow_involving_path(
+            &mut (),
+            ctxt,
+            blocked_place,
             self.borrow_set(),
             |borrow_index| self.borrow_in_scope_at(borrow_index, location),
             |_this, borrow_index, _borrow| {
                 tracing::info!(
-                    "Checking if {} contains loan at {:?}",
+                    "Checking if {} contains {:?} at {:?}",
                     blocking_place.to_short_string(ctxt),
+                    borrow_index,
                     location
                 );
-                if blocking_place
-                    .regions(ctxt)
-                    .iter()
-                    .any(|region| self.origin_contains_loan_at(*region, borrow_index, location))
-                {
+                if blocking_place.regions(ctxt).iter().any(|region| {
+                    let result = self.origin_contains_loan_at(*region, borrow_index, location);
+                    tracing::info!(
+                        "{} contains {:?} at {:?} = {}",
+                        region,
+                        borrow_index,
+                        location,
+                        result
+                    );
+                    result
+                }) {
                     conflict = true;
                     ControlFlow::Break(())
                 } else {
@@ -120,6 +151,19 @@ pub trait BorrowCheckerInterface<'tcx> {
         loan: BorrowIndex,
         location: Location,
     ) -> bool;
+
+    fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex> {
+        self.location_map()
+            .iter()
+            .enumerate()
+            .find_map(|(index, (_, data))| {
+                if data.region() == region.vid().unwrap() {
+                    Some(index.into())
+                } else {
+                    None
+                }
+            })
+    }
 
     #[rustversion::since(2024-12-14)]
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
@@ -210,9 +254,8 @@ impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
 
 pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
     s: &mut S,
-    tcx: TyCtxt<'tcx>,
-    body: &Body<'tcx>,
-    borrowed_place: mir::Place<'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+    borrowed_place: Place<'tcx>,
     borrow_set: &BorrowSet<'tcx>,
     is_candidate: I,
     mut op: F,
@@ -226,7 +269,7 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
     else {
         return;
     };
-    tracing::debug!(
+    tracing::info!(
         "Borrows for local {:?}: {:?}",
         borrowed_place.local,
         borrows_for_place_base
@@ -238,15 +281,18 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
         if !is_candidate(i) {
             continue;
         }
+        tracing::info!(
+            "{:?} is a candidate for {}",
+            i,
+            borrowed_place.to_short_string(ctxt)
+        );
         let borrowed = &borrow_set[i];
 
         if places_conflict(
-            tcx,
-            body,
-            borrowed
-                .get_borrowed_place()
-                .to_rust_place(CompilerCtxt::new(body, tcx, ())),
-            borrowed_place,
+            ctxt.tcx(),
+            ctxt.body(),
+            borrowed.get_borrowed_place().to_rust_place(ctxt),
+            borrowed_place.to_rust_place(ctxt),
             PlaceConflictBias::Overlap,
         ) {
             let ctrl = op(s, i, borrowed);

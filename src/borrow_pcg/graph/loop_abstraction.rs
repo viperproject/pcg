@@ -112,6 +112,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         loop_places: HashSet<Place<'tcx>>,
         root_places: HashSet<MaybeRemoteCurrentPlace<'tcx>>,
+        blocker_places: HashSet<Place<'tcx>>,
         loop_head: mir::BasicBlock,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -159,6 +160,31 @@ impl<'tcx> BorrowsGraph<'tcx> {
             owned: None,
         };
 
+        for blocker in blocker_places.into_iter() {
+            let ancestor_nodes = self.get_borrow_roots(blocker.into(), ctxt);
+            tracing::info!(
+                "immediate live ancestors of {}: {}",
+                blocker.to_short_string(ctxt),
+                ancestor_nodes.to_short_string(ctxt)
+            );
+            let root_places = ancestor_nodes
+                .into_iter()
+                .flat_map(|root| root.related_maybe_remote_current_place())
+                .filter(|p| match p {
+                    MaybeRemoteCurrentPlace::Local(place) => !loop_places.contains(place),
+                    MaybeRemoteCurrentPlace::Remote(_) => true,
+                })
+                .collect::<HashSet<_>>();
+            tracing::info!(
+                "immediate live place ancestors of {}: {}",
+                blocker.to_short_string(ctxt),
+                root_places.to_short_string(ctxt)
+            );
+            for root in root_places {
+                add_block_edges(&mut expander, root, blocker, ctxt);
+            }
+        }
+
         let mut handle_blocked_place =
             |blocked_place: MaybeRemoteCurrentPlace<'tcx>,
              predicate: &dyn Fn(Place<'tcx>) -> bool| {
@@ -181,7 +207,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             };
 
-        for borrow in ctxt.bc.location_map().values() {
+        for (index, borrow) in ctxt.bc.location_map().values().enumerate() {
             let borrowed_place: Place<'tcx> = borrow.get_borrowed_place();
             let blocked_places: Vec<MaybeRemoteCurrentPlace<'tcx>> =
                 if loop_places.contains(&borrowed_place) {
@@ -196,7 +222,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         .collect::<Vec<_>>()
                 };
             tracing::info!(
-                "Blocked places for borrow of {} at {:?}: {}",
+                "Blocked places for borrow bw{} of {} at {:?}: {}",
+                index,
                 borrowed_place.to_short_string(ctxt),
                 loop_head,
                 blocked_places.to_short_string(ctxt)
@@ -261,22 +288,24 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ConstructAbstractionGraphResult::new(graph, to_label, to_remove)
     }
 
-    pub(crate) fn get_immediate_live_ancestors<'mir>(
+    pub(crate) fn get_borrow_roots<'mir>(
         &self,
-        node: LocalNode<'tcx>,
-        liveness: &PlaceLiveness<'mir, 'tcx>,
-        location: mir::Location,
+        node: Place<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> HashSet<PCGNode<'tcx>> {
         let mut result = HashSet::default();
-        let mut queue = vec![node];
+        let mut queue: Vec<LocalNode<'tcx>> = node
+            .region_projections(ctxt)
+            .into_iter()
+            .map(|rp| rp.to_local_node(ctxt))
+            .collect();
         let mut seen = HashSet::default();
         while let Some(node) = queue.pop() {
             if seen.contains(&node) {
                 continue;
             }
             seen.insert(node);
-            let mut blocked_edges = self.edges_blocked_by(node, ctxt).peekable();
+            let mut blocked_edges = self.edges_blocked_by(node.into(), ctxt).peekable();
             if blocked_edges.peek().is_none() {
                 result.insert(node.to_pcg_node(ctxt));
                 continue;
@@ -293,11 +322,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                     borrow_edge.base.related_current_place().unwrap().ty(ctxt)
                                 );
                             });
-                        queue.push(
-                            deref_blocked_region_projection
-                                .try_to_local_node(ctxt)
-                                .unwrap(),
-                        );
+                        queue.push(deref_blocked_region_projection.into());
                     } else {
                         queue.push(borrow_edge.base);
                     }
@@ -306,7 +331,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for blocked_by in edge.blocked_nodes(ctxt) {
                     match blocked_by.try_to_local_node(ctxt) {
                         Some(local_node) => {
-                            if liveness.is_live(local_node.place(), location) {
+                            if local_node.related_current_place().is_some() {
                                 result.insert(local_node.into());
                             } else {
                                 queue.push(local_node);
@@ -330,7 +355,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn unpack_places_for_abstraction<'mir>(
         &mut self,
         loop_head_block: mir::BasicBlock,
-        live_loop_places: &HashSet<Place<'tcx>>,
+        blocked_loop_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
@@ -345,7 +370,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             ctxt,
         };
         let mut to_expand: Vec<Place<'tcx>> = vec![];
-        for place in live_loop_places {
+        for place in blocked_loop_places {
             if to_expand.iter().any(|p| place.is_prefix(*p)) {
                 continue;
             }
@@ -518,6 +543,7 @@ fn add_block_edges<'mir, 'tcx>(
     blocker: Place<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) {
+    assert_ne!(MaybeRemoteCurrentPlace::Local(blocker), blocked_place);
     let blocker_rps = blocker.region_projections(ctxt);
     // Add top-level borrow
     add_block_edge(

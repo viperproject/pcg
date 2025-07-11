@@ -10,11 +10,11 @@ use crate::{
     pcg::PCGNode,
     rustc_interface::{
         ast::Mutability,
+        borrowck::BorrowIndex,
         middle::{
             mir::{self, Location},
             ty::{self},
         },
-        borrowck::BorrowIndex,
     },
     utils::{remote::RemotePlace, HasPlace},
 };
@@ -43,7 +43,8 @@ pub struct LocalBorrow<'tcx> {
 
     pub region: ty::Region<'tcx>,
 
-    borrow_index: BorrowIndex,
+    // For some reason this may not be defined for certain shared borrows
+    borrow_index: Option<BorrowIndex>,
 
     assigned_rp_snapshot: Option<RegionProjectionLabel>,
 }
@@ -250,6 +251,13 @@ edgedata_enum!(
 );
 
 impl<'tcx> BorrowEdge<'tcx> {
+    pub(crate) fn borrow_index(&self) -> Option<BorrowIndex> {
+        match self {
+            BorrowEdge::Local(borrow) => borrow.borrow_index,
+            BorrowEdge::Remote(_) => None,
+        }
+    }
+
     pub fn kind(&self) -> Option<mir::BorrowKind> {
         match self {
             BorrowEdge::Local(borrow) => Some(borrow.kind),
@@ -404,8 +412,7 @@ impl<'tcx> LocalBorrow<'tcx> {
             reserve_location: reservation_location,
             region,
             assigned_rp_snapshot: None,
-            borrow_index: 0u32.into()
-            // borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
+            borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
         }
     }
 

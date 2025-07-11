@@ -109,6 +109,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         to: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
+        if from == to.into() {
+            return true;
+        }
         let mut queue: Vec<BorrowPcgEdgeRef<'tcx, '_>> = self.edges_blocking(from, ctxt).collect();
         let mut seen = HashSet::default();
         while let Some(edge) = queue.pop() {

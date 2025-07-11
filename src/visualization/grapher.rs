@@ -111,6 +111,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
                     region: borrow.borrow_region().map(|r| format!("{r:?}")),
                     path_conditions,
                     kind,
+                    borrow_index: borrow.borrow_index().map(|i| format!("{i:?}")),
                 });
             }
             BorrowPcgEdgeKind::Abstraction(abstraction) => {

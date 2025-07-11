@@ -160,7 +160,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> Result<(), PcgError> {
         tracing::info!("used places: {}", used_places.to_short_string(ctxt));
         // p_loop
-        let loop_places = used_places
+        let live_loop_places = used_places
             .iter()
             .copied()
             .filter(|p| {
@@ -174,47 +174,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        if loop_places.iter().any(|p| p.contains_unsafe_deref(ctxt)) {
+        if live_loop_places
+            .iter()
+            .any(|p| p.contains_unsafe_deref(ctxt))
+        {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
 
-        tracing::debug!("live loop places: {}", loop_places.to_short_string(ctxt));
-
-        // n_loop
-        let live_loop_nodes = loop_places
-            .iter()
-            .flat_map(|p| {
-                let mut nodes = p
-                    .region_projections(ctxt)
-                    .into_iter()
-                    .map(|rp| rp.into())
-                    .collect::<Vec<_>>();
-                if !p.is_owned(ctxt) {
-                    nodes.push((*p).into())
-                }
-                nodes
-            })
-            .collect::<HashSet<_>>();
-
-        tracing::info!("live loop nodes: {}", live_loop_nodes.to_short_string(ctxt));
-
-        self.unpack_places_for_abstraction(
-            loop_head,
-            &loop_places,
-            capabilities,
-            owned,
-            path_conditions.clone(),
-            ctxt,
+        tracing::debug!(
+            "live loop places: {}",
+            live_loop_places.to_short_string(ctxt)
         );
-        self.render_debug_graph(ctxt, "G_Pre'");
 
-        // n_roots
-        let live_roots = live_loop_nodes
+        let loop_blocked_places = live_loop_places
             .iter()
-            .flat_map(|p| {
-                self.get_immediate_live_ancestors(
-                    *p,
-                    &body_analysis.place_liveness,
+            .filter(|p| {
+                ctxt.bc.is_directly_blocked(
+                    **p,
                     mir::Location {
                         block: loop_head,
                         statement_index: 0,
@@ -222,6 +198,39 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ctxt,
                 )
             })
+            .copied()
+            .collect::<HashSet<_>>();
+
+        tracing::info!(
+            "loop_blocked_places: {}",
+            loop_blocked_places.to_short_string(ctxt)
+        );
+
+        let loop_blocker_places = live_loop_places
+            .iter()
+            .filter(|p| !p.regions(ctxt).is_empty())
+            .copied()
+            .collect::<HashSet<_>>();
+
+        let expand_places = loop_blocker_places
+            .union(&loop_blocked_places)
+            .copied()
+            .collect::<HashSet<_>>();
+
+        self.unpack_places_for_abstraction(
+            loop_head,
+            &expand_places,
+            capabilities,
+            owned,
+            path_conditions.clone(),
+            ctxt,
+        );
+        self.render_debug_graph(ctxt, "G_Pre'");
+
+        // p_roots
+        let live_roots = live_loop_places
+            .iter()
+            .flat_map(|p| self.get_borrow_roots(*p, ctxt))
             .collect::<HashSet<_>>();
 
         tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
@@ -236,8 +245,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_label,
             to_remove,
         } = self.get_loop_abstraction_graph(
-            loop_places,
+            live_loop_places,
             root_places,
+            loop_blocker_places,
             loop_head,
             path_conditions.clone(),
             ctxt,
