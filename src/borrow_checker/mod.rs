@@ -18,6 +18,7 @@ use crate::rustc_interface::borrowck::{
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
 use crate::rustc_interface::middle::mir::{self, Body, Location};
 use crate::rustc_interface::middle::ty::{RegionVid, TyCtxt};
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::utils::Place;
 
@@ -65,14 +66,6 @@ pub trait BorrowCheckerInterface<'tcx> {
         !self.is_live(node, location)
     }
 
-    fn blocks(
-        &self,
-        candidate_blocker: LocalRegionProjection<'tcx>,
-        borrowed_place: Place<'tcx>,
-        location: Location,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool;
-
     /// Returns true iff `sup` outlives `sub`.
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
 
@@ -82,6 +75,51 @@ pub trait BorrowCheckerInterface<'tcx> {
     }
 
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
+
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
+
+    fn blocks(
+        &self,
+        blocked_place: Place<'tcx>,
+        blocking_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        each_borrow_involving_path(
+            &mut (),
+            ctxt.tcx(),
+            ctxt.body(),
+            blocked_place.to_rust_place(ctxt),
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            |_this, borrow_index, _borrow| {
+                tracing::info!(
+                    "Checking if {} contains loan at {:?}",
+                    blocking_place.to_short_string(ctxt),
+                    location
+                );
+                if blocking_place
+                    .regions(ctxt)
+                    .iter()
+                    .any(|region| self.origin_contains_loan_at(*region, borrow_index, location))
+                {
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
+    }
+
+    fn origin_contains_loan_at(
+        &self,
+        region: PcgRegion,
+        loan: BorrowIndex,
+        location: Location,
+    ) -> bool;
 
     #[rustversion::since(2024-12-14)]
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
@@ -184,7 +222,8 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
 {
     // The number of candidates can be large, but borrows for different locals cannot conflict with
     // each other, so we restrict the working set a priori.
-    let Some(borrows_for_place_base) = borrow_set.get_borrows_for_local(borrowed_place.local) else {
+    let Some(borrows_for_place_base) = borrow_set.get_borrows_for_local(borrowed_place.local)
+    else {
         return;
     };
     tracing::debug!(
@@ -204,7 +243,9 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
         if places_conflict(
             tcx,
             body,
-            borrowed.get_borrowed_place().to_rust_place(CompilerCtxt::new(body, tcx, ())),
+            borrowed
+                .get_borrowed_place()
+                .to_rust_place(CompilerCtxt::new(body, tcx, ())),
             borrowed_place,
             PlaceConflictBias::Overlap,
         ) {

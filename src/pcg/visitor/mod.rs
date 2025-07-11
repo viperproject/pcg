@@ -10,6 +10,7 @@ use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::PcgDebugData;
+use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -604,7 +605,13 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         let source_cap = if expand.capability.is_read() {
             expand.capability
         } else {
-            capabilities.get(expand.from).unwrap()
+            capabilities
+                .get(expand.from)
+                .unwrap_or_else(|| {
+                    pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
+                    // For debugging, assume exclusive, we can visualize the graph to see what's going on
+                    CapabilityKind::Exclusive
+                })
         };
         for target_place in target_places {
             capabilities.insert(target_place, source_cap);

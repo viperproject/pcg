@@ -449,21 +449,24 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
         }
     }
 
-    fn blocks(
+    fn origin_contains_loan_at(
         &self,
-        candidate_blocker: LocalRegionProjection<'tcx>,
-        borrowed_place: Place<'tcx>,
+        region: PcgRegion,
+        loan: BorrowIndex,
         location: Location,
-        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            BorrowChecker::Polonius(bc) => {
-                bc.blocks(candidate_blocker, borrowed_place, location, ctxt)
-            }
-            BorrowChecker::Impl(bc) => bc.blocks(candidate_blocker, borrowed_place, location, ctxt),
+            BorrowChecker::Polonius(bc) => bc.origin_contains_loan_at(region, loan, location),
+            BorrowChecker::Impl(bc) => bc.origin_contains_loan_at(region, loan, location),
         }
     }
 
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.borrow_in_scope_at(borrow_index, location),
+            BorrowChecker::Impl(bc) => bc.borrow_in_scope_at(borrow_index, location),
+        }
+    }
 }
 
 fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {

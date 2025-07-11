@@ -11,6 +11,7 @@ use super::{
 };
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PcgError, PcgInternalError};
@@ -141,6 +142,12 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
+    pub(crate) fn maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(p) => p.maybe_remote_current_place(),
+            MaybeRemoteRegionProjectionBase::Const(_) => None,
+        }
+    }
     #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {

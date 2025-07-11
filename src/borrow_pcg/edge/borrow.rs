@@ -14,6 +14,7 @@ use crate::{
             mir::{self, Location},
             ty::{self},
         },
+        borrowck::BorrowIndex,
     },
     utils::{remote::RemotePlace, HasPlace},
 };
@@ -37,10 +38,12 @@ pub struct LocalBorrow<'tcx> {
     pub(crate) assigned_ref: MaybeOldPlace<'tcx>,
     kind: mir::BorrowKind,
 
-    /// The location when the reborrow was created
+    /// The location when the borrow was created
     reserve_location: Location,
 
     pub region: ty::Region<'tcx>,
+
+    borrow_index: BorrowIndex,
 
     assigned_rp_snapshot: Option<RegionProjectionLabel>,
 }
@@ -391,9 +394,9 @@ impl<'tcx> LocalBorrow<'tcx> {
         kind: mir::BorrowKind,
         reservation_location: Location,
         region: ty::Region<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        assert!(assigned_place.ty(repacker).ty.ref_mutability().is_some());
+        assert!(assigned_place.ty(ctxt).ty.ref_mutability().is_some());
         Self {
             blocked_place,
             assigned_ref: assigned_place,
@@ -401,6 +404,8 @@ impl<'tcx> LocalBorrow<'tcx> {
             reserve_location: reservation_location,
             region,
             assigned_rp_snapshot: None,
+            borrow_index: 0u32.into()
+            // borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
         }
     }
 

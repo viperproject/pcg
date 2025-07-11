@@ -27,6 +27,7 @@ use crate::{
         mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
         ty::{self},
     },
+    rustc_interface::borrowck::BorrowIndex,
     utils::{display::DebugLines, validity::HasValidityCheck},
     validity_checks_enabled,
 };

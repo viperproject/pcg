@@ -9,13 +9,14 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
 use itertools::Itertools;
 
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{PcgInternalError, PcgError},
+    pcg::{PcgError, PcgInternalError},
     utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
@@ -132,9 +133,13 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let from_cap = if let Some(cap) = capabilities.get(from) {
             cap
         } else {
-            let err = format!("No capability for {}", from.to_short_string(repacker));
-            tracing::error!("{}", err);
-            return Err(PcgError::internal(err));
+            pcg_validity_assert!(
+                false,
+                "No capability for {}",
+                from.to_short_string(repacker)
+            );
+            // For debugging, assume exclusive, we can visualize the graph to see what's going on
+            CapabilityKind::Exclusive
         };
         let expansion = from.expand(*to, repacker)?;
 

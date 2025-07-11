@@ -1,5 +1,6 @@
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
+use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -27,6 +28,13 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 impl<'tcx> PCGNode<'tcx> {
     pub(crate) fn related_local(&self) -> Option<mir::Local> {
         self.related_current_place().map(|p| p.local)
+    }
+
+    pub(crate) fn related_maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
+        match self {
+            PCGNode::Place(p) => p.maybe_remote_current_place(),
+            PCGNode::RegionProjection(rp) => rp.base().maybe_remote_current_place(),
+        }
     }
 
     pub(crate) fn related_current_place(&self) -> Option<Place<'tcx>> {

@@ -1,5 +1,6 @@
 use derive_more::From;
 
+use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
@@ -23,6 +24,16 @@ pub enum MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
+    pub(crate) fn maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
+        match self {
+            MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
+                Some(MaybeRemoteCurrentPlace::Local(*place))
+            }
+            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(_)) => None,
+            MaybeRemotePlace::Remote(rp) => Some(MaybeRemoteCurrentPlace::Remote(*rp)),
+        }
+    }
+
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemotePlace::Local(p) => p.is_mutable(ctxt),
@@ -35,9 +46,7 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeRemotePlace<'
     type Error = ();
     fn try_from(value: MaybeRemoteRegionProjectionBase<'tcx>) -> Result<Self, Self::Error> {
         match value {
-            MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
-                Ok(maybe_remote_place)
-            }
+            MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => Ok(maybe_remote_place),
             MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
         }
     }

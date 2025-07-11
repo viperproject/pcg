@@ -158,7 +158,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        tracing::debug!("used_places: {}", used_places.to_short_string(ctxt));
+        tracing::info!("used places: {}", used_places.to_short_string(ctxt));
+        // p_loop
         let loop_places = used_places
             .iter()
             .copied()
@@ -195,7 +196,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        tracing::debug!("live loop_nodes: {}", live_loop_nodes.to_short_string(ctxt));
+        tracing::info!("live loop nodes: {}", live_loop_nodes.to_short_string(ctxt));
 
         self.unpack_places_for_abstraction(
             loop_head,
@@ -223,15 +224,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        tracing::debug!("live roots: {}", live_roots.to_short_string(ctxt));
+        tracing::info!("live roots: {}", live_roots.to_short_string(ctxt));
+
+        let root_places = live_roots
+            .iter()
+            .flat_map(|node| node.related_maybe_remote_current_place())
+            .collect::<HashSet<_>>();
 
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
             to_label,
             to_remove,
         } = self.get_loop_abstraction_graph(
-            live_loop_nodes,
-            live_roots,
+            loop_places,
+            root_places,
             loop_head,
             path_conditions.clone(),
             ctxt,

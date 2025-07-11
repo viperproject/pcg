@@ -14,7 +14,8 @@ use crate::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         PcgError,
     },
-    utils::{corrected::CorrectedPlace, CompilerCtxt},
+    pcg_validity_assert,
+    utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
 
 impl<'tcx> CapabilityLocals<'tcx> {
@@ -117,7 +118,12 @@ impl<'tcx> CapabilityProjections<'tcx> {
                         continue;
                     }
                 } else {
-                    repacks.extend(from.collapse(place, None, &mut self_place_capabilities, repacker)?);
+                    repacks.extend(from.collapse(
+                        place,
+                        None,
+                        &mut self_place_capabilities,
+                        repacker,
+                    )?);
                     continue 'outer;
                 }
             }
@@ -132,10 +138,15 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 tracing::debug!("other expansion {:?} -> {:?}", place, expansion);
                 tracing::debug!("from: {:?}", from);
                 tracing::debug!("other: {:?}", other);
+                let cap = self_place_capabilities.get(*place).unwrap_or_else(|| {
+                    pcg_validity_assert!(false, "no cap for {}", place.to_short_string(repacker));
+                    // For debugging, assume exclusive, we can visualize the graph to see what's going on
+                    CapabilityKind::Exclusive
+                });
                 repacks.extend(from.expand(
                     *place,
                     CorrectedPlace::new(place.expansion_places(expansion, repacker)[0], repacker),
-                    self_place_capabilities.get(*place).unwrap(),
+                    cap,
                     &mut self_place_capabilities,
                     repacker,
                 )?);

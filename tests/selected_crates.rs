@@ -6,6 +6,18 @@ fn test_selected_crates() {
     std::fs::create_dir_all("tmp").unwrap();
 
     common::ensure_successful_run_on_crate(
+        "crypto-bigint",
+        "0.6.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: None,
+            extra_env_vars: vec![("PCG_MAX_BASIC_BLOCKS".to_string(), "13".to_string())],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
         "pest",
         "2.7.15",
         Some("2025-03-13"),
