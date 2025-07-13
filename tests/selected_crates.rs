@@ -6,7 +6,6 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
-
     let warn_only_vars = vec![(
         "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
         "true".to_string(),
@@ -21,6 +20,18 @@ fn test_selected_crates() {
     ];
 
     common::ensure_successful_run_on_crate(
+        "brotli",
+        "7.0.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("enc::static_dict::ComplexFindMatchLengthWithLimit"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
         "matchit",
         "0.8.6",
         Some("2025-03-13"),
@@ -28,11 +39,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("tree::Node::<T>::at"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     common::ensure_successful_run_on_crate(
         "regex-automata",
@@ -123,7 +132,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     common::ensure_successful_run_on_crate(
         "flate2",

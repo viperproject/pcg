@@ -24,7 +24,7 @@ use crate::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         MaybeHasLocation, PcgUnsupportedError,
     },
-    utils::json::ToJsonWithCompilerCtxt,
+    utils::{json::ToJsonWithCompilerCtxt, redirect::RedirectResult},
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -320,18 +320,18 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         from: LocalNode<'tcx>,
         to: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> RedirectResult {
         for p in &mut self.expansion {
             if *p == from {
                 if to == self.base {
-                    return false;
+                    return RedirectResult::SelfRedirect;
                 }
                 *p = to;
                 self.assert_validity(ctxt);
-                return true;
+                return RedirectResult::Redirect;
             }
         }
-        true
+        RedirectResult::NoRedirect
     }
 
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {

@@ -7,7 +7,7 @@ use crate::{
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     }, pcg::{PCGNode, PCGNodeLike}, pcg_validity_assert, utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::MaybeRedirected,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::{MaybeRedirected, RedirectResult},
         validity::HasValidityCheck, CompilerCtxt,
     }
 };
@@ -138,11 +138,15 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         from: LocalNode<'tcx>,
         to: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> RedirectResult {
         if let PCGNode::RegionProjection(rp) = from {
             self.short.redirect(rp, to.try_into().unwrap());
         }
-        self.long.to_pcg_node(ctxt) != self.short.effective().to_pcg_node(ctxt)
+        if self.long.to_pcg_node(ctxt) == self.short.effective().to_pcg_node(ctxt) {
+            RedirectResult::SelfRedirect
+        } else {
+            RedirectResult::Redirect
+        }
     }
 
     pub(crate) fn new(

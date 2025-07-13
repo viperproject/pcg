@@ -58,9 +58,12 @@ impl<T: Copy> MaybeRedirected<T> {
 }
 
 impl<T: Copy + Eq> MaybeRedirected<T> {
-    pub(crate) fn redirect(&mut self, from: T, to: T) {
+    pub(crate) fn redirect(&mut self, from: T, to: T) -> RedirectResult {
         if self.effective() == from {
             self.redirected = Some(to);
+            RedirectResult::Redirect
+        } else {
+            RedirectResult::NoRedirect
         }
     }
 
@@ -123,4 +126,11 @@ impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for MaybeRedirected
         }
         Ok(())
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RedirectResult {
+    Redirect,
+    NoRedirect,
+    SelfRedirect,
 }

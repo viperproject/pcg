@@ -8,13 +8,14 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::graph::BorrowsGraph;
-use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate};
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::PcgError;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::redirect::RedirectResult;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
@@ -201,7 +202,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let conditions = self.remove(&edge).unwrap();
-        if edge.redirect(from, to, ctxt) {
+        if edge.redirect(from, to, ctxt) != RedirectResult::SelfRedirect {
             self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
         }
         true
@@ -247,15 +248,14 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge, for_read } => {
-                self.graph.handle_add_edge(edge, for_read, capabilities, ctxt)?
+                self.graph
+                    .handle_add_edge(edge, for_read, capabilities, ctxt)?
             }
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
-                self.label_region_projection(
-                    &LabelRegionProjectionPredicate::Equals(rp),
-                    label,
-                    ctxt,
-                )
-            }
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => self.label_region_projection(
+                &LabelRegionProjectionPredicate::Equals(rp),
+                label,
+                ctxt,
+            ),
         };
         Ok(result)
     }
@@ -270,8 +270,7 @@ impl<'tcx> BorrowsState<'tcx> {
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.graph
-            .label_region_projection(predicate, label, ctxt)
+        self.graph.label_region_projection(predicate, label, ctxt)
     }
 
     #[must_use]
