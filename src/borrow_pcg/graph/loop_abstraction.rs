@@ -241,11 +241,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .render_debug_graph(ctxt, "Abstraction graph after expansion");
         let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
         let frozen_graph = graph.frozen_graph();
-        tracing::info!(
+        tracing::debug!(
             "leaf edges: {}",
             frozen_graph.leaf_edges(ctxt).to_short_string(ctxt)
         );
-        tracing::info!(
+        tracing::debug!(
             "leaf nodes: {}",
             frozen_graph.leaf_nodes(ctxt).to_short_string(ctxt)
         );
@@ -380,7 +380,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        while let Some(path) = paths.pop() {
+        'outer: while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
             if to_cut.contains(&last_edge) {
                 to_cut.extend(path);
@@ -397,10 +397,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             for blocked_by_node in blocked_by_nodes {
                 for edge in self.edges_blocking(blocked_by_node.into(), ctxt) {
                     if path.contains(&edge) {
+                        self.render_debug_graph(ctxt, "Invalid abstraction graph");
                         pcg_validity_assert!(false, "edge already in path");
-                        panic!("edge already in path");
+                        // panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
-                        // break 'outer;
+                        break 'outer;
                     }
                     let mut next_path = path.clone();
                     next_path.push(edge);
@@ -427,7 +428,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
 
 impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
-        tracing::info!("applying action: {}", action.debug_line(self.ctxt));
+        tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge, for_read } => {

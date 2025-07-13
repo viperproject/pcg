@@ -4,6 +4,7 @@ use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, OwnedPcgAction};
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{Expander, ObtainType};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
@@ -112,7 +113,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .into(),
             )?;
             for rp in p.region_projections(self.ctxt) {
-                let rp_expansion: Vec<LocalNode<'tcx>> = p
+                let rp_expansion: Vec<LocalRegionProjection<'tcx>> = p
                     .expansion_places(&expansion, self.ctxt)
                     .into_iter()
                     .flat_map(|ep| {
@@ -123,7 +124,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>();
-                if rp_expansion.len() > 1 {
+                if rp_expansion.len() > 1 && !capability.is_read() {
                     self.redirect_blocked_nodes_to_base(rp.into(), &rp_expansion)?;
                 }
             }

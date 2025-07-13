@@ -1,9 +1,36 @@
 mod common;
 
+#[allow(unused)]
 #[test]
 fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
+
+
+    let warn_only_vars = vec![(
+        "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
+        "true".to_string(),
+    )];
+
+    let visualization_env_vars = vec![
+        (
+            "PCG_VISUALIZATION_DATA_DIR".to_string(),
+            "../../visualization/data".to_string(),
+        ),
+        ("PCG_VISUALIZATION".to_string(), "true".to_string()),
+    ];
+
+    common::ensure_successful_run_on_crate(
+        "pest",
+        "2.7.15",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("parser_state::ParserState::<'i, R>::stack_match_pop"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
 
     common::ensure_successful_run_on_crate(
         "crypto-bigint",
@@ -14,18 +41,6 @@ fn test_selected_crates() {
             validity_checks: false,
             function: None,
             extra_env_vars: vec![("PCG_MAX_BASIC_BLOCKS".to_string(), "13".to_string())],
-        },
-    );
-
-    common::ensure_successful_run_on_crate(
-        "pest",
-        "2.7.15",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: false,
-            function: None,
-            extra_env_vars: vec![],
         },
     );
 
@@ -82,19 +97,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
-    let _warn_only_vars = vec![(
-        "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
-        "true".to_string(),
-    )];
-
-    let _visualization_env_vars = vec![
-        (
-            "PCG_VISUALIZATION_DATA_DIR".to_string(),
-            "../../visualization/data".to_string(),
-        ),
-        ("PCG_VISUALIZATION".to_string(), "true".to_string()),
-    ];
 
 
     common::ensure_successful_run_on_crate(

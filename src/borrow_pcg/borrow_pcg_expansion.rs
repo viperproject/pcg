@@ -139,7 +139,9 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
         latest: &Latest<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.base.label_place(predicate, latest, ctxt)
+        let result = self.base.label_place(predicate, latest, ctxt);
+        self.assert_validity(ctxt);
+        result
     }
 
     fn label_blocked_by_places(
@@ -152,6 +154,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
         for p in &mut self.expansion {
             changed |= p.label_place(predicate, latest, ctxt);
         }
+        self.assert_validity(ctxt);
         changed
     }
 }
@@ -187,12 +190,14 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
                 }
             }
         }
+        self.assert_validity(ctxt);
         changed
     }
 }
 
-impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for BorrowPcgExpansion<'tcx>
+impl<'tcx, 'a, P: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>>
+    DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for BorrowPcgExpansion<'tcx, P>
 {
     fn to_short_string(
         &self,
@@ -209,8 +214,11 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx> {
+impl<'tcx: 'a, 'a, P: Eq + std::fmt::Debug> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx, P> {
     fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        if self.expansion.contains(&self.base) {
+            return Err(format!("expansion contains base: {:?}", self));
+        }
         Ok(())
     }
 }
@@ -291,15 +299,32 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
+    pub(crate) fn try_to_lifetime_expansion(
+        &self,
+    ) -> Option<BorrowPcgExpansion<'tcx, LocalRegionProjection<'tcx>>> {
+        let base = self.base.try_into_region_projection().ok()?;
+        let expansion = self
+            .expansion
+            .iter()
+            .map(|p| p.try_into_region_projection().ok())
+            .collect::<Option<Vec<_>>>()?;
+        Some(BorrowPcgExpansion {
+            base,
+            expansion,
+            deref_blocked_region_projection_label: self.deref_blocked_region_projection_label,
+            _marker: PhantomData,
+        })
+    }
     pub(crate) fn redirect(
         &mut self,
         from: LocalNode<'tcx>,
         to: LocalNode<'tcx>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         for p in &mut self.expansion {
             if *p == from {
                 *p = to;
+                self.assert_validity(ctxt);
                 return true;
             }
         }
@@ -328,6 +353,16 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
             && let Some(projection) = p.base_region_projection(ctxt)
         {
             Some(projection.with_label(self.deref_blocked_region_projection_label, ctxt))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn deref_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
+        if let BlockingNode::Place(MaybeOldPlace::Current { place }) = self.base
+            && place.is_ref(ctxt)
+        {
+            Some(place.project_deref(ctxt))
         } else {
             None
         }
@@ -402,7 +437,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         if place_ty.ty.is_unsafe_ptr() {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
-        Ok(Self {
+        let result = Self {
             base,
             expansion: expansion
                 .elems()
@@ -411,7 +446,9 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
                 .collect::<Result<Vec<_>, _>>()?,
             deref_blocked_region_projection_label,
             _marker: PhantomData,
-        })
+        };
+        result.assert_validity(ctxt);
+        Ok(result)
     }
 }
 

@@ -4,7 +4,9 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, Local
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::region_projection::{
+    LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionLabel,
+};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -314,30 +316,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     /// Accordingly, when we want to remove *y in such cases, we just remove the
     /// label rather than use the normal logic (of renaming the placeholder
     /// projection to the current one).
-    ///
-    /// This should be called *after* renaming any placeholder projections to
-    /// current projections. (If there is a current projection, it means that
-    /// there was originally a placeholder projection that was renamed to the
-    /// current one).
-    ///
-    /// **TODO**: The above check is something of a hack, perhaps a better solution
-    /// is to check for the presence of lifetimes in the expansion?
     fn unlabel_blocked_region_projections(
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
     ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
-                // See the doc comment above for why we do this.
-                if !self.pcg.borrow.graph.contains(rp.unlabelled(), self.ctxt) {
-                    self.record_and_apply_action(
-                        BorrowPcgAction::remove_region_projection_label(
-                            rp,
-                            "unlabel_blocked_region_projections",
-                        )
-                        .into(),
-                    )?;
-                }
+                self.record_and_apply_action(
+                    BorrowPcgAction::remove_region_projection_label(
+                        rp,
+                        "unlabel_blocked_region_projections",
+                    )
+                    .into(),
+                )?;
             }
         }
         Ok(())
@@ -345,20 +336,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
     fn redirect_blocked_nodes_to_base(
         &mut self,
-        base: LocalNode<'tcx>,
-        expansion: &[LocalNode<'tcx>],
+        base: LocalRegionProjection<'tcx>,
+        expansion: &[LocalRegionProjection<'tcx>],
     ) -> Result<(), PcgError> {
         for node in expansion.iter() {
             let edges_to_redirect = self
                 .pcg
                 .borrow
                 .graph()
-                .edges_blocked_by(*node, self.ctxt)
+                .edges_blocked_by((*node).into(), self.ctxt)
                 .map(|e| e.kind.clone())
                 .collect::<Vec<_>>();
-            tracing::debug!(
-                "redirecting {} edges to base {}",
-                edges_to_redirect.len(),
+            tracing::info!(
+                "redirecting edges {} to base {}",
+                edges_to_redirect.to_short_string(self.ctxt),
                 base.to_short_string(self.ctxt)
             );
             for to_redirect in edges_to_redirect {
@@ -367,8 +358,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.record_and_apply_action(
                     BorrowPcgAction::redirect_edge(
                         to_redirect,
-                        *node,
-                        base,
+                        (*node).into(),
+                        base.into(),
                         "redirect_blocked_nodes_to_base",
                     )
                     .into(),
@@ -427,8 +418,17 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         match edge.kind() {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                self.redirect_blocked_nodes_to_base(expansion.base, expansion.expansion())?;
-                if expansion.is_mutable_deref(self.ctxt) {
+                if let Some(lifetime_expansion) = expansion.try_to_lifetime_expansion()
+                    && lifetime_expansion.base.place().is_owned(self.ctxt)
+                {
+                    self.redirect_blocked_nodes_to_base(
+                        lifetime_expansion.base,
+                        lifetime_expansion.expansion(),
+                    )?;
+                }
+                if let Some(place) = expansion.deref_blocked_place(self.ctxt)
+                    && place.regions(self.ctxt).len() == 0
+                {
                     self.unlabel_blocked_region_projections(expansion)?;
                 }
                 for exp_node in expansion.expansion() {
@@ -605,14 +605,12 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         let source_cap = if expand.capability.is_read() {
             expand.capability
         } else {
-            capabilities
-                .get(expand.from)
-                .unwrap_or_else(|| {
-                    pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
-                    panic!("no cap for {}", expand.from.to_short_string(ctxt));
-                    // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                    // CapabilityKind::Exclusive
-                })
+            capabilities.get(expand.from).unwrap_or_else(|| {
+                pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
+                panic!("no cap for {}", expand.from.to_short_string(ctxt));
+                // For debugging, assume exclusive, we can visualize the graph to see what's going on
+                // CapabilityKind::Exclusive
+            })
         };
         for target_place in target_places {
             capabilities.insert(target_place, source_cap);

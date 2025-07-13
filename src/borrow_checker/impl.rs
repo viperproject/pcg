@@ -330,7 +330,7 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             .borrow()
             .get()
             .contains(borrow_index);
-        tracing::info!(
+        tracing::debug!(
             "borrow_in_scope_at({:?}, {:?}) = {}",
             borrow_index,
             location,
