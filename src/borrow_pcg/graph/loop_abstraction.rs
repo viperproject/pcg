@@ -390,9 +390,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     if path.contains(&edge) {
                         self.render_debug_graph(ctxt, "Invalid abstraction graph");
                         pcg_validity_assert!(false, "edge already in path");
-                        // panic!("edge already in path");
+                        panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
-                        break 'outer;
+                        // break 'outer;
                     }
                     let mut next_path = path.clone();
                     next_path.push(edge);
