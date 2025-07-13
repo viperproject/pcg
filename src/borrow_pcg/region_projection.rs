@@ -432,17 +432,6 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     #[must_use]
-    pub(crate) fn unlabelled(self) -> RegionProjection<'tcx, T> {
-        RegionProjection {
-            base: self.base,
-            region_idx: self.region_idx,
-            label: None,
-            phantom: PhantomData,
-        }
-    }
-}
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    #[must_use]
     pub(crate) fn with_placeholder_label(
         self,
         ctxt: CompilerCtxt<'_, 'tcx>,

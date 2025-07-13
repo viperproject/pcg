@@ -3,7 +3,6 @@ use std::cmp::Ordering;
 use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, OwnedPcgAction};
-use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{Expander, ObtainType};
