@@ -216,9 +216,9 @@ impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.borrow.check_validity(ctxt)?;
         // TODO
-        // if !self.is_acyclic(ctxt) {
-        //     return Err("PCG is not acyclic".to_string());
-        // }
+        if !self.is_acyclic(ctxt) {
+            return Err("PCG is not acyclic".to_string());
+        }
         Ok(())
     }
 }
