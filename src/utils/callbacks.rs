@@ -21,7 +21,7 @@ use crate::{
     rustc_interface::{
         borrowck::{self, BorrowIndex, LocationTable, RichLocation},
         data_structures::fx::{FxHashMap, FxHashSet},
-        driver::{self, Compilation},
+        driver::{self, init_rustc_env_logger, Compilation},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{interface::Compiler, Config},
         middle::{
@@ -30,11 +30,11 @@ use crate::{
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::Session,
+        session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
         span::SpanSnippetError,
     },
     utils::MAX_BASIC_BLOCKS,
-    PcgOutput,
+    PcgCtxt, PcgOutput,
 };
 
 #[rustversion::before(2024-11-09)]
@@ -58,6 +58,8 @@ impl driver::Callbacks for PcgCallbacks {
         tracing::debug!("Setting mir_borrowck");
         assert!(config.override_queries.is_none());
         config.override_queries = Some(set_mir_borrowck);
+        let early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
+        init_rustc_env_logger(&early_dcx);
     }
 
     #[rustversion::before(2024-11-09)]
@@ -313,7 +315,8 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
     let arena = Bump::new();
-    let mut output = run_pcg(&body.body, tcx, &bc, &arena, item_dir.as_deref());
+    let pcg_ctxt = PcgCtxt::new(&body.body, tcx, &bc);
+    let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[rustversion::since(2024-12-14)]
@@ -452,6 +455,25 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
             BorrowChecker::Impl(bc) => bc.override_region_debug_string(_region),
         }
     }
+
+    fn origin_contains_loan_at(
+        &self,
+        region: PcgRegion,
+        loan: BorrowIndex,
+        location: Location,
+    ) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.origin_contains_loan_at(region, loan, location),
+            BorrowChecker::Impl(bc) => bc.origin_contains_loan_at(region, loan, location),
+        }
+    }
+
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
+        match self {
+            BorrowChecker::Polonius(bc) => bc.borrow_in_scope_at(borrow_index, location),
+            BorrowChecker::Impl(bc) => bc.borrow_in_scope_at(borrow_index, location),
+        }
+    }
 }
 
 fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
@@ -566,7 +588,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     bc_facts_file: &mut std::fs::File,
                     ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
-                    let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at(location);
+                    let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at_map(location);
                     writeln!(bc_facts_file, "{location:?} Origin contains loan at:").unwrap();
                     if let Some(origin_contains_loan_at) = origin_contains_loan_at {
                         write_loans(origin_contains_loan_at, bc_facts_file, ctxt);

@@ -3,13 +3,14 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection},
+        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
     pcg::PCGNode,
     rustc_interface::{
         ast::Mutability,
+        borrowck::BorrowIndex,
         middle::{
             mir::{self, Location},
             ty::{self},
@@ -37,10 +38,13 @@ pub struct LocalBorrow<'tcx> {
     pub(crate) assigned_ref: MaybeOldPlace<'tcx>,
     kind: mir::BorrowKind,
 
-    /// The location when the reborrow was created
+    /// The location when the borrow was created
     reserve_location: Location,
 
     pub region: ty::Region<'tcx>,
+
+    // For some reason this may not be defined for certain shared borrows
+    borrow_index: Option<BorrowIndex>,
 
     assigned_rp_snapshot: Option<RegionProjectionLabel>,
 }
@@ -48,12 +52,12 @@ pub struct LocalBorrow<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if self.assigned_region_projection(repacker) == *projection {
+        if predicate.matches(self.assigned_region_projection(repacker)) {
             self.assigned_rp_snapshot = label;
             changed = true;
         }
@@ -98,11 +102,11 @@ pub struct RemoteBorrow<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if self.assigned_ref.base_region_projection(repacker) == Some(*projection) {
+        if predicate.matches(self.assigned_region_projection(repacker)) {
             self.rp_snapshot_location = label;
             true
         } else {
@@ -247,6 +251,13 @@ edgedata_enum!(
 );
 
 impl<'tcx> BorrowEdge<'tcx> {
+    pub(crate) fn borrow_index(&self) -> Option<BorrowIndex> {
+        match self {
+            BorrowEdge::Local(borrow) => borrow.borrow_index,
+            BorrowEdge::Remote(_) => None,
+        }
+    }
+
     pub fn kind(&self) -> Option<mir::BorrowKind> {
         match self {
             BorrowEdge::Local(borrow) => Some(borrow.kind),
@@ -391,9 +402,9 @@ impl<'tcx> LocalBorrow<'tcx> {
         kind: mir::BorrowKind,
         reservation_location: Location,
         region: ty::Region<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        assert!(assigned_place.ty(repacker).ty.ref_mutability().is_some());
+        assert!(assigned_place.ty(ctxt).ty.ref_mutability().is_some());
         Self {
             blocked_place,
             assigned_ref: assigned_place,
@@ -401,6 +412,7 @@ impl<'tcx> LocalBorrow<'tcx> {
             reserve_location: reservation_location,
             region,
             assigned_rp_snapshot: None,
+            borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
         }
     }
 

@@ -8,10 +8,10 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::graph::BorrowsGraph;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::place_capabilities::PlaceCapabilities;
+use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::PcgError;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -246,10 +246,14 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge, for_read } => {
-                self.handle_add_edge(edge, for_read, capabilities, ctxt)?
+                self.graph.handle_add_edge(edge, for_read, capabilities, ctxt)?
             }
             BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
-                self.label_region_projection(&rp, label, ctxt)
+                self.label_region_projection(
+                    &LabelRegionProjectionPredicate::Equals(rp),
+                    label,
+                    ctxt,
+                )
             }
         };
         Ok(result)
@@ -261,16 +265,23 @@ impl<'tcx> BorrowsState<'tcx> {
 
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph
-            .mut_edges(|edge| edge.label_region_projection(projection, label, ctxt))
+            .label_region_projection(predicate, label, ctxt)
     }
 
-    #[instrument(skip(self, edge, capabilities, ctxt), fields(edge = edge.to_short_string(ctxt)))]
-    fn handle_add_edge(
+    #[must_use]
+    fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) -> bool {
+        let location = location.into();
+        self.latest.insert(place, location)
+    }
+}
+
+impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn handle_add_edge(
         &mut self,
         edge: BorrowPcgEdge<'tcx>,
         for_read: bool,
@@ -321,11 +332,5 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             _ => changed,
         })
-    }
-
-    #[must_use]
-    fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) -> bool {
-        let location = location.into();
-        self.latest.insert(place, location)
     }
 }

@@ -1,12 +1,14 @@
 use crate::borrow_pcg::{
     edge_data::LabelPlacePredicate,
-    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+    has_pcs_elem::{
+        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+    },
     latest::Latest,
-    region_projection::{RegionProjection, RegionProjectionLabel},
+    region_projection::RegionProjectionLabel,
 };
 
 use super::{
-    display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
+    display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
     CompilerCtxt,
 };
 
@@ -28,6 +30,15 @@ impl<'tcx, T: LabelPlace<'tcx>> LabelPlace<'tcx> for MaybeRedirected<T> {
             changed |= r.label_place(predicate, latest, ctxt);
         }
         changed
+    }
+}
+
+impl<T> MaybeRedirected<T> {
+    pub(crate) fn map<U, F: Fn(T) -> U>(self, f: F) -> MaybeRedirected<U> {
+        MaybeRedirected {
+            original: f(self.original),
+            redirected: self.redirected.map(f),
+        }
     }
 }
 
@@ -67,15 +78,15 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
 {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = self
             .original
-            .label_region_projection(projection, label, repacker);
+            .label_region_projection(predicate, label, repacker);
         if let Some(r) = &mut self.redirected {
-            changed |= r.label_region_projection(projection, label, repacker);
+            changed |= r.label_region_projection(predicate, label, repacker);
         }
         self.collapse_if_equal();
         changed

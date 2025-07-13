@@ -98,6 +98,9 @@ fn setup_rustc_args() -> Vec<String> {
 
     rustc_args.extend(std::env::args().skip(1));
 
+    // let args = args::raw_args(&early_dcx);
+    // panic!("args: {:?}", args);
+
     let args_str = rustc_args
         .iter()
         .map(|arg| shell_escape::escape(arg.into()))

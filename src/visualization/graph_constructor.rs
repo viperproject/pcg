@@ -1,16 +1,14 @@
 use crate::{
     borrow_pcg::{
-        domain::LoopAbstractionInput,
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowsState,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::{place_capabilities::PlaceCapabilities, MaybeHasLocation, Pcg},
+    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, Pcg},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, PlaceSnapshot,
-        SnapshotLocation,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,
     },
 };
 
@@ -45,6 +43,35 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             edges: HashSet::new(),
             ctxt,
             location,
+        }
+    }
+
+    fn insert_maybe_old_place(
+        &mut self,
+        place: MaybeOldPlace<'tcx>,
+        capability_getter: &impl CapabilityGetter<'tcx>,
+    ) -> NodeId {
+        self.insert_place_node(place.place(), place.location(), capability_getter)
+    }
+
+    fn insert_maybe_remote_place(
+        &mut self,
+        place: MaybeRemotePlace<'tcx>,
+        capability_getter: &impl CapabilityGetter<'tcx>,
+    ) -> NodeId {
+        match place {
+            MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place, capability_getter),
+            MaybeRemotePlace::Remote(local) => self.insert_remote_node(local),
+        }
+    }
+    fn insert_pcg_node(
+        &mut self,
+        node: PCGNode<'tcx>,
+        capability_getter: &impl CapabilityGetter<'tcx>,
+    ) -> NodeId {
+        match node {
+            PCGNode::Place(place) => self.insert_maybe_remote_place(place, capability_getter),
+            PCGNode::RegionProjection(rp) => self.insert_region_projection_node(rp),
         }
     }
 
@@ -149,24 +176,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         id
     }
 
-    pub(super) fn insert_abstraction_input_target(
-        &mut self,
-        node: LoopAbstractionInput<'tcx>,
-        capability: &impl CapabilityGetter<'tcx>,
-    ) -> NodeId {
-        match node {
-            LoopAbstractionInput::RegionProjection(rp) => {
-                self.insert_region_projection_node(rp.into())
-            }
-            LoopAbstractionInput::Place(MaybeRemotePlace::Local(place)) => {
-                self.insert_place_node(place.place(), place.location(), capability)
-            }
-            LoopAbstractionInput::Place(MaybeRemotePlace::Remote(place)) => {
-                self.insert_remote_node(place)
-            }
-        }
-    }
-
     pub(super) fn insert_abstraction(
         &mut self,
         abstraction: &AbstractionType<'tcx>,
@@ -177,13 +186,12 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let mut output_nodes = vec![];
 
         for input in abstraction.inputs() {
-            let input = self.insert_abstraction_input_target(input, capabilities);
+            let input = self.insert_pcg_node(*input, capabilities);
             input_nodes.push(input);
         }
 
         for output in abstraction.outputs() {
-            let output = output.with_base(output.base.into());
-            let output = self.insert_region_projection_node(output);
+            let output = self.insert_pcg_node((*output).into(), capabilities);
             output_nodes.push(output);
         }
 
@@ -346,16 +354,6 @@ impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg,
         self.repacker
     }
 
-    fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
-        match place {
-            MaybeOldPlace::Current { place } => {
-                self.constructor
-                    .insert_place_node(place, None, &self.capability_getter())
-            }
-            MaybeOldPlace::OldPlace(snapshot_place) => self.insert_snapshot_place(snapshot_place),
-        }
-    }
-
     fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
         &mut self.constructor
     }
@@ -425,14 +423,6 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
             last_node = node;
         }
         node
-    }
-
-    fn insert_snapshot_place(&mut self, place: PlaceSnapshot<'tcx>) -> NodeId {
-        self.insert_place_and_previous_projections(
-            place.place,
-            Some(place.at),
-            &NullCapabilityGetter,
-        )
     }
 
     pub fn construct_graph(mut self) -> Graph {

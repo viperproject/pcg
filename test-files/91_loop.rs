@@ -11,10 +11,9 @@ impl List {
         let mut i = 0;
         let mut current = self;
         while i < n {
-            // PCG: bb1[0] post_main: Loop(bb1): [Remote(_1)] -> [current↓'?17]
-            // PCG: bb1[0] post_main: Loop(bb1): [Remote(_1)↓'?13] -> [current↓'?17]
             // PCG: bb1[0] post_main: borrow: y <after bb0[7]> = &mut  x
             // PCG: bb1[0] post_main: borrow: z = &mut  *y
+            // PCG: bb1[0] post_main: Loop(bb1): [Remote(_1)↓'?13] -> [current↓'?17]
             current = match current.tail {
                 Some(ref mut tail) => tail,
                 None => unreachable!(),

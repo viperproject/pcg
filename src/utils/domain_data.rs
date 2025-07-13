@@ -3,10 +3,10 @@ use std::alloc::Allocator;
 use derive_more::From;
 
 use crate::pcg::EvalStmtPhase;
+use crate::utils::incoming_states::IncomingStates;
 
 use super::arena::ArenaRef;
 use super::eval_stmt_data::EvalStmtData;
-use super::incoming_states::IncomingStates;
 use super::validity::HasValidityCheck;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]

@@ -11,7 +11,8 @@ use super::{
 };
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::LabelPlace;
+use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
@@ -36,7 +37,7 @@ use crate::{
 };
 
 /// A region occuring in region projections
-#[derive(PartialEq, Eq, Clone, Copy, Hash, From)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, From, Debug)]
 pub enum PcgRegion {
     RegionVid(RegionVid),
     ReErased,
@@ -141,6 +142,12 @@ pub enum MaybeRemoteRegionProjectionBase<'tcx> {
 }
 
 impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
+    pub(crate) fn maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(p) => p.maybe_remote_current_place(),
+            MaybeRemoteRegionProjectionBase::Const(_) => None,
+        }
+    }
     #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
@@ -168,6 +175,12 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
     pub(crate) fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place(),
+            MaybeRemoteRegionProjectionBase::Const(_) => None,
+        }
+    }
+    pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
+        match self {
+            MaybeRemoteRegionProjectionBase::Place(p) => p.as_current_place(),
             MaybeRemoteRegionProjectionBase::Const(_) => None,
         }
     }
@@ -315,25 +328,33 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
 {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if label.is_some() {
-            pcg_validity_assert!(
-                projection.can_be_labelled(ctxt),
-                "{} is not mutable and shouldn't be labelled",
-                projection.to_short_string(ctxt)
-            );
-        }
-        if self.region_idx == projection.region_idx
-            && self.base == projection.base.into()
-            && self.label == projection.label
-        {
-            self.label = label;
-            true
-        } else {
-            false
+        match predicate {
+            LabelRegionProjectionPredicate::Equals(region_projection) => {
+                if self.region_idx == region_projection.region_idx
+                    && self.base == region_projection.base.into()
+                    && self.label == region_projection.label
+                {
+                    self.label = label;
+                    true
+                } else {
+                    false
+                }
+            }
+            LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+                if self.region_idx == *region_idx
+                    && self.base == (*maybe_old_place).into()
+                    && !self.is_placeholder()
+                {
+                    self.label = label;
+                    true
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -411,17 +432,6 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     #[must_use]
-    pub(crate) fn unlabelled(self) -> RegionProjection<'tcx, T> {
-        RegionProjection {
-            base: self.base,
-            region_idx: self.region_idx,
-            label: None,
-            phantom: PhantomData,
-        }
-    }
-}
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    #[must_use]
     pub(crate) fn with_placeholder_label(
         self,
         ctxt: CompilerCtxt<'_, 'tcx>,
@@ -477,7 +487,7 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemot
 }
 
 impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    type Error = ();
+    type Error = String;
     fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
         match rp.base {
             MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
@@ -486,7 +496,9 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
                 label: rp.label,
                 phantom: PhantomData,
             }),
-            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+            MaybeRemoteRegionProjectionBase::Const(_) => {
+                Err("Const cannot be converted to a region projection".to_string())
+            }
         }
     }
 }
@@ -519,6 +531,16 @@ pub trait RegionProjectionBaseLike<'tcx>:
     ) -> IndexVec<RegionIdx, PcgRegion>;
 
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx>;
+
+    fn region_projections<C: Copy>(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+        self.regions(ctxt)
+            .into_iter()
+            .map(|region| RegionProjection::new(region, *self, None, ctxt).unwrap())
+            .collect()
+    }
 }
 
 impl<
@@ -592,11 +614,14 @@ impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldP
 }
 
 impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    type Error = ();
+    type Error = String;
     fn try_from(node: AbstractionGraphNode<'tcx>) -> Result<Self, Self::Error> {
         match *node {
             PCGNode::RegionProjection(rp) => rp.try_into(),
-            PCGNode::Place(_) => Err(()),
+            PCGNode::Place(p) => Err(format!(
+                "Place {:?} cannot be converted to a region projection",
+                p
+            )),
         }
     }
 }
@@ -604,7 +629,7 @@ impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeO
 impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
     for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
 {
-    type Error = ();
+    type Error = String;
     fn try_from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Result<Self, Self::Error> {
         Ok(RegionProjection {
             base: rp.base.try_into()?,
@@ -743,8 +768,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         Ok(result)
     }
 
-    pub(crate) fn region<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgRegion {
-        let regions = self.base.regions(repacker);
+    pub(crate) fn region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgRegion {
+        let regions = self.base.regions(ctxt);
         if self.region_idx.index() >= regions.len() {
             unreachable!()
         } else {
@@ -762,6 +787,15 @@ impl<T: Copy> RegionProjection<'_, T> {
 impl<'tcx, T> RegionProjection<'tcx, T> {
     pub(crate) fn place_mut(&mut self) -> &mut T {
         &mut self.base
+    }
+
+    pub(crate) fn rebase<U: RegionProjectionBaseLike<'tcx> + From<T>>(
+        self,
+    ) -> RegionProjection<'tcx, U>
+    where
+        T: Copy,
+    {
+        self.with_base(self.base.into())
     }
 
     pub(crate) fn with_base<U: RegionProjectionBaseLike<'tcx>>(

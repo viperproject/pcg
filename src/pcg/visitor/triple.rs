@@ -1,9 +1,7 @@
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     pcg::{
-        triple::{PlaceCondition, Triple},
-        visitor::obtain::ObtainType,
-        PcgUnsupportedError, PcgError,
+        obtain::ObtainType, place_capabilities::PlaceCapabilitiesInterface, triple::{PlaceCondition, Triple}, PcgError, PcgUnsupportedError
     },
 };
 

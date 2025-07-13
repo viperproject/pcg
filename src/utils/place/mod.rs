@@ -16,7 +16,7 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
-    pcg::{PcgUnsupportedError, PcgError},
+    pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
         ast::Mutability,
         data_structures::fx::FxHasher,
@@ -257,7 +257,7 @@ impl<'tcx> Place<'tcx> {
         left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
     }
 
-    pub(crate) fn iter_places(self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<Self> {
+    pub(crate) fn iter_places<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Vec<Self> {
         let mut places = self
             .iter_projections(repacker)
             .into_iter()
@@ -359,11 +359,8 @@ impl<'tcx> Place<'tcx> {
         false
     }
 
-    pub(crate) fn ty_region<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<PcgRegion> {
-        match self.ty(repacker).ty.kind() {
+    pub(crate) fn ty_region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {
+        match self.ty(ctxt).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
         }
@@ -419,12 +416,12 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn region_projections<C: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
-        let place = self.with_inherent_region(repacker);
-        extract_regions(place.ty(repacker).ty, repacker)
+        let place = self.with_inherent_region(ctxt);
+        extract_regions(place.ty(ctxt).ty, ctxt)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
+            .map(|region| RegionProjection::new(*region, place, None, ctxt).unwrap())
             .collect()
     }
 
@@ -643,6 +640,10 @@ impl<'tcx> Place<'tcx> {
             }
         }
         unreachable!()
+    }
+
+    pub(crate) fn conflicts_with(self, other: Self) -> bool {
+        self.is_prefix(other) || other.is_prefix(self)
     }
 
     #[cfg(feature = "debug_info")]

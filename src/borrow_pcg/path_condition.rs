@@ -232,7 +232,13 @@ impl PathConditions {
         if successors.len() == 1 {
             return false;
         }
-        assert!(self.branch_choices_for(pc.from).is_none());
+        debug_assert!(
+            self.branch_choices_for(pc.from).is_none(),
+            "While inserting {:?}, expected no branch choices for {:?}, got {:?}",
+            pc,
+            pc.from,
+            self.branch_choices_for(pc.from)
+        );
         let bc_index = self
             .all_branch_choices()
             .enumerate()
@@ -271,41 +277,4 @@ impl PathConditions {
         }
         true
     }
-
-    // pub fn paths(&self) -> Option<HashSet<Vec<PathCondition>>> {
-    //     match self {
-    //         PathConditions::AtBlock(_b) => None,
-    //         PathConditions::Paths(p) => {
-    //             let end = self.end()?;
-    //             let mut paths = self
-    //                 .roots()
-    //                 .into_iter()
-    //                 .map(|b| (b, HashSet::default()))
-    //                 .collect::<HashMap<_, _>>();
-    //             let mut change = true;
-    //             while change {
-    //                 change = false;
-    //                 for edge in p.0.iter() {
-    //                     assert_ne!(edge.from, edge.to);
-    //                     let to_paths = paths.entry(edge.to).or_insert_with(HashSet::default);
-    //                     // SAFETY: different entries in the map
-    //                     let to_paths: &mut HashSet<_> = unsafe { &mut *(to_paths as *mut _) };
-    //                     let Some(from_paths) = paths.get(&edge.from) else {
-    //                         continue;
-    //                     };
-    //                     let to_paths_len = to_paths.len();
-    //                     if from_paths.is_empty() {
-    //                         to_paths.insert(vec![*edge]);
-    //                     } else {
-    //                         to_paths.extend(from_paths.iter().map(|p: &Vec<_>| {
-    //                             p.iter().copied().chain([*edge].iter().copied()).collect()
-    //                         }));
-    //                     }
-    //                     change |= to_paths.len() != to_paths_len;
-    //                 }
-    //             }
-    //             paths.remove(&end)
-    //         }
-    //     }
-    // }
 }

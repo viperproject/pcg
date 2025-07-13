@@ -9,6 +9,10 @@ impl<T> List<T> {
 
 fn f<'a>(mut list1: List<&'a mut i32>, mut list2: List<&'a mut i32>, mut list3: List<&'a mut i32>) {
     // PCG_LIFETIME_DISPLAY: list1 0 'a
+    // PCG: bb1[0] pre_operands: Loop(bb1): [Remote(_1)] -> [list1↓'a]
+    // PCG: bb1[0] pre_operands: Loop(bb1): [Remote(_1)↓'a] -> [list1↓'a]
+    // PCG: bb1[0] pre_operands: Loop(bb1): [Remote(_1)↓'a] -> [list2↓'?16]
+    // PCG: bb1[0] pre_operands: Loop(bb1): [Remote(_1)↓'a] -> [list3↓'?17]
     while true {
         let h1 = list1.head;
         let h2 = list2.head;

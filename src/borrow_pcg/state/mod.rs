@@ -8,10 +8,10 @@ use super::{
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, utils::place::maybe_remote::MaybeRemotePlace};
+use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError}, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
-    utils::{loop_usage::LoopUsage, place::maybe_old::MaybeOldPlace},
+    utils::{place::maybe_old::MaybeOldPlace},
 };
 use crate::{
     borrow_pcg::edge::{
@@ -68,7 +68,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph
             .frozen_graph()
             .leaf_nodes(ctxt)
-            .collect()
     }
 
     fn introduce_initial_borrows(
@@ -138,14 +137,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub(crate) fn insert(
-        &mut self,
-        edge: BorrowPcgEdge<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.insert(edge, ctxt)
-    }
-
     pub(super) fn remove(
         &mut self,
         edge: &BorrowPcgEdge<'tcx>,
@@ -169,29 +160,33 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        capabilities: &PlaceCapabilities<'tcx>,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> bool {
+    ) -> Result<bool, PcgError> {
         let mut changed = false;
-        let loop_usage = LoopUsage::new(self.latest.clone(), &other.latest);
         changed |= self.graph.join(
             &other.graph,
             self_block,
             other_block,
-            &loop_usage,
+            body_analysis,
             capabilities,
+            owned,
+            self.path_conditions.clone(),
             ctxt,
-        );
+        )?;
         changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions
             .join(&other.path_conditions, ctxt.body());
-        changed
+        Ok(changed)
     }
 
     pub(crate) fn add_cfg_edge(

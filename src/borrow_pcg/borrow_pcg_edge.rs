@@ -15,7 +15,7 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::{borrow_pcg::edge_data::edgedata_enum, utils::place::maybe_old::MaybeOldPlace};
+use crate::{borrow_pcg::{edge_data::edgedata_enum, has_pcs_elem::LabelRegionProjectionPredicate}, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -24,7 +24,6 @@ use crate::{
     },
 };
 use crate::{
-    borrow_pcg::abstraction::node::AbstractionGraphNode,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
@@ -73,12 +72,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgEdge<'tcx> {
 impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
     fn label_region_projection(
         &mut self,
-        projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.kind
-            .label_region_projection(projection, label, repacker)
+            .label_region_projection(predicate, label, repacker)
     }
 }
 
@@ -162,11 +161,17 @@ impl<'tcx, 'a, T: BorrowPcgEdgeLike<'tcx>>
     }
 }
 
-impl LocalNode<'_> {
+impl<'tcx> LocalNode<'tcx> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
             PCGNode::Place(p) => p.is_old(),
             PCGNode::RegionProjection(region_projection) => region_projection.place().is_old(),
+        }
+    }
+    pub(crate) fn related_current_place(self) -> Option<Place<'tcx>> {
+        match self {
+            PCGNode::Place(p) => p.as_current_place(),
+            PCGNode::RegionProjection(rp) => rp.base().as_current_place(),
         }
     }
 }
@@ -350,32 +355,6 @@ impl<'tcx> LocalNode<'tcx> {
 pub type BlockedNode<'tcx> = PCGNode<'tcx>;
 
 impl<'tcx> PCGNode<'tcx> {
-    pub(crate) fn as_abstraction_graph_node(
-        self,
-        block: mir::BasicBlock,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<AbstractionGraphNode<'tcx>> {
-        match self {
-            // Places are allowed only if they are roots of the borrow graph
-            PCGNode::Place(place) => match place {
-                MaybeRemotePlace::Local(maybe_old_place) => {
-                    if maybe_old_place.is_owned(ctxt) {
-                        Some(AbstractionGraphNode::place(place))
-                    } else {
-                        None
-                    }
-                }
-                MaybeRemotePlace::Remote(remote_place) => {
-                    Some(AbstractionGraphNode::place(remote_place.into()))
-                }
-            },
-            PCGNode::RegionProjection(rp) => Some(AbstractionGraphNode::from_region_projection(
-                rp.try_into().ok()?,
-                block,
-                ctxt,
-            )),
-        }
-    }
     pub(crate) fn as_blocking_node(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,

@@ -19,8 +19,7 @@ use super::{
     PcgDebugData, PcgError,
 };
 use crate::{
-    pcg::dot_graphs::PcgDotGraphsForBlock,
-    utils::{arena::ArenaRef, CompilerCtxt},
+    pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis}, utils::{arena::ArenaRef, CompilerCtxt}
 };
 use crate::{
     pcg::triple::TripleWalker,
@@ -35,6 +34,7 @@ use crate::{
             },
             ty::{self, GenericArgsRef},
         },
+        mir_dataflow::{move_paths::MoveData, Forward},
     },
     utils::{domain_data::DomainDataIndex, visitor::FallableVisitor},
     BodyAndBorrows,
@@ -125,6 +125,7 @@ pub struct PcgEngine<'a, 'tcx: 'a, A: Allocator + Clone> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     debug_data: Option<PCGEngineDebugData>,
     curr_block: Cell<BasicBlock>,
+    body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
     pub(crate) arena: A,
@@ -232,7 +233,6 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
         }
         pcg.states.0.pre_operands = pcg.entry_state.clone();
 
-
         let mut tw = TripleWalker::new(self.ctxt);
         match object {
             AnalysisObject::Statement(statement) => {
@@ -269,6 +269,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
 
     pub(crate) fn new(
         ctxt: CompilerCtxt<'a, 'tcx>,
+        move_data: &'a MoveData<'tcx>,
         arena: A,
         debug_output_dir: Option<&str>,
     ) -> Self {
@@ -295,6 +296,7 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             ctxt,
             debug_data,
             curr_block: Cell::new(START_BLOCK),
+            body_analysis: Rc::new(BodyAnalysis::new(ctxt, move_data)),
             arena,
         }
     }
@@ -332,7 +334,13 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
             // For results cursor, don't set block or consider debug data
             (None, None)
         };
-        PcgDomain::new(self.ctxt, block, debug_data, self.arena)
+        PcgDomain::new(
+            self.body_analysis.clone(),
+            self.ctxt,
+            block,
+            debug_data,
+            self.arena,
+        )
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
@@ -379,4 +387,6 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
         }
         edges
     }
+
+    type Direction = Forward;
 }

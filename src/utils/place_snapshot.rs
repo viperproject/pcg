@@ -21,6 +21,7 @@ pub enum SnapshotLocation {
     Mid(Location),
     After(Location),
     Start(BasicBlock),
+    Loop(BasicBlock),
 }
 
 impl SnapshotLocation {
@@ -47,6 +48,7 @@ impl SnapshotLocation {
             SnapshotLocation::After(loc) => loc.block,
             SnapshotLocation::Start(bb) => *bb,
             SnapshotLocation::Mid(loc) => loc.block,
+            SnapshotLocation::Loop(bb) => *bb,
         }
     }
 }
@@ -63,6 +65,7 @@ impl std::fmt::Display for SnapshotLocation {
             SnapshotLocation::After(loc) => write!(f, "after {loc:?}"),
             SnapshotLocation::Mid(loc) => write!(f, "mid {loc:?}"),
             SnapshotLocation::Start(bb) => write!(f, "start {bb:?}"),
+            SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
         }
     }
 }

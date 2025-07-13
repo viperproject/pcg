@@ -3,19 +3,62 @@
 //! Also includes implementations for the Polonius and NLL borrow-checkers.
 
 use std::collections::BTreeSet;
+use std::ops::ControlFlow;
 
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
-use crate::rustc_interface::middle::mir::Location;
-use crate::rustc_interface::middle::ty::RegionVid;
-use crate::rustc_interface::borrowck::{BorrowIndex, BorrowSet, LocationTable};
+use crate::rustc_interface::borrowck::BorrowData;
 use crate::rustc_interface::borrowck::PoloniusInput;
 use crate::rustc_interface::borrowck::PoloniusOutput;
 use crate::rustc_interface::borrowck::RegionInferenceContext;
-use crate::rustc_interface::borrowck::BorrowData;
-use crate::rustc_interface::data_structures::fx::FxIndexMap;
+use crate::rustc_interface::borrowck::{
+    places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias,
+};
+use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
+use crate::rustc_interface::middle::mir::{self, Location};
+use crate::rustc_interface::middle::ty::RegionVid;
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::CompilerCtxt;
+use crate::utils::Place;
 
 pub mod r#impl;
+
+pub(crate) trait BorrowLike<'tcx> {
+    fn get_borrowed_place(&self) -> Place<'tcx>;
+}
+
+#[rustversion::since(2024-10-17)]
+impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
+    fn get_borrowed_place(&self) -> Place<'tcx> {
+        self.borrowed_place().into()
+    }
+}
+
+#[rustversion::before(2024-10-17)]
+impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
+    fn get_borrowed_place(&self) -> Place<'tcx> {
+        self.borrowed_place.into()
+    }
+}
+
+trait HasPcgRegion {
+    fn pcg_region(&self) -> PcgRegion;
+}
+
+#[rustversion::since(2024-10-17)]
+impl HasPcgRegion for BorrowData<'_> {
+    fn pcg_region(&self) -> PcgRegion {
+        self.region().into()
+    }
+}
+
+#[rustversion::before(2024-10-17)]
+impl HasPcgRegion for BorrowData<'_> {
+    fn pcg_region(&self) -> PcgRegion {
+        self.region.into()
+    }
+}
+
 
 /// An interface to the results of the borrow-checker analysis. The PCG queries
 /// this interface as part of its analysis, for example, to identify when borrows
@@ -51,6 +94,95 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
 
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
+
+    fn is_directly_blocked(
+        &self,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        each_borrow_involving_path(
+            &mut (),
+            ctxt,
+            blocked_place,
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            |_this, _borrow_index, borrow| {
+                if borrow.get_borrowed_place() == blocked_place {
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
+    }
+
+    fn blocks(
+        &self,
+        blocking_place: Place<'tcx>,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let mut conflict = false;
+        each_borrow_involving_path(
+            &mut (),
+            ctxt,
+            blocked_place,
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            |_this, borrow_index, _borrow| {
+                tracing::debug!(
+                    "Checking if {} contains {:?} at {:?}",
+                    blocking_place.to_short_string(ctxt),
+                    borrow_index,
+                    location
+                );
+                if blocking_place.regions(ctxt).iter().any(|region| {
+                    let result = self.origin_contains_loan_at(*region, borrow_index, location);
+                    tracing::debug!(
+                        "{} contains {:?} at {:?} = {}",
+                        region,
+                        borrow_index,
+                        location,
+                        result
+                    );
+                    result
+                }) {
+                    conflict = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        );
+        conflict
+    }
+
+    fn origin_contains_loan_at(
+        &self,
+        region: PcgRegion,
+        loan: BorrowIndex,
+        location: Location,
+    ) -> bool;
+
+    fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex> {
+        self.location_map()
+            .iter()
+            .enumerate()
+            .find_map(|(index, (_, data))| {
+                if data.pcg_region() == region {
+                    Some(index.into())
+                } else {
+                    None
+                }
+            })
+    }
+
     #[rustversion::since(2024-12-14)]
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
         self.borrow_set()[borrow_index].region()
@@ -69,6 +201,19 @@ pub trait BorrowCheckerInterface<'tcx> {
     #[rustversion::before(2024-12-14)]
     fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
         &self.borrow_set().location_map
+    }
+
+    fn borrows_blocking(
+        &self,
+        place: Place<'tcx>,
+        _location: Location,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<BorrowData<'tcx>> {
+        self.location_map()
+            .iter()
+            .filter(|(_, data)| data.get_borrowed_place() == place)
+            .map(|(_, data)| data.clone())
+            .collect()
     }
 
     fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {
@@ -105,4 +250,73 @@ pub trait BorrowCheckerInterface<'tcx> {
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
+}
+
+trait BorrowSetLike<'tcx> {
+    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>>;
+}
+
+#[rustversion::since(2024-10-17)]
+impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
+    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
+        self.local_map().get(&local)
+    }
+}
+
+#[rustversion::before(2024-10-17)]
+impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
+    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
+        self.local_map.get(&local)
+    }
+}
+
+pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
+    s: &mut S,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+    borrowed_place: Place<'tcx>,
+    borrow_set: &BorrowSet<'tcx>,
+    is_candidate: I,
+    mut op: F,
+) where
+    F: FnMut(&mut S, BorrowIndex, &BorrowData<'tcx>) -> ControlFlow<()>,
+    I: Fn(BorrowIndex) -> bool,
+{
+    // The number of candidates can be large, but borrows for different locals cannot conflict with
+    // each other, so we restrict the working set a priori.
+    let Some(borrows_for_place_base) = borrow_set.get_borrows_for_local(borrowed_place.local)
+    else {
+        return;
+    };
+    // tracing::info!(
+    //     "Borrows for local {:?}: {:?}",
+    //     borrowed_place.local,
+    //     borrows_for_place_base
+    // );
+
+    // check for loan restricting path P being used. Accounts for
+    // borrows of P, P.a.b, etc.
+    for &i in borrows_for_place_base {
+        if !is_candidate(i) {
+            continue;
+        }
+        // tracing::info!(
+        //     "{:?} is a candidate for {}",
+        //     i,
+        //     borrowed_place.to_short_string(ctxt)
+        // );
+        let borrowed = &borrow_set[i];
+
+        if places_conflict(
+            ctxt.tcx(),
+            ctxt.body(),
+            borrowed.get_borrowed_place().to_rust_place(ctxt),
+            borrowed_place.to_rust_place(ctxt),
+            PlaceConflictBias::Overlap,
+        ) {
+            let ctrl = op(s, i, borrowed);
+            if matches!(ctrl, ControlFlow::Break(_)) {
+                return;
+            }
+        }
+    }
 }

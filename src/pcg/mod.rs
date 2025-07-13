@@ -13,6 +13,7 @@ mod node;
 mod successor;
 
 pub mod place_capabilities;
+pub(crate) mod obtain;
 pub(crate) mod triple;
 pub(crate) mod visitor;
 

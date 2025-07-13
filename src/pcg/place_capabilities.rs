@@ -9,6 +9,26 @@ use crate::{
     },
 };
 
+pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
+    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind>;
+    fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool;
+    fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind>;
+}
+
+impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
+    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+        self.0.get(&place).copied()
+    }
+
+    fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
+        self.0.remove(&place)
+    }
+
+    fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool {
+        self.0.insert(place, capability) != Some(capability)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<Place<'tcx>, CapabilityKind>);
 
@@ -24,7 +44,6 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
-
     pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
         self.get(place)
             .map(|c| c == CapabilityKind::Exclusive)
@@ -45,22 +64,8 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         })
     }
 
-    /// Returns true iff the capability was changed.
-    pub(crate) fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool {
-        tracing::debug!("inserting {:?} with {:?}", place, capability);
-        self.0.insert(place, capability) != Some(capability)
-    }
-
-    pub(crate) fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.0.remove(&place)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
         self.0.iter().map(|(k, v)| (*k, *v))
-    }
-
-    pub(crate) fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.0.get(&place).copied()
     }
 
     pub(crate) fn join(&mut self, other: &Self) -> bool {

@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     free_pcs::RepackOp,
-    pcg::{place_capabilities::PlaceCapabilities, PcgError},
+    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError},
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},

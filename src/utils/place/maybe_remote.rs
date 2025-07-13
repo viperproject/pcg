@@ -1,5 +1,6 @@
 use derive_more::From;
 
+use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
@@ -23,10 +24,30 @@ pub enum MaybeRemotePlace<'tcx> {
 }
 
 impl<'tcx> MaybeRemotePlace<'tcx> {
+    pub(crate) fn maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
+        match self {
+            MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
+                Some(MaybeRemoteCurrentPlace::Local(*place))
+            }
+            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(_)) => None,
+            MaybeRemotePlace::Remote(rp) => Some(MaybeRemoteCurrentPlace::Remote(*rp)),
+        }
+    }
+
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemotePlace::Local(p) => p.is_mutable(ctxt),
             MaybeRemotePlace::Remote(_) => false,
+        }
+    }
+}
+
+impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeRemotePlace<'tcx> {
+    type Error = ();
+    fn try_from(value: MaybeRemoteRegionProjectionBase<'tcx>) -> Result<Self, Self::Error> {
+        match value {
+            MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => Ok(maybe_remote_place),
+            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
         }
     }
 }
@@ -95,14 +116,6 @@ impl std::fmt::Display for MaybeRemotePlace<'_> {
 impl<'tcx> MaybeRemotePlace<'tcx> {
     pub fn place_assigned_to_local(local: mir::Local) -> Self {
         MaybeRemotePlace::Remote(RemotePlace { local })
-    }
-
-    pub(crate) fn is_old(&self) -> bool {
-        matches!(self, MaybeRemotePlace::Local(p) if p.is_old())
-    }
-
-    pub(crate) fn is_remote(&self) -> bool {
-        matches!(self, MaybeRemotePlace::Remote(_))
     }
 
     pub(crate) fn related_local_place(&self) -> Place<'tcx> {
@@ -176,11 +189,14 @@ impl RemotePlace {
         self.local
     }
 
-    pub(crate) fn ty<'tcx, C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
+    pub(crate) fn ty<'tcx, C: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<ty::Ty<'tcx>> {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
-            ty::TyKind::Ref(_, ty, _) => *ty,
-            _ => todo!(),
+            ty::TyKind::Ref(_, ty, _) => Some(*ty),
+            _ => None
         }
     }
 }

@@ -11,8 +11,9 @@ pub mod callbacks;
 pub mod display;
 pub mod eval_stmt_data;
 pub(crate) mod incoming_states;
-pub mod loop_usage;
+pub(crate) mod initialized;
 pub mod json;
+pub(crate) mod liveness;
 mod mutable;
 pub mod place;
 pub mod place_snapshot;
@@ -24,9 +25,9 @@ pub use mutable::*;
 pub use place::*;
 pub use place_snapshot::*;
 pub use repacker::*;
+pub(crate) mod data_structures;
 pub(crate) mod domain_data;
 pub(crate) mod repacker;
-pub(crate) mod data_structures;
 
 #[cfg(test)]
 #[rustversion::since(2025-05-24)]
@@ -39,6 +40,10 @@ lazy_static! {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,
     };
+    pub static ref TEST_CRATES_START_FROM: Option<usize> = match std::env::var("PCG_TEST_CRATES_START_FROM") {
+        Ok(val) => Some(val.parse().unwrap()),
+        Err(_) => None,
+    };
     pub static ref VALIDITY_CHECKS: bool =
         env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions));
     pub static ref COUPLING_DEBUG_IMGCAT: bool =
@@ -47,6 +52,8 @@ lazy_static! {
         env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false);
     pub static ref VALIDITY_CHECKS_WARN_ONLY: bool =
         env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false);
+    pub static ref PANIC_ON_ERROR: bool =
+        env_feature_enabled("PCG_PANIC_ON_ERROR").unwrap_or(false);
     pub static ref POLONIUS: bool = env_feature_enabled("PCG_POLONIUS").unwrap_or(false);
     pub static ref DUMP_MIR_DATAFLOW: bool =
         env_feature_enabled("PCG_DUMP_MIR_DATAFLOW").unwrap_or(false);

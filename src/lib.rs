@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#![feature(associated_type_defaults)]
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(if_let_guard, let_chains)]
@@ -15,7 +16,6 @@
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
-pub (crate) mod coupling;
 pub mod free_pcs;
 pub mod r#loop;
 pub mod pcg;
@@ -31,7 +31,8 @@ use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
-    middle::{mir::Body, ty::TyCtxt},
+    middle::{mir::Body, ty::{self, TyCtxt}},
+    mir_dataflow::move_paths::MoveData,
 };
 use serde_json::json;
 use utils::{
@@ -189,7 +190,9 @@ impl<'tcx, 'a> From<&'a PcgSuccessor<'tcx>> for PcgSuccessorVisualizationData<'a
     }
 }
 
-impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PcgSuccessorVisualizationData<'a, 'tcx> {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for PcgSuccessorVisualizationData<'a, 'tcx>
+{
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         json!({
             "actions": self.actions.iter().map(|a| a.to_json(repacker)).collect::<Vec<_>>(),
@@ -197,8 +200,13 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
     }
 }
 
-impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGStmtVisualizationData<'a, 'tcx> {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> serde_json::Value {
+impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for PCGStmtVisualizationData<'a, 'tcx>
+{
+    fn to_json(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         json!({
             "latest": self.latest.to_json(repacker),
             "actions": self.actions.to_json(repacker),
@@ -250,6 +258,35 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
     }
 }
 
+pub struct PcgCtxt<'mir, 'tcx> {
+    compiler_ctxt: CompilerCtxt<'mir, 'tcx>,
+    move_data: MoveData<'tcx>,
+}
+
+#[rustversion::since(2024-10-17)]
+fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> MoveData<'tcx> {
+    MoveData::gather_moves(body, tcx, |_| true)
+}
+
+#[rustversion::before(2024-10-17)]
+fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> MoveData<'tcx> {
+    MoveData::gather_moves(body, tcx, ty::ParamEnv::empty(), |_| true)
+}
+
+impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
+    pub fn new<BC: BorrowCheckerInterface<'tcx> + ?Sized>(
+        body: &'mir Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+        bc: &'mir BC,
+    ) -> Self {
+        let ctxt = CompilerCtxt::new(body, tcx, bc.as_dyn());
+        Self {
+            compiler_ctxt: ctxt,
+            move_data: gather_moves(ctxt.body(), ctxt.tcx()),
+        }
+    }
+}
+
 /// The main entrypoint for running the PCG.
 ///
 /// # Arguments
@@ -262,22 +299,25 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 /// - `visualization_output_path`: The path to output debug visualization to.
 pub fn run_pcg<
     'a,
-    'tcx: 'a,
+    'tcx,
     A: Allocator + Copy + std::fmt::Debug,
-    BC: BorrowCheckerInterface<'tcx> + ?Sized,
 >(
-    body: &'a Body<'tcx>,
-    tcx: TyCtxt<'tcx>,
-    bc: &'a BC,
+    pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
     arena: A,
     visualization_output_path: Option<&str>,
 ) -> PcgOutput<'a, 'tcx, A> {
-    let ctxt: CompilerCtxt<'a, 'tcx> = CompilerCtxt::new(body, tcx, bc.as_dyn());
-    let engine = PcgEngine::new(ctxt, arena, visualization_output_path);
+    let engine = PcgEngine::new(
+        pcg_ctxt.compiler_ctxt,
+        &pcg_ctxt.move_data,
+        arena,
+        visualization_output_path,
+    );
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
         *record_pcg = true;
     }
+    let body = pcg_ctxt.compiler_ctxt.body();
+    let tcx = pcg_ctxt.compiler_ctxt.tcx();
     let analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
     {
         let mut record_pcg = RECORD_PCG.lock().unwrap();
@@ -308,7 +348,7 @@ pub fn run_pcg<
         let node_legend_graph = crate::visualization::legend::generate_node_legend().unwrap();
         std::fs::write(&node_legend_file_path, node_legend_graph)
             .expect("Failed to write node legend");
-        generate_json_from_mir(&format!("{dir_path}/mir.json"), ctxt)
+        generate_json_from_mir(&format!("{dir_path}/mir.json"), pcg_ctxt.compiler_ctxt)
             .expect("Failed to generate JSON from MIR");
 
         // Iterate over each statement in the MIR
@@ -324,7 +364,7 @@ pub fn run_pcg<
             let pcs_block = pcs_block_option.unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
-                    statement.assert_validity(ctxt);
+                    statement.assert_validity(pcg_ctxt.compiler_ctxt);
                 }
                 let data = PCGStmtVisualizationData::new(statement);
                 let pcg_data_file_path = format!(
@@ -333,7 +373,7 @@ pub fn run_pcg<
                     block.index(),
                     statement_index
                 );
-                let pcg_data_json = data.to_json(ctxt);
+                let pcg_data_json = data.to_json(pcg_ctxt.compiler_ctxt);
                 std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
                     .expect("Failed to write pcg data to JSON file");
             }
@@ -345,7 +385,7 @@ pub fn run_pcg<
                     block.index(),
                     succ.block().index()
                 );
-                let pcg_data_json = data.to_json(ctxt);
+                let pcg_data_json = data.to_json(pcg_ctxt.compiler_ctxt);
                 std::fs::write(&pcg_data_file_path, pcg_data_json.to_string())
                     .expect("Failed to write pcg data to JSON file");
             }

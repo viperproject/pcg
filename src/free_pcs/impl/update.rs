@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     pcg::{
-        place_capabilities::PlaceCapabilities,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         triple::{PlaceCondition, Triple},
     },
     pcg_validity_assert,

@@ -10,6 +10,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::HasPlace;
@@ -73,6 +74,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             |p| {
                 self.pcg.capabilities.get(p) == Some(CapabilityKind::Read)
                     && !p.projects_shared_ref(self.ctxt)
+                    && p.parent_place()
+                        .is_none_or(|parent| self.pcg.capabilities.get(parent).is_none())
             },
             self.ctxt,
         );

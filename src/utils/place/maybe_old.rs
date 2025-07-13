@@ -1,3 +1,4 @@
+
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace};
@@ -27,6 +28,13 @@ pub enum MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> MaybeOldPlace<'tcx> {
+    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+        match self {
+            MaybeOldPlace::Current { place } => Some(place),
+            MaybeOldPlace::OldPlace(_) => None,
+        }
+    }
+
     pub fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.place()
             .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt)
@@ -72,14 +80,16 @@ impl<'tcx> PCGNodeLike<'tcx> for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx> {
-    type Error = ();
+    type Error = String;
 
     fn try_from(value: MaybeRemoteRegionProjectionBase<'tcx>) -> Result<Self, Self::Error> {
         match value {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 maybe_remote_place.try_into()
             }
-            MaybeRemoteRegionProjectionBase::Const(_) => Err(()),
+            MaybeRemoteRegionProjectionBase::Const(_) => {
+                Err("Const cannot be converted to a maybe old place".to_string())
+            }
         }
     }
 }
@@ -103,21 +113,25 @@ impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
 }
 
 impl<'tcx> TryFrom<PCGNode<'tcx>> for MaybeOldPlace<'tcx> {
-    type Error = ();
+    type Error = String;
     fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
         match node {
             PCGNode::Place(p) => Ok(p.try_into()?),
-            PCGNode::RegionProjection(_) => Err(()),
+            PCGNode::RegionProjection(_) => {
+                Err("Region projection cannot be converted to a maybe old place".to_string())
+            }
         }
     }
 }
 
 impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for MaybeOldPlace<'tcx> {
-    type Error = ();
+    type Error = String;
     fn try_from(remote_place: MaybeRemotePlace<'tcx>) -> Result<Self, Self::Error> {
         match remote_place {
             MaybeRemotePlace::Local(p) => Ok(p),
-            MaybeRemotePlace::Remote(_) => Err(()),
+            MaybeRemotePlace::Remote(r) => Err(format!(
+                "Remote place {r:?} cannot be converted to a maybe old place"
+            )),
         }
     }
 }

@@ -31,13 +31,33 @@ pub trait EdgeData<'tcx> {
     fn is_blocked_by(&self, node: LocalNode<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.blocked_by_nodes(ctxt).any(|n| n == node)
     }
+
+    fn nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
+        &'slf self,
+        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
+    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    where
+        'tcx: 'slf,
+    {
+        Box::new(
+            self.blocked_nodes(ctxt)
+                .chain(self.blocked_by_nodes(ctxt).map(|n| n.into())),
+        )
+    }
+
+    fn references_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.nodes(ctxt).any(|n| match n {
+            PCGNode::Place(p) => p.as_current_place() == Some(place),
+            PCGNode::RegionProjection(rp) => rp.base.as_current_place() == Some(place),
+        })
+    }
 }
 
-pub (crate) enum LabelPlacePredicate<'tcx> {
+pub(crate) enum LabelPlacePredicate<'tcx> {
     PrefixOrPostfix(Place<'tcx>),
 }
 
-pub (crate) trait LabelEdgePlaces<'tcx> {
+pub(crate) trait LabelEdgePlaces<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
@@ -151,13 +171,13 @@ macro_rules! edgedata_enum {
         impl<$tcx> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjection<$tcx> for $enum_name<$tcx> {
             fn label_region_projection(
                 &mut self,
-                projection: &RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+                predicate: &$crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate<'tcx>,
                 location: Option<$crate::borrow_pcg::region_projection::RegionProjectionLabel>,
                 repacker: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.label_region_projection(projection, location, repacker),
+                        $enum_name::$variant_name(inner) => inner.label_region_projection(predicate, location, repacker),
                     )+
                 }
             }

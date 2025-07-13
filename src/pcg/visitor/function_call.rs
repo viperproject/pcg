@@ -1,12 +1,10 @@
 use super::PcgVisitor;
 use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
-use crate::borrow_pcg::domain::FunctionCallAbstractionInput;
+use crate::borrow_pcg::domain::{FunctionCallAbstractionInput, FunctionCallAbstractionOutput};
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
-use crate::borrow_pcg::region_projection::{
-    RegionProjection, RegionProjectionLabel,
-};
+use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -147,9 +145,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .iter()
                 .copied()
                 .filter(|rp| self.ctxt.bc.same_region(this_region, rp.region(self.ctxt)))
-                .map(|rp| rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt))
+                .map(|rp| {
+                    FunctionCallAbstractionOutput::new(
+                        rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt),
+                    )
+                })
                 .collect::<Vec<_>>();
-            let result_projections: Vec<RegionProjection<MaybeOldPlace<'tcx>>> = destination
+            let result_projections: Vec<FunctionCallAbstractionOutput<'tcx>> = destination
                 .region_projections(self.ctxt)
                 .iter()
                 .filter(|rp| self.ctxt.bc.outlives(this_region, rp.region(self.ctxt)))
@@ -159,7 +161,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if !outputs.is_empty() {
                 self.record_and_apply_action(
                     mk_create_edge_action(
-                        arg_rp,
+                        arg_rp.into(),
                         outputs,
                         "Function call: edges for nested borrows",
                     )
@@ -167,8 +169,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 )?;
             }
         }
-        self.pcg
-            .render_debug_graph(self.ctxt, location, "final borrow_graph");
+        // self.pcg.render_debug_graph(self.ctxt, location, "final borrow_graph");
         Ok(())
     }
 }

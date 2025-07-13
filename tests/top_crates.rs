@@ -1,13 +1,16 @@
 #![feature(rustc_private)]
+#![feature(let_chains)]
 use chrono::Local;
 use derive_more::Deref;
-use pcg::utils::MAX_BASIC_BLOCKS;
+use pcg::utils::{MAX_BASIC_BLOCKS, TEST_CRATES_START_FROM};
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 mod common;
 use common::{get, run_on_crate, RunOnCrateOptions, Target};
+
+use crate::common::RunOnCrateResult;
 
 #[test]
 #[ignore]
@@ -47,9 +50,14 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .panic_fuse()
         .enumerate()
         .for_each(|(i, krate)| {
+            if let Some(start_from) = *TEST_CRATES_START_FROM && i < start_from {
+                println!("Skipping: {i} ({})", krate.name);
+                return;
+            }
+
             let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
-            run_on_crate(
+            let result = run_on_crate(
                 &krate.name,
                 version,
                 date,
@@ -60,6 +68,9 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                     extra_env_vars: extra_env_vars.clone(),
                 },
             );
+            if matches!(result, RunOnCrateResult::Failed) {
+                panic!("Failed: {i} ({}: {})", krate.name, version);
+            }
             println!("Finished: {i} ({})", krate.name);
         });
 }

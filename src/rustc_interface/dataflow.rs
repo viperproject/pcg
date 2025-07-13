@@ -1,15 +1,15 @@
+use std::cell::RefMut;
+
+use super::mir_dataflow::{self, ResultsCursor};
+
 #[rustversion::since(2024-11-14)]
 use super::mir_dataflow::Analysis as MirAnalysis;
 
-use super::{
-    middle::{
-        mir::{
-            self, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator,
-            TerminatorEdges,
-        },
-        ty,
+use super::middle::{
+    mir::{
+        self, BasicBlock, Body, CallReturnPlaces, Location, Statement, Terminator, TerminatorEdges,
     },
-    mir_dataflow,
+    ty,
 };
 
 #[rustversion::since(2025-05-24)]
@@ -62,6 +62,7 @@ where
 pub trait Analysis<'tcx> {
     const NAME: &'static str;
     type Domain: mir_dataflow::JoinSemiLattice + Clone;
+    type Direction: mir_dataflow::Direction;
 
     fn bottom_value(&self, body: &mir::Body<'tcx>) -> Self::Domain;
 
@@ -150,6 +151,7 @@ pub struct AnalysisEngine<T>(pub(crate) T);
 #[rustversion::before(2024-11-14)]
 impl<'tcx, T: Analysis<'tcx>> mir_dataflow::AnalysisDomain<'tcx> for AnalysisEngine<T> {
     type Domain = T::Domain;
+    type Direction = T::Direction;
     const NAME: &'static str = T::NAME;
 
     fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {
@@ -160,7 +162,11 @@ impl<'tcx, T: Analysis<'tcx>> mir_dataflow::AnalysisDomain<'tcx> for AnalysisEng
         self.0.initialize_start_block(body, state);
     }
 }
+
 impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T> {
+    #[rustversion::since(2024-11-14)]
+    type Direction = T::Direction;
+
     #[rustversion::since(2024-11-14)]
     const NAME: &'static str = T::NAME;
 
@@ -268,4 +274,11 @@ impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T>
         _return_places: CallReturnPlaces<'_, 'tcx>,
     ) {
     }
+}
+
+pub(crate) fn with_cursor_state<'tcx, A: mir_dataflow::Analysis<'tcx>, R>(
+    cursor: RefMut<'_, ResultsCursor<'_, 'tcx, A>>,
+    f: impl FnOnce(&A::Domain) -> R,
+) -> R {
+    f(cursor.get())
 }

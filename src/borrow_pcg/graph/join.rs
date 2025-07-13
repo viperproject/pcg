@@ -1,29 +1,25 @@
-use crate::borrow_pcg::abstraction_graph_constructor::AbstractionGraphConstructor;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
-use crate::pcg::place_capabilities::PlaceCapabilities;
-use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::free_pcs::FreePlaceCapabilitySummary;
+use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
+use crate::pcg::{BodyAnalysis, PcgError, PcgUnsupportedError};
+use crate::pcg_validity_assert;
+use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::loop_usage::LoopUsage;
-use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{CompilerCtxt, SnapshotLocation};
+use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
-    borrow_pcg::{
-        borrow_pcg_edge::ToBorrowsEdge,
-        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
-        path_condition::PathConditions,
-    },
-    rustc_interface::middle::mir::BasicBlock,
+    borrow_pcg::path_condition::PathConditions,
+    rustc_interface::middle::{mir, mir::BasicBlock},
     utils::{display::DisplayDiff, validity::HasValidityCheck},
     validity_checks_enabled,
 };
 
-use super::{borrows_imgcat_debug, coupling_imgcat_debug, BorrowsGraph};
+use super::{borrows_imgcat_debug, BorrowsGraph};
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
@@ -36,55 +32,40 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    fn apply_placeholder_labels<'mir>(
-        &mut self,
-        capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) {
-        let nodes = self.nodes(ctxt);
-        for node in nodes {
-            if let PCGNode::RegionProjection(rp) = node
-                && rp.is_placeholder()
-                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
-            {
-                if let MaybeOldPlace::Current { place } = local_rp.base
-                    && capabilities.get(place).is_some()
-                {
-                    self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
-                } else {
-                    let orig_rp = local_rp.with_label(None, ctxt);
-                    self.mut_edges(|edge| {
-                        edge.label_region_projection(
-                            &orig_rp,
-                            Some(RegionProjectionLabel::Placeholder),
-                            ctxt,
-                        )
-                    });
-                }
-            }
-        }
-    }
-
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn join<'mir>(
         &mut self,
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        loop_usage: &LoopUsage<'tcx, '_>,
-        capabilities: &PlaceCapabilities<'tcx>,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> bool {
-        tracing::debug!("join {self_block:?} {other_block:?} start");
+    ) -> Result<bool, PcgError> {
         // For performance reasons we don't check validity here.
         // if validity_checks_enabled() {
         //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
         // }
+        if ctxt.is_back_edge(other_block, self_block) {
+            return Ok(false);
+        }
         let old_self = self.clone();
 
-        if ctxt.is_back_edge(other_block, self_block) {
-            self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
-            other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
-            self.join_loop(other, self_block, other_block, loop_usage, ctxt);
+        if let Some(used_places) = body_analysis.get_places_used_in_loop(self_block) {
+            // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
+            // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
+
+            self.join_loop(
+                self_block,
+                used_places,
+                capabilities,
+                owned,
+                path_conditions,
+                body_analysis,
+                ctxt,
+            )?;
             let result = *self != old_self;
             if borrows_imgcat_debug()
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
@@ -104,8 +85,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // if validity_checks_enabled() {
             //     assert!(self.is_valid(repacker), "Graph became invalid after join");
             // }
-            self.apply_placeholder_labels(capabilities, ctxt);
-            return result;
+            // self.apply_placeholder_labels(capabilities, ctxt);
+            return Ok(result);
         }
         for other_edge in other.edges() {
             self.insert(other_edge.to_owned_edge(), ctxt);
@@ -123,21 +104,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        self.apply_placeholder_labels(capabilities, ctxt);
+        // self.apply_placeholder_labels(capabilities, ctxt);
 
         let changed = old_self != *self;
 
-        if borrows_imgcat_debug()
-            && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
-        {
-            DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
-                .unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {e}");
-                });
-            if changed {
-                eprintln!("{}", old_self.fmt_diff(self, ctxt))
-            }
-        }
+        // if borrows_imgcat_debug()
+        //     && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
+        // {
+        //     DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
+        //         .unwrap_or_else(|e| {
+        //             eprintln!("Error rendering self graph: {e}");
+        //         });
+        //     if changed {
+        //         eprintln!("{}", old_self.fmt_diff(self, ctxt))
+        //     }
+        // }
 
         // For performance reasons we only check validity here if we are also producing debug graphs
         if validity_checks_enabled() && borrows_imgcat_debug() && !self.is_valid(ctxt) {
@@ -158,127 +139,160 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     eprintln!("Error rendering other graph: {e}");
                 });
             }
-            panic!("Graph became invalid after join. self: {self_block:?}, other: {other_block:?}");
+            pcg_validity_assert!(
+                false,
+                "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
+            );
         }
-        changed
+        Ok(changed)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn join_loop<'mir>(
         &mut self,
-        other: &Self,
         loop_head: BasicBlock,
-        from_block: BasicBlock,
-        loop_usage: &LoopUsage<'tcx, '_>,
+        used_places: &HashSet<Place<'tcx>>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        path_conditions: PathConditions,
+        body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) {
-        tracing::debug!("join_loop {from_block:?} {loop_head:?} start");
-        tracing::debug!("Self has {} edges", self.edges.len());
-        tracing::debug!("Other has {} edges", other.edges.len());
-
-        let old_self = self.clone();
-        let self_abstraction_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
-            .construct_abstraction_graph(&old_self, ctxt.bc);
-        // `loop_head` is the correct block to use here
-        let other_coupling_graph = AbstractionGraphConstructor::new(ctxt, loop_head)
-            .construct_abstraction_graph(other, ctxt.bc);
-
-        if coupling_imgcat_debug() {
-            self_abstraction_graph
-                .render_with_imgcat(ctxt, &format!("self coupling graph: {from_block:?}"));
-            other_coupling_graph
-                .render_with_imgcat(ctxt, &format!("other coupling graph: {loop_head:?}"));
-        }
-
-        let mut result = self_abstraction_graph.clone();
-        result.merge(&other_coupling_graph, loop_usage, ctxt);
-        if coupling_imgcat_debug() {
-            result.render_with_imgcat(ctxt, "merged coupling graph");
-        }
-
-        // First only keep edges present in both graphs (remove other edges from `self`)
-        let to_keep = self.common_edges(other);
-        self.edges
-            .retain(|edge_kind, _| to_keep.contains(edge_kind));
-
-        if borrows_imgcat_debug() {
-            self.render_debug_graph(ctxt, "common edges");
-        }
-
-        let other_coupling_edges = other_coupling_graph.edges().collect::<Vec<_>>();
-        let self_coupling_edges = self_abstraction_graph.edges().collect::<Vec<_>>();
-        let unique_edges = result
-            .edges()
-            .filter(|edge| {
-                self_coupling_edges.iter().all(|other| other != edge)
-                    || other_coupling_edges.iter().all(|other| other != edge)
+    ) -> Result<(), PcgError> {
+        tracing::debug!("used places: {}", used_places.to_short_string(ctxt));
+        // p_loop
+        let live_loop_places = used_places
+            .iter()
+            .copied()
+            .filter(|p| {
+                body_analysis.is_live_and_initialized_at(
+                    mir::Location {
+                        block: loop_head,
+                        statement_index: 0,
+                    },
+                    *p,
+                )
             })
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
 
-        // Add any edges that are missing in either graph
-        for (blocked, assigned, to_remove) in unique_edges.iter() {
-            tracing::debug!(
-                "Adding edge {} -> {}",
-                blocked.to_short_string(ctxt),
-                assigned.to_short_string(ctxt)
-            );
-            // This edge is missing from one of the graphs
-            let abstraction = LoopAbstraction::new(
-                AbstractionBlockEdge::new(
-                    blocked.clone().into_iter().map(|node| *node).collect(),
-                    assigned
-                        .clone()
-                        .into_iter()
-                        .map(|node| {
-                            node.try_into().unwrap_or_else(|_e| {
-                                panic!("Failed to convert node {node:?} to node index");
-                            })
-                        })
-                        .collect(),
+        if live_loop_places
+            .iter()
+            .any(|p| p.contains_unsafe_deref(ctxt))
+        {
+            return Err(PcgUnsupportedError::DerefUnsafePtr.into());
+        }
+
+        tracing::debug!(
+            "live loop places: {}",
+            live_loop_places.to_short_string(ctxt)
+        );
+
+        let loop_blocked_places = live_loop_places
+            .iter()
+            .filter(|p| {
+                ctxt.bc.is_directly_blocked(
+                    **p,
+                    mir::Location {
+                        block: loop_head,
+                        statement_index: 0,
+                    },
                     ctxt,
-                ),
-                loop_head,
-            )
-            .to_borrow_pcg_edge(PathConditions::new());
+                )
+            })
+            .copied()
+            .collect::<HashSet<_>>();
 
-            self.insert(abstraction, ctxt);
-            self.edges
-                .retain(|edge_kind, _| !to_remove.contains(edge_kind));
+        tracing::debug!(
+            "loop_blocked_places: {}",
+            loop_blocked_places.to_short_string(ctxt)
+        );
+
+        let loop_blocker_places = live_loop_places
+            .iter()
+            .filter(|p| !p.regions(ctxt).is_empty())
+            .copied()
+            .collect::<HashSet<_>>();
+
+        tracing::debug!(
+            "loop_blocker_places: {}",
+            loop_blocker_places.to_short_string(ctxt)
+        );
+
+        let expand_places = loop_blocker_places
+            .union(&loop_blocked_places)
+            .copied()
+            .collect::<HashSet<_>>();
+
+        self.unpack_places_for_abstraction(
+            loop_head,
+            &expand_places,
+            capabilities,
+            owned,
+            path_conditions.clone(),
+            ctxt,
+        );
+        self.render_debug_graph(ctxt, "G_Pre'");
+
+        // p_roots
+        let live_roots = live_loop_places
+            .iter()
+            .flat_map(|p| self.get_borrow_roots(*p, loop_head, ctxt))
+            .collect::<HashSet<_>>();
+
+        tracing::debug!("live roots: {}", live_roots.to_short_string(ctxt));
+
+        let root_places = live_roots
+            .iter()
+            .flat_map(|node| node.related_maybe_remote_current_place())
+            .filter(|p| {
+                !(p.is_local() && live_loop_places.contains(&p.relevant_place_for_blocking()))
+            })
+            .collect::<HashSet<_>>();
+
+        tracing::debug!("root places: {}", root_places.to_short_string(ctxt));
+
+        let ConstructAbstractionGraphResult {
+            graph: abstraction_graph,
+            to_label,
+            to_remove,
+        } = self.get_loop_abstraction_graph(
+            live_loop_places,
+            root_places,
+            loop_blocker_places,
+            loop_head,
+            path_conditions.clone(),
+            ctxt,
+        );
+
+        abstraction_graph.render_debug_graph(ctxt, "Abstraction graph");
+
+        for rp in to_label.iter() {
+            self.mut_edges(|edge| {
+                edge.label_region_projection(
+                    rp,
+                    Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
+                        loop_head,
+                    ))),
+                    ctxt,
+                )
+            });
         }
 
-        // This is somewhat of a hack: we want to re-introduce borrow expansions
-        // that were removed simply due to being re-introduced at different
-        // times in the loop
-        for (blocked, assigned, _) in unique_edges.iter() {
-            for node in blocked.iter().chain(assigned.iter()) {
-                if let Some(PCGNode::RegionProjection(rp)) =
-                    node.to_pcg_node().try_to_local_node(ctxt)
-                    && let Some(place) = rp.deref(ctxt)
-                    && self.is_root(place, ctxt)
-                {
-                    self.insert(
-                        BorrowPcgEdge::new(
-                            BorrowPcgEdgeKind::BorrowPcgExpansion(
-                                BorrowPcgExpansion::new(
-                                    rp.base.into(),
-                                    PlaceExpansion::Deref,
-                                    Some(RegionProjectionLabel::Location(SnapshotLocation::Start(
-                                        loop_head,
-                                    ))),
-                                    ctxt,
-                                )
-                                .unwrap(),
-                            ),
-                            PathConditions::new(),
-                        ),
-                        ctxt,
-                    );
-                }
-            }
+        for place in to_remove {
+            capabilities.remove(place);
         }
 
-        if borrows_imgcat_debug() {
-            self.render_debug_graph(ctxt, "done");
+        let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);
+        let to_cut = self.identify_subgraph_to_cut(abstraction_graph_pcg_nodes, ctxt);
+        to_cut.render_debug_graph(ctxt, "To cut");
+        self.render_debug_graph(ctxt, "Self before cut");
+        for edge in to_cut.edges() {
+            self.remove(edge.kind());
         }
-        tracing::debug!("join_loop {from_block:?} {loop_head:?} end");
+        self.render_debug_graph(ctxt, "Self after cut");
+        for edge in abstraction_graph.into_edges() {
+            self.insert(edge, ctxt);
+        }
+        self.render_debug_graph(ctxt, "Final graph");
+        Ok(())
     }
 }
