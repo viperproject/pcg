@@ -323,12 +323,15 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     ) -> bool {
         for p in &mut self.expansion {
             if *p == from {
+                if to == self.base {
+                    return false;
+                }
                 *p = to;
                 self.assert_validity(ctxt);
                 return true;
             }
         }
-        false
+        true
     }
 
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {

@@ -57,6 +57,31 @@ pub(crate) enum LabelPlacePredicate<'tcx> {
     PrefixOrPostfix(Place<'tcx>),
 }
 
+impl<'tcx> LabelPlacePredicate<'tcx> {
+    pub(crate) fn applies_to(&self, candidate: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            LabelPlacePredicate::PrefixOrPostfix(predicate_place) => {
+                if predicate_place.is_prefix(candidate) {
+                    true
+                } else if candidate.is_prefix(*predicate_place) {
+                    for p in predicate_place
+                        .iter_places(ctxt)
+                        .into_iter()
+                        .skip(candidate.projection.len() + 1)
+                    {
+                        if p.parent_place().unwrap().is_ref(ctxt) && p.is_deref() {
+                            return false;
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
 pub(crate) trait LabelEdgePlaces<'tcx> {
     fn label_blocked_places(
         &mut self,

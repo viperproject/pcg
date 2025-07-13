@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, OwnedPcgAction};
+use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{Expander, ObtainType};
@@ -160,11 +161,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             )?;
         }
 
-        // if obtain_type.capability().is_write() {
-        //     let _ = self.record_and_apply_action(
-        //         BorrowPcgAction::make_place_old(place, MakePlaceOldReason::ReAssign).into(),
-        //     );
-        // }
+        if obtain_type.capability().is_write() {
+            let _ = self.record_and_apply_action(
+                BorrowPcgAction::make_place_old(place, MakePlaceOldReason::ReAssign).into(),
+            );
+        }
 
         self.expand_to(place, obtain_type, self.ctxt)?;
 

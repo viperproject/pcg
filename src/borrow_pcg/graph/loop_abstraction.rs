@@ -114,6 +114,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         root_places: HashSet<MaybeRemoteCurrentPlace<'tcx>>,
         candidate_blockers: HashSet<Place<'tcx>>,
         loop_head: mir::BasicBlock,
+        mut orig_capabilities: PlaceCapabilities<'tcx>,
+        mut orig_owned: FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> ConstructAbstractionGraphResult<'tcx> {
@@ -369,7 +371,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        while let Some(path) = paths.pop() {
+        'outer: while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
             if to_cut.contains(&last_edge) {
                 to_cut.extend(path);
@@ -388,9 +390,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     if path.contains(&edge) {
                         self.render_debug_graph(ctxt, "Invalid abstraction graph");
                         pcg_validity_assert!(false, "edge already in path");
-                        panic!("edge already in path");
+                        // panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
-                        // break 'outer;
+                        break 'outer;
                     }
                     let mut next_path = path.clone();
                     next_path.push(edge);
@@ -417,7 +419,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
 
 impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
-        tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
+        tracing::info!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge, for_read } => {

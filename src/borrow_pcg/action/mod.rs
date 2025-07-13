@@ -117,6 +117,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
 pub enum MakePlaceOldReason {
     StorageDead,
     MoveOut,
+    ReAssign,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

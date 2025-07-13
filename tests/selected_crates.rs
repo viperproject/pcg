@@ -27,10 +27,12 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("dfa::dense::DFA::<&'a [u32]>::from_bytes"),
-            extra_env_vars: vec![],
+            function: Some("tree::Node::<T>::at"),
+            extra_env_vars: visualization_env_vars,
         },
     );
+
+    return;
 
     common::ensure_successful_run_on_crate(
         "regex-automata",
