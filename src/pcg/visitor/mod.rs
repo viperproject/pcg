@@ -347,7 +347,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .edges_blocked_by((*node).into(), self.ctxt)
                 .map(|e| e.kind.clone())
                 .collect::<Vec<_>>();
-            tracing::info!(
+            tracing::debug!(
                 "redirecting edges {} to base {}",
                 edges_to_redirect.to_short_string(self.ctxt),
                 base.to_short_string(self.ctxt)

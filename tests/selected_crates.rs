@@ -21,6 +21,18 @@ fn test_selected_crates() {
     ];
 
     common::ensure_successful_run_on_crate(
+        "regex-automata",
+        "0.4.9",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("dfa::dense::DFA::<&'a [u32]>::from_bytes"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
         "pest",
         "2.7.15",
         Some("2025-03-13"),
@@ -28,7 +40,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("parser_state::ParserState::<'i, R>::stack_match_pop"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 

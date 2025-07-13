@@ -84,6 +84,13 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
         }
     }
 
+    pub(crate) fn local(self) -> mir::Local {
+        match self {
+            MaybeRemoteCurrentPlace::Local(place) => place.local,
+            MaybeRemoteCurrentPlace::Remote(place) => place.local,
+        }
+    }
+
     pub(crate) fn is_local(self) -> bool {
         matches!(self, MaybeRemoteCurrentPlace::Local(_))
     }
@@ -122,7 +129,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut to_remove = HashSet::default();
         let mut to_label = HashSet::default();
 
-        tracing::info!(
+        tracing::debug!(
             "loop_places at {:?} : {}",
             loop_head,
             loop_places.to_short_string(ctxt)
@@ -134,7 +141,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<Vec<_>>();
 
-        tracing::info!(
+        tracing::debug!(
             "candidate_blockers at {:?} : {}",
             loop_head,
             candidate_blockers.to_short_string(ctxt)
@@ -156,7 +163,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for blocker in blocker_places.into_iter() {
             // let ancestor_nodes = self.get_borrow_roots(blocker.into(), ctxt);
-            // tracing::info!(
+            // tracing::debug!(
             //     "immediate live ancestors of {}: {}",
             //     blocker.to_short_string(ctxt),
             //     ancestor_nodes.to_short_string(ctxt)
@@ -169,7 +176,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             //         MaybeRemoteCurrentPlace::Remote(_) => true,
             //     })
             //     .collect::<HashSet<_>>();
-            // tracing::info!(
+            // tracing::debug!(
             //     "immediate live place ancestors of {}: {}",
             //     blocker.to_short_string(ctxt),
             //     root_places.to_short_string(ctxt)
@@ -181,7 +188,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         .bc
                         .blocks(blocker, relevant_root, loop_head_location, ctxt)
                 {
-                    tracing::info!(
+                    tracing::debug!(
                         "{} blocks root {}",
                         blocker.to_short_string(ctxt),
                         relevant_root.to_short_string(ctxt)
@@ -227,7 +234,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .graph
             .render_debug_graph(ctxt, "Abstraction graph before expansion");
         for place in loop_places {
-            tracing::info!("expanding to {}", place.to_short_string(ctxt));
+            tracing::debug!("expanding to {}", place.to_short_string(ctxt));
             expander
                 .expand_to(
                     place,
@@ -357,7 +364,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_expand.retain(|p| !p.is_prefix(*place));
             to_expand.push(*place);
         }
-        tracing::info!("to_expand: {}", to_expand.to_short_string(ctxt));
+        tracing::debug!("to_expand: {}", to_expand.to_short_string(ctxt));
         for place in to_expand {
             expander
                 .expand_to(
@@ -550,7 +557,7 @@ fn add_rp_block_edges<'mir, 'tcx>(
                 })
                 .collect::<Vec<_>>();
             if !mut_rps.is_empty() {
-                tracing::info!(
+                tracing::debug!(
                     "Mutable rps: {} -> {}",
                     blocked_rp.to_short_string(ctxt),
                     mut_rps.to_short_string(ctxt)
@@ -580,7 +587,13 @@ fn add_block_edges<'mir, 'tcx>(
     blocker: Place<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) {
-    assert_ne!(MaybeRemoteCurrentPlace::Local(blocker), blocked_place);
+    assert_ne!(
+        MaybeRemoteCurrentPlace::Local(blocker),
+        blocked_place,
+        "blocker {} and blocked_place {} are the same",
+        blocker.to_short_string(ctxt),
+        blocked_place.to_short_string(ctxt)
+    );
     let blocker_rps = blocker.region_projections(ctxt);
     // Add top-level borrow
     add_block_edge(
@@ -602,10 +615,12 @@ fn add_edges_for_blocked_place<'tcx>(
 
     let candidate_blockers = all_blocker_candidates
         .iter()
-        .filter(|rp| check_blocks(**rp))
+        .filter(|place| {
+            place.local != blocked_place.local() && check_blocks(**place)
+        })
         .copied()
         .collect::<Vec<_>>();
-    tracing::info!(
+    tracing::debug!(
         "candidate_blockers of {}: {}",
         blocked_place.to_short_string(ctxt),
         candidate_blockers.to_short_string(ctxt)
