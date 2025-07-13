@@ -222,9 +222,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        let orig_capabilities = capabilities.clone();
-        let orig_owned = owned.clone();
-
         self.unpack_places_for_abstraction(
             loop_head,
             &expand_places,
@@ -262,8 +259,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             root_places,
             loop_blocker_places,
             loop_head,
-            orig_capabilities,
-            orig_owned,
             path_conditions.clone(),
             ctxt,
         );

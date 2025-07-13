@@ -114,8 +114,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         root_places: HashSet<MaybeRemoteCurrentPlace<'tcx>>,
         candidate_blockers: HashSet<Place<'tcx>>,
         loop_head: mir::BasicBlock,
-        mut orig_capabilities: PlaceCapabilities<'tcx>,
-        mut orig_owned: FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> ConstructAbstractionGraphResult<'tcx> {
@@ -371,7 +369,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        'outer: while let Some(path) = paths.pop() {
+        while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
             if to_cut.contains(&last_edge) {
                 to_cut.extend(path);
