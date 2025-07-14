@@ -7,7 +7,7 @@ use crate::{
         },
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult},
+        has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
@@ -70,19 +70,19 @@ impl<'tcx> LabelEdgePlaces<'tcx> for FunctionCallAbstraction<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edge.label_blocked_places(predicate, latest, ctxt)
+        self.edge.label_blocked_places(predicate, labeller, ctxt)
     }
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edge.label_blocked_by_places(predicate, latest, ctxt)
+        self.edge.label_blocked_by_places(predicate, labeller, ctxt)
     }
 }
 

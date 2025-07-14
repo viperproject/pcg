@@ -1,4 +1,5 @@
 use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::has_pcs_elem::PlaceLabeller;
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -118,14 +119,14 @@ pub(crate) trait LabelEdgePlaces<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
@@ -193,12 +194,12 @@ macro_rules! edgedata_enum {
             fn label_blocked_places(
                 &mut self,
                 predicate: &$crate::borrow_pcg::edge_data::LabelPlacePredicate<'tcx>,
-                latest: &Latest<'tcx>,
+                labeller: &impl $crate::borrow_pcg::has_pcs_elem::PlaceLabeller<'tcx>,
                 ctxt: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.label_blocked_places(predicate, latest, ctxt),
+                        $enum_name::$variant_name(inner) => inner.label_blocked_places(predicate, labeller, ctxt),
                     )+
                 }
             }
@@ -206,12 +207,12 @@ macro_rules! edgedata_enum {
             fn label_blocked_by_places(
                 &mut self,
                 predicate: &$crate::borrow_pcg::edge_data::LabelPlacePredicate<'tcx>,
-                latest: &Latest<'tcx>,
+                labeller: &impl $crate::borrow_pcg::has_pcs_elem::PlaceLabeller<'tcx>,
                 ctxt: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.label_blocked_by_places(predicate, latest, ctxt),
+                        $enum_name::$variant_name(inner) => inner.label_blocked_by_places(predicate, labeller, ctxt),
                     )+
                 }
             }

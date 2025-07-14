@@ -1,7 +1,7 @@
 use crate::borrow_pcg::{
     edge_data::LabelPlacePredicate,
     has_pcs_elem::{
-        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult,
+        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
     },
     latest::Latest,
     region_projection::RegionProjectionLabel,
@@ -22,12 +22,12 @@ impl<'tcx, T: LabelPlace<'tcx>> LabelPlace<'tcx> for MaybeRedirected<T> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.original.label_place(predicate, latest, ctxt);
+        let mut changed = self.original.label_place(predicate, labeller, ctxt);
         if let Some(r) = &mut self.redirected {
-            changed |= r.label_place(predicate, latest, ctxt);
+            changed |= r.label_place(predicate, labeller, ctxt);
         }
         changed
     }

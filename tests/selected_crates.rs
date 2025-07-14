@@ -34,6 +34,19 @@ fn test_selected_crates() {
 
     // return;
 
+    // 8 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tokio-io-timeout",
+        "1.2.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("TimeoutState::reset"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
     common::ensure_successful_run_on_crate(
         "tokio-io-timeout",
         "1.2.0",

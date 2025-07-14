@@ -6,7 +6,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
-        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult},
+        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
@@ -64,12 +64,12 @@ impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for p in self.pcg_elems() {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -123,12 +123,12 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionInput<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for p in self.pcg_elems() {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -186,13 +186,13 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionOutput<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         let maybe_old_places: Vec<&mut MaybeOldPlace<'tcx>> = self.0.pcg_elems();
         for p in maybe_old_places {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -225,10 +225,10 @@ impl<'tcx> LabelPlace<'tcx> for AbstractionOutputTarget<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.0.label_place(predicate, latest, ctxt)
+        self.0.label_place(predicate, labeller, ctxt)
     }
 }
 

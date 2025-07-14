@@ -20,6 +20,7 @@ use crate::{
 pub enum SnapshotLocation {
     Start(BasicBlock),
     Prepare(Location),
+    BeforeCollapse(Location),
     Mid(Location),
     After(Location),
     Loop(BasicBlock),
@@ -58,6 +59,7 @@ impl std::fmt::Display for SnapshotLocation {
             SnapshotLocation::Start(bb) => write!(f, "start {bb:?}"),
             SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
             SnapshotLocation::Prepare(location) => write!(f, "prep {location:?}"),
+            SnapshotLocation::BeforeCollapse(location) => write!(f, "before collapse {location:?}"),
         }
     }
 }

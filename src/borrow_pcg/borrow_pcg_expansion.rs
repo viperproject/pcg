@@ -16,7 +16,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult},
+        has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
         region_projection::LocalRegionProjection,
     },
     free_pcs::RepackGuide,
@@ -136,10 +136,10 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let result = self.base.label_place(predicate, latest, ctxt);
+        let result = self.base.label_place(predicate, labeller, ctxt);
         self.assert_validity(ctxt);
         result
     }
@@ -147,7 +147,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
@@ -158,7 +158,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
             return false;
         }
         for p in &mut self.expansion {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         self.assert_validity(ctxt);
         changed
@@ -305,22 +305,6 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
-    pub(crate) fn try_to_lifetime_expansion(
-        &self,
-    ) -> Option<BorrowPcgExpansion<'tcx, LocalRegionProjection<'tcx>>> {
-        let base = self.base.try_into_region_projection().ok()?;
-        let expansion = self
-            .expansion
-            .iter()
-            .map(|p| p.try_into_region_projection().ok())
-            .collect::<Option<Vec<_>>>()?;
-        Some(BorrowPcgExpansion {
-            base,
-            expansion,
-            deref_blocked_region_projection_label: self.deref_blocked_region_projection_label,
-            _marker: PhantomData,
-        })
-    }
     pub(crate) fn redirect(
         &mut self,
         from: LocalNode<'tcx>,

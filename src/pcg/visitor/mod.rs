@@ -5,7 +5,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::LabelPlace;
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, SetLabel};
 use crate::borrow_pcg::region_projection::{
     LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionLabel,
 };
@@ -346,20 +346,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         for (idx, node) in expansion.iter().enumerate() {
             if let Some(place) = node.base.as_current_place() {
-                self.pcg.borrow.latest.insert(
-                    place,
-                    SnapshotLocation::before(self.location),
-                    self.ctxt,
-                );
+                let labeller = SetLabel(SnapshotLocation::BeforeCollapse(self.location));
                 self.pcg.borrow.graph.make_place_old(
                     &LabelPlacePredicate::Exact((*place).into()),
-                    &self.pcg.borrow.latest,
+                    &labeller,
                     self.ctxt,
                 );
                 let mut node = node.clone();
                 node.label_place(
                     &LabelPlacePredicate::Exact((*place).into()),
-                    &self.pcg.borrow.latest,
+                    &labeller,
                     self.ctxt,
                 );
                 self.pcg.borrow.graph.insert(

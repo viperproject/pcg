@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use crate::rustc_interface::{
+use crate::{borrow_pcg::has_pcs_elem::PlaceLabeller, rustc_interface::{
     data_structures::fx::FxHashMap,
     middle::{mir::BasicBlock, ty},
-};
+}};
 use crate::utils::display::{DebugLines, DisplayWithCompilerCtxt};
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 
@@ -15,6 +15,16 @@ use crate::utils::json::ToJsonWithCompilerCtxt;
 /// A map from places to their last-modified locations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
+
+impl<'tcx> PlaceLabeller<'tcx> for Latest<'tcx> {
+    fn label_place(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> SnapshotLocation {
+        self.get(place, ctxt)
+    }
+}
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Latest<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {

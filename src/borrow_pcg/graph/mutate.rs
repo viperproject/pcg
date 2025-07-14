@@ -1,9 +1,6 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::BorrowPcgEdge,
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-        latest::Latest,
-        path_condition::{PathCondition, PathConditions},
+        borrow_pcg_edge::BorrowPcgEdge, edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::PlaceLabeller, latest::Latest, path_condition::{PathCondition, PathConditions}
     },
     rustc_interface::middle::mir::BasicBlock,
     utils::{CompilerCtxt, FilterMutResult},
@@ -15,12 +12,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.mut_edges(|edge| {
-            let mut c = edge.label_blocked_places(predicate, latest, ctxt);
-            c |= edge.label_blocked_by_places(predicate, latest, ctxt);
+            let mut c = edge.label_blocked_places(predicate, labeller, ctxt);
+            c |= edge.label_blocked_by_places(predicate, labeller, ctxt);
             c
         })
     }

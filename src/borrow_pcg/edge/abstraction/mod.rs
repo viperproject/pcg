@@ -12,7 +12,7 @@ use crate::{
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
         edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult},
+        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
         latest::Latest,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
@@ -77,12 +77,12 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for input in &mut self.inputs {
-            changed |= input.label_place(predicate, latest, ctxt);
+            changed |= input.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -90,12 +90,12 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for output in &mut self.outputs {
-            changed |= output.label_place(predicate, latest, ctxt);
+            changed |= output.label_place(predicate, labeller, ctxt);
         }
         changed
     }

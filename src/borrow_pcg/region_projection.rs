@@ -12,7 +12,7 @@ use super::{
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult};
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller};
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
@@ -282,11 +282,11 @@ impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if let Some(p) = self.base.as_local_place_mut() {
-            p.label_place(predicate, latest, ctxt)
+            p.label_place(predicate, labeller, ctxt)
         } else {
             false
         }

@@ -1,7 +1,7 @@
 
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace};
+use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace, PlaceLabeller};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
@@ -335,7 +335,7 @@ impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
@@ -343,7 +343,7 @@ impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
                 if predicate.applies_to(*place, ctxt) {
                     *self = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                         *place,
-                        latest.get(*place, ctxt),
+                        labeller.label_place(*place, ctxt),
                     ));
                     true
                 } else {

@@ -5,7 +5,7 @@ use crate::{
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
             LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult,
+            LabelRegionProjectionResult, PlaceLabeller,
         },
         latest::Latest,
         region_projection::RegionProjectionLabel,
@@ -72,19 +72,19 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.blocked_place.label_place(predicate, latest, ctxt)
+        self.blocked_place.label_place(predicate, labeller, ctxt)
     }
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.assigned_ref.label_place(predicate, latest, ctxt)
+        self.assigned_ref.label_place(predicate, labeller, ctxt)
     }
 }
 
@@ -122,7 +122,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
     fn label_blocked_places(
         &mut self,
         _predicate: &LabelPlacePredicate<'tcx>,
-        _latest: &Latest<'tcx>,
+        _labeller: &impl PlaceLabeller<'tcx>,
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         false
@@ -131,10 +131,10 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.assigned_ref.label_place(predicate, latest, ctxt)
+        self.assigned_ref.label_place(predicate, labeller, ctxt)
     }
 }
 
