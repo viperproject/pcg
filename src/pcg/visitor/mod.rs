@@ -5,6 +5,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::region_projection::{
     LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionLabel,
 };
@@ -343,32 +344,40 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         base: LocalRegionProjection<'tcx>,
         expansion: &[LocalRegionProjection<'tcx>],
     ) -> Result<(), PcgError> {
-        for node in expansion.iter() {
-            let edges_to_redirect = self
-                .pcg
-                .borrow
-                .graph()
-                .edges_blocked_by((*node).into(), self.ctxt)
-                .map(|e| e.kind.clone())
-                .collect::<Vec<_>>();
-            tracing::debug!(
-                "redirecting edges {} to base {}",
-                edges_to_redirect.to_short_string(self.ctxt),
-                base.to_short_string(self.ctxt)
-            );
-            for to_redirect in edges_to_redirect {
-                // TODO: Due to a bug ignore other expansions to this place for now
-                // if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
-                self.record_and_apply_action(
-                    BorrowPcgAction::redirect_edge(
-                        to_redirect,
-                        (*node).into(),
-                        base.into(),
-                        "redirect_blocked_nodes_to_base",
-                    )
-                    .into(),
-                )?;
-                // }
+        for (idx, node) in expansion.iter().enumerate() {
+            if let Some(place) = node.base.as_current_place() {
+                self.pcg.borrow.latest.insert(
+                    place,
+                    SnapshotLocation::before(self.location),
+                    self.ctxt,
+                );
+                self.pcg.borrow.graph.make_place_old(
+                    &LabelPlacePredicate::Exact((*place).into()),
+                    &self.pcg.borrow.latest,
+                    self.ctxt,
+                );
+                let mut node = node.clone();
+                node.label_place(
+                    &LabelPlacePredicate::Exact((*place).into()),
+                    &self.pcg.borrow.latest,
+                    self.ctxt,
+                );
+                self.pcg.borrow.graph.insert(
+                    BorrowPcgEdge::new(
+                        BorrowFlowEdge::new(
+                            node.into(),
+                            base,
+                            BorrowFlowEdgeKind::Aggregate {
+                                field_idx: idx,
+                                target_rp_index: 0,
+                            },
+                            self.ctxt,
+                        )
+                        .into(),
+                        self.pcg.borrow.path_conditions.clone(),
+                    ),
+                    self.ctxt,
+                );
             }
         }
         Ok(())

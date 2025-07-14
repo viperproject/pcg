@@ -57,6 +57,7 @@ pub trait EdgeData<'tcx> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LabelPlacePredicate<'tcx> {
+    Exact(Place<'tcx>),
     PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
     StrictPostfix(Place<'tcx>),
 }
@@ -74,6 +75,9 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             }
             LabelPlacePredicate::StrictPostfix(place) => {
                 format!("strict postfix of {}", place.to_short_string(ctxt))
+            }
+            LabelPlacePredicate::Exact(place) => {
+                format!("exact {}", place.to_short_string(ctxt))
             }
         }
     }
@@ -102,6 +106,9 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
             }
             LabelPlacePredicate::StrictPostfix(place) => {
                 place.projection.len() < candidate.projection.len() && place.is_prefix(candidate)
+            }
+            LabelPlacePredicate::Exact(place) => {
+                *place == candidate
             }
         }
     }

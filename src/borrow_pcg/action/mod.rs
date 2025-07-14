@@ -123,6 +123,7 @@ pub enum MakePlaceOldReason {
     StorageDead,
     MoveOut,
     ReAssign,
+    Collapse,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

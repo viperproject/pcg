@@ -27,12 +27,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("TimeoutState::poll_check"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
-
 
     // 4 basic blocks
     common::ensure_successful_run_on_crate(

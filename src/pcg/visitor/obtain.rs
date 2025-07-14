@@ -67,12 +67,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .filter(|(p, _)| {
                 p.projection.len() > upgraded_place.projection.len() && upgraded_place.is_prefix(*p)
             })
-            .map(|(p, _)| p)
             .collect::<Vec<_>>();
-        for p in to_remove {
-            self.record_and_apply_action(
-                BorrowPcgAction::weaken(p, CapabilityKind::Read, None).into(),
-            )?;
+        for (p, cap) in to_remove {
+            self.record_and_apply_action(BorrowPcgAction::weaken(p, cap, None).into())?;
         }
         Ok(())
     }

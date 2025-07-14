@@ -85,7 +85,7 @@ impl<'tcx> Latest<'tcx> {
             .unwrap_or(SnapshotLocation::start())
     }
 
-    pub(super) fn insert(
+    pub(crate) fn insert(
         &mut self,
         place: Place<'tcx>,
         location: SnapshotLocation,
