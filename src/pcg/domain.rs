@@ -15,15 +15,32 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
-    action::PcgActions, borrow_pcg::state::BorrowsState, borrows_imgcat_debug, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis}, pcg::{
+    action::PcgActions,
+    borrow_pcg::state::BorrowsState,
+    borrows_imgcat_debug,
+    pcg::{
         dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
         triple::Triple,
-    }, rustc_interface::{
+    },
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
+    rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
-    }, utils::{
-        arena::ArenaRef, data_structures::HashSet, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, initialized::DefinitelyInitialized, liveness::PlaceLiveness, validity::HasValidityCheck, CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR
-    }, validity_checks_enabled, validity_checks_warn_only, visualization::{dot_graph::DotGraph, generate_pcg_dot_graph}, AnalysisEngine, DebugLines
+    },
+    utils::{
+        arena::ArenaRef,
+        data_structures::HashSet,
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        incoming_states::IncomingStates,
+        initialized::DefinitelyInitialized,
+        liveness::PlaceLiveness,
+        validity::HasValidityCheck,
+        CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR,
+    },
+    validity_checks_enabled, validity_checks_warn_only,
+    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
+    AnalysisEngine, DebugLines,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
@@ -207,7 +224,6 @@ impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
-    #[allow(unused)]
     pub(crate) fn is_acyclic(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> bool {
         self.borrow.graph().frozen_graph().is_acyclic(ctxt)
     }

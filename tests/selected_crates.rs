@@ -19,6 +19,58 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 4 basic blocks
+    common::ensure_successful_run_on_crate(
+        "miniz_oxide",
+        "0.8.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("inflate::output_buffer::OutputBuffer::<'a>::write_byte"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 7 basic blocks
+    common::ensure_successful_run_on_crate(
+        "serde_json",
+        "1.0.140",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<read::SliceRead<'a> as read::Read<'a>>::peek"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 8 basic blocks
+    common::ensure_successful_run_on_crate(
+        "serde_json",
+        "1.0.140",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<read::SliceRead<'a> as read::Read<'a>>::next"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 13 basic blocks
+    common::ensure_successful_run_on_crate(
+        "serde_json",
+        "1.0.140",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("read::SliceRead::<'a>::skip_to_escape_slow"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 27 basic blocks
     common::ensure_successful_run_on_crate(
         "bstr",
@@ -31,7 +83,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-    return;
 
     // 29 basic blocks
     common::ensure_successful_run_on_crate(
@@ -451,16 +502,6 @@ fn test_selected_crates() {
     // common::ensure_successful_run_on_crate("ring", "0.17.3", true);
     // common::ensure_successful_run_on_crate("serde_with", "3.12.0", true);
     // common::ensure_successful_run_on_crate("tap", "1.0.1", false);
-
-    // common::ensure_successful_run_on_crate(
-    //     "serde_json",
-    //     "1.0.140",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Release,
-    //         validity_checks: true,
-    //     },
-    // );
 
     // We should test this consistently because it's a good loop test
     // common::ensure_successful_run_on_crate(

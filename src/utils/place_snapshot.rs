@@ -18,9 +18,10 @@ use crate::{
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub enum SnapshotLocation {
+    Start(BasicBlock),
+    Prepare(Location),
     Mid(Location),
     After(Location),
-    Start(BasicBlock),
     Loop(BasicBlock),
 }
 
@@ -42,13 +43,13 @@ impl SnapshotLocation {
         self.to_string().into()
     }
 
-    #[allow(unused)]
     pub(crate) fn block(&self) -> BasicBlock {
         match self {
             SnapshotLocation::After(loc) => loc.block,
             SnapshotLocation::Start(bb) => *bb,
             SnapshotLocation::Mid(loc) => loc.block,
             SnapshotLocation::Loop(bb) => *bb,
+            SnapshotLocation::Prepare(loc) => loc.block,
         }
     }
 }
@@ -66,6 +67,7 @@ impl std::fmt::Display for SnapshotLocation {
             SnapshotLocation::Mid(loc) => write!(f, "mid {loc:?}"),
             SnapshotLocation::Start(bb) => write!(f, "start {bb:?}"),
             SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
+            SnapshotLocation::Prepare(location) => write!(f, "prep {location:?}"),
         }
     }
 }

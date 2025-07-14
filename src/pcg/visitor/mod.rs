@@ -410,6 +410,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
         edge: impl BorrowPcgEdgeLike<'tcx>,
+        during_cleanup: bool,
         context: &str,
     ) -> Result<(), PcgError> {
         self.update_latest_for_unblocked_places(&edge, context)?;
@@ -442,12 +443,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 "labeling region projection: {}",
                                 rp.to_short_string(self.ctxt)
                             );
+                            let snapshot_location = if during_cleanup {
+                                SnapshotLocation::Prepare(self.location)
+                            } else {
+                                SnapshotLocation::before(self.location)
+                            };
                             self.record_and_apply_action(
                                 BorrowPcgAction::label_region_projection(
                                     rp,
-                                    Some(RegionProjectionLabel::Location(
-                                        SnapshotLocation::before(self.location),
-                                    )),
+                                    Some(RegionProjectionLabel::Location(snapshot_location)),
                                     format!(
                                         "{}: {}",
                                         context, "Label region projections of expansion"

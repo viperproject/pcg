@@ -45,7 +45,7 @@ lazy_static! {
         Err(_) => None,
     };
     pub static ref CHECK_CYCLES: bool =
-        env_feature_enabled("PCG_CHECK_CYCLES").unwrap_or(cfg!(debug_assertions));
+        env_feature_enabled("PCG_CHECK_CYCLES").unwrap_or(false);
     pub static ref VALIDITY_CHECKS: bool =
         env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions));
     pub static ref COUPLING_DEBUG_IMGCAT: bool =

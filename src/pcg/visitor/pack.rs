@@ -52,6 +52,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             for (edge, reason) in edges_to_trim {
                 self.remove_edge_and_perform_associated_state_updates(
                     edge,
+                    true,
                     &format!("Trim Old Leaves (iteration {}): {}", iteration, reason),
                 )?
             }
