@@ -16,7 +16,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::LabelRegionProjectionPredicate,
+        has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult},
         region_projection::LocalRegionProjection,
     },
     free_pcs::RepackGuide,
@@ -171,7 +171,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         let mut changed = self.base.label_region_projection(predicate, label, ctxt);
         for p in &mut self.expansion {
             changed |= p.label_region_projection(predicate, label, ctxt);

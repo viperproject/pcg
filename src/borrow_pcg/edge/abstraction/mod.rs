@@ -12,7 +12,7 @@ use crate::{
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
         edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
+        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult},
         latest::Latest,
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
@@ -149,8 +149,8 @@ impl<
         projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
+    ) -> LabelRegionProjectionResult {
+        let mut changed = LabelRegionProjectionResult::Unchanged;
         let mut i = 0;
         while i < self.inputs.len() {
             let input = &mut self.inputs[i];
@@ -164,7 +164,7 @@ impl<
                 self.inputs
                     .retain(|i| i.to_pcg_node(ctxt) != input.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
-                return true;
+                return LabelRegionProjectionResult::Changed;
             }
             i += 1;
         }
@@ -181,7 +181,7 @@ impl<
                 self.outputs
                     .retain(|o| o.effective().to_pcg_node(ctxt) != output.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
-                return true;
+                return LabelRegionProjectionResult::Changed;
             }
             j += 1;
         }

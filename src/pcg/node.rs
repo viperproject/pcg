@@ -1,7 +1,7 @@
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -74,11 +74,11 @@ impl<'tcx, T, U: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         if let PCGNode::RegionProjection(this_projection) = self {
             this_projection.label_region_projection(predicate, label, repacker)
         } else {
-            false
+            LabelRegionProjectionResult::Unchanged
         }
     }
 }

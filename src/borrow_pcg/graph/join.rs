@@ -1,7 +1,7 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -266,14 +266,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         abstraction_graph.render_debug_graph(ctxt, "Abstraction graph");
 
         for rp in to_label.iter() {
-            self.mut_edges(|edge| {
+            self.filter_mut_edges(|edge| {
                 edge.label_region_projection(
                     rp,
                     Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
                         loop_head,
                     ))),
                     ctxt,
-                )
+                ).to_filter_mut_result()
             });
         }
 

@@ -77,3 +77,8 @@ fn env_feature_enabled(feature: &'static str) -> Option<bool> {
         Err(_) => None,
     }
 }
+pub(crate) enum FilterMutResult {
+    Changed,
+    Unchanged,
+    Remove,
+}

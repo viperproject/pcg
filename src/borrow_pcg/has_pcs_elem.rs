@@ -3,9 +3,9 @@ use derive_more::From;
 use super::latest::Latest;
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::region_projection::RegionIdx;
+use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionIdx};
 use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::CompilerCtxt;
+use crate::utils::{CompilerCtxt, FilterMutResult};
 
 pub(crate) trait HasPcgElems<T> {
     fn pcg_elems(&mut self) -> Vec<&mut T>;
@@ -20,15 +20,42 @@ pub(crate) enum LabelRegionProjectionPredicate<'tcx> {
 impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
     pub(crate) fn matches(
         &self,
-        region_projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        region_projection: RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>,
     ) -> bool {
         match self {
-            LabelRegionProjectionPredicate::Equals(projection) => *projection == region_projection,
+            LabelRegionProjectionPredicate::Equals(projection) => {
+                (*projection).rebase() == region_projection
+            }
             LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
                 region_projection.region_idx == *region_idx
-                    && region_projection.place() == *maybe_old_place
+                    && region_projection.place() == (*maybe_old_place).into()
                     && !region_projection.is_placeholder()
             }
+        }
+    }
+}
+
+impl std::ops::BitOrAssign for LabelRegionProjectionResult {
+    fn bitor_assign(&mut self, rhs: Self) {
+        if rhs > *self {
+            *self = rhs;
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
+pub(crate) enum LabelRegionProjectionResult {
+    Unchanged = 0,
+    Changed = 1,
+    ShouldCollapse = 2,
+}
+
+impl LabelRegionProjectionResult {
+    pub(crate) fn to_filter_mut_result(self) -> FilterMutResult {
+        match self {
+            LabelRegionProjectionResult::Changed => FilterMutResult::Changed,
+            LabelRegionProjectionResult::Unchanged => FilterMutResult::Unchanged,
+            LabelRegionProjectionResult::ShouldCollapse => FilterMutResult::Remove,
         }
     }
 }
@@ -39,7 +66,7 @@ pub(crate) trait LabelRegionProjection<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool;
+    ) -> LabelRegionProjectionResult;
 }
 
 pub(crate) trait LabelPlace<'tcx> {

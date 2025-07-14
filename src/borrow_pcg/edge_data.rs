@@ -224,7 +224,7 @@ macro_rules! edgedata_enum {
                 predicate: &$crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate<'tcx>,
                 location: Option<$crate::borrow_pcg::region_projection::RegionProjectionLabel>,
                 repacker: CompilerCtxt<'_, 'tcx>,
-            ) -> bool {
+            ) -> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionResult {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.label_region_projection(predicate, location, repacker),

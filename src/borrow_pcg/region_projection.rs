@@ -12,7 +12,7 @@ use super::{
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate};
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult};
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
@@ -331,7 +331,7 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         match predicate {
             LabelRegionProjectionPredicate::Equals(region_projection) => {
                 if self.region_idx == region_projection.region_idx
@@ -339,9 +339,9 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
                     && self.label == region_projection.label
                 {
                     self.label = label;
-                    true
+                    LabelRegionProjectionResult::Changed
                 } else {
-                    false
+                    LabelRegionProjectionResult::Unchanged
                 }
             }
             LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
@@ -350,9 +350,9 @@ impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
                     && !self.is_placeholder()
                 {
                     self.label = label;
-                    true
+                    LabelRegionProjectionResult::Changed
                 } else {
-                    false
+                    LabelRegionProjectionResult::Unchanged
                 }
             }
         }

@@ -1,7 +1,7 @@
 use crate::borrow_pcg::{
     edge_data::LabelPlacePredicate,
     has_pcs_elem::{
-        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult,
     },
     latest::Latest,
     region_projection::RegionProjectionLabel,
@@ -84,7 +84,7 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         let mut changed = self
             .original
             .label_region_projection(predicate, label, repacker);

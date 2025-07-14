@@ -1,15 +1,25 @@
 //! Borrow-flow edges
 use crate::{
-    borrow_checker::BorrowCheckerInterface, borrow_pcg::{
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
+        has_pcs_elem::{
+            HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+            LabelRegionProjectionResult,
+        },
         latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
-    }, pcg::{PCGNode, PCGNodeLike}, pcg_validity_assert, utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, redirect::{MaybeRedirected, RedirectResult},
-        validity::HasValidityCheck, CompilerCtxt,
-    }
+    },
+    pcg::{PCGNode, PCGNodeLike},
+    pcg_validity_assert,
+    utils::{
+        display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeOldPlace,
+        redirect::{MaybeRedirected, RedirectResult},
+        validity::HasValidityCheck,
+        CompilerCtxt,
+    },
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -56,7 +66,16 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
+        tracing::debug!(
+            "Labeling region projection: {} (predicate: {:?}, label: {:?})",
+            self.to_short_string(ctxt),
+            predicate,
+            label
+        );
+        if predicate.matches(self.long) && predicate.matches(self.short.effective().rebase()) {
+            return LabelRegionProjectionResult::ShouldCollapse;
+        }
         let mut changed = self.long.label_region_projection(predicate, label, ctxt);
         changed |= self.short.label_region_projection(predicate, label, ctxt);
         self.assert_validity(ctxt);

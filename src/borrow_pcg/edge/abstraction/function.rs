@@ -7,7 +7,7 @@ use crate::{
         },
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate},
+        has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult},
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
@@ -60,7 +60,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.edge
             .label_region_projection(predicate, label, repacker)
     }

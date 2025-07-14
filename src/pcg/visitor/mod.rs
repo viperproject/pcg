@@ -344,33 +344,31 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         expansion: &[LocalRegionProjection<'tcx>],
     ) -> Result<(), PcgError> {
         for node in expansion.iter() {
-            if !self.pcg.borrow.graph().contains(*node, self.ctxt) {
-                let edges_to_redirect = self
-                    .pcg
-                    .borrow
-                    .graph()
-                    .edges_blocked_by((*node).into(), self.ctxt)
-                    .map(|e| e.kind.clone())
-                    .collect::<Vec<_>>();
-                tracing::debug!(
-                    "redirecting edges {} to base {}",
-                    edges_to_redirect.to_short_string(self.ctxt),
-                    base.to_short_string(self.ctxt)
-                );
-                for to_redirect in edges_to_redirect {
-                    // TODO: Due to a bug ignore other expansions to this place for now
-                    // if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
-                    self.record_and_apply_action(
-                        BorrowPcgAction::redirect_edge(
-                            to_redirect,
-                            (*node).into(),
-                            base.into(),
-                            "redirect_blocked_nodes_to_base",
-                        )
-                        .into(),
-                    )?;
-                    // }
-                }
+            let edges_to_redirect = self
+                .pcg
+                .borrow
+                .graph()
+                .edges_blocked_by((*node).into(), self.ctxt)
+                .map(|e| e.kind.clone())
+                .collect::<Vec<_>>();
+            tracing::debug!(
+                "redirecting edges {} to base {}",
+                edges_to_redirect.to_short_string(self.ctxt),
+                base.to_short_string(self.ctxt)
+            );
+            for to_redirect in edges_to_redirect {
+                // TODO: Due to a bug ignore other expansions to this place for now
+                // if !matches!(to_redirect, BorrowPcgEdgeKind::BorrowPcgExpansion(_)) {
+                self.record_and_apply_action(
+                    BorrowPcgAction::redirect_edge(
+                        to_redirect,
+                        (*node).into(),
+                        base.into(),
+                        "redirect_blocked_nodes_to_base",
+                    )
+                    .into(),
+                )?;
+                // }
             }
         }
         Ok(())

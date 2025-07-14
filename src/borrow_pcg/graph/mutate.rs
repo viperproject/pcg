@@ -6,7 +6,7 @@ use crate::{
         path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::CompilerCtxt,
+    utils::{CompilerCtxt, FilterMutResult},
 };
 
 use super::BorrowsGraph;
@@ -23,6 +23,29 @@ impl<'tcx> BorrowsGraph<'tcx> {
             c |= edge.label_blocked_by_places(predicate, latest, ctxt);
             c
         })
+    }
+
+    pub(crate) fn filter_mut_edges<'slf>(
+        &'slf mut self,
+        mut f: impl FnMut(&mut BorrowPcgEdge<'tcx>) -> FilterMutResult,
+    ) -> bool {
+        let mut changed = false;
+        self.edges = self
+            .edges
+            .drain()
+            .filter_map(|(kind, conditions)| {
+                let mut edge = BorrowPcgEdge::new(kind, conditions);
+                match f(&mut edge) {
+                    FilterMutResult::Changed => {
+                        changed = true;
+                        Some((edge.kind, edge.conditions))
+                    }
+                    FilterMutResult::Unchanged => Some((edge.kind, edge.conditions)),
+                    FilterMutResult::Remove => None,
+                }
+            })
+            .collect();
+        changed
     }
 
     pub(crate) fn mut_edges<'slf>(
@@ -54,7 +77,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub (crate) fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
         self.edges
             .retain(|_, conditions| conditions.valid_for_path(path, ctxt.body()));
     }
@@ -71,3 +94,4 @@ impl<'tcx> BorrowsGraph<'tcx> {
     //     self.mut_edge_conditions(|conditions| conditions.remove_after(block))
     // }
 }
+

@@ -3,7 +3,10 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
+        has_pcs_elem::{
+            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+            LabelRegionProjectionResult,
+        },
         latest::Latest,
         region_projection::RegionProjectionLabel,
     },
@@ -55,11 +58,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        if predicate.matches(self.assigned_region_projection(repacker)) {
+    ) -> LabelRegionProjectionResult {
+        let mut changed = LabelRegionProjectionResult::Unchanged;
+        if predicate.matches(self.assigned_region_projection(repacker).rebase()) {
             self.assigned_rp_snapshot = label;
-            changed = true;
+            changed = LabelRegionProjectionResult::Changed;
         }
         changed
     }
@@ -105,12 +108,12 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        if predicate.matches(self.assigned_region_projection(repacker)) {
+    ) -> LabelRegionProjectionResult {
+        if predicate.matches(self.assigned_region_projection(repacker).rebase()) {
             self.rp_snapshot_location = label;
-            true
+            LabelRegionProjectionResult::Changed
         } else {
-            false
+            LabelRegionProjectionResult::Unchanged
         }
     }
 }

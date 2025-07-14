@@ -100,7 +100,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.mut_edges(|edge| edge.label_region_projection(predicate, label, ctxt))
+        self.filter_mut_edges(|edge| {
+            edge.label_region_projection(predicate, label, ctxt).to_filter_mut_result()
+        })
     }
 
     pub(crate) fn contains_deref_expansion_from(
