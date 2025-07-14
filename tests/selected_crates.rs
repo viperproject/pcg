@@ -20,16 +20,18 @@ fn test_selected_crates() {
     ];
 
     common::ensure_successful_run_on_crate(
-        "winnow",
-        "0.7.4",
+        "rustls-pki-types",
+        "1.11.0",
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice"),
-            extra_env_vars: vec![],
+            function: Some("server_name::parser::Parser::<'a>::read_char"),
+            extra_env_vars: visualization_env_vars,
         },
     );
+
+    // return;
 
     common::ensure_successful_run_on_crate(
         "serde_yaml",
@@ -39,6 +41,20 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "winnow",
+        "0.7.4",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice",
+            ),
             extra_env_vars: vec![],
         },
     );

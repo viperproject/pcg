@@ -35,7 +35,7 @@ impl ObtainType {
 
     pub(crate) fn should_label_rp(&self) -> bool {
         match self {
-            ObtainType::Capability(cap) => !cap.is_read(),
+            ObtainType::Capability(_cap) => true,
             ObtainType::TwoPhaseExpand => true,
         }
     }

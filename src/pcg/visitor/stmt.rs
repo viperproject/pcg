@@ -4,6 +4,7 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
@@ -37,7 +38,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
                 self.record_and_apply_action(
-                    BorrowPcgAction::make_place_old(place, MakePlaceOldReason::StorageDead).into(),
+                    BorrowPcgAction::make_place_old(
+                        LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place),
+                        MakePlaceOldReason::StorageDead,
+                    )
+                    .into(),
                 )?;
             }
             StatementKind::Assign(box (target, _)) => {

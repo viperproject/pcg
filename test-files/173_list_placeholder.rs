@@ -16,7 +16,7 @@ fn f<'a>(mut list: List<&'a mut i32>, s: &'a mut i32) -> List<&'a mut i32> {
     // PCG: bb0[6] post_main: _4 after bb0[4]↓'?10 -> list↓'?7
     // PCG: bb0[6] post_main: {list after bb0[0]↓'?7 after bb0[0]} -> {list.head after bb0[0]↓'?7, list↓'?7}
 
-    // PCG: bb0[7] post_main: list after bb0[0]↓'?7 -> RETURN↓'?6
+    // PCG: bb0[7] post_main: list after bb0[5]↓'?7 -> RETURN↓'?6
     list
 }
 

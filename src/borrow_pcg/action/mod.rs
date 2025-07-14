@@ -7,6 +7,7 @@ use super::state::BorrowsState;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
@@ -106,9 +107,12 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
+    pub(crate) fn make_place_old(
+        predicate: LabelPlacePredicate<'tcx>,
+        reason: MakePlaceOldReason,
+    ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
+            kind: BorrowPcgActionKind::MakePlaceOld(predicate, reason),
             debug_context: None,
         }
     }
@@ -134,7 +138,7 @@ pub enum BorrowPcgActionKind<'tcx> {
     ),
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
-    MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
+    MakePlaceOld(LabelPlacePredicate<'tcx>, MakePlaceOldReason),
     SetLatest(Place<'tcx>, SnapshotLocation),
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
@@ -168,10 +172,10 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             }
             BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(ctxt),
             BorrowPcgActionKind::Restore(restore_capability) => restore_capability.debug_line(ctxt),
-            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
+            BorrowPcgActionKind::MakePlaceOld(predicate, reason) => {
                 format!(
                     "Make {} an old place ({:?})",
-                    place.to_short_string(ctxt),
+                    predicate.to_short_string(ctxt),
                     reason
                 )
             }
@@ -244,8 +248,10 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 true
             }
-            BorrowPcgActionKind::MakePlaceOld(place, _) => self.make_place_old(place, ctxt),
-            BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location, ctxt),
+            BorrowPcgActionKind::MakePlaceOld(predicate, _) => self.make_place_old(&predicate, ctxt),
+            BorrowPcgActionKind::SetLatest(place, location) => {
+                self.set_latest(place, location, ctxt)
+            }
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge, for_read } => {
                 self.graph
@@ -260,8 +266,12 @@ impl<'tcx> BorrowsState<'tcx> {
         Ok(result)
     }
 
-    fn make_place_old(&mut self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.graph.make_place_old(place, &self.latest, ctxt)
+    fn make_place_old(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph.make_place_old(predicate, &self.latest, ctxt)
     }
 
     fn label_region_projection(

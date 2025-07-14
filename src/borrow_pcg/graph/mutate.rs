@@ -6,7 +6,7 @@ use crate::{
         path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::{CompilerCtxt, Place},
+    utils::CompilerCtxt,
 };
 
 use super::BorrowsGraph;
@@ -14,13 +14,10 @@ use super::BorrowsGraph;
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
-        place: Place<'tcx>,
+        predicate: &LabelPlacePredicate<'tcx>,
         latest: &Latest<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let predicate = &LabelPlacePredicate::PrefixOrPostfix(place);
-
-
         self.mut_edges(|edge| {
             let mut c = edge.label_blocked_places(predicate, latest, ctxt);
             c |= edge.label_blocked_by_places(predicate, latest, ctxt);

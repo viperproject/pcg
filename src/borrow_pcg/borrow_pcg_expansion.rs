@@ -151,6 +151,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
+        if let LabelPlacePredicate::StrictPostfix(rule_place) = predicate
+            && let Some(place) = self.base.as_current_place()
+            && *rule_place == place
+        {
+            return false;
+        }
         for p in &mut self.expansion {
             changed |= p.label_place(predicate, latest, ctxt);
         }

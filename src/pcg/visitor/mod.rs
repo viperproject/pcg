@@ -4,6 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::region_projection::{
     LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionLabel,
 };
@@ -134,8 +135,11 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
             && let Operand::Move(place) = operand
         {
             self.record_and_apply_action(
-                BorrowPcgAction::make_place_old((*place).into(), MakePlaceOldReason::MoveOut)
-                    .into(),
+                BorrowPcgAction::make_place_old(
+                    LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix((*place).into()),
+                    MakePlaceOldReason::MoveOut,
+                )
+                .into(),
             )?;
         }
         Ok(())
@@ -325,7 +329,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.record_and_apply_action(
                     BorrowPcgAction::remove_region_projection_label(
                         rp,
-                        "unlabel_blocked_region_projections",
+                        "unlabel blocked_region_projections",
                     )
                     .into(),
                 )?;

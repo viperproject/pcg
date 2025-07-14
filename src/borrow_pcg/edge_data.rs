@@ -1,5 +1,7 @@
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::latest::Latest;
 use crate::pcg::PCGNode;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -53,14 +55,34 @@ pub trait EdgeData<'tcx> {
     }
 }
 
-pub(crate) enum LabelPlacePredicate<'tcx> {
-    PrefixOrPostfix(Place<'tcx>),
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LabelPlacePredicate<'tcx> {
+    PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
+    StrictPostfix(Place<'tcx>),
+}
+
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for LabelPlacePredicate<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        match self {
+            LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
+                predicate_place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
+            }
+            LabelPlacePredicate::StrictPostfix(place) => {
+                format!("strict postfix of {}", place.to_short_string(ctxt))
+            }
+        }
+    }
 }
 
 impl<'tcx> LabelPlacePredicate<'tcx> {
     pub(crate) fn applies_to(&self, candidate: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
-            LabelPlacePredicate::PrefixOrPostfix(predicate_place) => {
+            LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
                 if predicate_place.is_prefix(candidate) {
                     true
                 } else if candidate.is_prefix(*predicate_place) {
@@ -77,6 +99,9 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                 } else {
                     false
                 }
+            }
+            LabelPlacePredicate::StrictPostfix(place) => {
+                place.projection.len() < candidate.projection.len() && place.is_prefix(candidate)
             }
         }
     }
