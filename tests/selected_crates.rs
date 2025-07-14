@@ -19,6 +19,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 13 basic blocks
+    // common::ensure_successful_run_on_crate(
+    //     "serde_json",
+    //     "1.0.140",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("read::SliceRead::<'a>::skip_to_escape_slow"),
+    //         extra_env_vars: visualization_env_vars,
+    //     },
+    // );
+
+    // return;
+
     common::ensure_successful_run_on_crate(
         "tokio-io-timeout",
         "1.2.0",
@@ -209,7 +224,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     common::ensure_successful_run_on_crate(
         "matchit",

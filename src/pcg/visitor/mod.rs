@@ -432,14 +432,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         match edge.kind() {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                if let Some(lifetime_expansion) = expansion.try_to_lifetime_expansion()
-                    && lifetime_expansion.base.place().is_owned(self.ctxt)
-                {
-                    self.redirect_blocked_nodes_to_base(
-                        lifetime_expansion.base,
-                        lifetime_expansion.expansion(),
-                    )?;
-                }
+                // if let Some(lifetime_expansion) = expansion.try_to_lifetime_expansion()
+                //     && lifetime_expansion.base.place().is_owned(self.ctxt)
+                // {
+                //     self.redirect_blocked_nodes_to_base(
+                //         lifetime_expansion.base,
+                //         lifetime_expansion.expansion(),
+                //     )?;
+                // }
                 if let Some(place) = expansion.deref_blocked_place(self.ctxt)
                     && place.regions(self.ctxt).len() == 0
                 {
