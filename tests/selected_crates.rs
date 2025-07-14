@@ -20,6 +20,66 @@ fn test_selected_crates() {
     ];
 
     common::ensure_successful_run_on_crate(
+        "winnow",
+        "0.7.4",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "serde_yaml",
+        "0.9.34+deprecated",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("registry::SpanRef::<'a, R>::with_filter"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "tokio-io-timeout",
+        "1.2.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("TimeoutState::poll_check"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "cookie",
+        "0.18.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("prefix::Prefix::clip"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
         "brotli",
         "7.0.0",
         Some("2025-03-13"),
@@ -316,7 +376,6 @@ fn test_selected_crates() {
     // common::ensure_successful_run_on_crate("ascii", "1.1.0", true);
     // common::ensure_successful_run_on_crate("cc", "1.2.16", true);
     // common::ensure_successful_run_on_crate("crc", "3.2.1", true);
-    // common::ensure_successful_run_on_crate("cookie", "0.18.1", Some("2025-03-13"), false, true);
     // common::ensure_successful_run_on_crate("futures-util", "0.3.31", false);
     // common::ensure_successful_run_on_crate("gimli", "0.31.1", false);
     // common::ensure_successful_run_on_crate(

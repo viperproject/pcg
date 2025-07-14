@@ -245,7 +245,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 true
             }
             BorrowPcgActionKind::MakePlaceOld(place, _) => self.make_place_old(place, ctxt),
-            BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location),
+            BorrowPcgActionKind::SetLatest(place, location) => self.set_latest(place, location, ctxt),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge, for_read } => {
                 self.graph
@@ -274,9 +274,14 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     #[must_use]
-    fn set_latest<T: Into<SnapshotLocation>>(&mut self, place: Place<'tcx>, location: T) -> bool {
+    fn set_latest<T: Into<SnapshotLocation>>(
+        &mut self,
+        place: Place<'tcx>,
+        location: T,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         let location = location.into();
-        self.latest.insert(place, location)
+        self.latest.insert(place, location, ctxt)
     }
 }
 
