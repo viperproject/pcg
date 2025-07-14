@@ -190,11 +190,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         };
-        for edge in fg
-            .leaf_edges(self.ctxt)
-            .into_iter()
-            .map(|e| e.to_owned_edge())
-        {
+        let leaf_edges = fg.leaf_edges(self.ctxt);
+        tracing::info!("Leaf edges: {}", leaf_edges.to_short_string(self.ctxt));
+        for edge in leaf_edges.into_iter().map(|e| e.to_owned_edge()) {
             if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
                 tracing::debug!("Checking edge: {}", edge.to_short_string(self.ctxt));
                 edges_to_trim.push((edge, reason));

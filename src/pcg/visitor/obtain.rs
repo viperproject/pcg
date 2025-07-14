@@ -6,7 +6,6 @@ use crate::action::{BorrowPcgAction, OwnedPcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::borrow_pcg::edge::outlives::BorrowFlowEdge;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::region_projection::LocalRegionProjection;
@@ -65,7 +64,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .pcg
             .capabilities
             .iter()
-            .filter(|(p, c)| {
+            .filter(|(p, _)| {
                 p.projection.len() > upgraded_place.projection.len() && upgraded_place.is_prefix(*p)
             })
             .map(|(p, _)| p)

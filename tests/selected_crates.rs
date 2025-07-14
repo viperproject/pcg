@@ -19,6 +19,20 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    common::ensure_successful_run_on_crate(
+        "tokio-io-timeout",
+        "1.2.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("TimeoutState::poll_check"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    // return;
+
     // 4 basic blocks
     common::ensure_successful_run_on_crate(
         "miniz_oxide",
@@ -71,6 +85,19 @@ fn test_selected_crates() {
         },
     );
 
+    // 23 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tokio-io-timeout",
+        "1.2.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("TimeoutState::poll_check"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 27 basic blocks
     common::ensure_successful_run_on_crate(
         "bstr",
@@ -118,7 +145,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("server_name::parser::Parser::<'a>::read_char"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 
@@ -160,17 +187,6 @@ fn test_selected_crates() {
         },
     );
 
-    common::ensure_successful_run_on_crate(
-        "tokio-io-timeout",
-        "1.2.0",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("TimeoutState::poll_check"),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::ensure_successful_run_on_crate(
         "cookie",

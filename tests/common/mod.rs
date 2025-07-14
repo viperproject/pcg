@@ -138,6 +138,9 @@ pub fn crate_download_dirname(name: &str, version: &str) -> String {
 
 pub fn is_supported_crate(name: &str, version: &str) -> Result<(), String> {
     match (name, version) {
+        ("cookie", "0.18.1") => {
+            Err("Skipping cookie for now but should re-add it".to_string())
+        }
         ("rustls", "0.23.23") => {
             Err("not working, not sure why".to_string())
         }

@@ -42,16 +42,6 @@ impl SnapshotLocation {
     pub(crate) fn to_json(self) -> serde_json::Value {
         self.to_string().into()
     }
-
-    pub(crate) fn block(&self) -> BasicBlock {
-        match self {
-            SnapshotLocation::After(loc) => loc.block,
-            SnapshotLocation::Start(bb) => *bb,
-            SnapshotLocation::Mid(loc) => loc.block,
-            SnapshotLocation::Loop(bb) => *bb,
-            SnapshotLocation::Prepare(loc) => loc.block,
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
