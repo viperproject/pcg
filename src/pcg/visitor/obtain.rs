@@ -124,7 +124,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>();
-                if rp_expansion.len() > 1 && !capability.is_read() {
+                if rp_expansion.len() > 1 && capability.is_exclusive() {
                     self.redirect_blocked_nodes_to_base(rp.into(), &rp_expansion)?;
                 }
             }
