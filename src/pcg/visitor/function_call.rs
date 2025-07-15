@@ -111,7 +111,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<FxHashSet<_>>();
 
-        tracing::info!(
+        tracing::debug!(
             "Placeholder targets: {}",
             placeholder_targets.to_short_string(self.ctxt)
         );

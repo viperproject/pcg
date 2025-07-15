@@ -174,7 +174,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
         if !obtain_type.capability().is_read() {
-            tracing::info!(
+            tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
                 obtain_type,
                 place.to_short_string(self.ctxt),

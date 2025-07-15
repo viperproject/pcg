@@ -33,11 +33,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("simd::swar::match_header_name_vectored"),
-            extra_env_vars: visualization_env_vars
+            extra_env_vars: vec![]
         },
     );
-
-    return;
 
     // 7 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
