@@ -25,19 +25,19 @@ fn test_selected_crates() {
     ];
 
     // 20 basic blocks, ~40 nodes
-    common::ensure_successful_run_on_crate(
-        "object",
-        "0.36.7",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
-            extra_env_vars: visualization_env_vars
-        },
-    );
+    // common::ensure_successful_run_on_crate(
+    //     "object",
+    //     "0.36.7",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
+    //         extra_env_vars: visualization_env_vars
+    //     },
+    // );
 
-    return;
+    // return;
 
     // 17 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(

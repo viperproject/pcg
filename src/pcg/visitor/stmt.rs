@@ -38,11 +38,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
                 self.record_and_apply_action(
-                    BorrowPcgAction::make_place_old(
-                        place,
-                        MakePlaceOldReason::StorageDead,
-                    )
-                    .into(),
+                    BorrowPcgAction::make_place_old(place, MakePlaceOldReason::StorageDead).into(),
                 )?;
             }
             StatementKind::Assign(box (target, _)) => {
@@ -73,7 +69,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     target,
                                     target_cap,
                                     Some(CapabilityKind::Write),
-                                    "pre_main"
+                                    "pre_main",
                                 )
                                 .into(),
                             )?;

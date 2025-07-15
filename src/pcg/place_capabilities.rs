@@ -5,6 +5,7 @@ use crate::{
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
+        validity::HasValidityCheck,
         CompilerCtxt, Place,
     },
 };
@@ -31,6 +32,20 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<Place<'tcx>, CapabilityKind>);
+
+impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        for (place, cap) in self.iter() {
+            if place.projects_shared_ref(ctxt) && cap.is_exclusive() {
+                return Err(format!(
+                    "Place {} projects a shared ref, but has exclusive capability",
+                    place.to_short_string(ctxt)
+                ));
+            }
+        }
+        Ok(())
+    }
+}
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
