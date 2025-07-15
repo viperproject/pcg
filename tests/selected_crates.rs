@@ -1,6 +1,11 @@
 mod common;
 
 #[allow(unused)]
+fn pcg_max_nodes(n: usize) -> Vec<(String, String)> {
+    vec![("PCG_MAX_NODES".to_string(), n.to_string())]
+}
+
+#[allow(unused)]
 #[test]
 fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
@@ -19,33 +24,6 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // 3 basic blocks
-    common::ensure_successful_run_on_crate(
-        "hyper",
-        "1.6.0",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("rt::io::ReadBufCursor::<'_>::as_mut"),
-            extra_env_vars: visualization_env_vars,
-        },
-    );
-
-    return;
-
-    // 2 basic blocks
-    common::ensure_successful_run_on_crate(
-        "bitvec",
-        "1.0.1",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: None,
-            extra_env_vars: vec![],
-        },
-    );
 
     // 3 basic blocks
     common::ensure_successful_run_on_crate(
@@ -73,7 +51,20 @@ fn test_selected_crates() {
         },
     );
 
-    // 9 basic blocks
+    // 7 basic blocks
+    common::ensure_successful_run_on_crate(
+        "bitvec",
+        "1.0.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<domain::Domain<'a, wyz::Const, T, O> as std::fmt::Binary>::fmt"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 9 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "regex-automata",
         "0.4.9",

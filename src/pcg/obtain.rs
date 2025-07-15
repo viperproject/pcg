@@ -122,7 +122,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         if expansion_is_owned {
             self.expand_owned_place_one_level(base, expansion, obtain_type, ctxt)
         } else {
-            self.add_deref_expansion(base, place_expansion, obtain_type, ctxt)
+            self.add_borrow_pcg_expansion(base, place_expansion, obtain_type, ctxt)
         }
     }
 
@@ -132,7 +132,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
 
     fn path_conditions(&self) -> PathConditions;
 
-    fn add_deref_expansion(
+    fn add_borrow_pcg_expansion(
         &mut self,
         base: Place<'tcx>,
         place_expansion: PlaceExpansion<'tcx>,
@@ -152,7 +152,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
 
         if self
             .borrows_graph()
-            .contains_deref_expansion_from(base, ctxt)
+            .contains_borrow_pcg_expansion_from(base, ctxt)
         {
             return Ok(false);
         }

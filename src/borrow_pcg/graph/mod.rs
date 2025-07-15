@@ -8,6 +8,7 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
+        borrow_pcg_expansion::BorrowPcgExpansion,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
@@ -106,18 +107,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_deref_expansion_from(
+    pub(crate) fn contains_borrow_pcg_expansion_from(
         &self,
         base: Place<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edges_blocking(base.into(), ctxt).any(|edge| {
-            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind() {
-                e.is_owned_expansion(ctxt)
-            } else {
-                false
-            }
-        })
+        self.edges_blocking(base.into(), ctxt)
+            .any(|edge| matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
     }
 
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
