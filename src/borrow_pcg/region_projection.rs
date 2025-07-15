@@ -147,7 +147,6 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
             MaybeRemoteRegionProjectionBase::Const(_) => None,
         }
     }
-    #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.is_mutable(ctxt),

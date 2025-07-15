@@ -22,7 +22,7 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-        HasPlace, Place, BORROWS_DEBUG_IMGCAT,
+        HasPlace, LocalMutationIsAllowed, Place, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -169,6 +169,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
             seen.insert(node);
             let place = node.base().place();
+            if place.is_mutable(LocalMutationIsAllowed::Yes, ctxt).is_err() {
+                tracing::info!(
+                    "Skipping {} because it is not mutable",
+                    node.to_short_string(ctxt)
+                );
+                continue;
+            }
             if place.is_deref() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
                     .region_projections_blocked_by(node.into(), ctxt)

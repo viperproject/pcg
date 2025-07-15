@@ -111,6 +111,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<FxHashSet<_>>();
 
+        tracing::info!(
+            "Placeholder targets: {}",
+            placeholder_targets.to_short_string(self.ctxt)
+        );
+
         // The set of region projections that contain borrows that could be
         // moved into the labelled rps (as they are seen after the function call)
         let source_arg_projections = arg_region_projections
@@ -123,6 +128,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             })
             .collect::<Vec<_>>();
+
+        tracing::info!(
+            "Source arg projections: {}",
+            source_arg_projections.to_short_string(self.ctxt)
+        );
 
         for arg_rp in source_arg_projections {
             let this_region = arg_rp.region(self.ctxt);
