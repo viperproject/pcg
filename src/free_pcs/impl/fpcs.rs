@@ -65,13 +65,13 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         let capability_summary = IndexVec::from_fn_n(
             |local: mir::Local| {
                 if local == return_local {
-                    capabilities.insert(local.into(), CapabilityKind::Write);
+                    capabilities.insert(local.into(), CapabilityKind::Write, repacker);
                     CapabilityLocal::new(local)
                 } else if local <= last_arg {
-                    capabilities.insert(local.into(), CapabilityKind::Exclusive);
+                    capabilities.insert(local.into(), CapabilityKind::Exclusive, repacker);
                     CapabilityLocal::new(local)
                 } else if always_live.contains(local) {
-                    capabilities.insert(local.into(), CapabilityKind::Write);
+                    capabilities.insert(local.into(), CapabilityKind::Write, repacker);
                     CapabilityLocal::new(local)
                 } else {
                     // Other locals are unallocated

@@ -136,7 +136,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             owned: None,
         };
 
-
         for blocker in candidate_blockers.iter().copied() {
             for root in root_places.iter() {
                 let relevant_root = root.relevant_place_for_blocking();
@@ -368,7 +367,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             expander
                 .expand_to(
                     place,
-                    ObtainType::Capability(CapabilityKind::Exclusive),
+                    ObtainType::Capability(if place.projects_shared_ref(ctxt) {
+                        CapabilityKind::Read
+                    } else {
+                        CapabilityKind::Exclusive
+                    }),
                     ctxt,
                 )
                 .unwrap();

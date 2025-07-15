@@ -254,8 +254,8 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>) {
-        self.owned.locals_mut().ensures(t, &mut self.capabilities);
+    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+        self.owned.locals_mut().ensures(t, &mut self.capabilities, ctxt);
     }
 
     #[tracing::instrument(skip(self, other, ctxt, body_analysis))]

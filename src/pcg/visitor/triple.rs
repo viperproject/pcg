@@ -31,7 +31,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityLocal::Allocated(CapabilityProjections::new(local));
                 self.pcg
                     .capabilities
-                    .insert(local.into(), CapabilityKind::Write);
+                    .insert(local.into(), CapabilityKind::Write, self.ctxt);
             }
             PlaceCondition::Unalloc(_) | PlaceCondition::Return => {}
         }
@@ -39,7 +39,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     pub(crate) fn ensure_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
-        self.pcg.owned_ensures(triple);
+        self.pcg.owned_ensures(triple, self.ctxt);
         Ok(())
     }
 }

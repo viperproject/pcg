@@ -296,7 +296,7 @@ impl<'tcx> BorrowsState<'tcx> {
             _ => {
                 match capabilities.get(blocked_place) {
                     Some(CapabilityKind::Exclusive) => {
-                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read));
+                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read, ctxt));
                     }
                     Some(CapabilityKind::Read) => {
                         // Do nothing, this just adds another shared borrow

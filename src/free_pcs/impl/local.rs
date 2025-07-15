@@ -145,7 +145,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let expansion = from.expand(*to, repacker)?;
 
         for place in expansion.other_expansions() {
-            capabilities.insert(place, if for_cap.is_read() { for_cap } else { from_cap });
+            capabilities.insert(
+                place,
+                if for_cap.is_read() { for_cap } else { from_cap },
+                repacker,
+            );
         }
 
         let mut ops = Vec::new();
@@ -156,7 +160,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
             if for_cap.is_read() {
-                capabilities.insert(expansion.base_place(), for_cap);
+                capabilities.insert(expansion.base_place(), for_cap, repacker);
             } else {
                 capabilities.remove(expansion.base_place());
             }
@@ -175,7 +179,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             }
         }
 
-        capabilities.insert(*to, for_cap);
+        capabilities.insert(*to, for_cap, repacker);
 
         Ok(ops)
     }
@@ -208,7 +212,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                                 None => acc,
                             }
                         });
-                capabilities.insert(p, retained_cap);
+                capabilities.insert(p, retained_cap, repacker);
                 self.expansions.remove(&p);
                 RepackOp::collapse(p, expansion.guide(), retained_cap)
             })

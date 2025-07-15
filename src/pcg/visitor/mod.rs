@@ -525,7 +525,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     RepackOp::RegainLoanedCapability(place, capability_kind) => self
                         .pcg
                         .capabilities
-                        .insert((*place).into(), capability_kind),
+                        .insert((*place).into(), capability_kind, self.ctxt),
                     RepackOp::Expand(expand) => {
                         self.pcg.owned.perform_expand_action(
                             expand,
@@ -545,7 +545,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         for target_place in target_places {
                             self.pcg
                                 .capabilities
-                                .insert(target_place, CapabilityKind::Read);
+                                .insert(target_place, CapabilityKind::Read, self.ctxt);
                         }
                         true
                     }
@@ -560,7 +560,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 None => acc,
                             },
                         );
-                        self.pcg.capabilities.insert(collapse.to, retained_cap);
+                        self.pcg.capabilities.insert(collapse.to, retained_cap, self.ctxt);
                         capability_projections.expansions.remove(&collapse.to);
                         true
                     }
@@ -649,10 +649,10 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
             })
         };
         for target_place in target_places {
-            capabilities.insert(target_place, source_cap);
+            capabilities.insert(target_place, source_cap, ctxt);
         }
         if expand.capability.is_read() {
-            capabilities.insert(expand.from, CapabilityKind::Read);
+            capabilities.insert(expand.from, CapabilityKind::Read, ctxt);
         } else {
             capabilities.remove(expand.from);
         }

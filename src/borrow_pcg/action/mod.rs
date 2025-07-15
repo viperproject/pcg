@@ -263,7 +263,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 if let Some(cap) = capabilities.get(restore_place) {
                     assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
                 }
-                if !capabilities.insert(restore_place, restore.capability()) {
+                if !capabilities.insert(restore_place, restore.capability(), ctxt) {
                     panic!("Capability should have been updated")
                 }
                 true
@@ -273,7 +273,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
                 match weaken.to {
                     Some(to) => {
-                        capabilities.insert(weaken_place, to);
+                        capabilities.insert(weaken_place, to, ctxt);
                     }
                     None => {
                         assert!(capabilities.remove(weaken_place).is_some());
@@ -363,7 +363,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     };
 
                     if for_read {
-                        changed |= capabilities.insert(base.place(), CapabilityKind::Read);
+                        changed |= capabilities.insert(base.place(), CapabilityKind::Read, ctxt);
                     } else {
                         changed |= capabilities.remove(base.place()).is_some();
                     }
@@ -375,7 +375,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                                 expanded_capability,
                                 p.place().to_short_string(ctxt)
                             );
-                            changed |= capabilities.insert(p.place(), expanded_capability);
+                            changed |= capabilities.insert(p.place(), expanded_capability, ctxt);
                         }
                     }
                 }

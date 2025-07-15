@@ -236,7 +236,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     {
                         self.pcg
                             .capabilities
-                            .insert(base, CapabilityKind::Exclusive);
+                            .insert(base, CapabilityKind::Exclusive, self.ctxt);
                     }
                 }
             }

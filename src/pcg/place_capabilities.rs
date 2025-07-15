@@ -2,6 +2,7 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::CapabilityKind,
+    pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
@@ -12,7 +13,12 @@ use crate::{
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
     fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind>;
-    fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool;
+    fn insert(
+        &mut self,
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
     fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind>;
 }
 
@@ -25,7 +31,18 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
         self.0.remove(&place)
     }
 
-    fn insert(&mut self, place: Place<'tcx>, capability: CapabilityKind) -> bool {
+    fn insert(
+        &mut self,
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        pcg_validity_assert!(
+            !place.projects_shared_ref(ctxt) || capability.is_read(),
+            "Place {} projects a shared ref, but has capability {:?}",
+            place.to_short_string(ctxt),
+            capability
+        );
         self.0.insert(place, capability) != Some(capability)
     }
 }
@@ -36,10 +53,11 @@ pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<Place<'tcx>, CapabilityK
 impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         for (place, cap) in self.iter() {
-            if place.projects_shared_ref(ctxt) && cap.is_exclusive() {
+            if place.projects_shared_ref(ctxt) && !cap.is_read() {
                 return Err(format!(
-                    "Place {} projects a shared ref, but has exclusive capability",
-                    place.to_short_string(ctxt)
+                    "Place {} projects a shared ref, but has capability {:?}",
+                    place.to_short_string(ctxt),
+                    cap
                 ));
             }
         }

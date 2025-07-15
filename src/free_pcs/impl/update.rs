@@ -83,11 +83,11 @@ impl<'tcx> CapabilityLocals<'tcx> {
             }
         }
     }
-    #[tracing::instrument(skip(self, place_capabilities))]
     pub(crate) fn ensures(
         &mut self,
         t: Triple<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>
     ) {
         let Some(post) = t.post() else {
             return;
@@ -102,13 +102,13 @@ impl<'tcx> CapabilityLocals<'tcx> {
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
-                place_capabilities.insert(local.into(), CapabilityKind::Write);
+                place_capabilities.insert(local.into(), CapabilityKind::Write, ctxt);
             }
             PlaceCondition::Capability(place, cap) => {
-                place_capabilities.insert(place, cap);
+                place_capabilities.insert(place, cap, ctxt);
             }
             PlaceCondition::ExpandTwoPhase(place) => {
-                place_capabilities.insert(place, CapabilityKind::Read);
+                place_capabilities.insert(place, CapabilityKind::Read, ctxt);
             }
         }
     }
