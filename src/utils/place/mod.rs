@@ -366,20 +366,47 @@ impl<'tcx> Place<'tcx> {
             let field_tys: Vec<Ty<'tcx>> = match ty.kind() {
                 TyKind::Array(ty, _) => vec![*ty],
                 TyKind::Slice(ty) => vec![*ty],
-                TyKind::Adt(def, substs) => {
-                    def.all_fields().map(|f| f.ty(ctxt.tcx, substs)).collect::<Vec<_>>()
-                }
-                TyKind::Tuple(slice) => {
-                    slice.iter().collect::<Vec<_>>()
-                }
+                TyKind::Adt(def, substs) => def
+                    .all_fields()
+                    .map(|f| f.ty(ctxt.tcx, substs))
+                    .collect::<Vec<_>>(),
+                TyKind::Tuple(slice) => slice.iter().collect::<Vec<_>>(),
                 TyKind::Closure(_, substs) => {
                     substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
                 }
                 TyKind::Ref(_, ty, _) => vec![*ty],
-                // TyKind::Alias(..) => vec![],
-                _ => unreachable!("Unexpected type: {:?}", ty),
+                TyKind::Bool => todo!(),
+                TyKind::Char => todo!(),
+                TyKind::Int(int_ty) => todo!(),
+                TyKind::Uint(uint_ty) => todo!(),
+                TyKind::Float(float_ty) => todo!(),
+                TyKind::Adt(_, _) => todo!(),
+                TyKind::Foreign(_) => todo!(),
+                TyKind::Str => todo!(),
+                TyKind::Array(_, _) => todo!(),
+                TyKind::Pat(_, _) => todo!(),
+                TyKind::Slice(_) => todo!(),
+                TyKind::RawPtr(_, mutability) => todo!(),
+                TyKind::Ref(_, _, mutability) => todo!(),
+                TyKind::FnDef(_, _) => todo!(),
+                TyKind::FnPtr(binder, fn_header) => todo!(),
+                TyKind::Dynamic(_, _, dyn_kind) => vec![],
+                TyKind::Closure(_, _) => todo!(),
+                TyKind::CoroutineClosure(_, _) => todo!(),
+                TyKind::Coroutine(_, _) => todo!(),
+                TyKind::CoroutineWitness(_, _) => todo!(),
+                TyKind::Never => todo!(),
+                TyKind::Tuple(_) => todo!(),
+                TyKind::Alias(alias_ty_kind, alias_ty) => todo!(),
+                TyKind::Param(_) => todo!(),
+                TyKind::Bound(debruijn_index, _) => todo!(),
+                TyKind::Placeholder(_) => todo!(),
+                TyKind::Infer(infer_ty) => todo!(),
+                TyKind::Error(_) => todo!(),
             };
-            field_tys.iter().any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, ctxt))
+            field_tys
+                .iter()
+                .any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, ctxt))
         }
         ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, ctxt)
     }
