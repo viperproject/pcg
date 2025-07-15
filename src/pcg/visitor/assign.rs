@@ -158,7 +158,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 );
                 for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
                     let source_proj =
-                        if kind.mutability().is_mut() && source_proj.can_be_labelled(self.ctxt) {
+                        if kind.mutability().is_mut() {
                             let label = self.current_snapshot_location();
                             self.record_and_apply_action(
                                 BorrowPcgAction::label_region_projection(
@@ -171,7 +171,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             source_proj.with_label(Some(label.into()), self.ctxt)
                         } else {
                             source_proj.with_label(
-                                self.label_for_blocked_rp(source_proj, self.ctxt),
+                                self.label_for_shared_expansion_of_rp(source_proj, self.ctxt),
                                 self.ctxt,
                             )
                         };

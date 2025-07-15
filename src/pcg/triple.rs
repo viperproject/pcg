@@ -212,27 +212,6 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             _ => return Ok(()),
         };
         self.main_triples.push(t);
-        if let Assign(box (_, Rvalue::Ref(_, kind, place))) = &statement.kind {
-            let triple = match kind {
-                BorrowKind::Shared => Triple {
-                    pre: PlaceCondition::read(*place),
-                    post: Some(PlaceCondition::read(*place)),
-                },
-                BorrowKind::Fake(..) => return Ok(()),
-                BorrowKind::Mut { kind } => {
-                    let post = if matches!(kind, MutBorrowKind::TwoPhaseBorrow) {
-                        Some(PlaceCondition::ExpandTwoPhase((*place).into()))
-                    } else {
-                        Some(PlaceCondition::RemoveCapability((*place).into()))
-                    };
-                    Triple {
-                        pre: PlaceCondition::exclusive(*place, self.ctxt),
-                        post,
-                    }
-                }
-            };
-            self.main_triples.push(triple);
-        }
         Ok(())
     }
 

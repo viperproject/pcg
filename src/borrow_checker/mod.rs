@@ -59,7 +59,6 @@ impl HasPcgRegion for BorrowData<'_> {
     }
 }
 
-
 /// An interface to the results of the borrow-checker analysis. The PCG queries
 /// this interface as part of its analysis, for example, to identify when borrows
 /// expire.
@@ -205,15 +204,23 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     fn borrows_blocking(
         &self,
-        place: Place<'tcx>,
-        _location: Location,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<BorrowData<'tcx>> {
-        self.location_map()
-            .iter()
-            .filter(|(_, data)| data.get_borrowed_place() == place)
-            .map(|(_, data)| data.clone())
-            .collect()
+        let mut borrows = vec![];
+        each_borrow_involving_path(
+            &mut (),
+            ctxt,
+            blocked_place,
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            |_this, _, borrow| {
+                borrows.push(borrow.clone());
+                ControlFlow::Continue(())
+            },
+        );
+        borrows
     }
 
     fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {

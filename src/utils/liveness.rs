@@ -21,7 +21,7 @@ struct PlaceLivenessDomain<'tcx> {
 
 impl<'tcx> PlaceLivenessDomain<'tcx> {
     fn is_live(&self, place: Place<'tcx>) -> bool {
-        self.places.iter().any(|p| p.conflicts_with(place))
+        self.places.iter().any(|p| p.is_prefix_or_postfix_of(place))
     }
 }
 
@@ -68,12 +68,12 @@ impl<'tcx> Visitor<'tcx> for TransferFunction<'_, 'tcx> {
 
 impl<'tcx> GenKill<Place<'tcx>> for PlaceLivenessDomain<'tcx> {
     fn gen_(&mut self, elem: Place<'tcx>) {
-        self.places.retain(|p| !p.conflicts_with(elem));
+        self.places.retain(|p| !p.is_prefix_or_postfix_of(elem));
         self.places.insert(elem);
     }
 
     fn kill(&mut self, elem: Place<'tcx>) {
-        self.places.retain(|p| !p.conflicts_with(elem));
+        self.places.retain(|p| !p.is_prefix_or_postfix_of(elem));
     }
 }
 

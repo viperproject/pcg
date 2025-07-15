@@ -80,7 +80,7 @@ impl<'tcx> Latest<'tcx> {
         self.0
             .iter()
             .find_map(|(p, l)| {
-                if p.conflicts_with(place) {
+                if p.is_prefix_or_postfix_of(place) {
                     Some(l)
                 } else {
                     None
@@ -104,7 +104,7 @@ impl<'tcx> Latest<'tcx> {
         if self.get_opt(place, ctxt) == Some(location) {
             return false;
         }
-        self.0.retain(|existing, _| !existing.conflicts_with(place));
+        self.0.retain(|existing, _| !existing.is_prefix_or_postfix_of(place));
         self.0.insert(place, location);
         true
     }

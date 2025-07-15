@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 17 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "httparse",
+        "1.10.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("simd::swar::match_header_name_vectored"),
+            extra_env_vars: visualization_env_vars
+        },
+    );
+
+    return;
+
     // 7 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "combine",

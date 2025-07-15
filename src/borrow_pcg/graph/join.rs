@@ -189,7 +189,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        tracing::debug!("used places: {}", used_places.to_short_string(ctxt));
+        tracing::info!("used places: {}", used_places.to_short_string(ctxt));
         // p_loop
         let live_loop_places = used_places
             .iter()

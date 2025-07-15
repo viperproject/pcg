@@ -38,10 +38,11 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
+        context: impl Into<String>
     ) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to)),
-            debug_context: None,
+            debug_context: Some(context.into()),
         }
     }
 

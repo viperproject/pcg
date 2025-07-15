@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
@@ -223,6 +225,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.perform_borrow_initial_pre_operand_actions()?;
                 self.collapse_owned_places()?;
                 for triple in self.tw.operand_triples.iter() {
+                    tracing::debug!("Require triple {:?}", triple);
                     self.require_triple(*triple)?;
                 }
             }
@@ -233,6 +236,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             EvalStmtPhase::PreMain => {
                 for triple in self.tw.main_triples.iter() {
+                    tracing::debug!("Require triple {:?}", triple);
                     self.require_triple(*triple)?;
                 }
             }
@@ -366,22 +370,22 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &labeller,
                     self.ctxt,
                 );
-                self.pcg.borrow.graph.insert(
-                    BorrowPcgEdge::new(
-                        BorrowFlowEdge::new(
-                            node.into(),
-                            base,
-                            BorrowFlowEdgeKind::Aggregate {
-                                field_idx: idx,
-                                target_rp_index: 0,
-                            },
-                            self.ctxt,
-                        )
-                        .into(),
-                        self.pcg.borrow.path_conditions.clone(),
-                    ),
-                    self.ctxt,
+                let edge = BorrowPcgEdge::new(
+                    BorrowFlowEdge::new(
+                        node.into(),
+                        base,
+                        BorrowFlowEdgeKind::Aggregate {
+                            field_idx: idx,
+                            target_rp_index: 0,
+                        },
+                        self.ctxt,
+                    )
+                    .into(),
+                    self.pcg.borrow.path_conditions.clone(),
                 );
+                self.record_and_apply_action(
+                    BorrowPcgAction::add_edge(edge, "redirect blocked", false).into(),
+                )?;
             }
         }
         Ok(())
@@ -445,7 +449,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 //     )?;
                 // }
                 if let Some(place) = expansion.deref_blocked_place(self.ctxt)
-                    && place.regions(self.ctxt).len() == 0
+                    && !place.regions(self.ctxt).iter().contains(
+                        &expansion
+                            .deref_blocked_region_projection(self.ctxt)
+                            .unwrap()
+                            .region(self.ctxt),
+                    )
                 {
                     self.unlabel_blocked_region_projections(expansion)?;
                 }
@@ -486,8 +495,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     && let Some(existing_cap) = self.pcg.capabilities.get(place)
                 {
                     self.record_and_apply_action(
-                        BorrowPcgAction::weaken(place, existing_cap, Some(CapabilityKind::Write))
-                            .into(),
+                        BorrowPcgAction::weaken(
+                            place,
+                            existing_cap,
+                            Some(CapabilityKind::Write),
+                            "remove borrow edge",
+                        )
+                        .into(),
                     )?;
                 }
             }
@@ -576,7 +590,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             Some(borrow) => borrow,
             None => return Ok(()),
         };
-        tracing::debug!(
+        tracing::info!(
             "activate twophase borrow: {}",
             borrow.to_short_string(self.ctxt)
         );

@@ -472,6 +472,10 @@ impl<'tcx> Place<'tcx> {
         extract_regions(self.ty(ctxt).ty, ctxt)
     }
 
+    pub(crate) fn has_region_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        !self.regions(ctxt).is_empty()
+    }
+
     pub(crate) fn region_projections<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
@@ -700,7 +704,7 @@ impl<'tcx> Place<'tcx> {
         unreachable!()
     }
 
-    pub(crate) fn conflicts_with(self, other: Self) -> bool {
+    pub(crate) fn is_prefix_or_postfix_of(self, other: Self) -> bool {
         self.is_prefix(other) || other.is_prefix(self)
     }
 

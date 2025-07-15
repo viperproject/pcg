@@ -10,7 +10,7 @@ use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
-use crate::pcg::obtain::{Expander, ObtainType};
+use crate::pcg::obtain::{self, Expander, ObtainType};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{HasPlace, ShallowExpansion};
@@ -45,7 +45,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         while self.pcg.capabilities.get(current) == Some(CapabilityKind::Read) {
             self.record_and_apply_action(
-                BorrowPcgAction::weaken(current, CapabilityKind::Read, None).into(),
+                BorrowPcgAction::weaken(
+                    current,
+                    CapabilityKind::Read,
+                    None,
+                    "Remove read permission upwards",
+                )
+                .into(),
             )?;
             let parent = match current.parent_place() {
                 Some(parent) => parent,
@@ -69,7 +75,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<Vec<_>>();
         for (p, cap) in to_remove {
-            self.record_and_apply_action(BorrowPcgAction::weaken(p, cap, None).into())?;
+            self.record_and_apply_action(
+                BorrowPcgAction::weaken(p, cap, None, "Remove read permission downwards").into(),
+            )?;
         }
         Ok(())
     }
@@ -166,6 +174,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
         if !obtain_type.capability().is_read() {
+            tracing::info!(
+                "Obtain {:?} to place {} in phase {:?}",
+                obtain_type,
+                place.to_short_string(self.ctxt),
+                self.phase
+            );
             self.upgrade_closest_root_to_exclusive(place)?;
         }
 
@@ -197,50 +211,52 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         self.expand_to(place, obtain_type, self.ctxt)?;
 
-        let deref_projections_of_postfix_places = self
-            .pcg
-            .borrow
-            .graph
-            .edges()
-            .flat_map(|e| match e.kind() {
-                BorrowPcgEdgeKind::BorrowPcgExpansion(e)
-                    if let Some(p) = e.deref_blocked_place(self.ctxt)
-                        && place != p
-                        && place.is_prefix(p) =>
-                {
-                    Some(e.clone())
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
+            let deref_projections_of_postfix_places = self
+                .pcg
+                .borrow
+                .graph
+                .edges()
+                .flat_map(|e| match e.kind() {
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(e)
+                        if let Some(p) = e.deref_blocked_place(self.ctxt)
+                            && place != p
+                            && place.is_prefix(p) =>
+                    {
+                        Some(e.clone())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
 
-        for mut rp in deref_projections_of_postfix_places {
-            let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
-            rp.base.label_place(
-                &LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(rp.base.place()),
-                &self.pcg.borrow.latest,
-                self.ctxt,
-            );
-            rp.expansion.iter_mut().for_each(|e| {
-                e.label_place(
-                    &LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(e.place()),
+            for mut rp in deref_projections_of_postfix_places {
+                let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
+                rp.base.label_place(
+                    &LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(rp.base.place()),
                     &self.pcg.borrow.latest,
                     self.ctxt,
                 );
-            });
-            self.pcg
-                .borrow
-                .graph
-                .insert(BorrowPcgEdge::new(rp.into(), conditions), self.ctxt);
-        }
+                rp.expansion.iter_mut().for_each(|e| {
+                    e.label_place(
+                        &LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(e.place()),
+                        &self.pcg.borrow.latest,
+                        self.ctxt,
+                    );
+                });
+                self.pcg
+                    .borrow
+                    .graph
+                    .insert(BorrowPcgEdge::new(rp.into(), conditions), self.ctxt);
+            }
 
-        self.record_and_apply_action(
-            BorrowPcgAction::make_place_old(
-                LabelPlacePredicate::StrictPostfix(place),
-                MakePlaceOldReason::ReAssign,
-            )
-            .into(),
-        )?;
+            self.record_and_apply_action(
+                BorrowPcgAction::make_place_old(
+                    LabelPlacePredicate::StrictPostfix(place),
+                    MakePlaceOldReason::ReAssign,
+                )
+                .into(),
+            )?;
+        }
 
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),

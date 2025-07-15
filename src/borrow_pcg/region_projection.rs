@@ -411,9 +411,6 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'_, 'tcx> {
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn can_be_labelled<BC: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, BC>) -> bool {
-        true
-    }
     pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         let mut visitor = TyVarianceVisitor {
             ctxt,
@@ -441,15 +438,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn with_label<BC: Copy>(
         self,
         label: Option<RegionProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> RegionProjection<'tcx, T> {
-        if label.is_some() {
-            pcg_validity_assert!(
-                self.can_be_labelled(ctxt),
-                "{:?} is not mutable and shouldn't be labelled",
-                self,
-            );
-        }
         RegionProjection {
             base: self.base,
             region_idx: self.region_idx,

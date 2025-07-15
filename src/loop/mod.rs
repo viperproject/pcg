@@ -194,7 +194,7 @@ impl<'tcx> FallableVisitor<'tcx> for UsageVisitor<'_, 'tcx> {
         _location: mir::Location,
     ) -> Result<(), crate::pcg::PcgError> {
         if let PlaceContext::MutatingUse(MutatingUseContext::Store) = context {
-            self.used_places.retain(|p| !p.conflicts_with(place));
+            self.used_places.retain(|p| !p.is_prefix_or_postfix_of(place));
         }
         self.used_places.insert(place);
         Ok(())

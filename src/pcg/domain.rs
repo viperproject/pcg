@@ -200,9 +200,9 @@ impl<'tcx> Pcg<'tcx> {
         if validity_checks_enabled()
             && let Err(err) = self.check_validity(ctxt)
         {
-            if borrows_imgcat_debug() {
-                self.render_debug_graph(ctxt, location, "Validity check failed");
-            }
+            // if borrows_imgcat_debug() {
+            //     self.render_debug_graph(ctxt, location, "Validity check failed");
+            // }
             if validity_checks_warn_only() {
                 tracing::error!("Validity check failed: {}", err.to_string());
             } else {

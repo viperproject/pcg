@@ -27,6 +27,20 @@ pub enum SnapshotLocation {
 }
 
 impl SnapshotLocation {
+    pub(crate) fn location(self) -> Location {
+        match self {
+            SnapshotLocation::Prepare(location) => location,
+            SnapshotLocation::BeforeCollapse(location) => location,
+            SnapshotLocation::Mid(location) => location,
+            SnapshotLocation::After(location) => location,
+            SnapshotLocation::Start(basic_block) | SnapshotLocation::Loop(basic_block) => {
+                Location {
+                    block: basic_block,
+                    statement_index: 0,
+                }
+            }
+        }
+    }
     pub(crate) fn start() -> Self {
         SnapshotLocation::After(Location::START)
     }
