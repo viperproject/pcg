@@ -7,7 +7,6 @@ use crate::{
             LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
             LabelRegionProjectionResult, PlaceLabeller,
         },
-        latest::Latest,
         region_projection::RegionProjectionLabel,
     },
     pcg::PCGNode,

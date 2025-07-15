@@ -56,24 +56,23 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    #[allow(unused)]
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         let nodes = self.nodes(ctxt);
         // TODO
-        // for node in nodes.iter() {
-        //     if let PCGNode::RegionProjection(rp) = node
-        //         && rp.is_placeholder()
-        //     {
-        //         if nodes
-        //             .iter()
-        //             .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
-        //                 return Err(format!(
-        //                     "Placeholder region projection {} is not unique",
-        //                     rp.to_short_string(ctxt)
-        //                 ));
-        //             }
-        //     }
-        // }
+        for node in nodes.iter() {
+            if let PCGNode::RegionProjection(rp) = node
+                && rp.is_placeholder()
+            {
+                if nodes
+                    .iter()
+                    .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
+                        return Err(format!(
+                            "Unlabelled placeholder region projection {} also has a future label",
+                            rp.to_short_string(ctxt)
+                        ));
+                    }
+            }
+        }
         for edge in self.edges() {
             edge.check_validity(ctxt)?;
         }
@@ -101,7 +100,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.filter_mut_edges(|edge| {
-            edge.label_region_projection(predicate, label, ctxt).to_filter_mut_result()
+            edge.label_region_projection(predicate, label, ctxt)
+                .to_filter_mut_result()
         })
     }
 

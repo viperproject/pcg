@@ -1,6 +1,5 @@
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::has_pcs_elem::PlaceLabeller;
-use crate::borrow_pcg::latest::Latest;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};

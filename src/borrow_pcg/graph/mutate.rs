@@ -1,6 +1,9 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::BorrowPcgEdge, edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::PlaceLabeller, latest::Latest, path_condition::{PathCondition, PathConditions}
+        borrow_pcg_edge::BorrowPcgEdge,
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+        has_pcs_elem::PlaceLabeller,
+        path_condition::{PathCondition, PathConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
     utils::{CompilerCtxt, FilterMutResult},
@@ -91,4 +94,3 @@ impl<'tcx> BorrowsGraph<'tcx> {
     //     self.mut_edge_conditions(|conditions| conditions.remove_after(block))
     // }
 }
-

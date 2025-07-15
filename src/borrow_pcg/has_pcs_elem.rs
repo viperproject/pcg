@@ -1,6 +1,5 @@
 use derive_more::From;
 
-use super::latest::Latest;
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionIdx};

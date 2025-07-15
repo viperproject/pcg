@@ -7,7 +7,6 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
         has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
-        latest::Latest,
         region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},

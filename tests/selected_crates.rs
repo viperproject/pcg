@@ -19,20 +19,34 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // 13 basic blocks
-    // common::ensure_successful_run_on_crate(
-    //     "serde_json",
-    //     "1.0.140",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("read::SliceRead::<'a>::skip_to_escape_slow"),
-    //         extra_env_vars: visualization_env_vars,
-    //     },
-    // );
+    // 11 basic blocks
+    common::ensure_successful_run_on_crate(
+        "serde_yaml",
+        "0.9.34+deprecated",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
 
-    // return;
+    return;
+
+    // 32 basic blocks
+    common::ensure_successful_run_on_crate(
+        "serde_yaml",
+        "0.9.34+deprecated",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<de::SeqAccess<'de, 'document, 'seq> as serde::de::SeqAccess<'de>>::next_element_seed"),
+            extra_env_vars: vec![]
+        },
+    );
+
 
     // 8 basic blocks
     common::ensure_successful_run_on_crate(
@@ -188,17 +202,6 @@ fn test_selected_crates() {
         },
     );
 
-    common::ensure_successful_run_on_crate(
-        "serde_yaml",
-        "0.9.34+deprecated",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::ensure_successful_run_on_crate(
         "winnow",

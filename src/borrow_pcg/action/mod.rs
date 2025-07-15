@@ -63,6 +63,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn redirect_edge(
         edge: BorrowPcgEdgeKind<'tcx>,
         from: LocalNode<'tcx>,

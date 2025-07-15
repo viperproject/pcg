@@ -1,16 +1,13 @@
 use crate::borrow_pcg::{
     edge_data::LabelPlacePredicate,
     has_pcs_elem::{
-        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+        HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+        LabelRegionProjectionResult, PlaceLabeller,
     },
-    latest::Latest,
     region_projection::RegionProjectionLabel,
 };
 
-use super::{
-    display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
-    CompilerCtxt,
-};
+use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct MaybeRedirected<T, U = T> {

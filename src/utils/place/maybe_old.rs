@@ -1,8 +1,6 @@
-
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace, PlaceLabeller};
-use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
     RegionProjectionBaseLike,
@@ -339,7 +337,7 @@ impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            MaybeOldPlace::Current { place } =>  {
+            MaybeOldPlace::Current { place } => {
                 if predicate.applies_to(*place, ctxt) {
                     *self = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                         *place,

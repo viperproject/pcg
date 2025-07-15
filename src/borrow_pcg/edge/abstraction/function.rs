@@ -8,7 +8,6 @@ use crate::{
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
-        latest::Latest,
         region_projection::RegionProjectionLabel,
     },
     pcg::PCGNode,

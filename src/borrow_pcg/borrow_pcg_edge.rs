@@ -8,7 +8,6 @@ use super::{
     edge_data::EdgeData,
     graph::Conditioned,
     has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
-    latest::Latest,
     path_condition::PathConditions,
     region_projection::{
         LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,

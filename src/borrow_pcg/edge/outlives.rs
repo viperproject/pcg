@@ -8,7 +8,6 @@ use crate::{
             HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
             LabelRegionProjectionResult, PlaceLabeller,
         },
-        latest::Latest,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     pcg::{PCGNode, PCGNodeLike},

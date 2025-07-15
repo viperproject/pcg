@@ -13,7 +13,6 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller};
-use crate::borrow_pcg::latest::Latest;
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
