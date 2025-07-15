@@ -147,7 +147,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         {
             self.record_and_apply_action(
                 BorrowPcgAction::make_place_old(
-                    LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix((*place).into()),
+                    (*place).into(),
                     MakePlaceOldReason::MoveOut,
                 )
                 .into(),
@@ -360,7 +360,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if let Some(place) = node.base.as_current_place() {
                 let labeller = SetLabel(SnapshotLocation::BeforeCollapse(self.location));
                 self.pcg.borrow.graph.make_place_old(
-                    &LabelPlacePredicate::Exact((*place).into()),
+                    (*place).into(),
+                    MakePlaceOldReason::Collapse,
                     &labeller,
                     self.ctxt,
                 );

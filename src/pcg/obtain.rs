@@ -123,7 +123,6 @@ pub(crate) trait Expander<'mir, 'tcx> {
             return Some(SnapshotLocation::Mid(borrow.reserve_location()).into());
         }
         None
-
     }
 
     fn expand_owned_place_one_level(
@@ -199,6 +198,13 @@ pub(crate) trait Expander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
+        if self
+            .borrows_graph()
+            .contains_borrow_pcg_expansion_from(base, ctxt)
+        {
+            return Ok(false);
+        }
+        tracing::info!("Create expansion from {}", base.to_short_string(ctxt));
         let expansion_label = if base.is_ref(ctxt) {
             Some(self.label_for_rp(
                 base.base_region_projection(ctxt).unwrap(),
@@ -215,20 +221,13 @@ pub(crate) trait Expander<'mir, 'tcx> {
             ctxt,
         )?;
 
-        if self
-            .borrows_graph()
-            .contains_borrow_pcg_expansion_from(base, ctxt)
-        {
-            return Ok(false);
-        }
-
         if let Some(NewLabelAtCurrentLocation(location)) = expansion_label {
             let rp = base.base_region_projection(ctxt).unwrap();
             self.apply_action(
                 BorrowPcgAction::label_region_projection(
                     rp.into(),
                     Some(location),
-                    "add_deref_expansion",
+                    "add_borrow_pcg_expansion: fresh RP label",
                 )
                 .into(),
             )?;
@@ -239,7 +238,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                 self.path_conditions(),
             ),
-            "add_deref_expansion",
+            "add_borrow_pcg_expansion",
             obtain_type.capability().is_read(),
         );
         self.apply_action(action.into())
@@ -282,7 +281,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                         BorrowPcgAction::label_region_projection(
                             base_rp.into(),
                             Some(label),
-                            "expand_region_projections_one_level",
+                            "expand_region_projections_one_level: create new RP label",
                         )
                         .into(),
                     )?;

@@ -201,11 +201,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         if obtain_type.capability().is_write() {
             let _ = self.record_and_apply_action(
-                BorrowPcgAction::make_place_old(
-                    LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place),
-                    MakePlaceOldReason::ReAssign,
-                )
-                .into(),
+                BorrowPcgAction::make_place_old(place, MakePlaceOldReason::ReAssign).into(),
             );
         }
 
@@ -251,8 +247,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
             self.record_and_apply_action(
                 BorrowPcgAction::make_place_old(
-                    LabelPlacePredicate::StrictPostfix(place),
-                    MakePlaceOldReason::ReAssign,
+                    place,
+                    MakePlaceOldReason::LabelPostfixesOfPlaceToObtain,
                 )
                 .into(),
             )?;

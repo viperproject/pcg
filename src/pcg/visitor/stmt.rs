@@ -39,7 +39,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let place: utils::Place<'tcx> = (*local).into();
                 self.record_and_apply_action(
                     BorrowPcgAction::make_place_old(
-                        LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place),
+                        place,
                         MakePlaceOldReason::StorageDead,
                     )
                     .into(),

@@ -62,6 +62,12 @@ pub enum LabelPlacePredicate<'tcx> {
     StrictPostfix(Place<'tcx>),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EdgePredicate {
+    All,
+    BorrowEdges
+}
+
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for LabelPlacePredicate<'tcx>
 {

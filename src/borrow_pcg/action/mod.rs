@@ -7,9 +7,9 @@ use super::state::BorrowsState;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::edge_data::{EdgePredicate, LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::graph::BorrowsGraph;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -38,7 +38,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
-        context: impl Into<String>
+        context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to)),
@@ -109,23 +109,53 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn make_place_old(
-        predicate: LabelPlacePredicate<'tcx>,
-        reason: MakePlaceOldReason,
-    ) -> Self {
+    pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::MakePlaceOld(predicate, reason),
+            kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
             debug_context: None,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MakePlaceOldReason {
     StorageDead,
     MoveOut,
     ReAssign,
+    LabelPostfixesOfPlaceToObtain,
     Collapse,
+}
+
+impl MakePlaceOldReason {
+    pub(crate) fn apply_to_edge<'tcx>(
+        self,
+        place: Place<'tcx>,
+        edge: &mut BorrowPcgEdge<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let predicate = match self {
+            MakePlaceOldReason::ReAssign => {
+                if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = &edge.kind
+                    && e.base.is_place()
+                {
+                    return false;
+                } else {
+                    LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
+                }
+            }
+            MakePlaceOldReason::StorageDead | MakePlaceOldReason::MoveOut => {
+                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
+            }
+            MakePlaceOldReason::Collapse => LabelPlacePredicate::Exact(place),
+            MakePlaceOldReason::LabelPostfixesOfPlaceToObtain => {
+                LabelPlacePredicate::StrictPostfix(place)
+            }
+        };
+        let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
+        changed |= edge.label_blocked_places(&predicate, labeller, ctxt);
+        changed
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,7 +171,7 @@ pub enum BorrowPcgActionKind<'tcx> {
     ),
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
-    MakePlaceOld(LabelPlacePredicate<'tcx>, MakePlaceOldReason),
+    MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
     SetLatest(Place<'tcx>, SnapshotLocation),
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
@@ -251,7 +281,9 @@ impl<'tcx> BorrowsState<'tcx> {
                 }
                 true
             }
-            BorrowPcgActionKind::MakePlaceOld(predicate, _) => self.make_place_old(&predicate, ctxt),
+            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
+                self.make_place_old(place, reason, ctxt)
+            }
             BorrowPcgActionKind::SetLatest(place, location) => {
                 self.set_latest(place, location, ctxt)
             }
@@ -271,10 +303,11 @@ impl<'tcx> BorrowsState<'tcx> {
 
     fn make_place_old(
         &mut self,
-        predicate: &LabelPlacePredicate<'tcx>,
+        place: Place<'tcx>,
+        reason: MakePlaceOldReason,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.graph.make_place_old(predicate, &self.latest, ctxt)
+        self.graph.make_place_old(place, reason, &self.latest, ctxt)
     }
 
     fn label_region_projection(
