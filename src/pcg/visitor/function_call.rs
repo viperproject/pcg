@@ -34,21 +34,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        // TODO: Check whether this logic makes sense
-        // for arg in args.iter() {
-        //     if let Some(arg_place) = arg.place() {
-        //         let arg_place: utils::Place<'tcx> = arg_place.into();
-        //         if arg_place
-        //             .iter_places(self.ctxt)
-        //             .iter()
-        //             .any(|p| p.is_raw_ptr(self.ctxt))
-        //         {
-        //             return Err(PcgError::unsupported(
-        //                 PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
-        //             ));
-        //         }
-        //     }
-        // }
         // This is just a performance optimization
         if self
             .pcg

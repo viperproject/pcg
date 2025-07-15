@@ -131,6 +131,14 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         operand: &Operand<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
+        if let Operand::Copy(place) = operand {
+            let place: Place<'tcx> = (*place).into();
+            if place.has_lifetimes_under_unsafe_ptr(self.ctxt) {
+                return Err(PcgError::unsupported(
+                    PcgUnsupportedError::MoveUnsafePtrWithNestedLifetime,
+                ));
+            }
+        }
         self.super_operand_fallable(operand, location)?;
         if self.phase == EvalStmtPhase::PostMain
             && let Operand::Move(place) = operand

@@ -243,7 +243,6 @@ impl<'tcx> Place<'tcx> {
     }
 
     #[rustversion::before(2025-05-24)]
-    #[allow(unused)]
     pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.ty(ctxt).ty.is_unsafe_ptr()
     }
@@ -346,17 +345,43 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn contains_unsafe_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         for (p, proj) in self.iter_projections(repacker) {
-            #[rustversion::since(2025-03-02)]
-            let is_raw_ptr = p.ty(repacker).ty.is_raw_ptr();
-
-            #[rustversion::before(2025-03-02)]
-            let is_raw_ptr = p.ty(repacker).ty.is_unsafe_ptr();
-
-            if is_raw_ptr && matches!(proj, PlaceElem::Deref) {
+            if p.is_raw_ptr(repacker) && matches!(proj, PlaceElem::Deref) {
                 return true;
             }
         }
         false
+    }
+
+    pub(crate) fn has_lifetimes_under_unsafe_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        fn ty_has_lifetimes_under_unsafe_ptr<'tcx>(
+            ty: Ty<'tcx>,
+            ctxt: CompilerCtxt<'_, 'tcx>,
+        ) -> bool {
+            if extract_regions(ty, ctxt).is_empty() {
+                return false;
+            }
+            if ty.is_unsafe_ptr() {
+                return true;
+            }
+            let field_tys: Vec<Ty<'tcx>> = match ty.kind() {
+                TyKind::Array(ty, _) => vec![*ty],
+                TyKind::Slice(ty) => vec![*ty],
+                TyKind::Adt(def, substs) => {
+                    def.all_fields().map(|f| f.ty(ctxt.tcx, substs)).collect::<Vec<_>>()
+                }
+                TyKind::Tuple(slice) => {
+                    slice.iter().collect::<Vec<_>>()
+                }
+                TyKind::Closure(_, substs) => {
+                    substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
+                }
+                TyKind::Ref(_, ty, _) => vec![*ty],
+                // TyKind::Alias(..) => vec![],
+                _ => unreachable!("Unexpected type: {:?}", ty),
+            };
+            field_tys.iter().any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, ctxt))
+        }
+        ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, ctxt)
     }
 
     pub(crate) fn ty_region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {

@@ -478,6 +478,7 @@ impl From<PcgInternalError> for PcgError {
 pub enum PcgUnsupportedError {
     AssignBorrowToNonReferenceType,
     DerefUnsafePtr,
+    MoveUnsafePtrWithNestedLifetime,
     ExpansionOfAliasType,
     FunctionCallWithUnsafePtrArgument,
     IndexingNonIndexableType,
