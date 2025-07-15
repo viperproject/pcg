@@ -27,6 +27,7 @@ use crate::{
         },
         VariantIdx,
     },
+    utils::data_structures::HashSet,
 };
 
 #[cfg(feature = "debug_info")]
@@ -355,8 +356,13 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn has_lifetimes_under_unsafe_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         fn ty_has_lifetimes_under_unsafe_ptr<'tcx>(
             ty: Ty<'tcx>,
+            seen: &mut HashSet<Ty<'tcx>>,
             ctxt: CompilerCtxt<'_, 'tcx>,
         ) -> bool {
+            if seen.contains(&ty) {
+                return false;
+            }
+            seen.insert(ty);
             if extract_regions(ty, ctxt).is_empty() {
                 return false;
             }
@@ -406,9 +412,9 @@ impl<'tcx> Place<'tcx> {
             };
             field_tys
                 .iter()
-                .any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, ctxt))
+                .any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, seen, ctxt))
         }
-        ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, ctxt)
+        ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, &mut HashSet::default(), ctxt)
     }
 
     pub(crate) fn ty_region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {

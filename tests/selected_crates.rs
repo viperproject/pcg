@@ -19,6 +19,33 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 3 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<fmt::format::DefaultFields as field::MakeVisitor<fmt::format::Writer<'a>>>::make_visitor"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 4 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("fmt::fmt_layer::FormattedFields::<E>::as_writer"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 7 basic blocks
     common::ensure_successful_run_on_crate(
         "tracing-subscriber",
         "0.3.19",
@@ -44,8 +71,6 @@ fn test_selected_crates() {
         },
     );
 
-    return;
-
     // 32 basic blocks
     common::ensure_successful_run_on_crate(
         "serde_yaml",
@@ -69,7 +94,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("TimeoutState::reset"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 
