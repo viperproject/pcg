@@ -40,6 +40,10 @@ lazy_static! {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,
     };
+    pub static ref MAX_NODES: Option<usize> = match std::env::var("PCG_MAX_NODES") {
+        Ok(val) => Some(val.parse().unwrap()),
+        Err(_) => None,
+    };
     pub static ref TEST_CRATES_START_FROM: Option<usize> = match std::env::var("PCG_TEST_CRATES_START_FROM") {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,

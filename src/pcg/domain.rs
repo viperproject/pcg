@@ -483,6 +483,7 @@ pub enum PcgUnsupportedError {
     FunctionCallWithUnsafePtrArgument,
     IndexingNonIndexableType,
     InlineAssembly,
+    MaxNodesExceeded,
 }
 
 impl<'tcx, A: Allocator> PcgDomain<'_, 'tcx, A> {
