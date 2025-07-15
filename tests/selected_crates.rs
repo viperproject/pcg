@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 7 basic blocks, <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "combine",
+        "4.6.7",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<&'a str as stream::RangeStreamOnce>::uncons_while"),
+            extra_env_vars: vec![]
+        },
+    );
+
     // 8 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "encoding_rs",

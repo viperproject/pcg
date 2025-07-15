@@ -17,7 +17,6 @@ use crate::utils::{self, Place, SnapshotLocation};
 use super::{PcgError, PcgUnsupportedError};
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
-
     pub(crate) fn assign_post_main(
         &mut self,
         target: utils::Place<'tcx>,
@@ -171,7 +170,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             )?;
                             source_proj.with_label(Some(label.into()), self.ctxt)
                         } else {
-                            self.label_for_blocked_rp(source_proj, self.ctxt)
+                            source_proj.with_label(
+                                self.label_for_blocked_rp(source_proj, self.ctxt),
+                                self.ctxt,
+                            )
                         };
                     let source_region = source_proj.region(self.ctxt);
                     let mut nested_ref_mut_targets = vec![];
