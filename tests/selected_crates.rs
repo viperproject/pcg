@@ -24,20 +24,18 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // 7 basic blocks
+    // 11 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
-        "bitvec",
-        "1.0.1",
+        "indexmap",
+        "2.8.0",
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<domain::Domain<'a, wyz::Const, T, O> as std::fmt::Binary>::fmt"),
-            extra_env_vars: visualization_env_vars,
+            function: Some("map::core::RefMut::<'a, K, V>::shift_remove_finish"),
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // 3 basic blocks
     common::ensure_successful_run_on_crate(

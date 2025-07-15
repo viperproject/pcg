@@ -17,39 +17,6 @@ use crate::utils::{self, Place, SnapshotLocation};
 use super::{PcgError, PcgUnsupportedError};
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
-    pub(crate) fn label_for_blocked_rp(
-        &mut self,
-        rp: RegionProjection<'tcx, Place<'tcx>>,
-    ) -> RegionProjection<'tcx, Place<'tcx>> {
-        // This is hack for now. Actually we want to check if there is an
-        // reserved but not yet activated 2phase borrow on the place, and if there is,
-        // we want to label the rp with the location of the borrow reservation.
-        //
-        // For now, we guess this by finding a unique edge of a labelled version of this RP to the future one
-
-        let future_version = rp.with_placeholder_label(self.ctxt);
-        tracing::info!("Identifying label for {}", rp.to_short_string(self.ctxt));
-        for edge in self
-            .pcg
-            .borrow
-            .graph
-            .edges_blocked_by(future_version.into(), self.ctxt)
-        {
-            if let BorrowPcgEdgeKind::BorrowFlow(bf_edge) = edge.kind {
-                if bf_edge.kind == BorrowFlowEdgeKind::Future
-                    && bf_edge.short() == future_version.into()
-                    && bf_edge.long().base() == rp.base().into()
-                    && bf_edge.long().region_idx == rp.region_idx
-                {
-                    tracing::debug!("Found a future edge for {:?}", rp);
-                    return rp.with_label(bf_edge.long().label(), self.ctxt);
-                } else {
-                    tracing::debug!("Found a non-future edge for {:?}", rp);
-                }
-            }
-        }
-        rp
-    }
 
     pub(crate) fn assign_post_main(
         &mut self,
@@ -204,7 +171,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             )?;
                             source_proj.with_label(Some(label.into()), self.ctxt)
                         } else {
-                            self.label_for_blocked_rp(source_proj)
+                            self.label_for_blocked_rp(source_proj, self.ctxt)
                         };
                     let source_region = source_proj.region(self.ctxt);
                     let mut nested_ref_mut_targets = vec![];
