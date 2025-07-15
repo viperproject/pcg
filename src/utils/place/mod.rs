@@ -403,7 +403,7 @@ impl<'tcx> Place<'tcx> {
                 TyKind::CoroutineWitness(_, _) => todo!(),
                 TyKind::Never => todo!(),
                 TyKind::Tuple(_) => todo!(),
-                TyKind::Alias(alias_ty_kind, alias_ty) => todo!(),
+                TyKind::Alias(_, _) => vec![],
                 TyKind::Param(_) => todo!(),
                 TyKind::Bound(debruijn_index, _) => todo!(),
                 TyKind::Placeholder(_) => todo!(),

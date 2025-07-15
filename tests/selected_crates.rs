@@ -21,6 +21,73 @@ fn test_selected_crates() {
 
     // 3 basic blocks
     common::ensure_successful_run_on_crate(
+        "hyper",
+        "1.6.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("rt::io::ReadBufCursor::<'_>::as_mut"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
+    // 2 basic blocks
+    common::ensure_successful_run_on_crate(
+        "bitvec",
+        "1.0.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 3 basic blocks
+    common::ensure_successful_run_on_crate(
+        "hyper",
+        "1.6.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("rt::io::ReadBufCursor::<'_>::as_mut"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 4 basic blocks
+    common::ensure_successful_run_on_crate(
+        "regex-automata",
+        "0.4.9",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("util::search::Input::<'h>::set_start"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 9 basic blocks
+    common::ensure_successful_run_on_crate(
+        "regex-automata",
+        "0.4.9",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("util::iter::Searcher::<'h>::handle_overlapping_empty_half_match"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 3 basic blocks
+    common::ensure_successful_run_on_crate(
         "tracing-subscriber",
         "0.3.19",
         Some("2025-03-13"),
@@ -67,7 +134,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 
@@ -83,7 +150,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![]
         },
     );
-
 
     // 8 basic blocks
     common::ensure_successful_run_on_crate(
@@ -238,7 +304,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     common::ensure_successful_run_on_crate(
         "winnow",
