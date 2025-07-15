@@ -62,6 +62,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         for node in nodes.iter() {
             if let PCGNode::RegionProjection(rp) = node
                 && rp.is_placeholder()
+                && rp.base.as_current_place().is_some()
             {
                 if nodes
                     .iter()
