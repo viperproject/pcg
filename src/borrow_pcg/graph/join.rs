@@ -1,14 +1,15 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
-use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection};
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{BodyAnalysis, PcgError, PcgUnsupportedError};
+use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -29,6 +30,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
             DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
                 eprintln!("Error rendering self graph: {e}");
             });
+        }
+    }
+
+    fn apply_placeholder_labels<'mir>(
+        &mut self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) {
+        let nodes = self.nodes(ctxt);
+        for node in nodes {
+            if let PCGNode::RegionProjection(rp) = node
+                && rp.is_placeholder()
+                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
+            {
+                // if let MaybeOldPlace::Current { place } = local_rp.base
+                //     && capabilities.get(place).is_some()
+                // {
+                //     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
+                // } else {
+                let orig_rp = local_rp.with_label(None, ctxt);
+                self.filter_mut_edges(|edge| {
+                    edge.label_region_projection(
+                        &LabelRegionProjectionPredicate::Equals(orig_rp),
+                        Some(RegionProjectionLabel::Placeholder),
+                        ctxt,
+                    )
+                    .to_filter_mut_result()
+                });
+                // }
+            }
         }
     }
 
@@ -104,7 +135,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        // self.apply_placeholder_labels(capabilities, ctxt);
+        self.apply_placeholder_labels(capabilities, ctxt);
 
         let changed = old_self != *self;
 
@@ -273,7 +304,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         loop_head,
                     ))),
                     ctxt,
-                ).to_filter_mut_result()
+                )
+                .to_filter_mut_result()
             });
         }
 

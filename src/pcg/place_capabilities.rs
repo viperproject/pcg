@@ -80,10 +80,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
                         changed = true;
                     }
                 }
-                None => {
-                    self.0.insert(place, other_capability);
-                    changed = true;
-                }
+                None => {}
             }
         }
         changed
