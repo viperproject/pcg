@@ -501,6 +501,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             existing_cap,
                             Some(CapabilityKind::Write),
                             "remove borrow edge",
+                            self.ctxt
                         )
                         .into(),
                     )?;

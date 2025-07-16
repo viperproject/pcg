@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // Cycle, 10 blocks, <= 10 nodes
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("registry::SpanRef::<'a, R>::try_with_filter"),
+            extra_env_vars: visualization_env_vars
+        },
+    );
+
+    return;
+
     // 20 basic blocks, ~40 nodes
     common::ensure_successful_run_on_crate(
         "object",

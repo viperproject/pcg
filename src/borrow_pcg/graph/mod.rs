@@ -168,15 +168,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             seen.insert(node);
-            let place = node.base().place();
-            if place.is_mutable(LocalMutationIsAllowed::Yes, ctxt).is_err() {
+            let maybe_old_place = node.base();
+            if maybe_old_place.place().is_mutable(LocalMutationIsAllowed::Yes, ctxt).is_err() {
                 tracing::info!(
                     "Skipping {} because it is not mutable",
                     node.to_short_string(ctxt)
                 );
                 continue;
             }
-            if place.is_deref() {
+            if !maybe_old_place.is_current() || maybe_old_place.place().is_deref() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
                     .region_projections_blocked_by(node.into(), ctxt)
                     .into_iter()

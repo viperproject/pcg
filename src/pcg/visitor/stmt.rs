@@ -70,6 +70,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     target_cap,
                                     Some(CapabilityKind::Write),
                                     "pre_main",
+                                    self.ctxt
                                 )
                                 .into(),
                             )?;

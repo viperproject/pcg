@@ -50,6 +50,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityKind::Read,
                     None,
                     "Remove read permission upwards",
+                    self.ctxt,
                 )
                 .into(),
             )?;
@@ -76,7 +77,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .collect::<Vec<_>>();
         for (p, cap) in to_remove {
             self.record_and_apply_action(
-                BorrowPcgAction::weaken(p, cap, None, "Remove read permission downwards").into(),
+                BorrowPcgAction::weaken(
+                    p,
+                    cap,
+                    None,
+                    "Remove read permission downwards",
+                    self.ctxt,
+                )
+                .into(),
             )?;
         }
         Ok(())
