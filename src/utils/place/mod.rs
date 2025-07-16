@@ -419,7 +419,6 @@ impl<'tcx> Place<'tcx> {
                 .iter()
                 .any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, seen, ctxt))
         }
-        tracing::info!("Check type {:?}", self.ty(ctxt).ty);
         ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, &mut HashSet::default(), ctxt)
     }
 

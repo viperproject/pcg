@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
@@ -159,12 +159,20 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 expansion.base_place(),
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
-            if for_cap.is_read() {
-                capabilities.insert(expansion.base_place(), for_cap, repacker);
+
+            let block_type = if expansion.kind.is_deref_ref() {
+                BlockType::Deref
+            } else if for_cap.is_read() {
+                BlockType::Read
             } else {
-                capabilities.remove(expansion.base_place());
-            }
-            if expansion.kind.is_box() && from_cap.is_shallow_exclusive() {
+                BlockType::Other
+            };
+            capabilities.update_capabilities_for_block_of_place(
+                expansion.base_place(),
+                block_type,
+                repacker,
+            );
+            if expansion.kind.is_deref_box() && from_cap.is_shallow_exclusive() {
                 ops.push(RepackOp::DerefShallowInit(
                     expansion.base_place(),
                     expansion.target_place,
@@ -207,7 +215,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     expansion_places
                         .iter()
                         .fold(CapabilityKind::Exclusive, |acc, place| {
-                            match capabilities.remove(*place) {
+                            match capabilities.remove(*place, repacker) {
                                 Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                 None => acc,
                             }

@@ -115,7 +115,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
             .flat_map(|c| c.get_allocated().leaves(ctxt))
             .collect()
     }
-    pub(crate) fn capability_projections(&self) -> Vec<&CapabilityProjections<'tcx>> {
+    pub(crate) fn expansions(&self) -> Vec<&CapabilityProjections<'tcx>> {
         self.0
             .iter()
             .filter(|c| !c.is_unallocated())

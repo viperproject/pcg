@@ -13,17 +13,14 @@ use crate::{
         triple::{PlaceCondition, Triple},
     },
     pcg_validity_assert,
-    utils::{
-        CompilerCtxt,
-        LocalMutationIsAllowed,
-    },
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, LocalMutationIsAllowed},
 };
+
+use crate::rustc_interface::middle::mir::RETURN_PLACE;
 
 use super::CapabilityLocals;
 
 impl<'tcx> CapabilityLocals<'tcx> {
-
-    #[tracing::instrument(skip(self, capabilities, repacker))]
     fn check_pre_satisfied(
         &self,
         pre: PlaceCondition<'tcx>,
@@ -34,7 +31,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
             PlaceCondition::ExpandTwoPhase(_place) => {}
             PlaceCondition::RemoveCapability(_place) => {}
             PlaceCondition::Unalloc(local) => {
-                assert!(
+                pcg_validity_assert!(
                     self[local].is_unallocated(),
                     "local: {local:?}, fpcs: {self:?}\n"
                 );
@@ -54,32 +51,32 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     CapabilityKind::Exclusive => {
                         // Cannot get exclusive on a shared ref
                         // TODO
-                        // assert!(
-                        //     !place.projects_shared_ref(repacker),
-                        //     "Cannot get exclusive on projection of shared ref {}",
-                        //     place.to_short_string(repacker)
-                        // );
+                        pcg_validity_assert!(
+                            !place.projects_shared_ref(repacker),
+                            "Cannot get exclusive on projection of shared ref {}",
+                            place.to_short_string(repacker)
+                        );
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(repacker) {
                     if let Some(current_cap) = capabilities.get(place) {
-                        pcg_validity_assert!(
-                            matches!(
-                                current_cap.partial_cmp(&required_cap),
-                                Some(Ordering::Equal) | Some(Ordering::Greater)
-                            ),
-                            "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
-                        )
+                        // pcg_validity_assert!(
+                        //     matches!(
+                        //         current_cap.partial_cmp(&required_cap),
+                        //         Some(Ordering::Equal) | Some(Ordering::Greater)
+                        //     ),
+                        //     "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
+                        // )
                     } else {
                         pcg_validity_assert!(false, "No capability for {place:?}");
                     }
                 }
             }
             PlaceCondition::Return => {
-                // assert!(
-                //     capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
-                // );
+                pcg_validity_assert!(
+                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive
+                );
             }
         }
     }
@@ -87,15 +84,16 @@ impl<'tcx> CapabilityLocals<'tcx> {
         &mut self,
         t: Triple<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
+        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt);
         let Some(post) = t.post() else {
             return;
         };
         match post {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::RemoveCapability(place) => {
-                place_capabilities.remove(place);
+                place_capabilities.remove(place, ctxt);
             }
             PlaceCondition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;

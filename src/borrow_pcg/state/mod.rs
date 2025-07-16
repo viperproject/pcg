@@ -1,18 +1,20 @@
 //! The data structure representing the state of the Borrow PCG.
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
+    borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeRef, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError}, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::{
-    borrow_pcg::borrow_pcg_edge::LocalNode,
-    utils::{place::maybe_old::MaybeOldPlace},
+    action::BorrowPcgAction,
+    free_pcs::FreePlaceCapabilitySummary,
+    pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
+    utils::place::maybe_remote::MaybeRemotePlace,
 };
+use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -65,9 +67,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
 
 impl<'tcx> BorrowsState<'tcx> {
     pub(crate) fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
-        self.graph
-            .frozen_graph()
-            .leaf_nodes(ctxt)
+        self.graph.frozen_graph().leaf_nodes(ctxt)
     }
 
     fn introduce_initial_borrows(
@@ -149,7 +149,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 if !self.graph.contains(node, repacker)
                     && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
                 {
-                    let _ = capabilities.remove(place);
+                    let _ = capabilities.remove(place, repacker);
                 }
             }
         }
@@ -291,7 +291,7 @@ impl<'tcx> BorrowsState<'tcx> {
             BorrowKind::Mut {
                 kind: MutBorrowKind::Default,
             } => {
-                let _ = capabilities.remove(blocked_place);
+                let _ = capabilities.remove(blocked_place, ctxt);
             }
             _ => {
                 match capabilities.get(blocked_place) {

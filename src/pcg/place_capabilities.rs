@@ -19,7 +19,11 @@ pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
         capability: CapabilityKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
-    fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind>;
+    fn remove(
+        &mut self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<CapabilityKind>;
 }
 
 impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
@@ -27,7 +31,11 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
         self.0.get(&place).copied()
     }
 
-    fn remove(&mut self, place: Place<'tcx>) -> Option<CapabilityKind> {
+    fn remove(
+        &mut self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<CapabilityKind> {
         self.0.remove(&place)
     }
 
@@ -76,7 +84,34 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum BlockType {
+    Deref,
+    Read,
+    Other,
+}
+
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn update_capabilities_for_block_of_place(
+        &mut self,
+        place: Place<'tcx>,
+        block_type: BlockType,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        match block_type {
+            BlockType::Deref => {
+                let capability = if place.projects_shared_ref(ctxt) {
+                    CapabilityKind::Read
+                } else {
+                    CapabilityKind::ShallowExclusive
+                };
+                self.insert(place, capability, ctxt)
+            }
+            BlockType::Read => self.insert(place, CapabilityKind::Read, ctxt),
+            BlockType::Other => self.remove(place, ctxt).is_some(),
+        }
+    }
+
     pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
         self.get(place)
             .map(|c| c == CapabilityKind::Exclusive)

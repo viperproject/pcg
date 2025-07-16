@@ -12,6 +12,7 @@ use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{self, Expander, ObtainType};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg_validity_assert;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{HasPlace, ShallowExpansion};
 
@@ -156,7 +157,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     })
                     .collect::<Vec<_>>();
                 if rp_expansion.len() > 1 && capability.is_exclusive() {
-                    self.redirect_blocked_nodes_to_base(rp.into(), &rp_expansion)?;
+                    self.redirect_rp_expansion_to_base(rp.into(), &rp_expansion)?;
                 }
             }
         }
@@ -270,9 +271,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),
         //     "{:?}: Place {:?} does not have a capability after obtain {:?}",
-        //     location,
+        //     self.location,
         //     place,
-        //     capability
+        //     obtain_type.capability()
         // );
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).unwrap() >= capability,
@@ -307,7 +308,7 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for PcgVisitor<'_, 'mir, 'tcx> {
         if self.contains_owned_expansion_from(base) {
             return Ok(false);
         }
-        if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
+        if expansion.kind.is_deref_box() && obtain_type.capability().is_shallow_exclusive() {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
                     RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),

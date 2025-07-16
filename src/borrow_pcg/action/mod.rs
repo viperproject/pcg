@@ -12,7 +12,7 @@ use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
+use crate::pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::PcgError;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -39,7 +39,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         from: CapabilityKind,
         to: Option<CapabilityKind>,
         context: impl Into<String>,
-        ctxt: CompilerCtxt<'_, 'tcx>
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to, ctxt)),
@@ -277,7 +277,7 @@ impl<'tcx> BorrowsState<'tcx> {
                         capabilities.insert(weaken_place, to, ctxt);
                     }
                     None => {
-                        assert!(capabilities.remove(weaken_place).is_some());
+                        assert!(capabilities.remove(weaken_place, ctxt).is_some());
                     }
                 }
                 true
@@ -363,11 +363,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                         // panic!("Base capability should be set");
                     };
 
-                    if for_read {
-                        changed |= capabilities.insert(base.place(), CapabilityKind::Read, ctxt);
+                    let block_type = if base.place().is_ref(ctxt) {
+                        BlockType::Deref
+                    } else if for_read {
+                        BlockType::Read
                     } else {
-                        changed |= capabilities.remove(base.place()).is_some();
-                    }
+                        BlockType::Other
+                    };
+                    changed |= capabilities.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
 
                     for p in expansion.expansion.iter() {
                         if !p.place().is_owned(ctxt) {

@@ -116,8 +116,12 @@ impl<'tcx> ShallowExpansion<'tcx> {
 }
 
 impl ProjectionKind {
-    pub(crate) fn is_box(self) -> bool {
+    pub(crate) fn is_deref_box(self) -> bool {
         matches!(self, ProjectionKind::DerefBox)
+    }
+
+    pub(crate) fn is_deref_ref(self) -> bool {
+        matches!(self, ProjectionKind::DerefRef(_))
     }
 
     pub(crate) fn insert_target_into_expansion<'tcx>(

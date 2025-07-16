@@ -208,7 +208,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .data
             .clone()
             .unwrap()
-            .capability_projections()
+            .expansions()
         {
             let mut expansions = caps
                 .expansions()

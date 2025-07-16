@@ -310,7 +310,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         for place in to_remove {
-            capabilities.remove(place);
+            capabilities.remove(place, ctxt);
         }
 
         let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);

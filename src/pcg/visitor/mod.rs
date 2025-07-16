@@ -305,7 +305,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityKind::Exclusive
                 };
 
-                if blocked_cap.is_none() {
+                if blocked_cap.is_none() || matches!(blocked_cap, Some(CapabilityKind::ShallowExclusive))
+                {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,
@@ -356,7 +357,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    fn redirect_blocked_nodes_to_base(
+    fn redirect_rp_expansion_to_base(
         &mut self,
         base: LocalRegionProjection<'tcx>,
         expansion: &[LocalRegionProjection<'tcx>],
@@ -562,7 +563,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         expansion_places
                             .iter()
                             .fold(CapabilityKind::Exclusive, |acc, place| {
-                                match self.pcg.capabilities.remove(*place) {
+                                match self.pcg.capabilities.remove(*place, self.ctxt) {
                                     Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                     None => acc,
                                 }
@@ -663,7 +664,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         if expand.capability.is_read() {
             capabilities.insert(expand.from, CapabilityKind::Read, ctxt);
         } else {
-            capabilities.remove(expand.from);
+            capabilities.remove(expand.from, ctxt);
         }
         Ok(())
     }

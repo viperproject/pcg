@@ -9,6 +9,8 @@ use std::{
     fmt::{Debug, Formatter, Result},
 };
 
+use crate::utils::{CompilerCtxt, Place};
+
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
     /// For borrowed places only: permits reads from the location, but not writes or
