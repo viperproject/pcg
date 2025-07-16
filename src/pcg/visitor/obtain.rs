@@ -90,14 +90,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    pub(crate) fn upgrade_closest_root_to_exclusive(
+    // This function is called if we want to obtain non-read capability to `place`
+    // If the closest ancestor of `place` has read capability, then we are allowed to
+    // upgrade the capability of the ancestor to `E` in exchange for downgrading all
+    // other pre / postfix places to None.
+    //
+    // This is sound because if we need to obtain non-read capability to
+    // `place`, and there are any ancestors of `place` in the graph with R
+    // capability, one such ancestor originally had E capability was
+    // subsequently downgraded. This function finds such an ancestor (if one
+    // exists), and performs the capability exchange.
+    fn upgrade_closest_read_ancestor_to_exclusive(
         &mut self,
         place: Place<'tcx>,
     ) -> Result<(), PcgError> {
-        tracing::debug!(
-            "upgrade_closest_root_to_exclusive: {}",
-            place.to_short_string(self.ctxt)
-        );
         let mut expand_root = place;
         loop {
             if let Some(cap) = self.pcg.capabilities.get(expand_root) {
@@ -181,6 +187,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         place: Place<'tcx>,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
+
+
         if !obtain_type.capability().is_read() {
             tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
@@ -188,7 +196,21 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 place.to_short_string(self.ctxt),
                 self.phase
             );
-            self.upgrade_closest_root_to_exclusive(place)?;
+        // It's possible that we want to obtain exclusive or write permission to
+        // a field that we currently only have read access for. For example,
+        // consider the following case:
+        //
+        // There is an existing shared borrow of (*c).f1
+        // Therefore we have read permission to *c, (*c).f1, and (*c).f2
+        // Then, we want to create a mutable borrow of (*c).f2
+        // This requires obtaining exclusive permission to (*c).f2
+        //
+        // We can upgrade capability of (*c).f2 from R to E by downgrading all
+        // other pre-and postfix places of (*c).f2 to None (in this case c and
+        // *c). In the example, (*c).f2 is actually the closest read ancestor,
+        // but this is not always the case (e.g. if we wanted to obtain
+        // (*c).f2.f3 instead)
+            self.upgrade_closest_read_ancestor_to_exclusive(place)?;
         }
 
         let current_cap = self.pcg.capabilities.get(place);

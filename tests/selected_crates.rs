@@ -33,11 +33,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("registry::SpanRef::<'a, R>::try_with_filter"),
-            extra_env_vars: visualization_env_vars
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // 20 basic blocks, ~40 nodes
     common::ensure_successful_run_on_crate(
