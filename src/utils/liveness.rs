@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-
 use crate::{
     compute_fixpoint,
     rustc_interface::{
@@ -152,7 +151,6 @@ impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
         cursor.seek_before_primary_effect(location);
         with_cursor_state(cursor, |state| state.is_live(place))
     }
-
 }
 
 #[derive(Eq, PartialEq, Clone)]

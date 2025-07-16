@@ -146,11 +146,8 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
             && let Operand::Move(place) = operand
         {
             self.record_and_apply_action(
-                BorrowPcgAction::make_place_old(
-                    (*place).into(),
-                    MakePlaceOldReason::MoveOut,
-                )
-                .into(),
+                BorrowPcgAction::make_place_old((*place).into(), MakePlaceOldReason::MoveOut)
+                    .into(),
             )?;
         }
         Ok(())
@@ -171,6 +168,14 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                 ..
             } = &terminator.kind
         {
+            for operand in args {
+                if let Some(place) = operand.node.place() {
+                    let place: utils::Place<'tcx> = place.into();
+                    if place.has_lifetimes_under_unsafe_ptr(self.ctxt) {
+                        return Err(PcgUnsupportedError::CallWithUnsafePtrWithNestedLifetime.into());
+                    }
+                }
+            }
             let destination: utils::Place<'tcx> = (*destination).into();
             self.record_and_apply_action(
                 BorrowPcgAction::set_latest(
@@ -501,7 +506,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             existing_cap,
                             Some(CapabilityKind::Write),
                             "remove borrow edge",
-                            self.ctxt
+                            self.ctxt,
                         )
                         .into(),
                     )?;
@@ -515,59 +520,62 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     #[tracing::instrument(skip(self, action))]
     fn record_and_apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
-        let result =
-            match &action {
-                PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
-                    action.clone(),
-                    &mut self.pcg.capabilities,
-                    self.ctxt,
-                )?,
-                PcgAction::Owned(owned_action) => match owned_action.kind {
-                    RepackOp::RegainLoanedCapability(place, capability_kind) => self
-                        .pcg
+        let result = match &action {
+            PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
+                action.clone(),
+                &mut self.pcg.capabilities,
+                self.ctxt,
+            )?,
+            PcgAction::Owned(owned_action) => match owned_action.kind {
+                RepackOp::RegainLoanedCapability(place, capability_kind) => self
+                    .pcg
+                    .capabilities
+                    .insert((*place).into(), capability_kind, self.ctxt),
+                RepackOp::Expand(expand) => {
+                    self.pcg.owned.perform_expand_action(
+                        expand,
+                        &mut self.pcg.capabilities,
+                        self.ctxt,
+                    )?;
+                    true
+                }
+                RepackOp::DerefShallowInit(from, to) => {
+                    let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
+                    let capability_projections =
+                        self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
+                    capability_projections.insert_expansion(
+                        from,
+                        PlaceExpansion::from_places(target_places.clone(), self.ctxt),
+                    );
+                    for target_place in target_places {
+                        self.pcg
+                            .capabilities
+                            .insert(target_place, CapabilityKind::Read, self.ctxt);
+                    }
+                    true
+                }
+                RepackOp::Collapse(collapse) => {
+                    let capability_projections =
+                        self.pcg.owned.locals_mut()[collapse.local()].get_allocated_mut();
+                    let expansion_places = collapse.expansion_places(self.ctxt);
+                    let retained_cap =
+                        expansion_places
+                            .iter()
+                            .fold(CapabilityKind::Exclusive, |acc, place| {
+                                match self.pcg.capabilities.remove(*place) {
+                                    Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
+                                    None => acc,
+                                }
+                            });
+                    self.pcg
                         .capabilities
-                        .insert((*place).into(), capability_kind, self.ctxt),
-                    RepackOp::Expand(expand) => {
-                        self.pcg.owned.perform_expand_action(
-                            expand,
-                            &mut self.pcg.capabilities,
-                            self.ctxt,
-                        )?;
-                        true
-                    }
-                    RepackOp::DerefShallowInit(from, to) => {
-                        let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
-                        let capability_projections =
-                            self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
-                        capability_projections.insert_expansion(
-                            from,
-                            PlaceExpansion::from_places(target_places.clone(), self.ctxt),
-                        );
-                        for target_place in target_places {
-                            self.pcg
-                                .capabilities
-                                .insert(target_place, CapabilityKind::Read, self.ctxt);
-                        }
-                        true
-                    }
-                    RepackOp::Collapse(collapse) => {
-                        let capability_projections =
-                            self.pcg.owned.locals_mut()[collapse.local()].get_allocated_mut();
-                        let expansion_places = collapse.expansion_places(self.ctxt);
-                        let retained_cap = expansion_places.iter().fold(
-                            CapabilityKind::Exclusive,
-                            |acc, place| match self.pcg.capabilities.remove(*place) {
-                                Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
-                                None => acc,
-                            },
-                        );
-                        self.pcg.capabilities.insert(collapse.to, retained_cap, self.ctxt);
-                        capability_projections.expansions.remove(&collapse.to);
-                        true
-                    }
-                    _ => unreachable!(),
-                },
-            };
+                        .insert(collapse.to, retained_cap, self.ctxt);
+                    capability_projections.expansions.remove(&collapse.to);
+                    true
+                }
+                _ => unreachable!(),
+            },
+        };
         // self.pcg.borrow.graph.render_debug_graph(
         //     self.ctxt,
         //     &format!("after {}", action.debug_line(self.ctxt)),

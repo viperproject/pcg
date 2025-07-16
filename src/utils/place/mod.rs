@@ -372,10 +372,15 @@ impl<'tcx> Place<'tcx> {
             let field_tys: Vec<Ty<'tcx>> = match ty.kind() {
                 TyKind::Array(ty, _) => vec![*ty],
                 TyKind::Slice(ty) => vec![*ty],
-                TyKind::Adt(def, substs) => def
-                    .all_fields()
-                    .map(|f| f.ty(ctxt.tcx, substs))
-                    .collect::<Vec<_>>(),
+                TyKind::Adt(def, substs) => {
+                    if ty.is_box() {
+                        vec![substs.get(0).unwrap().expect_ty()]
+                    } else {
+                        def.all_fields()
+                            .map(|f| f.ty(ctxt.tcx, substs))
+                            .collect::<Vec<_>>()
+                    }
+                }
                 TyKind::Tuple(slice) => slice.iter().collect::<Vec<_>>(),
                 TyKind::Closure(_, substs) => {
                     substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
@@ -414,6 +419,7 @@ impl<'tcx> Place<'tcx> {
                 .iter()
                 .any(|ty| ty_has_lifetimes_under_unsafe_ptr(*ty, seen, ctxt))
         }
+        tracing::info!("Check type {:?}", self.ty(ctxt).ty);
         ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, &mut HashSet::default(), ctxt)
     }
 

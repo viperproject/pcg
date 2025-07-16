@@ -480,7 +480,7 @@ pub enum PcgUnsupportedError {
     DerefUnsafePtr,
     MoveUnsafePtrWithNestedLifetime,
     ExpansionOfAliasType,
-    FunctionCallWithUnsafePtrArgument,
+    CallWithUnsafePtrWithNestedLifetime,
     IndexingNonIndexableType,
     InlineAssembly,
     MaxNodesExceeded,
