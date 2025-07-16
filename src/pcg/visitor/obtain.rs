@@ -120,20 +120,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
     }
 
-    fn place_to_collapse_to(&self, place: Place<'tcx>) -> Place<'tcx> {
-        let mut current = place;
-        let capability_projs = self.pcg.owned.locals()[place.local].get_allocated();
-        loop {
-            if self.pcg.capabilities.get(current).is_some() {
-                return current;
-            }
-            if capability_projs.contains_expansion_to(current, self.ctxt) {
-                return current;
-            }
-            current = current.parent_place().unwrap();
-        }
-    }
-
     pub(crate) fn collapse(
         &mut self,
         place: Place<'tcx>,
@@ -187,8 +173,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         place: Place<'tcx>,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
-
-
         if !obtain_type.capability().is_read() {
             tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
@@ -196,20 +180,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 place.to_short_string(self.ctxt),
                 self.phase
             );
-        // It's possible that we want to obtain exclusive or write permission to
-        // a field that we currently only have read access for. For example,
-        // consider the following case:
-        //
-        // There is an existing shared borrow of (*c).f1
-        // Therefore we have read permission to *c, (*c).f1, and (*c).f2
-        // Then, we want to create a mutable borrow of (*c).f2
-        // This requires obtaining exclusive permission to (*c).f2
-        //
-        // We can upgrade capability of (*c).f2 from R to E by downgrading all
-        // other pre-and postfix places of (*c).f2 to None (in this case c and
-        // *c). In the example, (*c).f2 is actually the closest read ancestor,
-        // but this is not always the case (e.g. if we wanted to obtain
-        // (*c).f2.f3 instead)
+            // It's possible that we want to obtain exclusive or write permission to
+            // a field that we currently only have read access for. For example,
+            // consider the following case:
+            //
+            // There is an existing shared borrow of (*c).f1
+            // Therefore we have read permission to *c, (*c).f1, and (*c).f2
+            // Then, we want to create a mutable borrow of (*c).f2
+            // This requires obtaining exclusive permission to (*c).f2
+            //
+            // We can upgrade capability of (*c).f2 from R to E by downgrading all
+            // other pre-and postfix places of (*c).f2 to None (in this case c and
+            // *c). In the example, (*c).f2 is actually the closest read ancestor,
+            // but this is not always the case (e.g. if we wanted to obtain
+            // (*c).f2.f3 instead)
             self.upgrade_closest_read_ancestor_to_exclusive(place)?;
         }
 
@@ -221,9 +205,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 Some(Ordering::Less) | None
             )
         {
-            let collapse_to = self.place_to_collapse_to(place);
             self.collapse(
-                collapse_to,
+                place,
                 obtain_type.capability(),
                 format!("Obtain {}", place.to_short_string(self.ctxt)),
             )?;

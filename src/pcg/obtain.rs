@@ -1,6 +1,5 @@
 use crate::{
-    action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
-    borrow_pcg::{
+    action::{BorrowPcgAction, OwnedPcgAction, PcgAction}, borrow_checker::r#impl::get_reserve_location, borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
         borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
         edge::{
@@ -11,14 +10,10 @@ use crate::{
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
-    },
-    free_pcs::{CapabilityKind, RepackOp},
-    pcg::{obtain, PCGNodeLike, PcgError},
-    rustc_interface::middle::mir,
-    utils::{
+    }, free_pcs::{CapabilityKind, RepackOp}, pcg::{obtain, PCGNodeLike, PcgError}, rustc_interface::middle::mir, utils::{
         callbacks::in_cargo_crate, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace,
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
-    },
+    }
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -120,7 +115,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             ctxt.bc
                 .borrows_blocking(rp.base, self.current_snapshot_location().location(), ctxt)
         {
-            return Some(SnapshotLocation::Mid(borrow.reserve_location()).into());
+            return Some(SnapshotLocation::Mid(get_reserve_location(&borrow)).into());
         }
         None
     }
