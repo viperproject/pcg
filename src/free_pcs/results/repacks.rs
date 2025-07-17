@@ -78,6 +78,10 @@ impl<'tcx> RepackExpand<'tcx> {
         self.from
     }
 
+    pub fn guide(&self) -> Option<RepackGuide> {
+        self.guide
+    }
+
     pub(crate) fn local(&self) -> Local {
         self.from.local
     }
@@ -114,6 +118,10 @@ impl<'tcx> RepackCollapse<'tcx> {
 
     pub fn to(&self) -> Place<'tcx> {
         self.to
+    }
+
+    pub fn guide(&self) -> Option<RepackGuide> {
+        self.guide
     }
 
     pub fn capability(&self) -> CapabilityKind {
