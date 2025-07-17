@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // cycles, <= 30 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "hashbrown",
+        "0.15.2",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("raw::RawTable::<T, A>::get_many_mut"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // return;
+
     // 23 basic blocks
     common::ensure_successful_run_on_crate(
         "prost-build",
@@ -33,45 +48,6 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
-            extra_env_vars: vec![]
-        },
-    );
-
-    // cycles, <= 20 basic blocks, <= 20 nodes
-    // Can't find body?
-    // common::ensure_successful_run_on_crate(
-    //     "multimap",
-    //     "0.10.0",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: None,
-    //         extra_env_vars: vec![],
-    //     },
-    // );
-
-    // common::ensure_successful_run_on_crate(
-    //     "async-trait",
-    //     "0.1.87",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: false,
-    //         function: None,
-    //         extra_env_vars: vec![],
-    //     },
-    // );
-
-    // cycles, <= 20 basic blocks, <= 20 nodes
-    common::ensure_successful_run_on_crate(
-        "prost-build",
-        "0.13.5",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: None,
             extra_env_vars: vec![],
         },
     );

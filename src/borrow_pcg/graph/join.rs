@@ -284,7 +284,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
             to_label,
-            to_remove,
+            capability_updates
         } = self.get_loop_abstraction_graph(
             loop_blocked_places,
             root_places,
@@ -309,8 +309,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             });
         }
 
-        for place in to_remove {
-            capabilities.remove(place, ctxt);
+        for (place, cap_option) in capability_updates {
+            if let Some(cap) = cap_option {
+                capabilities.insert(place, cap, ctxt);
+            } else {
+                capabilities.remove(place, ctxt);
+            }
         }
 
         let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);

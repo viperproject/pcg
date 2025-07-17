@@ -25,27 +25,30 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace,
-        remote::RemotePlace, CompilerCtxt, Place, SnapshotLocation,
+        data_structures::{HashMap, HashSet},
+        display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeOldPlace,
+        remote::RemotePlace,
+        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
     },
 };
 
 pub(crate) struct ConstructAbstractionGraphResult<'tcx> {
     pub(crate) graph: BorrowsGraph<'tcx>,
     pub(crate) to_label: HashSet<LabelRegionProjectionPredicate<'tcx>>,
-    pub(crate) to_remove: HashSet<Place<'tcx>>,
+    pub(crate) capability_updates: HashMap<Place<'tcx>, Option<CapabilityKind>>,
 }
 
 impl<'tcx> ConstructAbstractionGraphResult<'tcx> {
     pub(crate) fn new(
         graph: BorrowsGraph<'tcx>,
         to_label: HashSet<LabelRegionProjectionPredicate<'tcx>>,
-        to_remove: HashSet<Place<'tcx>>,
+        capability_updates: HashMap<Place<'tcx>, Option<CapabilityKind>>,
     ) -> Self {
         Self {
             graph,
             to_label,
-            to_remove,
+            capability_updates,
         }
     }
 }
@@ -119,7 +122,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> ConstructAbstractionGraphResult<'tcx> {
         let mut graph = BorrowsGraph::default();
         // let mut all_nodes = HashSet::default();
-        let mut to_remove = HashSet::default();
+        let mut capability_updates = HashMap::default();
         let mut to_label = HashSet::default();
 
         let loop_head_location = mir::Location {
@@ -179,7 +182,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for blocker in blockers.iter() {
                     add_block_edges(&mut expander, blocked_place.into(), *blocker, ctxt);
                 }
-                to_remove.insert(blocked_place);
+                if blocked_place
+                    .is_mutable(LocalMutationIsAllowed::No, ctxt)
+                    .is_ok()
+                {
+                    capability_updates.insert(blocked_place, None);
+                } else {
+                    capability_updates.insert(blocked_place, Some(CapabilityKind::Read));
+                }
                 for rp in blocked_place.region_projections(ctxt) {
                     to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
                         blocked_place.into(),
@@ -258,7 +268,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             tracing::debug!("labeling {:?}", rp);
             graph.label_region_projection(rp, Some(loop_head_label), ctxt);
         }
-        ConstructAbstractionGraphResult::new(graph, to_label, to_remove)
+        ConstructAbstractionGraphResult::new(graph, to_label, capability_updates)
     }
 
     pub(crate) fn get_borrow_roots(

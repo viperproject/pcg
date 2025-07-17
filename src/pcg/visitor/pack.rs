@@ -191,9 +191,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         };
         let leaf_edges = fg.leaf_edges_skipping_future_nodes(self.ctxt);
-        tracing::info!("Leaf edges: {}", leaf_edges.to_short_string(self.ctxt));
+        tracing::debug!("Leaf edges: {}", leaf_edges.to_short_string(self.ctxt));
         for edge in leaf_edges.into_iter().map(|e| e.to_owned_edge()) {
-            tracing::info!(
+            tracing::debug!(
                 "Checking leaf edge: {}",
                 edge.kind.to_short_string(self.ctxt)
             );
