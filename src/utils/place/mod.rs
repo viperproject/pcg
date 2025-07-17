@@ -395,7 +395,7 @@ impl<'tcx> Place<'tcx> {
                 TyKind::Str => todo!(),
                 TyKind::Pat(_, _) => todo!(),
                 TyKind::RawPtr(_, mutability) => todo!(),
-                TyKind::FnDef(_, _) => todo!(),
+                TyKind::FnDef(_, _) => vec![],
                 TyKind::FnPtr(binder, fn_header) => todo!(),
                 TyKind::Dynamic(_, _, dyn_kind) => vec![],
                 TyKind::Closure(_, _) => todo!(),

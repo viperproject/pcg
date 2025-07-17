@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // cycles, <= 20 basic blocks, <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "prost-build",
+        "0.13.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
     // cycles, <= 10 basic blocks, <= 10 nodes
     common::ensure_successful_run_on_crate(
         "hyper-tls",
