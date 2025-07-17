@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // cycles, <= 10 basic blocks, <= 10 nodes
+    common::ensure_successful_run_on_crate(
+        "hyper-tls",
+        "0.6.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("client::err"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 17 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
         "httparse",
@@ -36,7 +49,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // 20 basic blocks, ~40 nodes
     common::ensure_successful_run_on_crate(
@@ -63,7 +75,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // 7 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
