@@ -12,6 +12,7 @@ use crate::{
     action::BorrowPcgAction,
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
+    pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeOldPlace};
@@ -83,7 +84,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
                     "Introduce initial borrows",
-                    false,
+                    repacker,
                 ),
                 capabilities,
                 repacker,
@@ -118,7 +119,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             PathConditions::new(),
                         ),
                         "Introduce initial borrows",
-                        false,
+                        repacker,
                     ),
                     capabilities,
                     repacker,
@@ -308,12 +309,13 @@ impl<'tcx> BorrowsState<'tcx> {
                         // TODO: Make such projections complete
                     }
                     other => {
-                        if validity_checks_enabled() {
-                            unreachable!(
-                                "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
-                                location, blocked_place, other
-                            );
-                        }
+                        pcg_validity_assert!(
+                            false,
+                            "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
+                            location,
+                            blocked_place,
+                            other
+                        );
                     }
                 }
             }

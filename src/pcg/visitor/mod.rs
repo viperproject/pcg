@@ -73,7 +73,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                             self.pcg.borrow.path_conditions.clone(),
                         ),
                         "connect_outliving_projections",
-                        false,
+                        self.ctxt
                     )
                     .into(),
                 )?;
@@ -305,7 +305,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     CapabilityKind::Exclusive
                 };
 
-                if blocked_cap.is_none() || matches!(blocked_cap, Some(CapabilityKind::ShallowExclusive))
+                if blocked_cap.is_none()
+                    || matches!(blocked_cap, Some(CapabilityKind::ShallowExclusive))
                 {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
@@ -391,7 +392,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     self.pcg.borrow.path_conditions.clone(),
                 );
                 self.record_and_apply_action(
-                    BorrowPcgAction::add_edge(edge, "redirect blocked", false).into(),
+                    BorrowPcgAction::add_edge(edge, "redirect blocked", self.ctxt).into(),
                 )?;
             }
         }

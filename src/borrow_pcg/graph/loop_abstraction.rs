@@ -337,7 +337,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn unpack_places_for_abstraction<'mir>(
+    pub(crate) fn expand_places_for_abstraction<'mir>(
         &mut self,
         loop_head_block: mir::BasicBlock,
         blocked_loop_places: &HashSet<Place<'tcx>>,
@@ -362,18 +362,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_expand.retain(|p| !p.is_prefix(*place));
             to_expand.push(*place);
         }
-        tracing::debug!("to_expand: {}", to_expand.to_short_string(ctxt));
         for place in to_expand {
             expander
-                .expand_to(
-                    place,
-                    ObtainType::Capability(if place.projects_shared_ref(ctxt) {
-                        CapabilityKind::Read
-                    } else {
-                        CapabilityKind::Exclusive
-                    }),
-                    ctxt,
-                )
+                .expand_to(place, ObtainType::LoopInvariant, ctxt)
                 .unwrap();
         }
     }
@@ -440,12 +431,8 @@ impl<'mir, 'tcx> AbsExpander<'_, 'mir, 'tcx> {
     fn expand_to_places(&mut self, places: HashSet<Place<'tcx>>) {
         for place in places {
             tracing::info!("expanding to {}", place.to_short_string(self.ctxt));
-            self.expand_to(
-                place,
-                ObtainType::Capability(CapabilityKind::Exclusive),
-                self.ctxt,
-            )
-            .unwrap();
+            self.expand_to(place, ObtainType::LoopInvariant, self.ctxt)
+                .unwrap();
         }
     }
 }
@@ -455,15 +442,7 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
-                BorrowPcgActionKind::AddEdge { edge, for_read } => {
-                    if let Some(capabilities) = &mut self.capabilities {
-                        self.graph
-                            .handle_add_edge(edge, for_read, capabilities, self.ctxt)
-                    } else {
-                        self.graph.insert(edge, self.ctxt);
-                        Ok(true)
-                    }
-                }
+                BorrowPcgActionKind::AddEdge { edge } => Ok(self.graph.insert(edge, self.ctxt)),
                 BorrowPcgActionKind::RedirectEdge { .. } => todo!(),
                 BorrowPcgActionKind::LabelRegionProjection(
                     region_projection,
@@ -525,6 +504,19 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         } else {
             // Pretend we're always fully expanded in the local PCG
             true
+        }
+    }
+
+    fn update_capabilities_for_borrow_expansion(
+        &mut self,
+        expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
+        block_type: crate::pcg::place_capabilities::BlockType,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, crate::pcg::PcgError> {
+        if let Some(caps) = &mut self.capabilities {
+            caps.update_for_expansion(expansion, block_type, ctxt)
+        } else {
+            Ok(true)
         }
     }
 }

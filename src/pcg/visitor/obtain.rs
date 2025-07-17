@@ -174,7 +174,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         place: Place<'tcx>,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
-        if !obtain_type.capability().is_read() {
+        let obtain_cap = obtain_type.capability(place, self.ctxt);
+        if !obtain_cap.is_read() {
             tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
                 obtain_type,
@@ -202,18 +203,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         if current_cap.is_none()
             || matches!(
-                current_cap.unwrap().partial_cmp(&obtain_type.capability()),
+                current_cap.unwrap().partial_cmp(&obtain_cap),
                 Some(Ordering::Less) | None
             )
         {
             self.collapse(
                 place,
-                obtain_type.capability(),
+                obtain_cap,
                 format!("Obtain {}", place.to_short_string(self.ctxt)),
             )?;
         }
 
-        if obtain_type.capability().is_write() {
+        if obtain_cap.is_write() {
             let _ = self.record_and_apply_action(
                 BorrowPcgAction::make_place_old(place, MakePlaceOldReason::ReAssign).into(),
             );
@@ -303,12 +304,13 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for PcgVisitor<'_, 'mir, 'tcx> {
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         obtain_type: ObtainType,
-        _ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
+        ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         if self.contains_owned_expansion_from(base) {
             return Ok(false);
         }
-        if expansion.kind.is_deref_box() && obtain_type.capability().is_shallow_exclusive() {
+        let obtain_cap = obtain_type.capability(base, ctxt);
+        if expansion.kind.is_deref_box() && obtain_cap.is_shallow_exclusive() {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
                     RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
@@ -322,7 +324,7 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for PcgVisitor<'_, 'mir, 'tcx> {
                     RepackOp::expand(
                         expansion.base_place(),
                         expansion.guide(),
-                        obtain_type.capability(),
+                        obtain_cap,
                         self.ctxt,
                     ),
                     None,
@@ -347,5 +349,16 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for PcgVisitor<'_, 'mir, 'tcx> {
 
     fn path_conditions(&self) -> crate::borrow_pcg::path_condition::PathConditions {
         self.pcg.borrow.path_conditions.clone()
+    }
+
+    fn update_capabilities_for_borrow_expansion(
+        &mut self,
+        expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
+        block_type: crate::pcg::place_capabilities::BlockType,
+        ctxt: crate::utils::CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        self.pcg
+            .capabilities
+            .update_for_expansion(expansion, block_type, ctxt)
     }
 }

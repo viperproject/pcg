@@ -517,6 +517,10 @@ impl<'tcx> Place<'tcx> {
         )
     }
 
+    pub(crate) fn is_shared_ref(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        matches!(self.ref_mutability(ctxt), Some(Mutability::Not))
+    }
+
     pub fn is_ref<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
         self.0.ty(ctxt.mir, ctxt.tcx).ty.is_ref()
     }

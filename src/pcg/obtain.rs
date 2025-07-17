@@ -11,10 +11,10 @@ use crate::{
         graph::BorrowsGraph,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
+        region_projection::{self, LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{obtain, PCGNodeLike, PcgError},
+    pcg::{obtain, place_capabilities::BlockType, PCGNodeLike, PcgError},
     rustc_interface::middle::mir,
     utils::{
         callbacks::in_cargo_crate, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace,
@@ -26,20 +26,37 @@ use crate::{
 pub(crate) enum ObtainType {
     Capability(CapabilityKind),
     TwoPhaseExpand,
+    LoopInvariant,
 }
 
 impl ObtainType {
-    pub(crate) fn capability(&self) -> CapabilityKind {
+    pub(crate) fn capability<'tcx>(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> CapabilityKind {
         match self {
             ObtainType::Capability(cap) => *cap,
             ObtainType::TwoPhaseExpand => CapabilityKind::Read,
+            ObtainType::LoopInvariant => {
+                if place.is_shared_ref(ctxt) || place.projects_shared_ref(ctxt) {
+                    CapabilityKind::Read
+                } else {
+                    CapabilityKind::Exclusive
+                }
+            }
         }
     }
 
-    pub(crate) fn should_label_rp(&self) -> bool {
+    pub(crate) fn should_label_rp<'tcx>(
+        &self,
+        rp: RegionProjection<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
             ObtainType::Capability(cap) => !cap.is_read(),
             ObtainType::TwoPhaseExpand => true,
+            ObtainType::LoopInvariant => rp.base.is_mutable(ctxt),
         }
     }
 }
@@ -75,6 +92,13 @@ pub(crate) trait Expander<'mir, 'tcx> {
 
     fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool;
 
+    fn update_capabilities_for_borrow_expansion(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        block_type: BlockType,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError>;
+
     fn expand_to(
         &mut self,
         place: Place<'tcx>,
@@ -102,7 +126,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> LabelForRegionProjection {
         use LabelForRegionProjection::*;
-        if obtain_type.should_label_rp() {
+        if obtain_type.should_label_rp(rp.rebase(), ctxt) {
             NewLabelAtCurrentLocation(self.current_snapshot_location().into())
         } else {
             match self.label_for_shared_expansion_of_rp(rp, ctxt) {
@@ -141,7 +165,9 @@ pub(crate) trait Expander<'mir, 'tcx> {
             return Ok(false);
         }
         tracing::debug!("New owned expansion from {}", base.to_short_string(ctxt));
-        if expansion.kind.is_deref_box() && obtain_type.capability().is_shallow_exclusive() {
+        if expansion.kind.is_deref_box()
+            && obtain_type.capability(base, ctxt).is_shallow_exclusive()
+        {
             self.apply_action(
                 OwnedPcgAction::new(
                     RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
@@ -155,7 +181,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                     RepackOp::expand(
                         expansion.base_place(),
                         expansion.guide(),
-                        obtain_type.capability(),
+                        obtain_type.capability(expansion.base_place(), ctxt),
                         ctxt,
                     ),
                     None,
@@ -201,7 +227,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
     ) -> Result<bool, PcgError> {
         if self
             .borrows_graph()
-            .contains_borrow_pcg_expansion_from(base, ctxt)
+            .contains_borrow_pcg_expansion_of(base, &place_expansion, ctxt)
         {
             return Ok(false);
         }
@@ -215,6 +241,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         } else {
             None
         };
+        let block_type = place_expansion.block_type(base, obtain_type, ctxt);
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
             base.into(),
             place_expansion,
@@ -234,17 +261,21 @@ pub(crate) trait Expander<'mir, 'tcx> {
             )?;
         }
 
+
+        self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
         let action = BorrowPcgAction::add_edge(
             BorrowPcgEdge::new(
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                 self.path_conditions(),
             ),
             "add_borrow_pcg_expansion",
-            obtain_type.capability().is_read(),
+            ctxt,
         );
-        self.apply_action(action.into())
+        self.apply_action(action.into())?;
+        Ok(true)
     }
 
+    #[tracing::instrument(skip(self, base, expansion, ctxt))]
     fn expand_region_projections_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -256,6 +287,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             if let Some(place_expansion) =
                 expansion.place_expansion_for_region(base_rp.region(ctxt), ctxt)
             {
+                tracing::info!("Expand {}", base_rp.to_short_string(ctxt));
                 let mut expansion =
                     BorrowPcgExpansion::new(base_rp.into(), place_expansion, None, ctxt)?;
                 let expansion_label = self.label_for_rp(base_rp, obtain_type, ctxt);
@@ -273,7 +305,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                             self.path_conditions(),
                         ),
                         "expand_region_projections_one_level",
-                        obtain_type.capability().is_read(),
+                        ctxt,
                     )
                     .into(),
                 )?;
@@ -333,7 +365,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                     self.path_conditions(),
                 ),
                 format!("{}: placeholder bookkeeping", context),
-                false,
+                ctxt,
             )
             .into(),
         )?;
@@ -351,7 +383,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                         self.path_conditions(),
                     ),
                     format!("{}: placeholder bookkeeping", context),
-                    false,
+                    ctxt,
                 )
                 .into(),
             )?;
@@ -385,7 +417,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                 BorrowPcgAction::remove_edge(to_remove, "placeholder bookkeeping").into(),
             )?;
             self.apply_action(
-                BorrowPcgAction::add_edge(to_insert, "placeholder bookkeeping", false).into(),
+                BorrowPcgAction::add_edge(to_insert, "placeholder bookkeeping", ctxt).into(),
             )?;
         }
         Ok(())

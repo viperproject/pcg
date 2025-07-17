@@ -8,7 +8,7 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_expansion::BorrowPcgExpansion,
+        borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
@@ -69,7 +69,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
                     .iter()
                     .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
                         return Err(format!(
-                            "Unlabelled placeholder region projection {} also has a future label",
+                            "Placeholder region projection {} also has a current projection",
                             rp.to_short_string(ctxt)
                         ));
                     }
@@ -107,9 +107,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_borrow_pcg_expansion_from(
+    pub(crate) fn contains_borrow_pcg_expansion_of(
         &self,
         base: Place<'tcx>,
+        place_expansion: &PlaceExpansion<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edges_blocking(base.into(), ctxt)

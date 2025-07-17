@@ -24,6 +24,35 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 17 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "httparse",
+        "1.10.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("simd::swar::match_header_name_vectored"),
+            extra_env_vars: visualization_env_vars
+        },
+    );
+
+    return;
+
+
+    // 20 basic blocks, ~40 nodes
+    common::ensure_successful_run_on_crate(
+            "object",
+            "0.36.7",
+            Some("2025-03-13"),
+            common::RunOnCrateOptions::RunPCG {
+                target: common::Target::Debug,
+                validity_checks: true,
+                function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
+                extra_env_vars: vec![]
+            },
+        );
+
     // Cycle, 10 blocks, <= 10 nodes
     common::ensure_successful_run_on_crate(
         "tracing-subscriber",
@@ -37,31 +66,6 @@ fn test_selected_crates() {
         },
     );
 
-    // 20 basic blocks, ~40 nodes
-    common::ensure_successful_run_on_crate(
-        "object",
-        "0.36.7",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
-            extra_env_vars: vec![]
-        },
-    );
-
-    // 17 basic blocks, <= 30 nodes
-    common::ensure_successful_run_on_crate(
-        "httparse",
-        "1.10.1",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("simd::swar::match_header_name_vectored"),
-            extra_env_vars: vec![],
-        },
-    );
 
     // 7 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(

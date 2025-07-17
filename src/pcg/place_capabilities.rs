@@ -1,13 +1,15 @@
 use itertools::Itertools;
 
 use crate::{
+    borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion,
     free_pcs::CapabilityKind,
+    pcg::PcgError,
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         validity::HasValidityCheck,
-        CompilerCtxt, Place,
+        CompilerCtxt, HasPlace, Place,
     },
 };
 
@@ -86,29 +88,72 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 
 #[derive(Clone, Copy)]
 pub(crate) enum BlockType {
-    Deref,
+    DerefExclusive,
     Read,
     Other,
 }
 
+impl BlockType {
+    pub(crate) fn expansion_capability<'tcx>(
+        self,
+        blocked_place: Place<'tcx>,
+        blocked_capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> CapabilityKind {
+        match self {
+            BlockType::DerefExclusive => CapabilityKind::Exclusive,
+            BlockType::Read => CapabilityKind::Read,
+            BlockType::Other => blocked_capability,
+        }
+    }
+}
+
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn update_for_expansion(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        block_type: BlockType,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        let mut changed = false;
+        // We dont change if only expanding region projections
+        if expansion.base.is_place() {
+            let base = expansion.base;
+            let base_capability = self.get(base.place());
+            let expanded_capability = if let Some(capability) = base_capability {
+                block_type.expansion_capability(base.place(), capability, ctxt)
+            } else {
+                // TODO
+                // pcg_validity_assert!(
+                //     false,
+                //     "Base capability for {} is not set",
+                //     base.place().to_short_string(ctxt)
+                // );
+                return Ok(true);
+                // panic!("Base capability should be set");
+            };
+
+            changed |= self.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
+
+            for p in expansion.expansion.iter() {
+                changed |= self.insert(p.place(), expanded_capability, ctxt);
+            }
+        }
+        Ok(changed)
+    }
     pub(crate) fn update_capabilities_for_block_of_place(
         &mut self,
-        place: Place<'tcx>,
+        blocked_place: Place<'tcx>,
         block_type: BlockType,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match block_type {
-            BlockType::Deref => {
-                let capability = if place.projects_shared_ref(ctxt) {
-                    CapabilityKind::Read
-                } else {
-                    CapabilityKind::ShallowExclusive
-                };
-                self.insert(place, capability, ctxt)
+            BlockType::Read => self.insert(blocked_place, CapabilityKind::Read, ctxt),
+            BlockType::DerefExclusive => {
+                pcg_validity_assert!(!blocked_place.is_shared_ref(ctxt));
+                self.insert(blocked_place, CapabilityKind::ShallowExclusive, ctxt)
             }
-            BlockType::Read => self.insert(place, CapabilityKind::Read, ctxt),
-            BlockType::Other => self.remove(place, ctxt).is_some(),
+            BlockType::Other => self.remove(blocked_place, ctxt).is_some(),
         }
     }
 

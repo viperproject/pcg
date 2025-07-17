@@ -7,18 +7,20 @@ use super::state::BorrowsState;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::edge_data::{EdgePredicate, LabelEdgePlaces, LabelPlacePredicate};
+use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
+use crate::borrow_pcg::edge_data::{EdgeData, EdgePredicate, LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::PcgError;
+use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::redirect::RedirectResult;
 use crate::utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation};
-use crate::{RestoreCapability, Weaken};
+use crate::{pcg_validity_assert, validity_checks_enabled, RestoreCapability, Weaken};
 
 pub mod actions;
 
@@ -81,10 +83,10 @@ impl<'tcx> BorrowPcgAction<'tcx> {
     pub(crate) fn add_edge(
         edge: BorrowPcgEdge<'tcx>,
         context: impl Into<String>,
-        for_read: bool,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::AddEdge { edge, for_read },
+            kind: BorrowPcgActionKind::AddEdge { edge },
             debug_context: Some(context.into()),
         }
     }
@@ -177,7 +179,6 @@ pub enum BorrowPcgActionKind<'tcx> {
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,
-        for_read: bool,
     },
 }
 
@@ -221,10 +222,9 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(ctxt))
             }
-            BorrowPcgActionKind::AddEdge { edge, for_read } => format!(
-                "Add Edge: {}; for read: {}",
+            BorrowPcgActionKind::AddEdge { edge} => format!(
+                "Add Edge: {}",
                 edge.to_short_string(ctxt),
-                for_read
             ),
         }
     }
@@ -289,10 +289,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 self.set_latest(place, location, ctxt)
             }
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
-            BorrowPcgActionKind::AddEdge { edge, for_read } => {
-                self.graph
-                    .handle_add_edge(edge, for_read, capabilities, ctxt)?
-            }
+            BorrowPcgActionKind::AddEdge { edge } => self.graph.insert(edge, ctxt),
             BorrowPcgActionKind::LabelRegionProjection(rp, label) => self.label_region_projection(
                 &LabelRegionProjectionPredicate::Equals(rp),
                 label,
@@ -329,63 +326,5 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> bool {
         let location = location.into();
         self.latest.insert(place, location, ctxt)
-    }
-}
-
-impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn handle_add_edge(
-        &mut self,
-        edge: BorrowPcgEdge<'tcx>,
-        for_read: bool,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<bool, PcgError> {
-        let mut changed = self.insert(edge.clone(), ctxt);
-        Ok(match edge.kind {
-            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                // We only want to change capability for expanding x -> *x, not
-                // for expanding region projections
-                if changed && expansion.base.is_place() {
-                    let base = expansion.base;
-                    let base_capability = capabilities.get(base.place());
-                    let expanded_capability = if for_read {
-                        CapabilityKind::Read
-                    } else if let Some(capability) = base_capability {
-                        capability
-                    } else {
-                        // TODO
-                        // pcg_validity_assert!(
-                        //     false,
-                        //     "Base capability for {} is not set",
-                        //     base.place().to_short_string(ctxt)
-                        // );
-                        return Ok(true);
-                        // panic!("Base capability should be set");
-                    };
-
-                    let block_type = if base.place().is_ref(ctxt) {
-                        BlockType::Deref
-                    } else if for_read {
-                        BlockType::Read
-                    } else {
-                        BlockType::Other
-                    };
-                    changed |= capabilities.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
-
-                    for p in expansion.expansion.iter() {
-                        if !p.place().is_owned(ctxt) {
-                            tracing::debug!(
-                                "Inserting capability {:?} for {}",
-                                expanded_capability,
-                                p.place().to_short_string(ctxt)
-                            );
-                            changed |= capabilities.insert(p.place(), expanded_capability, ctxt);
-                        }
-                    }
-                }
-                changed
-            }
-            _ => changed,
-        })
     }
 }

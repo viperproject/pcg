@@ -15,12 +15,15 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
+        has_pcs_elem::{
+            LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+        },
         region_projection::LocalRegionProjection,
     },
-    free_pcs::RepackGuide,
+    free_pcs::{CapabilityKind, RepackGuide},
     pcg::{
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        obtain::ObtainType,
+        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
         MaybeHasLocation, PcgUnsupportedError,
     },
     utils::{json::ToJsonWithCompilerCtxt, redirect::RedirectResult},
@@ -28,7 +31,10 @@ use crate::{
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
-    rustc_interface::middle::{mir::PlaceElem, ty},
+    rustc_interface::middle::{
+        mir::{self, PlaceElem},
+        ty,
+    },
     utils::{
         display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, HasPlace, Place,
     },
@@ -66,6 +72,19 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> PlaceExpansion<'tcx> {
+    pub(crate) fn block_type(&self, base_place: Place<'tcx>, obtain_type: ObtainType, ctxt: CompilerCtxt<'_, 'tcx>) -> BlockType {
+        if matches!(obtain_type, ObtainType::TwoPhaseExpand | ObtainType::Capability(CapabilityKind::Read)) {
+            BlockType::Read
+        } else if matches!(self, PlaceExpansion::Deref) {
+            if base_place.is_shared_ref(ctxt) {
+                BlockType::Read
+            } else {
+                BlockType::DerefExclusive
+            }
+        } else {
+            BlockType::Other
+        }
+    }
     pub(crate) fn guide(&self) -> Option<RepackGuide> {
         match self {
             PlaceExpansion::Guided(guide) => Some(*guide),

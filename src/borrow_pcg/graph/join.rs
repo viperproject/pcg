@@ -253,7 +253,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        self.unpack_places_for_abstraction(
+        self.expand_places_for_abstraction(
             loop_head,
             &expand_places,
             capabilities,

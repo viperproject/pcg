@@ -160,9 +160,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
 
-            let block_type = if expansion.kind.is_deref_ref() {
-                BlockType::Deref
-            } else if for_cap.is_read() {
+            let block_type = if for_cap.is_read() {
                 BlockType::Read
             } else {
                 BlockType::Other
