@@ -11,7 +11,7 @@ use crate::borrow_pcg::has_pcs_elem::LabelPlace;
 use crate::borrow_pcg::region_projection::LocalRegionProjection;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{self, Expander, ObtainType};
-use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg_validity_assert;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{HasPlace, ShallowExpansion};
@@ -35,26 +35,50 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         )?;
         self.remove_read_permission_downwards(place)?;
         if let Some(parent) = place.parent_place() {
-            self.remove_read_permission_upwards(parent)?;
+            self.remove_read_permission_upwards(parent, "Upgrade read to exclusive")?;
         }
         Ok(())
     }
 
+    // Remove read permission upwards for strict ancestors of `place` Used when
+    // we want to access `place` exclusively when activating a two-phase borrow
+    // or when it is a postfix of a place that was downgraded to read
+    // permission.
     pub(crate) fn remove_read_permission_upwards(
         &mut self,
         mut current: Place<'tcx>,
+        debug_ctxt: &str,
     ) -> Result<(), PcgError> {
         while self.pcg.capabilities.get(current) == Some(CapabilityKind::Read) {
-            self.record_and_apply_action(
-                BorrowPcgAction::weaken(
-                    current,
-                    CapabilityKind::Read,
-                    None,
-                    "Remove read permission upwards",
-                    self.ctxt,
-                )
-                .into(),
-            )?;
+            if current.is_mut_ref(self.ctxt) {
+                // We've reached an indirection, we downgrade the ref from R to e
+                // and we can stop here (retain exclusive for parents of the ref)
+                self.record_and_apply_action(
+                    BorrowPcgAction::weaken(
+                        current,
+                        CapabilityKind::Read,
+                        BlockType::DerefExclusive.blocked_place_retained_capability(),
+                        format!(
+                            "Remove read permission upwards (downgrade R to e for mut ref): {}",
+                            debug_ctxt
+                        ),
+                        self.ctxt,
+                    )
+                    .into(),
+                )?;
+                return Ok(());
+            } else {
+                self.record_and_apply_action(
+                    BorrowPcgAction::weaken(
+                        current,
+                        CapabilityKind::Read,
+                        None,
+                        format!("Remove read permission upwards: {}", debug_ctxt),
+                        self.ctxt,
+                    )
+                    .into(),
+                )?;
+            }
             let parent = match current.parent_place() {
                 Some(parent) => parent,
                 None => break,

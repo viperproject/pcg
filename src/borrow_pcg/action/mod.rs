@@ -222,10 +222,9 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(ctxt))
             }
-            BorrowPcgActionKind::AddEdge { edge} => format!(
-                "Add Edge: {}",
-                edge.to_short_string(ctxt),
-            ),
+            BorrowPcgActionKind::AddEdge { edge } => {
+                format!("Add Edge: {}", edge.to_short_string(ctxt),)
+            }
         }
     }
 }

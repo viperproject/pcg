@@ -621,7 +621,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.record_and_apply_action(upgrade_action.into())?;
         }
         if !blocked_place.is_owned(self.ctxt) {
-            self.remove_read_permission_upwards(blocked_place)?;
+            self.remove_read_permission_upwards(blocked_place, "Activate twophase borrow")?;
         }
         Ok(())
     }

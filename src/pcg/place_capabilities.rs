@@ -94,6 +94,13 @@ pub(crate) enum BlockType {
 }
 
 impl BlockType {
+    pub(crate) fn blocked_place_retained_capability(self) -> Option<CapabilityKind> {
+        match self {
+            BlockType::DerefExclusive => Some(CapabilityKind::ShallowExclusive),
+            BlockType::Read => Some(CapabilityKind::Read),
+            BlockType::Other => None
+        }
+    }
     pub(crate) fn expansion_capability<'tcx>(
         self,
         blocked_place: Place<'tcx>,
@@ -147,13 +154,11 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         block_type: BlockType,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        match block_type {
-            BlockType::Read => self.insert(blocked_place, CapabilityKind::Read, ctxt),
-            BlockType::DerefExclusive => {
-                pcg_validity_assert!(!blocked_place.is_shared_ref(ctxt));
-                self.insert(blocked_place, CapabilityKind::ShallowExclusive, ctxt)
-            }
-            BlockType::Other => self.remove(blocked_place, ctxt).is_some(),
+        let retained_capability = block_type.blocked_place_retained_capability();
+        if let Some(capability) = retained_capability {
+            self.insert(blocked_place, capability, ctxt)
+        } else {
+            self.remove(blocked_place, ctxt).is_some()
         }
     }
 
