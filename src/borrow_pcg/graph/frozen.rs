@@ -1,4 +1,7 @@
-use std::cell::{Ref, RefCell};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashSet,
+};
 
 use derive_more::{Deref, IntoIterator};
 use itertools::Itertools;
@@ -6,6 +9,7 @@ use itertools::Itertools;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdgeRef, LocalNode},
+        edge::kind::BorrowPcgEdgeKind,
         edge_data::EdgeData,
     },
     pcg::{PCGNode, PCGNodeLike},
@@ -152,6 +156,31 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
+    pub(crate) fn leaf_edges_skipping_future_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
+        &'slf self,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Vec<BorrowPcgEdgeRef<'tcx, 'graph>> {
+        let mut result: HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = HashSet::default();
+        let mut seen: HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = HashSet::default();
+        let mut queue = self.leaf_edges(ctxt);
+        while let Some(edge) = queue.pop() {
+            if seen.contains(&edge) {
+                continue;
+            }
+            seen.insert(edge);
+            if let BorrowPcgEdgeKind::BorrowFlow(edge) = edge.kind
+                && edge.short().is_placeholder()
+            {
+                if let Some(blocked_node) = edge.long().try_to_local_node(ctxt) {
+                    queue.extend(self.get_edges_blocked_by(blocked_node, ctxt));
+                }
+            } else {
+                result.insert(edge);
+            }
+        }
+        result.into_iter().collect()
+    }
+
     pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         repacker: CompilerCtxt<'mir, 'tcx>,
@@ -186,6 +215,14 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         self.graph
             .edges()
             .all(|edge| !edge.blocks_node(node.into(), repacker))
+    }
+
+    pub(crate) fn get_edges_blocked_by<'slf, 'mir: 'graph, 'bc: 'graph>(
+        &'slf self,
+        node: LocalNode<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir> {
+        self.graph.edges_blocked_by(node, ctxt)
     }
 
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(

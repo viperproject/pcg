@@ -602,7 +602,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             Some(borrow) => borrow,
             None => return Ok(()),
         };
-        tracing::info!(
+        tracing::debug!(
             "activate twophase borrow: {}",
             borrow.to_short_string(self.ctxt)
         );
@@ -626,7 +626,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
     fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
         self.pack_old_and_dead_borrow_leaves()?;
         for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {

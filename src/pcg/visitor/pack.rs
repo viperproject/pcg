@@ -190,11 +190,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         };
-        let leaf_edges = fg.leaf_edges(self.ctxt);
-        tracing::debug!("Leaf edges: {}", leaf_edges.to_short_string(self.ctxt));
+        let leaf_edges = fg.leaf_edges_skipping_future_nodes(self.ctxt);
+        tracing::info!("Leaf edges: {}", leaf_edges.to_short_string(self.ctxt));
         for edge in leaf_edges.into_iter().map(|e| e.to_owned_edge()) {
+            tracing::info!(
+                "Checking leaf edge: {}",
+                edge.kind.to_short_string(self.ctxt)
+            );
             if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
-                tracing::debug!("Checking edge: {}", edge.to_short_string(self.ctxt));
                 edges_to_trim.push((edge, reason));
             }
         }
@@ -202,14 +205,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
-        for caps in self
-            .pcg
-            .owned
-            .data
-            .clone()
-            .unwrap()
-            .expansions()
-        {
+        for caps in self.pcg.owned.data.clone().unwrap().expansions() {
             let mut expansions = caps
                 .expansions()
                 .clone()

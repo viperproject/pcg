@@ -171,7 +171,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             seen.insert(node);
             let maybe_old_place = node.base();
             if maybe_old_place.place().is_mutable(LocalMutationIsAllowed::Yes, ctxt).is_err() {
-                tracing::info!(
+                tracing::debug!(
                     "Skipping {} because it is not mutable",
                     node.to_short_string(ctxt)
                 );

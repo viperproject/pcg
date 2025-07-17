@@ -129,7 +129,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<Vec<_>>();
 
-        tracing::info!(
+        tracing::debug!(
             "Source arg projections: {}",
             source_arg_projections.to_short_string(self.ctxt)
         );

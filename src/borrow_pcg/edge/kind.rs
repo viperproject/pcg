@@ -25,6 +25,13 @@ impl<'tcx> From<RemoteBorrow<'tcx>> for BorrowPcgEdgeKind<'tcx> {
 }
 
 impl<'tcx> BorrowPcgEdgeKind<'tcx> {
+    pub(crate) fn is_edge_to_future_node(&self) -> bool {
+        match self {
+            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.short().is_placeholder(),
+            _ => false,
+        }
+    }
+
     #[allow(unused)]
     pub(crate) fn could_mutate(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {

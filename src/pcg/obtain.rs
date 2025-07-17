@@ -231,7 +231,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         {
             return Ok(false);
         }
-        tracing::info!("Create expansion from {}", base.to_short_string(ctxt));
+        tracing::debug!("Create expansion from {}", base.to_short_string(ctxt));
         let expansion_label = if base.is_ref(ctxt) {
             Some(self.label_for_rp(
                 base.base_region_projection(ctxt).unwrap(),
@@ -287,7 +287,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             if let Some(place_expansion) =
                 expansion.place_expansion_for_region(base_rp.region(ctxt), ctxt)
             {
-                tracing::info!("Expand {}", base_rp.to_short_string(ctxt));
+                tracing::debug!("Expand {}", base_rp.to_short_string(ctxt));
                 let mut expansion =
                     BorrowPcgExpansion::new(base_rp.into(), place_expansion, None, ctxt)?;
                 let expansion_label = self.label_for_rp(base_rp, obtain_type, ctxt);
