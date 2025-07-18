@@ -142,13 +142,7 @@ impl MakePlaceOldReason {
     ) -> bool {
         let predicate = match self {
             MakePlaceOldReason::ReAssign => {
-                if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = &edge.kind
-                    && e.base.is_place()
-                {
-                    return false;
-                } else {
                     LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
-                }
             }
             MakePlaceOldReason::StorageDead | MakePlaceOldReason::MoveOut => {
                 LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
