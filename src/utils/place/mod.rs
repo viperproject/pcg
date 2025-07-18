@@ -373,25 +373,23 @@ impl<'tcx> Place<'tcx> {
                 TyKind::Array(ty, _) => vec![*ty],
                 TyKind::Slice(ty) => vec![*ty],
                 TyKind::Adt(def, substs) => {
-                    if ty.is_box() {
-                        vec![substs.first().unwrap().expect_ty()]
-                    } else {
-                        def.all_fields()
-                            .map(|f| f.ty(ctxt.tcx, substs))
-                            .collect::<Vec<_>>()
-                    }
-                }
+                                if ty.is_box() {
+                                    vec![substs.first().unwrap().expect_ty()]
+                                } else {
+                                    def.all_fields()
+                                        .map(|f| f.ty(ctxt.tcx, substs))
+                                        .collect::<Vec<_>>()
+                                }
+                            }
                 TyKind::Tuple(slice) => slice.iter().collect::<Vec<_>>(),
                 TyKind::Closure(_, substs) => {
-                    substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
-                }
+                                substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
+                            }
+                TyKind::Coroutine(_, _) | TyKind::CoroutineClosure(_, _) => vec![], // TODO: Confirm
                 TyKind::Ref(_, ty, _) => vec![*ty],
-                TyKind::Bool => todo!(),
-                TyKind::Char => todo!(),
+                TyKind::Alias(_, _) => vec![],
                 TyKind::Dynamic(_, _, _) => vec![],
-                TyKind::CoroutineClosure(_, _) => todo!(),
-                TyKind::Coroutine(_, _) => vec![], // TODO: confirm
-                _ => todo!()
+                _ => todo!(),
             };
             field_tys
                 .iter()

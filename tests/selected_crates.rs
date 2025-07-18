@@ -49,6 +49,19 @@ fn test_selected_crates() {
     //     },
     // );
 
+    // 23 basic blocks
+    common::ensure_successful_run_on_crate(
+        "prost-build",
+        "0.13.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
+            extra_env_vars: vec![],
+        },
+    );
+
 
     // 4 basic blocks
     common::ensure_successful_run_on_crate(
@@ -155,20 +168,6 @@ fn test_selected_crates() {
         },
     );
 
-    // return;
-
-    // 23 basic blocks
-    common::ensure_successful_run_on_crate(
-        "prost-build",
-        "0.13.5",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
-            extra_env_vars: vec![],
-        },
-    );
 
     // cycles, <= 10 basic blocks, <= 10 nodes
     common::ensure_successful_run_on_crate(
