@@ -4,6 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::domain::{FunctionCallAbstractionInput, FunctionCallAbstractionOutput};
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -85,7 +86,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if arg.is_invariant_in_type(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::label_region_projection(
-                        *arg,
+                        LabelRegionProjectionPredicate::Equals(*arg),
                         Some(SnapshotLocation::before(location).into()),
                         format!(
                             "Function call: {} is invariant in type {:?}; therefore it will be labelled as the set of borrows inside may be modified",

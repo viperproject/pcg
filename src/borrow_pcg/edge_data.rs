@@ -3,6 +3,7 @@ use crate::borrow_pcg::has_pcs_elem::PlaceLabeller;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};
+use crate::rustc_interface::middle::mir::ProjectionElem;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
@@ -59,13 +60,13 @@ pub trait EdgeData<'tcx> {
 pub enum LabelPlacePredicate<'tcx> {
     Exact(Place<'tcx>),
     PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
-    StrictPostfix(Place<'tcx>),
+    LabelSharedDerefProjections(Place<'tcx>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EdgePredicate {
     All,
-    BorrowEdges
+    BorrowEdges,
 }
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
@@ -79,7 +80,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
                 predicate_place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
             }
-            LabelPlacePredicate::StrictPostfix(place) => {
+            LabelPlacePredicate::LabelSharedDerefProjections(place) => {
                 format!("strict postfix of {}", place.to_short_string(ctxt))
             }
             LabelPlacePredicate::Exact(place) => {
@@ -93,9 +94,9 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
     pub(crate) fn applies_to(&self, candidate: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
-                if predicate_place.is_prefix(candidate) {
+                if predicate_place.is_prefix_of(candidate) {
                     true
-                } else if candidate.is_prefix(*predicate_place) {
+                } else if candidate.is_prefix_of(*predicate_place) {
                     for p in predicate_place
                         .iter_places(ctxt)
                         .into_iter()
@@ -110,12 +111,18 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                     false
                 }
             }
-            LabelPlacePredicate::StrictPostfix(place) => {
-                place.projection.len() < candidate.projection.len() && place.is_prefix(candidate)
+            LabelPlacePredicate::LabelSharedDerefProjections(place) => {
+                if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
+                    tracing::info!("iter_projections_after: {:?}", candidate);
+                    for (place, proj) in iter {
+                        if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {
+                            return true;
+                        }
+                    }
+                }
+                false
             }
-            LabelPlacePredicate::Exact(place) => {
-                *place == candidate
-            }
+            LabelPlacePredicate::Exact(place) => *place == candidate,
         }
     }
 }

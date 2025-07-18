@@ -12,7 +12,9 @@ use super::{
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{
+    LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+};
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -321,38 +323,21 @@ impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
     }
 }
 
-impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
+impl<'tcx, P: Copy> LabelRegionProjection<'tcx>
     for RegionProjection<'tcx, P>
+    where MaybeRemoteRegionProjectionBase<'tcx>: From<P>
 {
     fn label_region_projection(
         &mut self,
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> LabelRegionProjectionResult {
-        match predicate {
-            LabelRegionProjectionPredicate::Equals(region_projection) => {
-                if self.region_idx == region_projection.region_idx
-                    && self.base == region_projection.base.into()
-                    && self.label == region_projection.label
-                {
-                    self.label = label;
-                    LabelRegionProjectionResult::Changed
-                } else {
-                    LabelRegionProjectionResult::Unchanged
-                }
-            }
-            LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
-                if self.region_idx == *region_idx
-                    && self.base == (*maybe_old_place).into()
-                    && !self.is_placeholder()
-                {
-                    self.label = label;
-                    LabelRegionProjectionResult::Changed
-                } else {
-                    LabelRegionProjectionResult::Unchanged
-                }
-            }
+        if predicate.matches(self.rebase(), ctxt) {
+            self.label = label;
+            LabelRegionProjectionResult::Changed
+        } else {
+            LabelRegionProjectionResult::Unchanged
         }
     }
 }

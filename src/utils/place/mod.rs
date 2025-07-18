@@ -603,7 +603,7 @@ impl<'tcx> Place<'tcx> {
     /// +   `is_prefix(x.f, x.f) == true`
     /// +   `is_prefix(x.f, x.f.g) == true`
     /// +   `is_prefix(x.f.g, x.f) == false`
-    pub(crate) fn is_prefix(self, place: Self) -> bool {
+    pub(crate) fn is_prefix_of(self, place: Self) -> bool {
         Self::partial_cmp(self, place)
             .map(|o| o == PlaceOrdering::Equal || o == PlaceOrdering::Prefix)
             .unwrap_or(false)
@@ -641,7 +641,7 @@ impl<'tcx> Place<'tcx> {
     }
 
     pub fn joinable_to(self, to: Self) -> Self {
-        assert!(self.is_prefix(to));
+        assert!(self.is_prefix_of(to));
         let diff = to.projection.len() - self.projection.len();
         let to_proj = self.projection.len()
             + to.projection[self.projection.len()..]
@@ -666,17 +666,33 @@ impl<'tcx> Place<'tcx> {
 
     pub fn is_deref_of(self, other: Self) -> bool {
         self.projection.last() == Some(&ProjectionElem::Deref)
-            && other.is_prefix(self)
+            && other.is_prefix_of(self)
             && other.projection.len() == self.projection.len() - 1
     }
 
     pub fn is_downcast_of(self, other: Self) -> Option<VariantIdx> {
         if let Some(ProjectionElem::Downcast(_, index)) = self.projection.last() {
-            if other.is_prefix(self) && other.projection.len() == self.projection.len() - 1 {
+            if other.is_prefix_of(self) && other.projection.len() == self.projection.len() - 1 {
                 Some(*index)
             } else {
                 None
             }
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn iter_projections_after(
+        self,
+        other: Self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<impl Iterator<Item = (Self, PlaceElem<'tcx>)>> {
+        if other.is_prefix_of(self) {
+            Some(
+                self.iter_projections(ctxt)
+                    .into_iter()
+                    .skip(other.projection.len()),
+            )
         } else {
             None
         }
@@ -710,7 +726,7 @@ impl<'tcx> Place<'tcx> {
     }
 
     pub(crate) fn is_prefix_or_postfix_of(self, other: Self) -> bool {
-        self.is_prefix(other) || other.is_prefix(self)
+        self.is_prefix_of(other) || other.is_prefix_of(self)
     }
 
     #[cfg(feature = "debug_info")]

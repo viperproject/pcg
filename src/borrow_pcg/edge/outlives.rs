@@ -72,7 +72,9 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             predicate,
             label
         );
-        if predicate.matches(self.long) && predicate.matches(self.short.effective().rebase()) {
+        if predicate.matches(self.long, ctxt)
+            && predicate.matches(self.short.effective().rebase(), ctxt)
+        {
             return LabelRegionProjectionResult::ShouldCollapse;
         }
         let mut changed = self.long.label_region_projection(predicate, label, ctxt);
@@ -221,6 +223,7 @@ pub enum BorrowFlowEdgeKind {
     CopyRef,
     Move,
     Future,
+    Other, // TODO
 }
 
 impl std::fmt::Display for BorrowFlowEdgeKind {
@@ -244,6 +247,7 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::CopyRef => write!(f, "CopyRef"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
             BorrowFlowEdgeKind::Future => write!(f, "Future"),
+            BorrowFlowEdgeKind::Other => write!(f, "Other"),
         }
     }
 }
@@ -258,6 +262,7 @@ impl BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::CopyRef => false,
             BorrowFlowEdgeKind::Move => true,
             BorrowFlowEdgeKind::Future => true,
+            BorrowFlowEdgeKind::Other => true
         }
     }
 }

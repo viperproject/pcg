@@ -24,6 +24,7 @@ pub enum SnapshotLocation {
     Mid(Location),
     After(Location),
     Loop(BasicBlock),
+    BeforeRefReassignment(Location),
 }
 
 impl SnapshotLocation {
@@ -39,6 +40,7 @@ impl SnapshotLocation {
                     statement_index: 0,
                 }
             }
+            SnapshotLocation::BeforeRefReassignment(location) => location,
         }
     }
     pub(crate) fn start() -> Self {
@@ -74,6 +76,7 @@ impl std::fmt::Display for SnapshotLocation {
             SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
             SnapshotLocation::Prepare(location) => write!(f, "prep {location:?}"),
             SnapshotLocation::BeforeCollapse(location) => write!(f, "before collapse {location:?}"),
+            SnapshotLocation::BeforeRefReassignment(location) => write!(f, "before ref reassignment {location:?}"),
         }
     }
 }

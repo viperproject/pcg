@@ -38,13 +38,6 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string(),
     ));
 
-    if let Some(max_basic_blocks) = *MAX_BASIC_BLOCKS {
-        extra_env_vars.push((
-            "PCG_MAX_BASIC_BLOCKS".to_string(),
-            max_basic_blocks.to_string(),
-        ));
-    }
-
     top_crates
         .into_par_iter()
         .panic_fuse()

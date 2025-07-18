@@ -7,7 +7,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, SetLabel};
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, SetLabel};
 use crate::borrow_pcg::region_projection::{
     LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionLabel,
 };
@@ -448,14 +448,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         match edge.kind() {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                // if let Some(lifetime_expansion) = expansion.try_to_lifetime_expansion()
-                //     && lifetime_expansion.base.place().is_owned(self.ctxt)
-                // {
-                //     self.redirect_blocked_nodes_to_base(
-                //         lifetime_expansion.base,
-                //         lifetime_expansion.expansion(),
-                //     )?;
-                // }
                 if let Some(place) = expansion.deref_blocked_place(self.ctxt)
                     && !place.regions(self.ctxt).iter().contains(
                         &expansion
@@ -466,32 +458,32 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 {
                     self.unlabel_blocked_region_projections(expansion)?;
                 }
-                for exp_node in expansion.expansion() {
-                    if let PCGNode::Place(place) = exp_node {
-                        for rp in place.region_projections(self.ctxt) {
-                            tracing::debug!(
-                                "labeling region projection: {}",
-                                rp.to_short_string(self.ctxt)
-                            );
-                            let snapshot_location = if during_cleanup {
-                                SnapshotLocation::Prepare(self.location)
-                            } else {
-                                SnapshotLocation::before(self.location)
-                            };
-                            self.record_and_apply_action(
-                                BorrowPcgAction::label_region_projection(
-                                    rp,
-                                    Some(RegionProjectionLabel::Location(snapshot_location)),
-                                    format!(
-                                        "{}: {}",
-                                        context, "Label region projections of expansion"
-                                    ),
-                                )
-                                .into(),
-                            )?;
-                        }
-                    }
-                }
+                // for exp_node in expansion.expansion() {
+                //     if let PCGNode::Place(place) = exp_node {
+                //         for rp in place.region_projections(self.ctxt) {
+                //             tracing::debug!(
+                //                 "labeling region projection: {}",
+                //                 rp.to_short_string(self.ctxt)
+                //             );
+                //             let snapshot_location = if during_cleanup {
+                //                 SnapshotLocation::Prepare(self.location)
+                //             } else {
+                //                 SnapshotLocation::before(self.location)
+                //             };
+                //             self.record_and_apply_action(
+                //                 BorrowPcgAction::label_region_projection(
+                //                     LabelRegionProjectionPredicate::Equals(rp.into()),
+                //                     Some(snapshot_location.into()),
+                //                     format!(
+                //                         "{}: {}",
+                //                         context, "Label region projections of expansion"
+                //                     ),
+                //                 )
+                //                 .into(),
+                //             )?;
+                //         }
+                //     }
+                // }
             }
             BorrowPcgEdgeKind::Borrow(borrow) => {
                 if self.ctxt.bc.is_dead(
@@ -627,7 +619,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
-        self.pack_old_and_dead_borrow_leaves()?;
+        self.pack_old_and_dead_borrow_leaves(None)?;
         for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
             self.activate_twophase_borrow_created_at(created_location)?;
         }

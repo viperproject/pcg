@@ -6,9 +6,10 @@ use crate::action::{BorrowPcgAction, OwnedPcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::LabelPlace;
-use crate::borrow_pcg::region_projection::LocalRegionProjection;
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, SetLabel};
+use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::obtain::{self, Expander, ObtainType};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
@@ -97,7 +98,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .capabilities
             .iter()
             .filter(|(p, _)| {
-                p.projection.len() > upgraded_place.projection.len() && upgraded_place.is_prefix(*p)
+                p.projection.len() > upgraded_place.projection.len() && upgraded_place.is_prefix_of(*p)
             })
             .collect::<Vec<_>>();
         for (p, cap) in to_remove {
@@ -155,7 +156,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let expansions = capability_projs
             .expansions
             .iter()
-            .filter(|(p, _)| place.is_prefix(**p))
+            .filter(|(p, _)| place.is_prefix_of(**p))
             .map(|(p, e)| (*p, e.clone()))
             .sorted_by_key(|(p, _)| p.projection.len())
             .rev()
@@ -189,6 +190,55 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
+    fn label_shared_deref_projections_of_postfix_places(
+        &mut self,
+        place: Place<'tcx>,
+    ) -> Result<bool, PcgError> {
+        let derefs_to_disconnect = self
+            .pcg
+            .borrow
+            .graph
+            .edges()
+            .flat_map(|e| match e.kind() {
+                BorrowPcgEdgeKind::BorrowPcgExpansion(e)
+                    if let Some(p) = e.base.as_current_place()
+                        && place != p
+                        && p.is_shared_ref(self.ctxt)
+                        && place.is_prefix_of(p) =>
+                {
+                    Some(e.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for mut rp in derefs_to_disconnect {
+            tracing::info!("Disconnecting deref projection {:?}", rp);
+            let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
+            let label = SnapshotLocation::BeforeRefReassignment(self.location);
+            rp.base.label_place(
+                &LabelPlacePredicate::Exact(rp.base.place()),
+                &SetLabel(label),
+                self.ctxt,
+            );
+            rp.expansion.iter_mut().for_each(|e| {
+                e.label_place(
+                    &LabelPlacePredicate::Exact(e.place()),
+                    &self.pcg.borrow.latest,
+                    self.ctxt,
+                );
+            });
+            self.pcg.borrow.graph.insert(
+                BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
+                self.ctxt,
+            );
+        }
+        self.record_and_apply_action(
+            BorrowPcgAction::make_place_old(place, MakePlaceOldReason::LabelSharedDerefProjections)
+                .into(),
+        )
+    }
+
     /// Ensures that the place is expanded to the given place, with a certain
     /// capability.
     ///
@@ -198,7 +248,27 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         place: Place<'tcx>,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
+
+
+        // This is to support the following kind of scenario:
+        //
+        //  - `s` is to be re-assigned or borrowed mutably at location `l`
+        //  - `s.f` is shared a reference with lifetime 'a reborrowed into `x`
+        //
+        // We want to label s.f. such that the edge {s.f@l, s.f|'a@l} ->
+        // {*s.f@l} is in the graph and redirect the borrow from *s.f to
+        // *s.f@l
+        //
+        // After performing this operation, we should try again to remove borrow
+        // PCG edges blocking `place`, since this may enable some borrow
+        // expansions to be removed (s.f was previously blocked and no longer is)
+        if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
+            self.label_shared_deref_projections_of_postfix_places(place)?;
+            self.pack_old_and_dead_borrow_leaves(Some(place))?;
+        }
+
         let obtain_cap = obtain_type.capability(place, self.ctxt);
+
         if !obtain_cap.is_read() {
             tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
@@ -245,53 +315,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
 
         self.expand_to(place, obtain_type, self.ctxt)?;
-
-        if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
-            let deref_projections_of_postfix_places = self
-                .pcg
-                .borrow
-                .graph
-                .edges()
-                .flat_map(|e| match e.kind() {
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(e)
-                        if let Some(p) = e.deref_blocked_place(self.ctxt)
-                            && place != p
-                            && place.is_prefix(p) =>
-                    {
-                        Some(e.clone())
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-
-            for mut rp in deref_projections_of_postfix_places {
-                let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
-                rp.base.label_place(
-                    &LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(rp.base.place()),
-                    &self.pcg.borrow.latest,
-                    self.ctxt,
-                );
-                rp.expansion.iter_mut().for_each(|e| {
-                    e.label_place(
-                        &LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(e.place()),
-                        &self.pcg.borrow.latest,
-                        self.ctxt,
-                    );
-                });
-                self.pcg
-                    .borrow
-                    .graph
-                    .insert(BorrowPcgEdge::new(rp.into(), conditions), self.ctxt);
-            }
-
-            self.record_and_apply_action(
-                BorrowPcgAction::make_place_old(
-                    place,
-                    MakePlaceOldReason::LabelPostfixesOfPlaceToObtain,
-                )
-                .into(),
-            )?;
-        }
 
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),

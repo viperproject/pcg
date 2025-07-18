@@ -59,7 +59,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelRegionProjectionResult {
         let mut changed = LabelRegionProjectionResult::Unchanged;
-        if predicate.matches(self.assigned_region_projection(repacker).rebase()) {
+        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
             self.assigned_rp_snapshot = label;
             changed = LabelRegionProjectionResult::Changed;
         }
@@ -108,7 +108,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelRegionProjectionResult {
-        if predicate.matches(self.assigned_region_projection(repacker).rebase()) {
+        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
             self.rp_snapshot_location = label;
             LabelRegionProjectionResult::Changed
         } else {

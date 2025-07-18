@@ -96,18 +96,21 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::LabelRegionProjection(projection, None),
+            kind: BorrowPcgActionKind::LabelRegionProjection(
+                LabelRegionProjectionPredicate::Equals(projection),
+                None,
+            ),
             debug_context: Some(context.into()),
         }
     }
 
     pub(crate) fn label_region_projection(
-        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        predicate: LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::LabelRegionProjection(projection, label),
+            kind: BorrowPcgActionKind::LabelRegionProjection(predicate, label),
             debug_context: Some(context.into()),
         }
     }
@@ -125,7 +128,7 @@ pub enum MakePlaceOldReason {
     StorageDead,
     MoveOut,
     ReAssign,
-    LabelPostfixesOfPlaceToObtain,
+    LabelSharedDerefProjections,
     Collapse,
 }
 
@@ -151,8 +154,8 @@ impl MakePlaceOldReason {
                 LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
             }
             MakePlaceOldReason::Collapse => LabelPlacePredicate::Exact(place),
-            MakePlaceOldReason::LabelPostfixesOfPlaceToObtain => {
-                LabelPlacePredicate::StrictPostfix(place)
+            MakePlaceOldReason::LabelSharedDerefProjections => {
+                LabelPlacePredicate::LabelSharedDerefProjections(place)
             }
         };
         let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
@@ -169,7 +172,7 @@ pub enum BorrowPcgActionKind<'tcx> {
         to: LocalNode<'tcx>,
     },
     LabelRegionProjection(
-        RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        LabelRegionProjectionPredicate<'tcx>,
         Option<RegionProjectionLabel>,
     ),
     Weaken(Weaken<'tcx>),
@@ -289,11 +292,9 @@ impl<'tcx> BorrowsState<'tcx> {
             }
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge } => self.graph.insert(edge, ctxt),
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => self.label_region_projection(
-                &LabelRegionProjectionPredicate::Equals(rp),
-                label,
-                ctxt,
-            ),
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                self.label_region_projection(&rp, label, ctxt)
+            }
         };
         Ok(result)
     }

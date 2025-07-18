@@ -14,6 +14,7 @@ use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::HasPlace;
+use crate::utils::Place;
 
 type EdgesToTrim<'tcx> = Vec<(BorrowPcgEdge<'tcx>, Cow<'static, str>)>;
 
@@ -39,13 +40,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     /// arguments. At least for now this interferes with the implementation in
     /// the Prusti purified encoding for accessing the final value of a
     /// reference-typed function argument in its postcondition.
-    pub(crate) fn pack_old_and_dead_borrow_leaves(&mut self) -> Result<(), PcgError> {
+    pub(crate) fn pack_old_and_dead_borrow_leaves(
+        &mut self,
+        for_place: Option<Place<'tcx>>,
+    ) -> Result<(), PcgError> {
         let debug_iteration_limit = 10000;
         let mut iteration = 0;
-        self.restore_capability_to_leaf_places()?;
+        self.restore_capability_to_leaf_places(for_place)?;
         loop {
             iteration += 1;
-            let edges_to_trim = self.identify_edges_to_trim()?;
+            let edges_to_trim = self.identify_edges_to_trim(for_place)?;
             if edges_to_trim.is_empty() {
                 break Ok(());
             }
@@ -53,7 +57,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.remove_edge_and_perform_associated_state_updates(
                     edge,
                     true,
-                    &format!("Trim Old Leaves (iteration {}): {}", iteration, reason),
+                    &format!(
+                        "Trim Old Leaves (for place {:?}, iteration {}): {}",
+                        for_place, iteration, reason
+                    ),
                 )?
             }
             if iteration % 10 == 0 {
@@ -70,7 +77,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
     }
 
-    fn restore_capability_to_leaf_places(&mut self) -> Result<(), PcgError> {
+    fn restore_capability_to_leaf_places(
+        &mut self,
+        parent_place: Option<Place<'tcx>>,
+    ) -> Result<(), PcgError> {
         let leaf_places = self.pcg.leaf_places_where(
             |p| {
                 self.pcg.capabilities.get(p) == Some(CapabilityKind::Read)
@@ -81,6 +91,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             self.ctxt,
         );
         for place in leaf_places {
+            if let Some(parent_place) = parent_place {
+                if !parent_place.is_prefix_of(place) {
+                    continue;
+                }
+            }
             let action = PcgAction::restore_capability(
                 place,
                 CapabilityKind::Exclusive,
@@ -92,7 +107,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
-    fn identify_edges_to_trim<'slf>(&'slf mut self) -> Result<EdgesToTrim<'tcx>, PcgError> {
+    fn identify_edges_to_trim<'slf>(
+        &'slf mut self,
+        ancestor_place: Option<Place<'tcx>>,
+    ) -> Result<EdgesToTrim<'tcx>, PcgError> {
         enum ShouldKillNode {
             Yes { reason: Cow<'static, str> },
             No,
@@ -101,11 +119,28 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let ctxt = self.ctxt;
         let location = self.location;
 
+        let ancestor_predicate_allows_killing = |p: LocalNode<'tcx>| {
+            let place = match p {
+                PCGNode::Place(p) => p,
+                PCGNode::RegionProjection(rp) => rp.place(),
+            };
+            if let Some(ancestor_place) = ancestor_place {
+                if !place.is_current() || !ancestor_place.place().is_prefix_of(place.place()) {
+                    return false;
+                }
+            }
+            true
+        };
+
         let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
             let place = match p {
                 PCGNode::Place(p) => p,
                 PCGNode::RegionProjection(rp) => rp.place(),
             };
+            if !ancestor_predicate_allows_killing(p) {
+                return ShouldKillNode::No;
+            }
+
             if place.is_old() {
                 return ShouldKillNode::Yes {
                     reason: "Place is old".into(),
@@ -146,6 +181,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let location = self.location;
         let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
+                if !ancestor_predicate_allows_killing(expansion.base()) {
+                    return ShouldPackEdge::No;
+                }
                 if expansion.expansion().iter().all(|node| {
                     node.is_old() || self.ctxt.bc.is_dead(node.place().into(), location)
                 }) {

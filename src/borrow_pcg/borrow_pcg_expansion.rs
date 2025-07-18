@@ -26,7 +26,7 @@ use crate::{
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
         MaybeHasLocation, PcgUnsupportedError,
     },
-    utils::{json::ToJsonWithCompilerCtxt, redirect::RedirectResult},
+    utils::{json::ToJsonWithCompilerCtxt, redirect::RedirectResult, SnapshotLocation},
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -72,8 +72,16 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> PlaceExpansion<'tcx> {
-    pub(crate) fn block_type(&self, base_place: Place<'tcx>, obtain_type: ObtainType, ctxt: CompilerCtxt<'_, 'tcx>) -> BlockType {
-        if matches!(obtain_type, ObtainType::TwoPhaseExpand | ObtainType::Capability(CapabilityKind::Read)) {
+    pub(crate) fn block_type(
+        &self,
+        base_place: Place<'tcx>,
+        obtain_type: ObtainType,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> BlockType {
+        if matches!(
+            obtain_type,
+            ObtainType::TwoPhaseExpand | ObtainType::Capability(CapabilityKind::Read)
+        ) {
             BlockType::Read
         } else if matches!(self, PlaceExpansion::Deref) {
             if base_place.is_shared_ref(ctxt) {
@@ -146,7 +154,7 @@ pub struct BorrowPcgExpansion<'tcx, P = LocalNode<'tcx>> {
     /// - The place of `base` is not a mutable reference, or
     /// - `expansion` does not contain any region projections, or
     /// - this deref is for a shared borrow / read access
-    deref_blocked_region_projection_label: Option<RegionProjectionLabel>,
+    deref_rp_label: Option<RegionProjectionLabel>,
     _marker: PhantomData<&'tcx ()>,
 }
 
@@ -157,6 +165,11 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
+        tracing::info!(
+            "label blocked places: {} with {:?}",
+            self.to_short_string(ctxt),
+            predicate
+        );
         let result = self.base.label_place(predicate, labeller, ctxt);
         self.assert_validity(ctxt);
         result
@@ -169,12 +182,6 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
-        if let LabelPlacePredicate::StrictPostfix(rule_place) = predicate
-            && let Some(place) = self.base.as_current_place()
-            && *rule_place == place
-        {
-            return false;
-        }
         for p in &mut self.expansion {
             changed |= p.label_place(predicate, labeller, ctxt);
         }
@@ -194,25 +201,10 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
         for p in &mut self.expansion {
             changed |= p.label_region_projection(predicate, label, ctxt);
         }
-        if let Some(base_rp) = self.base.place().base_region_projection(ctxt) {
-            match predicate {
-                LabelRegionProjectionPredicate::Equals(projection) => {
-                    if projection.label() == self.deref_blocked_region_projection_label
-                        && self.base == projection.base.into()
-                    {
-                        self.deref_blocked_region_projection_label = label;
-                    }
-                }
-                LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
-                    if base_rp.region_idx == *region_idx
-                        && maybe_old_place
-                            .as_current_place()
-                            .is_some_and(|p| p == base_rp.place())
-                    {
-                        self.deref_blocked_region_projection_label = label;
-                    }
-                }
-            }
+        if let Some(base_rp) = self.base.place().base_region_projection(ctxt)
+            && predicate.matches(base_rp.into(), ctxt)
+        {
+            self.deref_rp_label = label;
         }
         self.assert_validity(ctxt);
         changed
@@ -294,7 +286,7 @@ impl<'tcx> TryFrom<BorrowPcgExpansion<'tcx, LocalNode<'tcx>>>
     fn try_from(expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>>) -> Result<Self, Self::Error> {
         Ok(BorrowPcgExpansion {
             base: expansion.base.try_into()?,
-            deref_blocked_region_projection_label: expansion.deref_blocked_region_projection_label,
+            deref_rp_label: expansion.deref_rp_label,
             expansion: expansion
                 .expansion
                 .into_iter()
@@ -357,7 +349,28 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         if let BlockingNode::Place(p) = self.base
             && let Some(projection) = p.base_region_projection(ctxt)
         {
-            Some(projection.with_label(self.deref_blocked_region_projection_label, ctxt))
+            if let Some(SnapshotLocation::BeforeRefReassignment(_)) = p.location() {
+                // This is somewhat of a hack to support the following kind of scenario:
+                //
+                //  - `s` is to be re-assigned or borrowed mutably at location `l`
+                //  - `s.f` is shared a reference with lifetime 'a reborrowed into `x`
+                //
+                // We want to keep the edge {s.f@l, s.f|'a@l} -> {*s.f@l} in the graph
+                // Note that s.f|'a@l will be connected to the snapshot of
+                // `s|'a@l` (otherwise it would be disconnected from the graph)
+                //
+                // But in general the snapshot of the place in the places and
+                // the lifetime projection are the same, so using the normal
+                // logic we couldn't have refer to s.f@l in the place and s.f in
+                // the lifetime projection. Therefore we have this special case.
+                Some(
+                    projection
+                        .with_label(self.deref_rp_label, ctxt)
+                        .with_base(p.place().into()),
+                )
+            } else {
+                Some(projection.with_label(self.deref_rp_label, ctxt))
+            }
         } else {
             None
         }
@@ -449,7 +462,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
                 .into_iter()
                 .map(|elem| base.project_deeper(elem, ctxt))
                 .collect::<Result<Vec<_>, _>>()?,
-            deref_blocked_region_projection_label,
+            deref_rp_label: deref_blocked_region_projection_label,
             _marker: PhantomData,
         };
         result.assert_validity(ctxt);

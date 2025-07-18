@@ -200,7 +200,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let expansions = self
             .expansions
             .iter()
-            .filter(|(p, _)| to.is_prefix(**p))
+            .filter(|(p, _)| to.is_prefix_of(**p))
             .map(|(p, e)| (*p, e.clone()))
             .sorted_by_key(|(p, _)| p.projection.len())
             .rev()

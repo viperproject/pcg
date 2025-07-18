@@ -366,10 +366,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         };
         let mut to_expand: Vec<Place<'tcx>> = vec![];
         for place in blocked_loop_places {
-            if to_expand.iter().any(|p| place.is_prefix(*p)) {
+            if to_expand.iter().any(|p| place.is_prefix_of(*p)) {
                 continue;
             }
-            to_expand.retain(|p| !p.is_prefix(*place));
+            to_expand.retain(|p| !p.is_prefix_of(*place));
             to_expand.push(*place);
         }
         for place in to_expand {
@@ -454,14 +454,13 @@ impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge } => Ok(self.graph.insert(edge, self.ctxt)),
                 BorrowPcgActionKind::RedirectEdge { .. } => todo!(),
-                BorrowPcgActionKind::LabelRegionProjection(
-                    region_projection,
-                    region_projection_label,
-                ) => Ok(self.graph.label_region_projection(
-                    &LabelRegionProjectionPredicate::Equals(region_projection),
-                    region_projection_label,
-                    self.ctxt,
-                )),
+                BorrowPcgActionKind::LabelRegionProjection(predicate, region_projection_label) => {
+                    Ok(self.graph.label_region_projection(
+                        &predicate,
+                        region_projection_label,
+                        self.ctxt,
+                    ))
+                }
                 BorrowPcgActionKind::Weaken(_) => todo!(),
                 BorrowPcgActionKind::Restore(_) => todo!(),
                 BorrowPcgActionKind::MakePlaceOld(_, _) => todo!(),

@@ -253,7 +253,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
             let rp = base.base_region_projection(ctxt).unwrap();
             self.apply_action(
                 BorrowPcgAction::label_region_projection(
-                    rp.into(),
+                    LabelRegionProjectionPredicate::Equals(rp.into()),
                     Some(location),
                     "add_borrow_pcg_expansion: fresh RP label",
                 )
@@ -312,7 +312,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                 if let NewLabelAtCurrentLocation(label) = expansion_label {
                     self.apply_action(
                         BorrowPcgAction::label_region_projection(
-                            base_rp.into(),
+                            LabelRegionProjectionPredicate::Equals(base_rp.into()),
                             Some(label),
                             "expand_region_projections_one_level: create new RP label",
                         )

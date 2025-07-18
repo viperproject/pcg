@@ -3,6 +3,7 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::obtain::Expander;
@@ -162,9 +163,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             let label = self.current_snapshot_location();
                             self.record_and_apply_action(
                                 BorrowPcgAction::label_region_projection(
-                                    source_proj.into(),
+                                    LabelRegionProjectionPredicate::Postfix(source_proj.into()),
                                     Some(label.into()),
-                                    "assign_post_main",
+                                    "Label region projections of newly borrowed place",
                                 )
                                 .into(),
                             )?;
