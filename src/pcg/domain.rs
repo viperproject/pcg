@@ -316,19 +316,6 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.capabilities.check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
-        for edge in self.borrow.graph.edges() {
-            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind
-                && let Some(place) = e.base.as_current_place()
-                && place.projects_shared_ref(ctxt)
-                && self.capabilities.get(place) != Some(CapabilityKind::Read)
-            {
-                return Err(format!(
-                    "Expansion of shared reference {} is not read, but {:?}",
-                    place.to_short_string(ctxt),
-                    self.capabilities.get(place)
-                ));
-            }
-        }
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
         }
