@@ -1,18 +1,22 @@
 //! The data structure representing the state of the Borrow PCG.
 
 use super::{
-    borrow_pcg_edge::{BlockedNode, BorrowPcgEdgeRef, BorrowPcgEdge, ToBorrowsEdge},
+    borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeRef, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
     latest::Latest,
     path_condition::{PathCondition, PathConditions},
     visitor::extract_regions,
 };
-use crate::{action::BorrowPcgAction, free_pcs::FreePlaceCapabilitySummary, pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError}, utils::place::maybe_remote::MaybeRemotePlace};
 use crate::{
-    borrow_pcg::borrow_pcg_edge::LocalNode,
-    utils::{place::maybe_old::MaybeOldPlace},
+    action::BorrowPcgAction,
+    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
+    free_pcs::FreePlaceCapabilitySummary,
+    pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
+    pcg_validity_assert,
+    utils::place::maybe_remote::MaybeRemotePlace,
 };
+use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -28,7 +32,6 @@ use crate::{
         ty::{self},
     },
     utils::{display::DebugLines, validity::HasValidityCheck},
-    validity_checks_enabled,
 };
 use crate::{
     borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::RegionProjection},
@@ -49,6 +52,193 @@ pub struct BorrowsState<'tcx> {
     pub(crate) path_conditions: PathConditions,
 }
 
+pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
+    pub(crate) latest: &'pcg mut Latest<'tcx>,
+    pub(crate) graph: &'pcg mut BorrowsGraph<'tcx>,
+    pub(crate) path_conditions: &'pcg PathConditions,
+}
+
+#[allow(unused)]
+#[derive(Clone, Copy)]
+pub(crate) struct BorrowStateRef<'pcg, 'tcx> {
+    pub(crate) latest: &'pcg Latest<'tcx>,
+    pub(crate) graph: &'pcg BorrowsGraph<'tcx>,
+    pub(crate) path_conditions: &'pcg PathConditions,
+}
+
+pub(crate) trait BorrowsStateLike<'tcx> {
+    fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx>;
+    fn as_ref(&self) -> BorrowStateRef<'_, 'tcx>;
+
+    fn latest(&mut self) -> &mut Latest<'tcx> {
+        self.as_mut_ref().latest
+    }
+    fn graph_mut(&mut self) -> &mut BorrowsGraph<'tcx> {
+        self.as_mut_ref().graph
+    }
+    fn graph(&self) -> &BorrowsGraph<'tcx>;
+
+    // fn path_conditions(&self) -> &PathConditions {
+    //     self.as_ref().path_conditions
+    // }
+
+    fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
+        self.graph().frozen_graph().leaf_nodes(ctxt)
+    }
+
+    fn set_latest(
+        &mut self,
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.latest().insert(place, location, ctxt)
+    }
+
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        reason: MakePlaceOldReason,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let state = self.as_mut_ref();
+        state
+            .graph
+            .make_place_old(place, reason, state.latest, ctxt)
+    }
+
+    fn label_region_projection(
+        &mut self,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph_mut().label_region_projection(predicate, label, ctxt)
+    }
+
+    fn remove(
+        &mut self,
+        edge: &BorrowPcgEdge<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let state = self.as_mut_ref();
+        let removed = state.graph.remove(edge.kind()).is_some();
+        if removed {
+            for node in edge.blocked_by_nodes(repacker) {
+                if !state.graph.contains(node, repacker)
+                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+                {
+                    let _ = capabilities.remove(place, repacker);
+                }
+            }
+        }
+        removed
+    }
+
+    fn apply_action(
+        &mut self,
+        action: BorrowPcgAction<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        let result = match action.kind {
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                self.graph_mut().redirect_edge(edge, from, to, ctxt)
+            }
+            BorrowPcgActionKind::Restore(restore) => {
+                let restore_place = restore.place();
+                if let Some(cap) = capabilities.get(restore_place) {
+                    assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
+                }
+                if !capabilities.insert(restore_place, restore.capability(), ctxt) {
+                    panic!("Capability should have been updated")
+                }
+                true
+            }
+            BorrowPcgActionKind::Weaken(weaken) => {
+                let weaken_place = weaken.place();
+                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
+                match weaken.to {
+                    Some(to) => {
+                        capabilities.insert(weaken_place, to, ctxt);
+                    }
+                    None => {
+                        assert!(capabilities.remove(weaken_place, ctxt).is_some());
+                    }
+                }
+                true
+            }
+            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
+                self.make_place_old(place, reason, ctxt)
+            }
+            BorrowPcgActionKind::SetLatest(place, location) => {
+                self.set_latest(place, location, ctxt)
+            }
+            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
+            BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt),
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                self.label_region_projection(&rp, label, ctxt)
+            }
+        };
+        Ok(result)
+    }
+}
+
+impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> {
+    fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
+        BorrowStateMutRef {
+            latest: self.latest,
+            graph: self.graph,
+            path_conditions: self.path_conditions,
+        }
+    }
+
+    fn graph(&self) -> &BorrowsGraph<'tcx> {
+        self.graph
+    }
+
+    fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
+        BorrowStateRef {
+            latest: self.latest,
+            graph: self.graph,
+            path_conditions: self.path_conditions,
+        }
+    }
+}
+
+impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
+    fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
+        BorrowStateMutRef {
+            latest: &mut self.latest,
+            graph: &mut self.graph,
+            path_conditions: &self.path_conditions,
+        }
+    }
+
+    fn graph(&self) -> &BorrowsGraph<'tcx> {
+        &self.graph
+    }
+
+    fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
+        BorrowStateRef {
+            latest: &self.latest,
+            graph: &self.graph,
+            path_conditions: &self.path_conditions,
+        }
+    }
+}
+
+impl<'pcg, 'tcx> From<&'pcg mut BorrowsState<'tcx>> for BorrowStateMutRef<'pcg, 'tcx> {
+    fn from(borrows_state: &'pcg mut BorrowsState<'tcx>) -> Self {
+        Self {
+            latest: &mut borrows_state.latest,
+            graph: &mut borrows_state.graph,
+            path_conditions: &borrows_state.path_conditions,
+        }
+    }
+}
+
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut lines = Vec::new();
@@ -57,19 +247,20 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for BorrowStateRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
-        self.graph.check_validity(ctxt)
+        self.graph.check_validity(ctxt)?;
+        Ok(())
+    }
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for BorrowStateMutRef<'_, 'tcx> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.as_ref().check_validity(ctxt)
     }
 }
 
 impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
-        self.graph
-            .frozen_graph()
-            .leaf_nodes(ctxt)
-    }
-
     fn introduce_initial_borrows(
         &mut self,
         local: mir::Local,
@@ -83,7 +274,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
                     "Introduce initial borrows",
-                    false,
+                    repacker,
                 ),
                 capabilities,
                 repacker,
@@ -118,7 +309,7 @@ impl<'tcx> BorrowsState<'tcx> {
                             PathConditions::new(),
                         ),
                         "Introduce initial borrows",
-                        false,
+                        repacker,
                     ),
                     capabilities,
                     repacker,
@@ -135,25 +326,6 @@ impl<'tcx> BorrowsState<'tcx> {
         for arg in repacker.body().args_iter() {
             self.introduce_initial_borrows(arg, capabilities, repacker);
         }
-    }
-
-    pub(super) fn remove(
-        &mut self,
-        edge: &BorrowPcgEdge<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let removed = self.graph.remove(edge.kind()).is_some();
-        if removed {
-            for node in edge.blocked_by_nodes(repacker) {
-                if !self.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
-                {
-                    let _ = capabilities.remove(place);
-                }
-            }
-        }
-        removed
     }
 
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
@@ -179,6 +351,7 @@ impl<'tcx> BorrowsState<'tcx> {
             body_analysis,
             capabilities,
             owned,
+            &mut self.latest,
             self.path_conditions.clone(),
             ctxt,
         )?;
@@ -289,14 +462,14 @@ impl<'tcx> BorrowsState<'tcx> {
 
         match kind {
             BorrowKind::Mut {
-                kind: MutBorrowKind::Default,
+                kind: MutBorrowKind::Default | MutBorrowKind::ClosureCapture,
             } => {
-                let _ = capabilities.remove(blocked_place);
+                let _ = capabilities.remove(blocked_place, ctxt);
             }
             _ => {
                 match capabilities.get(blocked_place) {
                     Some(CapabilityKind::Exclusive) => {
-                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read));
+                        assert!(capabilities.insert(blocked_place, CapabilityKind::Read, ctxt));
                     }
                     Some(CapabilityKind::Read) => {
                         // Do nothing, this just adds another shared borrow
@@ -308,12 +481,13 @@ impl<'tcx> BorrowsState<'tcx> {
                         // TODO: Make such projections complete
                     }
                     other => {
-                        if validity_checks_enabled() {
-                            unreachable!(
-                                "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
-                                location, blocked_place, other
-                            );
-                        }
+                        pcg_validity_assert!(
+                            false,
+                            "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
+                            location,
+                            blocked_place,
+                            other
+                        );
                     }
                 }
             }

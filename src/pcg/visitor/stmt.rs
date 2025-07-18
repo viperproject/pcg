@@ -68,6 +68,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     target,
                                     target_cap,
                                     Some(CapabilityKind::Write),
+                                    "pre_main",
+                                    self.ctxt,
                                 )
                                 .into(),
                             )?;
@@ -94,7 +96,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         let should_remove =
                             !matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_));
                         if should_remove {
-                            self.remove_edge_and_perform_associated_state_updates(edge, "Assign")?;
+                            self.place_obtainer()
+                                .remove_edge_and_perform_associated_state_updates(
+                                    edge, false, "Assign",
+                                )?;
                         }
                     }
                 }

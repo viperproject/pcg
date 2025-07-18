@@ -1,6 +1,9 @@
-use crate::borrow_pcg::latest::Latest;
+use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::has_pcs_elem::PlaceLabeller;
 use crate::pcg::PCGNode;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};
+use crate::rustc_interface::middle::mir::ProjectionElem;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
@@ -53,22 +56,88 @@ pub trait EdgeData<'tcx> {
     }
 }
 
-pub(crate) enum LabelPlacePredicate<'tcx> {
-    PrefixOrPostfix(Place<'tcx>),
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LabelPlacePredicate<'tcx> {
+    Exact(Place<'tcx>),
+    PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
+    LabelSharedDerefProjections(Place<'tcx>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EdgePredicate {
+    All,
+    BorrowEdges,
+}
+
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for LabelPlacePredicate<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        match self {
+            LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
+                predicate_place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
+            }
+            LabelPlacePredicate::LabelSharedDerefProjections(place) => {
+                format!("strict postfix of {}", place.to_short_string(ctxt))
+            }
+            LabelPlacePredicate::Exact(place) => {
+                format!("exact {}", place.to_short_string(ctxt))
+            }
+        }
+    }
+}
+
+impl<'tcx> LabelPlacePredicate<'tcx> {
+    pub(crate) fn applies_to(&self, candidate: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        match self {
+            LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
+                if predicate_place.is_prefix_of(candidate) {
+                    true
+                } else if candidate.is_prefix_of(*predicate_place) {
+                    for p in predicate_place
+                        .iter_places(ctxt)
+                        .into_iter()
+                        .skip(candidate.projection.len() + 1)
+                    {
+                        if p.parent_place().unwrap().is_ref(ctxt) && p.is_deref() {
+                            return false;
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            LabelPlacePredicate::LabelSharedDerefProjections(place) => {
+                if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
+                    for (place, proj) in iter {
+                        if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            LabelPlacePredicate::Exact(place) => *place == candidate,
+        }
+    }
 }
 
 pub(crate) trait LabelEdgePlaces<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;
 }
@@ -136,12 +205,12 @@ macro_rules! edgedata_enum {
             fn label_blocked_places(
                 &mut self,
                 predicate: &$crate::borrow_pcg::edge_data::LabelPlacePredicate<'tcx>,
-                latest: &Latest<'tcx>,
+                labeller: &impl $crate::borrow_pcg::has_pcs_elem::PlaceLabeller<'tcx>,
                 ctxt: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.label_blocked_places(predicate, latest, ctxt),
+                        $enum_name::$variant_name(inner) => inner.label_blocked_places(predicate, labeller, ctxt),
                     )+
                 }
             }
@@ -149,12 +218,12 @@ macro_rules! edgedata_enum {
             fn label_blocked_by_places(
                 &mut self,
                 predicate: &$crate::borrow_pcg::edge_data::LabelPlacePredicate<'tcx>,
-                latest: &Latest<'tcx>,
+                labeller: &impl $crate::borrow_pcg::has_pcs_elem::PlaceLabeller<'tcx>,
                 ctxt: CompilerCtxt<'_, 'tcx>,
             ) -> bool {
                 match self {
                     $(
-                        $enum_name::$variant_name(inner) => inner.label_blocked_by_places(predicate, latest, ctxt),
+                        $enum_name::$variant_name(inner) => inner.label_blocked_by_places(predicate, labeller, ctxt),
                     )+
                 }
             }
@@ -174,7 +243,7 @@ macro_rules! edgedata_enum {
                 predicate: &$crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate<'tcx>,
                 location: Option<$crate::borrow_pcg::region_projection::RegionProjectionLabel>,
                 repacker: CompilerCtxt<'_, 'tcx>,
-            ) -> bool {
+            ) -> $crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionResult {
                 match self {
                     $(
                         $enum_name::$variant_name(inner) => inner.label_region_projection(predicate, location, repacker),

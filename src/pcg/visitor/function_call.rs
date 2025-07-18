@@ -4,6 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::domain::{FunctionCallAbstractionInput, FunctionCallAbstractionOutput};
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -34,21 +35,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        // TODO: Check whether this logic makes sense
-        // for arg in args.iter() {
-        //     if let Some(arg_place) = arg.place() {
-        //         let arg_place: utils::Place<'tcx> = arg_place.into();
-        //         if arg_place
-        //             .iter_places(self.ctxt)
-        //             .iter()
-        //             .any(|p| p.is_raw_ptr(self.ctxt))
-        //         {
-        //             return Err(PcgError::unsupported(
-        //                 PCGUnsupportedError::FunctionCallWithUnsafePtrArgument,
-        //             ));
-        //         }
-        //     }
-        // }
         // This is just a performance optimization
         if self
             .pcg
@@ -74,7 +60,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .into(),
                     path_conditions.clone(),
                 );
-                BorrowPcgAction::add_edge(edge, context, false)
+                BorrowPcgAction::add_edge(edge, context, ctxt)
             };
 
         // The versions of the region projections for the function inputs just
@@ -100,7 +86,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if arg.is_invariant_in_type(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::label_region_projection(
-                        *arg,
+                        LabelRegionProjectionPredicate::Equals(*arg),
                         Some(SnapshotLocation::before(location).into()),
                         format!(
                             "Function call: {} is invariant in type {:?}; therefore it will be labelled as the set of borrows inside may be modified",
@@ -126,6 +112,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<FxHashSet<_>>();
 
+        tracing::debug!(
+            "Placeholder targets: {}",
+            placeholder_targets.to_short_string(self.ctxt)
+        );
+
         // The set of region projections that contain borrows that could be
         // moved into the labelled rps (as they are seen after the function call)
         let source_arg_projections = arg_region_projections
@@ -138,6 +129,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             })
             .collect::<Vec<_>>();
+
+        tracing::debug!(
+            "Source arg projections: {}",
+            source_arg_projections.to_short_string(self.ctxt)
+        );
 
         for arg_rp in source_arg_projections {
             let this_region = arg_rp.region(self.ctxt);

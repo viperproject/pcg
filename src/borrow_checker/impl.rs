@@ -436,7 +436,7 @@ fn twophase_borrow_activations(
 }
 
 #[rustversion::since(2024-12-14)]
-fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
+pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
     borrow.reserve_location()
 }
 
@@ -448,7 +448,7 @@ fn get_activation_map<'a>(
 }
 
 #[rustversion::before(2024-12-14)]
-fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
+pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
     borrow.reserve_location
 }
 

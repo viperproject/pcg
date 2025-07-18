@@ -147,7 +147,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                                     abstraction.conditions,
                                 ),
                                 "terminator",
-                                false,
+                                ctxt
                             ),
                             ctxt,
                         );

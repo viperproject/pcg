@@ -2,9 +2,10 @@ use super::PcgVisitor;
 use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
+use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::obtain::Expander;
+use crate::pcg::obtain::PlaceExpander;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
@@ -30,7 +31,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         )?;
         self.pcg
             .capabilities
-            .insert(target, CapabilityKind::Exclusive);
+            .insert(target, CapabilityKind::Exclusive, self.ctxt);
         match rvalue {
             Rvalue::Aggregate(
                 box (mir::AggregateKind::Adt(..)
@@ -93,7 +94,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
                             "assign_post_main",
-                            false,
+                            self.ctxt,
                         )
                         .into(),
                     )?;
@@ -128,7 +129,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
                             "assign_post_main",
-                            false,
+                            self.ctxt,
                         )
                         .into(),
                     )?;
@@ -154,60 +155,73 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &mut self.pcg.capabilities,
                     self.ctxt,
                 );
-                for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
-                    let source_proj =
-                        if kind.mutability().is_mut() && source_proj.can_be_labelled(self.ctxt) {
-                            let label = self.current_snapshot_location();
-                            self.record_and_apply_action(
-                                BorrowPcgAction::label_region_projection(
-                                    source_proj.into(),
-                                    Some(label.into()),
-                                    "assign_post_main",
-                                )
-                                .into(),
-                            )?;
-                            source_proj.with_label(Some(label.into()), self.ctxt)
-                        } else {
-                            source_proj
-                        };
-                    let source_region = source_proj.region(self.ctxt);
-                    let mut nested_ref_mut_targets = vec![];
-                    for target_proj in target.region_projections(self.ctxt).into_iter() {
-                        let target_region = target_proj.region(self.ctxt);
-                        if self.ctxt.bc.outlives(source_region, target_region) {
-                            let regions_equal =
-                                self.ctxt.bc.same_region(source_region, target_region);
-                            self.record_and_apply_action(
-                                BorrowPcgAction::add_edge(
-                                    BorrowPcgEdge::new(
-                                        BorrowFlowEdge::new(
-                                            source_proj.into(),
-                                            target_proj.into(),
-                                            BorrowFlowEdgeKind::BorrowOutlives { regions_equal },
-                                            self.ctxt,
-                                        )
-                                        .into(),
-                                        self.pcg.borrow.path_conditions.clone(),
-                                    ),
-                                    "assign_post_main",
-                                    false,
-                                )
-                                .into(),
-                            )?;
-                            if regions_equal && kind.mutability().is_mut() {
-                                nested_ref_mut_targets.push(target_proj.into());
-                            }
-                        }
-                    }
-                    self.add_and_update_placeholder_edges(
-                        source_proj.into(),
-                        &nested_ref_mut_targets,
-                        "assign",
-                        self.ctxt
-                    )?;
-                }
+                self.label_region_projections_for_borrow(blocked_place, target, *kind)?;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn label_region_projections_for_borrow(
+        &mut self,
+        blocked_place: utils::Place<'tcx>,
+        target: utils::Place<'tcx>,
+        kind: mir::BorrowKind,
+    ) -> Result<(), PcgError> {
+        let ctxt = self.ctxt;
+        for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
+            let mut obtainer = self.place_obtainer();
+            let source_proj = if kind.mutability().is_mut() {
+                let label = obtainer.current_snapshot_location();
+                obtainer.apply_action(
+                    BorrowPcgAction::label_region_projection(
+                        LabelRegionProjectionPredicate::Postfix(source_proj.into()),
+                        Some(label.into()),
+                        "Label region projections of newly borrowed place",
+                    )
+                    .into(),
+                )?;
+                source_proj.with_label(Some(label.into()), self.ctxt)
+            } else {
+                source_proj.with_label(
+                    obtainer.label_for_shared_expansion_of_rp(source_proj, obtainer.ctxt),
+                    self.ctxt,
+                )
+            };
+            let source_region = source_proj.region(self.ctxt);
+            let mut nested_ref_mut_targets = vec![];
+            for target_proj in target.region_projections(self.ctxt).into_iter() {
+                let target_region = target_proj.region(self.ctxt);
+                if self.ctxt.bc.outlives(source_region, target_region) {
+                    let regions_equal = self.ctxt.bc.same_region(source_region, target_region);
+                    self.record_and_apply_action(
+                        BorrowPcgAction::add_edge(
+                            BorrowPcgEdge::new(
+                                BorrowFlowEdge::new(
+                                    source_proj.into(),
+                                    target_proj.into(),
+                                    BorrowFlowEdgeKind::BorrowOutlives { regions_equal },
+                                    self.ctxt,
+                                )
+                                .into(),
+                                self.pcg.borrow.path_conditions.clone(),
+                            ),
+                            "assign_post_main",
+                            self.ctxt,
+                        )
+                        .into(),
+                    )?;
+                    if regions_equal && kind.mutability().is_mut() {
+                        nested_ref_mut_targets.push(target_proj.into());
+                    }
+                }
+            }
+            self.place_obtainer().add_and_update_placeholder_edges(
+                source_proj.into(),
+                &nested_ref_mut_targets,
+                "assign",
+                ctxt,
+            )?;
         }
         Ok(())
     }

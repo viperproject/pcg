@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
 };
@@ -145,7 +145,11 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let expansion = from.expand(*to, repacker)?;
 
         for place in expansion.other_expansions() {
-            capabilities.insert(place, if for_cap.is_read() { for_cap } else { from_cap });
+            capabilities.insert(
+                place,
+                if for_cap.is_read() { for_cap } else { from_cap },
+                repacker,
+            );
         }
 
         let mut ops = Vec::new();
@@ -155,12 +159,18 @@ impl<'tcx> CapabilityProjections<'tcx> {
                 expansion.base_place(),
                 PlaceExpansion::from_places(expansion.expansion(), repacker),
             );
-            if for_cap.is_read() {
-                capabilities.insert(expansion.base_place(), for_cap);
+
+            let block_type = if for_cap.is_read() {
+                BlockType::Read
             } else {
-                capabilities.remove(expansion.base_place());
-            }
-            if expansion.kind.is_box() && from_cap.is_shallow_exclusive() {
+                BlockType::Other
+            };
+            capabilities.update_capabilities_for_block_of_place(
+                expansion.base_place(),
+                block_type,
+                repacker,
+            );
+            if expansion.kind.is_deref_box() && from_cap.is_shallow_exclusive() {
                 ops.push(RepackOp::DerefShallowInit(
                     expansion.base_place(),
                     expansion.target_place,
@@ -175,7 +185,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
             }
         }
 
-        capabilities.insert(*to, for_cap);
+        capabilities.insert(*to, for_cap, repacker);
 
         Ok(ops)
     }
@@ -190,7 +200,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         let expansions = self
             .expansions
             .iter()
-            .filter(|(p, _)| to.is_prefix(**p))
+            .filter(|(p, _)| to.is_prefix_of(**p))
             .map(|(p, e)| (*p, e.clone()))
             .sorted_by_key(|(p, _)| p.projection.len())
             .rev()
@@ -203,12 +213,12 @@ impl<'tcx> CapabilityProjections<'tcx> {
                     expansion_places
                         .iter()
                         .fold(CapabilityKind::Exclusive, |acc, place| {
-                            match capabilities.remove(*place) {
+                            match capabilities.remove(*place, repacker) {
                                 Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                 None => acc,
                             }
                         });
-                capabilities.insert(p, retained_cap);
+                capabilities.insert(p, retained_cap, repacker);
                 self.expansions.remove(&p);
                 RepackOp::collapse(p, expansion.guide(), retained_cap)
             })

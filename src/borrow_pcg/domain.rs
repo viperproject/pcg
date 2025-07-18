@@ -6,8 +6,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
-        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
-        latest::Latest,
+        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
         region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
@@ -35,7 +34,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstractionInput<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.0.label_region_projection(predicate, label, ctxt)
     }
 }
@@ -64,12 +63,12 @@ impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for p in self.pcg_elems() {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -94,7 +93,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionInput<'tcx> {
         projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.0.label_region_projection(projection, label, ctxt)
     }
 }
@@ -123,12 +122,12 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionInput<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for p in self.pcg_elems() {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -157,7 +156,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionOutput<'tcx> {
         projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.0.label_region_projection(projection, label, ctxt)
     }
 }
@@ -186,13 +185,13 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionOutput<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         let maybe_old_places: Vec<&mut MaybeOldPlace<'tcx>> = self.0.pcg_elems();
         for p in maybe_old_places {
-            changed |= p.label_place(predicate, latest, ctxt);
+            changed |= p.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -225,10 +224,10 @@ impl<'tcx> LabelPlace<'tcx> for AbstractionOutputTarget<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.0.label_place(predicate, latest, ctxt)
+        self.0.label_place(predicate, labeller, ctxt)
     }
 }
 
@@ -238,7 +237,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for AbstractionOutputTarget<'tcx> {
         projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.0.label_region_projection(projection, label, ctxt)
     }
 }

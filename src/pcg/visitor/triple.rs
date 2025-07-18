@@ -15,23 +15,20 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, ObtainType::TwoPhaseExpand)?;
+                self.place_obtainer().obtain(place, ObtainType::TwoPhaseExpand)?;
             }
             PlaceCondition::Capability(place, capability) => {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, ObtainType::Capability(capability))?;
-            }
-            PlaceCondition::RemoveCapability(place) => {
-                self.pcg.capabilities.remove(place);
+                self.place_obtainer().obtain(place, ObtainType::Capability(capability))?;
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self.pcg.owned.locals_mut()[local] =
                     CapabilityLocal::Allocated(CapabilityProjections::new(local));
                 self.pcg
                     .capabilities
-                    .insert(local.into(), CapabilityKind::Write);
+                    .insert(local.into(), CapabilityKind::Write, self.ctxt);
             }
             PlaceCondition::Unalloc(_) | PlaceCondition::Return => {}
         }
@@ -39,7 +36,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     pub(crate) fn ensure_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
-        self.pcg.owned_ensures(triple);
+        self.pcg.owned_ensures(triple, self.ctxt);
         Ok(())
     }
 }

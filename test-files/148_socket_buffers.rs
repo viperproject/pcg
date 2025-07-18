@@ -27,6 +27,7 @@ fn set_msghdr_iov(msg: &mut msghdr, ptr: *mut iovec, len: usize) {
 
 impl<'addr, 'bufs, 'control> MsgHdrMut<'addr, 'bufs, 'control> {
     pub fn with_buffers(mut self, bufs: &'bufs mut [MaybeUninitSlice<'_>]) -> Self {
+        // PCG: PcgError { kind: Unsupported(CallWithUnsafePtrWithNestedLifetime), context: [] }
         set_msghdr_iov(&mut self.inner, bufs.as_mut_ptr().cast(), bufs.len());
         self
     }

@@ -1,12 +1,9 @@
 use crate::{
     borrow_pcg::{
-        borrow_pcg_edge::BorrowPcgEdge,
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-        latest::Latest,
-        path_condition::{PathCondition, PathConditions},
+        action::MakePlaceOldReason, borrow_pcg_edge::BorrowPcgEdge, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, PathConditions}
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::{CompilerCtxt, Place},
+    utils::{CompilerCtxt, FilterMutResult, Place},
 };
 
 use super::BorrowsGraph;
@@ -15,17 +12,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        latest: &Latest<'tcx>,
+        reason: MakePlaceOldReason,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let predicate = &LabelPlacePredicate::PrefixOrPostfix(place);
-
-
         self.mut_edges(|edge| {
-            let mut c = edge.label_blocked_places(predicate, latest, ctxt);
-            c |= edge.label_blocked_by_places(predicate, latest, ctxt);
-            c
+            reason.apply_to_edge(place, edge, labeller, ctxt)
         })
+    }
+
+    pub(crate) fn filter_mut_edges<'slf>(
+        &'slf mut self,
+        mut f: impl FnMut(&mut BorrowPcgEdge<'tcx>) -> FilterMutResult,
+    ) -> bool {
+        let mut changed = false;
+        self.edges = self
+            .edges
+            .drain()
+            .filter_map(|(kind, conditions)| {
+                let mut edge = BorrowPcgEdge::new(kind, conditions);
+                match f(&mut edge) {
+                    FilterMutResult::Changed => {
+                        changed = true;
+                        Some((edge.kind, edge.conditions))
+                    }
+                    FilterMutResult::Unchanged => Some((edge.kind, edge.conditions)),
+                    FilterMutResult::Remove => None,
+                }
+            })
+            .collect();
+        changed
     }
 
     pub(crate) fn mut_edges<'slf>(
@@ -57,7 +73,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    pub (crate) fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn filter_for_path(&mut self, path: &[BasicBlock], ctxt: CompilerCtxt<'_, 'tcx>) {
         self.edges
             .retain(|_, conditions| conditions.valid_for_path(path, ctxt.body()));
     }

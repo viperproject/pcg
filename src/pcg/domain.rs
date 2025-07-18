@@ -16,7 +16,10 @@ use serde::{Serialize, Serializer};
 
 use crate::{
     action::PcgActions,
-    borrow_pcg::state::BorrowsState,
+    borrow_pcg::{
+        graph::BorrowsGraph,
+        state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
+    },
     borrows_imgcat_debug,
     pcg::{
         dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
@@ -36,7 +39,7 @@ use crate::{
         initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
         validity::HasValidityCheck,
-        CompilerCtxt, Place, PANIC_ON_ERROR,
+        CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR,
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
@@ -156,7 +159,71 @@ pub struct Pcg<'tcx> {
     pub(crate) capabilities: PlaceCapabilities<'tcx>,
 }
 
-impl<'tcx> Pcg<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
+        self.as_ref().check_validity(ctxt)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PcgRef<'pcg, 'tcx> {
+    pub(crate) owned: &'pcg FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
+    pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
+}
+
+impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
+    fn from(pcg: &'pcg Pcg<'tcx>) -> Self {
+        Self {
+            owned: &pcg.owned,
+            borrow: pcg.borrow.as_ref(),
+            capabilities: &pcg.capabilities,
+        }
+    }
+}
+
+impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
+    fn from(pcg: &'pcg PcgMutRef<'pcg, 'tcx>) -> Self {
+        let borrow = pcg.borrow.as_ref();
+        Self {
+            owned: &*pcg.owned,
+            borrow,
+            capabilities: &*pcg.capabilities,
+        }
+    }
+}
+
+pub(crate) struct PcgMutRef<'pcg, 'tcx> {
+    pub(crate) owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) borrow: BorrowStateMutRef<'pcg, 'tcx>,
+    pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+}
+
+impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
+    pub(crate) fn new(
+        owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+        borrow: BorrowStateMutRef<'pcg, 'tcx>,
+        capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+    ) -> Self {
+        Self {
+            owned,
+            borrow,
+            capabilities,
+        }
+    }
+}
+
+impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
+    fn from(pcg: &'pcg mut Pcg<'tcx>) -> Self {
+        Self::new(
+            &mut pcg.owned,
+            (&mut pcg.borrow).into(),
+            &mut pcg.capabilities,
+        )
+    }
+}
+
+impl<'tcx> PcgMutRef<'_, 'tcx> {
     pub(crate) fn leaf_places_where(
         &self,
         predicate: impl Fn(Place<'tcx>) -> bool,
@@ -195,14 +262,14 @@ impl<'tcx> Pcg<'tcx> {
     pub(crate) fn assert_validity_at_location(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-        location: mir::Location,
+        _location: mir::Location,
     ) {
         if validity_checks_enabled()
-            && let Err(err) = self.check_validity(ctxt)
+            && let Err(err) = self.as_ref().check_validity(ctxt)
         {
-            if borrows_imgcat_debug() {
-                self.render_debug_graph(ctxt, location, "Validity check failed");
-            }
+            // if borrows_imgcat_debug() {
+            //     self.render_debug_graph(ctxt, location, "Validity check failed");
+            // }
             if validity_checks_warn_only() {
                 tracing::error!("Validity check failed: {}", err.to_string());
             } else {
@@ -212,23 +279,67 @@ impl<'tcx> Pcg<'tcx> {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
+pub(crate) trait PcgRefLike<'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx>;
+    fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
+        self.as_ref().borrow.graph
+    }
+    fn is_acyclic(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.borrows_graph().frozen_graph().is_acyclic(ctxt)
+    }
+}
+
+impl<'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
+        PcgRef::from(self)
+    }
+}
+
+impl<'tcx> PcgRefLike<'tcx> for Pcg<'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
+        PcgRef::from(self)
+    }
+}
+
+impl<'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
+        *self
+    }
+}
+
+pub(crate) trait PcgMutRefLike<'pcg, 'tcx: 'pcg> {
+    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx>;
+}
+
+impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for PcgMutRef<'pcg, 'tcx> {
+    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
+        PcgMutRef {
+            owned: self.owned,
+            borrow: self.borrow.as_mut_ref(),
+            capabilities: self.capabilities,
+        }
+    }
+}
+
+impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for Pcg<'tcx> {
+    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
+        self.into()
+    }
+}
+
+impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
+        self.capabilities.check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
-        // TODO
-        // if !self.is_acyclic(ctxt) {
-        //     return Err("PCG is not acyclic".to_string());
-        // }
+        if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
+            return Err("PCG is not acyclic".to_string());
+        }
         Ok(())
     }
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
     #[allow(unused)]
-    pub(crate) fn is_acyclic(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> bool {
-        self.borrow.graph().frozen_graph().is_acyclic(ctxt)
-    }
-
     pub(crate) fn render_debug_graph(
         &self,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -236,7 +347,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         comment: &str,
     ) {
         if borrows_imgcat_debug() {
-            let dot_graph = generate_pcg_dot_graph(self, ctxt, location).unwrap();
+            let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
             DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
                 eprintln!("Error rendering self graph: {e}");
             });
@@ -255,8 +366,10 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>) {
-        self.owned.locals_mut().ensures(t, &mut self.capabilities);
+    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+        self.owned
+            .locals_mut()
+            .ensures(t, &mut self.capabilities, ctxt);
     }
 
     #[tracing::instrument(skip(self, other, ctxt, body_analysis))]
@@ -479,10 +592,12 @@ impl From<PcgInternalError> for PcgError {
 pub enum PcgUnsupportedError {
     AssignBorrowToNonReferenceType,
     DerefUnsafePtr,
+    MoveUnsafePtrWithNestedLifetime,
     ExpansionOfAliasType,
-    FunctionCallWithUnsafePtrArgument,
+    CallWithUnsafePtrWithNestedLifetime,
     IndexingNonIndexableType,
     InlineAssembly,
+    MaxNodesExceeded,
 }
 
 impl<'tcx, A: Allocator> PcgDomain<'_, 'tcx, A> {
@@ -516,8 +631,8 @@ impl<'tcx, A: Allocator> PcgDomain<'_, 'tcx, A> {
             self.block(),
             statement_index,
             ToGraph::Phase(phase),
-            pcg,
-            &self.debug_data,
+            pcg.into(),
+            self.debug_data.as_ref(),
             self.ctxt,
         );
     }

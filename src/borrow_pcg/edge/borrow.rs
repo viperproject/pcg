@@ -3,8 +3,10 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
-        latest::Latest,
+        has_pcs_elem::{
+            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+            LabelRegionProjectionResult, PlaceLabeller,
+        },
         region_projection::RegionProjectionLabel,
     },
     pcg::PCGNode,
@@ -55,11 +57,11 @@ impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
-        if predicate.matches(self.assigned_region_projection(repacker)) {
+    ) -> LabelRegionProjectionResult {
+        let mut changed = LabelRegionProjectionResult::Unchanged;
+        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
             self.assigned_rp_snapshot = label;
-            changed = true;
+            changed = LabelRegionProjectionResult::Changed;
         }
         changed
     }
@@ -69,19 +71,19 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.blocked_place.label_place(predicate, latest, ctxt)
+        self.blocked_place.label_place(predicate, labeller, ctxt)
     }
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.assigned_ref.label_place(predicate, latest, ctxt)
+        self.assigned_ref.label_place(predicate, labeller, ctxt)
     }
 }
 
@@ -105,12 +107,12 @@ impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        if predicate.matches(self.assigned_region_projection(repacker)) {
+    ) -> LabelRegionProjectionResult {
+        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
             self.rp_snapshot_location = label;
-            true
+            LabelRegionProjectionResult::Changed
         } else {
-            false
+            LabelRegionProjectionResult::Unchanged
         }
     }
 }
@@ -119,7 +121,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
     fn label_blocked_places(
         &mut self,
         _predicate: &LabelPlacePredicate<'tcx>,
-        _latest: &Latest<'tcx>,
+        _labeller: &impl PlaceLabeller<'tcx>,
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         false
@@ -128,10 +130,10 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.assigned_ref.label_place(predicate, latest, ctxt)
+        self.assigned_ref.label_place(predicate, labeller, ctxt)
     }
 }
 

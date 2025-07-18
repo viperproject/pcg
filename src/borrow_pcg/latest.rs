@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use crate::rustc_interface::{
+use crate::{borrow_pcg::has_pcs_elem::PlaceLabeller, rustc_interface::{
     data_structures::fx::FxHashMap,
     middle::{mir::BasicBlock, ty},
-};
+}};
 use crate::utils::display::{DebugLines, DisplayWithCompilerCtxt};
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 
@@ -15,6 +15,16 @@ use crate::utils::json::ToJsonWithCompilerCtxt;
 /// A map from places to their last-modified locations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Latest<'tcx>(FxHashMap<Place<'tcx>, SnapshotLocation>);
+
+impl<'tcx> PlaceLabeller<'tcx> for Latest<'tcx> {
+    fn label_place(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> SnapshotLocation {
+        self.get(place, ctxt)
+    }
+}
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Latest<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
@@ -62,25 +72,21 @@ impl<'tcx> Latest<'tcx> {
         Self(FxHashMap::default())
     }
 
-    fn get_exact(&self, place: Place<'tcx>) -> Option<SnapshotLocation> {
-        self.0.get(&place).copied()
-    }
-
     fn get_opt(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<SnapshotLocation> {
-        if let Some(location) = self.get_exact(place) {
-            Some(location)
-        } else {
-            for p in place.iter_places(ctxt).into_iter().rev() {
-                if let Some(location) = self.get_exact(p) {
-                    return Some(location);
+        self.0
+            .iter()
+            .find_map(|(p, l)| {
+                if p.is_prefix_or_postfix_of(place) {
+                    Some(l)
+                } else {
+                    None
                 }
-            }
-            None
-        }
+            })
+            .copied()
     }
 
     /// Get the last-modified location for a place
@@ -89,33 +95,16 @@ impl<'tcx> Latest<'tcx> {
             .unwrap_or(SnapshotLocation::start())
     }
 
-    pub(super) fn insert(&mut self, place: Place<'tcx>, location: SnapshotLocation) -> bool {
-        self.insert_unchecked(place, location)
-    }
-
-    fn insert_unchecked(&mut self, place: Place<'tcx>, location: SnapshotLocation) -> bool {
-        if self.get_exact(place) == Some(location) {
+    pub(crate) fn insert(
+        &mut self,
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        if self.get_opt(place, ctxt) == Some(location) {
             return false;
         }
-
-        self.0.retain(|existing, loc| {
-            // After insertion of this place, if we were to lookup `existing`,
-            // we'd get this location for `place`. For example if existing is `x.f.g`
-            // and place is `x.f`, then `Latest::get_opt(x.f.g)` would not find `x.f.g` and
-            // return the location for `x.f`.
-            if place.is_prefix(*existing) {
-                return false;
-            }
-
-            // Places that we're a prefix of should be updated to this new location.
-            // For example if existing is `x` and place is `x.f`, then we should
-            // snapshot `x` to this location. However, the snapshot for e.g. `x.g` would
-            // keep its old label.
-            if existing.is_prefix(place) && *loc != location {
-                *loc = location;
-            }
-            true
-        });
+        self.0.retain(|existing, _| !existing.is_prefix_or_postfix_of(place));
         self.0.insert(place, location);
         true
     }
@@ -138,11 +127,11 @@ impl<'tcx> Latest<'tcx> {
         for (place, other_loc) in other.0.iter() {
             if let Some(self_loc) = self.get_opt(*place, ctxt) {
                 if self_loc != *other_loc {
-                    self.insert_unchecked(*place, SnapshotLocation::Start(block));
+                    self.insert(*place, SnapshotLocation::Start(block), ctxt);
                     changed = true;
                 }
             } else {
-                self.insert(*place, *other_loc);
+                self.insert(*place, *other_loc, ctxt);
                 changed = true;
             }
         }

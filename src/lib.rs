@@ -31,7 +31,10 @@ use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
-    middle::{mir::Body, ty::{self, TyCtxt}},
+    middle::{
+        mir::Body,
+        ty::{self, TyCtxt},
+    },
     mir_dataflow::move_paths::MoveData,
 };
 use serde_json::json;
@@ -74,12 +77,15 @@ impl<'tcx> Weaken<'tcx> {
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        // TODO
+        // TODO: Sometimes R can be downgraded to W
         // if let Some(to) = to {
         //     pcg_validity_assert!(
         //         from > to,
-        //         "FROM capability ({:?}) is not greater than TO capability ({:?})",
+        //         "Weak of ({}: {}): FROM capability ({:?}) is not greater than TO capability ({:?})",
+        //         place.to_short_string(ctxt),
+        //         place.ty(ctxt).ty,
         //         from,
         //         to
         //     );
@@ -297,11 +303,7 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
 /// - `arena`: The arena to use for allocation. You can use [`std::alloc::Global`] if you don't
 ///   care to use a custom allocator.
 /// - `visualization_output_path`: The path to output debug visualization to.
-pub fn run_pcg<
-    'a,
-    'tcx,
-    A: Allocator + Copy + std::fmt::Debug,
->(
+pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
     pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
     arena: A,
     visualization_output_path: Option<&str>,

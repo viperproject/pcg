@@ -1,11 +1,12 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjection;
+use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
+use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{BodyAnalysis, PcgError, PcgUnsupportedError};
+use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -32,6 +33,36 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
+    fn apply_placeholder_labels<'mir>(
+        &mut self,
+        _capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) {
+        let nodes = self.nodes(ctxt);
+        for node in nodes {
+            if let PCGNode::RegionProjection(rp) = node
+                && rp.is_placeholder()
+                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
+            {
+                // if let MaybeOldPlace::Current { place } = local_rp.base
+                //     && capabilities.get(place).is_some()
+                // {
+                //     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
+                // } else {
+                let orig_rp = local_rp.with_label(None, ctxt);
+                self.filter_mut_edges(|edge| {
+                    edge.label_region_projection(
+                        &LabelRegionProjectionPredicate::Equals(orig_rp),
+                        Some(RegionProjectionLabel::Placeholder),
+                        ctxt,
+                    )
+                    .to_filter_mut_result()
+                });
+                // }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn join<'mir>(
         &mut self,
@@ -41,6 +72,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        latest: &mut Latest<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
@@ -63,6 +95,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 capabilities,
                 owned,
                 path_conditions,
+                latest,
                 body_analysis,
                 ctxt,
             )?;
@@ -104,7 +137,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        // self.apply_placeholder_labels(capabilities, ctxt);
+        self.apply_placeholder_labels(capabilities, ctxt);
 
         let changed = old_self != *self;
 
@@ -155,10 +188,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: PathConditions,
+        latest: &mut Latest<'tcx>,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        tracing::debug!("used places: {}", used_places.to_short_string(ctxt));
+        tracing::info!("used places: {}", used_places.to_short_string(ctxt));
         // p_loop
         let live_loop_places = used_places
             .iter()
@@ -181,7 +215,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
 
-        tracing::debug!(
+        tracing::info!(
             "live loop places: {}",
             live_loop_places.to_short_string(ctxt)
         );
@@ -201,7 +235,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        tracing::debug!(
+        tracing::info!(
             "loop_blocked_places: {}",
             loop_blocked_places.to_short_string(ctxt)
         );
@@ -212,7 +246,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        tracing::debug!(
+        tracing::info!(
             "loop_blocker_places: {}",
             loop_blocker_places.to_short_string(ctxt)
         );
@@ -222,11 +256,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        self.unpack_places_for_abstraction(
+        self.expand_places_for_abstraction(
             loop_head,
             &expand_places,
             capabilities,
             owned,
+            latest,
             path_conditions.clone(),
             ctxt,
         );
@@ -248,14 +283,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        tracing::debug!("root places: {}", root_places.to_short_string(ctxt));
+        tracing::info!("root places: {}", root_places.to_short_string(ctxt));
 
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
             to_label,
-            to_remove,
+            capability_updates
         } = self.get_loop_abstraction_graph(
-            live_loop_places,
+            loop_blocked_places,
             root_places,
             loop_blocker_places,
             loop_head,
@@ -266,7 +301,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         abstraction_graph.render_debug_graph(ctxt, "Abstraction graph");
 
         for rp in to_label.iter() {
-            self.mut_edges(|edge| {
+            self.filter_mut_edges(|edge| {
                 edge.label_region_projection(
                     rp,
                     Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
@@ -274,11 +309,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     ))),
                     ctxt,
                 )
+                .to_filter_mut_result()
             });
         }
 
-        for place in to_remove {
-            capabilities.remove(place);
+        for (place, cap_option) in capability_updates {
+            if let Some(cap) = cap_option {
+                capabilities.insert(place, cap, ctxt);
+            } else {
+                capabilities.remove(place, ctxt);
+            }
         }
 
         let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);

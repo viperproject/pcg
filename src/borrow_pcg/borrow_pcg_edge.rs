@@ -8,14 +8,13 @@ use super::{
     edge_data::EdgeData,
     graph::Conditioned,
     has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
-    latest::Latest,
     path_condition::PathConditions,
     region_projection::{
         LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
         RegionProjectionLabel,
     },
 };
-use crate::{borrow_pcg::{edge_data::edgedata_enum, has_pcs_elem::LabelRegionProjectionPredicate}, utils::place::maybe_old::MaybeOldPlace};
+use crate::{borrow_pcg::{edge_data::edgedata_enum, has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller}}, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -53,19 +52,19 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgEdge<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.kind.label_blocked_places(predicate, latest, ctxt)
+        self.kind.label_blocked_places(predicate, labeller, ctxt)
     }
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.kind.label_blocked_by_places(predicate, latest, ctxt)
+        self.kind.label_blocked_by_places(predicate, labeller, ctxt)
     }
 }
 
@@ -75,7 +74,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.kind
             .label_region_projection(predicate, label, repacker)
     }
@@ -185,12 +184,12 @@ impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            LocalNode::Place(p) => p.label_place(predicate, latest, repacker),
-            LocalNode::RegionProjection(rp) => rp.base.label_place(predicate, latest, repacker),
+            LocalNode::Place(p) => p.label_place(predicate, labeller, repacker),
+            LocalNode::RegionProjection(rp) => rp.base.label_place(predicate, labeller, repacker),
         }
     }
 }

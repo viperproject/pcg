@@ -18,13 +18,31 @@ use crate::{
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub enum SnapshotLocation {
+    Start(BasicBlock),
+    Prepare(Location),
+    BeforeCollapse(Location),
     Mid(Location),
     After(Location),
-    Start(BasicBlock),
     Loop(BasicBlock),
+    BeforeRefReassignment(Location),
 }
 
 impl SnapshotLocation {
+    pub(crate) fn location(self) -> Location {
+        match self {
+            SnapshotLocation::Prepare(location) => location,
+            SnapshotLocation::BeforeCollapse(location) => location,
+            SnapshotLocation::Mid(location) => location,
+            SnapshotLocation::After(location) => location,
+            SnapshotLocation::Start(basic_block) | SnapshotLocation::Loop(basic_block) => {
+                Location {
+                    block: basic_block,
+                    statement_index: 0,
+                }
+            }
+            SnapshotLocation::BeforeRefReassignment(location) => location,
+        }
+    }
     pub(crate) fn start() -> Self {
         SnapshotLocation::After(Location::START)
     }
@@ -41,16 +59,6 @@ impl SnapshotLocation {
     pub(crate) fn to_json(self) -> serde_json::Value {
         self.to_string().into()
     }
-
-    #[allow(unused)]
-    pub(crate) fn block(&self) -> BasicBlock {
-        match self {
-            SnapshotLocation::After(loc) => loc.block,
-            SnapshotLocation::Start(bb) => *bb,
-            SnapshotLocation::Mid(loc) => loc.block,
-            SnapshotLocation::Loop(bb) => *bb,
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
@@ -66,6 +74,9 @@ impl std::fmt::Display for SnapshotLocation {
             SnapshotLocation::Mid(loc) => write!(f, "mid {loc:?}"),
             SnapshotLocation::Start(bb) => write!(f, "start {bb:?}"),
             SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
+            SnapshotLocation::Prepare(location) => write!(f, "prep {location:?}"),
+            SnapshotLocation::BeforeCollapse(location) => write!(f, "before collapse {location:?}"),
+            SnapshotLocation::BeforeRefReassignment(location) => write!(f, "before ref reassignment {location:?}"),
         }
     }
 }

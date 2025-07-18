@@ -2,15 +2,12 @@ use crate::borrow_pcg::{
     edge_data::LabelPlacePredicate,
     has_pcs_elem::{
         HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+        LabelRegionProjectionResult, PlaceLabeller,
     },
-    latest::Latest,
     region_projection::RegionProjectionLabel,
 };
 
-use super::{
-    display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
-    CompilerCtxt,
-};
+use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct MaybeRedirected<T, U = T> {
@@ -22,12 +19,12 @@ impl<'tcx, T: LabelPlace<'tcx>> LabelPlace<'tcx> for MaybeRedirected<T> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        let mut changed = self.original.label_place(predicate, latest, ctxt);
+        let mut changed = self.original.label_place(predicate, labeller, ctxt);
         if let Some(r) = &mut self.redirected {
-            changed |= r.label_place(predicate, latest, ctxt);
+            changed |= r.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -58,9 +55,12 @@ impl<T: Copy> MaybeRedirected<T> {
 }
 
 impl<T: Copy + Eq> MaybeRedirected<T> {
-    pub(crate) fn redirect(&mut self, from: T, to: T) {
+    pub(crate) fn redirect(&mut self, from: T, to: T) -> RedirectResult {
         if self.effective() == from {
             self.redirected = Some(to);
+            RedirectResult::Redirect
+        } else {
+            RedirectResult::NoRedirect
         }
     }
 
@@ -81,7 +81,7 @@ impl<'tcx, T: Copy + Eq + LabelRegionProjection<'tcx>> LabelRegionProjection<'tc
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         let mut changed = self
             .original
             .label_region_projection(predicate, label, repacker);
@@ -123,4 +123,11 @@ impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for MaybeRedirected
         }
         Ok(())
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RedirectResult {
+    Redirect,
+    NoRedirect,
+    SelfRedirect,
 }

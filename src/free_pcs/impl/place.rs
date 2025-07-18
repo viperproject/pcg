@@ -9,6 +9,7 @@ use std::{
     fmt::{Debug, Formatter, Result},
 };
 
+
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
     /// For borrowed places only: permits reads from the location, but not writes or

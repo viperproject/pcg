@@ -8,10 +8,11 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
+        borrow_pcg_expansion::PlaceExpansion,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
-    pcg::PCGNode,
+    pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
@@ -21,7 +22,7 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-        HasPlace, Place, BORROWS_DEBUG_IMGCAT,
+        HasPlace, LocalMutationIsAllowed, Place, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -56,26 +57,39 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
 }
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
-    #[allow(unused)]
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         let nodes = self.nodes(ctxt);
         // TODO
-        // for node in nodes.iter() {
-        //     if let PCGNode::RegionProjection(rp) = node
-        //         && rp.is_placeholder()
-        //     {
-        //         if nodes
-        //             .iter()
-        //             .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
-        //                 return Err(format!(
-        //                     "Placeholder region projection {} is not unique",
-        //                     rp.to_short_string(ctxt)
-        //                 ));
-        //             }
-        //     }
-        // }
+        for node in nodes.iter() {
+            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(ctxt)
+                && rp.is_placeholder()
+                && rp.base.as_current_place().is_some()
+            {
+                let current_rp = rp.with_label(None, ctxt);
+                let conflicting_edges = self
+                    .edges_blocking(current_rp.into(), ctxt)
+                    .chain(self.edges_blocked_by(current_rp.into(), ctxt))
+                    .collect::<HashSet<_>>();
+                if !conflicting_edges.is_empty() {
+                    return Err(format!(
+                        "Placeholder region projection {} has edges blocking or blocked by its current version {}:\n\t{}",
+                        rp.to_short_string(ctxt),
+                        current_rp.to_short_string(ctxt),
+                        conflicting_edges
+                            .iter()
+                            .map(|e| e.to_short_string(ctxt))
+                            .join("\n\t")
+                    ));
+                }
+            }
+        }
         for edge in self.edges() {
-            edge.check_validity(ctxt)?;
+            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind()
+                && let Some(place) = e.base.as_current_place()
+                && place.projects_shared_ref(ctxt)
+            {
+                edge.check_validity(ctxt)?;
+            }
         }
         Ok(())
     }
@@ -100,21 +114,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.mut_edges(|edge| edge.label_region_projection(predicate, label, ctxt))
+        self.filter_mut_edges(|edge| {
+            edge.label_region_projection(predicate, label, ctxt)
+                .to_filter_mut_result()
+        })
     }
 
-    pub(crate) fn contains_deref_expansion_from(
+    pub(crate) fn contains_borrow_pcg_expansion_of(
         &self,
         base: Place<'tcx>,
+        _place_expansion: &PlaceExpansion<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edges_blocking(base.into(), ctxt).any(|edge| {
-            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind() {
-                e.is_owned_expansion(ctxt)
-            } else {
-                false
-            }
-        })
+        self.edges_blocking(base.into(), ctxt)
+            .any(|edge| matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
     }
 
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
@@ -169,8 +182,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             seen.insert(node);
-            let place = node.base().place();
-            if place.is_deref() {
+            let maybe_old_place = node.base();
+            if maybe_old_place
+                .place()
+                .is_mutable(LocalMutationIsAllowed::Yes, ctxt)
+                .is_err()
+            {
+                tracing::debug!(
+                    "Skipping {} because it is not mutable",
+                    node.to_short_string(ctxt)
+                );
+                continue;
+            }
+            if !maybe_old_place.is_current() || maybe_old_place.place().is_deref() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
                     .region_projections_blocked_by(node.into(), ctxt)
                     .into_iter()
@@ -265,7 +289,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    /// All edges that are not blocked by any other edge The argument
+    /// All edges that are not blocked by any other edge. The argument
     /// `blocking_map` can be provided to use a shared cache for computation
     /// of blocking calculations. The argument should be used if this function
     /// is to be called multiple times on the same graph.

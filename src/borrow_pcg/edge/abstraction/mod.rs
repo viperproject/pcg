@@ -12,8 +12,10 @@ use crate::{
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
         edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate},
-        latest::Latest,
+        has_pcs_elem::{
+            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+            LabelRegionProjectionResult, PlaceLabeller,
+        },
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
     pcg::PCGNodeLike,
@@ -77,12 +79,12 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for input in &mut self.inputs {
-            changed |= input.label_place(predicate, latest, ctxt);
+            changed |= input.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -90,12 +92,12 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
         for output in &mut self.outputs {
-            changed |= output.label_place(predicate, latest, ctxt);
+            changed |= output.label_place(predicate, labeller, ctxt);
         }
         changed
     }
@@ -149,8 +151,8 @@ impl<
         projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let mut changed = false;
+    ) -> LabelRegionProjectionResult {
+        let mut changed = LabelRegionProjectionResult::Unchanged;
         let mut i = 0;
         while i < self.inputs.len() {
             let input = &mut self.inputs[i];
@@ -164,7 +166,7 @@ impl<
                 self.inputs
                     .retain(|i| i.to_pcg_node(ctxt) != input.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
-                return true;
+                return LabelRegionProjectionResult::Changed;
             }
             i += 1;
         }
@@ -181,7 +183,7 @@ impl<
                 self.outputs
                     .retain(|o| o.effective().to_pcg_node(ctxt) != output.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
-                return true;
+                return LabelRegionProjectionResult::Changed;
             }
             j += 1;
         }

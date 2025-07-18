@@ -116,7 +116,7 @@ impl<'tcx> ShallowExpansion<'tcx> {
 }
 
 impl ProjectionKind {
-    pub(crate) fn is_box(self) -> bool {
+    pub(crate) fn is_deref_box(self) -> bool {
         matches!(self, ProjectionKind::DerefBox)
     }
 
@@ -274,7 +274,7 @@ impl<'tcx> Place<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<DeepExpansion<'tcx>, PcgError> {
         assert!(
-            self.is_prefix(to),
+            self.is_prefix_of(to),
             "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
         );
         let mut expanded = Vec::new();

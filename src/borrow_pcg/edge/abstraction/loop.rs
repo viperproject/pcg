@@ -5,8 +5,7 @@ use crate::borrow_pcg::domain::LoopAbstractionOutput;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate};
-use crate::borrow_pcg::latest::Latest;
+use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller};
 use crate::borrow_pcg::path_condition::PathConditions;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::pcg::PCGNode;
@@ -39,7 +38,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
         projection: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+    ) -> LabelRegionProjectionResult {
         self.edge
             .label_region_projection(projection, label, repacker)
     }
@@ -73,19 +72,19 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LoopAbstraction<'tcx> {
     fn label_blocked_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edge.label_blocked_places(predicate, latest, ctxt)
+        self.edge.label_blocked_places(predicate, labeller, ctxt)
     }
 
     fn label_blocked_by_places(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edge.label_blocked_by_places(predicate, latest, ctxt)
+        self.edge.label_blocked_by_places(predicate, labeller, ctxt)
     }
 }
 impl<'tcx> HasValidityCheck<'tcx> for LoopAbstraction<'tcx> {

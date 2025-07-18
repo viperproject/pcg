@@ -1,6 +1,6 @@
-
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
+    borrow_checker::r#impl::get_reserve_location,
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
         borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
@@ -9,43 +9,107 @@ use crate::{
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
         graph::BorrowsGraph,
+        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         path_condition::PathConditions,
-        region_projection::{LocalRegionProjection, RegionProjection},
+        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{PCGNodeLike, PcgError},
+    pcg::{
+        place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError,
+        PcgMutRef,
+    },
+    rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace, Place,
-        ProjectionKind, ShallowExpansion, SnapshotLocation,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, ProjectionKind,
+        ShallowExpansion, SnapshotLocation,
     },
 };
+
+pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
+    pub(crate) pcg: PcgMutRef<'state, 'tcx>,
+    pub(crate) phase: EvalStmtPhase,
+    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
+    pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
+    pub(crate) location: mir::Location,
+    pub(crate) snapshot_location: SnapshotLocation,
+    pub(crate) debug_data: Option<&'state mut PcgDebugData>,
+}
+
+impl PlaceObtainer<'_, '_, '_> {
+    pub(crate) fn location(&self) -> mir::Location {
+        self.location
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ObtainType {
     Capability(CapabilityKind),
     TwoPhaseExpand,
+    LoopInvariant,
 }
 
 impl ObtainType {
-    pub(crate) fn capability(&self) -> CapabilityKind {
+    pub(crate) fn capability<'tcx>(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> CapabilityKind {
         match self {
             ObtainType::Capability(cap) => *cap,
             ObtainType::TwoPhaseExpand => CapabilityKind::Read,
+            ObtainType::LoopInvariant => {
+                if place.is_shared_ref(ctxt) || place.projects_shared_ref(ctxt) {
+                    CapabilityKind::Read
+                } else {
+                    CapabilityKind::Exclusive
+                }
+            }
         }
     }
 
-    pub(crate) fn should_label_rp(&self) -> bool {
+    pub(crate) fn should_label_rp<'tcx>(
+        &self,
+        rp: RegionProjection<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
             ObtainType::Capability(cap) => !cap.is_read(),
             ObtainType::TwoPhaseExpand => true,
+            ObtainType::LoopInvariant => rp.base.is_mutable(ctxt),
         }
     }
 }
 
-pub(crate) trait Expander<'mir, 'tcx> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LabelForRegionProjection {
+    NewLabelAtCurrentLocation(RegionProjectionLabel),
+    ExistingLabelOfTwoPhaseReservation(RegionProjectionLabel),
+    NoLabel,
+}
+
+use LabelForRegionProjection::*;
+impl LabelForRegionProjection {
+    fn label(self) -> Option<RegionProjectionLabel> {
+        match self {
+            NewLabelAtCurrentLocation(label) | ExistingLabelOfTwoPhaseReservation(label) => {
+                Some(label)
+            }
+            NoLabel => None,
+        }
+    }
+}
+
+pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
     fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool;
+
+    fn update_capabilities_for_borrow_expansion(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        block_type: BlockType,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError>;
 
     fn expand_to(
         &mut self,
@@ -57,11 +121,42 @@ pub(crate) trait Expander<'mir, 'tcx> {
             let base = base.with_inherent_region(ctxt);
             let expansion = base.expand_one_level(place, ctxt)?;
             if self.expand_place_one_level(base, &expansion, obtain_type, ctxt)? {
-                tracing::debug!("expand region projections for {} one level", base.to_short_string(ctxt));
+                tracing::debug!(
+                    "expand region projections for {} one level",
+                    base.to_short_string(ctxt)
+                );
                 self.expand_region_projections_one_level(base, &expansion, obtain_type, ctxt)?;
             }
         }
         Ok(())
+    }
+
+    fn label_for_rp(
+        &self,
+        rp: RegionProjection<'tcx, Place<'tcx>>,
+        obtain_type: ObtainType,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> LabelForRegionProjection {
+        use LabelForRegionProjection::*;
+        if obtain_type.should_label_rp(rp.rebase(), ctxt) {
+            NewLabelAtCurrentLocation(self.current_snapshot_location().into())
+        } else {
+            match self.label_for_shared_expansion_of_rp(rp, ctxt) {
+                Some(label) => ExistingLabelOfTwoPhaseReservation(label),
+                None => NoLabel,
+            }
+        }
+    }
+
+    fn label_for_shared_expansion_of_rp(
+        &self,
+        rp: RegionProjection<'tcx, Place<'tcx>>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Option<RegionProjectionLabel> {
+        ctxt.bc
+            .borrows_blocking(rp.base, self.current_snapshot_location().location(), ctxt)
+            .first()
+            .map(|borrow| SnapshotLocation::Mid(get_reserve_location(borrow)).into())
     }
 
     fn expand_owned_place_one_level(
@@ -72,10 +167,16 @@ pub(crate) trait Expander<'mir, 'tcx> {
         ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         if self.contains_owned_expansion_from(base) {
+            tracing::debug!(
+                "Already contains owned expansion from {}",
+                base.to_short_string(ctxt)
+            );
             return Ok(false);
         }
         tracing::debug!("New owned expansion from {}", base.to_short_string(ctxt));
-        if expansion.kind.is_box() && obtain_type.capability().is_shallow_exclusive() {
+        if expansion.kind.is_deref_box()
+            && obtain_type.capability(base, ctxt).is_shallow_exclusive()
+        {
             self.apply_action(
                 OwnedPcgAction::new(
                     RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
@@ -89,7 +190,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                     RepackOp::expand(
                         expansion.base_place(),
                         expansion.guide(),
-                        obtain_type.capability(),
+                        obtain_type.capability(expansion.base_place(), ctxt),
                         ctxt,
                     ),
                     None,
@@ -116,7 +217,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
         if expansion_is_owned {
             self.expand_owned_place_one_level(base, expansion, obtain_type, ctxt)
         } else {
-            self.add_deref_expansion(base, place_expansion, obtain_type, ctxt)
+            self.add_borrow_pcg_expansion(base, place_expansion, obtain_type, ctxt)
         }
     }
 
@@ -126,55 +227,63 @@ pub(crate) trait Expander<'mir, 'tcx> {
 
     fn path_conditions(&self) -> PathConditions;
 
-    fn add_deref_expansion(
+    fn add_borrow_pcg_expansion(
         &mut self,
         base: Place<'tcx>,
         place_expansion: PlaceExpansion<'tcx>,
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
-            base.into(),
-            place_expansion,
-            if base.is_mut_ref(ctxt) && obtain_type.should_label_rp() {
-                Some(self.current_snapshot_location().into())
-            } else {
-                None
-            },
-            ctxt,
-        )?;
-
         if self
             .borrows_graph()
-            .contains_deref_expansion_from(base, ctxt)
+            .contains_borrow_pcg_expansion_of(base, &place_expansion, ctxt)
         {
             return Ok(false);
         }
+        tracing::debug!("Create expansion from {}", base.to_short_string(ctxt));
+        let expansion_label = if base.is_ref(ctxt) {
+            Some(self.label_for_rp(
+                base.base_region_projection(ctxt).unwrap(),
+                obtain_type,
+                ctxt,
+            ))
+        } else {
+            None
+        };
+        let block_type = place_expansion.block_type(base, obtain_type, ctxt);
+        let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
+            base.into(),
+            place_expansion,
+            expansion_label.and_then(|lbl| lbl.label()),
+            ctxt,
+        )?;
 
-        if base.is_mut_ref(ctxt) && obtain_type.should_label_rp() {
-            let place: MaybeOldPlace<'tcx> = base.into();
-            let rp = place.base_region_projection(ctxt).unwrap();
+        if let Some(NewLabelAtCurrentLocation(location)) = expansion_label {
+            let rp = base.base_region_projection(ctxt).unwrap();
             self.apply_action(
                 BorrowPcgAction::label_region_projection(
-                    rp,
-                    Some(self.current_snapshot_location().into()),
-                    "add_deref_expansion",
+                    LabelRegionProjectionPredicate::Equals(rp.into()),
+                    Some(location),
+                    "add_borrow_pcg_expansion: fresh RP label",
                 )
                 .into(),
             )?;
         }
 
+        self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
         let action = BorrowPcgAction::add_edge(
             BorrowPcgEdge::new(
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),
                 self.path_conditions(),
             ),
-            "add_deref_expansion",
-            obtain_type.capability().is_read(),
+            "add_borrow_pcg_expansion",
+            ctxt,
         );
-        self.apply_action(action.into())
+        self.apply_action(action.into())?;
+        Ok(true)
     }
 
+    #[tracing::instrument(skip(self, base, expansion, ctxt))]
     fn expand_region_projections_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -182,12 +291,21 @@ pub(crate) trait Expander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        for rp in base.region_projections(ctxt) {
+        for base_rp in base.region_projections(ctxt) {
             if let Some(place_expansion) =
-                expansion.place_expansion_for_region(rp.region(ctxt), ctxt)
+                expansion.place_expansion_for_region(base_rp.region(ctxt), ctxt)
             {
-                let rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>> = rp.into();
-                let expansion = BorrowPcgExpansion::new(rp.into(), place_expansion, None, ctxt)?;
+                tracing::debug!("Expand {}", base_rp.to_short_string(ctxt));
+                let mut expansion =
+                    BorrowPcgExpansion::new(base_rp.into(), place_expansion, None, ctxt)?;
+                let expansion_label = self.label_for_rp(base_rp, obtain_type, ctxt);
+                if let Some(label) = expansion_label.label() {
+                    expansion.label_region_projection(
+                        &LabelRegionProjectionPredicate::Equals(base_rp.into()),
+                        Some(label),
+                        ctxt,
+                    );
+                }
                 self.apply_action(
                     BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
@@ -195,25 +313,23 @@ pub(crate) trait Expander<'mir, 'tcx> {
                             self.path_conditions(),
                         ),
                         "expand_region_projections_one_level",
-                        obtain_type.capability().is_read(),
+                        ctxt,
                     )
                     .into(),
                 )?;
-                if rp.base.is_current() && rp.can_be_labelled(ctxt) && obtain_type.should_label_rp()
-                {
-                    let label = self.current_snapshot_location();
+                if let NewLabelAtCurrentLocation(label) = expansion_label {
                     self.apply_action(
                         BorrowPcgAction::label_region_projection(
-                            rp,
-                            Some(label.into()),
-                            "expand_region_projections_one_level",
+                            LabelRegionProjectionPredicate::Equals(base_rp.into()),
+                            Some(label),
+                            "expand_region_projections_one_level: create new RP label",
                         )
                         .into(),
                     )?;
 
                     // Don't add placeholder edges for owned expansions, unless its a deref
                     if !base.is_owned(ctxt) || base.is_mut_ref(ctxt) {
-                        let old_rp_base = rp.with_label(Some(label.into()), ctxt);
+                        let old_rp_base = base_rp.with_label(Some(label), ctxt);
                         let expansion_rps = expansion
                             .expansion()
                             .iter()
@@ -222,7 +338,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                             })
                             .collect::<Vec<_>>();
                         self.add_and_update_placeholder_edges(
-                            old_rp_base,
+                            old_rp_base.into(),
                             &expansion_rps,
                             "obtain",
                             ctxt,
@@ -233,6 +349,8 @@ pub(crate) trait Expander<'mir, 'tcx> {
         }
         Ok(())
     }
+
+    // In general the origin_rp should already be labelled
     fn add_and_update_placeholder_edges(
         &mut self,
         origin_rp: LocalRegionProjection<'tcx>,
@@ -244,6 +362,8 @@ pub(crate) trait Expander<'mir, 'tcx> {
             return Ok(());
         }
         let future_rp = origin_rp.with_placeholder_label(ctxt);
+
+        // Add edge {origin|r'a at l} -> {origin|r'a at FUTURE}
         self.apply_action(
             BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(
@@ -257,10 +377,12 @@ pub(crate) trait Expander<'mir, 'tcx> {
                     self.path_conditions(),
                 ),
                 format!("{}: placeholder bookkeeping", context),
-                false,
+                ctxt,
             )
             .into(),
         )?;
+
+        // For each field F add edge {origin.F|'a} -> {origin|r'a at FUTURE}
         for expansion_rp in expansion_rps {
             self.apply_action(
                 BorrowPcgAction::add_edge(
@@ -275,11 +397,14 @@ pub(crate) trait Expander<'mir, 'tcx> {
                         self.path_conditions(),
                     ),
                     format!("{}: placeholder bookkeeping", context),
-                    false,
+                    ctxt,
                 )
                 .into(),
             )?;
         }
+
+        // For all borrowflow edges blocking {origin|r'a at l} (except the one to origin|r'a at FUTURE)
+        // They should now be blocking the future one instead
         let to_replace = self
             .borrows_graph()
             .edges_blocking(origin_rp.into(), ctxt)
@@ -309,7 +434,7 @@ pub(crate) trait Expander<'mir, 'tcx> {
                 BorrowPcgAction::remove_edge(to_remove, "placeholder bookkeeping").into(),
             )?;
             self.apply_action(
-                BorrowPcgAction::add_edge(to_insert, "placeholder bookkeeping", false).into(),
+                BorrowPcgAction::add_edge(to_insert, "placeholder bookkeeping", ctxt).into(),
             )?;
         }
         Ok(())

@@ -12,10 +12,10 @@ use super::{
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate};
-use crate::borrow_pcg::latest::Latest;
+use crate::borrow_pcg::has_pcs_elem::{
+    LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+};
 use crate::pcg::{PcgError, PcgInternalError};
-use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -148,7 +148,6 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
             MaybeRemoteRegionProjectionBase::Const(_) => None,
         }
     }
-    #[allow(unused)]
     pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.is_mutable(ctxt),
@@ -282,11 +281,11 @@ impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
-        latest: &Latest<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if let Some(p) = self.base.as_local_place_mut() {
-            p.label_place(predicate, latest, ctxt)
+            p.label_place(predicate, labeller, ctxt)
         } else {
             false
         }
@@ -323,38 +322,21 @@ impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
     }
 }
 
-impl<'tcx, P: Eq + From<MaybeOldPlace<'tcx>>> LabelRegionProjection<'tcx>
+impl<'tcx, P: Copy> LabelRegionProjection<'tcx>
     for RegionProjection<'tcx, P>
+    where MaybeRemoteRegionProjectionBase<'tcx>: From<P>
 {
     fn label_region_projection(
         &mut self,
         predicate: &LabelRegionProjectionPredicate<'tcx>,
         label: Option<RegionProjectionLabel>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        match predicate {
-            LabelRegionProjectionPredicate::Equals(region_projection) => {
-                if self.region_idx == region_projection.region_idx
-                    && self.base == region_projection.base.into()
-                    && self.label == region_projection.label
-                {
-                    self.label = label;
-                    true
-                } else {
-                    false
-                }
-            }
-            LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
-                if self.region_idx == *region_idx
-                    && self.base == (*maybe_old_place).into()
-                    && !self.is_placeholder()
-                {
-                    self.label = label;
-                    true
-                } else {
-                    false
-                }
-            }
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> LabelRegionProjectionResult {
+        if predicate.matches(self.rebase(), ctxt) {
+            self.label = label;
+            LabelRegionProjectionResult::Changed
+        } else {
+            LabelRegionProjectionResult::Unchanged
         }
     }
 }
@@ -413,9 +395,6 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'_, 'tcx> {
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
-    pub(crate) fn can_be_labelled<BC: Copy>(&self, _ctxt: CompilerCtxt<'_, 'tcx, BC>) -> bool {
-        true
-    }
     pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         let mut visitor = TyVarianceVisitor {
             ctxt,
@@ -443,15 +422,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn with_label<BC: Copy>(
         self,
         label: Option<RegionProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> RegionProjection<'tcx, T> {
-        if label.is_some() {
-            pcg_validity_assert!(
-                self.can_be_labelled(ctxt),
-                "{:?} is not mutable and shouldn't be labelled",
-                self,
-            );
-        }
         RegionProjection {
             base: self.base,
             region_idx: self.region_idx,

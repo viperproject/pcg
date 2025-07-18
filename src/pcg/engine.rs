@@ -19,10 +19,11 @@ use super::{
     PcgDebugData, PcgError,
 };
 use crate::{
-    pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis}, utils::{arena::ArenaRef, CompilerCtxt}
+    pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis},
+    utils::{arena::ArenaRef, CompilerCtxt},
 };
 use crate::{
-    pcg::triple::TripleWalker,
+    pcg::{triple::TripleWalker, PcgUnsupportedError},
     rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
@@ -36,7 +37,7 @@ use crate::{
         },
         mir_dataflow::{move_paths::MoveData, Forward},
     },
-    utils::{domain_data::DomainDataIndex, visitor::FallableVisitor},
+    utils::{domain_data::DomainDataIndex, visitor::FallableVisitor, MAX_NODES},
     BodyAndBorrows,
 };
 
@@ -361,6 +362,22 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
         if let Some(error) = state.error() {
             self.record_error_if_first(error);
             return;
+        }
+        if let Some(max_nodes) = *MAX_NODES {
+            if state.data().unwrap().pcg[DomainDataIndex::Initial]
+                .borrow
+                .graph
+                .nodes(self.ctxt)
+                .len()
+                >= max_nodes
+            {
+                tracing::info!("Max nodes exceeded");
+                self.record_error_if_first(&PcgError::unsupported(
+                    PcgUnsupportedError::MaxNodesExceeded,
+                ));
+                state.record_error(PcgError::unsupported(PcgUnsupportedError::MaxNodesExceeded));
+                return;
+            }
         }
         if let Err(e) = self.analyze(state, statement.into(), location) {
             self.record_error_if_first(&e);
