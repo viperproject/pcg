@@ -423,7 +423,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     .graph
                     .edges_blocking(current_rp.into(), self.ctxt)
                     .collect::<Vec<_>>();
-                tracing::info!("Do thing on {} ", current_rp.to_short_string(self.ctxt));
                 if !edges_blocking_current_rp.is_empty() {
                     let labelled_rp = current_rp
                         .with_label(Some(self.current_snapshot_location().into()), self.ctxt);
