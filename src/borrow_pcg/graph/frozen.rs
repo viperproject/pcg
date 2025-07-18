@@ -159,26 +159,32 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     pub(crate) fn leaf_edges_skipping_future_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Vec<BorrowPcgEdgeRef<'tcx, 'graph>> {
+    ) -> HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
         let mut result: HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = HashSet::default();
         let mut seen: HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = HashSet::default();
-        let mut queue = self.leaf_edges(ctxt);
-        while let Some(edge) = queue.pop() {
-            if seen.contains(&edge) {
-                continue;
-            }
-            seen.insert(edge);
-            if let BorrowPcgEdgeKind::BorrowFlow(edge) = edge.kind
-                && edge.short().is_placeholder()
-            {
-                if let Some(blocked_node) = edge.long().try_to_local_node(ctxt) {
-                    queue.extend(self.get_edges_blocked_by(blocked_node, ctxt));
-                }
-            } else {
-                result.insert(edge);
-            }
-        }
-        result.into_iter().collect()
+        let is_edge_to_future_node = |edge: BorrowPcgEdgeRef<'tcx, 'graph>| {
+            edge.blocked_by_nodes(ctxt)
+                .all(|node| node.is_placeholder())
+        };
+        let leaf_nodes = self
+            .nodes(ctxt)
+            .iter()
+            .filter(|node| {
+                !node.is_placeholder()
+                    && self
+                        .get_edges_blocking(**node, ctxt)
+                        .iter()
+                        .all(|edge| is_edge_to_future_node(*edge))
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        self.graph
+            .edges()
+            .filter(|edge| {
+                edge.blocked_by_nodes(ctxt)
+                    .all(|node| leaf_nodes.contains(&node.into()))
+            })
+            .collect()
     }
 
     pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(

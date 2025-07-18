@@ -228,10 +228,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     self.ctxt,
                 );
             });
-            self.pcg.borrow.graph.insert(
-                BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
-                self.ctxt,
-            );
+            self.record_and_apply_action(
+                BorrowPcgAction::add_edge(
+                    BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
+                    "label_shared_deref_projections_of_postfix_places",
+                    self.ctxt,
+                )
+                .into(),
+            )?;
         }
         self.record_and_apply_action(
             BorrowPcgAction::make_place_old(place, MakePlaceOldReason::LabelSharedDerefProjections)

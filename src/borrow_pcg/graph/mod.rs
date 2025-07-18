@@ -272,7 +272,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    /// All edges that are not blocked by any other edge The argument
+    /// All edges that are not blocked by any other edge. The argument
     /// `blocking_map` can be provided to use a shared cache for computation
     /// of blocking calculations. The argument should be used if this function
     /// is to be called multiple times on the same graph.

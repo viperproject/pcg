@@ -138,25 +138,6 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub(super) fn remove(
-        &mut self,
-        edge: &BorrowPcgEdge<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let removed = self.graph.remove(edge.kind()).is_some();
-        if removed {
-            for node in edge.blocked_by_nodes(repacker) {
-                if !self.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
-                {
-                    let _ = capabilities.remove(place, repacker);
-                }
-            }
-        }
-        removed
-    }
-
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {
         &self.graph
     }

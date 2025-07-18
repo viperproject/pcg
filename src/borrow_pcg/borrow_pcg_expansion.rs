@@ -165,7 +165,7 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        tracing::info!(
+        tracing::debug!(
             "label blocked places: {} with {:?}",
             self.to_short_string(ctxt),
             predicate

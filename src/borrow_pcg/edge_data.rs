@@ -113,7 +113,6 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
             }
             LabelPlacePredicate::LabelSharedDerefProjections(place) => {
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
-                    tracing::info!("iter_projections_after: {:?}", candidate);
                     for (place, proj) in iter {
                         if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {
                             return true;

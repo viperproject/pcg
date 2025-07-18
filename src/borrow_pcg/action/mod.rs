@@ -14,7 +14,7 @@ use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabel
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::PcgError;
+use crate::pcg::{PCGNode, PcgError};
 use crate::rustc_interface::middle::mir::Location;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -142,7 +142,7 @@ impl MakePlaceOldReason {
     ) -> bool {
         let predicate = match self {
             MakePlaceOldReason::ReAssign => {
-                    LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
+                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
             }
             MakePlaceOldReason::StorageDead | MakePlaceOldReason::MoveOut => {
                 LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
@@ -291,6 +291,24 @@ impl<'tcx> BorrowsState<'tcx> {
             }
         };
         Ok(result)
+    }
+    fn remove(
+        &mut self,
+        edge: &BorrowPcgEdge<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let removed = self.graph.remove(edge.kind()).is_some();
+        if removed {
+            for node in edge.blocked_by_nodes(repacker) {
+                if !self.graph.contains(node, repacker)
+                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+                {
+                    let _ = capabilities.remove(place, repacker);
+                }
+            }
+        }
+        removed
     }
 
     fn make_place_old(

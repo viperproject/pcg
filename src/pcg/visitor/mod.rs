@@ -73,7 +73,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                             self.pcg.borrow.path_conditions.clone(),
                         ),
                         "connect_outliving_projections",
-                        self.ctxt
+                        self.ctxt,
                     )
                     .into(),
                 )?;
@@ -444,6 +444,23 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             BorrowPcgAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
         )?;
 
+        // This is true iff the expansion is for a place (not a region projection), and changes
+        // could have been made to the root place via the expansion
+        // We check that the base is place and either:
+        // - The base has no capability, meaning it was previously expanded mutably
+        // - The base has shallow write capability, it is a mutable ref
+        let is_mutable_place_expansion = if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) =
+            edge.kind()
+            && let Some(place) = expansion.base.as_current_place()
+        {
+            matches!(
+                self.pcg.capabilities.get(place),
+                Some(CapabilityKind::ShallowExclusive) | None
+            )
+        } else {
+            false
+        };
+
         self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
         match edge.kind() {
@@ -458,32 +475,44 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 {
                     self.unlabel_blocked_region_projections(expansion)?;
                 }
-                // for exp_node in expansion.expansion() {
-                //     if let PCGNode::Place(place) = exp_node {
-                //         for rp in place.region_projections(self.ctxt) {
-                //             tracing::debug!(
-                //                 "labeling region projection: {}",
-                //                 rp.to_short_string(self.ctxt)
-                //             );
-                //             let snapshot_location = if during_cleanup {
-                //                 SnapshotLocation::Prepare(self.location)
-                //             } else {
-                //                 SnapshotLocation::before(self.location)
-                //             };
-                //             self.record_and_apply_action(
-                //                 BorrowPcgAction::label_region_projection(
-                //                     LabelRegionProjectionPredicate::Equals(rp.into()),
-                //                     Some(snapshot_location.into()),
-                //                     format!(
-                //                         "{}: {}",
-                //                         context, "Label region projections of expansion"
-                //                     ),
-                //                 )
-                //                 .into(),
-                //             )?;
-                //         }
-                //     }
-                // }
+
+                if is_mutable_place_expansion {
+                    // If the expansion contained region projections, we need to
+                    // label them, they will flow into the now unblocked
+                    // projection (i.e. the one obtained by removing the
+                    // placeholder label)
+
+                    // For example, if we a are packing *s.i into *s at l
+                    // we need to label *s.i|'s to  *s|'s at l
+                    // because we will remove the label from *s|'s at l'
+                    // to become *s|'s. Otherwise we'd have both *s|'s and *s.i|'s
+                    for exp_node in expansion.expansion() {
+                        if let PCGNode::Place(place) = exp_node {
+                            for rp in place.region_projections(self.ctxt) {
+                                tracing::debug!(
+                                    "labeling region projection: {}",
+                                    rp.to_short_string(self.ctxt)
+                                );
+                                let snapshot_location = if during_cleanup {
+                                    SnapshotLocation::Prepare(self.location)
+                                } else {
+                                    SnapshotLocation::before(self.location)
+                                };
+                                self.record_and_apply_action(
+                                    BorrowPcgAction::label_region_projection(
+                                        LabelRegionProjectionPredicate::Equals(rp.into()),
+                                        Some(snapshot_location.into()),
+                                        format!(
+                                            "{}: {}",
+                                            context, "Label region projections of expansion"
+                                        ),
+                                    )
+                                    .into(),
+                                )?;
+                            }
+                        }
+                    }
+                }
             }
             BorrowPcgEdgeKind::Borrow(borrow) => {
                 if self.ctxt.bc.is_dead(

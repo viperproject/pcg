@@ -294,11 +294,6 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
     else {
         return;
     };
-    // tracing::info!(
-    //     "Borrows for local {:?}: {:?}",
-    //     borrowed_place.local,
-    //     borrows_for_place_base
-    // );
 
     // check for loan restricting path P being used. Accounts for
     // borrows of P, P.a.b, etc.
@@ -306,11 +301,6 @@ pub(super) fn each_borrow_involving_path<'tcx, F, I, S>(
         if !is_candidate(i) {
             continue;
         }
-        // tracing::info!(
-        //     "{:?} is a candidate for {}",
-        //     i,
-        //     borrowed_place.to_short_string(ctxt)
-        // );
         let borrowed = &borrow_set[i];
 
         if places_conflict(

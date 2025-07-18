@@ -28,6 +28,7 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx> PCGNode<'tcx> {
+
     pub(crate) fn related_maybe_remote_current_place(
         &self,
     ) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
@@ -55,6 +56,13 @@ impl<'tcx, T, U> PCGNode<'tcx, T, U> {
         matches!(self, PCGNode::Place(_))
     }
 
+    pub(crate) fn is_placeholder(&self) -> bool {
+        match self {
+            PCGNode::Place(p) => false,
+            PCGNode::RegionProjection(rp) => rp.is_placeholder(),
+        }
+    }
+
     pub(crate) fn try_into_region_projection(self) -> Result<RegionProjection<'tcx, U>, Self> {
         match self {
             PCGNode::RegionProjection(rp) => Ok(rp),
@@ -70,7 +78,8 @@ impl<'tcx> From<LoopAbstractionInput<'tcx>> for PCGNode<'tcx> {
 }
 
 impl<'tcx, T, U: Copy> LabelRegionProjection<'tcx> for PCGNode<'tcx, T, U>
-where MaybeRemoteRegionProjectionBase<'tcx>: From<U>
+where
+    MaybeRemoteRegionProjectionBase<'tcx>: From<U>,
 {
     fn label_region_projection(
         &mut self,

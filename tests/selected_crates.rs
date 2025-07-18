@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <10 basic blocks, cycles
+    common::ensure_successful_run_on_crate(
+        "serde_json",
+        "1.0.140",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<ser::PrettyFormatter<'a> as ser::Formatter>::begin_array"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 36 basic blocks
     common::ensure_successful_run_on_crate(
         "flume",
@@ -33,7 +46,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<select::Selector<'a, T>::send::SendSelection<'a, T, F, U> as select::Selection<'a, T>>::init"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 
