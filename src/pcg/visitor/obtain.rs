@@ -47,34 +47,41 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     // permission.
     pub(crate) fn remove_read_permission_upwards(
         &mut self,
-        mut current: Place<'tcx>,
+        place: Place<'tcx>,
         debug_ctxt: &str,
     ) -> Result<(), PcgError> {
+        let mut current = place;
         while self.pcg.capabilities.get(current) == Some(CapabilityKind::Read) {
             if current.is_mut_ref(self.ctxt) {
-                // We've reached an indirection, we downgrade the ref from R to e
-                // and we can stop here (retain exclusive for parents of the ref)
+                // We've reached an indirection (e.g from **s to *s), we
+                // downgrade the ref from R to e
+                // We need to continue: `s` would previously have capability R, which
+                // is not compatible with it being mutably borrowed
                 self.record_and_apply_action(
                     BorrowPcgAction::weaken(
                         current,
                         CapabilityKind::Read,
                         BlockType::DerefExclusive.blocked_place_retained_capability(),
                         format!(
-                            "Remove read permission upwards (downgrade R to e for mut ref): {}",
+                            "Remove read permission upwards from base place {} (downgrade R to e for mut ref): {}",
+                            place.to_short_string(self.ctxt),
                             debug_ctxt
                         ),
                         self.ctxt,
                     )
                     .into(),
                 )?;
-                return Ok(());
             } else {
                 self.record_and_apply_action(
                     BorrowPcgAction::weaken(
                         current,
                         CapabilityKind::Read,
                         None,
-                        format!("Remove read permission upwards: {}", debug_ctxt),
+                        format!(
+                            "Remove read permission upwards from base place {}: {}",
+                            place.to_short_string(self.ctxt),
+                            debug_ctxt
+                        ),
                         self.ctxt,
                     )
                     .into(),
@@ -98,7 +105,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .capabilities
             .iter()
             .filter(|(p, _)| {
-                p.projection.len() > upgraded_place.projection.len() && upgraded_place.is_prefix_of(*p)
+                p.projection.len() > upgraded_place.projection.len()
+                    && upgraded_place.is_prefix_of(*p)
             })
             .collect::<Vec<_>>();
         for (p, cap) in to_remove {
@@ -252,8 +260,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         place: Place<'tcx>,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
-
-
         // This is to support the following kind of scenario:
         //
         //  - `s` is to be re-assigned or borrowed mutably at location `l`
