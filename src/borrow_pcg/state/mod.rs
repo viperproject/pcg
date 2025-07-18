@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     action::BorrowPcgAction,
-    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
+    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, edge::kind::BorrowPcgEdgeKind, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
     pcg_validity_assert,
@@ -249,7 +249,8 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
 
 impl<'tcx> HasValidityCheck<'tcx> for BorrowStateRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
-        self.graph.check_validity(ctxt)
+        self.graph.check_validity(ctxt)?;
+        Ok(())
     }
 }
 

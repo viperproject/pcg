@@ -76,7 +76,12 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
             }
         }
         for edge in self.edges() {
-            edge.check_validity(ctxt)?;
+            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind()
+                && let Some(place) = e.base.as_current_place()
+                && place.projects_shared_ref(ctxt)
+            {
+                edge.check_validity(ctxt)?;
+            }
         }
         Ok(())
     }
@@ -170,7 +175,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
             seen.insert(node);
             let maybe_old_place = node.base();
-            if maybe_old_place.place().is_mutable(LocalMutationIsAllowed::Yes, ctxt).is_err() {
+            if maybe_old_place
+                .place()
+                .is_mutable(LocalMutationIsAllowed::Yes, ctxt)
+                .is_err()
+            {
                 tracing::debug!(
                     "Skipping {} because it is not mutable",
                     node.to_short_string(ctxt)

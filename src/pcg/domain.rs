@@ -15,35 +15,20 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
-    action::PcgActions,
-    borrow_pcg::{
+    action::PcgActions, borrow_pcg::{
+        edge::kind::BorrowPcgEdgeKind,
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
-    },
-    borrows_imgcat_debug,
-    pcg::{
+    }, borrows_imgcat_debug, free_pcs::CapabilityKind, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis}, pcg::{
         dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
+        place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
-    },
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
-    rustc_interface::{
+    }, rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
-    },
-    utils::{
-        arena::ArenaRef,
-        data_structures::HashSet,
-        domain_data::{DomainData, DomainDataIndex},
-        eval_stmt_data::EvalStmtData,
-        incoming_states::IncomingStates,
-        initialized::DefinitelyInitialized,
-        liveness::PlaceLiveness,
-        validity::HasValidityCheck,
-        CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR,
-    },
-    validity_checks_enabled, validity_checks_warn_only,
-    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
-    AnalysisEngine, DebugLines,
+    }, utils::{
+        arena::ArenaRef, data_structures::HashSet, display::DisplayWithCompilerCtxt, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, initialized::DefinitelyInitialized, liveness::PlaceLiveness, validity::HasValidityCheck, CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR
+    }, validity_checks_enabled, validity_checks_warn_only, visualization::{dot_graph::DotGraph, generate_pcg_dot_graph}, AnalysisEngine, DebugLines
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
@@ -331,6 +316,19 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.capabilities.check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
+        for edge in self.borrow.graph.edges() {
+            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = edge.kind
+                && let Some(place) = e.base.as_current_place()
+                && place.projects_shared_ref(ctxt)
+                && self.capabilities.get(place) != Some(CapabilityKind::Read)
+            {
+                return Err(format!(
+                    "Expansion of shared reference {} is not read, but {:?}",
+                    place.to_short_string(ctxt),
+                    self.capabilities.get(place)
+                ));
+            }
+        }
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
         }
