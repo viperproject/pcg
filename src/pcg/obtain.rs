@@ -2,13 +2,25 @@ use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_checker::r#impl::get_reserve_location,
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode}, borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion}, edge::{
+        borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
+        borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
+        edge::{
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
-        }, edge_data::LabelPlacePredicate, graph::BorrowsGraph, has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, SetLabel}, path_condition::PathConditions, region_projection::{self, LocalRegionProjection, RegionProjection, RegionProjectionLabel}
+        },
+        edge_data::LabelPlacePredicate,
+        graph::BorrowsGraph,
+        has_pcs_elem::{
+            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, SetLabel,
+        },
+        path_condition::PathConditions,
+        region_projection::{self, LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{obtain, place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, Pcg, PcgDebugData, PcgError, PcgMutRef},
+    pcg::{
+        obtain, place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, Pcg, PcgDebugData,
+        PcgError, PcgMutRef,
+    },
     rustc_interface::middle::mir,
     utils::{
         callbacks::in_cargo_crate, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace,
@@ -96,7 +108,6 @@ impl LabelForRegionProjection {
         rp.with_label(self.label(), ctxt)
     }
 }
-
 
 pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
@@ -351,6 +362,37 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         }
         Ok(())
     }
+
+    // This is used when labelling an interior RP
+    // This will label and add edges to the outer one.
+    // So we'd turn eg :
+    // {s|'a} -> {s.f|'a at X} -> {q|'a} -> {s.f|'a at Future}
+    //                  ^                         ^
+    //                  |-------------------------|
+    // into:
+    // {s|'a at X} -> {s.f|'a at X} -> {q|'a} -> {s.f|'a at Future} -> {s|'a at Future}
+    //        ^         ^                         ^                          ^
+    //        |         |-------------------------|                          |
+    //        |                                                              |
+    //        |--------------------------------------------------------------|                                                             ^
+    fn add_future_edges_and_mutate_current_rp_expansion(
+        &mut self,
+        edge: BorrowPcgExpansion<'tcx>,
+        context: &str,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Result<(), PcgError> {
+        let base_rp = edge.base.try_into_region_projection().unwrap();
+        assert!(base_rp.label().is_none());
+        let expansion_rps = edge
+            .expansion()
+            .iter()
+            .map(|node| node.to_pcg_node(ctxt).try_into_region_projection().unwrap())
+            .collect::<Vec<_>>();
+        self.add_and_update_placeholder_edges(base_rp, &expansion_rps, context, ctxt)?;
+        Ok(())
+    }
+
+    // In general the origin_rp should already be labelled
     fn add_and_update_placeholder_edges(
         &mut self,
         origin_rp: LocalRegionProjection<'tcx>,
@@ -362,6 +404,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
             return Ok(());
         }
         let future_rp = origin_rp.with_placeholder_label(ctxt);
+
+        // Add edge {origin|r'a at l} -> {origin|r'a at FUTURE}
         self.apply_action(
             BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(
@@ -379,6 +423,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
             )
             .into(),
         )?;
+
+        // For each field F add edge {origin.F|'a} -> {origin|r'a at FUTURE}
         for expansion_rp in expansion_rps {
             self.apply_action(
                 BorrowPcgAction::add_edge(
@@ -398,6 +444,9 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                 .into(),
             )?;
         }
+
+        // For all borrowflow edges blocking {origin|r'a at l} (except the one to origin|r'a at FUTURE)
+        // They should now be blocking the future one instead
         let to_replace = self
             .borrows_graph()
             .edges_blocking(origin_rp.into(), ctxt)

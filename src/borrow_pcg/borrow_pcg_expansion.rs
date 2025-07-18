@@ -201,8 +201,8 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
         for p in &mut self.expansion {
             changed |= p.label_region_projection(predicate, label, ctxt);
         }
-        if let Some(base_rp) = self.base.place().base_region_projection(ctxt)
-            && predicate.matches(base_rp.into(), ctxt)
+        if let Some(rp) = self.deref_blocked_region_projection(ctxt)
+            && predicate.matches(rp.into(), ctxt)
         {
             self.deref_rp_label = label;
         }

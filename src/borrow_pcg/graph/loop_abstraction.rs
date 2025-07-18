@@ -22,7 +22,7 @@ use crate::{
     pcg::{
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
-        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, Pcg, PcgMutRef,
+        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, Pcg, PcgMutRef, PcgRefLike,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
@@ -391,8 +391,25 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_obtain.retain(|p| !p.is_prefix_of(*place));
             to_obtain.push(*place);
         }
+        let obtain_type = ObtainType::LoopInvariant;
         for place in to_obtain {
+            let obtain_cap = obtain_type.capability(place, ctxt);
+
+            if !obtain_cap.is_read() {
+                tracing::debug!(
+                    "Obtain {:?} to place {} in phase {:?}",
+                    obtain_type,
+                    place.to_short_string(ctxt),
+                    obtain_type
+                );
+                obtainer.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place).unwrap();
+            }
+
             obtainer.obtain(place, ObtainType::LoopInvariant).unwrap();
+            obtainer.pcg.borrows_graph().render_debug_graph(
+                ctxt,
+                &format!("After obtaining {}", place.to_short_string(ctxt)),
+            );
         }
     }
 

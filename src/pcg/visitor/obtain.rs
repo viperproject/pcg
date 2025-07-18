@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use itertools::Itertools;
 
@@ -99,7 +100,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         Ok(())
     }
-
 
     fn update_latest_for_unblocked_places(
         &mut self,
@@ -212,8 +212,19 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             .unwrap()
                             .region(self.ctxt),
                     )
+                    && expansion.expansion().iter().all(|e| {
+                        if let PCGNode::Place(p) = e {
+                            p.is_current()
+                        } else {
+                            false
+                        }
+                    })
                 {
-                    self.unlabel_blocked_region_projections(expansion)?;
+                    // Note the last condition above: if the expansion was to old
+                    // places, that means that this was e.g an expansion that occurred
+                    // previously. Its possible that the RP is labelled because its currently
+                    // borrowed, in which case we don't want to unlabel it.
+                    self.unlabel_blocked_region_projections(expansion, context)?;
                 }
 
                 if is_mutable_place_expansion {
@@ -291,13 +302,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     fn unlabel_blocked_region_projections(
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
+        context: &str,
     ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
             if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::remove_region_projection_label(
                         rp,
-                        "unlabel blocked_region_projections",
+                        format!("{}: unlabel blocked_region_projections", context),
                     )
                     .into(),
                 )?;
@@ -350,11 +362,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     // Remove read permission upwards for strict ancestors of `place` Used when // we want to access `place` exclusively when activating a two-phase borrow
     // or when it is a postfix of a place that was downgraded to read
     // permission.
-    pub(crate) fn remove_read_permission_upwards(
+    pub(crate) fn remove_read_permission_upwards_and_label_rps(
         &mut self,
         place: Place<'tcx>,
         debug_ctxt: &str,
     ) -> Result<(), PcgError> {
+        let place_regions = place.regions(self.ctxt);
         let mut current = place;
         while self.pcg.capabilities.get(current) == Some(CapabilityKind::Read) {
             if current.is_mut_ref(self.ctxt) {
@@ -391,6 +404,104 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     )
                     .into(),
                 )?;
+            }
+            for r in place_regions.iter() {
+                let current_rp = RegionProjection::new(*r, current, None, self.ctxt)?;
+                if current.is_ref(self.ctxt)
+                    && !current
+                        .project_deref(self.ctxt)
+                        .regions(self.ctxt)
+                        .iter()
+                        .contains(r)
+                {
+                    // If this region projection couldn't be modified (because its deref doesn't hold r), we skip
+                    // There is probably a better way to do this
+                    continue;
+                }
+                let edges_blocking_current_rp = self
+                    .pcg
+                    .borrow
+                    .graph
+                    .edges_blocking(current_rp.into(), self.ctxt)
+                    .collect::<Vec<_>>();
+                tracing::info!("Do thing on {} ", current_rp.to_short_string(self.ctxt));
+                if !edges_blocking_current_rp.is_empty() {
+                    let labelled_rp = current_rp
+                        .with_label(Some(self.current_snapshot_location().into()), self.ctxt);
+                    let future_rp = current_rp.with_placeholder_label(self.ctxt);
+                    let expansion_nodes = edges_blocking_current_rp
+                        .iter()
+                        .flat_map(|e| {
+                            if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = e.kind()
+                                && let PCGNode::RegionProjection(rp) = e.base
+                                && rp == current_rp.into()
+                            {
+                                Some(
+                                    e.expansion()
+                                        .iter()
+                                        .flat_map(|e| e.try_into_region_projection())
+                                        .filter(|e| e.base.is_current())
+                                        .collect::<Vec<_>>(),
+                                )
+                            } else {
+                                None
+                            }
+                        })
+                        .flatten()
+                        .collect::<HashSet<_>>();
+                    self.record_and_apply_action(
+                        BorrowPcgAction::label_region_projection(
+                            LabelRegionProjectionPredicate::Equals(current_rp.into()),
+                            Some(self.current_snapshot_location().into()),
+                            "remove_read_permission_upwards_and_label_rps",
+                        )
+                        .into(),
+                    )?;
+                    self.record_and_apply_action(
+                        BorrowPcgAction::add_edge(
+                            BorrowPcgEdge::new(
+                                BorrowFlowEdge::new(
+                                    labelled_rp.into(),
+                                    future_rp.into(),
+                                    BorrowFlowEdgeKind::Future,
+                                    self.ctxt,
+                                )
+                                .into(),
+                                self.pcg.borrow.path_conditions.clone(),
+                            ),
+                            "remove_read_permission_upwards_and_label_rps",
+                            self.ctxt,
+                        )
+                        .into(),
+                    )?;
+                    for expansion_node in expansion_nodes {
+                        // If the expansion isn't labelled, it is likely a sibling RO of the place gaining exclusive capability
+                        // so we connect to its current version
+                        // Otherwise if its labelled we connect to its placeholder version
+                        let to_connect = if expansion_node.label().is_none() {
+                            expansion_node.into()
+                        } else {
+                            expansion_node.with_placeholder_label(self.ctxt).into()
+                        };
+                        self.record_and_apply_action(
+                            BorrowPcgAction::add_edge(
+                                BorrowPcgEdge::new(
+                                    BorrowFlowEdge::new(
+                                        to_connect,
+                                        future_rp.into(),
+                                        BorrowFlowEdgeKind::Future,
+                                        self.ctxt,
+                                    )
+                                    .into(),
+                                    self.pcg.borrow.path_conditions.clone(),
+                                ),
+                                "remove_read_permission_upwards_and_label_rps",
+                                self.ctxt,
+                            )
+                            .into(),
+                        )?;
+                    }
+                }
             }
             let parent = match current.parent_place() {
                 Some(parent) => parent,
@@ -444,7 +555,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         )?;
         self.remove_read_permission_downwards(place)?;
         if let Some(parent) = place.parent_place() {
-            self.remove_read_permission_upwards(parent, "Upgrade read to exclusive")?;
+            self.remove_read_permission_upwards_and_label_rps(parent, "Upgrade read to exclusive")?;
         }
         Ok(())
     }
@@ -479,7 +590,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     // capability, one such ancestor originally had E capability was
     // subsequently downgraded. This function finds such an ancestor (if one
     // exists), and performs the capability exchange.
-    fn upgrade_closest_read_ancestor_to_exclusive(
+    pub(crate) fn upgrade_closest_read_ancestor_to_exclusive_and_update_rps(
         &mut self,
         place: Place<'tcx>,
     ) -> Result<(), PcgError> {
@@ -680,7 +791,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             // *c). In the example, (*c).f2 is actually the closest read ancestor,
             // but this is not always the case (e.g. if we wanted to obtain
             // (*c).f2.f3 instead)
-            self.upgrade_closest_read_ancestor_to_exclusive(place)?;
+            //
+            // This also labels rps and adds placeholder projections
+            self.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)?;
         }
 
         let current_cap = self.pcg.capabilities.get(place);

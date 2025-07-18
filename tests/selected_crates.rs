@@ -24,8 +24,22 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-        // cycles, <= 20 basic blocks, <= 30 nodes
-        common::ensure_successful_run_on_crate(
+    // 4 basic blocks
+    common::ensure_successful_run_on_crate(
+        "rustls-pki-types",
+        "1.11.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("server_name::parser::Parser::<'a>::read_char"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+
+    // cycles, <= 20 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
             "object",
             "0.36.7",
             Some("2025-03-13"),
@@ -33,11 +47,9 @@ fn test_selected_crates() {
                 target: common::Target::Debug,
                 validity_checks: true,
                 function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
-                extra_env_vars: visualization_env_vars,
+                extra_env_vars: vec![],
             },
         );
-
-        return;
 
     // cycles, 12 basic blocks, cycles, <= 30 nodes
     common::ensure_successful_run_on_crate(
@@ -64,7 +76,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // 4 basic blocks, cycles, <= 12 nodes
     common::ensure_successful_run_on_crate(
@@ -484,17 +495,6 @@ fn test_selected_crates() {
         },
     );
 
-    common::ensure_successful_run_on_crate(
-        "rustls-pki-types",
-        "1.11.0",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("server_name::parser::Parser::<'a>::read_char"),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::ensure_successful_run_on_crate(
         "winnow",

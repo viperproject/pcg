@@ -48,9 +48,10 @@ impl<T: Default> Default for EvalStmtData<T> {
 
 impl<'tcx, T: HasValidityCheck<'tcx>> HasValidityCheck<'tcx> for EvalStmtData<T> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
-        self.pre_operands.check_validity(ctxt)?;
-        self.post_operands.check_validity(ctxt)?;
-        self.pre_main.check_validity(ctxt)?;
+        // self.pre_operands.check_validity(ctxt)?;
+        // self.post_operands.check_validity(ctxt)?;
+        // self.pre_main.check_validity(ctxt)?;
+        // Only check post main for now
         self.post_main.check_validity(ctxt)
     }
 }

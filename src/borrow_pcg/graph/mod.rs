@@ -12,7 +12,7 @@ use crate::{
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
-    pcg::PCGNode,
+    pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
@@ -61,18 +61,26 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         let nodes = self.nodes(ctxt);
         // TODO
         for node in nodes.iter() {
-            if let PCGNode::RegionProjection(rp) = node
+            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(ctxt)
                 && rp.is_placeholder()
                 && rp.base.as_current_place().is_some()
             {
-                if nodes
-                    .iter()
-                    .any(|n| matches!(n, PCGNode::RegionProjection(rp2) if rp.base == rp2.base && rp.region_idx == rp2.region_idx && rp2.label().is_none())) {
-                        return Err(format!(
-                            "Placeholder region projection {} also has a current projection",
-                            rp.to_short_string(ctxt)
-                        ));
-                    }
+                let current_rp = rp.with_label(None, ctxt);
+                let conflicting_edges = self
+                    .edges_blocking(current_rp.into(), ctxt)
+                    .chain(self.edges_blocked_by(current_rp.into(), ctxt))
+                    .collect::<HashSet<_>>();
+                if !conflicting_edges.is_empty() {
+                    return Err(format!(
+                        "Placeholder region projection {} has edges blocking or blocked by its current version {}:\n\t{}",
+                        rp.to_short_string(ctxt),
+                        current_rp.to_short_string(ctxt),
+                        conflicting_edges
+                            .iter()
+                            .map(|e| e.to_short_string(ctxt))
+                            .join("\n\t")
+                    ));
+                }
             }
         }
         for edge in self.edges() {

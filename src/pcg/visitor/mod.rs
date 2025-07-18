@@ -125,7 +125,6 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         self.perform_statement_actions(statement)?;
-        self.pcg.as_mut_ref().assert_validity_at_location(self.ctxt, location);
         Ok(())
     }
 
@@ -159,7 +158,6 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         terminator: &Terminator<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        self.pcg.as_mut_ref().assert_validity_at_location(self.ctxt, location);
         self.super_terminator_fallable(terminator, location)?;
         if self.phase == EvalStmtPhase::PostMain
             && let mir::TerminatorKind::Call {
@@ -300,6 +298,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.visit_terminator_fallable(terminator, self.location)?
             }
         }
+        if self.phase == EvalStmtPhase::PostMain {
+            self.pcg
+                .as_mut_ref()
+                .assert_validity_at_location(self.ctxt, self.location);
+        }
         Ok(self.actions)
     }
 
@@ -363,7 +366,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
         if !blocked_place.is_owned(self.ctxt) {
             self.place_obtainer()
-                .remove_read_permission_upwards(blocked_place, "Activate twophase borrow")?;
+                .remove_read_permission_upwards_and_label_rps(
+                    blocked_place,
+                    "Activate twophase borrow",
+                )?;
         }
         Ok(())
     }

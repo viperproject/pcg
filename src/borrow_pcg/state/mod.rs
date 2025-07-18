@@ -462,7 +462,7 @@ impl<'tcx> BorrowsState<'tcx> {
 
         match kind {
             BorrowKind::Mut {
-                kind: MutBorrowKind::Default,
+                kind: MutBorrowKind::Default | MutBorrowKind::ClosureCapture,
             } => {
                 let _ = capabilities.remove(blocked_place, ctxt);
             }
