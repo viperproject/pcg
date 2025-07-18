@@ -635,7 +635,7 @@ impl<'tcx, A: Allocator> PcgDomain<'_, 'tcx, A> {
             statement_index,
             ToGraph::Phase(phase),
             pcg.into(),
-            &self.debug_data,
+            self.debug_data.as_ref(),
             self.ctxt,
         );
     }

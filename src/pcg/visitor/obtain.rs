@@ -32,10 +32,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         PlaceObtainer::new(
             pcg_ref,
             self.phase,
-            &mut self.actions,
+            Some(&mut self.actions),
             self.ctxt,
             self.location,
-            &mut self.debug_data,
+            if self.phase.is_operands_stage() {
+                SnapshotLocation::before(self.location)
+            } else {
+                SnapshotLocation::Mid(self.location)
+            },
+            if let Some(debug_data) = &mut self.debug_data {
+                Some(debug_data)
+            } else {
+                None
+            },
         )
     }
     pub(crate) fn record_and_apply_action(
@@ -91,6 +100,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
+
     fn update_latest_for_unblocked_places(
         &mut self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
@@ -104,7 +114,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 self.record_and_apply_action(
                     BorrowPcgAction::set_latest(
                         place,
-                        SnapshotLocation::After(self.location),
+                        SnapshotLocation::After(self.location()),
                         context,
                     )
                     .into(),
@@ -224,9 +234,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                     rp.to_short_string(self.ctxt)
                                 );
                                 let snapshot_location = if during_cleanup {
-                                    SnapshotLocation::Prepare(self.location)
+                                    SnapshotLocation::Prepare(self.location())
                                 } else {
-                                    SnapshotLocation::before(self.location)
+                                    SnapshotLocation::before(self.location())
                                 };
                                 self.record_and_apply_action(
                                     BorrowPcgAction::label_region_projection(
@@ -249,7 +259,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     borrow
                         .assigned_region_projection(self.ctxt)
                         .to_pcg_node(self.ctxt),
-                    self.location,
+                    self.location(),
                 ) && let MaybeOldPlace::Current { place } = borrow.assigned_ref()
                     && let Some(existing_cap) = self.pcg.capabilities.get(place)
                 {
@@ -303,7 +313,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         for (idx, node) in expansion.iter().enumerate() {
             if let Some(place) = node.base.as_current_place() {
-                let labeller = SetLabel(SnapshotLocation::BeforeCollapse(self.location));
+                let labeller = SetLabel(SnapshotLocation::BeforeCollapse(self.location()));
                 self.pcg.borrow.graph.make_place_old(
                     (*place).into(),
                     MakePlaceOldReason::Collapse,
@@ -442,10 +452,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) fn new(
         pcg: PcgMutRef<'state, 'tcx>,
         phase: EvalStmtPhase,
-        actions: &'state mut Vec<PcgAction<'tcx>>,
+        actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
         location: mir::Location,
-        debug_data: &'state mut Option<PcgDebugData>,
+        snapshot_location: SnapshotLocation,
+        debug_data: Option<&'state mut PcgDebugData>,
     ) -> Self {
         Self {
             pcg,
@@ -453,6 +464,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             ctxt,
             actions,
             location,
+            snapshot_location,
             debug_data,
         }
     }
@@ -549,19 +561,18 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 _ => unreachable!(),
             },
         };
-        // self.pcg.borrow.graph.render_debug_graph(
-        //     self.ctxt,
-        //     &format!("after {}", action.debug_line(self.ctxt)),
-        // );
-        generate_dot_graph(
-            self.location.block,
-            self.location.statement_index,
-            ToGraph::Action(self.phase, self.actions.len()),
-            self.pcg.as_ref(),
-            &self.debug_data,
-            self.ctxt,
-        );
-        self.actions.push(action);
+        let location = self.location();
+        if let Some(actions) = &mut self.actions {
+            generate_dot_graph(
+                location.block,
+                location.statement_index,
+                ToGraph::Action(self.phase, actions.len()),
+                self.pcg.as_ref(),
+                self.debug_data.as_deref(),
+                self.ctxt,
+            );
+            actions.push(action);
+        }
         Ok(result)
     }
 }
@@ -592,7 +603,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         for mut rp in derefs_to_disconnect {
             tracing::info!("Disconnecting deref projection {:?}", rp);
             let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
-            let label = SnapshotLocation::BeforeRefReassignment(self.location);
+            let label = SnapshotLocation::BeforeRefReassignment(self.location());
             rp.base.label_place(
                 &LabelPlacePredicate::Exact(rp.base.place()),
                 &SetLabel(label),
@@ -758,11 +769,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {
-        if self.phase.is_operands_stage() {
-            SnapshotLocation::before(self.location)
-        } else {
-            SnapshotLocation::Mid(self.location)
-        }
+        self.snapshot_location
     }
 
     fn borrows_graph(&self) -> &crate::borrow_pcg::graph::BorrowsGraph<'tcx> {

@@ -138,7 +138,7 @@ pub(crate) fn generate_dot_graph<'tcx>(
     statement_index: usize,
     to_graph: ToGraph,
     pcg: PcgRef<'_, 'tcx>,
-    debug_data: &Option<PcgDebugData>,
+    debug_data: Option<&PcgDebugData>,
     ctxt: CompilerCtxt<'_, 'tcx>,
 ) {
     if !*RECORD_PCG.lock().unwrap() {

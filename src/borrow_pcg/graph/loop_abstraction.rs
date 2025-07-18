@@ -373,37 +373,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
             path_conditions: &path_conditions,
         };
         let pcg = PcgMutRef::new(owned, borrow, capabilities);
+        let snapshot_location = SnapshotLocation::Loop(loop_head_block);
         let mut obtainer = PlaceObtainer::new(
             pcg,
             EvalStmtPhase::PreOperands,
-            &mut vec![],
+            None,
             ctxt,
-            mir::Location {
-                block: loop_head_block,
-                statement_index: 0,
-            },
-            &mut None,
+            snapshot_location.location(),
+            snapshot_location,
+            None,
         );
-        let mut expander = AbsExpander {
-            loop_head_block,
-            graph: self,
-            capabilities: Some(capabilities),
-            owned: Some(owned),
-            path_conditions,
-            ctxt,
-        };
-        let mut to_expand: Vec<Place<'tcx>> = vec![];
+        let mut to_obtain: Vec<Place<'tcx>> = vec![];
         for place in blocked_loop_places {
-            if to_expand.iter().any(|p| place.is_prefix_of(*p)) {
+            if to_obtain.iter().any(|p| place.is_prefix_of(*p)) {
                 continue;
             }
-            to_expand.retain(|p| !p.is_prefix_of(*place));
-            to_expand.push(*place);
+            to_obtain.retain(|p| !p.is_prefix_of(*place));
+            to_obtain.push(*place);
         }
-        for place in to_expand {
-            expander
-                .expand_to(place, ObtainType::LoopInvariant, ctxt)
-                .unwrap();
+        for place in to_obtain {
+            obtainer.obtain(place, ObtainType::LoopInvariant).unwrap();
         }
     }
 

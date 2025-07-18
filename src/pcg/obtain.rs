@@ -20,9 +20,16 @@ pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) pcg: PcgMutRef<'state, 'tcx>,
     pub(crate) phase: EvalStmtPhase,
     pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
-    pub(crate) actions: &'state mut Vec<PcgAction<'tcx>>,
+    pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
     pub(crate) location: mir::Location,
-    pub(crate) debug_data: &'state mut Option<PcgDebugData>,
+    pub(crate) snapshot_location: SnapshotLocation,
+    pub(crate) debug_data: Option<&'state mut PcgDebugData>,
+}
+
+impl<'state, 'mir, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+    pub(crate) fn location(&self) -> mir::Location {
+        self.location
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

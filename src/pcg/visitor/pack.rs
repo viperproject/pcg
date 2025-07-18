@@ -10,8 +10,8 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::obtain::PlaceObtainer;
+use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::HasPlace;
@@ -103,7 +103,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                 "restore capability to leaf place",
                 self.ctxt,
             );
-           self.record_and_apply_action(action)?;
+            self.record_and_apply_action(action)?;
         }
         Ok(())
     }
@@ -118,7 +118,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         }
 
         let ctxt = self.ctxt;
-       let location = self.location;
+        let location = self.location();
 
         let ancestor_predicate_allows_killing = |p: LocalNode<'tcx>| {
             let place = match p {
@@ -179,7 +179,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
 
         let mut edges_to_trim = Vec::new();
         let fg = self.pcg.borrow.graph.frozen_graph();
-        let location = self.location;
+        let location = self.location();
         let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                 if !ancestor_predicate_allows_killing(expansion.base()) {
@@ -242,6 +242,4 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         }
         Ok(edges_to_trim)
     }
-
-
 }
