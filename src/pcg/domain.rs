@@ -324,10 +324,7 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
-    pub(crate) fn is_acyclic(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> bool {
-        self.borrow.graph().frozen_graph().is_acyclic(ctxt)
-    }
-
+    #[allow(unused)]
     pub(crate) fn render_debug_graph(
         &self,
         ctxt: CompilerCtxt<'mir, 'tcx>,

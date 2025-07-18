@@ -7,7 +7,6 @@ use super::state::BorrowsState;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use crate::borrow_pcg::edge_data::{EdgeData, EdgePredicate, LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller};

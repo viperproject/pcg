@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 45 blocks
+    common::ensure_successful_run_on_crate(
+        "ring",
+        "0.17.14",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
     common::ensure_successful_run_on_crate(
         "http",
         "1.3.1",
@@ -31,12 +46,11 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("header::map::Entry::<'a, T>::key"),
-            extra_env_vars: visualization_env_vars,
+            function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
+            extra_env_vars: vec![]
         },
     );
 
-    return;
 
     // 4 basic blocks
     common::ensure_successful_run_on_crate(
