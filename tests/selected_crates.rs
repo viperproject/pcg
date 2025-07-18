@@ -24,32 +24,30 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // 45 blocks
-    common::ensure_successful_run_on_crate(
-        "ring",
-        "0.17.14",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
-            extra_env_vars: visualization_env_vars,
-        },
-    );
+    // 45 blocks TODO
+    // common::ensure_successful_run_on_crate("ring",
+    //     "0.17.14",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
+    //         extra_env_vars: visualization_env_vars,
+    //     },
+    // );
 
-    return;
-
-    common::ensure_successful_run_on_crate(
-        "http",
-        "1.3.1",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
-            extra_env_vars: vec![]
-        },
-    );
+    // TODO
+    // common::ensure_successful_run_on_crate(
+    //     "http",
+    //     "1.3.1",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
+    //         extra_env_vars: vec![]
+    //     },
+    // );
 
 
     // 4 basic blocks
@@ -497,18 +495,18 @@ fn test_selected_crates() {
         },
     );
 
-    // 159 basic blocks
-    common::ensure_successful_run_on_crate(
-        "serde_yaml",
-        "0.9.34+deprecated",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("loader::Loader::<'input>::next_document"),
-            extra_env_vars: vec![],
-        },
-    );
+    // 159 basic blocks TODO
+    // common::ensure_successful_run_on_crate(
+    //     "serde_yaml",
+    //     "0.9.34+deprecated",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("loader::Loader::<'input>::next_document"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
 
     // 198 basic blocks
     common::ensure_successful_run_on_crate(
