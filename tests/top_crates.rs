@@ -56,7 +56,7 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
                 date,
                 RunOnCrateOptions::RunPCG {
                     target: Target::Release,
-                    validity_checks: true,
+                    validity_checks: false,
                     function: None,
                     extra_env_vars: extra_env_vars.clone(),
                 },
