@@ -3,7 +3,7 @@ use derive_more::From;
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionIdx};
+use crate::borrow_pcg::region_projection::RegionIdx;
 use crate::pcg::{MaybeHasLocation, PCGNodeLike};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -14,7 +14,7 @@ pub(crate) trait HasPcgElems<T> {
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub(crate) enum LabelRegionProjectionPredicate<'tcx> {
+pub enum LabelRegionProjectionPredicate<'tcx> {
     Postfix(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     Equals(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     AllNonPlaceHolder(MaybeOldPlace<'tcx>, RegionIdx),

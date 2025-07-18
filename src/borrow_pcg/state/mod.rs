@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     action::BorrowPcgAction,
-    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, edge::kind::BorrowPcgEdgeKind, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
+    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
     pcg_validity_assert,
@@ -32,7 +32,6 @@ use crate::{
         ty::{self},
     },
     utils::{display::DebugLines, validity::HasValidityCheck},
-    validity_checks_enabled,
 };
 use crate::{
     borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::RegionProjection},
@@ -59,6 +58,7 @@ pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
     pub(crate) path_conditions: &'pcg PathConditions,
 }
 
+#[allow(unused)]
 #[derive(Clone, Copy)]
 pub(crate) struct BorrowStateRef<'pcg, 'tcx> {
     pub(crate) latest: &'pcg Latest<'tcx>,

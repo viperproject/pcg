@@ -388,28 +388,10 @@ impl<'tcx> Place<'tcx> {
                 TyKind::Ref(_, ty, _) => vec![*ty],
                 TyKind::Bool => todo!(),
                 TyKind::Char => todo!(),
-                TyKind::Int(int_ty) => todo!(),
-                TyKind::Uint(uint_ty) => todo!(),
-                TyKind::Float(float_ty) => todo!(),
-                TyKind::Foreign(_) => todo!(),
-                TyKind::Str => todo!(),
-                TyKind::Pat(_, _) => todo!(),
-                TyKind::RawPtr(_, mutability) => todo!(),
-                TyKind::FnDef(_, _) => vec![],
-                TyKind::FnPtr(binder, fn_header) => todo!(),
-                TyKind::Dynamic(_, _, dyn_kind) => vec![],
-                TyKind::Closure(_, _) => todo!(),
+                TyKind::Dynamic(_, _, _) => vec![],
                 TyKind::CoroutineClosure(_, _) => todo!(),
                 TyKind::Coroutine(_, _) => vec![], // TODO: confirm
-                TyKind::CoroutineWitness(_, _) => todo!(),
-                TyKind::Never => todo!(),
-                TyKind::Tuple(_) => todo!(),
-                TyKind::Alias(_, _) => vec![],
-                TyKind::Param(_) => todo!(),
-                TyKind::Bound(debruijn_index, _) => todo!(),
-                TyKind::Placeholder(_) => todo!(),
-                TyKind::Infer(infer_ty) => todo!(),
-                TyKind::Error(_) => todo!(),
+                _ => todo!()
             };
             field_tys
                 .iter()
@@ -471,10 +453,6 @@ impl<'tcx> Place<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, PcgRegion> {
         extract_regions(self.ty(ctxt).ty, ctxt)
-    }
-
-    pub(crate) fn has_region_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        !self.regions(ctxt).is_empty()
     }
 
     pub(crate) fn region_projections<C: Copy>(

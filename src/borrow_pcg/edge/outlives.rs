@@ -148,10 +148,6 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
-    pub(crate) fn is_mut(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.kind.is_mut(repacker)
-    }
-
     /// Returns true if the edge could be redirected, false if it would create a self edge.
     pub(crate) fn redirect(
         &mut self,
@@ -248,21 +244,6 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
             BorrowFlowEdgeKind::Future => write!(f, "Future"),
             BorrowFlowEdgeKind::Other => write!(f, "Other"),
-        }
-    }
-}
-
-impl BorrowFlowEdgeKind {
-    pub(crate) fn is_mut(&self, _ctxt: CompilerCtxt<'_, '_>) -> bool {
-        match self {
-            BorrowFlowEdgeKind::Aggregate { .. } => true,
-            BorrowFlowEdgeKind::ConstRef => false,
-            BorrowFlowEdgeKind::BorrowOutlives { .. } => true,
-            BorrowFlowEdgeKind::InitialBorrows => true,
-            BorrowFlowEdgeKind::CopyRef => false,
-            BorrowFlowEdgeKind::Move => true,
-            BorrowFlowEdgeKind::Future => true,
-            BorrowFlowEdgeKind::Other => true
         }
     }
 }

@@ -120,10 +120,6 @@ impl ProjectionKind {
         matches!(self, ProjectionKind::DerefBox)
     }
 
-    pub(crate) fn is_deref_ref(self) -> bool {
-        matches!(self, ProjectionKind::DerefRef(_))
-    }
-
     pub(crate) fn insert_target_into_expansion<'tcx>(
         self,
         target: Place<'tcx>,

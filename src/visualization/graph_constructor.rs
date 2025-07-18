@@ -2,10 +2,10 @@ use crate::{
     borrow_pcg::{
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-        state::{BorrowStateRef, BorrowsState},
+        state::BorrowStateRef,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, Pcg, PcgRef},
+    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, PcgRef},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
         display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,

@@ -23,9 +23,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
                 self.place_obtainer().obtain(place, ObtainType::Capability(capability))?;
             }
-            PlaceCondition::RemoveCapability(place) => {
-                self.pcg.capabilities.remove(place, self.ctxt);
-            }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self.pcg.owned.locals_mut()[local] =
                     CapabilityLocal::Allocated(CapabilityProjections::new(local));

@@ -1,18 +1,14 @@
 use itertools::Itertools;
 
-use crate::action::{BorrowPcgAction, PcgAction};
+use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::action::MakePlaceOldReason;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
+use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, SetLabel};
 use crate::borrow_pcg::region_projection::{
-    LocalRegionProjection, PcgRegion, RegionProjection, RegionProjectionLabel,
+    PcgRegion, RegionProjection,
 };
-use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand, RepackOp};
-use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
+use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
 use crate::pcg::obtain::PlaceObtainer;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
@@ -118,11 +114,11 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
 }
 
 impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
-    #[tracing::instrument(skip(self, location))]
+    #[tracing::instrument(skip(self))]
     fn visit_statement_fallable(
         &mut self,
         statement: &Statement<'tcx>,
-        location: Location,
+        _location: Location,
     ) -> Result<(), PcgError> {
         self.perform_statement_actions(statement)?;
         Ok(())

@@ -9,7 +9,6 @@ use itertools::Itertools;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdgeRef, LocalNode},
-        edge::kind::BorrowPcgEdgeKind,
         edge_data::EdgeData,
     },
     pcg::{PCGNode, PCGNodeLike},
@@ -160,8 +159,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         &'slf self,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
-        let mut result: HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = HashSet::default();
-        let mut seen: HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = HashSet::default();
         let is_edge_to_future_node = |edge: BorrowPcgEdgeRef<'tcx, 'graph>| {
             edge.blocked_by_nodes(ctxt)
                 .all(|node| node.is_placeholder())
@@ -221,14 +218,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         self.graph
             .edges()
             .all(|edge| !edge.blocks_node(node.into(), repacker))
-    }
-
-    pub(crate) fn get_edges_blocked_by<'slf, 'mir: 'graph, 'bc: 'graph>(
-        &'slf self,
-        node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir> {
-        self.graph.edges_blocked_by(node, ctxt)
     }
 
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(

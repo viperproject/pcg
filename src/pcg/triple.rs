@@ -46,7 +46,6 @@ pub(crate) enum PlaceCondition<'tcx> {
     /// be labelled, similarly to the situation where the borrow was exclusive.
     ExpandTwoPhase(Place<'tcx>),
     Capability(Place<'tcx>, CapabilityKind),
-    RemoveCapability(Place<'tcx>),
     AllocateOrDeallocate(Local),
     Unalloc(Local),
     Return,

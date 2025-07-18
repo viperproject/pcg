@@ -1,7 +1,6 @@
 use super::PcgVisitor;
 use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
@@ -11,9 +10,8 @@ use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{self, Place, SnapshotLocation};
+use crate::utils::{self, SnapshotLocation};
 
 use super::{PcgError, PcgUnsupportedError};
 

@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 
-use itertools::Itertools;
-
 use super::PcgError;
-use super::PcgVisitor;
 use crate::action::PcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;

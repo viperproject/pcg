@@ -36,7 +36,7 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
     fn remove(
         &mut self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<CapabilityKind> {
         self.0.remove(&place)
     }
@@ -103,9 +103,9 @@ impl BlockType {
     }
     pub(crate) fn expansion_capability<'tcx>(
         self,
-        blocked_place: Place<'tcx>,
+        _blocked_place: Place<'tcx>,
         blocked_capability: CapabilityKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
             BlockType::DerefExclusive => CapabilityKind::Exclusive,

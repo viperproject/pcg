@@ -18,7 +18,7 @@ mod node;
 use crate::{
     borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph},
     free_pcs::CapabilityKind,
-    pcg::{Pcg, PcgRef},
+    pcg::PcgRef,
     rustc_interface::middle::mir::Location,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };

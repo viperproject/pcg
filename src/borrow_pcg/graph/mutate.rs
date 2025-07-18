@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        action::MakePlaceOldReason, borrow_pcg_edge::BorrowPcgEdge, edge_data::{LabelEdgePlaces, LabelPlacePredicate}, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, PathConditions}
+        action::MakePlaceOldReason, borrow_pcg_edge::BorrowPcgEdge, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, PathConditions}
     },
     rustc_interface::middle::mir::BasicBlock,
     utils::{CompilerCtxt, FilterMutResult, Place},

@@ -8,22 +8,21 @@ use crate::{
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
-        edge_data::LabelPlacePredicate,
         graph::BorrowsGraph,
         has_pcs_elem::{
-            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, SetLabel,
+            LabelRegionProjection, LabelRegionProjectionPredicate,
         },
         path_condition::PathConditions,
-        region_projection::{self, LocalRegionProjection, RegionProjection, RegionProjectionLabel},
+        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{
-        obtain, place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, Pcg, PcgDebugData,
+        place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, PcgDebugData,
         PcgError, PcgMutRef,
     },
     rustc_interface::middle::mir,
     utils::{
-        callbacks::in_cargo_crate, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace,
+        display::DisplayWithCompilerCtxt,
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
     },
 };
@@ -99,13 +98,6 @@ impl LabelForRegionProjection {
             }
             NoLabel => None,
         }
-    }
-    fn apply<'tcx>(
-        self,
-        rp: RegionProjection<'tcx, Place<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Place<'tcx>> {
-        rp.with_label(self.label(), ctxt)
     }
 }
 
@@ -360,35 +352,6 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                 }
             }
         }
-        Ok(())
-    }
-
-    // This is used when labelling an interior RP
-    // This will label and add edges to the outer one.
-    // So we'd turn eg :
-    // {s|'a} -> {s.f|'a at X} -> {q|'a} -> {s.f|'a at Future}
-    //                  ^                         ^
-    //                  |-------------------------|
-    // into:
-    // {s|'a at X} -> {s.f|'a at X} -> {q|'a} -> {s.f|'a at Future} -> {s|'a at Future}
-    //        ^         ^                         ^                          ^
-    //        |         |-------------------------|                          |
-    //        |                                                              |
-    //        |--------------------------------------------------------------|                                                             ^
-    fn add_future_edges_and_mutate_current_rp_expansion(
-        &mut self,
-        edge: BorrowPcgExpansion<'tcx>,
-        context: &str,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Result<(), PcgError> {
-        let base_rp = edge.base.try_into_region_projection().unwrap();
-        assert!(base_rp.label().is_none());
-        let expansion_rps = edge
-            .expansion()
-            .iter()
-            .map(|node| node.to_pcg_node(ctxt).try_into_region_projection().unwrap())
-            .collect::<Vec<_>>();
-        self.add_and_update_placeholder_edges(base_rp, &expansion_rps, context, ctxt)?;
         Ok(())
     }
 

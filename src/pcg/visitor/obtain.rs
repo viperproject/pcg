@@ -15,10 +15,9 @@ use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjecti
 use crate::borrow_pcg::state::BorrowsStateLike;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
-use crate::pcg::obtain::{self, ObtainType, PlaceExpander, PlaceObtainer};
+use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
-use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, Pcg, PcgDebugData, PcgMutRef, PcgRefLike};
-use crate::pcg_validity_assert;
+use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;

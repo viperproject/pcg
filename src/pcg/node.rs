@@ -58,7 +58,7 @@ impl<'tcx, T, U> PCGNode<'tcx, T, U> {
 
     pub(crate) fn is_placeholder(&self) -> bool {
         match self {
-            PCGNode::Place(p) => false,
+            PCGNode::Place(_) => false,
             PCGNode::RegionProjection(rp) => rp.is_placeholder(),
         }
     }

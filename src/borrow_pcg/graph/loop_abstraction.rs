@@ -22,7 +22,7 @@ use crate::{
     pcg::{
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
-        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, Pcg, PcgMutRef, PcgRefLike,
+        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},

@@ -32,7 +32,7 @@ use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::middle::{
-        mir::{self, PlaceElem},
+        mir::{PlaceElem},
         ty,
     },
     utils::{

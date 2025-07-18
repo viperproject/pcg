@@ -10,7 +10,6 @@ use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedErr
 use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
@@ -36,7 +35,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn apply_placeholder_labels<'mir>(
         &mut self,
-        capabilities: &PlaceCapabilities<'tcx>,
+        _capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         let nodes = self.nodes(ctxt);

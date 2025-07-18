@@ -16,7 +16,6 @@ use crate::borrow_pcg::has_pcs_elem::{
     LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
 };
 use crate::pcg::{PcgError, PcgInternalError};
-use crate::pcg_validity_assert;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_derive::Serialize;
 
-use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, Pcg, PcgDebugData, PcgRef};
+use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, PcgDebugData, PcgRef};
 use crate::rustc_interface::middle::mir::{self, BasicBlock};
 use crate::utils::CompilerCtxt;
 use crate::visualization::write_pcg_dot_graph_to_file;

@@ -4,7 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::cmp::Ordering;
 
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
@@ -29,7 +28,6 @@ impl<'tcx> CapabilityLocals<'tcx> {
     ) {
         match pre {
             PlaceCondition::ExpandTwoPhase(_place) => {}
-            PlaceCondition::RemoveCapability(_place) => {}
             PlaceCondition::Unalloc(local) => {
                 pcg_validity_assert!(
                     self[local].is_unallocated(),
@@ -60,7 +58,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(repacker) {
-                    if let Some(current_cap) = capabilities.get(place) {
+                    if let Some(_) = capabilities.get(place) {
                         // pcg_validity_assert!(
                         //     matches!(
                         //         current_cap.partial_cmp(&required_cap),
@@ -92,9 +90,6 @@ impl<'tcx> CapabilityLocals<'tcx> {
         };
         match post {
             PlaceCondition::Return => unreachable!(),
-            PlaceCondition::RemoveCapability(place) => {
-                place_capabilities.remove(place, ctxt);
-            }
             PlaceCondition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;
             }

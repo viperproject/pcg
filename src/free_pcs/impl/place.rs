@@ -9,7 +9,6 @@ use std::{
     fmt::{Debug, Formatter, Result},
 };
 
-use crate::utils::{CompilerCtxt, Place};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {

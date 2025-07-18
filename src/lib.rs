@@ -77,7 +77,7 @@ impl<'tcx> Weaken<'tcx> {
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         // TODO: Sometimes R can be downgraded to W
         // if let Some(to) = to {

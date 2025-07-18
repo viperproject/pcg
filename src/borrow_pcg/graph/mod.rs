@@ -8,7 +8,7 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
+        borrow_pcg_expansion::PlaceExpansion,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
@@ -123,7 +123,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn contains_borrow_pcg_expansion_of(
         &self,
         base: Place<'tcx>,
-        place_expansion: &PlaceExpansion<'tcx>,
+        _place_expansion: &PlaceExpansion<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edges_blocking(base.into(), ctxt)

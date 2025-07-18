@@ -15,20 +15,35 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
-    action::PcgActions, borrow_pcg::{
-        edge::kind::BorrowPcgEdgeKind,
+    action::PcgActions,
+    borrow_pcg::{
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
-    }, borrows_imgcat_debug, free_pcs::CapabilityKind, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis}, pcg::{
+    },
+    borrows_imgcat_debug,
+    pcg::{
         dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
-        place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
-    }, rustc_interface::{
+    },
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
+    rustc_interface::{
         middle::mir::{self, BasicBlock},
         mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
-    }, utils::{
-        arena::ArenaRef, data_structures::HashSet, display::DisplayWithCompilerCtxt, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, initialized::DefinitelyInitialized, liveness::PlaceLiveness, validity::HasValidityCheck, CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR
-    }, validity_checks_enabled, validity_checks_warn_only, visualization::{dot_graph::DotGraph, generate_pcg_dot_graph}, AnalysisEngine, DebugLines
+    },
+    utils::{
+        arena::ArenaRef,
+        data_structures::HashSet,
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        incoming_states::IncomingStates,
+        initialized::DefinitelyInitialized,
+        liveness::PlaceLiveness,
+        validity::HasValidityCheck,
+        CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR,
+    },
+    validity_checks_enabled, validity_checks_warn_only,
+    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
+    AnalysisEngine, DebugLines,
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
@@ -247,7 +262,7 @@ impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
     pub(crate) fn assert_validity_at_location(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-        location: mir::Location,
+        _location: mir::Location,
     ) {
         if validity_checks_enabled()
             && let Err(err) = self.as_ref().check_validity(ctxt)
