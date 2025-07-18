@@ -11,6 +11,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg::obtain::PlaceObtainer;
 use crate::pcg::PCGNode;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::HasPlace;
@@ -18,7 +19,7 @@ use crate::utils::Place;
 
 type EdgesToTrim<'tcx> = Vec<(BorrowPcgEdge<'tcx>, Cow<'static, str>)>;
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
     /// Removes leaves that are old or dead (based on the borrow checker). This
     /// function should called prior to evaluating the effect of the statement
     /// at `location`.
@@ -102,7 +103,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 "restore capability to leaf place",
                 self.ctxt,
             );
-            self.record_and_apply_action(action)?;
+           self.record_and_apply_action(action)?;
         }
         Ok(())
     }
@@ -117,7 +118,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
 
         let ctxt = self.ctxt;
-        let location = self.location;
+       let location = self.location;
 
         let ancestor_predicate_allows_killing = |p: LocalNode<'tcx>| {
             let place = match p {
@@ -177,7 +178,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         }
 
         let mut edges_to_trim = Vec::new();
-        let fg = self.pcg.borrow.graph().frozen_graph();
+        let fg = self.pcg.borrow.graph.frozen_graph();
         let location = self.location;
         let should_pack_edge = |edge: &BorrowPcgEdgeKind<'tcx>| match edge {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
@@ -242,39 +243,5 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(edges_to_trim)
     }
 
-    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
-        for caps in self.pcg.owned.data.clone().unwrap().expansions() {
-            let mut expansions = caps
-                .expansions()
-                .clone()
-                .into_iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
-                .collect::<Vec<_>>();
-            while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, self.ctxt);
-                if expansion_places
-                    .iter()
-                    .all(|p| !self.pcg.borrow.graph().contains(*p, self.ctxt))
-                    && let Some(candidate_cap) = self.pcg.capabilities.get(expansion_places[0])
-                    && expansion_places
-                        .iter()
-                        .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
-                {
-                    self.collapse(
-                        base,
-                        candidate_cap,
-                        format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
-                    )?;
-                    if base.projection.is_empty()
-                        && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
-                    {
-                        self.pcg
-                            .capabilities
-                            .insert(base, CapabilityKind::Exclusive, self.ctxt);
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
+
 }

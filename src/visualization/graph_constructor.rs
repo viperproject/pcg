@@ -2,10 +2,10 @@ use crate::{
     borrow_pcg::{
         graph::{materialize::MaterializedEdge, BorrowsGraph},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
-        state::BorrowsState,
+        state::{BorrowStateRef, BorrowsState},
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, Pcg},
+    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, Pcg, PcgRef},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
         display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,
@@ -325,7 +325,7 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
     summary: &'pcg CapabilityLocals<'tcx>,
-    borrows_domain: &'pcg BorrowsState<'tcx>,
+    borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
     repacker: CompilerCtxt<'a, 'tcx>,
@@ -383,13 +383,13 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> Grapher<'graph, 'mir, 'tcx>
 
 impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     pub fn new(
-        pcg: &'pcg Pcg<'tcx>,
+        pcg: PcgRef<'pcg, 'tcx>,
         repacker: CompilerCtxt<'a, 'tcx>,
         location: mir::Location,
     ) -> Self {
         Self {
             summary: pcg.owned.locals(),
-            borrows_domain: &pcg.borrow,
+            borrows_domain: pcg.borrow,
             capabilities: &pcg.capabilities,
             constructor: GraphConstructor::new(repacker, Some(location)),
             repacker,
@@ -453,7 +453,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         }
         for (edge_idx, edge) in self
             .borrows_domain
-            .graph()
+            .graph
             .materialized_edges(self.repacker)
             .into_iter()
             .enumerate()

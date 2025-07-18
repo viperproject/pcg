@@ -228,7 +228,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 
 impl<'tcx> BorrowsGraph<'tcx> {
     #[must_use]
-    fn redirect_edge(
+    pub(crate) fn redirect_edge(
         &mut self,
         mut edge: BorrowPcgEdgeKind<'tcx>,
         from: LocalNode<'tcx>,
@@ -240,103 +240,5 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.insert(BorrowPcgEdge::new(edge, conditions), ctxt);
         }
         true
-    }
-}
-
-impl<'tcx> BorrowsState<'tcx> {
-    #[instrument(skip(self, action, capabilities, ctxt))]
-    pub(crate) fn apply_action(
-        &mut self,
-        action: BorrowPcgAction<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<bool, PcgError> {
-        let result = match action.kind {
-            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
-                self.graph.redirect_edge(edge, from, to, ctxt)
-            }
-            BorrowPcgActionKind::Restore(restore) => {
-                let restore_place = restore.place();
-                if let Some(cap) = capabilities.get(restore_place) {
-                    assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
-                }
-                if !capabilities.insert(restore_place, restore.capability(), ctxt) {
-                    panic!("Capability should have been updated")
-                }
-                true
-            }
-            BorrowPcgActionKind::Weaken(weaken) => {
-                let weaken_place = weaken.place();
-                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
-                match weaken.to {
-                    Some(to) => {
-                        capabilities.insert(weaken_place, to, ctxt);
-                    }
-                    None => {
-                        assert!(capabilities.remove(weaken_place, ctxt).is_some());
-                    }
-                }
-                true
-            }
-            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
-                self.make_place_old(place, reason, ctxt)
-            }
-            BorrowPcgActionKind::SetLatest(place, location) => {
-                self.set_latest(place, location, ctxt)
-            }
-            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
-            BorrowPcgActionKind::AddEdge { edge } => self.graph.insert(edge, ctxt),
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
-                self.label_region_projection(&rp, label, ctxt)
-            }
-        };
-        Ok(result)
-    }
-    fn remove(
-        &mut self,
-        edge: &BorrowPcgEdge<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let removed = self.graph.remove(edge.kind()).is_some();
-        if removed {
-            for node in edge.blocked_by_nodes(repacker) {
-                if !self.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
-                {
-                    let _ = capabilities.remove(place, repacker);
-                }
-            }
-        }
-        removed
-    }
-
-    fn make_place_old(
-        &mut self,
-        place: Place<'tcx>,
-        reason: MakePlaceOldReason,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.make_place_old(place, reason, &self.latest, ctxt)
-    }
-
-    fn label_region_projection(
-        &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.graph.label_region_projection(predicate, label, ctxt)
-    }
-
-    #[must_use]
-    fn set_latest<T: Into<SnapshotLocation>>(
-        &mut self,
-        place: Place<'tcx>,
-        location: T,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let location = location.into();
-        self.latest.insert(place, location, ctxt)
     }
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_derive::Serialize;
 
-use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, Pcg, PcgDebugData};
+use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, Pcg, PcgDebugData, PcgRef};
 use crate::rustc_interface::middle::mir::{self, BasicBlock};
 use crate::utils::CompilerCtxt;
 use crate::visualization::write_pcg_dot_graph_to_file;
@@ -137,7 +137,7 @@ pub(crate) fn generate_dot_graph<'tcx>(
     block: BasicBlock,
     statement_index: usize,
     to_graph: ToGraph,
-    pcg: &Pcg<'tcx>,
+    pcg: PcgRef<'_, 'tcx>,
     debug_data: &Option<PcgDebugData>,
     ctxt: CompilerCtxt<'_, 'tcx>,
 ) {

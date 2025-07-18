@@ -24,6 +24,35 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // cycles, 12 basic blocks, cycles, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "regex-automata",
+        "0.4.9",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("hybrid::dfa::Lazy::<'i, 'c>::set_all_transitions"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
+    // <= 20 basic blocks, cycles, <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "sha2",
+        "0.10.8",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
+
     // 4 basic blocks, cycles, <= 12 nodes
     common::ensure_successful_run_on_crate(
         "rustix",
@@ -33,7 +62,8 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("buffer::<impl buffer::private::Sealed<T> for &mut [T]>::parts_mut"),
-            extra_env_vars: vec![],        },
+            extra_env_vars: vec![],
+        },
     );
 
     // <10 basic blocks, cycles

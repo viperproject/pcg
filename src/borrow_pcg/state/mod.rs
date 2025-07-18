@@ -10,6 +10,7 @@ use super::{
 };
 use crate::{
     action::BorrowPcgAction,
+    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
     pcg_validity_assert,
@@ -52,6 +53,192 @@ pub struct BorrowsState<'tcx> {
     pub(crate) path_conditions: PathConditions,
 }
 
+pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
+    pub(crate) latest: &'pcg mut Latest<'tcx>,
+    pub(crate) graph: &'pcg mut BorrowsGraph<'tcx>,
+    pub(crate) path_conditions: &'pcg PathConditions,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct BorrowStateRef<'pcg, 'tcx> {
+    pub(crate) latest: &'pcg Latest<'tcx>,
+    pub(crate) graph: &'pcg BorrowsGraph<'tcx>,
+    pub(crate) path_conditions: &'pcg PathConditions,
+}
+
+pub(crate) trait BorrowsStateLike<'tcx> {
+    fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx>;
+    fn as_ref(&self) -> BorrowStateRef<'_, 'tcx>;
+
+    fn latest(&mut self) -> &mut Latest<'tcx> {
+        self.as_mut_ref().latest
+    }
+    fn graph_mut(&mut self) -> &mut BorrowsGraph<'tcx> {
+        self.as_mut_ref().graph
+    }
+    fn graph(&self) -> &BorrowsGraph<'tcx>;
+
+    // fn path_conditions(&self) -> &PathConditions {
+    //     self.as_ref().path_conditions
+    // }
+
+    fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
+        self.graph().frozen_graph().leaf_nodes(ctxt)
+    }
+
+    fn set_latest(
+        &mut self,
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.latest().insert(place, location, ctxt)
+    }
+
+    fn make_place_old(
+        &mut self,
+        place: Place<'tcx>,
+        reason: MakePlaceOldReason,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let state = self.as_mut_ref();
+        state
+            .graph
+            .make_place_old(place, reason, state.latest, ctxt)
+    }
+
+    fn label_region_projection(
+        &mut self,
+        predicate: &LabelRegionProjectionPredicate<'tcx>,
+        label: Option<RegionProjectionLabel>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.graph_mut().label_region_projection(predicate, label, ctxt)
+    }
+
+    fn remove(
+        &mut self,
+        edge: &BorrowPcgEdge<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let state = self.as_mut_ref();
+        let removed = state.graph.remove(edge.kind()).is_some();
+        if removed {
+            for node in edge.blocked_by_nodes(repacker) {
+                if !state.graph.contains(node, repacker)
+                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+                {
+                    let _ = capabilities.remove(place, repacker);
+                }
+            }
+        }
+        removed
+    }
+
+    fn apply_action(
+        &mut self,
+        action: BorrowPcgAction<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        let result = match action.kind {
+            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
+                self.graph_mut().redirect_edge(edge, from, to, ctxt)
+            }
+            BorrowPcgActionKind::Restore(restore) => {
+                let restore_place = restore.place();
+                if let Some(cap) = capabilities.get(restore_place) {
+                    assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
+                }
+                if !capabilities.insert(restore_place, restore.capability(), ctxt) {
+                    panic!("Capability should have been updated")
+                }
+                true
+            }
+            BorrowPcgActionKind::Weaken(weaken) => {
+                let weaken_place = weaken.place();
+                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
+                match weaken.to {
+                    Some(to) => {
+                        capabilities.insert(weaken_place, to, ctxt);
+                    }
+                    None => {
+                        assert!(capabilities.remove(weaken_place, ctxt).is_some());
+                    }
+                }
+                true
+            }
+            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
+                self.make_place_old(place, reason, ctxt)
+            }
+            BorrowPcgActionKind::SetLatest(place, location) => {
+                self.set_latest(place, location, ctxt)
+            }
+            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
+            BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt),
+            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+                self.label_region_projection(&rp, label, ctxt)
+            }
+        };
+        Ok(result)
+    }
+}
+
+impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> {
+    fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
+        BorrowStateMutRef {
+            latest: &mut self.latest,
+            graph: &mut self.graph,
+            path_conditions: &self.path_conditions,
+        }
+    }
+
+    fn graph(&self) -> &BorrowsGraph<'tcx> {
+        self.graph
+    }
+
+    fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
+        BorrowStateRef {
+            latest: &self.latest,
+            graph: &self.graph,
+            path_conditions: &self.path_conditions,
+        }
+    }
+}
+
+impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
+    fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
+        BorrowStateMutRef {
+            latest: &mut self.latest,
+            graph: &mut self.graph,
+            path_conditions: &self.path_conditions,
+        }
+    }
+
+    fn graph(&self) -> &BorrowsGraph<'tcx> {
+        &self.graph
+    }
+
+    fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
+        BorrowStateRef {
+            latest: &self.latest,
+            graph: &self.graph,
+            path_conditions: &self.path_conditions,
+        }
+    }
+}
+
+impl<'pcg, 'tcx> From<&'pcg mut BorrowsState<'tcx>> for BorrowStateMutRef<'pcg, 'tcx> {
+    fn from(borrows_state: &'pcg mut BorrowsState<'tcx>) -> Self {
+        Self {
+            latest: &mut borrows_state.latest,
+            graph: &mut borrows_state.graph,
+            path_conditions: &borrows_state.path_conditions,
+        }
+    }
+}
+
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut lines = Vec::new();
@@ -60,17 +247,19 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsState<'tcx> {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for BorrowsState<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for BorrowStateRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.graph.check_validity(ctxt)
     }
 }
 
-impl<'tcx> BorrowsState<'tcx> {
-    pub(crate) fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
-        self.graph.frozen_graph().leaf_nodes(ctxt)
+impl<'tcx> HasValidityCheck<'tcx> for BorrowStateMutRef<'_, 'tcx> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+        self.as_ref().check_validity(ctxt)
     }
+}
 
+impl<'tcx> BorrowsState<'tcx> {
     fn introduce_initial_borrows(
         &mut self,
         local: mir::Local,
@@ -161,6 +350,7 @@ impl<'tcx> BorrowsState<'tcx> {
             body_analysis,
             capabilities,
             owned,
+            &mut self.latest,
             self.path_conditions.clone(),
             ctxt,
         )?;

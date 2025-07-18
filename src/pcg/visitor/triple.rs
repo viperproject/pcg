@@ -15,13 +15,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, ObtainType::TwoPhaseExpand)?;
+                self.place_obtainer().obtain(place, ObtainType::TwoPhaseExpand)?;
             }
             PlaceCondition::Capability(place, capability) => {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
-                self.obtain(place, ObtainType::Capability(capability))?;
+                self.place_obtainer().obtain(place, ObtainType::Capability(capability))?;
             }
             PlaceCondition::RemoveCapability(place) => {
                 self.pcg.capabilities.remove(place, self.ctxt);

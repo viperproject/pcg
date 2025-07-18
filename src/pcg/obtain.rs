@@ -2,25 +2,28 @@ use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_checker::r#impl::get_reserve_location,
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
-        borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
-        edge::{
+        borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode}, borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion}, edge::{
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
-        },
-        graph::BorrowsGraph,
-        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
-        path_condition::PathConditions,
-        region_projection::{self, LocalRegionProjection, RegionProjection, RegionProjectionLabel},
+        }, edge_data::LabelPlacePredicate, graph::BorrowsGraph, has_pcs_elem::{LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, SetLabel}, path_condition::PathConditions, region_projection::{self, LocalRegionProjection, RegionProjection, RegionProjectionLabel}
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{obtain, place_capabilities::BlockType, PCGNodeLike, PcgError},
+    pcg::{obtain, place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, Pcg, PcgDebugData, PcgError, PcgMutRef},
     rustc_interface::middle::mir,
     utils::{
         callbacks::in_cargo_crate, display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace,
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
     },
 };
+
+pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
+    pub(crate) pcg: PcgMutRef<'state, 'tcx>,
+    pub(crate) phase: EvalStmtPhase,
+    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
+    pub(crate) actions: &'state mut Vec<PcgAction<'tcx>>,
+    pub(crate) location: mir::Location,
+    pub(crate) debug_data: &'state mut Option<PcgDebugData>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ObtainType {
@@ -87,7 +90,8 @@ impl LabelForRegionProjection {
     }
 }
 
-pub(crate) trait Expander<'mir, 'tcx> {
+
+pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
     fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool;
@@ -260,7 +264,6 @@ pub(crate) trait Expander<'mir, 'tcx> {
                 .into(),
             )?;
         }
-
 
         self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
         let action = BorrowPcgAction::add_edge(

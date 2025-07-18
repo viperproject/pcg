@@ -18,7 +18,7 @@ mod node;
 use crate::{
     borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph},
     free_pcs::CapabilityKind,
-    pcg::Pcg,
+    pcg::{Pcg, PcgRef},
     rustc_interface::middle::mir::Location,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
@@ -369,7 +369,7 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
 }
 
 pub(crate) fn generate_pcg_dot_graph<'a, 'tcx: 'a>(
-    pcg: &Pcg<'tcx>,
+    pcg: PcgRef<'_, 'tcx>,
     ctxt: CompilerCtxt<'a, 'tcx>,
     location: Location,
 ) -> io::Result<String> {
@@ -382,7 +382,7 @@ pub(crate) fn generate_pcg_dot_graph<'a, 'tcx: 'a>(
 }
 
 pub(crate) fn write_pcg_dot_graph_to_file<'a, 'tcx: 'a>(
-    pcg: &Pcg<'tcx>,
+    pcg: PcgRef<'_, 'tcx>,
     ctxt: CompilerCtxt<'a, 'tcx>,
     location: Location,
     file_path: &str,

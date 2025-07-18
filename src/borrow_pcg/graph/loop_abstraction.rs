@@ -13,14 +13,16 @@ use crate::{
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelRegionProjectionPredicate,
+        latest::Latest,
         path_condition::PathConditions,
         region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
+        state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
-        obtain::{Expander, ObtainType},
+        obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
-        LocalNodeLike, PCGNode, PCGNodeLike,
+        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, Pcg, PcgMutRef,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
@@ -268,6 +270,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
             tracing::debug!("labeling {:?}", rp);
             graph.label_region_projection(rp, Some(loop_head_label), ctxt);
         }
+        tracing::info!("Completed loop abstraction");
+        for (place, capability) in capability_updates.iter() {
+            tracing::debug!(
+                "capability update for {}: {:?}",
+                place.to_short_string(ctxt),
+                capability
+            );
+        }
         ConstructAbstractionGraphResult::new(graph, to_label, capability_updates)
     }
 
@@ -353,9 +363,27 @@ impl<'tcx> BorrowsGraph<'tcx> {
         blocked_loop_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        latest: &mut Latest<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
+        let borrow = BorrowStateMutRef {
+            latest,
+            graph: self,
+            path_conditions: &path_conditions,
+        };
+        let pcg = PcgMutRef::new(owned, borrow, capabilities);
+        let mut obtainer = PlaceObtainer::new(
+            pcg,
+            EvalStmtPhase::PreOperands,
+            &mut vec![],
+            ctxt,
+            mir::Location {
+                block: loop_head_block,
+                statement_index: 0,
+            },
+            &mut None,
+        );
         let mut expander = AbsExpander {
             loop_head_block,
             graph: self,
@@ -447,7 +475,7 @@ impl<'mir, 'tcx> AbsExpander<'_, 'mir, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> Expander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
+impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
         tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {

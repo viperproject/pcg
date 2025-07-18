@@ -6,7 +6,7 @@ use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::obtain::Expander;
+use crate::pcg::obtain::PlaceExpander;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
@@ -23,6 +23,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         target: utils::Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
     ) -> Result<(), PcgError> {
+        let mut ctxt = self.ctxt;
         self.record_and_apply_action(
             BorrowPcgAction::set_latest(
                 target,
@@ -96,7 +97,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
                             "assign_post_main",
-                            self.ctxt
+                            self.ctxt,
                         )
                         .into(),
                     )?;
@@ -131,7 +132,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                 self.pcg.borrow.path_conditions.clone(),
                             ),
                             "assign_post_main",
-                            self.ctxt
+                            self.ctxt,
                         )
                         .into(),
                     )?;
@@ -158,24 +159,24 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     self.ctxt,
                 );
                 for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
-                    let source_proj =
-                        if kind.mutability().is_mut() {
-                            let label = self.current_snapshot_location();
-                            self.record_and_apply_action(
-                                BorrowPcgAction::label_region_projection(
-                                    LabelRegionProjectionPredicate::Postfix(source_proj.into()),
-                                    Some(label.into()),
-                                    "Label region projections of newly borrowed place",
-                                )
-                                .into(),
-                            )?;
-                            source_proj.with_label(Some(label.into()), self.ctxt)
-                        } else {
-                            source_proj.with_label(
-                                self.label_for_shared_expansion_of_rp(source_proj, self.ctxt),
-                                self.ctxt,
+                    let mut obtainer = self.place_obtainer();
+                    let source_proj = if kind.mutability().is_mut() {
+                        let label = obtainer.current_snapshot_location();
+                        obtainer.apply_action(
+                            BorrowPcgAction::label_region_projection(
+                                LabelRegionProjectionPredicate::Postfix(source_proj.into()),
+                                Some(label.into()),
+                                "Label region projections of newly borrowed place",
                             )
-                        };
+                            .into(),
+                        )?;
+                        source_proj.with_label(Some(label.into()), self.ctxt)
+                    } else {
+                        source_proj.with_label(
+                            obtainer.label_for_shared_expansion_of_rp(source_proj, obtainer.ctxt),
+                            self.ctxt,
+                        )
+                    };
                     let source_region = source_proj.region(self.ctxt);
                     let mut nested_ref_mut_targets = vec![];
                     for target_proj in target.region_projections(self.ctxt).into_iter() {
@@ -196,7 +197,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                         self.pcg.borrow.path_conditions.clone(),
                                     ),
                                     "assign_post_main",
-                                    self.ctxt
+                                    self.ctxt,
                                 )
                                 .into(),
                             )?;
@@ -205,11 +206,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             }
                         }
                     }
-                    self.add_and_update_placeholder_edges(
+                    self.place_obtainer().add_and_update_placeholder_edges(
                         source_proj.into(),
                         &nested_ref_mut_targets,
                         "assign",
-                        self.ctxt,
+                        ctxt,
                     )?;
                 }
             }
