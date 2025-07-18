@@ -216,7 +216,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
     pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
         for caps in self.pcg.owned.data.clone().unwrap().expansions() {

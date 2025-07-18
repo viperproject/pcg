@@ -58,7 +58,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(repacker) {
-                    if let Some(_) = capabilities.get(place) {
+                    if capabilities.get(place).is_some() {
                         // pcg_validity_assert!(
                         //     matches!(
                         //         current_cap.partial_cmp(&required_cap),

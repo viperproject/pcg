@@ -250,7 +250,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                 };
                                 self.record_and_apply_action(
                                     BorrowPcgAction::label_region_projection(
-                                        LabelRegionProjectionPredicate::Equals(rp.into()),
+                                        LabelRegionProjectionPredicate::Equals(rp),
                                         Some(snapshot_location.into()),
                                         format!(
                                             "{}: {}",
@@ -331,7 +331,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     &labeller,
                     self.ctxt,
                 );
-                let mut node = node.clone();
+                let mut node = *node;
                 node.label_place(
                     &LabelPlacePredicate::Exact((*place).into()),
                     &labeller,
@@ -618,7 +618,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         let result = match &action {
             PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
                 action.clone(),
-                &mut self.pcg.capabilities,
+                self.pcg.capabilities,
                 self.ctxt,
             )?,
             PcgAction::Owned(owned_action) => match owned_action.kind {
@@ -629,7 +629,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 RepackOp::Expand(expand) => {
                     self.pcg.owned.perform_expand_action(
                         expand,
-                        &mut self.pcg.capabilities,
+                        self.pcg.capabilities,
                         self.ctxt,
                     )?;
                     true
@@ -885,7 +885,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
     }
 
     fn borrows_graph(&self) -> &crate::borrow_pcg::graph::BorrowsGraph<'tcx> {
-        &self.pcg.borrow.graph
+        self.pcg.borrow.graph
     }
 
     fn path_conditions(&self) -> crate::borrow_pcg::path_condition::PathConditions {

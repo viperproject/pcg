@@ -188,9 +188,9 @@ pub(crate) trait BorrowsStateLike<'tcx> {
 impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> {
     fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         BorrowStateMutRef {
-            latest: &mut self.latest,
-            graph: &mut self.graph,
-            path_conditions: &self.path_conditions,
+            latest: self.latest,
+            graph: self.graph,
+            path_conditions: self.path_conditions,
         }
     }
 
@@ -200,9 +200,9 @@ impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> 
 
     fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
         BorrowStateRef {
-            latest: &self.latest,
-            graph: &self.graph,
-            path_conditions: &self.path_conditions,
+            latest: self.latest,
+            graph: self.graph,
+            path_conditions: self.path_conditions,
         }
     }
 }

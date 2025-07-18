@@ -98,7 +98,7 @@ impl BlockType {
         match self {
             BlockType::DerefExclusive => Some(CapabilityKind::ShallowExclusive),
             BlockType::Read => Some(CapabilityKind::Read),
-            BlockType::Other => None
+            BlockType::Other => None,
         }
     }
     pub(crate) fn expansion_capability<'tcx>(
@@ -189,16 +189,13 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
         for (place, other_capability) in other.iter() {
-            match self.0.get(&place) {
-                Some(self_capability) => {
-                    if let Some(c) = self_capability.minimum(other_capability) {
-                        changed |= self.0.insert(place, c) != Some(c);
-                    } else {
-                        self.0.remove(&place);
-                        changed = true;
-                    }
+            if let Some(self_capability) = self.0.get(&place) {
+                if let Some(c) = self_capability.minimum(other_capability) {
+                    changed |= self.0.insert(place, c) != Some(c);
+                } else {
+                    self.0.remove(&place);
+                    changed = true;
                 }
-                None => {}
             }
         }
         changed

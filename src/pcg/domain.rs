@@ -223,7 +223,7 @@ impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
     }
 }
 
-impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
+impl<'tcx> PcgMutRef<'_, 'tcx> {
     pub(crate) fn leaf_places_where(
         &self,
         predicate: impl Fn(Place<'tcx>) -> bool,
@@ -301,7 +301,7 @@ impl<'tcx> PcgRefLike<'tcx> for Pcg<'tcx> {
     }
 }
 
-impl<'pcg, 'tcx> PcgRefLike<'tcx> for PcgRef<'pcg, 'tcx> {
+impl<'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         *self
     }
@@ -314,9 +314,9 @@ pub(crate) trait PcgMutRefLike<'pcg, 'tcx: 'pcg> {
 impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for PcgMutRef<'pcg, 'tcx> {
     fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
         PcgMutRef {
-            owned: &mut self.owned,
+            owned: self.owned,
             borrow: self.borrow.as_mut_ref(),
-            capabilities: &mut self.capabilities,
+            capabilities: self.capabilities,
         }
     }
 }

@@ -374,7 +374,7 @@ impl<'tcx> Place<'tcx> {
                 TyKind::Slice(ty) => vec![*ty],
                 TyKind::Adt(def, substs) => {
                     if ty.is_box() {
-                        vec![substs.get(0).unwrap().expect_ty()]
+                        vec![substs.first().unwrap().expect_ty()]
                     } else {
                         def.all_fields()
                             .map(|f| f.ty(ctxt.tcx, substs))

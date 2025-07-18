@@ -9,21 +9,19 @@ use crate::{
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
         graph::BorrowsGraph,
-        has_pcs_elem::{
-            LabelRegionProjection, LabelRegionProjectionPredicate,
-        },
+        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{
-        place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, PcgDebugData,
-        PcgError, PcgMutRef,
+        place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError,
+        PcgMutRef,
     },
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt,
-        CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, ProjectionKind,
+        ShallowExpansion, SnapshotLocation,
     },
 };
 
@@ -37,7 +35,7 @@ pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
 }
 
-impl<'state, 'mir, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl PlaceObtainer<'_, '_, '_> {
     pub(crate) fn location(&self) -> mir::Location {
         self.location
     }
@@ -155,13 +153,10 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         rp: RegionProjection<'tcx, Place<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Option<RegionProjectionLabel> {
-        for borrow in
-            ctxt.bc
-                .borrows_blocking(rp.base, self.current_snapshot_location().location(), ctxt)
-        {
-            return Some(SnapshotLocation::Mid(get_reserve_location(&borrow)).into());
-        }
-        None
+        ctxt.bc
+            .borrows_blocking(rp.base, self.current_snapshot_location().location(), ctxt)
+            .first()
+            .map(|borrow| SnapshotLocation::Mid(get_reserve_location(borrow)).into())
     }
 
     fn expand_owned_place_one_level(
@@ -334,7 +329,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
 
                     // Don't add placeholder edges for owned expansions, unless its a deref
                     if !base.is_owned(ctxt) || base.is_mut_ref(ctxt) {
-                        let old_rp_base = base_rp.with_label(Some(label.into()), ctxt);
+                        let old_rp_base = base_rp.with_label(Some(label), ctxt);
                         let expansion_rps = expansion
                             .expansion()
                             .iter()

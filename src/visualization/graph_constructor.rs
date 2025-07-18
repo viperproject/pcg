@@ -390,7 +390,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         Self {
             summary: pcg.owned.locals(),
             borrows_domain: pcg.borrow,
-            capabilities: &pcg.capabilities,
+            capabilities: pcg.capabilities,
             constructor: GraphConstructor::new(repacker, Some(location)),
             repacker,
         }

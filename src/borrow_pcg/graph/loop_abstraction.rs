@@ -207,7 +207,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         expander.expand_to_places(
             loop_blocked_places
                 .union(&candidate_blockers)
-                .into_iter()
                 .copied()
                 .collect(),
         );
@@ -357,6 +356,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn expand_places_for_abstraction<'mir>(
         &mut self,
         loop_head_block: mir::BasicBlock,
@@ -471,7 +471,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
-impl<'mir, 'tcx> AbsExpander<'_, 'mir, 'tcx> {
+impl<'tcx> AbsExpander<'_, '_, 'tcx> {
     fn expand_to_places(&mut self, places: HashSet<Place<'tcx>>) {
         for place in places {
             tracing::info!("expanding to {}", place.to_short_string(self.ctxt));

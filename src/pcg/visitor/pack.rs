@@ -188,7 +188,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                     ShouldPackEdge::Yes {
                         reason: "Expansion is old or dead".into(),
                     }
-                } else if expansion.is_packable(&self.pcg.capabilities) {
+                } else if expansion.is_packable(self.pcg.capabilities) {
                     ShouldPackEdge::Yes {
                         reason: format!(
                             "Expansion {} is packable",
