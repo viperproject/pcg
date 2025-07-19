@@ -129,22 +129,30 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         let fg = self.pcg.borrow.graph.frozen_graph();
         let blocked_nodes = edge.blocked_nodes(self.ctxt);
+
+        // After removing an edge, some nodes may become accessible, their capabilities should be restored
         let to_restore = blocked_nodes
             .into_iter()
             .filter(|node| !fg.has_edge_blocking(*node, self.ctxt))
             .collect::<Vec<_>>();
+
         for node in to_restore {
             if let Some(place) = node.as_current_place() {
                 let blocked_cap = self.pcg.capabilities.get(place);
 
+                // TODO: If the place projects a shared ref, do we even need to restore a capability?
                 let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
                     CapabilityKind::Read
                 } else {
                     CapabilityKind::Exclusive
                 };
 
+                // The blocked capability would be None if the place was mutably
+                // borrowed The capability would be Write if the place is a
+                // mutable reference (when dereferencing a mutable ref, the ref
+                // place retains write capability)
                 if blocked_cap.is_none()
-                    || matches!(blocked_cap, Some(CapabilityKind::ShallowExclusive))
+                    || matches!(blocked_cap, Some(CapabilityKind::Write))
                 {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
@@ -608,12 +616,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         }
     }
 
-    #[tracing::instrument(skip(self, action))]
     pub(crate) fn record_and_apply_action(
         &mut self,
         action: PcgAction<'tcx>,
     ) -> Result<bool, PcgError> {
-        tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
+        tracing::info!("Applying Action: {}", action.debug_line(self.ctxt));
         let result = match &action {
             PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
                 action.clone(),
@@ -841,42 +848,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         self.pcg.owned.locals()[base.local]
             .get_allocated()
             .contains_expansion_from(base)
-    }
-
-    fn expand_owned_place_one_level(
-        &mut self,
-        base: Place<'tcx>,
-        expansion: &ShallowExpansion<'tcx>,
-        obtain_type: ObtainType,
-        ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
-    ) -> Result<bool, PcgError> {
-        if self.contains_owned_expansion_from(base) {
-            return Ok(false);
-        }
-        let obtain_cap = obtain_type.capability(base, ctxt);
-        if expansion.kind.is_deref_box() && obtain_cap.is_shallow_exclusive() {
-            self.record_and_apply_action(
-                OwnedPcgAction::new(
-                    RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
-                    None,
-                )
-                .into(),
-            )?;
-        } else {
-            self.record_and_apply_action(
-                OwnedPcgAction::new(
-                    RepackOp::expand(
-                        expansion.base_place(),
-                        expansion.guide(),
-                        obtain_cap,
-                        self.ctxt,
-                    ),
-                    None,
-                )
-                .into(),
-            )?;
-        }
-        Ok(true)
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {
