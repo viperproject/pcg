@@ -15,7 +15,6 @@ use crate::{
     utils::{
         display::DisplayWithCompilerCtxt,
         maybe_old::MaybeOldPlace,
-        redirect::MaybeRedirected,
         validity::HasValidityCheck,
         CompilerCtxt,
     },
@@ -24,7 +23,7 @@ use crate::{
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowFlowEdge<'tcx> {
     long: RegionProjection<'tcx>,
-    short: MaybeRedirected<LocalRegionProjection<'tcx>>,
+    short: LocalRegionProjection<'tcx>,
     pub(crate) kind: BorrowFlowEdgeKind,
 }
 
@@ -73,7 +72,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             label
         );
         if predicate.matches(self.long, ctxt)
-            && predicate.matches(self.short.effective().rebase(), ctxt)
+            && predicate.matches(self.short.rebase(), ctxt)
         {
             return LabelRegionProjectionResult::ShouldCollapse;
         }
@@ -129,7 +128,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
     where
         'tcx: 'mir,
     {
-        Box::new(std::iter::once(self.short.effective().into()))
+        Box::new(std::iter::once(self.short.into()))
     }
 }
 
@@ -137,7 +136,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.long.check_validity(ctxt)?;
         self.short.check_validity(ctxt)?;
-        if self.long.to_pcg_node(ctxt) == self.short.effective().to_pcg_node(ctxt) {
+        if self.long.to_pcg_node(ctxt) == self.short.to_pcg_node(ctxt) {
             return Err(format!(
                 "BorrowFlowEdge: long and short are the same node: {}",
                 self.to_short_string(ctxt)
@@ -169,7 +168,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
 
     /// The blocking lifetime projection. Intuitively, it must die before the `long()` projection.
     pub fn short(&self) -> LocalRegionProjection<'tcx> {
-        self.short.effective()
+        self.short
     }
 
     pub fn kind(&self) -> BorrowFlowEdgeKind {

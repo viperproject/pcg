@@ -1,13 +1,11 @@
 use std::marker::PhantomData;
 
+use crate::borrow_pcg::{
+    domain::{AbstractionInputTarget, AbstractionOutputTarget, FunctionCallAbstractionOutput},
+    edge::abstraction::{AbstractionBlockEdge, AbstractionInputLike, AbstractionType},
+};
 use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::Location;
-use crate::
-    borrow_pcg::{
-        domain::{AbstractionInputTarget, AbstractionOutputTarget, FunctionCallAbstractionOutput},
-        edge::abstraction::{AbstractionBlockEdge, AbstractionInputLike, AbstractionType},
-    }
-;
 
 impl<'tcx> AbstractionType<'tcx> {
     pub(crate) fn is_function_call(&self) -> bool {
@@ -42,12 +40,7 @@ impl<'tcx> AbstractionType<'tcx> {
                     .iter()
                     .map(|i| i.to_abstraction_input())
                     .collect(),
-                outputs: c
-                    .edge()
-                    .outputs
-                    .iter()
-                    .map(|o| o.map(|o| o.into()))
-                    .collect(),
+                outputs: c.edge().outputs.iter().copied().map(|o| o.into()).collect(),
             },
             AbstractionType::Loop(c) => AbstractionBlockEdge {
                 _phantom: PhantomData,
@@ -57,12 +50,7 @@ impl<'tcx> AbstractionType<'tcx> {
                     .iter()
                     .map(|i| i.to_abstraction_input())
                     .collect(),
-                outputs: c
-                    .edge
-                    .outputs
-                    .iter()
-                    .map(|o| o.map(|o| (*o).into()))
-                    .collect(),
+                outputs: c.edge.outputs.iter().copied().map(|o| (*o).into()).collect(),
             },
         }
     }

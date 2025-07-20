@@ -19,7 +19,7 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
     pcg::PCGNodeLike,
-    utils::{maybe_remote::MaybeRemotePlace, redirect::MaybeRedirected},
+    utils::{maybe_remote::MaybeRemotePlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
@@ -52,7 +52,7 @@ edgedata_enum!(
 pub struct AbstractionBlockEdge<'tcx, Input, Output> {
     _phantom: PhantomData<&'tcx ()>,
     inputs: Vec<Input>,
-    pub(crate) outputs: Vec<MaybeRedirected<Output>>,
+    pub(crate) outputs: Vec<Output>,
 }
 
 impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
@@ -111,7 +111,7 @@ impl<
             if self
                 .outputs
                 .iter()
-                .any(|o| o.effective().to_pcg_node(ctxt) == input.to_pcg_node(ctxt))
+                .any(|o| o.to_pcg_node(ctxt) == input.to_pcg_node(ctxt))
             {
                 self.inputs
                     .retain(|i| i.to_pcg_node(ctxt) != input.to_pcg_node(ctxt));
@@ -124,14 +124,14 @@ impl<
         while j < self.outputs.len() {
             let output = &mut self.outputs[j];
             changed |= output.label_region_projection(projection, label, ctxt);
-            let output = self.outputs[j].effective();
+            let output = self.outputs[j];
             if self
                 .inputs
                 .iter()
                 .any(|i| i.to_pcg_node(ctxt) == output.to_pcg_node(ctxt))
             {
                 self.outputs
-                    .retain(|o| o.effective().to_pcg_node(ctxt) != output.to_pcg_node(ctxt));
+                    .retain(|o| o.to_pcg_node(ctxt) != output.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
                 return LabelRegionProjectionResult::Changed;
             }
@@ -281,7 +281,7 @@ impl<
         }
         for input in self.inputs.iter() {
             for output in self.outputs.iter() {
-                if input.to_pcg_node(ctxt) == output.effective().to_pcg_node(ctxt) {
+                if input.to_pcg_node(ctxt) == output.to_pcg_node(ctxt) {
                     return Err(format!(
                         "Input {:?} and output {:?} are the same node",
                         input, output,
@@ -323,11 +323,11 @@ impl<
 
 impl<Input: Clone, Output: Copy> AbstractionBlockEdge<'_, Input, Output> {
     pub fn outputs(&self) -> Vec<Output> {
-        self.outputs.iter().map(|o| o.effective()).collect()
+        self.outputs.clone()
     }
 
     pub fn inputs(&self) -> Vec<Input> {
-        self.inputs.to_vec()
+        self.inputs.clone()
     }
 }
 
