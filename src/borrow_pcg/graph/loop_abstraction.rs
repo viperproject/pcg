@@ -487,7 +487,6 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge } => Ok(self.graph.insert(edge, self.ctxt)),
-                BorrowPcgActionKind::RedirectEdge { .. } => todo!(),
                 BorrowPcgActionKind::LabelRegionProjection(predicate, region_projection_label) => {
                     Ok(self.graph.label_region_projection(
                         &predicate,

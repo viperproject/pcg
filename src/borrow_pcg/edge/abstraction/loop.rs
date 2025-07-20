@@ -20,18 +20,6 @@ pub struct LoopAbstraction<'tcx> {
     pub(crate) block: BasicBlock,
 }
 
-impl<'tcx> LoopAbstraction<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: LoopAbstractionOutput<'tcx>,
-        to: LoopAbstractionOutput<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.edge.redirect(from, to, ctxt);
-        self.assert_validity(ctxt);
-    }
-}
-
 impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,

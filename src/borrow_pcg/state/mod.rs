@@ -143,9 +143,6 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
-            BorrowPcgActionKind::RedirectEdge { edge, from, to } => {
-                self.graph_mut().redirect_edge(edge, from, to, ctxt)
-            }
             BorrowPcgActionKind::Restore(restore) => {
                 let restore_place = restore.place();
                 if let Some(cap) = capabilities.get(restore_place) {

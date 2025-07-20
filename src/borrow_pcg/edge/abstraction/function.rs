@@ -42,17 +42,6 @@ pub struct FunctionCallAbstraction<'tcx> {
     >,
 }
 
-impl<'tcx> FunctionCallAbstraction<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: FunctionCallAbstractionOutput<'tcx>,
-        to: FunctionCallAbstractionOutput<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.edge.redirect(from, to, ctxt);
-    }
-}
-
 impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
     fn label_region_projection(
         &mut self,

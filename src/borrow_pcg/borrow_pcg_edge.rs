@@ -175,9 +175,10 @@ impl<'tcx> LocalNode<'tcx> {
     }
 }
 
-/// Any node in the PCG that is "local" in the sense that it can be named
-/// (include nodes that potentially refer to a past program point), i.e. any
-/// node other than a [`crate::utils::place::remote::RemotePlace`]
+/// Any node in the PCG that is "local" in the sense that it can be named by
+/// referring to a (potentially labelled) place, i.e. any node with an associated
+/// place.
+/// This excludes nodes that refer to remote places or constants.
 pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
 
 impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {

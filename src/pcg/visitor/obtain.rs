@@ -21,7 +21,7 @@ use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, P
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{CompilerCtxt, HasPlace, ShallowExpansion};
+use crate::utils::{CompilerCtxt, HasPlace};
 
 use crate::utils::{Place, SnapshotLocation};
 
@@ -56,6 +56,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+
+    /// Collapses owned places and performs appropriate updates to region projections.
     pub(crate) fn collapse(
         &mut self,
         place: Place<'tcx>,
@@ -298,7 +300,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
-    /// As an optimzization, for expansions of the form {y, y|'y at l} -> *y,
+    /// As an optimization, for expansions of the form {y, y|'y at l} -> *y,
     /// if *y doesn't contain any borrows, we currently don't introduce placeholder
     /// projections for y|'y: the set of borrows is guaranteed not to change as long as *y
     /// is in the graph.
@@ -325,6 +327,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
+    /// Note: Only for owned places.
     fn redirect_rp_expansion_to_base(
         &mut self,
         base: LocalRegionProjection<'tcx>,
@@ -351,7 +354,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         base,
                         BorrowFlowEdgeKind::Aggregate {
                             field_idx: idx,
-                            target_rp_index: 0,
+                            target_rp_index: 0, // TODO
                         },
                         self.ctxt,
                     )
@@ -664,6 +667,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             .iter()
                             .fold(CapabilityKind::Exclusive, |acc, place| {
                                 match self.pcg.capabilities.remove(*place, self.ctxt) {
+                                    // TODO: unwrap_or is probably no longer
+                                    // necessary with new deref rules
                                     Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                     None => acc,
                                 }

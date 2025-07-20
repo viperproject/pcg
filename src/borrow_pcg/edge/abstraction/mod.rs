@@ -23,7 +23,7 @@ use crate::{
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
-use crate::borrow_pcg::domain::{AbstractionOutputTarget, LoopAbstractionInput};
+use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
@@ -46,24 +46,6 @@ edgedata_enum!(
     FunctionCall(FunctionCallAbstraction<'tcx>),
     Loop(LoopAbstraction<'tcx>),
 );
-
-impl<'tcx> AbstractionType<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: AbstractionOutputTarget<'tcx>,
-        to: AbstractionOutputTarget<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        match self {
-            AbstractionType::FunctionCall(c) => c.redirect(
-                from.try_into_region_projection().unwrap().into(),
-                to.try_into_region_projection().unwrap().into(),
-                ctxt,
-            ),
-            AbstractionType::Loop(c) => c.redirect((*from).into(), (*to).into(), ctxt),
-        }
-    }
-}
 
 /// A hyperedge for a function or loop abstraction
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -100,38 +82,6 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
             changed |= output.label_place(predicate, labeller, ctxt);
         }
         changed
-    }
-}
-
-impl<
-        'tcx: 'a,
-        'a,
-        Input: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        Output: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > AbstractionBlockEdge<'tcx, Input, Output>
-{
-    pub(crate) fn redirect(&mut self, from: Output, to: Output, ctxt: CompilerCtxt<'_, 'tcx>) {
-        for output in self.outputs.iter_mut() {
-            if output.effective() == from {
-                let output_node = output.effective().to_pcg_node(ctxt);
-                if self
-                    .inputs
-                    .iter()
-                    .any(|i| i.to_pcg_node(ctxt) == output_node)
-                {
-                    self.outputs = self
-                        .outputs
-                        .iter()
-                        .filter(|o| o.effective() != from)
-                        .cloned()
-                        .collect();
-                    return;
-                } else {
-                    output.redirect(from, to);
-                }
-            }
-        }
-        self.assert_validity(ctxt);
     }
 }
 

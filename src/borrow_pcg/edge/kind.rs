@@ -1,10 +1,7 @@
 //! Describes the kind of Borrow PCG edges
-use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
-use crate::borrow_pcg::domain::AbstractionOutputTarget;
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
-use crate::utils::redirect::RedirectResult;
 use crate::utils::CompilerCtxt;
 
 use super::borrow::RemoteBorrow;
@@ -29,27 +26,6 @@ impl<'tcx> BorrowPcgEdgeKind<'tcx> {
         match self {
             BorrowPcgEdgeKind::Borrow(reborrow) => !reborrow.is_mut(repacker),
             _ => false,
-        }
-    }
-
-    /// Returns true if the edge could be redirected, false if it would create a self edge.
-    pub(crate) fn redirect(
-        &mut self,
-        from: LocalNode<'tcx>,
-        to: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> RedirectResult {
-        match self {
-            BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => expansion.redirect(from, to, ctxt),
-            BorrowPcgEdgeKind::BorrowFlow(edge) => edge.redirect(from, to, ctxt),
-            BorrowPcgEdgeKind::Abstraction(edge) => {
-                let from: AbstractionOutputTarget<'tcx> = from.into();
-                let to: AbstractionOutputTarget<'tcx> = to.into();
-                edge.redirect(from, to, ctxt);
-                // TODO
-                RedirectResult::Redirect
-            }
-            other => panic!("Cannot redirect this edge kind: {other:?}"),
         }
     }
 }

@@ -26,7 +26,7 @@ use crate::{
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
         MaybeHasLocation, PcgUnsupportedError,
     },
-    utils::{json::ToJsonWithCompilerCtxt, redirect::RedirectResult, SnapshotLocation},
+    utils::{json::ToJsonWithCompilerCtxt, SnapshotLocation},
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -315,24 +315,6 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: LocalNode<'tcx>,
-        to: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> RedirectResult {
-        for p in &mut self.expansion {
-            if *p == from {
-                if to == self.base {
-                    return RedirectResult::SelfRedirect;
-                }
-                *p = to;
-                self.assert_validity(ctxt);
-                return RedirectResult::Redirect;
-            }
-        }
-        RedirectResult::NoRedirect
-    }
 
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         if let BlockingNode::Place(p) = self.base {
