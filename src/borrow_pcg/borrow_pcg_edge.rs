@@ -347,6 +347,9 @@ impl<'tcx> LocalNode<'tcx> {
             _ => None,
         }
     }
+    pub(crate) fn is_current_place(self) -> bool {
+        self.as_current_place().is_some()
+    }
 }
 
 /// A node that could potentially be blocked in the PCG. In principle any kind

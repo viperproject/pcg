@@ -31,6 +31,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .insert(local.into(), CapabilityKind::Write, self.ctxt);
             }
             PlaceCondition::Unalloc(_) | PlaceCondition::Return => {}
+            PlaceCondition::RemoveCapability(_) => unreachable!(),
         }
         Ok(())
     }

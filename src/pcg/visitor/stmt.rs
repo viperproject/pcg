@@ -6,6 +6,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
 use crate::utils::visitor::FallableVisitor;
@@ -60,28 +61,23 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     }
                 }
 
-                if !target.is_owned(self.ctxt) {
-                    if let Some(target_cap) = self.pcg.capabilities.get(target) {
-                        if target_cap != CapabilityKind::Write {
-                            self.record_and_apply_action(
-                                BorrowPcgAction::weaken(
-                                    target,
-                                    target_cap,
-                                    Some(CapabilityKind::Write),
-                                    "pre_main",
-                                    self.ctxt,
-                                )
-                                .into(),
-                            )?;
-                        }
-                    } else {
-                        // TODO: This is failing in code that loops for some reason
-                        // pcg_validity_assert!(
-                        //     false,
-                        //     "No capability found for {} in {:?}",
-                        //     target.to_short_string(self.ctxt),
-                        //     statement,
-                        // );
+                if let Some(target_cap) = self.pcg.capabilities.get(target) {
+                    pcg_validity_assert!(
+                        target_cap >= CapabilityKind::Write,
+                        "target_cap: {:?}",
+                        target_cap
+                    );
+                    if target_cap != CapabilityKind::Write {
+                        self.record_and_apply_action(
+                            BorrowPcgAction::weaken(
+                                target,
+                                target_cap,
+                                Some(CapabilityKind::Write),
+                                "pre_main",
+                                self.ctxt,
+                            )
+                            .into(),
+                        )?;
                     }
                 }
                 for rp in target.region_projections(self.ctxt).into_iter() {

@@ -4,7 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
     pcg::{
@@ -76,6 +75,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive
                 );
             }
+            PlaceCondition::RemoveCapability(_) => unreachable!(),
         }
     }
     pub(crate) fn ensures(
@@ -102,6 +102,9 @@ impl<'tcx> CapabilityLocals<'tcx> {
             }
             PlaceCondition::ExpandTwoPhase(place) => {
                 place_capabilities.insert(place, CapabilityKind::Read, ctxt);
+            }
+            PlaceCondition::RemoveCapability(place) => {
+                place_capabilities.remove(place, ctxt);
             }
         }
     }

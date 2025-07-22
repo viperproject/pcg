@@ -180,6 +180,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// If the following conditions apply:
     /// 1. `expansion` is a dereference of a place `p`
     /// 2. `*p` does not contain any borrows
+    /// 3. The target of this expansion is not labelled
     ///
     /// Then we perform an optimization where instead of connecting the blocked
     /// lifetime projection to the current one, we instead remove the label of
@@ -190,14 +191,29 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// changed. In other words, the set of borrows in the lifetime projection
     /// at the point it was dereferenced is the same as the current set of
     /// borrows in the lifetime projection.
+    ///
+    /// Note the third condition: if the expansion is labelled, that indicates
+    /// that the expansion occurred at a point where `p` had a different value
+    /// than the current one. We don't want to perform this optimization because
+    /// the it is referring to this different value.
+    /// For test case see rustls-pki-types@1.11.0 server_name::parser::Parser::<'a>::read_char
+    ///
+    /// TODO: In the above test case, should the parent place also be labelled?
     fn unlabel_blocked_region_projections_if_applicable(
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        if let Some(place) = expansion.deref_blocked_place(self.ctxt)
-            && !place.has_region_projections(self.ctxt)
-        {
+        let Some(place) = expansion.deref_of_blocked_place(self.ctxt) else {
+            return Ok(());
+        };
+
+        if place.has_region_projections(self.ctxt) {
+            return Ok(());
+        }
+
+        // Check if the target is labelled e.g. *p @ l instead of *p
+        if expansion.expansion().iter().all(|p| p.is_current_place()) {
             self.unlabel_blocked_region_projections(expansion, context)
         } else {
             Ok(())
@@ -626,7 +642,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         &mut self,
         action: PcgAction<'tcx>,
     ) -> Result<bool, PcgError> {
-        tracing::info!("Applying Action: {}", action.debug_line(self.ctxt));
+        tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
         let result = match &action {
             PcgAction::Borrow(action) => {
                 self.pcg

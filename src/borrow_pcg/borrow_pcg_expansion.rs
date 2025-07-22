@@ -365,7 +365,10 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
 
     /// If this expansion is a dereference of a place `p`, this returns the
     /// dereferenced place `*p`.
-    pub(crate) fn deref_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
+    ///
+    /// Note that this node is NOT necessary the target node of the graph,
+    /// in particular, the target node might be labelled
+    pub(crate) fn deref_of_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
         if let BlockingNode::Place(MaybeOldPlace::Current { place }) = self.base
             && place.is_ref(ctxt)
         {

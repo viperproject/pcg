@@ -407,6 +407,7 @@ macro_rules! pcg_validity_assert {
                     tracing::error!("assertion failed: {}", stringify!($cond));
                 }
             } else {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
                 if !$cond {
                     tracing::error!("assertion failed: {}", stringify!($cond));
                 }
@@ -422,6 +423,8 @@ macro_rules! pcg_validity_assert {
                     tracing::error!($($arg)*);
                 }
             } else {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+
                 if !$cond {
                     tracing::error!($($arg)*);
                 }
