@@ -446,6 +446,10 @@ impl<'tcx> Place<'tcx> {
         self.region_projections(repacker)[idx]
     }
 
+    pub(crate) fn has_region_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        !self.region_projections(ctxt).is_empty()
+    }
+
     pub fn regions<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,

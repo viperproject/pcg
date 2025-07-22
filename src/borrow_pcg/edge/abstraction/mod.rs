@@ -19,7 +19,7 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
     },
     pcg::PCGNodeLike,
-    utils::{maybe_remote::MaybeRemotePlace},
+    utils::maybe_remote::MaybeRemotePlace,
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
@@ -314,7 +314,7 @@ impl<
         let result = Self {
             _phantom: PhantomData,
             inputs,
-            outputs: outputs.into_iter().map(|o| o.into()).collect(),
+            outputs,
         };
         result.assert_validity(ctxt);
         result

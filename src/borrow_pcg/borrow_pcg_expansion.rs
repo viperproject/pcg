@@ -324,6 +324,11 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
+    /// If this expansion is a dereference of a place `p`, this returns the
+    /// source lifetime projection of this edge For example if this is a shared
+    /// reference , it could be an unlabelled lifetime projection e.g. p|'a For
+    /// a mutable reference, this will be labelled with the location of the
+    /// dereference (e.g p|'a@l),
     pub(crate) fn deref_blocked_region_projection<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
@@ -358,6 +363,8 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
+    /// If this expansion is a dereference of a place `p`, this returns the
+    /// dereferenced place `*p`.
     pub(crate) fn deref_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
         if let BlockingNode::Place(MaybeOldPlace::Current { place }) = self.base
             && place.is_ref(ctxt)

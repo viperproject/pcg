@@ -13,9 +13,7 @@ use crate::{
     pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
     utils::{
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeOldPlace,
-        validity::HasValidityCheck,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
         CompilerCtxt,
     },
 };
@@ -71,9 +69,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             predicate,
             label
         );
-        if predicate.matches(self.long, ctxt)
-            && predicate.matches(self.short.rebase(), ctxt)
-        {
+        if predicate.matches(self.long, ctxt) && predicate.matches(self.short.rebase(), ctxt) {
             return LabelRegionProjectionResult::ShouldCollapse;
         }
         let mut changed = self.long.label_region_projection(predicate, label, ctxt);
@@ -154,11 +150,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(ctxt) != short.to_pcg_node(ctxt));
-        Self {
-            long,
-            short: short.into(),
-            kind,
-        }
+        Self { long, short, kind }
     }
 
     /// The blocked lifetime projection. Intuitively, it must outlive the `short()` projection.
@@ -186,6 +178,7 @@ pub enum BorrowFlowEdgeKind {
     ///    of the place to the current base
     /// 2. Assigning an aggregate (e.g. `x = Aggregate(a, b)`): edges flow from
     ///    the (labelled) arguments to the rvalue to lifetime projections of `x`
+    ///
     /// TODO: Perhaps a different kind for the 1st case? We don't need this metadata I think
     Aggregate {
         field_idx: usize,

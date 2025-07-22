@@ -56,7 +56,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-
     /// Collapses owned places and performs appropriate updates to region projections.
     pub(crate) fn collapse(
         &mut self,
@@ -153,9 +152,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 // borrowed The capability would be Write if the place is a
                 // mutable reference (when dereferencing a mutable ref, the ref
                 // place retains write capability)
-                if blocked_cap.is_none()
-                    || matches!(blocked_cap, Some(CapabilityKind::Write))
-                {
+                if blocked_cap.is_none() || matches!(blocked_cap, Some(CapabilityKind::Write)) {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,
@@ -180,6 +177,33 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
+    /// If the following conditions apply:
+    /// 1. `expansion` is a dereference of a place `p`
+    /// 2. `*p` does not contain any borrows
+    ///
+    /// Then we perform an optimization where instead of connecting the blocked
+    /// lifetime projection to the current one, we instead remove the label of
+    /// the blocked lifetime projection.
+    ///
+    /// This is sound because the lifetime projection only contains the single
+    /// borrow that `p` refers to and therefore the set of borrows cannot be
+    /// changed. In other words, the set of borrows in the lifetime projection
+    /// at the point it was dereferenced is the same as the current set of
+    /// borrows in the lifetime projection.
+    fn unlabel_blocked_region_projections_if_applicable(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        context: &str,
+    ) -> Result<(), PcgError> {
+        if let Some(place) = expansion.deref_blocked_place(self.ctxt)
+            && !place.has_region_projections(self.ctxt)
+        {
+            self.unlabel_blocked_region_projections(expansion, context)
+        } else {
+            Ok(())
+        }
+    }
+
     #[tracing::instrument(skip(self, edge))]
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
@@ -197,14 +221,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // could have been made to the root place via the expansion
         // We check that the base is place and either:
         // - The base has no capability, meaning it was previously expanded mutably
-        // - The base has shallow write capability, it is a mutable ref
+        // - The base has write capability, it is a mutable ref
         let is_mutable_place_expansion = if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) =
             edge.kind()
             && let Some(place) = expansion.base.as_current_place()
         {
             matches!(
                 self.pcg.capabilities.get(place),
-                Some(CapabilityKind::ShallowExclusive) | None
+                Some(CapabilityKind::Write) | None
             )
         } else {
             false
@@ -214,28 +238,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         match edge.kind() {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                if let Some(place) = expansion.deref_blocked_place(self.ctxt)
-                    && !place.regions(self.ctxt).iter().contains(
-                        &expansion
-                            .deref_blocked_region_projection(self.ctxt)
-                            .unwrap()
-                            .region(self.ctxt),
-                    )
-                    && expansion.expansion().iter().all(|e| {
-                        if let PCGNode::Place(p) = e {
-                            p.is_current()
-                        } else {
-                            false
-                        }
-                    })
-                {
-                    // Note the last condition above: if the expansion was to old
-                    // places, that means that this was e.g an expansion that occurred
-                    // previously. Its possible that the RP is labelled because its currently
-                    // borrowed, in which case we don't want to unlabel it.
-                    self.unlabel_blocked_region_projections(expansion, context)?;
-                }
-
+                self.unlabel_blocked_region_projections_if_applicable(expansion, context)?;
                 if is_mutable_place_expansion {
                     // If the expansion contained region projections, we need to
                     // label them, they will flow into the now unblocked
@@ -625,11 +628,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<bool, PcgError> {
         tracing::info!("Applying Action: {}", action.debug_line(self.ctxt));
         let result = match &action {
-            PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
-                action.clone(),
-                self.pcg.capabilities,
-                self.ctxt,
-            )?,
+            PcgAction::Borrow(action) => {
+                self.pcg
+                    .borrow
+                    .apply_action(action.clone(), self.pcg.capabilities, self.ctxt)?
+            }
             PcgAction::Owned(owned_action) => match owned_action.kind {
                 RepackOp::RegainLoanedCapability(place, capability_kind) => self
                     .pcg
