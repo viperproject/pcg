@@ -4,7 +4,7 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
+    free_pcs::{CapabilityKind, OwnedPcgRoot, CapabilityLocals},
     pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, PcgRef},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
@@ -431,8 +431,8 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         };
         for (local, capability) in self.summary.iter_enumerated() {
             match capability {
-                CapabilityLocal::Unallocated => {}
-                CapabilityLocal::Allocated(projections) => {
+                OwnedPcgRoot::Unallocated => {}
+                OwnedPcgRoot::Allocated(projections) => {
                     self.insert_place_and_previous_projections(
                         local.into(),
                         None,

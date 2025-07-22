@@ -18,7 +18,7 @@ use derive_more::{Deref, DerefMut};
 
 use super::CapabilityKind;
 use crate::{
-    free_pcs::{CapabilityLocal, CapabilityProjections},
+    free_pcs::{OwnedPcgRoot, PlaceExpansions},
     utils::CompilerCtxt,
 };
 
@@ -66,16 +66,16 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
             |local: mir::Local| {
                 if local == return_local {
                     capabilities.insert(local.into(), CapabilityKind::Write, repacker);
-                    CapabilityLocal::new(local)
+                    OwnedPcgRoot::new(local)
                 } else if local <= last_arg {
                     capabilities.insert(local.into(), CapabilityKind::Exclusive, repacker);
-                    CapabilityLocal::new(local)
+                    OwnedPcgRoot::new(local)
                 } else if always_live.contains(local) {
                     capabilities.insert(local.into(), CapabilityKind::Write, repacker);
-                    CapabilityLocal::new(local)
+                    OwnedPcgRoot::new(local)
                 } else {
                     // Other locals are unallocated
-                    CapabilityLocal::Unallocated
+                    OwnedPcgRoot::Unallocated
                 }
             },
             repacker.local_count(),
@@ -98,7 +98,7 @@ impl Debug for FreePlaceCapabilitySummary<'_> {
 }
 #[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
 /// The expansions of all locals.
-pub struct CapabilityLocals<'tcx>(IndexVec<Local, CapabilityLocal<'tcx>>);
+pub struct CapabilityLocals<'tcx>(IndexVec<Local, OwnedPcgRoot<'tcx>>);
 
 impl Debug for CapabilityLocals<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -115,7 +115,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
             .flat_map(|c| c.get_allocated().leaves(ctxt))
             .collect()
     }
-    pub(crate) fn expansions(&self) -> Vec<&CapabilityProjections<'tcx>> {
+    pub(crate) fn expansions(&self) -> Vec<&PlaceExpansions<'tcx>> {
         self.0
             .iter()
             .filter(|c| !c.is_unallocated())

@@ -7,7 +7,7 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    borrow_pcg::borrow_pcg_expansion::ExpansionFields,
     pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
@@ -21,14 +21,14 @@ use crate::{
 };
 
 #[derive(Clone, PartialEq, Eq)]
-/// The permissions of a local, each key in the hashmap is a "root" projection of the local
+/// The expansions of a local, each key in the hashmap is a "root" projection of the local
 /// Examples of root projections are: `_1`, `*_1.f`, `*(*_.f).g` (i.e. either a local or a deref)
-pub enum CapabilityLocal<'tcx> {
+pub enum OwnedPcgRoot<'tcx> {
     Unallocated,
-    Allocated(CapabilityProjections<'tcx>),
+    Allocated(PlaceExpansions<'tcx>),
 }
 
-impl Debug for CapabilityLocal<'_> {
+impl Debug for OwnedPcgRoot<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Unallocated => write!(f, "U"),
@@ -37,21 +37,21 @@ impl Debug for CapabilityLocal<'_> {
     }
 }
 
-impl<'tcx> CapabilityLocal<'tcx> {
-    pub fn get_allocated(&self) -> &CapabilityProjections<'tcx> {
+impl<'tcx> OwnedPcgRoot<'tcx> {
+    pub fn get_allocated(&self) -> &PlaceExpansions<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
             Self::Unallocated => panic!("Expected allocated local"),
         }
     }
-    pub fn get_allocated_mut(&mut self) -> &mut CapabilityProjections<'tcx> {
+    pub fn get_allocated_mut(&mut self) -> &mut PlaceExpansions<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
             Self::Unallocated => panic!("Expected allocated local"),
         }
     }
     pub fn new(local: Local) -> Self {
-        Self::Allocated(CapabilityProjections::new(local))
+        Self::Allocated(PlaceExpansions::new(local))
     }
     pub fn is_unallocated(&self) -> bool {
         matches!(self, Self::Unallocated)
@@ -59,17 +59,17 @@ impl<'tcx> CapabilityLocal<'tcx> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct CapabilityProjections<'tcx> {
+pub struct PlaceExpansions<'tcx> {
     local: Local,
-    pub(crate) expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
+    pub(crate) expansions: FxHashMap<Place<'tcx>, ExpansionFields<'tcx>>,
 }
 
-impl<'tcx> CapabilityProjections<'tcx> {
-    pub(crate) fn insert_expansion(&mut self, place: Place<'tcx>, expansion: PlaceExpansion<'tcx>) {
+impl<'tcx> PlaceExpansions<'tcx> {
+    pub(crate) fn insert_expansion(&mut self, place: Place<'tcx>, expansion: ExpansionFields<'tcx>) {
         self.expansions.insert(place, expansion);
     }
 
-    pub(crate) fn expansions(&self) -> &FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>> {
+    pub(crate) fn expansions(&self) -> &FxHashMap<Place<'tcx>, ExpansionFields<'tcx>> {
         &self.expansions
     }
 
@@ -157,7 +157,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         for expansion in expansion.expansions() {
             self.insert_expansion(
                 expansion.base_place(),
-                PlaceExpansion::from_places(expansion.expansion(), repacker),
+                ExpansionFields::from_places(expansion.expansion(), repacker),
             );
 
             let block_type = if for_cap.is_read() {

@@ -3,7 +3,7 @@ use itertools::Itertools;
 use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
-use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
+use crate::borrow_pcg::borrow_pcg_expansion::ExpansionFields;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{
     PcgRegion, RegionProjection,
@@ -391,7 +391,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         let capability_projections = self.locals_mut()[expand.local()].get_allocated_mut();
         capability_projections.insert_expansion(
             expand.from,
-            PlaceExpansion::from_places(target_places.clone(), ctxt),
+            ExpansionFields::from_places(target_places.clone(), ctxt),
         );
         let source_cap = if expand.capability.is_read() {
             expand.capability

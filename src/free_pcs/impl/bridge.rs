@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::{
-        CapabilityKind, CapabilityLocal, CapabilityLocals, CapabilityProjections, RepackOp,
+        CapabilityKind, OwnedPcgRoot, CapabilityLocals, PlaceExpansions, RepackOp,
     },
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -41,7 +41,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
     }
 }
 
-impl<'tcx> CapabilityLocal<'tcx> {
+impl<'tcx> OwnedPcgRoot<'tcx> {
     pub(crate) fn bridge(
         &self,
         other: &Self,
@@ -50,11 +50,11 @@ impl<'tcx> CapabilityLocal<'tcx> {
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut place_capabilities = place_capabilities.clone();
         match (self, other) {
-            (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(Vec::new()),
-            (CapabilityLocal::Allocated(from_places), CapabilityLocal::Allocated(to_places)) => {
+            (OwnedPcgRoot::Unallocated, OwnedPcgRoot::Unallocated) => Ok(Vec::new()),
+            (OwnedPcgRoot::Allocated(from_places), OwnedPcgRoot::Allocated(to_places)) => {
                 from_places.bridge(to_places, &place_capabilities, repacker)
             }
-            (CapabilityLocal::Allocated(cps), CapabilityLocal::Unallocated) => {
+            (OwnedPcgRoot::Allocated(cps), OwnedPcgRoot::Unallocated) => {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
@@ -73,7 +73,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
                 repacks.push(RepackOp::StorageDead(local));
                 Ok(repacks)
             }
-            (CapabilityLocal::Unallocated, CapabilityLocal::Allocated(cps)) => {
+            (OwnedPcgRoot::Unallocated, OwnedPcgRoot::Allocated(cps)) => {
                 // A bit of an unusual case, should happen only when we
                 // "allocated" a local to allow it to immediately be
                 // StorageDead-ed. In this case we should ignore the SD.
@@ -84,7 +84,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
     }
 }
 
-impl<'tcx> CapabilityProjections<'tcx> {
+impl<'tcx> PlaceExpansions<'tcx> {
     pub(crate) fn bridge(
         &self,
         other: &Self,

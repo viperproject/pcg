@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::action::{BorrowPcgAction, OwnedPcgAction, PcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
+use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, ExpansionFields};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
@@ -668,7 +668,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
                     capability_projections.insert_expansion(
                         from,
-                        PlaceExpansion::from_places(target_places.clone(), self.ctxt),
+                        ExpansionFields::from_places(target_places.clone(), self.ctxt),
                     );
                     for target_place in target_places {
                         self.pcg
