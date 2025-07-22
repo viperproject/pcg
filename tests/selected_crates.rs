@@ -24,6 +24,18 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: None,
+            extra_env_vars: vec![],
+        },
+    );
+
     // 45 blocks TODO
     // common::ensure_successful_run_on_crate("ring",
     //     "0.17.14",

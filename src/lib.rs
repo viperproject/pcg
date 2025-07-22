@@ -106,8 +106,9 @@ impl<'tcx> Weaken<'tcx> {
     }
 }
 
-/// Instructs that the current capability to the place should be restored to the given capability, e.g.
-/// a lent exclusive capability should be restored to an exclusive capability.
+/// Instructs that the capability to the place should be restored to the
+/// given capability, e.g. after a borrow expires, the borrowed place should be
+/// restored to exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RestoreCapability<'tcx> {
     place: Place<'tcx>,

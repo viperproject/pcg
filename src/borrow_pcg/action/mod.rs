@@ -126,7 +126,7 @@ impl MakePlaceOldReason {
             }
             MakePlaceOldReason::Collapse => LabelPlacePredicate::Exact(place),
             MakePlaceOldReason::LabelSharedDerefProjections => {
-                LabelPlacePredicate::LabelSharedDerefProjections(place)
+                LabelPlacePredicate::StrictPostfix(place)
             }
         };
         let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
