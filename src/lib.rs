@@ -106,8 +106,9 @@ impl<'tcx> Weaken<'tcx> {
     }
 }
 
-/// Instructs that the current capability to the place should be restored to the given capability, e.g.
-/// a lent exclusive capability should be restored to an exclusive capability.
+/// Instructs that the capability to the place should be restored to the
+/// given capability, e.g. after a borrow expires, the borrowed place should be
+/// restored to exclusive capability.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RestoreCapability<'tcx> {
     place: Place<'tcx>,
@@ -406,6 +407,7 @@ macro_rules! pcg_validity_assert {
                     tracing::error!("assertion failed: {}", stringify!($cond));
                 }
             } else {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
                 if !$cond {
                     tracing::error!("assertion failed: {}", stringify!($cond));
                 }
@@ -421,6 +423,8 @@ macro_rules! pcg_validity_assert {
                     tracing::error!($($arg)*);
                 }
             } else {
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+
                 if !$cond {
                     tracing::error!($($arg)*);
                 }

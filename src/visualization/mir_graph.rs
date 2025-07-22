@@ -227,7 +227,7 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -
             format!("PlaceMention({})", format_place(place, repacker))
         }
         mir::StatementKind::AscribeUserType(_, _) => "AscribeUserType(...)".to_string(),
-        mir::StatementKind::Coverage(_) => todo!(),
+        mir::StatementKind::Coverage(_) => "coverage".to_string(),
         mir::StatementKind::Intrinsic(non_diverging_intrinsic) => {
             format!("Intrinsic({:?})", non_diverging_intrinsic)
         }

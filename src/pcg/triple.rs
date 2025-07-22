@@ -19,7 +19,7 @@ use crate::rustc_interface::middle::mir::RawPtrKind;
 use crate::utils::visitor::FallableVisitor;
 use crate::{
     free_pcs::CapabilityKind,
-    pcg::{PcgUnsupportedError, PcgError},
+    pcg::{PcgError, PcgUnsupportedError},
     utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
 };
 
@@ -30,6 +30,10 @@ pub(crate) struct Triple<'tcx> {
 }
 
 impl<'tcx> Triple<'tcx> {
+    pub(crate) fn new(pre: PlaceCondition<'tcx>, post: Option<PlaceCondition<'tcx>>) -> Self {
+        Self { pre, post }
+    }
+
     pub fn pre(self) -> PlaceCondition<'tcx> {
         self.pre
     }
@@ -46,6 +50,7 @@ pub(crate) enum PlaceCondition<'tcx> {
     /// be labelled, similarly to the situation where the borrow was exclusive.
     ExpandTwoPhase(Place<'tcx>),
     Capability(Place<'tcx>, CapabilityKind),
+    RemoveCapability(Place<'tcx>),
     AllocateOrDeallocate(Local),
     Unalloc(Local),
     Return,
@@ -125,7 +130,7 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
     ) -> Result<(), PcgError> {
         self.super_rvalue_fallable(rvalue, location)?;
         use Rvalue::*;
-        let pre = match rvalue {
+        let triple = match rvalue {
             Use(_)
             | Repeat(_, _)
             | ThreadLocalRef(_)
@@ -137,34 +142,43 @@ impl<'tcx> FallableVisitor<'tcx> for TripleWalker<'_, 'tcx> {
             | ShallowInitBox(_, _) => return Ok(()),
 
             &Ref(_, kind, place) => match kind {
-                BorrowKind::Shared => PlaceCondition::read(place),
+                BorrowKind::Shared => Triple::new(
+                    PlaceCondition::read(place),
+                    Some(PlaceCondition::read(place)),
+                ),
                 BorrowKind::Mut {
                     kind: MutBorrowKind::TwoPhaseBorrow,
-                } => PlaceCondition::ExpandTwoPhase(place.into()),
+                } => Triple::new(
+                    PlaceCondition::ExpandTwoPhase(place.into()),
+                    Some(PlaceCondition::read(place)),
+                ),
                 BorrowKind::Fake(..) => return Ok(()),
-                BorrowKind::Mut { .. } => PlaceCondition::exclusive(place, self.ctxt),
+                BorrowKind::Mut { .. } => Triple::new(
+                    PlaceCondition::exclusive(place, self.ctxt),
+                    Some(PlaceCondition::RemoveCapability(place.into())),
+                ),
             },
             &RawPtr(mutbl, place) => {
                 #[rustversion::since(2025-03-02)]
-                if matches!(mutbl, RawPtrKind::Mut) {
+                let pre = if matches!(mutbl, RawPtrKind::Mut) {
                     PlaceCondition::exclusive(place, self.ctxt)
                 } else {
                     PlaceCondition::read(place)
-                }
+                };
                 #[rustversion::before(2025-03-02)]
-                if matches!(mutbl, Mutability::Mut) {
+                let pre = if matches!(mutbl, Mutability::Mut) {
                     PlaceCondition::exclusive(place, self.ctxt)
                 } else {
                     PlaceCondition::read(place)
-                }
+                };
+                Triple::new(pre, None)
             }
             &Len(place) | &Discriminant(place) | &CopyForDeref(place) => {
-                PlaceCondition::read(place)
+                Triple::new(PlaceCondition::read(place), None)
             }
             _ => todo!(),
         };
-        tracing::debug!("Pre: {pre:?}");
-        self.operand_triples.push(Triple { pre, post: None });
+        self.operand_triples.push(triple);
         Ok(())
     }
 

@@ -75,17 +75,6 @@ impl<T> EvalStmtData<T> {
         .into_iter()
     }
 
-    #[allow(unused)]
-    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (EvalStmtPhase, &mut T)> {
-        [
-            (EvalStmtPhase::PreOperands, &mut self.pre_operands),
-            (EvalStmtPhase::PostOperands, &mut self.post_operands),
-            (EvalStmtPhase::PreMain, &mut self.pre_main),
-            (EvalStmtPhase::PostMain, &mut self.post_main),
-        ]
-        .into_iter()
-    }
-
     pub(crate) fn get(&self, phase: EvalStmtPhase) -> &T {
         match phase {
             EvalStmtPhase::PreOperands => &self.pre_operands,

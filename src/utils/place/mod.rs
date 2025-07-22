@@ -373,22 +373,38 @@ impl<'tcx> Place<'tcx> {
                 TyKind::Array(ty, _) => vec![*ty],
                 TyKind::Slice(ty) => vec![*ty],
                 TyKind::Adt(def, substs) => {
-                                if ty.is_box() {
-                                    vec![substs.first().unwrap().expect_ty()]
-                                } else {
-                                    def.all_fields()
-                                        .map(|f| f.ty(ctxt.tcx, substs))
-                                        .collect::<Vec<_>>()
-                                }
-                            }
+                                            if ty.is_box() {
+                                                vec![substs.first().unwrap().expect_ty()]
+                                            } else {
+                                                def.all_fields()
+                                                    .map(|f| f.ty(ctxt.tcx, substs))
+                                                    .collect::<Vec<_>>()
+                                            }
+                                        }
                 TyKind::Tuple(slice) => slice.iter().collect::<Vec<_>>(),
                 TyKind::Closure(_, substs) => {
-                                substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
-                            }
-                TyKind::Coroutine(_, _) | TyKind::CoroutineClosure(_, _) => vec![], // TODO: Confirm
+                                            substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
+                                        }
+                TyKind::Coroutine(_, _) | TyKind::CoroutineClosure(_, _) | TyKind::FnDef(_, _) => vec![],
                 TyKind::Ref(_, ty, _) => vec![*ty],
                 TyKind::Alias(_, _) => vec![],
                 TyKind::Dynamic(_, _, _) => vec![],
+                TyKind::Param(_) => vec![],
+                TyKind::Bound(_, _) => vec![],
+                TyKind::CoroutineWitness(_, _) => vec![],
+                TyKind::Bool => todo!(),
+                TyKind::Int(_) => todo!(),
+                TyKind::Uint(_) => todo!(),
+                TyKind::Float(_) => todo!(),
+                TyKind::Foreign(_) => todo!(),
+                TyKind::Str => todo!(),
+                TyKind::Pat(_, _) => todo!(),
+                TyKind::RawPtr(_, _) => todo!(),
+                TyKind::FnPtr(_, _) => todo!(),
+                TyKind::Never => todo!(),
+                TyKind::Placeholder(_) => todo!(),
+                TyKind::Infer(_) => todo!(),
+                TyKind::Error(_) => todo!(),
                 _ => todo!(),
             };
             field_tys
@@ -444,6 +460,10 @@ impl<'tcx> Place<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> RegionProjection<'tcx, Self> {
         self.region_projections(repacker)[idx]
+    }
+
+    pub(crate) fn has_region_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        !self.region_projections(ctxt).is_empty()
     }
 
     pub fn regions<C: Copy>(

@@ -96,7 +96,7 @@ pub(crate) enum BlockType {
 impl BlockType {
     pub(crate) fn blocked_place_retained_capability(self) -> Option<CapabilityKind> {
         match self {
-            BlockType::DerefExclusive => Some(CapabilityKind::ShallowExclusive),
+            BlockType::DerefExclusive => Some(CapabilityKind::Write),
             BlockType::Read => Some(CapabilityKind::Read),
             BlockType::Other => None,
         }

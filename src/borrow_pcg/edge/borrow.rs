@@ -83,6 +83,9 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
+        // Technically, `assigned_ref` does not block this node, but this place
+        // is used to compute `assigned_region_projection` which *does* block this node
+        // So we should label it
         self.assigned_ref.label_place(predicate, labeller, ctxt)
     }
 }

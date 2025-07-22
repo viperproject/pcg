@@ -13,10 +13,7 @@ use crate::{
     pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
     utils::{
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeOldPlace,
-        redirect::{MaybeRedirected, RedirectResult},
-        validity::HasValidityCheck,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
         CompilerCtxt,
     },
 };
@@ -24,7 +21,7 @@ use crate::{
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowFlowEdge<'tcx> {
     long: RegionProjection<'tcx>,
-    short: MaybeRedirected<LocalRegionProjection<'tcx>>,
+    short: LocalRegionProjection<'tcx>,
     pub(crate) kind: BorrowFlowEdgeKind,
 }
 
@@ -72,9 +69,7 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             predicate,
             label
         );
-        if predicate.matches(self.long, ctxt)
-            && predicate.matches(self.short.effective().rebase(), ctxt)
-        {
+        if predicate.matches(self.long, ctxt) && predicate.matches(self.short.rebase(), ctxt) {
             return LabelRegionProjectionResult::ShouldCollapse;
         }
         let mut changed = self.long.label_region_projection(predicate, label, ctxt);
@@ -129,7 +124,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
     where
         'tcx: 'mir,
     {
-        Box::new(std::iter::once(self.short.effective().into()))
+        Box::new(std::iter::once(self.short.into()))
     }
 }
 
@@ -137,7 +132,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.long.check_validity(ctxt)?;
         self.short.check_validity(ctxt)?;
-        if self.long.to_pcg_node(ctxt) == self.short.effective().to_pcg_node(ctxt) {
+        if self.long.to_pcg_node(ctxt) == self.short.to_pcg_node(ctxt) {
             return Err(format!(
                 "BorrowFlowEdge: long and short are the same node: {}",
                 self.to_short_string(ctxt)
@@ -148,23 +143,6 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
-    /// Returns true if the edge could be redirected, false if it would create a self edge.
-    pub(crate) fn redirect(
-        &mut self,
-        from: LocalNode<'tcx>,
-        to: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> RedirectResult {
-        if let PCGNode::RegionProjection(rp) = from {
-            self.short.redirect(rp, to.try_into().unwrap());
-        }
-        if self.long.to_pcg_node(ctxt) == self.short.effective().to_pcg_node(ctxt) {
-            RedirectResult::SelfRedirect
-        } else {
-            RedirectResult::Redirect
-        }
-    }
-
     pub(crate) fn new(
         long: RegionProjection<'tcx>,
         short: LocalRegionProjection<'tcx>,
@@ -172,11 +150,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         pcg_validity_assert!(long.to_pcg_node(ctxt) != short.to_pcg_node(ctxt));
-        Self {
-            long,
-            short: short.into(),
-            kind,
-        }
+        Self { long, short, kind }
     }
 
     /// The blocked lifetime projection. Intuitively, it must outlive the `short()` projection.
@@ -186,7 +160,7 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
 
     /// The blocking lifetime projection. Intuitively, it must die before the `long()` projection.
     pub fn short(&self) -> LocalRegionProjection<'tcx> {
-        self.short.effective()
+        self.short
     }
 
     pub fn kind(&self) -> BorrowFlowEdgeKind {
@@ -196,10 +170,16 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BorrowFlowEdgeKind {
-    /// Region projection edge resulting due to contracting a place. For
-    /// example, if the type of `x.t` is `&'a mut T` and there is a borrow `x.t
-    /// = &mut y`, and we need to contract to `x`, then we need to replace the
-    /// borrow edge with an edge `{y} -> {x↓'a}` of this kind.
+    /// Indicates that the borrow flows to the `target_rp_index`th region
+    /// projection of the `field_idx`th field of the aggregate.
+    ///
+    /// Introduced in the following two cases:
+    /// 1. Collapsing an owned place: edges flow from the (labelled) expansions
+    ///    of the place to the current base
+    /// 2. Assigning an aggregate (e.g. `x = Aggregate(a, b)`): edges flow from
+    ///    the (labelled) arguments to the rvalue to lifetime projections of `x`
+    ///
+    /// TODO: Perhaps a different kind for the 1st case? We don't need this metadata I think
     Aggregate {
         field_idx: usize,
         target_rp_index: usize,
@@ -211,15 +191,20 @@ pub enum BorrowFlowEdgeKind {
     /// For a borrow `let x: &'x T<'b> = &y`, where y is of typ T<'a>, an edge generated
     /// for `{y|'a} -> {x|'b}` of this kind is created if 'a outlives 'b.
     ///
-    /// `lifetimes_equal` is true if the lifetimes are equal, false otherwise.
     BorrowOutlives {
+        /// If true, the lifetimes are equal (mutually outlive each other),
+        /// false otherwise.
+        ///
+        /// This field is somewhat redundant because the equality can be queried
+        /// by the borrow checker based on the regions of the long and short
+        /// endpoints. However, it is useful for clients that may not have access
+        /// to the borrow checker (e.g. visualization tools).
         regions_equal: bool,
     },
     InitialBorrows,
     CopyRef,
     Move,
     Future,
-    Other, // TODO
 }
 
 impl std::fmt::Display for BorrowFlowEdgeKind {
@@ -243,7 +228,6 @@ impl std::fmt::Display for BorrowFlowEdgeKind {
             BorrowFlowEdgeKind::CopyRef => write!(f, "CopyRef"),
             BorrowFlowEdgeKind::Move => write!(f, "Move"),
             BorrowFlowEdgeKind::Future => write!(f, "Future"),
-            BorrowFlowEdgeKind::Other => write!(f, "Other"),
         }
     }
 }

@@ -26,7 +26,7 @@ use crate::{
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
         MaybeHasLocation, PcgUnsupportedError,
     },
-    utils::{json::ToJsonWithCompilerCtxt, redirect::RedirectResult, SnapshotLocation},
+    utils::{json::ToJsonWithCompilerCtxt, SnapshotLocation},
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -315,24 +315,6 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
-    pub(crate) fn redirect(
-        &mut self,
-        from: LocalNode<'tcx>,
-        to: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> RedirectResult {
-        for p in &mut self.expansion {
-            if *p == from {
-                if to == self.base {
-                    return RedirectResult::SelfRedirect;
-                }
-                *p = to;
-                self.assert_validity(ctxt);
-                return RedirectResult::Redirect;
-            }
-        }
-        RedirectResult::NoRedirect
-    }
 
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         if let BlockingNode::Place(p) = self.base {
@@ -342,6 +324,11 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
+    /// If this expansion is a dereference of a place `p`, this returns the
+    /// source lifetime projection of this edge For example if this is a shared
+    /// reference , it could be an unlabelled lifetime projection e.g. p|'a For
+    /// a mutable reference, this will be labelled with the location of the
+    /// dereference (e.g p|'a@l),
     pub(crate) fn deref_blocked_region_projection<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
@@ -376,7 +363,12 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn deref_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
+    /// If this expansion is a dereference of a place `p`, this returns the
+    /// dereferenced place `*p`.
+    ///
+    /// Note that this node is NOT necessary the target node of the graph,
+    /// in particular, the target node might be labelled
+    pub(crate) fn deref_of_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
         if let BlockingNode::Place(MaybeOldPlace::Current { place }) = self.base
             && place.is_ref(ctxt)
         {

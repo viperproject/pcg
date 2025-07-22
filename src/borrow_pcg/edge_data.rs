@@ -60,7 +60,7 @@ pub trait EdgeData<'tcx> {
 pub enum LabelPlacePredicate<'tcx> {
     Exact(Place<'tcx>),
     PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
-    LabelSharedDerefProjections(Place<'tcx>),
+    StrictPostfix(Place<'tcx>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,7 +80,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
                 predicate_place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
             }
-            LabelPlacePredicate::LabelSharedDerefProjections(place) => {
+            LabelPlacePredicate::StrictPostfix(place) => {
                 format!("strict postfix of {}", place.to_short_string(ctxt))
             }
             LabelPlacePredicate::Exact(place) => {
@@ -111,7 +111,7 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                     false
                 }
             }
-            LabelPlacePredicate::LabelSharedDerefProjections(place) => {
+            LabelPlacePredicate::StrictPostfix(place) => {
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
                     for (place, proj) in iter {
                         if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {

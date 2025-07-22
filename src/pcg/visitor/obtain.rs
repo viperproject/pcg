@@ -21,7 +21,7 @@ use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, P
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{CompilerCtxt, HasPlace, ShallowExpansion};
+use crate::utils::{CompilerCtxt, HasPlace};
 
 use crate::utils::{Place, SnapshotLocation};
 
@@ -56,6 +56,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+    /// Collapses owned places and performs appropriate updates to region projections.
     pub(crate) fn collapse(
         &mut self,
         place: Place<'tcx>,
@@ -129,23 +130,29 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         let fg = self.pcg.borrow.graph.frozen_graph();
         let blocked_nodes = edge.blocked_nodes(self.ctxt);
+
+        // After removing an edge, some nodes may become accessible, their capabilities should be restored
         let to_restore = blocked_nodes
             .into_iter()
             .filter(|node| !fg.has_edge_blocking(*node, self.ctxt))
             .collect::<Vec<_>>();
+
         for node in to_restore {
             if let Some(place) = node.as_current_place() {
                 let blocked_cap = self.pcg.capabilities.get(place);
 
+                // TODO: If the place projects a shared ref, do we even need to restore a capability?
                 let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
                     CapabilityKind::Read
                 } else {
                     CapabilityKind::Exclusive
                 };
 
-                if blocked_cap.is_none()
-                    || matches!(blocked_cap, Some(CapabilityKind::ShallowExclusive))
-                {
+                // The blocked capability would be None if the place was mutably
+                // borrowed The capability would be Write if the place is a
+                // mutable reference (when dereferencing a mutable ref, the ref
+                // place retains write capability)
+                if blocked_cap.is_none() || matches!(blocked_cap, Some(CapabilityKind::Write)) {
                     self.record_and_apply_action(PcgAction::restore_capability(
                         place,
                         restore_cap,
@@ -170,6 +177,49 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
+    /// If the following conditions apply:
+    /// 1. `expansion` is a dereference of a place `p`
+    /// 2. `*p` does not contain any borrows
+    /// 3. The target of this expansion is not labelled
+    ///
+    /// Then we perform an optimization where instead of connecting the blocked
+    /// lifetime projection to the current one, we instead remove the label of
+    /// the blocked lifetime projection.
+    ///
+    /// This is sound because the lifetime projection only contains the single
+    /// borrow that `p` refers to and therefore the set of borrows cannot be
+    /// changed. In other words, the set of borrows in the lifetime projection
+    /// at the point it was dereferenced is the same as the current set of
+    /// borrows in the lifetime projection.
+    ///
+    /// Note the third condition: if the expansion is labelled, that indicates
+    /// that the expansion occurred at a point where `p` had a different value
+    /// than the current one. We don't want to perform this optimization because
+    /// the it is referring to this different value.
+    /// For test case see rustls-pki-types@1.11.0 server_name::parser::Parser::<'a>::read_char
+    ///
+    /// TODO: In the above test case, should the parent place also be labelled?
+    fn unlabel_blocked_region_projections_if_applicable(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        context: &str,
+    ) -> Result<(), PcgError> {
+        let Some(place) = expansion.deref_of_blocked_place(self.ctxt) else {
+            return Ok(());
+        };
+
+        if place.has_region_projections(self.ctxt) {
+            return Ok(());
+        }
+
+        // Check if the target is labelled e.g. *p @ l instead of *p
+        if expansion.expansion().iter().all(|p| p.is_current_place()) {
+            self.unlabel_blocked_region_projections(expansion, context)
+        } else {
+            Ok(())
+        }
+    }
+
     #[tracing::instrument(skip(self, edge))]
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
@@ -187,14 +237,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // could have been made to the root place via the expansion
         // We check that the base is place and either:
         // - The base has no capability, meaning it was previously expanded mutably
-        // - The base has shallow write capability, it is a mutable ref
+        // - The base has write capability, it is a mutable ref
         let is_mutable_place_expansion = if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) =
             edge.kind()
             && let Some(place) = expansion.base.as_current_place()
         {
             matches!(
                 self.pcg.capabilities.get(place),
-                Some(CapabilityKind::ShallowExclusive) | None
+                Some(CapabilityKind::Write) | None
             )
         } else {
             false
@@ -204,28 +254,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         match edge.kind() {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                if let Some(place) = expansion.deref_blocked_place(self.ctxt)
-                    && !place.regions(self.ctxt).iter().contains(
-                        &expansion
-                            .deref_blocked_region_projection(self.ctxt)
-                            .unwrap()
-                            .region(self.ctxt),
-                    )
-                    && expansion.expansion().iter().all(|e| {
-                        if let PCGNode::Place(p) = e {
-                            p.is_current()
-                        } else {
-                            false
-                        }
-                    })
-                {
-                    // Note the last condition above: if the expansion was to old
-                    // places, that means that this was e.g an expansion that occurred
-                    // previously. Its possible that the RP is labelled because its currently
-                    // borrowed, in which case we don't want to unlabel it.
-                    self.unlabel_blocked_region_projections(expansion, context)?;
-                }
-
+                self.unlabel_blocked_region_projections_if_applicable(expansion, context)?;
                 if is_mutable_place_expansion {
                     // If the expansion contained region projections, we need to
                     // label them, they will flow into the now unblocked
@@ -290,7 +319,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
-    /// As an optimzization, for expansions of the form {y, y|'y at l} -> *y,
+    /// As an optimization, for expansions of the form {y, y|'y at l} -> *y,
     /// if *y doesn't contain any borrows, we currently don't introduce placeholder
     /// projections for y|'y: the set of borrows is guaranteed not to change as long as *y
     /// is in the graph.
@@ -317,6 +346,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         Ok(())
     }
 
+    /// Note: Only for owned places.
     fn redirect_rp_expansion_to_base(
         &mut self,
         base: LocalRegionProjection<'tcx>,
@@ -343,7 +373,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         base,
                         BorrowFlowEdgeKind::Aggregate {
                             field_idx: idx,
-                            target_rp_index: 0,
+                            target_rp_index: 0, // TODO
                         },
                         self.ctxt,
                     )
@@ -608,18 +638,17 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         }
     }
 
-    #[tracing::instrument(skip(self, action))]
     pub(crate) fn record_and_apply_action(
         &mut self,
         action: PcgAction<'tcx>,
     ) -> Result<bool, PcgError> {
         tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
         let result = match &action {
-            PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
-                action.clone(),
-                self.pcg.capabilities,
-                self.ctxt,
-            )?,
+            PcgAction::Borrow(action) => {
+                self.pcg
+                    .borrow
+                    .apply_action(action.clone(), self.pcg.capabilities, self.ctxt)?
+            }
             PcgAction::Owned(owned_action) => match owned_action.kind {
                 RepackOp::RegainLoanedCapability(place, capability_kind) => self
                     .pcg
@@ -657,6 +686,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             .iter()
                             .fold(CapabilityKind::Exclusive, |acc, place| {
                                 match self.pcg.capabilities.remove(*place, self.ctxt) {
+                                    // TODO: unwrap_or is probably no longer
+                                    // necessary with new deref rules
                                     Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                     None => acc,
                                 }
@@ -841,42 +872,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         self.pcg.owned.locals()[base.local]
             .get_allocated()
             .contains_expansion_from(base)
-    }
-
-    fn expand_owned_place_one_level(
-        &mut self,
-        base: Place<'tcx>,
-        expansion: &ShallowExpansion<'tcx>,
-        obtain_type: ObtainType,
-        ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
-    ) -> Result<bool, PcgError> {
-        if self.contains_owned_expansion_from(base) {
-            return Ok(false);
-        }
-        let obtain_cap = obtain_type.capability(base, ctxt);
-        if expansion.kind.is_deref_box() && obtain_cap.is_shallow_exclusive() {
-            self.record_and_apply_action(
-                OwnedPcgAction::new(
-                    RepackOp::DerefShallowInit(expansion.base_place(), expansion.target_place),
-                    None,
-                )
-                .into(),
-            )?;
-        } else {
-            self.record_and_apply_action(
-                OwnedPcgAction::new(
-                    RepackOp::expand(
-                        expansion.base_place(),
-                        expansion.guide(),
-                        obtain_cap,
-                        self.ctxt,
-                    ),
-                    None,
-                )
-                .into(),
-            )?;
-        }
-        Ok(true)
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {
