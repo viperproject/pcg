@@ -24,6 +24,58 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 159 basic blocks TODO
+    // common::ensure_successful_run_on_crate(
+    //     "serde_yaml",
+    //     "0.9.34+deprecated",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("loader::Loader::<'input>::next_document"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+
+    // 45 blocks TODO
+    // common::ensure_successful_run_on_crate("ring",
+    //     "0.17.14",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
+    // return;
+
+    // 20 basic blocks
+    common::ensure_successful_run_on_crate(
+        "http",
+        "1.3.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
+            extra_env_vars: vec![]
+        },
+    );
+
+    // 4 basic blocks
+    common::ensure_successful_run_on_crate(
+        "rustls-pki-types",
+        "1.11.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("server_name::parser::Parser::<'a>::read_char"),
+            extra_env_vars: vec![],
+        },
+    );
+
     common::ensure_successful_run_on_crate(
         "tracing-subscriber",
         "0.3.19",
@@ -36,30 +88,7 @@ fn test_selected_crates() {
         },
     );
 
-    // 45 blocks TODO
-    // common::ensure_successful_run_on_crate("ring",
-    //     "0.17.14",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
-    //         extra_env_vars: visualization_env_vars,
-    //     },
-    // );
 
-    // TODO
-    // common::ensure_successful_run_on_crate(
-    //     "http",
-    //     "1.3.1",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
-    //         extra_env_vars: vec![]
-    //     },
-    // );
 
     // 23 basic blocks
     common::ensure_successful_run_on_crate(
@@ -71,20 +100,6 @@ fn test_selected_crates() {
             validity_checks: true,
             function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
             extra_env_vars: vec![],
-        },
-    );
-
-
-    // 4 basic blocks
-    common::ensure_successful_run_on_crate(
-        "rustls-pki-types",
-        "1.11.0",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("server_name::parser::Parser::<'a>::read_char"),
-            extra_env_vars: visualization_env_vars,
         },
     );
 
@@ -245,7 +260,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-    // return;
 
     // 132 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
@@ -506,18 +520,6 @@ fn test_selected_crates() {
         },
     );
 
-    // 159 basic blocks TODO
-    // common::ensure_successful_run_on_crate(
-    //     "serde_yaml",
-    //     "0.9.34+deprecated",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("loader::Loader::<'input>::next_document"),
-    //         extra_env_vars: vec![],
-    //     },
-    // );
 
     // 198 basic blocks
     common::ensure_successful_run_on_crate(
