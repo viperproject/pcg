@@ -4,12 +4,13 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, PcgRef},
-    rustc_interface::{borrowck::BorrowIndex, middle::mir},
-    utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,
+    free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgRoot},
+    pcg::{
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        MaybeHasLocation, PCGNode, PcgRef,
     },
+    rustc_interface::{borrowck::BorrowIndex, middle::mir},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation},
 };
 
 use super::{
@@ -324,7 +325,7 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 }
 
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
-    summary: &'pcg CapabilityLocals<'tcx>,
+    summary: &'pcg LocalExpansions<'tcx>,
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
@@ -431,16 +432,20 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         };
         for (local, capability) in self.summary.iter_enumerated() {
             match capability {
-                CapabilityLocal::Unallocated => {}
-                CapabilityLocal::Allocated(projections) => {
+                OwnedPcgRoot::Unallocated => {}
+                OwnedPcgRoot::Allocated(projections) => {
                     self.insert_place_and_previous_projections(
                         local.into(),
                         None,
                         capability_getter,
                     );
-                    for (place, expansion) in projections.expansions() {
-                        self.insert_place_and_previous_projections(*place, None, capability_getter);
-                        for child_place in place.expansion_places(expansion, self.repacker) {
+                    for pe in projections.expansions() {
+                        self.insert_place_and_previous_projections(
+                            pe.base_place(),
+                            None,
+                            capability_getter,
+                        );
+                        for child_place in pe.expansion_places(self.repacker) {
                             self.insert_place_and_previous_projections(
                                 child_place,
                                 None,

@@ -24,6 +24,59 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 12 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "siphasher",
+        "1.0.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<sip::Sip13Rounds as sip::Sip>::c_rounds"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+    return;
+
+    // 12 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "ring",
+        "0.17.14",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("bssl::<impl core::convert::From<bssl::Result> for core::result::Result<(), error::unspecified::Unspecified>>::from"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // <= 13 basic blocks, <= 50 nodes
+    common::ensure_successful_run_on_crate(
+        "curve25519-dalek",
+        "4.1.3",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<ristretto::RistrettoPoint as core::fmt::Debug>::fmt"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // <= 6 basic blocks, <= 50 nodes
+    common::ensure_successful_run_on_crate(
+        "zip",
+        "2.2.3",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("read::ZipFile::<'a>::take_raw_reader"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 159 basic blocks TODO
     // common::ensure_successful_run_on_crate(
     //     "serde_yaml",
@@ -38,16 +91,17 @@ fn test_selected_crates() {
     // );
 
     // 45 blocks TODO
-    // common::ensure_successful_run_on_crate("ring",
-    //     "0.17.14",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
-    //         extra_env_vars: vec![],
-    //     },
-    // );
+    common::ensure_successful_run_on_crate(
+        "ring",
+        "0.17.14",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
+            extra_env_vars: vec![],
+        },
+    );
     // return;
 
     // 20 basic blocks
@@ -58,8 +112,10 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
-            extra_env_vars: vec![]
+            function: Some(
+                "<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back",
+            ),
+            extra_env_vars: vec![],
         },
     );
 
@@ -88,8 +144,6 @@ fn test_selected_crates() {
         },
     );
 
-
-
     // 23 basic blocks
     common::ensure_successful_run_on_crate(
         "prost-build",
@@ -102,7 +156,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // cycles, <= 20 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
@@ -194,7 +247,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // cycles, <= 10 basic blocks, <= 10 nodes
     common::ensure_successful_run_on_crate(
@@ -520,7 +572,6 @@ fn test_selected_crates() {
         },
     );
 
-
     // 198 basic blocks
     common::ensure_successful_run_on_crate(
         "brotli",
@@ -533,7 +584,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     common::ensure_successful_run_on_crate(
         "winnow",
@@ -561,6 +611,7 @@ fn test_selected_crates() {
         },
     );
 
+    // 30 basic blocks
     common::ensure_successful_run_on_crate(
         "cookie",
         "0.18.1",

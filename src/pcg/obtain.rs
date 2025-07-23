@@ -3,7 +3,7 @@ use crate::{
     borrow_checker::r#impl::get_reserve_location,
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
-        borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
+        borrow_pcg_expansion::{BorrowPcgExpansion, ExpansionFields},
         edge::{
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
@@ -13,7 +13,7 @@ use crate::{
         path_condition::PathConditions,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
-    free_pcs::{CapabilityKind, RepackOp},
+    free_pcs::{CapabilityKind, RepackGuide, RepackOp},
     pcg::{
         place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError,
         PcgMutRef,
@@ -102,7 +102,7 @@ impl LabelForRegionProjection {
 pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool;
+    fn contains_owned_expansion(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool;
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
@@ -166,9 +166,9 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        if self.contains_owned_expansion_from(base) {
+        if self.contains_owned_expansion(base, expansion.guide()) {
             tracing::debug!(
-                "Already contains owned expansion from {}",
+                "Already contains same owned expansion of {}",
                 base.to_short_string(ctxt)
             );
             return Ok(false);
@@ -208,7 +208,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let place_expansion = PlaceExpansion::from_places(expansion.expansion(), ctxt);
+        let place_expansion = ExpansionFields::from_places(expansion.expansion(), ctxt);
         let expansion_is_owned = base.is_owned(ctxt)
             && !matches!(
                 expansion.kind,
@@ -230,7 +230,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn add_borrow_pcg_expansion(
         &mut self,
         base: Place<'tcx>,
-        place_expansion: PlaceExpansion<'tcx>,
+        place_expansion: ExpansionFields<'tcx>,
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {

@@ -6,18 +6,19 @@ use itertools::Itertools;
 use crate::action::{BorrowPcgAction, OwnedPcgAction, PcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
-use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
+use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, ExpansionFields};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, SetLabel};
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
-use crate::free_pcs::{CapabilityKind, RepackOp};
+use crate::free_pcs::{CapabilityKind, PlaceWithExpansion, RepackGuide, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
+use crate::private;
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -56,33 +57,53 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    /// Collapses owned places and performs appropriate updates to region projections.
-    pub(crate) fn collapse(
+    pub(crate) fn collapse_all_from_place(
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
         context: String,
     ) -> Result<(), PcgError> {
-        let capability_projs = self.pcg.owned.locals_mut()[place.local].get_allocated_mut();
-        let expansions = capability_projs
-            .expansions
-            .iter()
-            .filter(|(p, _)| place.is_prefix_of(**p))
-            .map(|(p, e)| (*p, e.clone()))
-            .sorted_by_key(|(p, _)| p.projection.len())
-            .rev()
+        let place_expansions = self.pcg.owned.locals_mut()[place.local].get_allocated_mut();
+        if let Some(expansion_fields) = place_expansions.expansions_map().get(place) {
+            for expansion_field in expansion_fields {
+                self.collapse(
+                    &PlaceWithExpansion::new(place, expansion_field.clone()),
+                    capability,
+                    context.clone(),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Collapses owned places and performs appropriate updates to region projections.
+    pub(crate) fn collapse(
+        &mut self,
+        place_with_expansion: &PlaceWithExpansion<'tcx>,
+        capability: CapabilityKind,
+        context: String,
+    ) -> Result<(), PcgError> {
+        let base = place_with_expansion.base_place();
+        let expansion_places = place_with_expansion.expansion_places(self.ctxt);
+        let place_expansions = self.pcg.owned.locals_mut()[base.local].get_allocated_mut();
+        let expansions_to_collapse = place_expansions
+            .expansions()
+            .into_iter()
+            .filter(|pe| *pe == place_with_expansion || expansion_places.contains(&pe.base_place()))
+            .sorted_by_key(|pe| pe.base_place().projection.len())
+            .cloned()
             .collect::<Vec<_>>();
-        for (p, expansion) in expansions {
+        for pe in expansions_to_collapse {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
-                    RepackOp::collapse(p, expansion.guide(), capability),
+                    RepackOp::collapse(pe.base_place(), pe.expansion().guide(), capability),
                     Some(context.clone()),
                 )
                 .into(),
             )?;
-            for rp in p.region_projections(self.ctxt) {
-                let rp_expansion: Vec<LocalRegionProjection<'tcx>> = p
-                    .expansion_places(&expansion, self.ctxt)
+            for rp in pe.base_place().region_projections(self.ctxt) {
+                let rp_expansion: Vec<LocalRegionProjection<'tcx>> = pe
+                    .expansion_places(self.ctxt)
                     .into_iter()
                     .flat_map(|ep| {
                         ep.region_projections(self.ctxt)
@@ -307,6 +328,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             place,
                             existing_cap,
                             Some(CapabilityKind::Write),
+                            private::WeakenReason::RefBorrowExpired,
                             "remove borrow edge",
                             self.ctxt,
                         )
@@ -409,6 +431,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         current,
                         CapabilityKind::Read,
                         BlockType::DerefExclusive.blocked_place_retained_capability(),
+                        private::WeakenReason::RefTwoPhaseBorrowActivated,
                         format!(
                             "Remove read permission upwards from base place {} (downgrade R to e for mut ref): {}",
                             place.to_short_string(self.ctxt),
@@ -424,6 +447,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         current,
                         CapabilityKind::Read,
                         None,
+                        private::WeakenReason::Other,
                         format!(
                             "Remove read permission upwards from base place {}: {}",
                             place.to_short_string(self.ctxt),
@@ -559,6 +583,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     p,
                     cap,
                     None,
+                    private::WeakenReason::Other,
                     "Remove read permission downwards",
                     self.ctxt,
                 )
@@ -668,7 +693,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
                     capability_projections.insert_expansion(
                         from,
-                        PlaceExpansion::from_places(target_places.clone(), self.ctxt),
+                        ExpansionFields::from_places(target_places.clone(), self.ctxt),
                     );
                     for target_place in target_places {
                         self.pcg
@@ -695,7 +720,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     self.pcg
                         .capabilities
                         .insert(collapse.to, retained_cap, self.ctxt);
-                    capability_projections.expansions.remove(&collapse.to);
+                    capability_projections.remove(collapse.to, collapse.guide());
                     true
                 }
                 _ => unreachable!(),
@@ -833,7 +858,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 Some(Ordering::Less) | None
             )
         {
-            self.collapse(
+            self.collapse_all_from_place(
                 place,
                 obtain_cap,
                 format!("Obtain {}", place.to_short_string(self.ctxt)),
@@ -868,10 +893,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, 'mir, 'tcx> {
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
-        self.pcg.owned.locals()[base.local]
-            .get_allocated()
-            .contains_expansion_from(base)
+    fn contains_owned_expansion(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
+        self.pcg.owned.contains_expansion(base, guide)
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {

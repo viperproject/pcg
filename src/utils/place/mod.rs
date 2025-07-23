@@ -14,7 +14,7 @@ use std::{
 use derive_more::{Deref, DerefMut};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    borrow_pcg::borrow_pcg_expansion::ExpansionFields,
     free_pcs::RepackGuide,
     pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
@@ -29,9 +29,6 @@ use crate::{
     },
     utils::data_structures::HashSet,
 };
-
-#[cfg(feature = "debug_info")]
-use super::debug_info::DebugInfo;
 
 use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -57,7 +54,6 @@ pub struct Place<'tcx>(
     #[deref]
     #[deref_mut]
     PlaceRef<'tcx>,
-    #[cfg(feature = "debug_info")] DebugInfo<'static>,
 );
 
 impl<'tcx> From<Place<'tcx>> for PlaceRef<'tcx> {
@@ -274,12 +270,6 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    #[cfg(feature = "debug_info")]
-    pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
-        Self(PlaceRef { local, projection }, DebugInfo::new_static())
-    }
-
-    #[cfg(not(feature = "debug_info"))]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
         Self(PlaceRef { local, projection })
     }
@@ -288,11 +278,11 @@ impl<'tcx> Place<'tcx> {
         self,
         guide: Option<RepackGuide>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> PlaceExpansion<'tcx> {
+    ) -> ExpansionFields<'tcx> {
         if let Some(guide) = guide {
             guide.into()
         } else if self.ty(ctxt).ty.is_box() {
-            PlaceExpansion::Deref
+            ExpansionFields::Deref
         } else {
             match self.ty(ctxt).ty.kind() {
                 ty::TyKind::Adt(adt_def, substs) => {
@@ -300,7 +290,7 @@ impl<'tcx> Place<'tcx> {
                         Some(v) => adt_def.variant(v),
                         None => adt_def.non_enum_variant(),
                     };
-                    PlaceExpansion::Fields(
+                    ExpansionFields::Fields(
                         variant
                             .fields
                             .iter()
@@ -309,7 +299,7 @@ impl<'tcx> Place<'tcx> {
                             .collect(),
                     )
                 }
-                ty::TyKind::Tuple(tys) => PlaceExpansion::Fields(
+                ty::TyKind::Tuple(tys) => ExpansionFields::Fields(
                     tys.iter()
                         .enumerate()
                         .map(|(i, ty)| (i.into(), ty))
@@ -322,7 +312,7 @@ impl<'tcx> Place<'tcx> {
 
     pub(crate) fn expansion_places(
         self,
-        expansion: &PlaceExpansion<'tcx>,
+        expansion: &ExpansionFields<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<Place<'tcx>> {
         let mut places = Vec::new();
@@ -724,11 +714,6 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn is_prefix_or_postfix_of(self, other: Self) -> bool {
         self.is_prefix_of(other) || other.is_prefix_of(self)
     }
-
-    #[cfg(feature = "debug_info")]
-    pub fn debug_info(&self) -> DebugInfo<'static> {
-        self.1
-    }
 }
 
 impl Debug for Place<'_> {
@@ -860,21 +845,11 @@ impl Hash for Place<'_> {
 }
 
 impl<'tcx> From<PlaceRef<'tcx>> for Place<'tcx> {
-    #[cfg(feature = "debug_info")]
-    fn from(value: PlaceRef<'tcx>) -> Self {
-        Self(value, DebugInfo::new_static())
-    }
-    #[cfg(not(feature = "debug_info"))]
     fn from(value: PlaceRef<'tcx>) -> Self {
         Self(value)
     }
 }
 impl<'tcx> From<MirPlace<'tcx>> for Place<'tcx> {
-    #[cfg(feature = "debug_info")]
-    fn from(value: MirPlace<'tcx>) -> Self {
-        Self(value.as_ref(), DebugInfo::new_static())
-    }
-    #[cfg(not(feature = "debug_info"))]
     fn from(value: MirPlace<'tcx>) -> Self {
         Self(value.as_ref())
     }

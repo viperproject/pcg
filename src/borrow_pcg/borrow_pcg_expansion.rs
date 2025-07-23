@@ -41,6 +41,9 @@ use crate::{
 };
 use crate::{rustc_interface::FieldIdx, utils::place::maybe_old::MaybeOldPlace};
 
+#[deprecated(note = "Use `ExpansionFields` instead")]
+pub type PlaceExpansion<'tcx> = ExpansionFields<'tcx>;
+
 /// The projections resulting from an expansion of a place.
 ///
 /// This representation is preferred to a `Vec<PlaceElem>` because it ensures
@@ -48,7 +51,7 @@ use crate::{rustc_interface::FieldIdx, utils::place::maybe_old::MaybeOldPlace};
 /// storing the place elements in a `Vec` could lead to different representations
 /// for the same expansion, e.g. `{*x.f.a, *x.f.b}` and `{*x.f.b, *x.f.a}`.
 #[derive(PartialEq, Eq, Clone, Debug, Hash, From)]
-pub enum PlaceExpansion<'tcx> {
+pub enum ExpansionFields<'tcx> {
     /// Fields from e.g. a struct or tuple, e.g. `{*x.f} -> {*x.f.a, *x.f.b}`
     /// Note that for region projections, not every field of the base type may
     /// be included. For example consider the following:
@@ -65,13 +68,13 @@ pub enum PlaceExpansion<'tcx> {
     Guided(RepackGuide),
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for ExpansionFields<'tcx> {
     fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         Ok(())
     }
 }
 
-impl<'tcx> PlaceExpansion<'tcx> {
+impl<'tcx> ExpansionFields<'tcx> {
     pub(crate) fn block_type(
         &self,
         base_place: Place<'tcx>,
@@ -83,7 +86,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
             ObtainType::TwoPhaseExpand | ObtainType::Capability(CapabilityKind::Read)
         ) {
             BlockType::Read
-        } else if matches!(self, PlaceExpansion::Deref) {
+        } else if matches!(self, ExpansionFields::Deref) {
             if base_place.is_shared_ref(ctxt) {
                 BlockType::Read
             } else {
@@ -95,7 +98,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
     }
     pub(crate) fn guide(&self) -> Option<RepackGuide> {
         match self {
-            PlaceExpansion::Guided(guide) => Some(*guide),
+            ExpansionFields::Guided(guide) => Some(*guide),
             _ => None,
         }
     }
@@ -111,19 +114,19 @@ impl<'tcx> PlaceExpansion<'tcx> {
                     PlaceElem::Field(field_idx, ty) => {
                         fields.insert(field_idx, ty);
                     }
-                    PlaceElem::Deref => return PlaceExpansion::Deref,
+                    PlaceElem::Deref => return ExpansionFields::Deref,
                     other => {
                         let repack_guide: RepackGuide = other
                             .try_into()
                             .unwrap_or_else(|_| todo!("unsupported place elem: {:?}", other));
-                        return PlaceExpansion::Guided(repack_guide);
+                        return ExpansionFields::Guided(repack_guide);
                     }
                 }
             }
         }
 
         if !fields.is_empty() {
-            PlaceExpansion::Fields(fields)
+            ExpansionFields::Fields(fields)
         } else {
             unreachable!()
         }
@@ -131,13 +134,13 @@ impl<'tcx> PlaceExpansion<'tcx> {
 
     pub(crate) fn elems(&self) -> Vec<PlaceElem<'tcx>> {
         match self {
-            PlaceExpansion::Fields(fields) => fields
+            ExpansionFields::Fields(fields) => fields
                 .iter()
                 .sorted_by_key(|(idx, _)| *idx)
                 .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
                 .collect(),
-            PlaceExpansion::Deref => vec![PlaceElem::Deref],
-            PlaceExpansion::Guided(guided) => vec![(*guided).into()],
+            ExpansionFields::Deref => vec![PlaceElem::Deref],
+            ExpansionFields::Guided(guided) => vec![(*guided).into()],
         }
     }
 }
@@ -436,7 +439,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
 
     pub(crate) fn new(
         base: P,
-        expansion: PlaceExpansion<'tcx>,
+        expansion: ExpansionFields<'tcx>,
         deref_blocked_region_projection_label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Self, PcgError>

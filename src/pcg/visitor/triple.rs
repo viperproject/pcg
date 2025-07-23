@@ -1,5 +1,5 @@
 use crate::{
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
+    free_pcs::{CapabilityKind, OwnedPcgRoot, PlaceExpansions},
     pcg::{
         obtain::ObtainType, place_capabilities::PlaceCapabilitiesInterface, triple::{PlaceCondition, Triple}, PcgError, PcgUnsupportedError
     },
@@ -25,7 +25,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self.pcg.owned.locals_mut()[local] =
-                    CapabilityLocal::Allocated(CapabilityProjections::new(local));
+                    OwnedPcgRoot::Allocated(PlaceExpansions::new(local));
                 self.pcg
                     .capabilities
                     .insert(local.into(), CapabilityKind::Write, self.ctxt);

@@ -8,7 +8,7 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_expansion::PlaceExpansion,
+        borrow_pcg_expansion::ExpansionFields,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
         region_projection::{RegionProjection, RegionProjectionLabel},
     },
@@ -123,7 +123,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn contains_borrow_pcg_expansion_of(
         &self,
         base: Place<'tcx>,
-        _place_expansion: &PlaceExpansion<'tcx>,
+        _place_expansion: &ExpansionFields<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.edges_blocking(base.into(), ctxt)
@@ -182,19 +182,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             seen.insert(node);
+
             let maybe_old_place = node.base();
             if maybe_old_place
                 .place()
                 .is_mutable(LocalMutationIsAllowed::Yes, ctxt)
                 .is_err()
             {
-                tracing::debug!(
+                tracing::info!(
                     "Skipping {} because it is not mutable",
                     node.to_short_string(ctxt)
                 );
                 continue;
             }
-            if !maybe_old_place.is_current() || maybe_old_place.place().is_deref() {
+            // TODO: Should we use liveness instead?
+            // See zip@2.2.3 read::ZipFile::<'a>::take_raw_reader
+            if !maybe_old_place.is_current() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
                     .region_projections_blocked_by(node.into(), ctxt)
                     .into_iter()

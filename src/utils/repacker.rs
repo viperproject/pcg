@@ -6,7 +6,7 @@
 
 use crate::{
     borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    borrow_pcg::borrow_pcg_expansion::ExpansionFields,
     free_pcs::RepackGuide,
     rustc_interface::{
         data_structures::fx::FxHashSet,
@@ -105,12 +105,12 @@ impl<'tcx> ShallowExpansion<'tcx> {
         &self,
         region: PcgRegion,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<PlaceExpansion<'tcx>> {
+    ) -> Option<ExpansionFields<'tcx>> {
         let dest_places = self.dest_places_for_region(region, ctxt);
         if dest_places.is_empty() {
             None
         } else {
-            Some(PlaceExpansion::from_places(dest_places, ctxt))
+            Some(ExpansionFields::from_places(dest_places, ctxt))
         }
     }
 }
