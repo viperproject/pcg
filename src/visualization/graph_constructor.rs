@@ -4,12 +4,13 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcgRoot, LocalExpansions},
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, PcgRef},
-    rustc_interface::{borrowck::BorrowIndex, middle::mir},
-    utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,
+    free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgRoot},
+    pcg::{
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        MaybeHasLocation, PCGNode, PcgRef,
     },
+    rustc_interface::{borrowck::BorrowIndex, middle::mir},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation},
 };
 
 use super::{
@@ -438,9 +439,13 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
                         None,
                         capability_getter,
                     );
-                    for (place, expansion) in projections.expansions() {
-                        self.insert_place_and_previous_projections(*place, None, capability_getter);
-                        for child_place in place.expansion_places(expansion, self.repacker) {
+                    for pe in projections.expansions() {
+                        self.insert_place_and_previous_projections(
+                            pe.base_place(),
+                            None,
+                            capability_getter,
+                        );
+                        for child_place in pe.expansion_places(self.repacker) {
                             self.insert_place_and_previous_projections(
                                 child_place,
                                 None,

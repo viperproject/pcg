@@ -32,6 +32,10 @@ pub struct OwnedPcg<'tcx> {
 }
 
 impl<'tcx> OwnedPcg<'tcx> {
+    pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
+        self.locals()[place.local].get_allocated().expansions().iter().any(|pe| pe.base_place() == place)
+    }
+
     pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }

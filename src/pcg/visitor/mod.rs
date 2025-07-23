@@ -5,9 +5,7 @@ use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::ExpansionFields;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{
-    PcgRegion, RegionProjection,
-};
+use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
 use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
 use crate::pcg::obtain::PlaceObtainer;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -217,36 +215,43 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
+    // TODO: Duplicates with impl in PlaceObtainer
     pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
-        for caps in self.pcg.owned.data.clone().unwrap().expansions() {
-            let mut expansions = caps
+        for place_expansions in self.pcg.owned.data.clone().unwrap().expansions() {
+            let place_expansions = place_expansions
                 .expansions()
-                .clone()
                 .into_iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
+                .sorted_by_key(|pe| pe.base_place().projection.len())
                 .collect::<Vec<_>>();
-            while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, ctxt);
+            for pe in place_expansions {
+                let expansion_places = pe.expansion_places(ctxt);
                 if expansion_places
                     .iter()
                     .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
-                    && let Some(candidate_cap) = self.pcg.capabilities.get(expansion_places[0])
+                    && let Some(candidate_cap) = self
+                        .pcg
+                        .capabilities
+                        .get(*expansion_places.iter().next().unwrap())
                     && expansion_places
                         .iter()
                         .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
                 {
                     self.collapse(
-                        base,
+                        &pe,
                         candidate_cap,
-                        format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
+                        format!(
+                            "Collapse owned place {}",
+                            pe.base_place().to_short_string(self.ctxt)
+                        ),
                     )?;
-                    if base.projection.is_empty()
-                        && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
+                    if pe.base_place().projection.is_empty()
+                        && self.pcg.capabilities.get(pe.base_place()) == Some(CapabilityKind::Read)
+                        && self.pcg.owned.contains_expansion_from(pe.base_place())
                     {
                         self.pcg
                             .capabilities
-                            .insert(base, CapabilityKind::Exclusive, self.ctxt);
+                            .insert(pe.base_place(), CapabilityKind::Exclusive, self.ctxt);
                     }
                 }
             }

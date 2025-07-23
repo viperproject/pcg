@@ -87,42 +87,12 @@ impl<'tcx> PlaceExpansions<'tcx> {
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
         other_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
-        for (place, other_expansion) in other
-            .expansions()
-            .iter()
-            .sorted_by_key(|(p, _)| p.projection.len())
-        {
-            if let Some(self_expansion) = self.expansions().get(place) {
-                if other_expansion != self_expansion {
-                    tracing::debug!("collapse to {:?}", place);
-                    self.collapse(*place, None, self_place_capabilities, repacker)?;
-                    tracing::debug!("self: {:?}", self);
-                    changed = true;
-                }
-            } else if self.contains_expansion_to(*place, repacker) {
-                tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
-                tracing::debug!("other: {:?}", other);
-                self.insert_expansion(*place, other_expansion.clone());
-                if let Some(cap) = other_place_capabilities.get(*place) {
-                    self_place_capabilities.insert(*place, cap, repacker);
-                } else {
-                    self_place_capabilities.remove(*place, repacker);
-                }
-                for place in place.expansion_places(other_expansion, repacker) {
-                    if let Some(cap) = other_place_capabilities.get(place) {
-                        self_place_capabilities.insert(place, cap, repacker);
-                    } else {
-                        self_place_capabilities.remove(place, repacker);
-                    }
-                }
-                changed = true;
-            }
-            // Otherwise, this is an expansion from a place that won't survive the join
-        }
-        tracing::debug!("self: {:?}", self);
+        let old_len = self.expansions.len();
+        self.expansions.extend(other.expansions.iter().cloned());
+        changed = self.expansions.len() != old_len;
         Ok(changed)
     }
 }
