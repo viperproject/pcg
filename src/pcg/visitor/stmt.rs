@@ -6,6 +6,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::{pcg_validity_assert, private};
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
@@ -64,8 +65,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if let Some(target_cap) = self.pcg.capabilities.get(target) {
                     pcg_validity_assert!(
                         target_cap >= CapabilityKind::Write,
-                        "target_cap: {:?}",
-                        target_cap
+                        "capacity {:?} for {} is not >= Write",
+                        target_cap,
+                        target.to_short_string(self.ctxt)
                     );
                     if target_cap != CapabilityKind::Write {
                         self.record_and_apply_action(

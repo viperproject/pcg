@@ -186,12 +186,12 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         self.0.iter().map(|(k, v)| (*k, *v))
     }
 
-    fn remove_and_propagate_downwards(
-        &mut self,
-        place: Place<'tcx>,
-        other: &Self,
-    ) {
-        let targets = other.0.keys().filter(|p| place.is_prefix_exact(**p)).copied();
+    fn remove_and_propagate_downwards(&mut self, place: Place<'tcx>, other: &Self) {
+        let targets = other
+            .0
+            .keys()
+            .filter(|p| place.is_prefix_exact(**p))
+            .copied();
         let capability = self.0.remove(&place).unwrap();
         for target in targets {
             self.0.insert(target, capability);
@@ -210,7 +210,6 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         }
         false
     }
-
 
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
@@ -236,11 +235,11 @@ impl<'tcx> PlaceCapabilities<'tcx> {
             }
         }
         let old_self = self.clone();
-        self.0.retain(|place, _| {
+        self.0.retain(|place, cap| {
             if other.0.contains_key(place) {
                 true
             } else {
-                other.has_read_capability_ancestor(*place)
+                cap.is_read() && other.has_read_capability_ancestor(*place)
             }
         });
         changed

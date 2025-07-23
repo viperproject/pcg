@@ -106,7 +106,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
     }
 
     fn identify_edges_to_trim<'slf>(
-        &'slf mut self,
+        &'slf self,
         ancestor_place: Option<Place<'tcx>>,
     ) -> Result<EdgesToTrim<'tcx>, PcgError> {
         enum ShouldKillNode {
