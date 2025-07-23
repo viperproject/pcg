@@ -18,7 +18,7 @@ use crate::{
         region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
+    free_pcs::{CapabilityKind, OwnedPcg, RepackGuide, RepackOp},
     pcg::{
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
@@ -538,11 +538,9 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         self.path_conditions.clone()
     }
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
+    fn contains_owned_expansion(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
         if let Some(owned) = &self.owned {
-            owned.locals()[base.local]
-                .get_allocated()
-                .contains_expansion_from(base)
+            owned.contains_expansion(base, guide)
         } else {
             // Pretend we're always fully expanded in the local PCG
             true

@@ -13,7 +13,7 @@ use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, SetLabel};
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
-use crate::free_pcs::{CapabilityKind, PlaceWithExpansion, RepackOp};
+use crate::free_pcs::{CapabilityKind, PlaceWithExpansion, RepackGuide, RepackOp};
 use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
@@ -893,10 +893,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, 'mir, 'tcx> {
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
-        self.pcg.owned.locals()[base.local]
-            .get_allocated()
-            .contains_expansion_from(base)
+    fn contains_owned_expansion(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
+        self.pcg.owned.contains_expansion(base, guide)
     }
 
     fn current_snapshot_location(&self) -> SnapshotLocation {

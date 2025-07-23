@@ -7,7 +7,7 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    free_pcs::RepackOp,
+    free_pcs::{RepackGuide, RepackOp},
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         PcgError,
@@ -50,6 +50,10 @@ impl<'tcx> OwnedPcg<'tcx> {
 
     pub fn locals(&self) -> &LocalExpansions<'tcx> {
         self.data.as_ref().unwrap()
+    }
+
+    pub(crate) fn contains_expansion(&self, place: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
+        self.locals().contains_expansion(place, guide)
     }
 
     pub(crate) fn locals_mut(&mut self) -> &mut LocalExpansions<'tcx> {
@@ -127,6 +131,13 @@ impl Debug for LocalExpansions<'_> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
+    pub(crate) fn contains_expansion(&self, place: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
+        self.0
+            .iter()
+            .filter(|c| !c.is_unallocated())
+            .any(|c| c.get_allocated().contains_expansion(place, guide))
+    }
+
     pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.0
             .iter()

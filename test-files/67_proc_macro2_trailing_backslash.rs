@@ -39,11 +39,11 @@ fn trailing_backslash(input: &mut Cursor, mut last: u8) -> Result<(), Reject> {
             Some((_, b @ (b' ' | b'\t' | b'\n' | b'\r'))) => {
                 last = b;
             }
-            Some((offset, _)) => {
-                *input = input.advance(offset);
-                return Ok(());
-            }
-            None => return Err(Reject),
+            // Some((offset, _)) => {
+            //     *input = input.advance(offset);
+            //     return Ok(());
+            // }
+            _ => return Err(Reject),
         }
     }
 }

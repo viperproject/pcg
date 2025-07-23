@@ -24,6 +24,20 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 13 basic blocks, <= 50 nodes
+    common::ensure_successful_run_on_crate(
+        "curve25519-dalek",
+        "4.1.3",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<ristretto::RistrettoPoint as core::fmt::Debug>::fmt"),
+            extra_env_vars: vec![]
+        },
+    );
+
+
     // <= 6 basic blocks, <= 50 nodes
     common::ensure_successful_run_on_crate(
         "zip",

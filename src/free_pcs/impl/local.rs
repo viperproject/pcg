@@ -173,6 +173,10 @@ impl<'tcx> PlaceExpansions<'tcx> {
         self.expansions.iter().any(|pe| pe.base_place() == place)
     }
 
+    pub(crate) fn contains_expansion(&self, place: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
+        self.expansions.iter().any(|pe| pe.base_place() == place && pe.expansion().guide() == guide)
+    }
+
     pub(crate) fn contains_expansion_to(
         &self,
         place: Place<'tcx>,
