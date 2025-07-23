@@ -14,7 +14,7 @@ use crate::{
         graph::BorrowsGraph,
         has_pcs_elem::LabelRegionProjectionPredicate,
         latest::Latest,
-        path_condition::PathConditions,
+        path_condition::ValidityConditions,
         region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
         state::BorrowStateMutRef,
     },
@@ -119,7 +119,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         root_places: HashSet<MaybeRemoteCurrentPlace<'tcx>>,
         candidate_blockers: HashSet<Place<'tcx>>,
         loop_head: mir::BasicBlock,
-        path_conditions: PathConditions,
+        path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> ConstructAbstractionGraphResult<'tcx> {
         let mut graph = BorrowsGraph::default();
@@ -364,7 +364,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         latest: &mut Latest<'tcx>,
-        path_conditions: PathConditions,
+        path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         let borrow = BorrowStateMutRef {
@@ -467,7 +467,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     graph: &'pcg mut BorrowsGraph<'tcx>,
     capabilities: Option<&'pcg mut PlaceCapabilities<'tcx>>,
     owned: Option<&'pcg mut FreePlaceCapabilitySummary<'tcx>>,
-    path_conditions: PathConditions,
+    path_conditions: ValidityConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
@@ -534,7 +534,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         self.graph
     }
 
-    fn path_conditions(&self) -> PathConditions {
+    fn path_conditions(&self) -> ValidityConditions {
         self.path_conditions.clone()
     }
 

@@ -14,7 +14,7 @@ use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
-    borrow_pcg::path_condition::PathConditions,
+    borrow_pcg::path_condition::ValidityConditions,
     rustc_interface::middle::{mir, mir::BasicBlock},
     utils::{display::DisplayDiff, validity::HasValidityCheck},
     validity_checks_enabled,
@@ -73,7 +73,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         latest: &mut Latest<'tcx>,
-        path_conditions: PathConditions,
+        path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         // For performance reasons we don't check validity here.
@@ -187,7 +187,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         used_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
-        path_conditions: PathConditions,
+        path_conditions: ValidityConditions,
         latest: &mut Latest<'tcx>,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,

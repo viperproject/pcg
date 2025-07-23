@@ -10,7 +10,7 @@ use crate::{
         },
         graph::BorrowsGraph,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
-        path_condition::PathConditions,
+        path_condition::ValidityConditions,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
@@ -225,7 +225,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx>;
 
-    fn path_conditions(&self) -> PathConditions;
+    fn path_conditions(&self) -> ValidityConditions;
 
     fn add_borrow_pcg_expansion(
         &mut self,

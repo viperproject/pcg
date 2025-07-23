@@ -138,24 +138,27 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for BranchChoices {
     }
 }
 
+#[deprecated(note = "Use `ValidityConditions` instead")]
+pub type PathConditions = ValidityConditions;
+
 /// Validity conditions describing the control-flow paths for which a given edge
 /// in the PCG applies.
 #[derive(PartialEq, Eq, Clone, Hash, PartialOrd, Ord, Debug)]
-pub struct PathConditions(SmallVec<[BranchChoices; 8]>);
+pub struct ValidityConditions(SmallVec<[BranchChoices; 8]>);
 
-impl Default for PathConditions {
+impl Default for ValidityConditions {
     fn default() -> Self {
         Self(SmallVec::new())
     }
 }
 
-impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PathConditions {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for ValidityConditions {
     fn to_json(&self, _ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()
     }
 }
 
-impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PathConditions {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for ValidityConditions {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
         self.all_branch_choices()
             .map(|bc| bc.to_short_string(ctxt))
@@ -177,7 +180,7 @@ fn effective_successors(from: BasicBlock, body: &mir::Body<'_>) -> Vec<BasicBloc
     }
 }
 
-impl PathConditions {
+impl ValidityConditions {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -197,6 +200,10 @@ impl PathConditions {
     ///   [`BranchChoices`] for `b`
     pub fn all_branch_choices(&self) -> impl Iterator<Item = &BranchChoices> {
         self.0.iter()
+    }
+
+    fn has_branch_choices_for(&self, from: BasicBlock) -> bool {
+        self.0.iter().any(|c| c.from == from)
     }
 
     fn branch_choices_for(&mut self, from: BasicBlock) -> Option<&mut BranchChoices> {
@@ -219,8 +226,15 @@ impl PathConditions {
                     BranchChoicesJoinResult::Changed => {
                         changed = true;
                     }
-                    _ => {}
+                    BranchChoicesJoinResult::Unchanged => {}
                 }
+            }
+        }
+        let self_choice_blocks = self.0.iter().map(|c| c.from).collect::<Vec<_>>();
+        for block in self_choice_blocks {
+            if !other.has_branch_choices_for(block) {
+                self.delete_branch_choices(block);
+                changed = true;
             }
         }
         changed
@@ -253,7 +267,7 @@ impl PathConditions {
     }
 }
 
-impl PathConditions {
+impl ValidityConditions {
     pub fn valid_for_path(&self, path: &[BasicBlock], body: &mir::Body<'_>) -> bool {
         let get_successor_of_block_in_path = |block: BasicBlock| {
             let block_pos = path.iter().position(|b| *b == block);

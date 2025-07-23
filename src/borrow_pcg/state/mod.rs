@@ -5,7 +5,7 @@ use super::{
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
     latest::Latest,
-    path_condition::{PathCondition, PathConditions},
+    path_condition::{PathCondition, ValidityConditions},
     visitor::extract_regions,
 };
 use crate::{
@@ -49,13 +49,13 @@ use crate::{
 pub struct BorrowsState<'tcx> {
     pub latest: Latest<'tcx>,
     pub(crate) graph: BorrowsGraph<'tcx>,
-    pub(crate) path_conditions: PathConditions,
+    pub(crate) path_conditions: ValidityConditions,
 }
 
 pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
     pub(crate) latest: &'pcg mut Latest<'tcx>,
     pub(crate) graph: &'pcg mut BorrowsGraph<'tcx>,
-    pub(crate) path_conditions: &'pcg PathConditions,
+    pub(crate) path_conditions: &'pcg ValidityConditions,
 }
 
 #[allow(unused)]
@@ -63,7 +63,7 @@ pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
 pub(crate) struct BorrowStateRef<'pcg, 'tcx> {
     pub(crate) latest: &'pcg Latest<'tcx>,
     pub(crate) graph: &'pcg BorrowsGraph<'tcx>,
-    pub(crate) path_conditions: &'pcg PathConditions,
+    pub(crate) path_conditions: &'pcg ValidityConditions,
 }
 
 pub(crate) trait BorrowsStateLike<'tcx> {
@@ -269,7 +269,7 @@ impl<'tcx> BorrowsState<'tcx> {
         if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
             let _ = self.apply_action(
                 BorrowPcgAction::add_edge(
-                    BorrowPcgEdge::new(RemoteBorrow::new(local).into(), PathConditions::new()),
+                    BorrowPcgEdge::new(RemoteBorrow::new(local).into(), ValidityConditions::new()),
                     "Introduce initial borrows",
                     repacker,
                 ),
@@ -303,7 +303,7 @@ impl<'tcx> BorrowsState<'tcx> {
                                 repacker,
                             )
                             .into(),
-                            PathConditions::new(),
+                            ValidityConditions::new(),
                         ),
                         "Introduce initial borrows",
                         repacker,

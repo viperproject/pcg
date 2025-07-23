@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        action::MakePlaceOldReason, borrow_pcg_edge::BorrowPcgEdge, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, PathConditions}
+        action::MakePlaceOldReason, borrow_pcg_edge::BorrowPcgEdge, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, ValidityConditions}
     },
     rustc_interface::middle::mir::BasicBlock,
     utils::{CompilerCtxt, FilterMutResult, Place},
@@ -63,7 +63,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         changed
     }
 
-    fn mut_edge_conditions(&mut self, mut f: impl FnMut(&mut PathConditions) -> bool) -> bool {
+    fn mut_edge_conditions(&mut self, mut f: impl FnMut(&mut ValidityConditions) -> bool) -> bool {
         let mut changed = false;
         for (_, conditions) in self.edges.iter_mut() {
             if f(conditions) {
