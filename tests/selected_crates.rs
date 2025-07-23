@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 6 basic blocks, <= 50 nodes
+    common::ensure_successful_run_on_crate(
+        "zip",
+        "2.2.3",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("read::ZipFile::<'a>::take_raw_reader"),
+            extra_env_vars: vec![]
+        },
+    );
+
     // 159 basic blocks TODO
     // common::ensure_successful_run_on_crate(
     //     "serde_yaml",
@@ -561,6 +574,7 @@ fn test_selected_crates() {
         },
     );
 
+    // 30 basic blocks
     common::ensure_successful_run_on_crate(
         "cookie",
         "0.18.1",

@@ -47,6 +47,15 @@ use visualization::mir_graph::generate_json_from_mir;
 
 use utils::json::ToJsonWithCompilerCtxt;
 
+pub(crate) mod private {
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+    pub enum WeakenReason {
+        RefBorrowExpired,
+        RefTwoPhaseBorrowActivated,
+        Other,
+    }
+}
+
 /// The result of the PCG analysis.
 pub type PcgOutput<'mir, 'tcx, A> = free_pcs::PcgAnalysis<'mir, 'tcx, A>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
@@ -57,6 +66,7 @@ pub struct Weaken<'tcx> {
     pub(crate) place: Place<'tcx>,
     pub(crate) from: CapabilityKind,
     pub(crate) to: Option<CapabilityKind>,
+    pub(crate) reason: private::WeakenReason,
 }
 
 impl<'tcx> Weaken<'tcx> {
@@ -77,20 +87,44 @@ impl<'tcx> Weaken<'tcx> {
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        reason: private::WeakenReason,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         // TODO: Sometimes R can be downgraded to W
-        // if let Some(to) = to {
-        //     pcg_validity_assert!(
-        //         from > to,
-        //         "Weak of ({}: {}): FROM capability ({:?}) is not greater than TO capability ({:?})",
-        //         place.to_short_string(ctxt),
-        //         place.ty(ctxt).ty,
-        //         from,
-        //         to
-        //     );
-        // }
-        Self { place, from, to }
+        if validity_checks_enabled() {
+            match reason {
+                private::WeakenReason::RefBorrowExpired
+                | private::WeakenReason::RefTwoPhaseBorrowActivated => {
+                    pcg_validity_assert!(
+                        place.is_ref(ctxt),
+                        "Place {} is not a ref",
+                        place.to_short_string(ctxt),
+                    );
+                    pcg_validity_assert!(
+                        to == Some(CapabilityKind::Write),
+                        "Unexpected write capability for place {} after ref borrow expired: {:?}",
+                        place.to_short_string(ctxt),
+                        to
+                    );
+                }
+                _ => {
+                    if let Some(to) = to {
+                        pcg_validity_assert!(
+                from > to,
+                "Weak of ({}: {}): FROM capability ({:?}) is not greater than TO capability ({:?})",
+                place.to_short_string(ctxt),
+                place.ty(ctxt).ty,
+                from, to);
+                    }
+                }
+            }
+        }
+        Self {
+            place,
+            from,
+            to,
+            reason,
+        }
     }
 
     pub fn place(&self) -> Place<'tcx> {

@@ -299,6 +299,9 @@ impl<P> RegionProjection<'_, P> {
     pub(crate) fn label(&self) -> Option<RegionProjectionLabel> {
         self.label
     }
+    pub(crate) fn is_labelled(&self) -> bool {
+        self.label.is_some()
+    }
 }
 
 impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> {

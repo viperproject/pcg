@@ -8,11 +8,15 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     free_pcs::RepackOp,
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError},
+    pcg::{
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        PcgError,
+    },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
-    }, utils::{data_structures::HashSet, Place},
+    },
+    utils::{data_structures::HashSet, Place},
 };
 use derive_more::{Deref, DerefMut};
 
@@ -33,7 +37,11 @@ pub struct OwnedPcg<'tcx> {
 
 impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
-        self.locals()[place.local].get_allocated().expansions().iter().any(|pe| pe.base_place() == place)
+        self.locals()[place.local]
+            .get_allocated()
+            .expansions()
+            .iter()
+            .any(|pe| pe.base_place() == place)
     }
 
     pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {

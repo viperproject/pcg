@@ -10,7 +10,7 @@ use crate::free_pcs::CapabilityKind;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
-use crate::{RestoreCapability, Weaken};
+use crate::{private, RestoreCapability, Weaken};
 
 pub mod actions;
 
@@ -30,11 +30,12 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
+        reason: private::WeakenReason,
         context: impl Into<String>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to, ctxt)),
+            kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to, reason, ctxt)),
             debug_context: Some(context.into()),
         }
     }

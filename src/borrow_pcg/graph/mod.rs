@@ -182,19 +182,22 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             seen.insert(node);
+
             let maybe_old_place = node.base();
             if maybe_old_place
                 .place()
                 .is_mutable(LocalMutationIsAllowed::Yes, ctxt)
                 .is_err()
             {
-                tracing::debug!(
+                tracing::info!(
                     "Skipping {} because it is not mutable",
                     node.to_short_string(ctxt)
                 );
                 continue;
             }
-            if !maybe_old_place.is_current() || maybe_old_place.place().is_deref() {
+            // TODO: Should we use liveness instead?
+            // See zip@2.2.3 read::ZipFile::<'a>::take_raw_reader
+            if !maybe_old_place.is_current() {
                 let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
                     .region_projections_blocked_by(node.into(), ctxt)
                     .into_iter()

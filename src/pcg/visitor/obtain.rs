@@ -18,6 +18,7 @@ use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
 use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
+use crate::private;
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -327,6 +328,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             place,
                             existing_cap,
                             Some(CapabilityKind::Write),
+                            private::WeakenReason::RefBorrowExpired,
                             "remove borrow edge",
                             self.ctxt,
                         )
@@ -429,6 +431,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         current,
                         CapabilityKind::Read,
                         BlockType::DerefExclusive.blocked_place_retained_capability(),
+                        private::WeakenReason::RefTwoPhaseBorrowActivated,
                         format!(
                             "Remove read permission upwards from base place {} (downgrade R to e for mut ref): {}",
                             place.to_short_string(self.ctxt),
@@ -444,6 +447,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         current,
                         CapabilityKind::Read,
                         None,
+                        private::WeakenReason::Other,
                         format!(
                             "Remove read permission upwards from base place {}: {}",
                             place.to_short_string(self.ctxt),
@@ -579,6 +583,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     p,
                     cap,
                     None,
+                    private::WeakenReason::Other,
                     "Remove read permission downwards",
                     self.ctxt,
                 )
