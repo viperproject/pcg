@@ -4,7 +4,7 @@ use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
 use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
-use crate::free_pcs::FreePlaceCapabilitySummary;
+use crate::free_pcs::OwnedPcg;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
@@ -44,11 +44,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 && rp.is_placeholder()
                 && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
-                // if let MaybeOldPlace::Current { place } = local_rp.base
-                //     && capabilities.get(place).is_some()
-                // {
-                //     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
-                // } else {
                 let orig_rp = local_rp.with_label(None, ctxt);
                 self.filter_mut_edges(|edge| {
                     edge.label_region_projection(
@@ -58,7 +53,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     )
                     .to_filter_mut_result()
                 });
-                // }
             }
         }
     }
@@ -71,7 +65,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         latest: &mut Latest<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -186,7 +180,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         loop_head: BasicBlock,
         used_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         path_conditions: PathConditions,
         latest: &mut Latest<'tcx>,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,

@@ -214,6 +214,7 @@ impl<'tcx> PlaceExpansions<'tcx> {
                         .iter()
                         .fold(CapabilityKind::Exclusive, |acc, place| {
                             match capabilities.remove(*place, repacker) {
+                                // TODO: Actually we shouldn't need a capability
                                 Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                 None => acc,
                             }

@@ -16,9 +16,9 @@ use crate::{
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
 
-use super::CapabilityLocals;
+use super::LocalExpansions;
 
-impl<'tcx> CapabilityLocals<'tcx> {
+impl<'tcx> LocalExpansions<'tcx> {
     fn check_pre_satisfied(
         &self,
         pre: PlaceCondition<'tcx>,

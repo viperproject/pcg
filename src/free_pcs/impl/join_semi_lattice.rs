@@ -11,11 +11,11 @@ use crate::pcg::{
 use itertools::Itertools;
 
 use crate::{
-    free_pcs::{CapabilityLocals, FreePlaceCapabilitySummary, OwnedPcgRoot, PlaceExpansions},
+    free_pcs::{LocalExpansions, OwnedPcg, OwnedPcgRoot, PlaceExpansions},
     utils::CompilerCtxt,
 };
 
-impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn join(
         &mut self,
         other: &Self,
@@ -32,7 +32,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
     }
 }
 
-impl<'tcx> CapabilityLocals<'tcx> {
+impl<'tcx> LocalExpansions<'tcx> {
     pub(crate) fn join(
         &mut self,
         other: &Self,

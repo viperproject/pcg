@@ -18,7 +18,7 @@ use crate::{
         region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
+    free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     pcg::{
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
@@ -362,7 +362,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         loop_head_block: mir::BasicBlock,
         blocked_loop_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         latest: &mut Latest<'tcx>,
         path_conditions: PathConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -466,7 +466,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     loop_head_block: mir::BasicBlock,
     graph: &'pcg mut BorrowsGraph<'tcx>,
     capabilities: Option<&'pcg mut PlaceCapabilities<'tcx>>,
-    owned: Option<&'pcg mut FreePlaceCapabilitySummary<'tcx>>,
+    owned: Option<&'pcg mut OwnedPcg<'tcx>>,
     path_conditions: PathConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }

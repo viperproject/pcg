@@ -188,16 +188,19 @@ impl<'tcx> PlaceCapabilities<'tcx> {
 
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
-        for (place, other_capability) in other.iter() {
-            if let Some(self_capability) = self.0.get(&place) {
-                if let Some(c) = self_capability.minimum(other_capability) {
-                    changed |= self.0.insert(place, c) != Some(c);
-                } else {
-                    self.0.remove(&place);
+        self.0.retain(|place, capability| {
+            if let Some(other_capability) = other.0.get(place)
+                && let Some(c) = capability.minimum(*other_capability)
+            {
+                if c != *capability {
+                    *capability = c;
                     changed = true;
                 }
+                true
+            } else {
+                false
             }
-        }
+        });
         changed
     }
 }

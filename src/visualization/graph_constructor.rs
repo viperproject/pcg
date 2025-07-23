@@ -4,7 +4,7 @@ use crate::{
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcgRoot, CapabilityLocals},
+    free_pcs::{CapabilityKind, OwnedPcgRoot, LocalExpansions},
     pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, PcgRef},
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{
@@ -324,7 +324,7 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 }
 
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
-    summary: &'pcg CapabilityLocals<'tcx>,
+    summary: &'pcg LocalExpansions<'tcx>,
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,

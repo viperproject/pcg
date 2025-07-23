@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::{
-        CapabilityKind, OwnedPcgRoot, CapabilityLocals, PlaceExpansions, RepackOp,
+        CapabilityKind, OwnedPcgRoot, LocalExpansions, PlaceExpansions, RepackOp,
     },
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -18,7 +18,7 @@ use crate::{
     utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt},
 };
 
-impl<'tcx> CapabilityLocals<'tcx> {
+impl<'tcx> LocalExpansions<'tcx> {
     pub(crate) fn bridge(
         &self,
         other: &Self,

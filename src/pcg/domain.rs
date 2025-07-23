@@ -47,7 +47,7 @@ use crate::{
 };
 
 use super::{place_capabilities::PlaceCapabilities, PcgEngine};
-use crate::free_pcs::FreePlaceCapabilitySummary;
+use crate::free_pcs::OwnedPcg;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -154,7 +154,7 @@ pub(crate) struct PcgDebugData {
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Pcg<'tcx> {
-    pub(crate) owned: FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
     pub(crate) capabilities: PlaceCapabilities<'tcx>,
 }
@@ -167,7 +167,7 @@ impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PcgRef<'pcg, 'tcx> {
-    pub(crate) owned: &'pcg FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: &'pcg OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
 }
@@ -194,14 +194,14 @@ impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
 }
 
 pub(crate) struct PcgMutRef<'pcg, 'tcx> {
-    pub(crate) owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateMutRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
 }
 
 impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
     pub(crate) fn new(
-        owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &'pcg mut OwnedPcg<'tcx>,
         borrow: BorrowStateMutRef<'pcg, 'tcx>,
         capabilities: &'pcg mut PlaceCapabilities<'tcx>,
     ) -> Self {
@@ -358,7 +358,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.capabilities
     }
 
-    pub fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'tcx> {
+    pub fn owned_pcg(&self) -> &OwnedPcg<'tcx> {
         &self.owned
     }
 
@@ -390,6 +390,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
+        // TODO: This should happen in the borrow join
         other.borrow.add_cfg_edge(other_block, self_block, ctxt);
         res |= self.capabilities.join(&other.capabilities);
         res |= self.borrow.join(

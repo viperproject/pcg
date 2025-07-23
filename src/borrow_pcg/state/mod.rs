@@ -11,7 +11,7 @@ use super::{
 use crate::{
     action::BorrowPcgAction,
     borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
-    free_pcs::FreePlaceCapabilitySummary,
+    free_pcs::OwnedPcg,
     pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
@@ -337,7 +337,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
