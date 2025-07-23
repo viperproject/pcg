@@ -186,18 +186,52 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         self.0.iter().map(|(k, v)| (*k, *v))
     }
 
+    fn remove_and_propagate_downwards(&mut self, place: Place<'tcx>, targets: impl Iterator<Item = Place<'tcx>>) -> bool {
+        let mut changed = false;
+        if let Some(capability) = self.0.remove(&place) {
+            for target in targets {
+                self.0.insert(target, capability);
+            }
+        }
+        changed
+    }
+
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
-        self.0.retain(|place, capability| {
-            if let Some(other_capability) = other.0.get(place)
-                && let Some(c) = capability.minimum(*other_capability)
-            {
-                if c != *capability {
-                    *capability = c;
+        for (place, other_cap) in other.iter().sorted_by_key(|(p, _)| p.projection.len()) {
+            if let Some(self_cap) = self.get(place) {
+                if let Some(c) = self_cap.minimum(other_cap) {
+                    if c != self_cap {
+                        self.0.insert(place, c);
+                        changed = true;
+                    }
+                } else {
+                    let postfix_places = other.0.keys().filter(|p| place.is_prefix_exact(**p)).copied();
+                    self.remove_and_propagate_downwards(place, postfix_places);
                     changed = true;
                 }
+            } else if matches!(other_cap, CapabilityKind::Read) {
+                if let Some(parent) = place.parent_place() {
+                    if let Some(c) = self.get(parent) && c >= CapabilityKind::Read {
+                        self.0.insert(place, CapabilityKind::Read);
+                        self.0.insert(parent, CapabilityKind::Read);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        let old_self = self.clone();
+        self.0.retain(|place, _| {
+            if other.0.contains_key(place) {
                 true
             } else {
+                let mut place = *place;
+                while let Some(parent) = place.parent_place() {
+                    if let Some(c) = old_self.get(parent) && c == CapabilityKind::Read {
+                        return true;
+                    }
+                    place = parent;
+                }
                 false
             }
         });
