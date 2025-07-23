@@ -28,7 +28,7 @@ pub enum SnapshotLocation {
 }
 
 impl SnapshotLocation {
-    pub(crate) fn location(self) -> Location {
+    pub fn location(self) -> Location {
         match self {
             SnapshotLocation::Prepare(location) => location,
             SnapshotLocation::BeforeCollapse(location) => location,
