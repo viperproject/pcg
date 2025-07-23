@@ -111,24 +111,24 @@ jobs:
       working-directory: prusti-dev
       run: ./x.py setup && python3 test-rpe.py --no-server
 
-  # mutation_tests:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - name: Checkout repository
-  #     uses: actions/checkout@v4
-  #     with:
-  #       path: pcg
+  mutation_tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        path: pcg
 
-  #   - name: Checkout flowistry repository
-  #     uses: actions/checkout@v4
-  #     with:
-  #       repository: jaspergeer/pcg-mutation-testing
-  #       ref: main
-  #       path: pcg-mutation-testing
+    - name: Checkout flowistry repository
+      uses: actions/checkout@v4
+      with:
+        repository: jaspergeer/pcg-mutation-testing
+        ref: main
+        path: pcg-mutation-testing
 
-  #   - name: Build mutation testing tool
-  #     working-directory: pcg-mutation-testing
-  #     run: cargo build
+    - name: Build mutation testing tool
+      working-directory: pcg-mutation-testing
+      run: cargo build
 
   flowistry_tests:
     runs-on: ubuntu-latest
