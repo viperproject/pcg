@@ -14,3 +14,6 @@ pub mod latest;
 pub mod path_condition;
 pub mod region_projection;
 pub mod unblock_graph;
+
+pub use domain::AbstractionInputTarget;
+pub use domain::AbstractionOutputTarget;

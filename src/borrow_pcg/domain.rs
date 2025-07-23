@@ -6,7 +6,10 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
-        has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
+        has_pcs_elem::{
+            HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+            LabelRegionProjectionResult, PlaceLabeller,
+        },
         region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
@@ -15,7 +18,6 @@ use crate::{
         place::maybe_old::MaybeOldPlace, validity::HasValidityCheck, CompilerCtxt, Place,
     },
 };
-
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref, DerefMut)]
 pub struct FunctionCallAbstractionInput<'tcx>(
@@ -79,7 +81,6 @@ pub(crate) struct LoopAbstractionInput<'tcx>(pub(crate) PCGNode<'tcx>);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub(crate) struct LoopAbstractionOutput<'tcx>(pub(crate) LocalNode<'tcx>);
-
 
 impl<'tcx> From<MaybeRemotePlace<'tcx>> for LoopAbstractionInput<'tcx> {
     fn from(value: MaybeRemotePlace<'tcx>) -> Self {
@@ -269,4 +270,3 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for FunctionCallAbstraction
         FunctionCallAbstractionInput(value.into())
     }
 }
-
