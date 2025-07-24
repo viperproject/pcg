@@ -347,6 +347,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
+    #[cfg(feature="visualization")]
     #[rustversion::since(2024-12-14)]
     if let Some(dir_path) = &item_dir {
         emit_borrowcheck_graphs(dir_path, ctxt);
@@ -567,6 +568,7 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
     Ok(lines.lines().map(|l| l.to_string()).collect())
 }
 
+#[cfg(feature = "visualization")]
 #[rustversion::since(2024-12-14)]
 fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     dir_path: &str,
