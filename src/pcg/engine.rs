@@ -72,10 +72,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for BodyWithBorrowckFacts<'tcx> {
     }
 }
 
-#[rustversion::before(2024-12-14)]
-type MonomorphizeEnv<'tcx> = ty::ParamEnv<'tcx>;
-
-#[rustversion::since(2024-12-14)]
 type MonomorphizeEnv<'tcx> = ty::TypingEnv<'tcx>;
 
 impl<'tcx> BodyWithBorrowckFacts<'tcx> {

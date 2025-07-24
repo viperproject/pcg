@@ -28,16 +28,6 @@ use pcg::rustc_interface::driver;
 
 use tracing::trace;
 
-#[rustversion::before(2024-11-09)]
-use pcg::rustc_interface::interface::Queries;
-
-#[rustversion::before(2024-12-14)]
-fn go(args: Vec<String>) {
-    driver::RunCompiler::new(&args, &mut PcgCallbacks)
-        .run()
-        .unwrap()
-}
-
 #[rustversion::nightly(2024-12-14)]
 fn go(args: Vec<String>) {
     driver::RunCompiler::new(&args, &mut PcgCallbacks).run()

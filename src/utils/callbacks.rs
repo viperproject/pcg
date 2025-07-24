@@ -37,9 +37,6 @@ use crate::{
     PcgCtxt, PcgOutput,
 };
 
-#[rustversion::before(2024-11-09)]
-use crate::rustc_interface::interface::Queries;
-
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::{
     region_inference_outlives, subset_anywhere, subset_at_location, RegionPrettyPrinter,
@@ -62,25 +59,6 @@ impl driver::Callbacks for PcgCallbacks {
         init_rustc_env_logger(&early_dcx);
     }
 
-    #[rustversion::before(2024-11-09)]
-    fn after_analysis<'tcx>(
-        &mut self,
-        _compiler: &Compiler,
-        queries: &'tcx Queries<'tcx>,
-    ) -> Compilation {
-        queries.global_ctxt().unwrap().enter(|tcx| {
-            // SAFETY: `config()` overrides the borrowck query to save the bodies
-            // from `tcx` in `BODIES`
-            unsafe { run_pcg_on_all_fns(tcx, env_feature_enabled("PCG_POLONIUS").unwrap_or(false)) }
-        });
-        if in_cargo_crate() {
-            Compilation::Continue
-        } else {
-            Compilation::Stop
-        }
-    }
-
-    #[rustversion::since(2024-11-09)]
     fn after_analysis(&mut self, _compiler: &Compiler, tcx: TyCtxt<'_>) -> Compilation {
         // SAFETY: `config()` overrides the borrowck query to save the bodies
         // from `tcx` in `BODIES`
@@ -348,7 +326,6 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[cfg(feature="visualization")]
-    #[rustversion::since(2024-12-14)]
     if let Some(dir_path) = &item_dir {
         emit_borrowcheck_graphs(dir_path, ctxt);
     }
@@ -569,7 +546,6 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
 }
 
 #[cfg(feature = "visualization")]
-#[rustversion::since(2024-12-14)]
 fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     dir_path: &str,
     ctxt: CompilerCtxt<'a, 'tcx, &'bc BorrowChecker<'a, 'tcx>>,

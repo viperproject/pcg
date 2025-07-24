@@ -276,14 +276,8 @@ pub struct PcgCtxt<'mir, 'tcx> {
     move_data: MoveData<'tcx>,
 }
 
-#[rustversion::since(2024-10-17)]
 fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> MoveData<'tcx> {
     MoveData::gather_moves(body, tcx, |_| true)
-}
-
-#[rustversion::before(2024-10-17)]
-fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: TyCtxt<'tcx>) -> MoveData<'tcx> {
-    MoveData::gather_moves(body, tcx, ty::ParamEnv::empty(), |_| true)
 }
 
 impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
