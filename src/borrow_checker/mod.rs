@@ -268,6 +268,8 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
 }
 
 pub trait BorrowCheckerInterface<'tcx> {
+    /* Main Interface Start */
+
     /// Answers the question: Does `node` contain borrow extents that are not
     /// in scope at `location`?
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool;
@@ -290,15 +292,6 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// Returns true iff `sup` is required to outlive `sub` at `location`.
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion, location: Location) -> bool;
 
-    /// Returns true iff `reg1` outlives `reg2` and `reg2` outlives `reg1`.
-    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion, location: Location) -> bool {
-        self.outlives(reg1, reg2, location) && self.outlives(reg2, reg1, location)
-    }
-
-    /// For visualization purposes, this function can be implemented to provide
-    /// human-readable names for region variables.
-    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
-
     fn borrows_blocking(
         &self,
         blocked_place: Place<'tcx>,
@@ -311,7 +304,23 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// that it was created at.
     fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 
+    /* Main Interface End */
+
+    /// Returns true iff `reg1` outlives `reg2` and `reg2` outlives `reg1`.
+    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion, location: Location) -> bool {
+        self.outlives(reg1, reg2, location) && self.outlives(reg2, reg1, location)
+    }
+
+    // Implementors of this trait should be dyn-safe
     fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
+
+    /*
+     * The remaining methods are only used for debugging / visualization.
+     */
+
+    /// For visualization purposes, this function can be implemented to provide
+    /// human-readable names for region variables.
+    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
 
     // DEBUG ONLY
     /// If the borrow checker is based on Polonius, it can define this method to
