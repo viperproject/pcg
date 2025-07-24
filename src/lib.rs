@@ -7,7 +7,7 @@
 #![feature(associated_type_defaults)]
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-#![feature(if_let_guard, let_chains)]
+#![feature(if_let_guard)]
 #![feature(never_type)]
 #![feature(proc_macro_hygiene)]
 #![feature(anonymous_lifetime_in_impl_trait)]

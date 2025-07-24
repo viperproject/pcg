@@ -101,6 +101,7 @@ thread_local! {
         RefCell::new(FxHashMap::default());
 }
 
+#[rustversion::before(2025-07-01)]
 pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
     let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
     tracing::debug!(
@@ -112,8 +113,30 @@ pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBo
         "End mir_borrowck for {}",
         tcx.def_path_str(def_id.to_def_id())
     );
+    save_body(tcx, def_id, body_with_facts.into());
+    original_mir_borrowck(tcx, def_id)
+}
+
+#[rustversion::since(2025-07-01)]
+pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
+    let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
+    tracing::debug!(
+        "Start mir_borrowck for {}",
+        tcx.def_path_str(def_id.to_def_id())
+    );
+    let body_with_facts = borrowck::get_bodies_with_borrowck_facts(tcx, def_id, consumer_opts);
+    tracing::debug!(
+        "End mir_borrowck for {}",
+        tcx.def_path_str(def_id.to_def_id())
+    );
+    for (def_id, body) in body_with_facts {
+        save_body(tcx, def_id, body.into());
+    }
+    original_mir_borrowck(tcx, def_id)
+}
+
+fn save_body(tcx: TyCtxt<'_>, def_id: LocalDefId, body: BodyWithBorrowckFacts<'_>) {
     unsafe {
-        let body: BodyWithBorrowckFacts<'tcx> = body_with_facts.into();
         let body: BodyWithBorrowckFacts<'static> = std::mem::transmute(body);
         BODIES.with(|state| {
             let mut map = state.borrow_mut();
@@ -124,6 +147,9 @@ pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBo
             assert!(map.insert(def_id, body).is_none());
         });
     }
+}
+
+fn original_mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
     let mut providers = Providers::default();
     borrowck::provide(&mut providers);
     let original_mir_borrowck = providers.mir_borrowck;
@@ -245,7 +271,9 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             );
             continue;
         }
-        let body = take_stored_body(tcx, def_id);
+        let body = unsafe {
+            take_stored_body(tcx, def_id)
+        };
 
         if !should_check_body(&body.body) {
             continue;

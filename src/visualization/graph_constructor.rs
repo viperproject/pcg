@@ -494,7 +494,7 @@ fn main() {
             let ctxt = analysis.ctxt();
             let stmt = &bb.statements[22];
             let pcg = &stmt.states.0.post_main;
-            let graph = PcgGraphConstructor::new(pcg, ctxt, stmt.location).construct_graph();
+            let graph = PcgGraphConstructor::new(pcg.into(), ctxt, stmt.location).construct_graph();
             if let Err(e) = graph.edge_between_labelled_nodes("_3 = s", "_3.0 = s.x") {
                 panic!("{}", e);
             }

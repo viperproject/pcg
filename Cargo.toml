@@ -2,7 +2,7 @@
 name = "pcg"
 version = "0.1.0"
 authors = ["Prusti Devs <prusti_developers@sympa.ethz.ch>"]
-edition = "2021"
+edition = "2024"
 
 [features]
 memory_profiling = [

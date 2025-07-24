@@ -1,5 +1,4 @@
 #![feature(rustc_private)]
-#![feature(let_chains)]
 #![feature(stmt_expr_attributes)]
 #![feature(proc_macro_hygiene)]
 

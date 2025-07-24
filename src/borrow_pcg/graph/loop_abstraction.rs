@@ -15,7 +15,7 @@ use crate::{
         has_pcs_elem::LabelRegionProjectionPredicate,
         latest::Latest,
         path_condition::PathConditions,
-        region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
+        region_projection::{RegionIdx, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
         state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
@@ -650,7 +650,7 @@ fn add_block_edges<'mir, 'tcx>(
     add_block_edge(
         expander,
         blocked_place.to_pcg_node(ctxt),
-        blocker_rps[0.into()].to_local_node(ctxt),
+        blocker_rps[RegionIdx::from(0)].to_local_node(ctxt),
         ctxt,
     );
     add_rp_block_edges(expander, blocked_place, blocker, ctxt);
