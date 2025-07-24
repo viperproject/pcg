@@ -366,7 +366,11 @@ impl<'tcx> Place<'tcx> {
             if extract_regions(ty, ctxt).is_empty() {
                 return false;
             }
-            if ty.is_unsafe_ptr() {
+            #[rustversion::before(2025-04-01)]
+            let is_raw_ptr = ty.is_unsafe_ptr();
+            #[rustversion::since(2025-04-01)]
+            let is_raw_ptr = ty.is_raw_ptr();
+            if is_raw_ptr {
                 return true;
             }
             let field_tys: Vec<Ty<'tcx>> = match ty.kind() {

@@ -1,7 +1,10 @@
+#![allow(stable_features)]
+/* Depending on the client's rust version, some of the features below
+   may already be stabilized */
 #![feature(rustc_private)]
-#![feature(let_chains)]
 #![feature(stmt_expr_attributes)]
 #![feature(proc_macro_hygiene)]
+#![feature(let_chains)]
 
 #[cfg(feature = "memory_profiling")]
 #[cfg(not(target_env = "msvc"))]

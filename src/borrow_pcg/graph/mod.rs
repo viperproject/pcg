@@ -366,7 +366,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx, BC>,
-    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>> + use<'tcx, 'graph, 'mir, BC> {
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>> {
         self.edges()
             .filter(move |edge| edge.blocked_by_nodes(ctxt).contains(&node))
     }
@@ -421,7 +421,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'slf self,
         node: BlockedNode<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'slf>> + use<'tcx, 'slf, 'mir, 'bc> {
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'slf>> {
         self.edges()
             .filter(move |edge| edge.blocks_node(node, ctxt))
     }

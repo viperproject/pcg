@@ -1,16 +1,12 @@
+cargo-features = ["edition2024"] # This is needed here for now if we want to support Rust versions before edition-2024 was stabilized
 [package]
 name = "pcg"
 version = "0.1.0"
 authors = ["Prusti Devs <prusti_developers@sympa.ethz.ch>"]
-edition = "2021"
+edition = "2024"
 
 [features]
-memory_profiling = [
-    "tikv-jemallocator",
-    "axum",
-    "tokio",
-    "jemalloc_pprof",
-]
+memory_profiling = []
 custom-rust-toolchain = []
 visualization = []
 debug_info = []
