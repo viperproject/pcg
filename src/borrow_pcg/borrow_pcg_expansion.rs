@@ -444,7 +444,11 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         P: Ord + HasPlace<'tcx>,
     {
         let place_ty = base.place().ty(ctxt);
-        if place_ty.ty.is_unsafe_ptr() {
+        #[rustversion::before(2025-04-01)]
+        let is_raw_ptr = place_ty.ty.is_unsafe_ptr();
+        #[rustversion::since(2025-04-01)]
+        let is_raw_ptr = place_ty.ty.is_raw_ptr();
+        if is_raw_ptr {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
         let result = Self {

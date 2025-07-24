@@ -4,15 +4,21 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+/* Depending on the client's rust version, some of the features below
+   may already be stabilized */
+
+#![allow(stable_features)]
 #![feature(associated_type_defaults)]
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-#![feature(if_let_guard, let_chains)]
+#![feature(if_let_guard)]
 #![feature(never_type)]
 #![feature(proc_macro_hygiene)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(stmt_expr_attributes)]
 #![feature(allocator_api)]
+#![feature(let_chains)]
+
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;

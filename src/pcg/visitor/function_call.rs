@@ -35,15 +35,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        // This is just a performance optimization
-        if self
-            .pcg
-            .borrow
-            .graph()
-            .has_function_call_abstraction_at(location)
-        {
-            return Ok(());
-        }
         let function_data = get_function_data(func, self.ctxt);
 
         let path_conditions = self.pcg.borrow.path_conditions.clone();

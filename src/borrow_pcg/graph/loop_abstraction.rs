@@ -7,7 +7,7 @@ use crate::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
-            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
+            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
             kind::BorrowPcgEdgeKind,
         },
         edge_data::EdgeData,
@@ -15,23 +15,25 @@ use crate::{
         has_pcs_elem::LabelRegionProjectionPredicate,
         latest::Latest,
         path_condition::ValidityConditions,
-        region_projection::{RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel},
+        region_projection::{
+            RegionIdx, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
+        },
         state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
+        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
-        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
+        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
         data_structures::{HashMap, HashSet},
         display::DisplayWithCompilerCtxt,
         maybe_old::MaybeOldPlace,
         remote::RemotePlace,
-        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
     },
 };
 
@@ -666,7 +668,7 @@ fn add_block_edges<'mir, 'tcx>(
     add_block_edge(
         expander,
         blocked_place.to_pcg_node(ctxt),
-        blocker_rps[0.into()].to_local_node(ctxt),
+        blocker_rps[RegionIdx::from(0)].to_local_node(ctxt),
         ctxt,
     );
     add_rp_block_edges(expander, blocked_place, blocker, ctxt);
