@@ -204,12 +204,6 @@ impl CompilerCtxt<'_, '_> {
         self.mir.local_decls().len()
     }
 
-    #[rustversion::before(2024-12-14)]
-    pub fn always_live_locals(self) -> RustBitSet<Local> {
-        mir_dataflow::storage::always_storage_live_locals(self.mir)
-    }
-
-    #[rustversion::since(2024-12-14)]
     pub fn always_live_locals(self) -> RustBitSet<Local> {
         mir_dataflow::impls::always_storage_live_locals(self.mir)
     }

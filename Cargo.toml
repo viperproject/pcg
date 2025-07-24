@@ -1,4 +1,3 @@
-cargo-features = ["edition2024"] # This is needed here for now if we want to support Rust versions before edition-2024 was stabilized
 [package]
 name = "pcg"
 version = "0.1.0"

@@ -435,37 +435,12 @@ fn twophase_borrow_activations(
     }
 }
 
-#[rustversion::since(2024-12-14)]
 pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
     borrow.reserve_location()
 }
 
-#[rustversion::since(2024-12-14)]
 fn get_activation_map<'a>(
     borrows: &'a BorrowSet<'_>,
 ) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
     borrows.activation_map()
-}
-
-#[rustversion::before(2024-12-14)]
-pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
-    borrow.reserve_location
-}
-
-#[rustversion::before(2024-12-14)]
-fn get_activation_map<'a, 'tcx>(
-    borrows: &'a BorrowSet<'tcx>,
-) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
-    &borrows.activation_map
-}
-
-#[rustversion::since(2024-12-14)]
-#[allow(unused)]
-fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
-    borrow.region()
-}
-
-#[rustversion::before(2024-12-14)]
-fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
-    borrow.region
 }

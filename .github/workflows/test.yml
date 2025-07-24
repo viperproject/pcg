@@ -35,13 +35,6 @@ jobs:
     - name: Run tests on files
       run: cargo test --test test_files
 
-  build_2024_09_15:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build using Rust Nightly 2024-09-15
-      run: cp rust-toolchain-2024-09-15 rust-toolchain && cargo build --no-default-features
-
   build_2025_07_21:
     runs-on: ubuntu-latest
     steps:

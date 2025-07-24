@@ -109,7 +109,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
             && let Some(region_vid) = projection.region(self.ctxt).vid()
         {
             let region_vid = region_vid.into();
-            #[rustversion::since(2024-12-14)]
             let render_loans = |loans: Option<&BTreeSet<BorrowIndex>>| {
                 if let Some(loans) = loans {
                     format!(
@@ -117,21 +116,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                         loans
                             .iter()
                             .map(|l| format!("{:?}", self.ctxt.bc.borrow_set()[*l].region()))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                } else {
-                    "{}".to_string()
-                }
-            };
-            #[rustversion::before(2024-12-14)]
-            let render_loans = |loans: Option<&BTreeSet<BorrowIndex>>| {
-                if let Some(loans) = loans {
-                    format!(
-                        "{{{}}}",
-                        loans
-                            .iter()
-                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_index_to_region(*l)))
                             .collect::<Vec<_>>()
                             .join(", ")
                     )

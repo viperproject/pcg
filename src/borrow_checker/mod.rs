@@ -27,17 +27,9 @@ pub(crate) trait BorrowLike<'tcx> {
     fn get_borrowed_place(&self) -> Place<'tcx>;
 }
 
-#[rustversion::since(2024-10-17)]
 impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
     fn get_borrowed_place(&self) -> Place<'tcx> {
         self.borrowed_place().into()
-    }
-}
-
-#[rustversion::before(2024-10-17)]
-impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
-    fn get_borrowed_place(&self) -> Place<'tcx> {
-        self.borrowed_place.into()
     }
 }
 
@@ -45,17 +37,9 @@ trait HasPcgRegion {
     fn pcg_region(&self) -> PcgRegion;
 }
 
-#[rustversion::since(2024-10-17)]
 impl HasPcgRegion for BorrowData<'_> {
     fn pcg_region(&self) -> PcgRegion {
         self.region().into()
-    }
-}
-
-#[rustversion::before(2024-10-17)]
-impl HasPcgRegion for BorrowData<'_> {
-    fn pcg_region(&self) -> PcgRegion {
-        self.region.into()
     }
 }
 
@@ -182,24 +166,12 @@ pub trait BorrowCheckerInterface<'tcx> {
             })
     }
 
-    #[rustversion::since(2024-12-14)]
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
         self.borrow_set()[borrow_index].region()
     }
 
-    #[rustversion::before(2024-12-14)]
-    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
-        self.borrow_set()[borrow_index].region
-    }
-
-    #[rustversion::since(2024-12-14)]
     fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
         self.borrow_set().location_map()
-    }
-
-    #[rustversion::before(2024-12-14)]
-    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
-        &self.borrow_set().location_map
     }
 
     fn borrows_blocking(
@@ -263,17 +235,9 @@ trait BorrowSetLike<'tcx> {
     fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>>;
 }
 
-#[rustversion::since(2024-10-17)]
 impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
     fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
         self.local_map().get(&local)
-    }
-}
-
-#[rustversion::before(2024-10-17)]
-impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
-    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
-        self.local_map.get(&local)
     }
 }
 
