@@ -373,19 +373,21 @@ impl<'tcx> Place<'tcx> {
                 TyKind::Array(ty, _) => vec![*ty],
                 TyKind::Slice(ty) => vec![*ty],
                 TyKind::Adt(def, substs) => {
-                                            if ty.is_box() {
-                                                vec![substs.first().unwrap().expect_ty()]
-                                            } else {
-                                                def.all_fields()
-                                                    .map(|f| f.ty(ctxt.tcx, substs))
-                                                    .collect::<Vec<_>>()
-                                            }
-                                        }
+                    if ty.is_box() {
+                        vec![substs.first().unwrap().expect_ty()]
+                    } else {
+                        def.all_fields()
+                            .map(|f| f.ty(ctxt.tcx, substs))
+                            .collect::<Vec<_>>()
+                    }
+                }
                 TyKind::Tuple(slice) => slice.iter().collect::<Vec<_>>(),
                 TyKind::Closure(_, substs) => {
-                                            substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
-                                        }
-                TyKind::Coroutine(_, _) | TyKind::CoroutineClosure(_, _) | TyKind::FnDef(_, _) => vec![],
+                    substs.as_closure().upvar_tys().iter().collect::<Vec<_>>()
+                }
+                TyKind::Coroutine(_, _) | TyKind::CoroutineClosure(_, _) | TyKind::FnDef(_, _) => {
+                    vec![]
+                }
                 TyKind::Ref(_, ty, _) => vec![*ty],
                 TyKind::Alias(_, _) => vec![],
                 TyKind::Dynamic(_, _, _) => vec![],
@@ -592,6 +594,10 @@ impl<'tcx> Place<'tcx> {
         } else {
             Some(self.projection.len().cmp(&right.projection.len()).into())
         }
+    }
+
+    pub(crate) fn is_strict_prefix_of(self, place: Self) -> bool {
+        self.0.projection.len() + 1 == place.0.projection.len() && self.is_prefix_of(place)
     }
 
     /// Check if the place `self` is a prefix of `place`. For example:

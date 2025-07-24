@@ -140,7 +140,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let mut outputs = placeholder_targets
                 .iter()
                 .copied()
-                .filter(|rp| self.ctxt.bc.same_region(this_region, rp.region(self.ctxt)))
+                .filter(|rp| self.ctxt.bc.same_region(this_region, rp.region(self.ctxt), self.location))
                 .map(|rp| {
                     FunctionCallAbstractionOutput::new(
                         rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt),
@@ -150,7 +150,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let result_projections: Vec<FunctionCallAbstractionOutput<'tcx>> = destination
                 .region_projections(self.ctxt)
                 .iter()
-                .filter(|rp| self.ctxt.bc.outlives(this_region, rp.region(self.ctxt)))
+                .filter(|rp| self.ctxt.bc.outlives(this_region, rp.region(self.ctxt), self.location))
                 .map(|rp| (*rp).into())
                 .collect();
             outputs.extend(result_projections);

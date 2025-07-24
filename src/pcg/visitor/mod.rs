@@ -46,7 +46,7 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
 
 impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
-        self.ctxt.bc.outlives(sup, sub)
+        self.ctxt.bc.outlives(sup, sub, self.location)
     }
 
     fn connect_outliving_projections(

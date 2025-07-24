@@ -14,16 +14,23 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::{borrow_pcg::{edge_data::edgedata_enum, has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller}}, utils::place::maybe_old::MaybeOldPlace};
+use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::{
     borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::{
+        edge_data::edgedata_enum,
+        has_pcs_elem::{
+            LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+        },
+    },
+    utils::place::maybe_old::MaybeOldPlace,
+};
+use crate::{
+    borrow_checker::RustBorrowCheckerInterface,
     borrow_pcg::{
         edge::kind::BorrowPcgEdgeKind,
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
     },
-};
-use crate::{
-    utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
@@ -426,7 +433,6 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
 }
 
 impl<'tcx> BorrowPcgEdge<'tcx> {
-
     /// The conditions under which the edge is valid
     pub fn conditions(&self) -> &ValidityConditions {
         &self.conditions

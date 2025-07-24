@@ -402,7 +402,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     place.to_short_string(ctxt),
                     obtain_type
                 );
-                obtainer.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place).unwrap();
+                obtainer
+                    .upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)
+                    .unwrap();
             }
 
             obtainer.obtain(place, ObtainType::LoopInvariant).unwrap();
@@ -472,6 +474,13 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
 }
 
 impl<'tcx> AbsExpander<'_, '_, 'tcx> {
+    fn loop_head_location(&self) -> mir::Location {
+        mir::Location {
+            block: self.loop_head_block,
+            statement_index: 0,
+        }
+    }
+
     fn expand_to_places(&mut self, places: HashSet<Place<'tcx>>) {
         for place in places {
             tracing::info!("expanding to {}", place.to_short_string(self.ctxt));
@@ -588,8 +597,11 @@ fn add_rp_block_edges<'mir, 'tcx>(
         let flow_rps = blocker_rps
             .iter()
             .filter(|blocker_rp| {
-                ctxt.bc
-                    .outlives(blocked_rp.region(ctxt), blocker_rp.region(ctxt))
+                ctxt.bc.outlives(
+                    blocked_rp.region(ctxt),
+                    blocker_rp.region(ctxt),
+                    expander.loop_head_location(),
+                )
             })
             .copied()
             .collect::<Vec<_>>();
@@ -599,7 +611,11 @@ fn add_rp_block_edges<'mir, 'tcx>(
                 .iter()
                 .filter_map(|rp| {
                     if rp.is_invariant_in_type(ctxt)
-                        && ctxt.bc.outlives(rp.region(ctxt), blocked_rp.region(ctxt))
+                        && ctxt.bc.outlives(
+                            rp.region(ctxt),
+                            blocked_rp.region(ctxt),
+                            expander.loop_head_location(),
+                        )
                     {
                         Some(rp.rebase())
                     } else {

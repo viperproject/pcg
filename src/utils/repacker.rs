@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrow_checker::BorrowCheckerInterface,
+    borrow_checker::{BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface},
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
     rustc_interface::{

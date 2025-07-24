@@ -1,7 +1,9 @@
 extern crate polonius_engine;
 use polonius_engine::Output;
 
-use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_checker::{
+    BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface,
+};
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
@@ -31,14 +33,14 @@ pub struct PoloniusBorrowChecker<'mir, 'tcx: 'mir> {
     pub output_facts: PoloniusOutput,
     body: &'mir mir::Body<'tcx>,
     tcx: ty::TyCtxt<'tcx>,
-    region_cx: &'mir RegionInferenceContext<'tcx>,
-    borrows: &'mir BorrowSet<'tcx>,
+    pub(crate) region_cx: &'mir RegionInferenceContext<'tcx>,
+    pub(crate) borrows: &'mir BorrowSet<'tcx>,
     #[cfg(feature = "visualization")]
     pub pretty_printer: RegionPrettyPrinter<'mir, 'tcx>,
 }
 
 impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
-    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &Self> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
 
@@ -125,7 +127,7 @@ impl<'mir, 'tcx: 'mir> PoloniusBorrowChecker<'mir, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
+impl<'mir, 'tcx: 'mir> RustBorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'mir, 'tcx> {
     #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
@@ -171,17 +173,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
         })
     }
 
-    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
-        outlives(self.region_cx, sup, sub)
-    }
-
-    fn twophase_borrow_activations(
-        &self,
-        location: Location,
-    ) -> std::collections::BTreeSet<Location> {
-        twophase_borrow_activations(location, self.borrows)
-    }
-
     fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         self.region_cx
     }
@@ -192,10 +183,6 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
 
     fn polonius_output(&self) -> Option<&PoloniusOutput> {
         Some(&self.output_facts)
-    }
-
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
-        self
     }
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
@@ -231,13 +218,16 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerInterface<'tcx> for PoloniusBorrowChecker<'m
     }
 }
 
+#[deprecated(note = "Use NllBorrowCheckerImpl instead")]
+pub type BorrowCheckerImpl<'mir, 'tcx> = NllBorrowCheckerImpl<'mir, 'tcx>;
+
 /// An interface to the results of the NLL borrow-checker analysis.
 #[derive(Clone)]
-pub struct BorrowCheckerImpl<'mir, 'tcx: 'mir> {
+pub struct NllBorrowCheckerImpl<'mir, 'tcx: 'mir> {
     input_facts: &'mir PoloniusInput,
     live_locals: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     in_scope_borrows: Rc<RefCell<ResultsCursor<'mir, 'tcx, Borrows<'mir, 'tcx>>>>,
-    region_cx: &'mir RegionInferenceContext<'tcx>,
+    pub(crate) region_cx: &'mir RegionInferenceContext<'tcx>,
     borrows: &'mir BorrowSet<'tcx>,
     location_table: &'mir LocationTable,
     #[allow(unused)]
@@ -254,7 +244,7 @@ fn cursor_contains_local(
     with_cursor_state(cursor, |state| state.contains(local))
 }
 
-impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
+impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
     pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let region_cx = body.region_inference_context();
         let borrows = body.borrow_set();
@@ -282,13 +272,12 @@ impl<'mir, 'tcx: 'mir> BorrowCheckerImpl<'mir, 'tcx> {
         }
     }
 
-    #[allow(unused)]
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &dyn BorrowCheckerInterface<'tcx>> {
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &Self> {
         CompilerCtxt::new(self.body, self.tcx, self)
     }
 }
 
-impl BorrowCheckerImpl<'_, '_> {
+impl NllBorrowCheckerImpl<'_, '_> {
     fn local_is_live_before(&self, local: mir::Local, mut location: Location) -> bool {
         // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
         // the statement at `location`. Therefore we need to decrement the statement
@@ -307,9 +296,9 @@ impl BorrowCheckerImpl<'_, '_> {
     }
 }
 
-impl BorrowCheckerImpl<'_, '_> {}
+impl NllBorrowCheckerImpl<'_, '_> {}
 
-impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
+impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
     #[cfg(feature = "visualization")]
     fn override_region_debug_string(&self, region: ty::RegionVid) -> Option<&str> {
         self.pretty_printer.lookup(region).map(|s| s.as_str())
@@ -337,10 +326,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
             result
         );
         result
-    }
-
-    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
-        outlives(self.region_cx, sup, sub)
     }
 
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
@@ -372,13 +357,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         self.local_is_live_before(local, location)
     }
 
-    fn twophase_borrow_activations(
-        &self,
-        location: Location,
-    ) -> std::collections::BTreeSet<Location> {
-        twophase_borrow_activations(location, self.borrows)
-    }
-
     fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         self.region_cx
     }
@@ -391,10 +369,6 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         None
     }
 
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
-        self
-    }
-
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
         self.borrows
     }
@@ -405,33 +379,10 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowCheckerImpl<'_, 'tcx> {
         loan: BorrowIndex,
         _location: Location,
     ) -> bool {
-        self.outlives(
-            PcgRegion::RegionVid(self.borrow_index_to_region(loan)),
-            region,
+        self.region_cx.eval_outlives(
+            region.vid().unwrap(),
+            self.borrow_index_to_region(loan)
         )
-    }
-}
-
-fn outlives(region_cx: &RegionInferenceContext<'_>, sup: PcgRegion, sub: PcgRegion) -> bool {
-    match (sup, sub) {
-        (PcgRegion::RegionVid(sup), PcgRegion::RegionVid(sub)) => region_cx.eval_outlives(sup, sub),
-        (PcgRegion::ReStatic, _) => true,
-        _ => false,
-    }
-}
-
-fn twophase_borrow_activations(
-    location: Location,
-    borrows: &BorrowSet<'_>,
-) -> std::collections::BTreeSet<Location> {
-    let activation_map = get_activation_map(borrows);
-    if let Some(borrow_idxs) = activation_map.get(&location) {
-        borrow_idxs
-            .iter()
-            .map(|idx| get_reserve_location(&borrows[*idx]))
-            .collect()
-    } else {
-        std::collections::BTreeSet::new()
     }
 }
 
@@ -440,23 +391,9 @@ pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
     borrow.reserve_location()
 }
 
-#[rustversion::since(2024-12-14)]
-fn get_activation_map<'a>(
-    borrows: &'a BorrowSet<'_>,
-) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
-    borrows.activation_map()
-}
-
 #[rustversion::before(2024-12-14)]
 pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
     borrow.reserve_location
-}
-
-#[rustversion::before(2024-12-14)]
-fn get_activation_map<'a, 'tcx>(
-    borrows: &'a BorrowSet<'tcx>,
-) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
-    &borrows.activation_map
 }
 
 #[rustversion::since(2024-12-14)]

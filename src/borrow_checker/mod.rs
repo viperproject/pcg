@@ -3,8 +3,11 @@
 //! Also includes implementations for the Polonius and NLL borrow-checkers.
 
 use std::collections::BTreeSet;
+use std::marker::PhantomData;
 use std::ops::ControlFlow;
+use std::ops::Deref;
 
+use crate::borrow_checker::r#impl::get_reserve_location;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::BorrowData;
@@ -59,41 +62,102 @@ impl HasPcgRegion for BorrowData<'_> {
     }
 }
 
-/// An interface to the results of the borrow-checker analysis. The PCG queries
-/// this interface as part of its analysis, for example, to identify when borrows
-/// expire.
-pub trait BorrowCheckerInterface<'tcx> {
-    /// Returns true iff the node is live *before* `location`. A node is live
-    /// iff:
-    /// - it is a place node, and the place is live
-    /// - it is a lifetime projection node, and the lifetime is live
-    ///
-    /// For lifetimes, we use the notion of liveness defined here in
-    /// <https://rust-lang.github.io/rfcs/2094-nll.html#liveness>:
-    ///
-    /// > A lifetime `L` is live at a point `P` if there is some variable `p` which is
-    /// > live at `P`, and `L` appears in the type of `p`
-    ///
-    /// However, as referenced in the above link, there are some subtleties
-    /// related to places that will be dropped. Follow the link for more details.
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+#[derive(Clone, Copy)]
+pub(crate) struct RustBorrowChecker<'a, 'tcx, T: ?Sized>(
+    &'a T,
+    PhantomData<&'tcx ()>,
+);
 
-    /// A node is dead iff it is not live. See [`BorrowCheckerInterface::is_live`]
+impl<'a, 'tcx, T: ?Sized> Deref for RustBorrowChecker<'a, 'tcx, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a, 'tcx, T: RustBorrowCheckerInterface<'tcx>> From<&'a T> for RustBorrowChecker<'a, 'tcx, T> {
+    fn from(value: &'a T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<'a, 'tcx, T: RustBorrowCheckerInterface<'tcx> + ?Sized> RustBorrowChecker<'a, 'tcx, T> {
+    pub(crate) fn new(inner: &'a T) -> Self {
+        Self(inner, PhantomData)
+    }
+}
+
+#[rustversion::since(2024-12-14)]
+fn get_activation_map<'a>(
+    borrows: &'a BorrowSet<'_>,
+) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
+    borrows.activation_map()
+}
+
+#[rustversion::before(2024-12-14)]
+fn get_activation_map<'a, 'tcx>(
+    borrows: &'a BorrowSet<'tcx>,
+) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
+    &borrows.activation_map
+}
+
+impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
+    for RustBorrowChecker<'_, 'tcx, T>
+{
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
-        !self.is_live(node, location)
+        !self.0.is_live(node, location)
     }
 
-    /// Returns true iff `sup` outlives `sub`.
-    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool;
-
-    /// Returns true iff `reg1` outlives `reg2` and `reg2` outlives `reg1`.
-    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion) -> bool {
-        self.outlives(reg1, reg2) && self.outlives(reg2, reg1)
+    fn twophase_borrow_activations(
+        &self,
+        location: Location,
+    ) -> std::collections::BTreeSet<Location> {
+        let activation_map = get_activation_map(self.0.borrow_set());
+        if let Some(borrow_idxs) = activation_map.get(&location) {
+            borrow_idxs
+                .iter()
+                .map(|idx| get_reserve_location(&self.0.borrow_set()[*idx]))
+                .collect()
+        } else {
+            std::collections::BTreeSet::new()
+        }
     }
 
-    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+    fn borrows_blocking(
+        &self,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<BorrowData<'tcx>> {
+        let mut borrows = vec![];
+        each_borrow_involving_path(
+            &mut (),
+            ctxt,
+            blocked_place,
+            self.0.borrow_set(),
+            |borrow_index| self.0.borrow_in_scope_at(borrow_index, location),
+            |_this, _, borrow| {
+                borrows.push(borrow.clone());
+                ControlFlow::Continue(())
+            },
+        );
+        borrows
+    }
 
-    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
+    fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex> {
+        self.0
+            .location_map()
+            .iter()
+            .enumerate()
+            .find_map(|(index, (_, data))| {
+                if data.pcg_region() == region {
+                    Some(index.into())
+                } else {
+                    None
+                }
+            })
+    }
 
     fn is_directly_blocked(
         &self,
@@ -106,8 +170,8 @@ pub trait BorrowCheckerInterface<'tcx> {
             &mut (),
             ctxt,
             blocked_place,
-            self.borrow_set(),
-            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            self.0.borrow_set(),
+            |borrow_index| self.0.borrow_in_scope_at(borrow_index, location),
             |_this, _borrow_index, borrow| {
                 if borrow.get_borrowed_place() == blocked_place {
                     conflict = true;
@@ -132,8 +196,8 @@ pub trait BorrowCheckerInterface<'tcx> {
             &mut (),
             ctxt,
             blocked_place,
-            self.borrow_set(),
-            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            self.0.borrow_set(),
+            |borrow_index| self.0.borrow_in_scope_at(borrow_index, location),
             |_this, borrow_index, _borrow| {
                 tracing::debug!(
                     "Checking if {} contains {:?} at {:?}",
@@ -142,7 +206,9 @@ pub trait BorrowCheckerInterface<'tcx> {
                     location
                 );
                 if blocking_place.regions(ctxt).iter().any(|region| {
-                    let result = self.origin_contains_loan_at(*region, borrow_index, location);
+                    let result = self
+                        .0
+                        .origin_contains_loan_at(*region, borrow_index, location);
                     tracing::debug!(
                         "{} contains {:?} at {:?} = {}",
                         region,
@@ -162,25 +228,145 @@ pub trait BorrowCheckerInterface<'tcx> {
         conflict
     }
 
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
+        self
+    }
+
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion, _location: Location) -> bool {
+        match (sup, sub) {
+            (PcgRegion::RegionVid(sup), PcgRegion::RegionVid(sub)) => {
+                self.0.region_infer_ctxt().eval_outlives(sup, sub)
+            }
+            (PcgRegion::ReStatic, _) => true,
+            _ => false,
+        }
+    }
+
+    fn override_region_debug_string(&self, region: RegionVid) -> Option<&str> {
+        self.0.override_region_debug_string(region)
+    }
+
+    fn polonius_output(&self) -> Option<&PoloniusOutput> {
+        self.0.polonius_output()
+    }
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        self.0.borrow_set()
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        self.0.location_table()
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        self.0.input_facts()
+    }
+
+    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
+        self.0.borrow_index_to_region(borrow_index)
+    }
+}
+
+pub trait BorrowCheckerInterface<'tcx> {
+    /// Answers the question: Does `node` contain borrow extents that are not
+    /// in scope at `location`?
+    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+
+    fn is_directly_blocked(
+        &self,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
+
+    fn blocks(
+        &self,
+        blocking_place: Place<'tcx>,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
+
+    /// Returns true iff `sup` is required to outlive `sub` at `location`.
+    fn outlives(&self, sup: PcgRegion, sub: PcgRegion, location: Location) -> bool;
+
+    /// Returns true iff `reg1` outlives `reg2` and `reg2` outlives `reg1`.
+    fn same_region(&self, reg1: PcgRegion, reg2: PcgRegion, location: Location) -> bool {
+        self.outlives(reg1, reg2, location) && self.outlives(reg2, reg1, location)
+    }
+
+    /// For visualization purposes, this function can be implemented to provide
+    /// human-readable names for region variables.
+    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
+
+    fn borrows_blocking(
+        &self,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<BorrowData<'tcx>>;
+
+    /// Returns the set of two-phase borrows that activate at `location`.
+    /// Each borrow in the returned set is represented by the MIR location
+    /// that it was created at.
+    fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
+
+    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
+
+    // DEBUG ONLY
+    /// If the borrow checker is based on Polonius, it can define this method to
+    /// expose its output facts. This is only used for debugging /
+    /// visualization.
+    /// TODO: Remove
+    fn polonius_output(&self) -> Option<&PoloniusOutput>;
+
+    /// Currently only used for associating borrows with their indexes for
+    /// visualization purposes.
+    /// TODO: Remove
+    fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex>;
+
+    /// TODO: Remove
+    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+
+    // TODO: Remove, only for visualization
+    fn location_table(&self) -> &LocationTable;
+
+    // TODO: Remove, only for visualization
+    fn input_facts(&self) -> &PoloniusInput;
+
+    // TODO: Remove, only for visualization
+    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid;
+}
+
+/// An interface to the results of the borrow-checker analysis. The PCG queries
+/// this interface as part of its analysis, for example, to identify when borrows
+/// expire.
+pub trait RustBorrowCheckerInterface<'tcx> {
+    /// Returns true iff the node is live *before* `location`. A node is live
+    /// iff:
+    /// - it is a place node, and the place is live
+    /// - it is a lifetime projection node, and the lifetime is live
+    ///
+    /// For lifetimes, we use the notion of liveness defined here in
+    /// <https://rust-lang.github.io/rfcs/2094-nll.html#liveness>:
+    ///
+    /// > A lifetime `L` is live at a point `P` if there is some variable `p` which is
+    /// > live at `P`, and `L` appears in the type of `p`
+    ///
+    /// However, as referenced in the above link, there are some subtleties
+    /// related to places that will be dropped. Follow the link for more details.
+    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+
+    fn borrow_set(&self) -> &BorrowSet<'tcx>;
+
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
+
     fn origin_contains_loan_at(
         &self,
         region: PcgRegion,
         loan: BorrowIndex,
         location: Location,
     ) -> bool;
-
-    fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex> {
-        self.location_map()
-            .iter()
-            .enumerate()
-            .find_map(|(index, (_, data))| {
-                if data.pcg_region() == region {
-                    Some(index.into())
-                } else {
-                    None
-                }
-            })
-    }
 
     #[rustversion::since(2024-12-14)]
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
@@ -202,26 +388,12 @@ pub trait BorrowCheckerInterface<'tcx> {
         &self.borrow_set().location_map
     }
 
-    fn borrows_blocking(
-        &self,
-        blocked_place: Place<'tcx>,
-        location: Location,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<BorrowData<'tcx>> {
-        let mut borrows = vec![];
-        each_borrow_involving_path(
-            &mut (),
-            ctxt,
-            blocked_place,
-            self.borrow_set(),
-            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
-            |_this, _, borrow| {
-                borrows.push(borrow.clone());
-                ControlFlow::Continue(())
-            },
-        );
-        borrows
-    }
+    /// If the borrow checker is based on Polonius, it can define this method to
+    /// expose its output facts. This is only used for debugging /
+    /// visualization.
+    fn polonius_output(&self) -> Option<&PoloniusOutput>;
+
+    fn override_region_debug_string(&self, region: RegionVid) -> Option<&str>;
 
     fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {
         let location_indices = [
@@ -236,27 +408,12 @@ pub trait BorrowCheckerInterface<'tcx> {
             .collect()
     }
 
-    /// For visualization purposes, this function can be implemented to provide
-    /// human-readable names for region variables.
-    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
-
     fn input_facts(&self) -> &PoloniusInput;
-
-    /// Returns the set of two-phase borrows that activate at `location`.
-    /// Each borrow in the returned set is represented by the MIR location
-    /// that it was created at.
-    fn twophase_borrow_activations(&self, location: Location) -> BTreeSet<Location>;
 
     fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx>;
 
     fn location_table(&self) -> &LocationTable;
 
-    /// If the borrow checker is based on Polonius, it can define this method to
-    /// expose its output facts. This is only used for debugging /
-    /// visualization.
-    fn polonius_output(&self) -> Option<&PoloniusOutput>;
-
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx>;
 }
 
 trait BorrowSetLike<'tcx> {

@@ -192,8 +192,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let mut nested_ref_mut_targets = vec![];
             for target_proj in target.region_projections(self.ctxt).into_iter() {
                 let target_region = target_proj.region(self.ctxt);
-                if self.ctxt.bc.outlives(source_region, target_region) {
-                    let regions_equal = self.ctxt.bc.same_region(source_region, target_region);
+                if self
+                    .ctxt
+                    .bc
+                    .outlives(source_region, target_region, self.location)
+                {
+                    let regions_equal = self.ctxt.bc.same_region(
+                        source_region,
+                        target_region,
+                        self.location,
+                    );
                     self.record_and_apply_action(
                         BorrowPcgAction::add_edge(
                             BorrowPcgEdge::new(

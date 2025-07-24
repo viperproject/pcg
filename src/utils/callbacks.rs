@@ -7,19 +7,23 @@ use std::{
 
 use bumpalo::Bump;
 use derive_more::From;
+#[cfg(feature = "visualization")]
 use tracing::info;
 
 use crate::{
     borrow_checker::{
-        r#impl::{BorrowCheckerImpl, PoloniusBorrowChecker},
-        BorrowCheckerInterface,
+        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
+        BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface,
     },
     borrow_pcg::region_projection::{PcgRegion, RegionIdx},
     free_pcs::PcgAnalysis,
     pcg::{self, BodyWithBorrowckFacts},
     run_pcg,
     rustc_interface::{
-        borrowck::{self, BorrowIndex, LocationTable, RichLocation},
+        borrowck::{
+            self, BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput,
+            RegionInferenceContext, RichLocation, PoloniusInput
+        },
         data_structures::fx::{FxHashMap, FxHashSet},
         driver::{self, init_rustc_env_logger, Compilation},
         hir::{def::DefKind, def_id::LocalDefId},
@@ -301,9 +305,9 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
         BTreeMap::new()
     };
     let mut bc = if polonius {
-        BorrowChecker::Polonius(PoloniusBorrowChecker::new(tcx, body))
+        RustBorrowCheckerImpl::Polonius(PoloniusBorrowChecker::new(tcx, body))
     } else {
-        BorrowChecker::Impl(BorrowCheckerImpl::new(tcx, body))
+        RustBorrowCheckerImpl::Nll(NllBorrowCheckerImpl::new(tcx, body))
     };
     #[cfg(feature = "visualization")]
     {
@@ -315,6 +319,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
     let arena = Bump::new();
+    let bc = RustBorrowChecker::new(&bc);
     let pcg_ctxt = PcgCtxt::new(&body.body, tcx, &bc);
     let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
@@ -370,90 +375,22 @@ impl From<&str> for LifetimeRenderAnnotation {
 
 #[derive(From)]
 #[allow(clippy::large_enum_variant)]
-enum BorrowChecker<'mir, 'tcx> {
+pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
     Polonius(PoloniusBorrowChecker<'mir, 'tcx>),
-    Impl(BorrowCheckerImpl<'mir, 'tcx>),
+    Nll(NllBorrowCheckerImpl<'mir, 'tcx>),
 }
 
-#[cfg(feature = "visualization")]
-impl<'mir, 'tcx> BorrowChecker<'mir, 'tcx> {
-    fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
-        match self {
-            BorrowChecker::Polonius(bc) => &mut bc.pretty_printer,
-            BorrowChecker::Impl(bc) => &mut bc.pretty_printer,
-        }
-    }
-}
-
-impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
+impl<'mir, 'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'mir, 'tcx> {
     fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.is_live(node, location),
-            BorrowChecker::Impl(bc) => bc.is_live(node, location),
-        }
+        todo!()
     }
 
-    fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.outlives(sup, sub),
-            BorrowChecker::Impl(bc) => bc.outlives(sup, sub),
-        }
+    fn borrow_set(&self) -> &BorrowSet<'tcx> {
+        todo!()
     }
 
-    fn twophase_borrow_activations(
-        &self,
-        location: Location,
-    ) -> std::collections::BTreeSet<Location> {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.twophase_borrow_activations(location),
-            BorrowChecker::Impl(bc) => bc.twophase_borrow_activations(location),
-        }
-    }
-
-    fn region_infer_ctxt(&self) -> &borrowck::RegionInferenceContext<'tcx> {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.region_infer_ctxt(),
-            BorrowChecker::Impl(bc) => bc.region_infer_ctxt(),
-        }
-    }
-
-    fn location_table(&self) -> &LocationTable {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.location_table(),
-            BorrowChecker::Impl(bc) => bc.location_table(),
-        }
-    }
-
-    fn polonius_output(&self) -> Option<&borrowck::PoloniusOutput> {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.polonius_output(),
-            BorrowChecker::Impl(bc) => bc.polonius_output(),
-        }
-    }
-
-    fn as_dyn(&self) -> &dyn BorrowCheckerInterface<'tcx> {
-        self
-    }
-
-    fn borrow_set(&self) -> &borrowck::BorrowSet<'tcx> {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.borrow_set(),
-            BorrowChecker::Impl(bc) => bc.borrow_set(),
-        }
-    }
-
-    fn input_facts(&self) -> &borrowck::PoloniusInput {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.input_facts(),
-            BorrowChecker::Impl(bc) => bc.input_facts(),
-        }
-    }
-
-    fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str> {
-        match self {
-            BorrowChecker::Polonius(bc) => bc.override_region_debug_string(_region),
-            BorrowChecker::Impl(bc) => bc.override_region_debug_string(_region),
-        }
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
+        todo!()
     }
 
     fn origin_contains_loan_at(
@@ -462,16 +399,43 @@ impl<'tcx> BorrowCheckerInterface<'tcx> for BorrowChecker<'_, 'tcx> {
         loan: BorrowIndex,
         location: Location,
     ) -> bool {
+        todo!()
+    }
+
+    fn override_region_debug_string(&self, region: RegionVid) -> Option<&str> {
+        todo!()
+    }
+
+    fn input_facts(&self) -> &PoloniusInput {
+        todo!()
+    }
+
+    fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
+        todo!()
+    }
+
+    fn location_table(&self) -> &LocationTable {
+        todo!()
+    }
+
+    fn polonius_output(&self) -> Option<&PoloniusOutput> {
+        todo!()
+    }
+}
+
+#[cfg(feature = "visualization")]
+impl<'mir, 'tcx> RustBorrowCheckerImpl<'mir, 'tcx> {
+    fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
         match self {
-            BorrowChecker::Polonius(bc) => bc.origin_contains_loan_at(region, loan, location),
-            BorrowChecker::Impl(bc) => bc.origin_contains_loan_at(region, loan, location),
+            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.pretty_printer,
+            RustBorrowCheckerImpl::Nll(bc) => &mut bc.pretty_printer,
         }
     }
 
-    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
+    pub fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         match self {
-            BorrowChecker::Polonius(bc) => bc.borrow_in_scope_at(borrow_index, location),
-            BorrowChecker::Impl(bc) => bc.borrow_in_scope_at(borrow_index, location),
+            RustBorrowCheckerImpl::Polonius(bc) => bc.region_cx,
+            RustBorrowCheckerImpl::Nll(bc) => bc.region_cx,
         }
     }
 }
@@ -542,9 +506,9 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
 #[rustversion::since(2024-12-14)]
 fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     dir_path: &str,
-    ctxt: CompilerCtxt<'a, 'tcx, &'bc BorrowChecker<'a, 'tcx>>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowChecker<'_, 'tcx, RustBorrowCheckerImpl<'a, 'tcx>>>,
 ) {
-    if let BorrowChecker::Polonius(bc) = ctxt.bc() {
+    if let RustBorrowCheckerImpl::Polonius(ref bc) = **ctxt.bc() {
         let ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), bc);
         for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
             let num_stmts = data.statements.len();
@@ -570,6 +534,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                 .unwrap();
 
                 fn write_loans(
+                    bc: &PoloniusBorrowChecker<'_, '_>,
                     loans: BTreeMap<RegionVid, BTreeSet<BorrowIndex>>,
                     loans_file: &mut std::fs::File,
                     ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
@@ -577,13 +542,13 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {region:?}").unwrap();
                         for index in indices {
-                            writeln!(loans_file, "  {:?}", ctxt.bc().borrow_set()[index].region())
-                                .unwrap();
+                            writeln!(loans_file, "  {:?}", bc.borrows[index].region()).unwrap();
                         }
                     }
                 }
 
                 fn write_bc_facts(
+                    bc: &PoloniusBorrowChecker<'_, '_>,
                     location: RichLocation,
                     bc_facts_file: &mut std::fs::File,
                     ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
@@ -591,7 +556,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     let origin_contains_loan_at = ctxt.bc().origin_contains_loan_at_map(location);
                     writeln!(bc_facts_file, "{location:?} Origin contains loan at:").unwrap();
                     if let Some(origin_contains_loan_at) = origin_contains_loan_at {
-                        write_loans(origin_contains_loan_at, bc_facts_file, ctxt);
+                        write_loans(bc, origin_contains_loan_at, bc_facts_file, ctxt);
                     }
                     writeln!(bc_facts_file, "{location:?} Origin live on entry:").unwrap();
                     if let Some(origin_live_on_entry) = ctxt.bc().origin_live_on_entry(location) {
@@ -607,8 +572,8 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
 
                 let start_location = RichLocation::Start(location);
                 let mid_location = RichLocation::Mid(location);
-                write_bc_facts(start_location, &mut bc_facts_file, ctxt);
-                write_bc_facts(mid_location, &mut bc_facts_file, ctxt);
+                write_bc_facts(bc, start_location, &mut bc_facts_file, ctxt);
+                write_bc_facts(bc, mid_location, &mut bc_facts_file, ctxt);
             }
         }
         let dot_graph = subset_anywhere(ctxt);

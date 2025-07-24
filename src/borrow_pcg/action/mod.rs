@@ -2,7 +2,7 @@
 
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use crate::action::BorrowPcgAction;
-use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_checker::{BorrowCheckerInterface, RustBorrowCheckerInterface};
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
