@@ -102,7 +102,7 @@ thread_local! {
 }
 
 #[rustversion::before(2025-07-01)]
-pub(crate) fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
+pub(crate) fn mir_borrowck(tcx: TyCtxt<'_>, def_id: LocalDefId) -> MirBorrowck<'_> {
     let consumer_opts = borrowck::ConsumerOptions::PoloniusInputFacts;
     tracing::debug!(
         "Start mir_borrowck for {}",
@@ -149,7 +149,7 @@ fn save_body(tcx: TyCtxt<'_>, def_id: LocalDefId, body: BodyWithBorrowckFacts<'_
     }
 }
 
-fn original_mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx> {
+fn original_mir_borrowck(tcx: TyCtxt<'_>, def_id: LocalDefId) -> MirBorrowck<'_> {
     let mut providers = Providers::default();
     borrowck::provide(&mut providers);
     let original_mir_borrowck = providers.mir_borrowck;
