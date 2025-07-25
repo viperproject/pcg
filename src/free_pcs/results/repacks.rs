@@ -221,6 +221,7 @@ impl<'tcx> RepackOp<'tcx> {
         for_cap: CapabilityKind,
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
+        assert!(!matches!(for_cap, CapabilityKind::Write));
         Self::Expand(RepackExpand {
             from,
             guide,

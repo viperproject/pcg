@@ -55,6 +55,7 @@ impl ObtainType {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
+            ObtainType::Capability(CapabilityKind::Write) => CapabilityKind::Exclusive,
             ObtainType::Capability(cap) => *cap,
             ObtainType::TwoPhaseExpand => CapabilityKind::Read,
             ObtainType::LoopInvariant => {
