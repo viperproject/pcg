@@ -1,6 +1,5 @@
 use std::{
     cell::{Ref, RefCell},
-    collections::HashSet,
 };
 
 use derive_more::{Deref, IntoIterator};
@@ -13,7 +12,7 @@ use crate::{
     },
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::{FxHashMap, FxHashSet},
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt},
 };
 
 use super::BorrowsGraph;
@@ -153,35 +152,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         let roots = self.graph.roots(ctxt);
         self.roots_cache.replace(Some(roots));
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
-    }
-
-    pub(crate) fn leaf_edges_skipping_future_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
-        &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
-        let is_edge_to_future_node = |edge: BorrowPcgEdgeRef<'tcx, 'graph>| {
-            edge.blocked_by_nodes(ctxt)
-                .all(|node| node.is_placeholder())
-        };
-        let leaf_nodes = self
-            .nodes(ctxt)
-            .iter()
-            .filter(|node| {
-                !node.is_placeholder()
-                    && self
-                        .get_edges_blocking(**node, ctxt)
-                        .iter()
-                        .all(|edge| is_edge_to_future_node(*edge))
-            })
-            .copied()
-            .collect::<Vec<_>>();
-        self.graph
-            .edges()
-            .filter(|edge| {
-                edge.blocked_by_nodes(ctxt)
-                    .all(|node| leaf_nodes.contains(&node.into()))
-            })
-            .collect()
     }
 
     pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(

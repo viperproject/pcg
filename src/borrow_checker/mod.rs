@@ -79,6 +79,15 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
 
+    fn is_blocked(
+        &self,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        !self.borrows_blocking(blocked_place, location, ctxt).is_empty()
+    }
+
     fn is_directly_blocked(
         &self,
         blocked_place: Place<'tcx>,

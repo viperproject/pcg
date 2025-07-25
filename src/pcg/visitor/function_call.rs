@@ -5,12 +5,11 @@ use crate::borrow_pcg::domain::{FunctionCallAbstractionInput, FunctionCallAbstra
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
-use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::pcg::obtain::PlaceExpander;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
-use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::{self, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
@@ -35,15 +34,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         destination: utils::Place<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        // This is just a performance optimization
-        if self
-            .pcg
-            .borrow
-            .graph()
-            .has_function_call_abstraction_at(location)
-        {
-            return Ok(());
-        }
         let function_data = get_function_data(func, self.ctxt);
 
         let path_conditions = self.pcg.borrow.path_conditions.clone();
@@ -79,93 +69,65 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<Vec<_>>();
 
-        // The subset of the argument region projections that are nested
-        // (and labelled, since the set of borrows inside may be modified)
-        let mut labelled_rps = FxHashSet::default();
-        for arg in arg_region_projections.iter() {
-            if arg.is_invariant_in_type(self.ctxt) {
-                self.record_and_apply_action(
-                    BorrowPcgAction::label_region_projection(
-                        LabelRegionProjectionPredicate::Equals(*arg),
-                        Some(SnapshotLocation::before(location).into()),
-                        format!(
-                            "Function call: {} is invariant in type {:?}; therefore it will be labelled as the set of borrows inside may be modified",
-                            arg.to_short_string(self.ctxt),
-                            arg.base.ty(self.ctxt).ty,
-                        ),
-                    )
-                    .into(),
-                )?;
-                labelled_rps.insert(
-                    arg.with_label(Some(SnapshotLocation::before(location).into()), self.ctxt),
-                );
-            }
-        }
-
-        let placeholder_targets = labelled_rps
+        let pre_rps = arg_region_projections
             .iter()
-            .flat_map(|rp| {
-                self.pcg
-                    .borrow
-                    .graph()
-                    .identify_placeholder_target(*rp, self.ctxt)
-            })
-            .collect::<FxHashSet<_>>();
-
-        tracing::debug!(
-            "Placeholder targets: {}",
-            placeholder_targets.to_short_string(self.ctxt)
-        );
-
-        // The set of region projections that contain borrows that could be
-        // moved into the labelled rps (as they are seen after the function call)
-        let source_arg_projections = arg_region_projections
-            .iter()
-            .map(|rp| {
-                if rp.is_invariant_in_type(self.ctxt) {
-                    (*rp).with_label(Some(SnapshotLocation::before(location).into()), self.ctxt)
-                } else {
-                    *rp
-                }
-            })
+            .map(|rp| rp.with_label(Some(SnapshotLocation::before(location).into()), self.ctxt))
             .collect::<Vec<_>>();
 
-        tracing::debug!(
-            "Source arg projections: {}",
-            source_arg_projections.to_short_string(self.ctxt)
-        );
+        let post_rps = arg_region_projections
+            .iter()
+            .map(|rp| rp.with_label(Some(SnapshotLocation::After(location).into()), self.ctxt))
+            .collect::<Vec<_>>();
 
-        for arg_rp in source_arg_projections {
-            let this_region = arg_rp.region(self.ctxt);
-            let mut outputs = placeholder_targets
-                .iter()
-                .copied()
-                .filter(|rp| self.ctxt.bc.same_region(this_region, rp.region(self.ctxt)))
-                .map(|rp| {
-                    FunctionCallAbstractionOutput::new(
-                        rp.with_label(Some(RegionProjectionLabel::Placeholder), self.ctxt),
-                    )
-                })
-                .collect::<Vec<_>>();
+        for (rp, post_rp) in arg_region_projections.iter().zip(post_rps.iter()) {
+            self.place_obtainer()
+                .redirect_source_of_future_edges(*rp, *post_rp, ctxt)?;
+        }
+
+        for (rp, pre_rp) in arg_region_projections.iter().zip(pre_rps.iter()) {
+            self.record_and_apply_action(
+                BorrowPcgAction::label_region_projection(
+                    LabelRegionProjectionPredicate::Equals(*rp),
+                    pre_rp.label(),
+                    format!(
+                        "Function call:Label Pre version of {}",
+                        rp.to_short_string(self.ctxt),
+                    ),
+                )
+                .into(),
+            )?;
+        }
+
+        for pre_rp in pre_rps {
+            let mut outputs = vec![];
+            for post_rp in post_rps.iter() {
+                if post_rp.is_invariant_in_type(self.ctxt)
+                    && self
+                        .ctxt
+                        .bc
+                        .outlives(pre_rp.region(self.ctxt), post_rp.region(self.ctxt))
+                {
+                    outputs.push((*post_rp).into());
+                }
+            }
             let result_projections: Vec<FunctionCallAbstractionOutput<'tcx>> = destination
                 .region_projections(self.ctxt)
                 .iter()
-                .filter(|rp| self.ctxt.bc.outlives(this_region, rp.region(self.ctxt)))
+                .filter(|rp| {
+                    self.ctxt
+                        .bc
+                        .outlives(pre_rp.region(self.ctxt), rp.region(self.ctxt))
+                })
                 .map(|rp| (*rp).into())
                 .collect();
             outputs.extend(result_projections);
             if !outputs.is_empty() {
                 self.record_and_apply_action(
-                    mk_create_edge_action(
-                        arg_rp.into(),
-                        outputs,
-                        "Function call: edges for nested borrows",
-                    )
-                    .into(),
+                    mk_create_edge_action(pre_rp.into(), outputs, "Function call").into(),
                 )?;
             }
         }
-        // self.pcg.render_debug_graph(self.ctxt, location, "final borrow_graph");
+
         Ok(())
     }
 }
