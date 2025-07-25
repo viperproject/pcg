@@ -801,7 +801,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // After performing this operation, we should try again to remove borrow
         // PCG edges blocking `place`, since this may enable some borrow
         // expansions to be removed (s.f was previously blocked and no longer is)
-        if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
+        if !matches!(obtain_type, ObtainType::LoopInvariant | ObtainType::Capability(CapabilityKind::Read)) {
             self.label_shared_deref_projections_of_postfix_places(place)?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }

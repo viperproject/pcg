@@ -10,10 +10,11 @@ use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::edge_data::{LabelPlaceCtxt, LabelPlacePredicate};
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+    LabelPlace, LabelPlaceWithCtxt, LabelRegionProjectionPredicate, LabelRegionProjectionResult,
+    PlaceLabeller,
 };
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -33,7 +34,7 @@ use crate::{
             },
         },
     },
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
+    utils::{HasPlace, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 /// A region occuring in region projections
@@ -285,7 +286,7 @@ impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if let Some(p) = self.base.as_local_place_mut() {
-            p.label_place(predicate, labeller, ctxt)
+            p.label_place_with_ctxt(predicate, LabelPlaceCtxt::RegionProjection, labeller, ctxt)
         } else {
             false
         }
@@ -322,9 +323,9 @@ impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
     }
 }
 
-impl<'tcx, P: Copy> LabelRegionProjection<'tcx>
-    for RegionProjection<'tcx, P>
-    where MaybeRemoteRegionProjectionBase<'tcx>: From<P>
+impl<'tcx, P: Copy> LabelRegionProjection<'tcx> for RegionProjection<'tcx, P>
+where
+    MaybeRemoteRegionProjectionBase<'tcx>: From<P>,
 {
     fn label_region_projection(
         &mut self,
@@ -516,11 +517,11 @@ pub trait RegionProjectionBaseLike<'tcx>:
 }
 
 impl<
-        'tcx,
-        'a,
-        T: RegionProjectionBaseLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    'tcx,
+    'a,
+    T: RegionProjectionBaseLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for RegionProjection<'tcx, T>
 {
     fn to_short_string(
@@ -542,12 +543,11 @@ impl<
 }
 
 impl<
-        'tcx,
-        'a,
-        T: RegionProjectionBaseLike<'tcx>
-            + ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for RegionProjection<'tcx, T>
+    'tcx,
+    'a,
+    T: RegionProjectionBaseLike<'tcx>
+        + ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for RegionProjection<'tcx, T>
 {
     fn to_json(
         &self,

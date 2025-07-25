@@ -2,7 +2,7 @@ use derive_more::From;
 
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::edge_data::{LabelPlaceCtxt, LabelPlacePredicate};
 use crate::borrow_pcg::region_projection::RegionIdx;
 use crate::pcg::{MaybeHasLocation, PCGNodeLike};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -132,6 +132,16 @@ pub(crate) trait LabelPlace<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
+}
+
+pub(crate) trait LabelPlaceWithCtxt<'tcx, Ctxt = LabelPlaceCtxt> {
+    fn label_place_with_ctxt(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        label_ctxt: Ctxt,
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;

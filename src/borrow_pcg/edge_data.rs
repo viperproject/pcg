@@ -1,9 +1,9 @@
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::has_pcs_elem::PlaceLabeller;
 use crate::pcg::PCGNode;
+use crate::rustc_interface::middle::mir::ProjectionElem;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};
-use crate::rustc_interface::middle::mir::ProjectionElem;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
@@ -60,6 +60,10 @@ pub trait EdgeData<'tcx> {
 pub enum LabelPlacePredicate<'tcx> {
     Exact(Place<'tcx>),
     PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
+    BorrowedFrom {
+        place: Place<'tcx>,
+        only_from_shared: bool,
+    },
     StrictPostfix(Place<'tcx>),
 }
 
@@ -80,18 +84,52 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
                 predicate_place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
             }
-            LabelPlacePredicate::StrictPostfix(place) => {
-                format!("strict postfix of {}", place.to_short_string(ctxt))
+            LabelPlacePredicate::BorrowedFrom {
+                place,
+                only_from_shared,
+            } => {
+                format!(
+                    "strict deref postfix of {} {}",
+                    place.to_short_string(ctxt),
+                    if *only_from_shared {
+                        "only from shared"
+                    } else {
+                        ""
+                    }
+                )
             }
             LabelPlacePredicate::Exact(place) => {
                 format!("exact {}", place.to_short_string(ctxt))
+            }
+            LabelPlacePredicate::StrictPostfix(place) => {
+                format!("strict postfix of {}", place.to_short_string(ctxt))
             }
         }
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub(crate) enum LabelPlaceCtxt {
+    RegionProjection,
+    Place,
+}
+
+impl LabelPlaceCtxt {
+    pub(crate) fn for_pcg_node<T, U>(node: PCGNode<'_, T, U>) -> Self {
+        match node {
+            PCGNode::Place(_) => LabelPlaceCtxt::Place,
+            PCGNode::RegionProjection(_) => LabelPlaceCtxt::RegionProjection,
+        }
+    }
+}
+
 impl<'tcx> LabelPlacePredicate<'tcx> {
-    pub(crate) fn applies_to(&self, candidate: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn applies_to(
+        &self,
+        candidate: Place<'tcx>,
+        label_ctxt: LabelPlaceCtxt,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
             LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
                 if predicate_place.is_prefix_of(candidate) {
@@ -111,17 +149,39 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                     false
                 }
             }
-            LabelPlacePredicate::StrictPostfix(place) => {
-                if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
-                    for (place, proj) in iter {
-                        if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {
-                            return true;
+            LabelPlacePredicate::BorrowedFrom {
+                place,
+                only_from_shared,
+            } => {
+                if !place.is_prefix_of(candidate) {
+                    return false;
+                }
+                match label_ctxt {
+                    LabelPlaceCtxt::RegionProjection => {
+                        if *only_from_shared {
+                            return place.is_shared_ref(ctxt);
+                        }
+                        return true;
+                    }
+                    LabelPlaceCtxt::Place => {
+                        if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
+                            for (place, proj) in iter {
+                                if matches!(proj, ProjectionElem::Deref) {
+                                    if !place.is_ref(ctxt) {
+                                        return false;
+                                    }
+                                    return place.is_shared_ref(ctxt) || !*only_from_shared;
+                                }
+                            }
                         }
                     }
                 }
                 false
             }
             LabelPlacePredicate::Exact(place) => *place == candidate,
+            LabelPlacePredicate::StrictPostfix(place) => {
+                *place != candidate && place.is_prefix_of(candidate)
+            }
         }
     }
 }

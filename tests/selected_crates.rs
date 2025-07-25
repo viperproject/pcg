@@ -24,6 +24,31 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 4 basic blocks
+    common::ensure_successful_run_on_crate(
+        "rustls-pki-types",
+        "1.11.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("server_name::parser::Parser::<'a>::read_char"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "siphasher",
+        "1.0.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<sip::Sip13Rounds as sip::Sip>::c_rounds"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // common::ensure_successful_run_on_crate(
     //     "brotli-decompressor",
     //     "4.0.2",
@@ -101,18 +126,6 @@ fn test_selected_crates() {
         },
     );
 
-    // 4 basic blocks
-    common::ensure_successful_run_on_crate(
-        "rustls-pki-types",
-        "1.11.0",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("server_name::parser::Parser::<'a>::read_char"),
-            extra_env_vars: vec![],
-        },
-    );
 
     // 23 basic blocks
     // common::ensure_successful_run_on_crate(
@@ -597,6 +610,7 @@ fn test_selected_crates() {
         },
     );
 
+    // 171 basic blocks
     common::ensure_successful_run_on_crate(
         "matchit",
         "0.8.6",

@@ -5,17 +5,17 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
-        edge_data::LabelPlacePredicate,
+        edge_data::{LabelPlaceCtxt, LabelPlacePredicate},
         has_pcs_elem::{
-            HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult, PlaceLabeller,
+            HasPcgElems, LabelPlace, LabelPlaceWithCtxt, LabelRegionProjection,
+            LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
         },
         region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace,
-        place::maybe_old::MaybeOldPlace, validity::HasValidityCheck, CompilerCtxt, Place,
+        CompilerCtxt, Place, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace,
+        place::maybe_old::MaybeOldPlace, validity::HasValidityCheck,
     },
 };
 
@@ -64,7 +64,12 @@ impl<'tcx> LabelPlace<'tcx> for FunctionCallAbstractionInput<'tcx> {
     ) -> bool {
         let mut changed = false;
         for p in self.pcg_elems() {
-            changed |= p.label_place(predicate, labeller, ctxt);
+            changed |= p.label_place_with_ctxt(
+                predicate,
+                LabelPlaceCtxt::RegionProjection,
+                labeller,
+                ctxt,
+            );
         }
         changed
     }
@@ -121,8 +126,14 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionInput<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
+        let label_ctxt = LabelPlaceCtxt::for_pcg_node(self.0);
         for p in self.pcg_elems() {
-            changed |= p.label_place(predicate, labeller, ctxt);
+            changed |= p.label_place_with_ctxt(
+                predicate,
+                label_ctxt,
+                labeller,
+                ctxt,
+            );
         }
         changed
     }
@@ -184,9 +195,15 @@ impl<'tcx> LabelPlace<'tcx> for LoopAbstractionOutput<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let mut changed = false;
+        let label_ctxt = LabelPlaceCtxt::for_pcg_node(self.0);
         let maybe_old_places: Vec<&mut MaybeOldPlace<'tcx>> = self.0.pcg_elems();
         for p in maybe_old_places {
-            changed |= p.label_place(predicate, labeller, ctxt);
+            changed |= p.label_place_with_ctxt(
+                predicate,
+                label_ctxt,
+                labeller,
+                ctxt,
+            );
         }
         changed
     }

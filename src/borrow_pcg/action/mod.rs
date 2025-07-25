@@ -118,15 +118,15 @@ impl MakePlaceOldReason {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let predicate = match self {
-            MakePlaceOldReason::ReAssign => {
-                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
-            }
             MakePlaceOldReason::StorageDead | MakePlaceOldReason::MoveOut => {
                 LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
             }
             MakePlaceOldReason::Collapse => LabelPlacePredicate::Exact(place),
-            MakePlaceOldReason::LabelSharedDerefProjections => {
-                LabelPlacePredicate::StrictPostfix(place)
+            MakePlaceOldReason::ReAssign | MakePlaceOldReason::LabelSharedDerefProjections => {
+                LabelPlacePredicate::BorrowedFrom {
+                    place,
+                    only_from_shared: matches!(self, MakePlaceOldReason::LabelSharedDerefProjections),
+                }
             }
         };
         let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
