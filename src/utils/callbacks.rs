@@ -147,7 +147,7 @@ pub fn in_cargo_crate() -> bool {
 /// Is the current compilation running under cargo? Either compiling a crate or
 /// a build script.
 pub fn in_cargo() -> bool {
-    std::env::var("CARGO").ok().is_some()
+    in_cargo_crate() || std::env::var("OUT_DIR").ok().is_some()
 }
 
 #[rustversion::before(2025-03-02)]
