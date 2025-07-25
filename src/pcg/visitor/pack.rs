@@ -80,32 +80,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         &mut self,
         parent_place: Option<Place<'tcx>>,
     ) -> Result<(), PcgError> {
-        let frozen_graph = self.pcg.borrow.graph.frozen_graph();
-        let leaf_nodes = frozen_graph.leaf_nodes(self.ctxt);
-        let leaf_future_node_places = leaf_nodes
-            .iter()
-            .filter_map(|node| match node {
-                PCGNode::Place(_) => None,
-                PCGNode::RegionProjection(region_projection) => {
-                    if region_projection.is_placeholder() {
-                        region_projection.base.as_current_place()
-                    } else {
-                        None
-                    }
-                }
-            })
-            .collect::<HashSet<_>>();
-        for place in leaf_future_node_places {
-            if !self.ctxt.bc.is_blocked(place, self.location(), self.ctxt) {
-                let action = PcgAction::restore_capability(
-                    place,
-                    CapabilityKind::Exclusive,
-                    "restore capability to leaf place",
-                    self.ctxt,
-                );
-                self.record_and_apply_action(action)?;
-            }
-        }
         let leaf_places = self.pcg.leaf_places_where(
             |p| {
                 self.pcg.capabilities.get(p) == Some(CapabilityKind::Read)
