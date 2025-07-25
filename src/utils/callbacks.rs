@@ -138,8 +138,16 @@ fn cargo_crate_name() -> Option<String> {
     std::env::var("CARGO_CRATE_NAME").ok()
 }
 
+/// Is the current compilation running under cargo? Returns true when compiling
+/// a crate, but false when compiling a build script.
 pub fn in_cargo_crate() -> bool {
     cargo_crate_name().is_some()
+}
+
+/// Is the current compilation running under cargo? Either compiling a crate or
+/// a build script.
+pub fn in_cargo() -> bool {
+    std::env::var("CARGO").ok().is_some()
 }
 
 #[rustversion::before(2025-03-02)]
