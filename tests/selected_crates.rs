@@ -24,19 +24,30 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // // 23 basic blocks
-    // common::ensure_successful_run_on_crate(
-    //     "prost-build",
-    //     "0.13.5",
-    //     Some("2025-03-13"),
-    //     common::RunOnCrateOptions::RunPCG {
-    //         target: common::Target::Debug,
-    //         validity_checks: true,
-    //         function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
-    //         extra_env_vars: visualization_env_vars,
-    //     },
-    // );
-    // return;
+    // 140 basic blocks
+    common::ensure_successful_run_on_crate(
+        "clap_builder",
+        "4.5.32",
+        None,
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Release,
+            validity_checks: false,
+            function: Some("output::help_template::HelpTemplate::<'_, '_>::write_all_args"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "zip",
+        "2.2.3",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("read::ZipFile::<'a>::take_raw_reader"),
+            extra_env_vars: vec![],
+        },
+    );
 
     // 159 basic blocks TODO
     // common::ensure_successful_run_on_crate(
@@ -90,9 +101,6 @@ fn test_selected_crates() {
         },
     );
 
-
-
-
     // 23 basic blocks
     // common::ensure_successful_run_on_crate(
     //     "prost-build",
@@ -105,7 +113,6 @@ fn test_selected_crates() {
     //         extra_env_vars: vec![],
     //     },
     // );
-
 
     // cycles, <= 20 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(

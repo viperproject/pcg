@@ -1,6 +1,5 @@
 use std::{
     cell::{Ref, RefCell},
-    collections::HashSet,
 };
 
 use derive_more::{Deref, IntoIterator};
@@ -153,65 +152,6 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         let roots = self.graph.roots(ctxt);
         self.roots_cache.replace(Some(roots));
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
-    }
-
-    /// Returns all leaf edges, except for those that are to future lifetime
-    /// set of leaf edges to cleanup.
-    ///
-    /// Edges that are to future lifetime projections of current places
-    /// shouldn't be cleaned up - presumably the place will become accessible
-    /// again and the label will be removed.
-    ///
-    /// It is possible to have future lifetime projections of labelled places;
-    /// this can happen as follows.
-    /// ```ignore
-    /// let a = T {};
-    /// let x = &mut a;
-    /// let y = &mut (*x); // we have a -> x|'a @l -> .. -> y|'a -> .. -> x|'a @ FUTURE
-    /// StorageDead(x)  // we have a -> x @ old |'a @l -> .. -> y|'a -> .. -> x @ old |'a @ FUTURE
-    /// let z = y;
-    /// ```
-    ///
-    /// In such a case we'd want to remove edges to x @ old |'a @ FUTURE so we
-    /// can eventually regain capability to `a`.
-    ///
-    pub(crate) fn leaf_edges_skipping_future_rps_of_current_places<
-        'slf,
-        'mir: 'graph,
-        'bc: 'graph,
-    >(
-        &'slf self,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
-        let is_edge_to_future_node_with_current_place = |edge: BorrowPcgEdgeRef<'tcx, 'graph>| {
-            edge.blocked_by_nodes(ctxt).all(|node| match node {
-                PCGNode::RegionProjection(rp) => rp.is_placeholder() && rp.base().is_current(),
-                _ => false,
-            })
-        };
-        self.leaf_edges(ctxt)
-            .into_iter()
-            .filter(|edge| !is_edge_to_future_node_with_current_place(*edge))
-            .collect()
-        // let leaf_nodes = self
-        //     .nodes(ctxt)
-        //     .iter()
-        //     .filter(|node| {
-        //         !node.is_placeholder()
-        //             && self
-        //                 .get_edges_blocking(**node, ctxt)
-        //                 .iter()
-        //                 .all(|edge| is_edge_to_future_node(*edge))
-        //     })
-        //     .copied()
-        //     .collect::<Vec<_>>();
-        // self.graph
-        //     .edges()
-        //     .filter(|edge| {
-        //         edge.blocked_by_nodes(ctxt)
-        //             .all(|node| leaf_nodes.contains(&node.into()))
-        //     })
-        //     .collect()
     }
 
     pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(
