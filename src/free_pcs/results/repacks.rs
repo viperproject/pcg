@@ -8,8 +8,8 @@ use rustc_interface::middle::mir::{Local, PlaceElem};
 
 use crate::{
     free_pcs::CapabilityKind,
-    rustc_interface::{self, span::Symbol, VariantIdx},
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, ConstantIndex, Place},
+    rustc_interface::{self, VariantIdx, span::Symbol},
+    utils::{CompilerCtxt, ConstantIndex, Place, display::DisplayWithCompilerCtxt},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -221,6 +221,8 @@ impl<'tcx> RepackOp<'tcx> {
         for_cap: CapabilityKind,
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
+        // Note that we might generate expand annotations with `Write` capability for
+        // the `bridge` operation to generate annotations between basic blocks.
         Self::Expand(RepackExpand {
             from,
             guide,

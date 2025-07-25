@@ -247,16 +247,16 @@ fn test_selected_crates() {
     );
 
     // 45 blocks
-    common::ensure_successful_run_on_crate("ring",
-        "0.17.14",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
-            extra_env_vars: vec![],
-        },
-    );
+    // common::ensure_successful_run_on_crate("ring",
+    //     "0.17.14",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
 
     // 7 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(

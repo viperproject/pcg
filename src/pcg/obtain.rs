@@ -49,6 +49,21 @@ pub(crate) enum ObtainType {
 }
 
 impl ObtainType {
+    /// The capability to use when generating expand annotations.
+    ///
+    /// If we are intend to write to the place, an expansion must come
+    /// from a place with exclusive permission, so we expand for that capability.
+    /// A weaken will come later.
+    pub(crate) fn capability_for_expand<'tcx>(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> CapabilityKind {
+        match self {
+            ObtainType::Capability(CapabilityKind::Write) => CapabilityKind::Exclusive,
+            _ => self.capability(place, ctxt),
+        }
+    }
     pub(crate) fn capability<'tcx>(
         &self,
         place: Place<'tcx>,
@@ -190,7 +205,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                     RepackOp::expand(
                         expansion.base_place(),
                         expansion.guide(),
-                        obtain_type.capability(expansion.base_place(), ctxt),
+                        obtain_type.capability_for_expand(expansion.base_place(), ctxt),
                         ctxt,
                     ),
                     None,
