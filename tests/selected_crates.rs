@@ -24,13 +24,26 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 7 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields"),
+            extra_env_vars: vec![]
+        },
+    );
+
     // 140 basic blocks
     common::ensure_successful_run_on_crate(
         "clap_builder",
         "4.5.32",
         None,
         common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Release,
+            target: common::Target::Debug,
             validity_checks: false,
             function: Some("output::help_template::HelpTemplate::<'_, '_>::write_all_args"),
             extra_env_vars: vec![],

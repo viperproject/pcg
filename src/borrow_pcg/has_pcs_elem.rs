@@ -18,6 +18,7 @@ pub enum LabelRegionProjectionPredicate<'tcx> {
     Postfix(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     Equals(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     AllNonPlaceHolder(MaybeOldPlace<'tcx>, RegionIdx),
+    AllPlaceholderPostfixes(Place<'tcx>),
 }
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
@@ -40,6 +41,9 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
                     maybe_old_place.to_short_string(ctxt),
                     region_idx
                 )
+            }
+            LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place) => {
+                format!("AllPlaceholderPostfixes: {}", place.to_short_string(ctxt))
             }
         }
     }
@@ -71,6 +75,17 @@ impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
                         && to_match.base.location() == predicate_projection.base.location()
                         && to_match.region_idx == predicate_projection.region_idx
                         && to_match.label() == predicate_projection.label()
+                } else {
+                    false
+                }
+            }
+            LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place) => {
+                if let Some(crate::pcg::PCGNode::RegionProjection(to_match)) =
+                    to_match.try_to_local_node(ctxt)
+                {
+                    to_match.is_placeholder() &&
+                    to_match.base.is_current() &&
+                    place.is_prefix_of(to_match.base.place())
                 } else {
                     false
                 }
