@@ -163,25 +163,30 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
             edge.blocked_by_nodes(ctxt)
                 .all(|node| node.is_placeholder())
         };
-        let leaf_nodes = self
-            .nodes(ctxt)
-            .iter()
-            .filter(|node| {
-                !node.is_placeholder()
-                    && self
-                        .get_edges_blocking(**node, ctxt)
-                        .iter()
-                        .all(|edge| is_edge_to_future_node(*edge))
-            })
-            .copied()
-            .collect::<Vec<_>>();
-        self.graph
-            .edges()
-            .filter(|edge| {
-                edge.blocked_by_nodes(ctxt)
-                    .all(|node| leaf_nodes.contains(&node.into()))
-            })
-            .collect()
+        // TODO: There should be a simpler predicate
+        // Can only borrowflow edges lead to future nodes?
+        self.leaf_edges(ctxt).into_iter().filter(|edge| {
+            !is_edge_to_future_node(*edge)
+        }).collect()
+        // let leaf_nodes = self
+        //     .nodes(ctxt)
+        //     .iter()
+        //     .filter(|node| {
+        //         !node.is_placeholder()
+        //             && self
+        //                 .get_edges_blocking(**node, ctxt)
+        //                 .iter()
+        //                 .all(|edge| is_edge_to_future_node(*edge))
+        //     })
+        //     .copied()
+        //     .collect::<Vec<_>>();
+        // self.graph
+        //     .edges()
+        //     .filter(|edge| {
+        //         edge.blocked_by_nodes(ctxt)
+        //             .all(|node| leaf_nodes.contains(&node.into()))
+        //     })
+        //     .collect()
     }
 
     pub fn leaf_edges<'slf, 'mir: 'graph, 'bc: 'graph>(
