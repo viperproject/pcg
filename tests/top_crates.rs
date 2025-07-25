@@ -32,12 +32,6 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .filter(|(k, _)| k.starts_with("PCG_"))
         .collect();
 
-    // TODO: Fix the slowness
-    // extra_env_vars.push((
-    //     "PCG_SKIP_FUNCTION".to_string(),
-    //     "<ir::comp::CompInfo as codegen::CodeGenerator>::codegen".to_string(),
-    // ));
-
     top_crates
         .into_par_iter()
         .panic_fuse()

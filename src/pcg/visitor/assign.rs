@@ -21,6 +21,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         target: utils::Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
     ) -> Result<(), PcgError> {
+        let ctxt = self.ctxt;
         self.record_and_apply_action(
             BorrowPcgAction::set_latest(
                 target,
@@ -132,6 +133,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             self.ctxt,
                         )
                         .into(),
+                    )?;
+                    // Redirect all future edges from `from` to now be from `target`
+                    self.place_obtainer().redirect_source_of_future_edges(
+                        source_proj,
+                        target_proj.into(),
+                        ctxt,
                     )?;
                 }
             }

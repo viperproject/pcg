@@ -3,18 +3,16 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
-        edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{EdgeData, LabelEdgePlaces, LabelPlaceCtxt, LabelPlacePredicate},
         has_pcs_elem::{
-            HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult, PlaceLabeller,
+            HasPcgElems, LabelPlace, LabelPlaceWithCtxt, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller
         },
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
-        CompilerCtxt,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck, CompilerCtxt
     },
 };
 
@@ -52,7 +50,8 @@ impl<'tcx> LabelPlace<'tcx> for LocalRegionProjection<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.base.label_place(predicate, labeller, ctxt)
+        self.base
+            .label_place_with_ctxt(predicate, LabelPlaceCtxt::RegionProjection, labeller, ctxt)
     }
 }
 

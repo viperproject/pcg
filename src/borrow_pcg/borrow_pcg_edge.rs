@@ -14,7 +14,7 @@ use super::{
         RegionProjectionLabel,
     },
 };
-use crate::{borrow_pcg::{edge_data::edgedata_enum, has_pcs_elem::{LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller}}, utils::place::maybe_old::MaybeOldPlace};
+use crate::{borrow_pcg::{edge_data::{edgedata_enum, LabelPlaceCtxt}, has_pcs_elem::{LabelPlaceWithCtxt, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller}}, utils::place::maybe_old::MaybeOldPlace};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -189,8 +189,8 @@ impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            LocalNode::Place(p) => p.label_place(predicate, labeller, repacker),
-            LocalNode::RegionProjection(rp) => rp.base.label_place(predicate, labeller, repacker),
+            LocalNode::Place(p) => p.label_place_with_ctxt(predicate, LabelPlaceCtxt::Place, labeller, repacker),
+            LocalNode::RegionProjection(rp) => rp.base.label_place_with_ctxt(predicate, LabelPlaceCtxt::RegionProjection, labeller, repacker),
         }
     }
 }

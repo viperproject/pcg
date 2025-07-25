@@ -14,14 +14,15 @@ fn main() {
     let mut rv1 = &mut v1;
     let mut rv2 = &mut v2;
     let mut rv3 = &mut v3;
-    let mut list = List {
+    let mut list: List<&mut i32> = List {
         head: rv1,
         tail: None,
     };
     list.push(rv2);
     // list|'a should not be a placeholder here
-    // PCG: bb2[0] post_main: call List::<T>::push at bb1[8]: [_11 after bb1[5]↓'?20 after bb1[7]] -> [list↓'?16]
-    // PCG: bb2[0] post_main: call List::<T>::push at bb1[8]: [_12 after bb1[7]↓'?21] -> [list↓'?16]
+    // PCG: bb2[0] post_main: call List::<T>::push at bb1[9]: [_11 after bb1[6]↓'?21 after bb1[8]] -> [_11 after bb1[6]↓'?21 after bb1[9]]
+    // PCG: bb2[0] post_main: call List::<T>::push at bb1[9]: [_12 after bb1[8]↓'?22 after bb1[8]] -> [_11 after bb1[6]↓'?21 after bb1[9]]
+    // PCG: bb2[0] post_main: _11 after bb1[6]↓'?21 after bb1[9] -> list↓'?17
     let y = 1;
     list.push(rv3);
 }

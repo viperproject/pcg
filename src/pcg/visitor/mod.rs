@@ -1,13 +1,11 @@
 use itertools::Itertools;
 
-use crate::action::BorrowPcgAction;
+use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::MakePlaceOldReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{
-    PcgRegion, RegionProjection,
-};
+use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
 use crate::pcg::obtain::PlaceObtainer;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -375,6 +373,36 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .pack_old_and_dead_borrow_leaves(None)?;
         for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
             self.activate_twophase_borrow_created_at(created_location)?;
+        }
+        let frozen_graph = self.pcg.borrow.graph.frozen_graph();
+        let leaf_nodes = frozen_graph.leaf_nodes(self.ctxt);
+        let leaf_future_node_places = leaf_nodes
+            .iter()
+            .filter_map(|node| match node {
+                PCGNode::Place(_) => None,
+                PCGNode::RegionProjection(region_projection) => {
+                    if region_projection.is_placeholder() {
+                        region_projection.base.as_current_place()
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect::<HashSet<_>>();
+        for place in leaf_future_node_places {
+            if !self
+                .ctxt
+                .bc
+                .is_directly_blocked(place, self.location, self.ctxt)
+            {
+                let action = PcgAction::restore_capability(
+                    place,
+                    CapabilityKind::Exclusive,
+                    "Leaf future node restore cap",
+                    self.ctxt,
+                );
+                self.record_and_apply_action(action)?;
+            }
         }
         Ok(())
     }

@@ -2,7 +2,7 @@ use derive_more::From;
 
 use super::region_projection::{RegionProjection, RegionProjectionLabel};
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::borrow_pcg::edge_data::LabelPlacePredicate;
+use crate::borrow_pcg::edge_data::{LabelPlaceCtxt, LabelPlacePredicate};
 use crate::borrow_pcg::region_projection::RegionIdx;
 use crate::pcg::{MaybeHasLocation, PCGNodeLike};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -18,6 +18,7 @@ pub enum LabelRegionProjectionPredicate<'tcx> {
     Postfix(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     Equals(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     AllNonPlaceHolder(MaybeOldPlace<'tcx>, RegionIdx),
+    AllPlaceholderPostfixes(Place<'tcx>),
 }
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
@@ -40,6 +41,9 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
                     maybe_old_place.to_short_string(ctxt),
                     region_idx
                 )
+            }
+            LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place) => {
+                format!("AllPlaceholderPostfixes: {}", place.to_short_string(ctxt))
             }
         }
     }
@@ -71,6 +75,17 @@ impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
                         && to_match.base.location() == predicate_projection.base.location()
                         && to_match.region_idx == predicate_projection.region_idx
                         && to_match.label() == predicate_projection.label()
+                } else {
+                    false
+                }
+            }
+            LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place) => {
+                if let Some(crate::pcg::PCGNode::RegionProjection(to_match)) =
+                    to_match.try_to_local_node(ctxt)
+                {
+                    to_match.is_placeholder() &&
+                    to_match.base.is_current() &&
+                    place.is_prefix_of(to_match.base.place())
                 } else {
                     false
                 }
@@ -117,6 +132,16 @@ pub(crate) trait LabelPlace<'tcx> {
     fn label_place(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool;
+}
+
+pub(crate) trait LabelPlaceWithCtxt<'tcx, Ctxt = LabelPlaceCtxt> {
+    fn label_place_with_ctxt(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        label_ctxt: Ctxt,
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool;

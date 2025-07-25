@@ -7,12 +7,12 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::PCGNode;
 use crate::pcg::obtain::PlaceObtainer;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
-use crate::pcg::PCGNode;
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::HasPlace;
 use crate::utils::Place;
+use crate::utils::display::DisplayWithCompilerCtxt;
 
 type EdgesToTrim<'tcx> = Vec<(BorrowPcgEdge<'tcx>, Cow<'static, str>)>;
 
@@ -105,6 +105,19 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         Ok(())
     }
 
+    /// Identifies the set of edges that should be removed from the graph
+    ///
+    /// If `ancestor_place` is defined, we only consider a subset of the edges.
+    ///
+    /// The subset of edges is defined as follows:
+    ///
+    /// A node *can be killed* if it has a related current place that is a
+    /// postfix of `ancestor_place`.
+    ///
+    /// Then we consider edges where either:
+    ///
+    /// 1. The edge is an expansion edge, and the base can be killed, or
+    /// 2. The edge is some other kind of edge, and all of the blocking nodes can be killed
     fn identify_edges_to_trim<'slf>(
         &'slf mut self,
         ancestor_place: Option<Place<'tcx>>,
@@ -226,7 +239,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                 }
             }
         };
-        let leaf_edges = fg.leaf_edges_skipping_future_nodes(self.ctxt);
+        let leaf_edges = fg.leaf_edges(self.ctxt);
         // tracing::debug!("Leaf edges: {}", leaf_edges.to_short_string(self.ctxt));
         for edge in leaf_edges.into_iter().map(|e| e.to_owned_edge()) {
             tracing::debug!(

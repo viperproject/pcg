@@ -15,13 +15,13 @@ use crate::{
     },
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{
-        place_capabilities::BlockType, EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError,
-        PcgMutRef,
+        EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
+        place_capabilities::BlockType,
     },
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, ProjectionKind,
-        ShallowExpansion, SnapshotLocation,
+        CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
+        display::DisplayWithCompilerCtxt,
     },
 };
 
@@ -350,7 +350,25 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         Ok(())
     }
 
-    // In general the origin_rp should already be labelled
+    /// Performs bookkeeping for future nodes in the case where capability from
+    /// (generally lablled) `origin_rp` is is temporarily transferred to
+    /// (unlablled) `expansion_rps`, but will eventually be transferred back to
+    /// `origin_rp`.
+    ///
+    /// This happens in the case of borrows and expansions of borrowed places,
+    /// in which case `origin_rp` is labelled.
+    /// We also use this for constructing loop abstractions where `origin_rp`
+    /// is unlabelled (the labels are added in a later stage).
+    ///
+    /// The logic as as follows:
+    ///
+    /// Adds a node `future_rp` which is the future node for `origin_rp`.
+    ///
+    /// 1. Add a Future edge from `origin_rp` to `future_rp`
+    /// 2. Add Future edges from each `expansion_rp` to `future_rp`
+    /// 3. All Future edges with source `origin_rp` (except for the one
+    ///    created in step 1) are modified to now have source `future_rp`
+    ///
     fn add_and_update_placeholder_edges(
         &mut self,
         origin_rp: LocalRegionProjection<'tcx>,
@@ -402,20 +420,27 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                 .into(),
             )?;
         }
+        self.redirect_source_of_future_edges(origin_rp, future_rp, ctxt)?;
+        Ok(())
+    }
 
-        // For all borrowflow edges blocking {origin|r'a at l} (except the one to origin|r'a at FUTURE)
-        // They should now be blocking the future one instead
+    fn redirect_source_of_future_edges(
+        &mut self,
+        old_source: LocalRegionProjection<'tcx>,
+        new_source: LocalRegionProjection<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Result<(), PcgError> {
         let to_replace = self
             .borrows_graph()
-            .edges_blocking(origin_rp.into(), ctxt)
+            .edges_blocking(old_source.into(), ctxt)
             .filter_map(|edge| {
                 if let BorrowPcgEdgeKind::BorrowFlow(bf_edge) = edge.kind {
-                    if bf_edge.kind == BorrowFlowEdgeKind::Future && bf_edge.short() != future_rp {
+                    if bf_edge.kind == BorrowFlowEdgeKind::Future && bf_edge.short() != new_source {
                         return Some((
                             edge.to_owned_edge(),
                             BorrowPcgEdge::new(
                                 BorrowFlowEdge::new(
-                                    future_rp.into(),
+                                    new_source.into(),
                                     bf_edge.short(),
                                     BorrowFlowEdgeKind::Future,
                                     ctxt,

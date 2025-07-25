@@ -8,10 +8,6 @@ use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::Location;
 
 impl<'tcx> AbstractionType<'tcx> {
-    pub(crate) fn is_function_call(&self) -> bool {
-        matches!(self, AbstractionType::FunctionCall(_))
-    }
-
     pub fn location(&self) -> Location {
         match self {
             AbstractionType::FunctionCall(c) => c.location(),

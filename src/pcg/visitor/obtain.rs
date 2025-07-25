@@ -14,7 +14,7 @@ use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
 use crate::free_pcs::{CapabilityKind, RepackOp};
-use crate::pcg::dot_graphs::{generate_dot_graph, ToGraph};
+use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
@@ -650,10 +650,19 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     .apply_action(action.clone(), self.pcg.capabilities, self.ctxt)?
             }
             PcgAction::Owned(owned_action) => match owned_action.kind {
-                RepackOp::RegainLoanedCapability(place, capability_kind) => self
-                    .pcg
-                    .capabilities
-                    .insert((*place).into(), capability_kind, self.ctxt),
+                RepackOp::RegainLoanedCapability(place, capability_kind) => {
+                    self.pcg
+                        .capabilities
+                        .insert((*place).into(), capability_kind, self.ctxt);
+                    if capability_kind == CapabilityKind::Exclusive {
+                        self.pcg.borrow.label_region_projection(
+                            &LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place),
+                            None,
+                            self.ctxt,
+                        );
+                    }
+                    true
+                }
                 RepackOp::Expand(expand) => {
                     self.pcg.owned.perform_expand_action(
                         expand,
@@ -792,7 +801,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // After performing this operation, we should try again to remove borrow
         // PCG edges blocking `place`, since this may enable some borrow
         // expansions to be removed (s.f was previously blocked and no longer is)
-        if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
+        if !matches!(obtain_type, ObtainType::LoopInvariant | ObtainType::Capability(CapabilityKind::Read)) {
             self.label_shared_deref_projections_of_postfix_places(place)?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }

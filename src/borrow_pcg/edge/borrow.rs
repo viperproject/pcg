@@ -2,9 +2,9 @@
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{LabelEdgePlaces, LabelPlaceCtxt, LabelPlacePredicate, edgedata_enum},
         has_pcs_elem::{
-            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
+            LabelPlaceWithCtxt, LabelRegionProjection, LabelRegionProjectionPredicate,
             LabelRegionProjectionResult, PlaceLabeller,
         },
         region_projection::RegionProjectionLabel,
@@ -18,18 +18,18 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace},
+    utils::{HasPlace, remote::RemotePlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::RegionProjection;
+use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::CompilerCtxt;
 
 /// A borrow that is explicit in the MIR (e.g. `let x = &mut y;`)
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -74,7 +74,8 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.blocked_place.label_place(predicate, labeller, ctxt)
+        self.blocked_place
+            .label_place_with_ctxt(predicate, LabelPlaceCtxt::Place, labeller, ctxt)
     }
 
     fn label_blocked_by_places(
@@ -86,7 +87,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
         // Technically, `assigned_ref` does not block this node, but this place
         // is used to compute `assigned_region_projection` which *does* block this node
         // So we should label it
-        self.assigned_ref.label_place(predicate, labeller, ctxt)
+        self.assigned_ref.label_place_with_ctxt(
+            predicate,
+            LabelPlaceCtxt::RegionProjection,
+            labeller,
+            ctxt,
+        )
     }
 }
 
@@ -136,7 +142,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.assigned_ref.label_place(predicate, labeller, ctxt)
+        self.assigned_ref.label_place_with_ctxt(
+            predicate,
+            LabelPlaceCtxt::Place,
+            labeller,
+            ctxt,
+        )
     }
 }
 
