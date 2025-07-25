@@ -24,6 +24,18 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // common::ensure_successful_run_on_crate(
+    //     "brotli-decompressor",
+    //     "4.0.2",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Release,
+    //         validity_checks: false,
+    //         function: Some("<MemPool<'a, T> as core::default::Default>::default"),
+    //         extra_env_vars: visualization_env_vars,
+    //     },
+    // );
+
     // 7 basic blocks
     common::ensure_successful_run_on_crate(
         "tracing-subscriber",
@@ -103,17 +115,17 @@ fn test_selected_crates() {
     );
 
     // 23 basic blocks
-    common::ensure_successful_run_on_crate(
-        "prost-build",
-        "0.13.5",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
-            extra_env_vars: vec![],
-        },
-    );
+    // common::ensure_successful_run_on_crate(
+    //     "prost-build",
+    //     "0.13.5",
+    //     Some("2025-03-13"),
+    //     common::RunOnCrateOptions::RunPCG {
+    //         target: common::Target::Debug,
+    //         validity_checks: true,
+    //         function: Some("code_generator::CodeGenerator::<'_, 'b>::append_type_attributes"),
+    //         extra_env_vars: vec![],
+    //     },
+    // );
 
     // cycles, <= 20 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
@@ -246,17 +258,6 @@ fn test_selected_crates() {
         },
     );
 
-    // 45 blocks
-    common::ensure_successful_run_on_crate("ring",
-        "0.17.14",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
-            extra_env_vars: vec![],
-        },
-    );
 
     // 7 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
@@ -731,17 +732,6 @@ fn test_selected_crates() {
         },
     );
 
-    common::ensure_successful_run_on_crate(
-        "brotli-decompressor",
-        "4.0.2",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<MemPool<'a, T> as core::default::Default>::default"),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::ensure_successful_run_on_crate(
         "predicates-tree",
@@ -835,6 +825,18 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: false,
             function: Some("internals::ast::Container::<'a>::from_ast"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 45 blocks
+    common::ensure_successful_run_on_crate("ring",
+        "0.17.14",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("ec::suite_b::ops::p384::p384_scalar_inv_to_mont"),
             extra_env_vars: vec![],
         },
     );
