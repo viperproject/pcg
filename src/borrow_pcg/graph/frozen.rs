@@ -13,7 +13,7 @@ use crate::{
     },
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::{FxHashMap, FxHashSet},
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt},
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt},
 };
 
 use super::BorrowsGraph;
@@ -155,19 +155,44 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
         Ref::map(self.roots_cache.borrow(), |o| o.as_ref().unwrap())
     }
 
-    pub(crate) fn leaf_edges_skipping_future_nodes<'slf, 'mir: 'graph, 'bc: 'graph>(
+    /// Returns all leaf edges, except for those that are to future lifetime
+    /// set of leaf edges to cleanup.
+    ///
+    /// Edges that are to future lifetime projections of current places
+    /// shouldn't be cleaned up - presumably the place will become accessible
+    /// again and the label will be removed.
+    ///
+    /// It is possible to have future lifetime projections of labelled places;
+    /// this can happen as follows.
+    /// ```ignore
+    /// let a = T {};
+    /// let x = &mut a;
+    /// let y = &mut (*x); // we have a -> x|'a @l -> .. -> y|'a -> .. -> x|'a @ FUTURE
+    /// StorageDead(x)  // we have a -> x @ old |'a @l -> .. -> y|'a -> .. -> x @ old |'a @ FUTURE
+    /// let z = y;
+    /// ```
+    ///
+    /// In such a case we'd want to remove edges to x @ old |'a @ FUTURE so we
+    /// can eventually regain capability to `a`.
+    ///
+    pub(crate) fn leaf_edges_skipping_future_rps_of_current_places<
+        'slf,
+        'mir: 'graph,
+        'bc: 'graph,
+    >(
         &'slf self,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> HashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
-        let is_edge_to_future_node = |edge: BorrowPcgEdgeRef<'tcx, 'graph>| {
-            edge.blocked_by_nodes(ctxt)
-                .all(|node| node.is_placeholder())
+        let is_edge_to_future_node_with_current_place = |edge: BorrowPcgEdgeRef<'tcx, 'graph>| {
+            edge.blocked_by_nodes(ctxt).all(|node| match node {
+                PCGNode::RegionProjection(rp) => rp.is_placeholder() && rp.base().is_current(),
+                _ => false,
+            })
         };
-        // TODO: There should be a simpler predicate
-        // Can only borrowflow edges lead to future nodes?
-        self.leaf_edges(ctxt).into_iter().filter(|edge| {
-            !is_edge_to_future_node(*edge)
-        }).collect()
+        self.leaf_edges(ctxt)
+            .into_iter()
+            .filter(|edge| !is_edge_to_future_node_with_current_place(*edge))
+            .collect()
         // let leaf_nodes = self
         //     .nodes(ctxt)
         //     .iter()
