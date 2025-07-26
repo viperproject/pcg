@@ -204,10 +204,6 @@ impl ValidityConditions {
         self.0.iter()
     }
 
-    fn has_branch_choices_for(&self, from: BasicBlock) -> bool {
-        self.0.iter().any(|c| c.from == from)
-    }
-
     fn branch_choices_for(&mut self, from: BasicBlock) -> Option<&mut BranchChoices> {
         self.0.iter_mut().find(|c| c.from == from)
     }
@@ -230,13 +226,6 @@ impl ValidityConditions {
                     }
                     BranchChoicesJoinResult::Unchanged => {}
                 }
-            }
-        }
-        let self_choice_blocks = self.0.iter().map(|c| c.from).collect::<Vec<_>>();
-        for block in self_choice_blocks {
-            if !other.has_branch_choices_for(block) {
-                self.delete_branch_choices(block);
-                changed = true;
             }
         }
         changed

@@ -373,7 +373,7 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
         _location: Location,
     ) -> bool {
         self.region_cx
-            .eval_outlives(region.vid().unwrap(), self.borrow_index_to_region(loan))
+            .eval_outlives(self.borrow_index_to_region(loan), region.vid().unwrap())
     }
 }
 

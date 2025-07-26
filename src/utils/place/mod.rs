@@ -600,10 +600,6 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub(crate) fn is_strict_prefix_of(self, place: Self) -> bool {
-        self.0.projection.len() + 1 == place.0.projection.len() && self.is_prefix_of(place)
-    }
-
     /// Check if the place `self` is a prefix of `place`. For example:
     ///
     /// +   `is_prefix(x.f, x.f) == true`

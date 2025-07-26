@@ -740,7 +740,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 BorrowPcgEdgeKind::BorrowPcgExpansion(e)
                     if let Some(p) = e.base.as_current_place()
                         && p.is_shared_ref(self.ctxt)
-                        && place.is_strict_prefix_of(p) =>
+                        && place.is_prefix_of(p) =>
                 {
                     Some(e.clone())
                 }
