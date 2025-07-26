@@ -1,6 +1,6 @@
 use crate::{
     rustc_interface,
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
+    utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 use serde_derive::Serialize;
 use std::{
@@ -241,6 +241,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
+    let location_table = ctxt.bc.rust_borrow_checker().unwrap().location_table();
     for (bb, data) in ctxt.body().basic_blocks.iter_enumerated() {
         let stmts = data.statements.iter().enumerate().map(|(idx, stmt)| {
             let stmt = format_stmt(stmt, ctxt);
@@ -253,7 +254,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
             let loans_invalidated_start = invalidated_at
                 .iter()
                 .filter_map(|(point, idx)| {
-                    if *point == bc.location_table().start_index(location) {
+                    if *point == location_table.start_index(location) {
                         let borrow_region = bc.borrow_index_to_region(*idx);
                         Some(format!("{borrow_region:?}"))
                     } else {
@@ -264,7 +265,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
             let loans_invalidated_mid = invalidated_at
                 .iter()
                 .filter_map(|(point, idx)| {
-                    if *point == bc.location_table().mid_index(location) {
+                    if *point == location_table.mid_index(location) {
                         let borrow_region = bc.borrow_index_to_region(*idx);
                         Some(format!("{borrow_region:?}"))
                     } else {

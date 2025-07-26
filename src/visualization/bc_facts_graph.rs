@@ -5,14 +5,14 @@ use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
 use crate::borrow_checker::{
-    BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface,
+    BorrowCheckerInterface, RustBorrowCheckerInterface,
 };
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::rustc_interface::middle::mir::{Body, Location};
 use crate::rustc_interface::middle::ty::{self, RegionVid};
+use crate::utils::CompilerCtxt;
 use crate::utils::callbacks::RustBorrowCheckerImpl;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::CompilerCtxt;
 use crate::{
     borrow_checker::r#impl::PoloniusBorrowChecker,
     rustc_interface::borrowck::{PoloniusRegionVid, RegionInferenceContext},
@@ -66,12 +66,10 @@ pub fn subset_anywhere<'a, 'tcx: 'a, 'bc>(
     };
     let mut nodes = IdLookup::new('n');
     for loc in ctxt.bc.output_facts.subset.values() {
-        let bc = RustBorrowChecker::new(ctxt.bc);
-        let normal_ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), &bc).as_dyn();
         for (sup, subs) in loc {
-            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, normal_ctxt);
+            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
             for sub in subs {
-                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, normal_ctxt);
+                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
                 let edge = DotEdge {
                     from: sup_node.to_string(),
                     to: sub_node.to_string(),
@@ -162,7 +160,7 @@ fn compute_region_sccs(
     scc_graph
 }
 pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc>(
-    ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowChecker<'_, 'tcx, RustBorrowCheckerImpl<'a, 'tcx>>>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowCheckerImpl<'a, 'tcx>>,
 ) -> String {
     let regions = get_all_regions(ctxt.body(), ctxt.tcx());
     let scc_graph = compute_region_sccs(regions, ctxt.bc.region_infer_ctxt());
@@ -199,12 +197,10 @@ pub fn subset_at_location<'a, 'tcx: 'a, 'bc>(
         ctxt.bc.location_table().mid_index(location)
     };
     if let Some(subset) = ctxt.bc.output_facts.subset.get(&location_index) {
-        let rust_bc = RustBorrowChecker::new(ctxt.bc);
-        let default_ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), &rust_bc).as_dyn();
         for (sup, subs) in subset {
-            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, default_ctxt);
+            let sup_node = get_id(sup, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
             for sub in subs {
-                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, default_ctxt);
+                let sub_node = get_id(sub, &mut nodes, &mut graph.nodes, ctxt.as_dyn());
                 graph.edges.push(DotEdge {
                     from: sup_node.to_string(),
                     to: sub_node.to_string(),

@@ -7,13 +7,11 @@ use std::{
 
 use bumpalo::Bump;
 use derive_more::From;
-#[cfg(feature = "visualization")]
-use tracing::info;
 
 use crate::{
     PcgCtxt, PcgOutput,
     borrow_checker::{
-        RustBorrowChecker, RustBorrowCheckerInterface,
+        RustBorrowCheckerInterface,
         r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
     },
     borrow_pcg::region_projection::{PcgRegion, RegionIdx},
@@ -267,7 +265,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             continue;
         }
 
-        info!(
+        tracing::info!(
             "{}Running PCG on function: {} with {} basic blocks",
             cargo_crate_name().map_or("".to_string(), |name| format!("{name}: ")),
             item_name,
@@ -331,7 +329,6 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
     let arena = Bump::new();
-    let bc = RustBorrowChecker::new(&bc);
     let pcg_ctxt = PcgCtxt::new(&body.body, tcx, &bc);
     let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
@@ -547,9 +544,9 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
 #[cfg(feature = "visualization")]
 fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     dir_path: &str,
-    ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowChecker<'_, 'tcx, RustBorrowCheckerImpl<'a, 'tcx>>>,
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowCheckerImpl<'a, 'tcx>>,
 ) {
-    if let RustBorrowCheckerImpl::Polonius(ref bc) = **ctxt.bc() {
+    if let RustBorrowCheckerImpl::Polonius(ref bc) = *ctxt.bc() {
         let ctxt = CompilerCtxt::new(ctxt.body(), ctxt.tcx(), bc);
         for (block_index, data) in ctxt.body().basic_blocks.iter_enumerated() {
             let num_stmts = data.statements.len();

@@ -3,9 +3,7 @@
 //! Also includes implementations for the Polonius and NLL borrow-checkers.
 
 use std::collections::BTreeSet;
-use std::marker::PhantomData;
 use std::ops::ControlFlow;
-use std::ops::Deref;
 
 use crate::borrow_checker::r#impl::get_reserve_location;
 use crate::borrow_pcg::region_projection::PcgRegion;
@@ -46,59 +44,20 @@ impl HasPcgRegion for BorrowData<'_> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct RustBorrowChecker<'a, 'tcx, T: ?Sized>(&'a T, PhantomData<&'tcx ()>);
-
-impl<T: ?Sized> Deref for RustBorrowChecker<'_, '_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl<'a, 'tcx, T: RustBorrowCheckerInterface<'tcx>> From<&'a T> for RustBorrowChecker<'a, 'tcx, T> {
-    fn from(value: &'a T) -> Self {
-        Self::new(value)
-    }
-}
-
-impl<'a, 'tcx, T: RustBorrowCheckerInterface<'tcx> + ?Sized> RustBorrowChecker<'a, 'tcx, T> {
-    pub(crate) fn new(inner: &'a T) -> Self {
-        Self(inner, PhantomData)
-    }
-}
-
-#[rustversion::since(2024-12-14)]
-fn get_activation_map<'a>(
-    borrows: &'a BorrowSet<'_>,
-) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
-    borrows.activation_map()
-}
-
-#[rustversion::before(2024-12-14)]
-fn get_activation_map<'a, 'tcx>(
-    borrows: &'a BorrowSet<'tcx>,
-) -> &'a FxIndexMap<Location, Vec<BorrowIndex>> {
-    &borrows.activation_map
-}
-
-impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
-    for RustBorrowChecker<'_, 'tcx, T>
-{
+impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx> for T {
     fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
-        !self.0.is_live(node, location)
+        !self.is_live(node, location)
     }
 
     fn twophase_borrow_activations(
         &self,
         location: Location,
     ) -> std::collections::BTreeSet<Location> {
-        let activation_map = get_activation_map(self.0.borrow_set());
+        let activation_map = self.borrow_set().activation_map();
         if let Some(borrow_idxs) = activation_map.get(&location) {
             borrow_idxs
                 .iter()
-                .map(|idx| get_reserve_location(&self.0.borrow_set()[*idx]))
+                .map(|idx| get_reserve_location(&self.borrow_set()[*idx]))
                 .collect()
         } else {
             std::collections::BTreeSet::new()
@@ -116,8 +75,8 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
             &mut (),
             ctxt,
             blocked_place,
-            self.0.borrow_set(),
-            |borrow_index| self.0.borrow_in_scope_at(borrow_index, location),
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
             |_this, _, borrow| {
                 borrows.push(borrow.clone());
                 ControlFlow::Continue(())
@@ -127,8 +86,7 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
     }
 
     fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex> {
-        self.0
-            .location_map()
+        self.location_map()
             .iter()
             .enumerate()
             .find_map(|(index, (_, data))| {
@@ -151,8 +109,8 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
             &mut (),
             ctxt,
             blocked_place,
-            self.0.borrow_set(),
-            |borrow_index| self.0.borrow_in_scope_at(borrow_index, location),
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
             |_this, _borrow_index, borrow| {
                 if borrow.get_borrowed_place() == blocked_place {
                     conflict = true;
@@ -177,8 +135,8 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
             &mut (),
             ctxt,
             blocked_place,
-            self.0.borrow_set(),
-            |borrow_index| self.0.borrow_in_scope_at(borrow_index, location),
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
             |_this, borrow_index, _borrow| {
                 tracing::debug!(
                     "Checking if {} contains {:?} at {:?}",
@@ -187,9 +145,7 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
                     location
                 );
                 if blocking_place.regions(ctxt).iter().any(|region| {
-                    let result = self
-                        .0
-                        .origin_contains_loan_at(*region, borrow_index, location);
+                    let result = self.origin_contains_loan_at(*region, borrow_index, location);
                     tracing::debug!(
                         "{} contains {:?} at {:?} = {}",
                         region,
@@ -216,7 +172,7 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion, _location: Location) -> bool {
         match (sup, sub) {
             (PcgRegion::RegionVid(sup), PcgRegion::RegionVid(sub)) => {
-                self.0.region_infer_ctxt().eval_outlives(sup, sub)
+                self.region_infer_ctxt().eval_outlives(sup, sub)
             }
             (PcgRegion::ReStatic, _) => true,
             _ => false,
@@ -224,27 +180,27 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx>
     }
 
     fn override_region_debug_string(&self, region: RegionVid) -> Option<&str> {
-        self.0.override_region_debug_string(region)
+        self.override_region_debug_string(region)
     }
 
     fn polonius_output(&self) -> Option<&PoloniusOutput> {
-        self.0.polonius_output()
+        self.polonius_output()
     }
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
-        self.0.borrow_set()
-    }
-
-    fn location_table(&self) -> &LocationTable {
-        self.0.location_table()
+        self.borrow_set()
     }
 
     fn input_facts(&self) -> &PoloniusInput {
-        self.0.input_facts()
+        self.input_facts()
     }
 
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
-        self.0.borrow_index_to_region(borrow_index)
+        self.borrow_index_to_region(borrow_index)
+    }
+
+    fn rust_borrow_checker(&self) -> Option<&dyn RustBorrowCheckerInterface<'tcx>> {
+        Some(self)
     }
 }
 
@@ -299,6 +255,10 @@ pub trait BorrowCheckerInterface<'tcx> {
      * The remaining methods are only used for debugging / visualization.
      */
 
+    /// If this is a Rust borrow checker, return its interface.
+    /// TODO: Get rid of this at some point
+    fn rust_borrow_checker(&self) -> Option<&dyn RustBorrowCheckerInterface<'tcx>>;
+
     /// For visualization purposes, this function can be implemented to provide
     /// human-readable names for region variables.
     fn override_region_debug_string(&self, _region: RegionVid) -> Option<&str>;
@@ -317,9 +277,6 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     /// TODO: Remove
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
-
-    // TODO: Remove, only for visualization
-    fn location_table(&self) -> &LocationTable;
 
     // TODO: Remove, only for visualization
     fn input_facts(&self) -> &PoloniusInput;
