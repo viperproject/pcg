@@ -192,7 +192,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        tracing::info!("used places: {}", used_places.to_short_string(ctxt));
+        tracing::debug!("used places: {}", used_places.to_short_string(ctxt));
         // p_loop
         let live_loop_places = used_places
             .iter()
@@ -215,7 +215,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
 
-        tracing::info!(
+        tracing::debug!(
             "live loop places: {}",
             live_loop_places.to_short_string(ctxt)
         );
@@ -235,7 +235,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        tracing::info!(
+        tracing::debug!(
             "loop_blocked_places: {}",
             loop_blocked_places.to_short_string(ctxt)
         );
@@ -246,7 +246,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .copied()
             .collect::<HashSet<_>>();
 
-        tracing::info!(
+        tracing::debug!(
             "loop_blocker_places: {}",
             loop_blocker_places.to_short_string(ctxt)
         );
@@ -283,7 +283,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        tracing::info!("root places: {}", root_places.to_short_string(ctxt));
+        tracing::debug!("root places: {}", root_places.to_short_string(ctxt));
 
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,

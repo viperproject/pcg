@@ -267,7 +267,11 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
             None
         };
         let block_type = place_expansion.block_type(base, obtain_type, ctxt);
-        tracing::info!("Block type for {} is {:?}", base.to_short_string(ctxt), block_type);
+        tracing::debug!(
+            "Block type for {} is {:?}",
+            base.to_short_string(ctxt),
+            block_type
+        );
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
             base.into(),
             place_expansion,

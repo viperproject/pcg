@@ -271,7 +271,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             tracing::debug!("labeling {:?}", rp);
             graph.label_region_projection(rp, Some(loop_head_label), ctxt);
         }
-        tracing::info!("Completed loop abstraction");
+        tracing::debug!("Completed loop abstraction");
         for (place, capability) in capability_updates.iter() {
             tracing::debug!(
                 "capability update for {}: {:?}",
@@ -485,7 +485,7 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
 
     fn expand_to_places(&mut self, places: HashSet<Place<'tcx>>) {
         for place in places {
-            tracing::info!("expanding to {}", place.to_short_string(self.ctxt));
+            tracing::debug!("expanding to {}", place.to_short_string(self.ctxt));
             self.expand_to(place, ObtainType::LoopInvariant, self.ctxt)
                 .unwrap();
         }

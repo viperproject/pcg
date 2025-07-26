@@ -750,7 +750,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             .collect::<Vec<_>>();
 
         for mut rp in derefs_to_disconnect {
-            tracing::info!("Disconnecting deref projection {:?}", rp);
+            tracing::debug!("Disconnecting deref projection {:?}", rp);
             let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
             let label = SnapshotLocation::BeforeRefReassignment(self.location());
             rp.base.label_place(
