@@ -95,6 +95,10 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
         matches!(self, MaybeRemoteCurrentPlace::Local(_))
     }
 
+    pub(crate) fn is_remote(self) -> bool {
+        matches!(self, MaybeRemoteCurrentPlace::Remote(_))
+    }
+
     fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<RegionProjection<'tcx>> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place
@@ -141,29 +145,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for blocker in candidate_blockers.iter().copied() {
             for root in root_places.iter() {
-                match root {
-                    MaybeRemoteCurrentPlace::Remote(_) => {
-                        add_rp_block_edges(&mut expander, *root, blocker, ctxt);
-                    }
-                    MaybeRemoteCurrentPlace::Local(root_place) => {
-                        if ctxt
-                            .bc
-                            .blocks(blocker, *root_place, loop_head_location, ctxt)
-                        {
-                            tracing::debug!(
-                                "{} blocks root {}",
-                                blocker.to_short_string(ctxt),
-                                root_place.to_short_string(ctxt)
-                            );
-                            add_block_edges(&mut expander, *root, blocker, ctxt);
-                            for rp in root.region_projections(ctxt) {
-                                to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
-                                    (*root_place).into(),
-                                    rp.region_idx,
-                                ));
-                            }
+                let relevant_root = root.relevant_place_for_blocking();
+                if blocker == relevant_root
+                    || ctxt
+                        .bc
+                        .blocks(blocker, relevant_root, loop_head_location, ctxt)
+                {
+                    tracing::debug!(
+                        "{} blocks root {}",
+                        blocker.to_short_string(ctxt),
+                        relevant_root.to_short_string(ctxt)
+                    );
+                    add_block_edges(&mut expander, *root, blocker, ctxt);
+                    if let MaybeRemoteCurrentPlace::Local(root) = root {
+                        for rp in root.region_projections(ctxt) {
+                            to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
+                                (*root).into(),
+                                rp.region_idx,
+                            ));
                         }
                     }
+                } else if root.is_remote() {
+                    add_rp_block_edges(&mut expander, *root, blocker, ctxt);
                 }
             }
         }
