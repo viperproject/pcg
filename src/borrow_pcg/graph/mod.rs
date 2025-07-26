@@ -33,7 +33,7 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode},
     edge::borrow::LocalBorrow,
     edge_data::EdgeData,
-    path_condition::PathConditions,
+    path_condition::ValidityConditions,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
@@ -44,7 +44,7 @@ use crate::utils::CompilerCtxt;
 /// The Borrow PCG Graph.
 #[derive(Clone, Debug, Default)]
 pub struct BorrowsGraph<'tcx> {
-    edges: FxHashMap<BorrowPcgEdgeKind<'tcx>, PathConditions>,
+    edges: FxHashMap<BorrowPcgEdgeKind<'tcx>, ValidityConditions>,
 }
 
 impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowsGraph<'tcx> {
@@ -363,14 +363,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges_blocking(node, ctxt).collect()
     }
 
-    pub(crate) fn remove(&mut self, edge: &BorrowPcgEdgeKind<'tcx>) -> Option<PathConditions> {
+    pub(crate) fn remove(&mut self, edge: &BorrowPcgEdgeKind<'tcx>) -> Option<ValidityConditions> {
         self.edges.remove(edge)
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct Conditioned<T> {
-    pub(crate) conditions: PathConditions,
+    pub(crate) conditions: ValidityConditions,
     pub(crate) value: T,
 }
 

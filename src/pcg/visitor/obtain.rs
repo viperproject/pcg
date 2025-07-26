@@ -750,7 +750,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             .collect::<Vec<_>>();
 
         for mut rp in derefs_to_disconnect {
-            tracing::info!("Disconnecting deref projection {:?}", rp);
+            tracing::debug!("Disconnecting deref projection {:?}", rp);
             let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
             let label = SnapshotLocation::BeforeRefReassignment(self.location());
             rp.base.label_place(
@@ -891,14 +891,14 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         self.pcg.borrow.graph
     }
 
-    fn path_conditions(&self) -> crate::borrow_pcg::path_condition::PathConditions {
+    fn path_conditions(&self) -> crate::borrow_pcg::path_condition::ValidityConditions {
         self.pcg.borrow.path_conditions.clone()
     }
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
-        expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
-        block_type: crate::pcg::place_capabilities::BlockType,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        block_type: BlockType,
         ctxt: crate::utils::CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         self.pcg

@@ -9,7 +9,7 @@ use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
 use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
-use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_checker::{BorrowCheckerInterface};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
@@ -47,7 +47,10 @@ pub enum PcgRegion {
 }
 
 impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>> for RegionVid {
-    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> String {
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
         if let Some(string) = ctxt.bc.override_region_debug_string(*self) {
             string.to_string()
         } else {
@@ -63,7 +66,10 @@ impl std::fmt::Display for PcgRegion {
 }
 
 impl PcgRegion {
-    pub fn to_string(&self, ctxt: Option<CompilerCtxt<'_, '_>>) -> String {
+    pub fn to_string(
+        &self,
+        ctxt: Option<CompilerCtxt<'_, '_>>
+    ) -> String {
         match self {
             PcgRegion::RegionVid(vid) => {
                 if let Some(ctxt) = ctxt {
@@ -322,9 +328,9 @@ impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
     }
 }
 
-impl<'tcx, P: Copy> LabelRegionProjection<'tcx>
-    for RegionProjection<'tcx, P>
-    where MaybeRemoteRegionProjectionBase<'tcx>: From<P>
+impl<'tcx, P: Copy> LabelRegionProjection<'tcx> for RegionProjection<'tcx, P>
+where
+    MaybeRemoteRegionProjectionBase<'tcx>: From<P>,
 {
     fn label_region_projection(
         &mut self,

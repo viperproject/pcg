@@ -22,21 +22,18 @@ use crate::{
     },
     free_pcs::{CapabilityKind, RepackGuide},
     pcg::{
+        MaybeHasLocation, PcgUnsupportedError,
         obtain::ObtainType,
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
-        MaybeHasLocation, PcgUnsupportedError,
     },
-    utils::{json::ToJsonWithCompilerCtxt, SnapshotLocation},
+    utils::{SnapshotLocation, json::ToJsonWithCompilerCtxt},
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNode, PCGNodeLike},
-    rustc_interface::middle::{
-        mir::{PlaceElem},
-        ty,
-    },
+    rustc_interface::middle::{mir::PlaceElem, ty},
     utils::{
-        display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, HasPlace, Place,
+        CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
     },
 };
 use crate::{rustc_interface::FieldIdx, utils::place::maybe_old::MaybeOldPlace};
@@ -84,7 +81,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
         ) {
             BlockType::Read
         } else if matches!(self, PlaceExpansion::Deref) {
-            if base_place.is_shared_ref(ctxt) {
+            if base_place.is_shared_ref(ctxt) || base_place.projects_shared_ref(ctxt) {
                 BlockType::Read
             } else {
                 BlockType::DerefExclusive
@@ -315,7 +312,6 @@ where
 }
 
 impl<'tcx> BorrowPcgExpansion<'tcx> {
-
     pub(crate) fn is_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
         if let BlockingNode::Place(p) = self.base {
             p.place().is_ref(repacker)
@@ -368,7 +364,10 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     ///
     /// Note that this node is NOT necessary the target node of the graph,
     /// in particular, the target node might be labelled
-    pub(crate) fn deref_of_blocked_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
+    pub(crate) fn deref_of_blocked_place(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<Place<'tcx>> {
         if let BlockingNode::Place(MaybeOldPlace::Current { place }) = self.base
             && place.is_ref(ctxt)
         {

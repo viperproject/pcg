@@ -4,12 +4,15 @@ use std::collections::BTreeMap;
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
-use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_checker::{
+    BorrowCheckerInterface, RustBorrowCheckerInterface,
+};
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::rustc_interface::middle::mir::{Body, Location};
 use crate::rustc_interface::middle::ty::{self, RegionVid};
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
+use crate::utils::callbacks::RustBorrowCheckerImpl;
+use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::{
     borrow_checker::r#impl::PoloniusBorrowChecker,
     rustc_interface::borrowck::{PoloniusRegionVid, RegionInferenceContext},
@@ -156,8 +159,8 @@ fn compute_region_sccs(
     });
     scc_graph
 }
-pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc, T: BorrowCheckerInterface<'tcx> + ?Sized>(
-    ctxt: CompilerCtxt<'a, 'tcx, &'bc T>,
+pub fn region_inference_outlives<'a, 'tcx: 'a, 'bc>(
+    ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowCheckerImpl<'a, 'tcx>>,
 ) -> String {
     let regions = get_all_regions(ctxt.body(), ctxt.tcx());
     let scc_graph = compute_region_sccs(regions, ctxt.bc.region_infer_ctxt());

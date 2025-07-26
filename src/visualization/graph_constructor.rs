@@ -1,21 +1,22 @@
 use crate::{
     borrow_pcg::{
-        graph::{materialize::MaterializedEdge, BorrowsGraph},
+        graph::{BorrowsGraph, materialize::MaterializedEdge},
         region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
         state::BorrowStateRef,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PCGNode, PcgRef},
-    rustc_interface::{borrowck::BorrowIndex, middle::mir},
-    utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, SnapshotLocation,
+    pcg::{
+        MaybeHasLocation, PCGNode, PcgRef,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
+    rustc_interface::{borrowck::BorrowIndex, middle::mir},
+    utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCompilerCtxt},
 };
 
 use super::{
+    Graph, GraphEdge, GraphNode, NodeId, NodeType,
     grapher::{CapabilityGetter, Grapher},
     node::IdLookup,
-    Graph, GraphEdge, GraphNode, NodeId, NodeType,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::utils::place::maybe_old::MaybeOldPlace;
@@ -124,16 +125,17 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 }
             };
             if let Some(location) = self.location {
+                let location_table = self.ctxt.bc.rust_borrow_checker().unwrap().location_table();
                 let loans_before = render_loans(
                     output
                         .origin_contains_loan_at(
-                            self.ctxt.bc.location_table().start_index(location),
+                            location_table.start_index(location),
                         )
                         .get(&region_vid),
                 );
                 let loans_after = render_loans(
                     output
-                        .origin_contains_loan_at(self.ctxt.bc.location_table().mid_index(location))
+                        .origin_contains_loan_at(location_table.mid_index(location))
                         .get(&region_vid),
                 );
                 format!(

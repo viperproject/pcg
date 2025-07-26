@@ -10,7 +10,7 @@ use crate::{
         },
         graph::BorrowsGraph,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
-        path_condition::PathConditions,
+        path_condition::ValidityConditions,
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
@@ -126,6 +126,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError>;
 
+    #[tracing::instrument(skip(self, obtain_type, ctxt))]
     fn expand_to(
         &mut self,
         place: Place<'tcx>,
@@ -240,7 +241,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx>;
 
-    fn path_conditions(&self) -> PathConditions;
+    fn path_conditions(&self) -> ValidityConditions;
 
     fn add_borrow_pcg_expansion(
         &mut self,
@@ -266,6 +267,11 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
             None
         };
         let block_type = place_expansion.block_type(base, obtain_type, ctxt);
+        tracing::debug!(
+            "Block type for {} is {:?}",
+            base.to_short_string(ctxt),
+            block_type
+        );
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
             base.into(),
             place_expansion,

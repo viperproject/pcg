@@ -76,8 +76,7 @@ impl<'tcx> UnblockGraph<'tcx> {
     /// Returns an ordered list of actions to unblock the edges in the graph.
     /// This is essentially a topological sort of the edges.
     ///
-    /// If this method returns an error, it is definitely a bug in the PCG
-    /// implementation and should be reported.
+    /// This method could fail if the If this method returns an error, it should be reported.
     pub fn actions(
         self,
         repacker: CompilerCtxt<'_, 'tcx>,

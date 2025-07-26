@@ -102,10 +102,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let mut outputs = vec![];
             for post_rp in post_rps.iter() {
                 if post_rp.is_invariant_in_type(self.ctxt)
-                    && self
-                        .ctxt
-                        .bc
-                        .outlives(pre_rp.region(self.ctxt), post_rp.region(self.ctxt))
+                    && self.ctxt.bc.outlives(
+                        pre_rp.region(self.ctxt),
+                        post_rp.region(self.ctxt),
+                        location,
+                    )
                 {
                     outputs.push((*post_rp).into());
                 }
@@ -116,7 +117,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .filter(|rp| {
                     self.ctxt
                         .bc
-                        .outlives(pre_rp.region(self.ctxt), rp.region(self.ctxt))
+                        .outlives(pre_rp.region(self.ctxt), rp.region(self.ctxt), location)
                 })
                 .map(|rp| (*rp).into())
                 .collect();

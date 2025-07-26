@@ -707,6 +707,8 @@ impl<A: Allocator + Clone> PartialEq for PcgDomain<'_, '_, A> {
 }
 
 impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
+    // TODO: It should be possible to simplify this logic considerably because
+    // each block should only be visited once.
     fn join(&mut self, other: &Self) -> bool {
         if !self.reachable && !other.reachable {
             return false;

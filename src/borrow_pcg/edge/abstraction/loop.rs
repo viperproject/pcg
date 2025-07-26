@@ -6,7 +6,7 @@ use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller};
-use crate::borrow_pcg::path_condition::PathConditions;
+use crate::borrow_pcg::path_condition::ValidityConditions;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::{BasicBlock, Location};
@@ -106,7 +106,7 @@ where
 }
 
 impl<'tcx> ToBorrowsEdge<'tcx> for LoopAbstraction<'tcx> {
-    fn to_borrow_pcg_edge(self, path_conditions: PathConditions) -> BorrowPcgEdge<'tcx> {
+    fn to_borrow_pcg_edge(self, path_conditions: ValidityConditions) -> BorrowPcgEdge<'tcx> {
         BorrowPcgEdge::new(
             BorrowPcgEdgeKind::Abstraction(AbstractionType::Loop(self)),
             path_conditions,
