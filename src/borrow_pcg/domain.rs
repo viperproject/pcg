@@ -24,12 +24,6 @@ pub struct FunctionCallAbstractionInput<'tcx>(
     pub(crate) RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
 );
 
-impl<'tcx> FunctionCallAbstractionInput<'tcx> {
-    pub(crate) fn new(region_projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        FunctionCallAbstractionInput(region_projection)
-    }
-}
-
 impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstractionInput<'tcx> {
     fn label_region_projection(
         &mut self,

@@ -18,7 +18,10 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
-use pcg::utils::{callbacks::{in_cargo_crate, PcgCallbacks}, DUMP_MIR_DATAFLOW, POLONIUS};
+use pcg::utils::{
+    DUMP_MIR_DATAFLOW, POLONIUS,
+    callbacks::{PcgCallbacks, in_cargo, in_cargo_crate},
+};
 
 #[rustversion::since(2025-03-02)]
 use pcg::rustc_interface::driver::run_compiler;
@@ -27,16 +30,6 @@ use pcg::rustc_interface::driver::run_compiler;
 use pcg::rustc_interface::driver;
 
 use tracing::trace;
-
-#[rustversion::before(2024-11-09)]
-use pcg::rustc_interface::interface::Queries;
-
-#[rustversion::before(2024-12-14)]
-fn go(args: Vec<String>) {
-    driver::RunCompiler::new(&args, &mut PcgCallbacks)
-        .run()
-        .unwrap()
-}
 
 #[rustversion::nightly(2024-12-14)]
 fn go(args: Vec<String>) {
@@ -84,6 +77,10 @@ fn setup_rustc_args() -> Vec<String> {
 
     if !std::env::args().any(|arg| arg.starts_with("--edition=")) {
         rustc_args.push("--edition=2018".to_string());
+    }
+    // Avoid need for `main` function when running `pcg` directly
+    if !in_cargo() && !std::env::args().any(|arg| arg.starts_with("--crate-type=")) {
+        rustc_args.push("--crate-type=lib".into());
     }
     if *POLONIUS {
         rustc_args.push("-Zpolonius".to_string());

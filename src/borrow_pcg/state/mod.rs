@@ -10,9 +10,13 @@ use super::{
 };
 use crate::{
     action::BorrowPcgAction,
-    borrow_pcg::{action::{BorrowPcgActionKind, MakePlaceOldReason}, has_pcs_elem::LabelRegionProjectionPredicate, region_projection::RegionProjectionLabel},
+    borrow_pcg::{
+        action::{BorrowPcgActionKind, MakePlaceOldReason},
+        has_pcs_elem::LabelRegionProjectionPredicate,
+        region_projection::RegionProjectionLabel,
+    },
     free_pcs::FreePlaceCapabilitySummary,
-    pcg::{place_capabilities::PlaceCapabilitiesInterface, BodyAnalysis, PcgError},
+    pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
@@ -113,7 +117,8 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         label: Option<RegionProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.graph_mut().label_region_projection(predicate, label, ctxt)
+        self.graph_mut()
+            .label_region_projection(predicate, label, ctxt)
     }
 
     fn remove(
@@ -146,10 +151,22 @@ pub(crate) trait BorrowsStateLike<'tcx> {
             BorrowPcgActionKind::Restore(restore) => {
                 let restore_place = restore.place();
                 if let Some(cap) = capabilities.get(restore_place) {
-                    assert!(cap < restore.capability(), "Current capability {:?} is not less than the capability to restore to {:?}", cap, restore.capability());
+                    assert!(
+                        cap < restore.capability(),
+                        "Current capability {:?} is not less than the capability to restore to {:?}",
+                        cap,
+                        restore.capability()
+                    );
                 }
                 if !capabilities.insert(restore_place, restore.capability(), ctxt) {
                     panic!("Capability should have been updated")
+                }
+                if restore.capability() == CapabilityKind::Exclusive {
+                    self.label_region_projection(
+                        &LabelRegionProjectionPredicate::AllPlaceholderPostfixes(restore_place),
+                        None,
+                        ctxt,
+                    );
                 }
                 true
             }
@@ -280,8 +297,8 @@ impl<'tcx> BorrowsState<'tcx> {
         for region in extract_regions(local_decl.ty, repacker) {
             let region_projection =
                 RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
-            assert!(self
-                .apply_action(
+            assert!(
+                self.apply_action(
                     BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
@@ -311,7 +328,8 @@ impl<'tcx> BorrowsState<'tcx> {
                     capabilities,
                     repacker,
                 )
-                .unwrap());
+                .unwrap()
+            );
         }
     }
 

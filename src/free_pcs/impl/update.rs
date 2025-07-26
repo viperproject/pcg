@@ -11,7 +11,7 @@ use crate::{
         triple::{PlaceCondition, Triple},
     },
     pcg_validity_assert,
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, LocalMutationIsAllowed},
+    utils::{CompilerCtxt, LocalMutationIsAllowed, display::DisplayWithCompilerCtxt},
 };
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
@@ -23,7 +23,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         &self,
         pre: PlaceCondition<'tcx>,
         capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
         match pre {
             PlaceCondition::ExpandTwoPhase(_place) => {}
@@ -41,22 +41,21 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     }
                     CapabilityKind::Write => {
                         // Cannot get write on a shared ref
-                        pcg_validity_assert!(place
-                            .is_mutable(LocalMutationIsAllowed::Yes, repacker)
-                            .is_ok());
+                        pcg_validity_assert!(
+                            place.is_mutable(LocalMutationIsAllowed::Yes, ctxt).is_ok()
+                        );
                     }
                     CapabilityKind::Exclusive => {
                         // Cannot get exclusive on a shared ref
-                        // TODO
                         pcg_validity_assert!(
-                            !place.projects_shared_ref(repacker),
+                            !place.projects_shared_ref(ctxt),
                             "Cannot get exclusive on projection of shared ref {}",
-                            place.to_short_string(repacker)
+                            place.to_short_string(ctxt)
                         );
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
-                if place.is_owned(repacker) {
+                if place.is_owned(ctxt) {
                     if capabilities.get(place).is_some() {
                         // pcg_validity_assert!(
                         //     matches!(
@@ -66,7 +65,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                         //     "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
                         // )
                     } else {
-                        pcg_validity_assert!(false, "No capability for {place:?}");
+                        pcg_validity_assert!(false, "No capability for {}", place.to_short_string(ctxt));
                     }
                 }
             }

@@ -150,9 +150,6 @@ pub fn is_supported_crate(name: &str, version: &str) -> Result<(), String> {
         ("net2", "0.2.39") => {
             Err("Skipping net2; this version doesn't compile.".to_string())
         }
-        ("generic-array", "1.2.0") if rustversion::cfg!(nightly(2024 - 09 - 14)) => {
-            Err("Skipping generic-array; it's not supported on nightly 2024-09-14".to_string())
-        }
         ("plotters", "0.3.7") | ("clang-sys", "1.8.1") => {
             // TODO: This should be relatively easy to fix
             Err("Skipping {name} {version}; haven't figured out how to run it on NixOS yet.".to_string())

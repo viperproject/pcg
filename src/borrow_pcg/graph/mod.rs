@@ -10,7 +10,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_expansion::PlaceExpansion,
         has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
-        region_projection::{RegionProjection, RegionProjectionLabel},
+        region_projection::RegionProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -22,7 +22,7 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeOldPlace,
         validity::HasValidityCheck,
-        HasPlace, LocalMutationIsAllowed, Place, BORROWS_DEBUG_IMGCAT,
+        Place, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -163,77 +163,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
         None
-    }
-
-    pub(crate) fn identify_placeholder_target(
-        &self,
-        from: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        let mut result = FxHashSet::default();
-        let mut blocking: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
-            .region_projections_blocked_by(from.into(), ctxt)
-            .into_iter()
-            .flat_map(|rp| rp.try_into())
-            .collect();
-        let mut seen = FxHashSet::default();
-        while let Some(node) = blocking.pop() {
-            if seen.contains(&node) {
-                continue;
-            }
-            seen.insert(node);
-            let maybe_old_place = node.base();
-            if maybe_old_place
-                .place()
-                .is_mutable(LocalMutationIsAllowed::Yes, ctxt)
-                .is_err()
-            {
-                tracing::debug!(
-                    "Skipping {} because it is not mutable",
-                    node.to_short_string(ctxt)
-                );
-                continue;
-            }
-            if !maybe_old_place.is_current() || maybe_old_place.place().is_deref() {
-                let to_add: Vec<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> = self
-                    .region_projections_blocked_by(node.into(), ctxt)
-                    .into_iter()
-                    .flat_map(|rp| rp.try_into())
-                    .collect();
-                blocking.extend(to_add);
-            } else {
-                result.insert(node);
-            }
-        }
-        result
-    }
-
-    fn region_projections_blocked_by(
-        &self,
-        from: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> FxHashSet<RegionProjection<'tcx>> {
-        let mut result = FxHashSet::default();
-        for edge in self.edges_blocked_by(from, ctxt) {
-            for node in edge.blocked_nodes(ctxt) {
-                if let PCGNode::RegionProjection(rp) = node {
-                    result.insert(rp);
-                }
-            }
-        }
-        result
-    }
-
-    pub(crate) fn has_function_call_abstraction_at(&self, location: mir::Location) -> bool {
-        for edge in self.edges() {
-            if let BorrowPcgEdgeKind::Abstraction(abstraction) = edge.kind()
-                && abstraction.is_function_call()
-                && abstraction.location() == location
-            {
-                return true;
-            }
-        }
-        false
     }
 
     pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(

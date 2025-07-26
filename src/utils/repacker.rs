@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrow_checker::{BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface},
+    borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
     rustc_interface::{
@@ -204,12 +204,6 @@ impl CompilerCtxt<'_, '_> {
         self.mir.local_decls().len()
     }
 
-    #[rustversion::before(2024-12-14)]
-    pub fn always_live_locals(self) -> RustBitSet<Local> {
-        mir_dataflow::storage::always_storage_live_locals(self.mir)
-    }
-
-    #[rustversion::since(2024-12-14)]
     pub fn always_live_locals(self) -> RustBitSet<Local> {
         mir_dataflow::impls::always_storage_live_locals(self.mir)
     }

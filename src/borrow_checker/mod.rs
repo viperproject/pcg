@@ -30,17 +30,9 @@ pub(crate) trait BorrowLike<'tcx> {
     fn get_borrowed_place(&self) -> Place<'tcx>;
 }
 
-#[rustversion::since(2024-10-17)]
 impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
     fn get_borrowed_place(&self) -> Place<'tcx> {
         self.borrowed_place().into()
-    }
-}
-
-#[rustversion::before(2024-10-17)]
-impl<'tcx> BorrowLike<'tcx> for BorrowData<'tcx> {
-    fn get_borrowed_place(&self) -> Place<'tcx> {
-        self.borrowed_place.into()
     }
 }
 
@@ -48,22 +40,14 @@ trait HasPcgRegion {
     fn pcg_region(&self) -> PcgRegion;
 }
 
-#[rustversion::since(2024-10-17)]
 impl HasPcgRegion for BorrowData<'_> {
     fn pcg_region(&self) -> PcgRegion {
         self.region().into()
     }
 }
 
-#[rustversion::before(2024-10-17)]
-impl HasPcgRegion for BorrowData<'_> {
-    fn pcg_region(&self) -> PcgRegion {
-        self.region.into()
-    }
-}
-
 #[derive(Clone, Copy)]
-pub(crate) struct RustBorrowChecker<'a, 'tcx, T: ?Sized>(
+pub struct RustBorrowChecker<'a, 'tcx, T: ?Sized>(
     &'a T,
     PhantomData<&'tcx ()>,
 );
@@ -377,24 +361,25 @@ pub trait RustBorrowCheckerInterface<'tcx> {
         location: Location,
     ) -> bool;
 
-    #[rustversion::since(2024-12-14)]
+    fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex> {
+        self.location_map()
+            .iter()
+            .enumerate()
+            .find_map(|(index, (_, data))| {
+                if data.pcg_region() == region {
+                    Some(index.into())
+                } else {
+                    None
+                }
+            })
+    }
+
     fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
         self.borrow_set()[borrow_index].region()
     }
 
-    #[rustversion::before(2024-12-14)]
-    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
-        self.borrow_set()[borrow_index].region
-    }
-
-    #[rustversion::since(2024-12-14)]
     fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
         self.borrow_set().location_map()
-    }
-
-    #[rustversion::before(2024-12-14)]
-    fn location_map(&self) -> &FxIndexMap<Location, BorrowData<'tcx>> {
-        &self.borrow_set().location_map
     }
 
     /// If the borrow checker is based on Polonius, it can define this method to
@@ -403,6 +388,27 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
     fn override_region_debug_string(&self, region: RegionVid) -> Option<&str>;
+
+    fn borrows_blocking(
+        &self,
+        blocked_place: Place<'tcx>,
+        location: Location,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<BorrowData<'tcx>> {
+        let mut borrows = vec![];
+        each_borrow_involving_path(
+            &mut (),
+            ctxt,
+            blocked_place,
+            self.borrow_set(),
+            |borrow_index| self.borrow_in_scope_at(borrow_index, location),
+            |_this, _, borrow| {
+                borrows.push(borrow.clone());
+                ControlFlow::Continue(())
+            },
+        );
+        borrows
+    }
 
     fn loans_killed_at(&self, location: Location) -> BTreeSet<RegionVid> {
         let location_indices = [
@@ -429,17 +435,9 @@ trait BorrowSetLike<'tcx> {
     fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>>;
 }
 
-#[rustversion::since(2024-10-17)]
 impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
     fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
         self.local_map().get(&local)
-    }
-}
-
-#[rustversion::before(2024-10-17)]
-impl<'tcx> BorrowSetLike<'tcx> for BorrowSet<'tcx> {
-    fn get_borrows_for_local(&self, local: mir::Local) -> Option<&FxIndexSet<BorrowIndex>> {
-        self.local_map.get(&local)
     }
 }
 

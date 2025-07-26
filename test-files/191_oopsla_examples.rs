@@ -33,6 +33,9 @@ fn dec_max(mut pos: Pos2D<i32>, mut z: i32) {
         &mut pos.y
     };
     let max3 = if z > *max2 {
+        // PCG: bb4[1] pre_operands: Remove Edge borrow: max2 = &mut  (*_7) after bb2[3] under conditions bb0 -> bb2, bb3 -> bb4
+        // PCG: bb4[2] pre_main: Expand(RepackExpand { from: _1, guide: None, capability: E })
+        // PCG: bb4[2] pre_main: Weaken pos.x from E to W
         pos.x = 0; // max2 borrow must end here!
         &mut z
     } else {

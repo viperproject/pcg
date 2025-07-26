@@ -1,25 +1,22 @@
 extern crate polonius_engine;
 use polonius_engine::Output;
 
-use crate::borrow_checker::{
-    BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface,
-};
+use crate::BodyAndBorrows;
+use crate::borrow_checker::RustBorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::borrowck::{
     BorrowData, BorrowIndex, BorrowSet, Borrows, LocationTable, PoloniusInput, PoloniusOutput,
     RegionInferenceContext, RichLocation,
 };
-use crate::rustc_interface::data_structures::fx::FxIndexMap;
 use crate::rustc_interface::dataflow::{compute_fixpoint, with_cursor_state};
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty;
-use crate::rustc_interface::mir_dataflow::{impls::MaybeLiveLocals, ResultsCursor};
-use crate::utils::maybe_remote::MaybeRemotePlace;
+use crate::rustc_interface::mir_dataflow::{ResultsCursor, impls::MaybeLiveLocals};
 use crate::utils::CompilerCtxt;
+use crate::utils::maybe_remote::MaybeRemotePlace;
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
-use crate::BodyAndBorrows;
 use std::cell::{RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -271,10 +268,6 @@ impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
             pretty_printer: RegionPrettyPrinter::new(region_cx),
         }
     }
-
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &Self> {
-        CompilerCtxt::new(self.body, self.tcx, self)
-    }
 }
 
 impl NllBorrowCheckerImpl<'_, '_> {
@@ -379,30 +372,11 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
         loan: BorrowIndex,
         _location: Location,
     ) -> bool {
-        self.region_cx.eval_outlives(
-            region.vid().unwrap(),
-            self.borrow_index_to_region(loan)
-        )
+        self.region_cx
+            .eval_outlives(region.vid().unwrap(), self.borrow_index_to_region(loan))
     }
 }
 
-#[rustversion::since(2024-12-14)]
 pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
     borrow.reserve_location()
-}
-
-#[rustversion::before(2024-12-14)]
-pub(crate) fn get_reserve_location(borrow: &BorrowData<'_>) -> Location {
-    borrow.reserve_location
-}
-
-#[rustversion::since(2024-12-14)]
-#[allow(unused)]
-fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
-    borrow.region()
-}
-
-#[rustversion::before(2024-12-14)]
-fn get_region(borrow: &BorrowData<'_>) -> ty::RegionVid {
-    borrow.region
 }

@@ -11,9 +11,10 @@ use derive_more::From;
 use tracing::info;
 
 use crate::{
+    PcgCtxt, PcgOutput,
     borrow_checker::{
+        RustBorrowChecker, RustBorrowCheckerInterface,
         r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
-        BorrowCheckerInterface, RustBorrowChecker, RustBorrowCheckerInterface,
     },
     borrow_pcg::region_projection::{PcgRegion, RegionIdx},
     free_pcs::PcgAnalysis,
@@ -21,35 +22,31 @@ use crate::{
     run_pcg,
     rustc_interface::{
         borrowck::{
-            self, BorrowData, BorrowIndex, BorrowSet, LocationTable, PoloniusOutput,
-            RegionInferenceContext, RichLocation, PoloniusInput
+            self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
+            RegionInferenceContext, RichLocation,
         },
         data_structures::fx::{FxHashMap, FxHashSet},
-        driver::{self, init_rustc_env_logger, Compilation},
+        driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
-        interface::{interface::Compiler, Config},
+        interface::{Config, interface::Compiler},
         middle::{
             mir::{Body, Local, Location},
             query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
+        session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
     },
     utils::MAX_BASIC_BLOCKS,
-    PcgCtxt, PcgOutput,
 };
-
-#[rustversion::before(2024-11-09)]
-use crate::rustc_interface::interface::Queries;
 
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::{
-    region_inference_outlives, subset_anywhere, subset_at_location, RegionPrettyPrinter,
+    RegionPrettyPrinter, region_inference_outlives, subset_anywhere, subset_at_location,
 };
 
-use super::{env_feature_enabled, CompilerCtxt, Place};
+use super::{CompilerCtxt, Place, env_feature_enabled};
 
 pub struct PcgCallbacks;
 
@@ -66,25 +63,6 @@ impl driver::Callbacks for PcgCallbacks {
         init_rustc_env_logger(&early_dcx);
     }
 
-    #[rustversion::before(2024-11-09)]
-    fn after_analysis<'tcx>(
-        &mut self,
-        _compiler: &Compiler,
-        queries: &'tcx Queries<'tcx>,
-    ) -> Compilation {
-        queries.global_ctxt().unwrap().enter(|tcx| {
-            // SAFETY: `config()` overrides the borrowck query to save the bodies
-            // from `tcx` in `BODIES`
-            unsafe { run_pcg_on_all_fns(tcx, env_feature_enabled("PCG_POLONIUS").unwrap_or(false)) }
-        });
-        if in_cargo_crate() {
-            Compilation::Continue
-        } else {
-            Compilation::Stop
-        }
-    }
-
-    #[rustversion::since(2024-11-09)]
     fn after_analysis(&mut self, _compiler: &Compiler, tcx: TyCtxt<'_>) -> Compilation {
         // SAFETY: `config()` overrides the borrowck query to save the bodies
         // from `tcx` in `BODIES`
@@ -164,8 +142,16 @@ fn cargo_crate_name() -> Option<String> {
     std::env::var("CARGO_CRATE_NAME").ok()
 }
 
+/// Is the current compilation running under cargo? Returns true when compiling
+/// a crate, but false when compiling a build script.
 pub fn in_cargo_crate() -> bool {
     cargo_crate_name().is_some()
+}
+
+/// Is the current compilation running under cargo? Either compiling a crate or
+/// a build script.
+pub fn in_cargo() -> bool {
+    std::env::var("CARGO").ok().is_some()
 }
 
 #[rustversion::before(2025-03-02)]
@@ -275,9 +261,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             );
             continue;
         }
-        let body = unsafe {
-            take_stored_body(tcx, def_id)
-        };
+        let body = unsafe { take_stored_body(tcx, def_id) };
 
         if !should_check_body(&body.body) {
             continue;
@@ -352,8 +336,7 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
-    #[cfg(feature="visualization")]
-    #[rustversion::since(2024-12-14)]
+    #[cfg(feature = "visualization")]
     if let Some(dir_path) = &item_dir {
         emit_borrowcheck_graphs(dir_path, ctxt);
     }
@@ -411,15 +394,24 @@ pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
 
 impl<'mir, 'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'mir, 'tcx> {
     fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.is_live(node, location),
+            RustBorrowCheckerImpl::Nll(bc) => bc.is_live(node, location),
+        }
     }
 
     fn borrow_set(&self) -> &BorrowSet<'tcx> {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrow_set(),
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrow_set(),
+        }
     }
 
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrow_in_scope_at(borrow_index, location),
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrow_in_scope_at(borrow_index, location),
+        }
     }
 
     fn origin_contains_loan_at(
@@ -428,27 +420,47 @@ impl<'mir, 'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'mir
         loan: BorrowIndex,
         location: Location,
     ) -> bool {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => {
+                bc.origin_contains_loan_at(region, loan, location)
+            }
+            RustBorrowCheckerImpl::Nll(bc) => bc.origin_contains_loan_at(region, loan, location),
+        }
     }
 
     fn override_region_debug_string(&self, region: RegionVid) -> Option<&str> {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.override_region_debug_string(region),
+            RustBorrowCheckerImpl::Nll(bc) => bc.override_region_debug_string(region),
+        }
     }
 
     fn input_facts(&self) -> &PoloniusInput {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.input_facts(),
+            RustBorrowCheckerImpl::Nll(bc) => bc.input_facts(),
+        }
     }
 
     fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.region_infer_ctxt(),
+            RustBorrowCheckerImpl::Nll(bc) => bc.region_infer_ctxt(),
+        }
     }
 
     fn location_table(&self) -> &LocationTable {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.location_table(),
+            RustBorrowCheckerImpl::Nll(bc) => bc.location_table(),
+        }
     }
 
     fn polonius_output(&self) -> Option<&PoloniusOutput> {
-        todo!()
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.polonius_output(),
+            RustBorrowCheckerImpl::Nll(bc) => bc.polonius_output(),
+        }
     }
 }
 
@@ -533,7 +545,6 @@ fn source_lines(tcx: TyCtxt<'_>, mir: &Body<'_>) -> Result<Vec<String>, SpanSnip
 }
 
 #[cfg(feature = "visualization")]
-#[rustversion::since(2024-12-14)]
 fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
     dir_path: &str,
     ctxt: CompilerCtxt<'a, 'tcx, &'bc RustBorrowChecker<'_, 'tcx, RustBorrowCheckerImpl<'a, 'tcx>>>,
@@ -567,7 +578,7 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     bc: &PoloniusBorrowChecker<'_, '_>,
                     loans: BTreeMap<RegionVid, BTreeSet<BorrowIndex>>,
                     loans_file: &mut std::fs::File,
-                    ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
+                    _ctxt: CompilerCtxt<'_, '_, &PoloniusBorrowChecker<'_, '_>>,
                 ) {
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {region:?}").unwrap();

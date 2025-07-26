@@ -26,7 +26,6 @@ use crate::{
     utils::place::maybe_old::MaybeOldPlace,
 };
 use crate::{
-    borrow_checker::RustBorrowCheckerInterface,
     borrow_pcg::{
         edge::kind::BorrowPcgEdgeKind,
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
