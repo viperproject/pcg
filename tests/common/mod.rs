@@ -138,6 +138,11 @@ pub fn crate_download_dirname(name: &str, version: &str) -> String {
 
 pub fn is_supported_crate(name: &str, version: &str) -> Result<(), String> {
     match (name, version) {
+        ("rustls", "0.23.23") => {
+            // When we ran the original evaluation for some reason rustls didn't compile
+            // It's fixed now, but we skip it to get the same results
+            Err("skipped because we didn't run in original evaluation ".to_string())
+        }
         ("system-configuration", "0.6.1") => {
             Err("Skipping system-configuration; it doesn't compile.".to_string())
         }
