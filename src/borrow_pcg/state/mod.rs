@@ -151,7 +151,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
             BorrowPcgActionKind::Restore(restore) => {
                 let restore_place = restore.place();
                 if let Some(cap) = capabilities.get(restore_place) {
-                    assert!(
+                    pcg_validity_assert!(
                         cap < restore.capability(),
                         "Current capability {:?} is not less than the capability to restore to {:?}",
                         cap,

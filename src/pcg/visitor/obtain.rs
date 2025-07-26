@@ -897,8 +897,8 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
-        expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
-        block_type: crate::pcg::place_capabilities::BlockType,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        block_type: BlockType,
         ctxt: crate::utils::CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         self.pcg

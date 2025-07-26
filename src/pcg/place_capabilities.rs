@@ -7,10 +7,11 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
+        CompilerCtxt, HasPlace, Place,
         display::{DebugLines, DisplayWithCompilerCtxt},
         validity::HasValidityCheck,
-        CompilerCtxt, HasPlace, Place,
     },
+    validity_checks_enabled,
 };
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
@@ -86,7 +87,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum BlockType {
     DerefExclusive,
     Read,
@@ -116,6 +117,7 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    #[tracing::instrument(skip(self, expansion, ctxt))]
     pub(crate) fn update_for_expansion(
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
@@ -140,6 +142,13 @@ impl<'tcx> PlaceCapabilities<'tcx> {
                 // panic!("Base capability should be set");
             };
 
+            if validity_checks_enabled() && matches!(block_type, BlockType::DerefExclusive) {
+                pcg_validity_assert!(
+                    !base.place().projects_shared_ref(ctxt),
+                    "Updating for DerefExclusive block, but place {} projects a shared ref",
+                    base.place().to_short_string(ctxt)
+                );
+            }
             changed |= self.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
 
             for p in expansion.expansion.iter() {
