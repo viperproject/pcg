@@ -739,6 +739,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             .flat_map(|e| match e.kind() {
                 BorrowPcgEdgeKind::BorrowPcgExpansion(e)
                     if let Some(p) = e.base.as_current_place()
+                        && place != p
                         && p.is_shared_ref(self.ctxt)
                         && place.is_prefix_of(p) =>
                 {
