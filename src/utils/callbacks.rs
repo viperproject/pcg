@@ -392,7 +392,7 @@ pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
     Nll(NllBorrowCheckerImpl<'mir, 'tcx>),
 }
 
-impl<'mir, 'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'mir, 'tcx> {
+impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> {
     fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
         match self {
             RustBorrowCheckerImpl::Polonius(bc) => bc.is_live(node, location),

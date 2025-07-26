@@ -15,14 +15,14 @@ use crate::rustc_interface::borrowck::PoloniusInput;
 use crate::rustc_interface::borrowck::PoloniusOutput;
 use crate::rustc_interface::borrowck::RegionInferenceContext;
 use crate::rustc_interface::borrowck::{
-    places_conflict, BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias,
+    BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, places_conflict,
 };
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty::RegionVid;
-use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
 use crate::utils::Place;
+use crate::utils::display::DisplayWithCompilerCtxt;
 
 pub mod r#impl;
 
@@ -47,12 +47,9 @@ impl HasPcgRegion for BorrowData<'_> {
 }
 
 #[derive(Clone, Copy)]
-pub struct RustBorrowChecker<'a, 'tcx, T: ?Sized>(
-    &'a T,
-    PhantomData<&'tcx ()>,
-);
+pub struct RustBorrowChecker<'a, 'tcx, T: ?Sized>(&'a T, PhantomData<&'tcx ()>);
 
-impl<'a, 'tcx, T: ?Sized> Deref for RustBorrowChecker<'a, 'tcx, T> {
+impl<T: ?Sized> Deref for RustBorrowChecker<'_, '_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -428,7 +425,6 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx>;
 
     fn location_table(&self) -> &LocationTable;
-
 }
 
 trait BorrowSetLike<'tcx> {
