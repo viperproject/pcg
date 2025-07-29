@@ -273,33 +273,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
             EvalStmtPhase::PreMain => {
-                // This is somewhat of a special case for something we should
-                // make more robust.  If evaluating the operands causes an
-                // expansion, that's not needed by the LHS, then we can pack it back up here.
-                //
-                // We can't perform this operation always, e.g. in `let y = &mut *x`,
-                // the expansion to *x is needed.
-                //
-                // Our special case currently applies only for assignments where
-                // the LHS doesn't contain any references.
-                //
-                // This is an optimization that should make the graphs smaller
-                // but in principle shouldn't be needed for correctness. However
-                // our current implementation of restoring read capability to
-                // exclusive doesn't generate the correct annotations for prusti
-                // (see 199_oopsla_dec_max_alt.rs) and this solves that issue
-                // temporarily until we have a better solution.
-
-
-                if let AnalysisObject::Statement(stmt) = object
-                    && let mir::StatementKind::Assign(box (target, _)) = stmt.kind
-                {
-                    let target: Place<'tcx> = target.into();
-                    if !target.has_region_projections(self.ctxt) {
-                        self.place_obtainer()
-                            .pack_old_and_dead_borrow_leaves(None)?;
-                    }
-                }
                 for triple in self.tw.main_triples.iter() {
                     tracing::debug!("Require triple {:?}", triple);
                     self.require_triple(*triple)?;
