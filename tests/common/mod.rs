@@ -1,5 +1,6 @@
 use serde_derive::Deserialize;
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -110,8 +111,25 @@ pub fn run_pcg_on_file(file: &Path) {
     let pcs_exe = workspace_dir.join("target/debug/pcg_bin");
     println!("Running PCG on file: {}", file.display());
 
-    let status = Command::new(&pcs_exe)
-        .arg(file)
+    let mut command = Command::new(&pcs_exe);
+
+    // Check if the file starts with // args: and extract arguments
+    if let Ok(file_handle) = File::open(file) {
+        let reader = BufReader::new(file_handle);
+        if let Some(Ok(first_line)) = reader.lines().next() {
+            if let Some(args_str) = first_line.strip_prefix("// args: ") {
+                // Split the args and add them to the command
+                for arg in args_str.split_whitespace() {
+                    command.arg(arg);
+                }
+            }
+        }
+    }
+
+    // Add the file path after any args
+    command.arg(file);
+
+    let status = command
         .env("PCG_CHECK_ANNOTATIONS", "true")
         .env(
             "PCG_POLONIUS",
