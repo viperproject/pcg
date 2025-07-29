@@ -286,7 +286,7 @@ impl<'tcx> PcgBasicBlock<'tcx> {
 
 /// The PCG state at a MIR location. Also contains associated actions performed
 /// when analysing the statement at that location.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PcgLocation<'tcx> {
     pub location: Location,
     pub states: DomainDataStates<Pcg<'tcx>>,
