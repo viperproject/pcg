@@ -573,10 +573,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             "upgrade_read_to_exclusive: {}",
             place.to_short_string(self.ctxt)
         );
-        self.remove_read_permission_downwards(place)?;
-        if let Some(parent) = place.parent_place() {
-            self.remove_read_permission_upwards_and_label_rps(parent, "Upgrade read to exclusive")?;
-        }
         self.record_and_apply_action(
             BorrowPcgAction::restore_capability(
                 place,
@@ -585,6 +581,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             )
             .into(),
         )?;
+        self.remove_read_permission_downwards(place)?;
+        if let Some(parent) = place.parent_place() {
+            self.remove_read_permission_upwards_and_label_rps(parent, "Upgrade read to exclusive")?;
+        }
         Ok(())
     }
 
