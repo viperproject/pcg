@@ -29,6 +29,20 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 
 impl<'tcx> PCGNode<'tcx> {
 
+    pub fn related_place(self) -> Option<MaybeRemotePlace<'tcx>> {
+        match self {
+            PCGNode::Place(p) => Some(p),
+            PCGNode::RegionProjection(rp) => match rp.base() {
+                MaybeRemoteRegionProjectionBase::Place(p) => Some(p),
+                _ => None,
+            }
+        }
+    }
+
+    pub fn related_maybe_old_place(self) -> Option<MaybeOldPlace<'tcx>> {
+        self.related_place().and_then(|p| p.as_local_place())
+    }
+
     pub(crate) fn related_maybe_remote_current_place(
         &self,
     ) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
