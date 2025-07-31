@@ -1,13 +1,13 @@
 use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, PcgAction};
-use crate::borrow_pcg::action::MakePlaceOldReason;
+use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
-use crate::pcg::obtain::PlaceObtainer;
+use crate::pcg::obtain::{PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::{PcgDebugData, PcgMutRefLike};
@@ -19,7 +19,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, CompilerCtxt, HasPlace, Place, SnapshotLocation};
+use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place};
 
 use super::{
     AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
@@ -36,15 +36,22 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
     pcg: &'pcg mut Pcg<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
     actions: PcgActions<'tcx>,
-    phase: EvalStmtPhase,
+    analysis_location: AnalysisLocation,
     tw: &'pcg TripleWalker<'mir, 'tcx>,
-    location: Location,
     debug_data: Option<PcgDebugData>,
 }
 
 impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+    fn phase(&self) -> EvalStmtPhase {
+        self.analysis_location.eval_stmt_phase
+    }
+
+    fn location(&self) -> Location {
+        self.analysis_location.location
+    }
+
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
-        self.ctxt.bc.outlives(sup, sub, self.location)
+        self.ctxt.bc.outlives(sup, sub, self.location())
     }
 
     fn connect_outliving_projections(
@@ -81,12 +88,11 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         pcg: &'pcg mut Pcg<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
         tw: &'pcg TripleWalker<'mir, 'tcx>,
-        phase: EvalStmtPhase,
+        analysis_location: AnalysisLocation,
         analysis_object: AnalysisObject<'_, 'tcx>,
-        location: Location,
         debug_data: Option<PcgDebugData>,
     ) -> Result<PcgActions<'tcx>, PcgError> {
-        let visitor = Self::new(pcg, ctxt, tw, phase, location, debug_data);
+        let visitor = Self::new(pcg, ctxt, tw, analysis_location, debug_data);
         let actions = visitor.apply(analysis_object)?;
         Ok(actions)
     }
@@ -95,17 +101,15 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         pcg: &'pcg mut Pcg<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
         tw: &'pcg TripleWalker<'mir, 'tcx>,
-        phase: EvalStmtPhase,
-        location: Location,
+        analysis_location: AnalysisLocation,
         debug_data: Option<PcgDebugData>,
     ) -> Self {
         Self {
             pcg,
             ctxt,
             actions: PcgActions::default(),
-            phase,
+            analysis_location,
             tw,
-            location,
             debug_data,
         }
     }
@@ -127,23 +131,31 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         operand: &Operand<'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if let Operand::Copy(place) = operand {
-            let place: Place<'tcx> = (*place).into();
-            if place.has_lifetimes_under_unsafe_ptr(self.ctxt) {
-                return Err(PcgError::unsupported(
-                    PcgUnsupportedError::MoveUnsafePtrWithNestedLifetime,
-                ));
+        match operand {
+            Operand::Copy(place) => {
+                let place: Place<'tcx> = (*place).into();
+                if place.has_lifetimes_under_unsafe_ptr(self.ctxt) {
+                    return Err(PcgError::unsupported(
+                        PcgUnsupportedError::MoveUnsafePtrWithNestedLifetime,
+                    ));
+                }
             }
+            Operand::Move(place) => {
+                if self.phase() == EvalStmtPhase::PostOperands {
+                    let snapshot_location = self.place_obtainer().prev_snapshot_location();
+                    self.record_and_apply_action(
+                        BorrowPcgAction::make_place_old(
+                            (*place).into(),
+                            snapshot_location,
+                            LabelPlaceReason::MoveOut,
+                        )
+                        .into(),
+                    )?;
+                }
+            }
+            _ => {}
         }
         self.super_operand_fallable(operand, location)?;
-        if self.phase == EvalStmtPhase::PostMain
-            && let Operand::Move(place) = operand
-        {
-            self.record_and_apply_action(
-                BorrowPcgAction::make_place_old((*place).into(), MakePlaceOldReason::MoveOut)
-                    .into(),
-            )?;
-        }
         Ok(())
     }
 
@@ -153,7 +165,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         location: Location,
     ) -> Result<(), PcgError> {
         self.super_terminator_fallable(terminator, location)?;
-        if self.phase == EvalStmtPhase::PostMain
+        if self.phase() == EvalStmtPhase::PostMain
             && let mir::TerminatorKind::Call {
                 func,
                 args,
@@ -170,14 +182,6 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                 }
             }
             let destination: utils::Place<'tcx> = (*destination).into();
-            self.record_and_apply_action(
-                BorrowPcgAction::set_latest(
-                    destination,
-                    SnapshotLocation::After(location),
-                    "Destination of Function Call",
-                )
-                .into(),
-            )?;
             self.make_function_call_abstraction(
                 func,
                 &args.iter().map(|arg| &arg.node).collect::<Vec<_>>(),
@@ -258,7 +262,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         mut self,
         object: AnalysisObject<'_, 'tcx>,
     ) -> Result<PcgActions<'tcx>, PcgError> {
-        match self.phase {
+        match self.phase() {
             EvalStmtPhase::PreOperands => {
                 self.perform_borrow_initial_pre_operand_actions()?;
                 self.place_obtainer().collapse_owned_places()?;
@@ -284,18 +288,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
         }
+        let location = self.location();
         match object {
             AnalysisObject::Statement(statement) => {
-                self.visit_statement_fallable(statement, self.location)?
+                self.visit_statement_fallable(statement, location)?
             }
             AnalysisObject::Terminator(terminator) => {
-                self.visit_terminator_fallable(terminator, self.location)?
+                self.visit_terminator_fallable(terminator, location)?
             }
         }
-        if self.phase == EvalStmtPhase::PostMain {
+        if self.phase() == EvalStmtPhase::PostMain {
             self.pcg
                 .as_mut_ref()
-                .assert_validity_at_location(self.ctxt, self.location);
+                .assert_validity_at_location(self.ctxt, location);
         }
         Ok(self.actions)
     }
@@ -371,7 +376,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
         self.place_obtainer()
             .pack_old_and_dead_borrow_leaves(None)?;
-        for created_location in self.ctxt.bc.twophase_borrow_activations(self.location) {
+        for created_location in self.ctxt.bc.twophase_borrow_activations(self.location()) {
             self.activate_twophase_borrow_created_at(created_location)?;
         }
         let frozen_graph = self.pcg.borrow.graph.frozen_graph();
@@ -393,7 +398,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if !self
                 .ctxt
                 .bc
-                .is_directly_blocked(place, self.location, self.ctxt)
+                .is_directly_blocked(place, self.location(), self.ctxt)
             {
                 let action = PcgAction::restore_capability(
                     place,

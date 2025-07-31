@@ -4,13 +4,13 @@ use std::collections::HashSet;
 use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, OwnedPcgAction, PcgAction};
-use crate::borrow_pcg::action::MakePlaceOldReason;
+use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, SetLabel};
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelLifetimeProjectionPredicate, SetLabel};
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
 use crate::free_pcs::{CapabilityKind, RepackOp};
@@ -31,15 +31,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let pcg_ref = self.pcg.into();
         PlaceObtainer::new(
             pcg_ref,
-            self.phase,
             Some(&mut self.actions),
             self.ctxt,
-            self.location,
-            if self.phase.is_operands_stage() {
-                SnapshotLocation::before(self.location)
-            } else {
-                SnapshotLocation::Mid(self.location)
-            },
+            self.analysis_location.location,
+            SnapshotLocation::before(self.analysis_location),
             if let Some(debug_data) = &mut self.debug_data {
                 Some(debug_data)
             } else {
@@ -98,29 +93,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             }
         }
 
-        Ok(())
-    }
-
-    fn update_latest_for_unblocked_places(
-        &mut self,
-        edge: &impl BorrowPcgEdgeLike<'tcx>,
-        context: &str,
-    ) -> Result<(), PcgError> {
-        for place in edge.blocked_places(self.ctxt) {
-            if let Some(place) = place.as_current_place()
-                && self.pcg.capabilities.get(place) != Some(CapabilityKind::Read)
-                && place.has_location_dependent_value(self.ctxt)
-            {
-                self.record_and_apply_action(
-                    BorrowPcgAction::set_latest(
-                        place,
-                        SnapshotLocation::After(self.location()),
-                        context,
-                    )
-                    .into(),
-                )?;
-            }
-        }
         Ok(())
     }
 
@@ -224,11 +196,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
         edge: impl BorrowPcgEdgeLike<'tcx>,
-        during_cleanup: bool,
         context: &str,
     ) -> Result<(), PcgError> {
-        self.update_latest_for_unblocked_places(&edge, context)?;
-
         self.record_and_apply_action(
             BorrowPcgAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
         )?;
@@ -272,15 +241,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                     "labeling region projection: {}",
                                     rp.to_short_string(self.ctxt)
                                 );
-                                let snapshot_location = if during_cleanup {
-                                    SnapshotLocation::Prepare(self.location())
-                                } else {
-                                    SnapshotLocation::before(self.location())
-                                };
                                 self.record_and_apply_action(
                                     BorrowPcgAction::label_region_projection(
-                                        LabelRegionProjectionPredicate::Equals(rp),
-                                        Some(snapshot_location.into()),
+                                        LabelLifetimeProjectionPredicate::Equals(rp),
+                                        Some(self.prev_snapshot_location().into()),
                                         format!(
                                             "{}: {}",
                                             context, "Label region projections of expansion"
@@ -354,10 +318,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         for (idx, node) in expansion.iter().enumerate() {
             if let Some(place) = node.base.as_current_place() {
-                let labeller = SetLabel(SnapshotLocation::BeforeCollapse(self.location()));
+                let labeller = SetLabel(self.prev_snapshot_location());
                 self.pcg.borrow.graph.make_place_old(
                     (*place).into(),
-                    MakePlaceOldReason::Collapse,
+                    LabelPlaceReason::Collapse,
                     &labeller,
                     self.ctxt,
                 );
@@ -455,7 +419,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     .collect::<Vec<_>>();
                 if !edges_blocking_current_rp.is_empty() {
                     let labelled_rp = current_rp
-                        .with_label(Some(self.current_snapshot_location().into()), self.ctxt);
+                        .with_label(Some(self.prev_snapshot_location().into()), self.ctxt);
                     let future_rp = current_rp.with_placeholder_label(self.ctxt);
                     let expansion_nodes = edges_blocking_current_rp
                         .iter()
@@ -479,8 +443,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .collect::<HashSet<_>>();
                     self.record_and_apply_action(
                         BorrowPcgAction::label_region_projection(
-                            LabelRegionProjectionPredicate::Equals(current_rp.into()),
-                            Some(self.current_snapshot_location().into()),
+                            LabelLifetimeProjectionPredicate::Equals(current_rp.into()),
+                            Some(self.prev_snapshot_location().into()),
                             "remove_read_permission_upwards_and_label_rps",
                         )
                         .into(),
@@ -590,20 +554,18 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
     pub(crate) fn new(
         pcg: PcgMutRef<'state, 'tcx>,
-        phase: EvalStmtPhase,
         actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
         location: mir::Location,
-        snapshot_location: SnapshotLocation,
+        prev_snapshot_location: SnapshotLocation,
         debug_data: Option<&'state mut PcgDebugData>,
     ) -> Self {
         Self {
             pcg,
-            phase,
             ctxt,
             actions,
             location,
-            snapshot_location,
+            prev_snapshot_location,
             debug_data,
         }
     }
@@ -656,7 +618,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .insert((*place).into(), capability_kind, self.ctxt);
                     if capability_kind == CapabilityKind::Exclusive {
                         self.pcg.borrow.label_region_projection(
-                            &LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place),
+                            &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
                             None,
                             self.ctxt,
                         );
@@ -711,11 +673,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             },
         };
         let location = self.location();
-        if let Some(actions) = &mut self.actions {
+
+        if let Some(phase) = self.phase()
+            && let Some(actions) = &mut self.actions
+        {
             generate_dot_graph(
                 location.block,
                 location.statement_index,
-                ToGraph::Action(self.phase, actions.len()),
+                ToGraph::Action(phase, actions.len()),
                 self.pcg.as_ref(),
                 self.debug_data.as_deref(),
                 self.ctxt,
@@ -723,6 +688,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             actions.push(action);
         }
         Ok(result)
+    }
+    pub(crate) fn phase(&self) -> Option<EvalStmtPhase> {
+        match self.prev_snapshot_location {
+            SnapshotLocation::Before(analysis_location) => Some(analysis_location.eval_stmt_phase),
+            _ => None,
+        }
     }
 }
 
@@ -761,7 +732,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             rp.expansion.iter_mut().for_each(|e| {
                 e.label_place(
                     &LabelPlacePredicate::Exact(e.place()),
-                    self.pcg.borrow.latest,
+                    &SetLabel(self.prev_snapshot_location()),
                     self.ctxt,
                 );
             });
@@ -775,8 +746,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             )?;
         }
         self.record_and_apply_action(
-            BorrowPcgAction::make_place_old(place, MakePlaceOldReason::LabelSharedDerefProjections)
-                .into(),
+            BorrowPcgAction::make_place_old(
+                place,
+                self.prev_snapshot_location(),
+                LabelPlaceReason::LabelSharedDerefProjections,
+            )
+            .into(),
         )
     }
 
@@ -813,7 +788,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 "Obtain {:?} to place {} in phase {:?}",
                 obtain_type,
                 place.to_short_string(self.ctxt),
-                self.phase
+                self.phase()
             );
             // It's possible that we want to obtain exclusive or write permission to
             // a field that we currently only have read access for. For example,
@@ -851,7 +826,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         if obtain_cap.is_write() {
             let _ = self.record_and_apply_action(
-                BorrowPcgAction::make_place_old(place, MakePlaceOldReason::ReAssign).into(),
+                BorrowPcgAction::make_place_old(
+                    place,
+                    self.prev_snapshot_location(),
+                    LabelPlaceReason::ReAssign,
+                )
+                .into(),
             );
         }
 
@@ -883,10 +863,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
             .contains_expansion_from(base)
     }
 
-    fn current_snapshot_location(&self) -> SnapshotLocation {
-        self.snapshot_location
-    }
-
     fn borrows_graph(&self) -> &crate::borrow_pcg::graph::BorrowsGraph<'tcx> {
         self.pcg.borrow.graph
     }
@@ -908,5 +884,13 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
 
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         self.record_and_apply_action(action)
+    }
+
+    fn prev_snapshot_location(&self) -> SnapshotLocation {
+        self.prev_snapshot_location
+    }
+
+    fn location(&self) -> mir::Location {
+        self.location
     }
 }

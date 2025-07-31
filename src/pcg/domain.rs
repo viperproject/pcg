@@ -54,12 +54,22 @@ pub struct DataflowIterationDebugInfo {
     pub join_with: BasicBlock,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Ord, PartialOrd, Hash)]
 pub enum EvalStmtPhase {
     PreOperands,
     PostOperands,
     PreMain,
     PostMain,
+}
+
+impl EvalStmtPhase {
+    pub(crate) const fn first() -> Self {
+        EvalStmtPhase::PreOperands
+    }
+
+    pub const fn last() -> Self {
+        EvalStmtPhase::PostMain
+    }
 }
 
 impl Serialize for EvalStmtPhase {

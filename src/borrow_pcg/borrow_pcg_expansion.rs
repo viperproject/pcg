@@ -8,15 +8,15 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
-    region_projection::{RegionProjection, RegionProjectionLabel},
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelLifetimeProjection},
+    region_projection::{RegionProjection, LifetimeProjectionLabel},
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+            LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller,
         },
         region_projection::LocalRegionProjection,
     },
@@ -151,7 +151,7 @@ pub struct BorrowPcgExpansion<'tcx, P = LocalNode<'tcx>> {
     /// - The place of `base` is not a mutable reference, or
     /// - `expansion` does not contain any region projections, or
     /// - this deref is for a shared borrow / read access
-    deref_rp_label: Option<RegionProjectionLabel>,
+    deref_rp_label: Option<LifetimeProjectionLabel>,
     _marker: PhantomData<&'tcx ()>,
 }
 
@@ -187,16 +187,16 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgExpansion<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowPcgExpansion<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        let mut changed = self.base.label_region_projection(predicate, label, ctxt);
+    ) -> LabelLifetimeProjectionResult {
+        let mut changed = self.base.label_lifetime_projection(predicate, label, ctxt);
         for p in &mut self.expansion {
-            changed |= p.label_region_projection(predicate, label, ctxt);
+            changed |= p.label_lifetime_projection(predicate, label, ctxt);
         }
         if let Some(rp) = self.deref_blocked_region_projection(ctxt)
             && predicate.matches(rp.into(), ctxt)
@@ -436,7 +436,7 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
     pub(crate) fn new(
         base: P,
         expansion: PlaceExpansion<'tcx>,
-        deref_blocked_region_projection_label: Option<RegionProjectionLabel>,
+        deref_blocked_region_projection_label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Self, PcgError>
     where

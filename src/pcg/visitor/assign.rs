@@ -2,34 +2,55 @@ use super::PcgVisitor;
 use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
+use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::EvalStmtPhase;
 use crate::pcg::obtain::PlaceExpander;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{self, SnapshotLocation};
+use crate::utils::{self, AnalysisLocation, SnapshotLocation};
 
 use super::{PcgError, PcgUnsupportedError};
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+    // The label that should be used when referencing (after PostOperands), the
+    // value at the place before the move.
+    pub(crate) fn pre_operand_move_label(&self) -> SnapshotLocation {
+        SnapshotLocation::Before(AnalysisLocation::new(
+            self.location(),
+            EvalStmtPhase::PostOperands,
+        ))
+    }
+
+    // Returns the maybe-labelled place to use to reference the value of an
+    // operand after the PostOperands phase. If the operand was copied, the
+    // place is returned as-is. If the operand was moved, the place is returned
+    // with the label of the value before the move.
+    // Returns `None` if the operand is a constant.
+    pub(crate) fn maybe_labelled_operand_place(
+        &self,
+        operand: &Operand<'tcx>,
+    ) -> Option<MaybeOldPlace<'tcx>> {
+        match operand {
+            Operand::Copy(place) => Some((*place).into()),
+            Operand::Move(place) => Some(MaybeOldPlace::new(
+                (*place).into(),
+                Some(self.pre_operand_move_label()),
+            )),
+            Operand::Constant(_) => None,
+        }
+    }
+
     pub(crate) fn assign_post_main(
         &mut self,
         target: utils::Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
     ) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
-        self.record_and_apply_action(
-            BorrowPcgAction::set_latest(
-                target,
-                SnapshotLocation::After(self.location),
-                "Target of Assignment",
-            )
-            .into(),
-        )?;
         self.pcg
             .capabilities
             .insert(target, CapabilityKind::Exclusive, self.ctxt);
@@ -52,10 +73,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         .iter()
                         .enumerate()
                     {
-                        let source_proj = source_proj.with_base(MaybeOldPlace::new(
-                            source_proj.base,
-                            Some(self.pcg.borrow.get_latest(source_proj.base, self.ctxt)),
-                        ));
+                        let maybe_labelled = self.maybe_labelled_operand_place(field).unwrap();
+                        let source_proj = source_proj.with_base(maybe_labelled);
                         self.connect_outliving_projections(source_proj, target, |_| {
                             BorrowFlowEdgeKind::Aggregate {
                                 field_idx,
@@ -106,7 +125,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let from: utils::Place<'tcx> = (*from).into();
                 let (from, kind) = if matches!(operand, Operand::Move(_)) {
                     (
-                        MaybeOldPlace::new(from, Some(self.pcg.borrow.get_latest(from, self.ctxt))),
+                        MaybeOldPlace::new(from, Some(self.pre_operand_move_label())),
                         BorrowFlowEdgeKind::Move,
                     )
                 } else {
@@ -157,7 +176,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     blocked_place,
                     target,
                     *kind,
-                    self.location,
+                    self.location(),
                     *borrow_region,
                     &mut self.pcg.capabilities,
                     self.ctxt,
@@ -179,10 +198,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
             let mut obtainer = self.place_obtainer();
             let source_proj = if kind.mutability().is_mut() {
-                let label = obtainer.current_snapshot_location();
+                let label = obtainer.prev_snapshot_location();
                 obtainer.apply_action(
                     BorrowPcgAction::label_region_projection(
-                        LabelRegionProjectionPredicate::Postfix(source_proj.into()),
+                        LabelLifetimeProjectionPredicate::Postfix(source_proj.into()),
                         Some(label.into()),
                         "Label region projections of newly borrowed place",
                     )
@@ -202,13 +221,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if self
                     .ctxt
                     .bc
-                    .outlives(source_region, target_region, self.location)
+                    .outlives(source_region, target_region, self.location())
                 {
-                    let regions_equal = self.ctxt.bc.same_region(
-                        source_region,
-                        target_region,
-                        self.location,
-                    );
+                    let regions_equal =
+                        self.ctxt
+                            .bc
+                            .same_region(source_region, target_region, self.location());
                     self.record_and_apply_action(
                         BorrowPcgAction::add_edge(
                             BorrowPcgEdge::new(

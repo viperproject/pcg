@@ -1,9 +1,8 @@
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
-use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
-use crate::borrow_pcg::latest::Latest;
-use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate};
+use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
@@ -51,9 +50,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 // } else {
                 let orig_rp = local_rp.with_label(None, ctxt);
                 self.filter_mut_edges(|edge| {
-                    edge.label_region_projection(
-                        &LabelRegionProjectionPredicate::Equals(orig_rp),
-                        Some(RegionProjectionLabel::Placeholder),
+                    edge.label_lifetime_projection(
+                        &LabelLifetimeProjectionPredicate::Equals(orig_rp),
+                        Some(LifetimeProjectionLabel::Placeholder),
                         ctxt,
                     )
                     .to_filter_mut_result()
@@ -72,7 +71,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
-        latest: &mut Latest<'tcx>,
         path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
@@ -95,7 +93,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 capabilities,
                 owned,
                 path_conditions,
-                latest,
                 body_analysis,
                 ctxt,
             )?;
@@ -188,7 +185,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: ValidityConditions,
-        latest: &mut Latest<'tcx>,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
@@ -261,7 +257,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             &expand_places,
             capabilities,
             owned,
-            latest,
             path_conditions.clone(),
             ctxt,
         );
@@ -302,9 +297,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for rp in to_label.iter() {
             self.filter_mut_edges(|edge| {
-                edge.label_region_projection(
+                edge.label_lifetime_projection(
                     rp,
-                    Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
+                    Some(LifetimeProjectionLabel::Location(SnapshotLocation::Loop(
                         loop_head,
                     ))),
                     ctxt,

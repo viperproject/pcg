@@ -7,10 +7,10 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
         has_pcs_elem::{
-            HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult, PlaceLabeller,
+            HasPcgElems, LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, PlaceLabeller,
         },
-        region_projection::RegionProjectionLabel,
+        region_projection::LifetimeProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
     utils::{
@@ -24,14 +24,14 @@ pub struct FunctionCallAbstractionInput<'tcx>(
     pub(crate) RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
 );
 
-impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstractionInput<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for FunctionCallAbstractionInput<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        self.0.label_region_projection(predicate, label, ctxt)
+    ) -> LabelLifetimeProjectionResult {
+        self.0.label_lifetime_projection(predicate, label, ctxt)
     }
 }
 
@@ -82,14 +82,14 @@ impl<'tcx> From<MaybeRemotePlace<'tcx>> for LoopAbstractionInput<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionInput<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for LoopAbstractionInput<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        projection: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        projection: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        self.0.label_region_projection(projection, label, ctxt)
+    ) -> LabelLifetimeProjectionResult {
+        self.0.label_lifetime_projection(projection, label, ctxt)
     }
 }
 
@@ -145,14 +145,14 @@ impl<'tcx> TryFrom<LoopAbstractionInput<'tcx>> for RegionProjection<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstractionOutput<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for LoopAbstractionOutput<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        projection: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        projection: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        self.0.label_region_projection(projection, label, ctxt)
+    ) -> LabelLifetimeProjectionResult {
+        self.0.label_lifetime_projection(projection, label, ctxt)
     }
 }
 
@@ -226,14 +226,14 @@ impl<'tcx> LabelPlace<'tcx> for AbstractionOutputTarget<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for AbstractionOutputTarget<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for AbstractionOutputTarget<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        projection: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        projection: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        self.0.label_region_projection(projection, label, ctxt)
+    ) -> LabelLifetimeProjectionResult {
+        self.0.label_lifetime_projection(projection, label, ctxt)
     }
 }
 

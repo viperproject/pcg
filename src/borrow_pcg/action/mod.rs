@@ -4,8 +4,8 @@ use super::borrow_pcg_edge::BorrowPcgEdge;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
-use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller};
-use crate::borrow_pcg::region_projection::{RegionProjection, RegionProjectionLabel};
+use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller};
+use crate::borrow_pcg::region_projection::{RegionProjection, LifetimeProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
@@ -39,17 +39,6 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn set_latest(
-        place: Place<'tcx>,
-        location: SnapshotLocation,
-        context: impl Into<String>,
-    ) -> Self {
-        BorrowPcgAction {
-            kind: BorrowPcgActionKind::SetLatest(place, location),
-            debug_context: Some(context.into()),
-        }
-    }
-
     pub(crate) fn remove_edge(edge: BorrowPcgEdge<'tcx>, context: impl Into<String>) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::RemoveEdge(edge),
@@ -73,8 +62,8 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::LabelRegionProjection(
-                LabelRegionProjectionPredicate::Equals(projection),
+            kind: BorrowPcgActionKind::LabelLifetimeProjection(
+                LabelLifetimeProjectionPredicate::Equals(projection),
                 None,
             ),
             debug_context: Some(context.into()),
@@ -82,26 +71,37 @@ impl<'tcx> BorrowPcgAction<'tcx> {
     }
 
     pub(crate) fn label_region_projection(
-        predicate: LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::LabelRegionProjection(predicate, label),
+            kind: BorrowPcgActionKind::LabelLifetimeProjection(predicate, label),
             debug_context: Some(context.into()),
         }
     }
 
-    pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
+    pub(crate) fn make_place_old(
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+        reason: LabelPlaceReason,
+    ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
+            kind: BorrowPcgActionKind::MakePlaceOld(LabelPlaceAction {
+                place,
+                location,
+                reason,
+            }),
             debug_context: None,
         }
     }
 }
 
+#[deprecated(note = "Use LabelPlaceReason instead")]
+pub type MakePlaceOldReason = LabelPlaceReason;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum MakePlaceOldReason {
+pub enum LabelPlaceReason {
     StorageDead,
     MoveOut,
     ReAssign,
@@ -109,7 +109,7 @@ pub enum MakePlaceOldReason {
     Collapse,
 }
 
-impl MakePlaceOldReason {
+impl LabelPlaceReason {
     pub(crate) fn apply_to_edge<'tcx>(
         self,
         place: Place<'tcx>,
@@ -118,14 +118,14 @@ impl MakePlaceOldReason {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let predicate = match self {
-            MakePlaceOldReason::ReAssign => {
+            LabelPlaceReason::ReAssign => {
                 LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
             }
-            MakePlaceOldReason::StorageDead | MakePlaceOldReason::MoveOut => {
+            LabelPlaceReason::StorageDead | LabelPlaceReason::MoveOut => {
                 LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
             }
-            MakePlaceOldReason::Collapse => LabelPlacePredicate::Exact(place),
-            MakePlaceOldReason::LabelSharedDerefProjections => {
+            LabelPlaceReason::Collapse => LabelPlacePredicate::Exact(place),
+            LabelPlaceReason::LabelSharedDerefProjections => {
                 LabelPlacePredicate::StrictPostfix(place)
             }
         };
@@ -136,15 +136,36 @@ impl MakePlaceOldReason {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LabelPlaceAction<'tcx> {
+    pub(crate) place: Place<'tcx>,
+    pub(crate) location: SnapshotLocation,
+    pub(crate) reason: LabelPlaceReason,
+}
+
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for LabelPlaceAction<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        format!(
+            "Make {} an old place ({:?})",
+            self.place.to_short_string(ctxt),
+            self.reason
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPcgActionKind<'tcx> {
-    LabelRegionProjection(
-        LabelRegionProjectionPredicate<'tcx>,
-        Option<RegionProjectionLabel>,
+    LabelLifetimeProjection(
+        LabelLifetimeProjectionPredicate<'tcx>,
+        Option<LifetimeProjectionLabel>,
     ),
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
-    MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
-    SetLatest(Place<'tcx>, SnapshotLocation),
+    MakePlaceOld(LabelPlaceAction<'tcx>),
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,
@@ -159,7 +180,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
         ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
     ) -> String {
         match self {
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+            BorrowPcgActionKind::LabelLifetimeProjection(rp, label) => {
                 format!(
                     "Label Region Projection: {} with {:?}",
                     rp.to_short_string(ctxt),
@@ -168,18 +189,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             }
             BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(ctxt),
             BorrowPcgActionKind::Restore(restore_capability) => restore_capability.debug_line(ctxt),
-            BorrowPcgActionKind::MakePlaceOld(predicate, reason) => {
-                format!(
-                    "Make {} an old place ({:?})",
-                    predicate.to_short_string(ctxt),
-                    reason
-                )
-            }
-            BorrowPcgActionKind::SetLatest(place, location) => format!(
-                "Set Latest of {} to {:?}",
-                place.to_short_string(ctxt),
-                location
-            ),
+            BorrowPcgActionKind::MakePlaceOld(action) => action.to_short_string(ctxt),
             BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(ctxt))
             }

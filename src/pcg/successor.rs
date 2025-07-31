@@ -5,7 +5,6 @@ use serde_json::json;
 use crate::action::PcgActions;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::graph::BorrowsGraph;
-use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::rustc_interface::middle::mir::BasicBlock;
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -25,9 +24,6 @@ impl<'tcx> PcgSuccessor<'tcx> {
     }
     pub fn block(&self) -> BasicBlock {
         self.block
-    }
-    pub fn latest(&self) -> &Latest<'tcx> {
-        &self.entry_state.latest
     }
     pub fn entry_graph(&self) -> &BorrowsGraph<'tcx> {
         self.entry_state.graph()

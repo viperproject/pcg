@@ -13,10 +13,10 @@ use crate::{
         edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult, PlaceLabeller,
+            LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, PlaceLabeller,
         },
-        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjectionLabel},
+        region_projection::{MaybeRemoteRegionProjectionBase, LifetimeProjectionLabel},
     },
     pcg::PCGNodeLike,
     utils::maybe_remote::MaybeRemotePlace,
@@ -88,25 +88,25 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
 impl<
         'tcx: 'a,
         'a,
-        Input: LabelRegionProjection<'tcx>
+        Input: LabelLifetimeProjection<'tcx>
             + PCGNodeLike<'tcx>
             + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        Output: LabelRegionProjection<'tcx>
+        Output: LabelLifetimeProjection<'tcx>
             + PCGNodeLike<'tcx>
             + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > LabelRegionProjection<'tcx> for AbstractionBlockEdge<'tcx, Input, Output>
+    > LabelLifetimeProjection<'tcx> for AbstractionBlockEdge<'tcx, Input, Output>
 {
-    fn label_region_projection(
+    fn label_lifetime_projection(
         &mut self,
-        projection: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        projection: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        let mut changed = LabelRegionProjectionResult::Unchanged;
+    ) -> LabelLifetimeProjectionResult {
+        let mut changed = LabelLifetimeProjectionResult::Unchanged;
         let mut i = 0;
         while i < self.inputs.len() {
             let input = &mut self.inputs[i];
-            changed |= input.label_region_projection(projection, label, ctxt);
+            changed |= input.label_lifetime_projection(projection, label, ctxt);
             let input = self.inputs[i];
             if self
                 .outputs
@@ -116,14 +116,14 @@ impl<
                 self.inputs
                     .retain(|i| i.to_pcg_node(ctxt) != input.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
-                return LabelRegionProjectionResult::Changed;
+                return LabelLifetimeProjectionResult::Changed;
             }
             i += 1;
         }
         let mut j = 0;
         while j < self.outputs.len() {
             let output = &mut self.outputs[j];
-            changed |= output.label_region_projection(projection, label, ctxt);
+            changed |= output.label_lifetime_projection(projection, label, ctxt);
             let output = self.outputs[j];
             if self
                 .inputs
@@ -133,7 +133,7 @@ impl<
                 self.outputs
                     .retain(|o| o.to_pcg_node(ctxt) != output.to_pcg_node(ctxt));
                 self.assert_validity(ctxt);
-                return LabelRegionProjectionResult::Changed;
+                return LabelLifetimeProjectionResult::Changed;
             }
             j += 1;
         }

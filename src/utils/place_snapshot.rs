@@ -1,59 +1,113 @@
 use serde_json::json;
 
 use super::display::DisplayWithCompilerCtxt;
-use super::{validity::HasValidityCheck, CompilerCtxt, Place};
+use super::{CompilerCtxt, Place, validity::HasValidityCheck};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
     pcg::LocalNodeLike,
     rustc_interface::{
         index::IndexVec,
-        middle::mir::{BasicBlock, Location},
+        middle::mir::{self, BasicBlock, Location},
     },
 };
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Copy, Ord, PartialOrd)]
+pub struct AnalysisLocation {
+    pub(crate) location: Location,
+    pub(crate) eval_stmt_phase: EvalStmtPhase,
+}
+
+impl std::fmt::Display for AnalysisLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}:{:?}", self.location, self.eval_stmt_phase)
+    }
+}
+
+impl AnalysisLocation {
+    pub fn location(&self) -> Location {
+        self.location
+    }
+
+    pub fn first(block: BasicBlock) -> Self {
+        AnalysisLocation {
+            location: Location {
+                block,
+                statement_index: 0,
+            },
+            eval_stmt_phase: EvalStmtPhase::first(),
+        }
+    }
+
+    pub fn new(location: Location, eval_stmt_phase: EvalStmtPhase) -> Self {
+        AnalysisLocation {
+            location,
+            eval_stmt_phase,
+        }
+    }
+    pub fn next_snapshot_location(self, body: &mir::Body<'_>) -> SnapshotLocation {
+        if let Some(phase) = self.eval_stmt_phase.next() {
+            SnapshotLocation::Before(AnalysisLocation {
+                location: self.location,
+                eval_stmt_phase: phase,
+            })
+        } else {
+            let bb = &body.basic_blocks[self.location.block];
+            // Not < because the PCG also has a location for the terminator
+            if self.location.statement_index == bb.statements.len() {
+                SnapshotLocation::After(self.location.block)
+            } else {
+                let mut next_location = self.location;
+                next_location.statement_index += 1;
+                SnapshotLocation::Before(AnalysisLocation {
+                    location: next_location,
+                    eval_stmt_phase: EvalStmtPhase::first(),
+                })
+            }
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub enum SnapshotLocation {
-    Start(BasicBlock),
-    Prepare(Location),
-    BeforeCollapse(Location),
-    Mid(Location),
-    After(Location),
+    Before(AnalysisLocation),
+    After(BasicBlock),
     Loop(BasicBlock),
     BeforeRefReassignment(Location),
 }
 
 impl SnapshotLocation {
-    pub fn location(self) -> Location {
-        match self {
-            SnapshotLocation::Prepare(location) => location,
-            SnapshotLocation::BeforeCollapse(location) => location,
-            SnapshotLocation::Mid(location) => location,
-            SnapshotLocation::After(location) => location,
-            SnapshotLocation::Start(basic_block) | SnapshotLocation::Loop(basic_block) => {
-                Location {
-                    block: basic_block,
-                    statement_index: 0,
-                }
-            }
-            SnapshotLocation::BeforeRefReassignment(location) => location,
-        }
-    }
-    pub(crate) fn start() -> Self {
-        SnapshotLocation::After(Location::START)
+    pub fn before_block(block: BasicBlock) -> Self {
+        SnapshotLocation::Before(AnalysisLocation {
+            location: Location {
+                block,
+                statement_index: 0,
+            },
+            eval_stmt_phase: EvalStmtPhase::first(),
+        })
     }
 
-    pub(crate) fn before(mut loc: Location) -> Self {
-        if loc.statement_index == 0 {
-            SnapshotLocation::Start(loc.block)
-        } else {
-            loc.statement_index -= 1;
-            SnapshotLocation::After(loc)
-        }
+    pub const fn first() -> Self {
+        SnapshotLocation::Before(AnalysisLocation {
+            location: Location::START,
+            eval_stmt_phase: EvalStmtPhase::first(),
+        })
+    }
+
+    pub fn after_statement_at(location: Location, ctxt: CompilerCtxt<'_, '_>) -> Self {
+        let analysis_location = AnalysisLocation {
+            location,
+            eval_stmt_phase: EvalStmtPhase::last(),
+        };
+        analysis_location.next_snapshot_location(ctxt.body())
+    }
+
+    pub(crate) fn before(analysis_location: AnalysisLocation) -> Self {
+        SnapshotLocation::Before(analysis_location)
     }
 
     pub(crate) fn to_json(self) -> serde_json::Value {
@@ -71,12 +125,11 @@ impl std::fmt::Display for SnapshotLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SnapshotLocation::After(loc) => write!(f, "after {loc:?}"),
-            SnapshotLocation::Mid(loc) => write!(f, "mid {loc:?}"),
-            SnapshotLocation::Start(bb) => write!(f, "start {bb:?}"),
             SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
-            SnapshotLocation::Prepare(location) => write!(f, "prep {location:?}"),
-            SnapshotLocation::BeforeCollapse(location) => write!(f, "before collapse {location:?}"),
-            SnapshotLocation::BeforeRefReassignment(location) => write!(f, "before ref reassignment {location:?}"),
+            SnapshotLocation::BeforeRefReassignment(location) => {
+                write!(f, "before ref reassignment {location:?}")
+            }
+            SnapshotLocation::Before(eval_stmt_phase) => write!(f, "before {eval_stmt_phase}"),
         }
     }
 }

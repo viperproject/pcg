@@ -7,11 +7,11 @@ use super::{
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{HasPcgElems, LabelPlace, LabelRegionProjection},
+    has_pcs_elem::{HasPcgElems, LabelPlace, LabelLifetimeProjection},
     path_condition::ValidityConditions,
     region_projection::{
         LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
-        RegionProjectionLabel,
+        LifetimeProjectionLabel,
     },
 };
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -20,7 +20,7 @@ use crate::{
     borrow_pcg::{
         edge_data::edgedata_enum,
         has_pcs_elem::{
-            LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+            LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller,
         },
     },
     utils::place::maybe_old::MaybeOldPlace,
@@ -74,15 +74,15 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgEdge<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for BorrowPcgEdge<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowPcgEdge<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         self.kind
-            .label_region_projection(predicate, label, repacker)
+            .label_lifetime_projection(predicate, label, repacker)
     }
 }
 

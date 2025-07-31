@@ -24,15 +24,29 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 12 basic blocks <= 15 nodes
     common::ensure_successful_run_on_crate(
-        "rustls",
-        "0.23.23",
+        "regex-automata",
+        "0.4.9",
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: None,
-            extra_env_vars: vec![]
+            function: Some("<util::search::PatternSetIter<'a> as core::iter::Iterator>::next"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    // 15 basic blocks <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "hashbrown",
+        "0.15.2",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<set::Intersection<'a, T, S, A> as core::iter::Iterator>::next"),
+            extra_env_vars: vec![],
         },
     );
 
@@ -860,6 +874,18 @@ fn test_selected_crates() {
             validity_checks: false,
             function: None,
             extra_env_vars: vec![],
+        },
+    );
+
+    common::ensure_successful_run_on_crate(
+        "rustls",
+        "0.23.23",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: None,
+            extra_env_vars: vec![]
         },
     );
 

@@ -19,12 +19,12 @@ impl <'a> StringList<'a> {
     fn set_nth(self, n: usize, value: String) {
         if let Some(node) = self.get_nth(n) {
             *node = value;
-// PCG: bb4[0] post_main: (_4@Some).0 after bb0[5]↓'?6 -> node↓'?8 mid bb4[0] under conditions bb1 -> bb2
-// PCG: bb4[0] post_main: Remote(_1)↓'?5 -> self after bb0[0]↓'?5 under conditions bb1 -> bb2
-// PCG: bb4[0] post_main: call StringList::<'a>::get_nth at bb0[5]: [_5 after bb0[2]↓'?7 after bb0[4]] -> [_4 after bb0[5]↓'?6 after bb3[0]] under conditions bb1 -> bb2
-// PCG: bb4[0] post_main: self after bb0[0]↓'?5 -> _5 after bb0[2]↓'?7 after bb0[4] under conditions bb1 -> bb2
-// PCG: bb4[0] post_main: {(_4@Some) after bb0[5]↓'?6 after bb3[0]} -> {(_4@Some).0 after bb0[5]↓'?6} under conditions bb1 -> bb2
-// PCG: bb4[0] post_main: {_4 after bb0[5]↓'?6 after bb3[0]} -> {(_4@Some) after bb0[5]↓'?6 after bb3[0]} under conditions bb1 -> bb2
+// PCG: bb4[0] post_main: (_4@Some).0 before bb3[1]:PostOperands↓'?6 -> node↓'?8 before bb4[0]:PreMain under conditions bb1 -> bb2
+// PCG: bb4[0] post_main: Remote(_1)↓'?5 -> self before bb0[2]:PostOperands↓'?5 under conditions bb1 -> bb2
+// PCG: bb4[0] post_main: call StringList::<'a>::get_nth at bb0[5]: [_5 before bb0[5]:PostOperands↓'?7 before bb0[5]:PostMain] -> [_4 before bb3[1]:PostOperands↓'?6 before bb3[1]:PreOperands] under conditions bb1 -> bb2
+// PCG: bb4[0] post_main: self before bb0[2]:PostOperands↓'?5 -> _5 before bb0[5]:PostOperands↓'?7 before bb0[5]:PostMain under conditions bb1 -> bb2
+// PCG: bb4[0] post_main: {(_4@Some) before bb3[1]:PostOperands↓'?6 before bb3[1]:PreOperands} -> {(_4@Some).0 before bb3[1]:PostOperands↓'?6} under conditions bb1 -> bb2
+// PCG: bb4[0] post_main: {_4 before bb3[1]:PostOperands↓'?6 before bb3[1]:PreOperands} -> {(_4@Some) before bb3[1]:PostOperands↓'?6 before bb3[1]:PreOperands} under conditions bb1 -> bb2
         }
     }
 }

@@ -2,9 +2,9 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult,
+    LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult,
 };
-use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -17,8 +17,8 @@ use crate::{
             MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
         },
     },
-    rustc_interface::{hir::Mutability, middle::mir},
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
+    rustc_interface::middle::mir,
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -28,14 +28,13 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 }
 
 impl<'tcx> PCGNode<'tcx> {
-
     pub fn related_place(self) -> Option<MaybeRemotePlace<'tcx>> {
         match self {
             PCGNode::Place(p) => Some(p),
             PCGNode::RegionProjection(rp) => match rp.base() {
                 MaybeRemoteRegionProjectionBase::Place(p) => Some(p),
                 _ => None,
-            }
+            },
         }
     }
 
@@ -49,18 +48,6 @@ impl<'tcx> PCGNode<'tcx> {
         match self {
             PCGNode::Place(p) => p.maybe_remote_current_place(),
             PCGNode::RegionProjection(rp) => rp.base().maybe_remote_current_place(),
-        }
-    }
-
-    // TODO: Make this more precise
-    #[allow(unused)]
-    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        match self {
-            PCGNode::Place(p) => p.is_mutable(ctxt),
-            PCGNode::RegionProjection(rp) => rp
-                .base()
-                .as_local_place()
-                .is_some_and(|p| p.ty(ctxt).ty.ref_mutability() != Some(Mutability::Not)),
         }
     }
 }
@@ -84,20 +71,20 @@ impl<'tcx> From<LoopAbstractionInput<'tcx>> for PCGNode<'tcx> {
     }
 }
 
-impl<'tcx, T, U: Copy> LabelRegionProjection<'tcx> for PCGNode<'tcx, T, U>
+impl<'tcx, T, U: Copy> LabelLifetimeProjection<'tcx> for PCGNode<'tcx, T, U>
 where
     MaybeRemoteRegionProjectionBase<'tcx>: From<U>,
 {
-    fn label_region_projection(
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         if let PCGNode::RegionProjection(this_projection) = self {
-            this_projection.label_region_projection(predicate, label, repacker)
+            this_projection.label_lifetime_projection(predicate, label, repacker)
         } else {
-            LabelRegionProjectionResult::Unchanged
+            LabelLifetimeProjectionResult::Unchanged
         }
     }
 }
@@ -149,12 +136,12 @@ impl<'tcx, T: PCGNodeLike<'tcx>, U: RegionProjectionBaseLike<'tcx>> HasValidityC
 }
 
 impl<
-        'tcx,
-        'a,
-        T: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        U: RegionProjectionBaseLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGNode<'tcx, T, U>
+    'tcx,
+    'a,
+    T: PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    U: RegionProjectionBaseLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>> for PCGNode<'tcx, T, U>
 {
     fn to_short_string(
         &self,
@@ -168,11 +155,11 @@ impl<
 }
 
 impl<
-        'tcx,
-        BC: Copy,
-        T: PCGNodeLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
-        U: RegionProjectionBaseLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
-    > ToJsonWithCompilerCtxt<'tcx, BC> for PCGNode<'tcx, T, U>
+    'tcx,
+    BC: Copy,
+    T: PCGNodeLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
+    U: RegionProjectionBaseLike<'tcx> + ToJsonWithCompilerCtxt<'tcx, BC>,
+> ToJsonWithCompilerCtxt<'tcx, BC> for PCGNode<'tcx, T, U>
 {
     fn to_json(&self, _repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         todo!()

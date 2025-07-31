@@ -1,10 +1,11 @@
 use super::PcgVisitor;
 
 use crate::action::BorrowPcgAction;
-use crate::borrow_pcg::action::MakePlaceOldReason;
+use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
+use crate::pcg::obtain::PlaceExpander;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
@@ -19,8 +20,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         &mut self,
         statement: &Statement<'tcx>,
     ) -> Result<(), PcgError> {
-        self.super_statement_fallable(statement, self.location)?;
-        match self.phase {
+        self.super_statement_fallable(statement, self.location())?;
+        match self.phase() {
             EvalStmtPhase::PreMain => {
                 self.stmt_pre_main(statement)?;
             }
@@ -33,12 +34,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     fn stmt_pre_main(&mut self, statement: &Statement<'tcx>) -> Result<(), PcgError> {
-        assert!(self.phase == EvalStmtPhase::PreMain);
+        assert!(self.phase() == EvalStmtPhase::PreMain);
         match &statement.kind {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
+                let snapshot_location = self.place_obtainer().prev_snapshot_location();
                 self.record_and_apply_action(
-                    BorrowPcgAction::make_place_old(place, MakePlaceOldReason::StorageDead).into(),
+                    BorrowPcgAction::make_place_old(
+                        place,
+                        snapshot_location,
+                        LabelPlaceReason::StorageDead,
+                    )
+                    .into(),
                 )?;
             }
             StatementKind::Assign(box (target, _)) => {
@@ -94,7 +101,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         if should_remove {
                             self.place_obtainer()
                                 .remove_edge_and_perform_associated_state_updates(
-                                    edge, false, "Assign",
+                                    edge, "Assign",
                                 )?;
                         }
                     }
@@ -106,7 +113,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 
     fn stmt_post_main(&mut self, statement: &Statement<'tcx>) -> Result<(), PcgError> {
-        assert!(self.phase == EvalStmtPhase::PostMain);
+        assert!(self.phase() == EvalStmtPhase::PostMain);
         if let StatementKind::Assign(box (target, rvalue)) = &statement.kind {
             self.assign_post_main((*target).into(), rvalue)?;
         }

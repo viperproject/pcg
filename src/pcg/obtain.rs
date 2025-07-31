@@ -9,15 +9,12 @@ use crate::{
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
         graph::BorrowsGraph,
-        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
+        has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         path_condition::ValidityConditions,
-        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
+        region_projection::{LocalRegionProjection, RegionProjection, LifetimeProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{
-        EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
-        place_capabilities::BlockType,
-    },
+    pcg::{PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, place_capabilities::BlockType},
     rustc_interface::middle::mir,
     utils::{
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
@@ -27,11 +24,10 @@ use crate::{
 
 pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) pcg: PcgMutRef<'state, 'tcx>,
-    pub(crate) phase: EvalStmtPhase,
     pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
     pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
     pub(crate) location: mir::Location,
-    pub(crate) snapshot_location: SnapshotLocation,
+    pub(crate) prev_snapshot_location: SnapshotLocation,
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
 }
 
@@ -97,14 +93,14 @@ impl ObtainType {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LabelForRegionProjection {
-    NewLabelAtCurrentLocation(RegionProjectionLabel),
-    ExistingLabelOfTwoPhaseReservation(RegionProjectionLabel),
+    NewLabelAtCurrentLocation(LifetimeProjectionLabel),
+    ExistingLabelOfTwoPhaseReservation(LifetimeProjectionLabel),
     NoLabel,
 }
 
 use LabelForRegionProjection::*;
 impl LabelForRegionProjection {
-    fn label(self) -> Option<RegionProjectionLabel> {
+    fn label(self) -> Option<LifetimeProjectionLabel> {
         match self {
             NewLabelAtCurrentLocation(label) | ExistingLabelOfTwoPhaseReservation(label) => {
                 Some(label)
@@ -155,7 +151,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
     ) -> LabelForRegionProjection {
         use LabelForRegionProjection::*;
         if obtain_type.should_label_rp(rp.rebase(), ctxt) {
-            NewLabelAtCurrentLocation(self.current_snapshot_location().into())
+            NewLabelAtCurrentLocation(self.prev_snapshot_location().into())
         } else {
             match self.label_for_shared_expansion_of_rp(rp, ctxt) {
                 Some(label) => ExistingLabelOfTwoPhaseReservation(label),
@@ -168,11 +164,16 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         &self,
         rp: RegionProjection<'tcx, Place<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Option<RegionProjectionLabel> {
+    ) -> Option<LifetimeProjectionLabel> {
         ctxt.bc
-            .borrows_blocking(rp.base, self.current_snapshot_location().location(), ctxt)
+            .borrows_blocking(rp.base, self.location(), ctxt)
             .first()
-            .map(|borrow| SnapshotLocation::Mid(get_reserve_location(borrow)).into())
+            .map(|borrow| {
+                let borrow_reserve_location = get_reserve_location(borrow);
+                let snapshot_location =
+                    SnapshotLocation::after_statement_at(borrow_reserve_location, ctxt);
+                snapshot_location.into()
+            })
     }
 
     fn expand_owned_place_one_level(
@@ -237,7 +238,14 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         }
     }
 
-    fn current_snapshot_location(&self) -> SnapshotLocation;
+    /// The snapshot location to use when e.g. moving out a place. Before
+    /// performing such an action on a place, we would first update references
+    /// to the place to use the version that is *labelled* with the location
+    /// returned by this function (indicating that it refers to the value in the
+    /// place before the action).
+    fn prev_snapshot_location(&self) -> SnapshotLocation;
+
+    fn location(&self) -> mir::Location;
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx>;
 
@@ -283,7 +291,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
             let rp = base.base_region_projection(ctxt).unwrap();
             self.apply_action(
                 BorrowPcgAction::label_region_projection(
-                    LabelRegionProjectionPredicate::Equals(rp.into()),
+                    LabelLifetimeProjectionPredicate::Equals(rp.into()),
                     Some(location),
                     "add_borrow_pcg_expansion: fresh RP label",
                 )
@@ -321,8 +329,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                     BorrowPcgExpansion::new(base_rp.into(), place_expansion, None, ctxt)?;
                 let expansion_label = self.label_for_rp(base_rp, obtain_type, ctxt);
                 if let Some(label) = expansion_label.label() {
-                    expansion.label_region_projection(
-                        &LabelRegionProjectionPredicate::Equals(base_rp.into()),
+                    expansion.label_lifetime_projection(
+                        &LabelLifetimeProjectionPredicate::Equals(base_rp.into()),
                         Some(label),
                         ctxt,
                     );
@@ -341,7 +349,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                 if let NewLabelAtCurrentLocation(label) = expansion_label {
                     self.apply_action(
                         BorrowPcgAction::label_region_projection(
-                            LabelRegionProjectionPredicate::Equals(base_rp.into()),
+                            LabelLifetimeProjectionPredicate::Equals(base_rp.into()),
                             Some(label),
                             "expand_region_projections_one_level: create new RP label",
                         )

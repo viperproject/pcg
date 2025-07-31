@@ -5,9 +5,9 @@ use crate::borrow_pcg::domain::LoopAbstractionOutput;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller};
 use crate::borrow_pcg::path_condition::ValidityConditions;
-use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::{BasicBlock, Location};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -20,15 +20,15 @@ pub struct LoopAbstraction<'tcx> {
     pub(crate) block: BasicBlock,
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for LoopAbstraction<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for LoopAbstraction<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        projection: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        projection: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         self.edge
-            .label_region_projection(projection, label, repacker)
+            .label_lifetime_projection(projection, label, repacker)
     }
 }
 impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {

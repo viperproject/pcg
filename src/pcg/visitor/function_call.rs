@@ -4,15 +4,14 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::domain::{FunctionCallAbstractionInput, FunctionCallAbstractionOutput};
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
+use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::pcg::obtain::PlaceExpander;
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::maybe_old::MaybeOldPlace;
-use crate::utils::{self, CompilerCtxt, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{self, CompilerCtxt, SnapshotLocation};
 
 fn get_function_data<'tcx>(
     func: &Operand<'tcx>,
@@ -58,25 +57,28 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         // time
         let arg_region_projections = args
             .iter()
-            .filter_map(|arg| arg.place())
-            .flat_map(|mir_place| {
-                let input_place: utils::Place<'tcx> = mir_place.into();
-                let input_place = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
-                    input_place,
-                    self.pcg.borrow.get_latest(input_place, self.ctxt),
-                ));
-                input_place.region_projections(self.ctxt)
-            })
+            .filter_map(|arg| self.maybe_labelled_operand_place(arg))
+            .flat_map(|input_place| input_place.region_projections(self.ctxt))
             .collect::<Vec<_>>();
 
         let pre_rps = arg_region_projections
             .iter()
-            .map(|rp| rp.with_label(Some(SnapshotLocation::before(location).into()), self.ctxt))
+            .map(|rp| {
+                rp.with_label(
+                    Some(self.place_obtainer().prev_snapshot_location().into()),
+                    self.ctxt,
+                )
+            })
             .collect::<Vec<_>>();
 
         let post_rps = arg_region_projections
             .iter()
-            .map(|rp| rp.with_label(Some(SnapshotLocation::After(location).into()), self.ctxt))
+            .map(|rp| {
+                rp.with_label(
+                    Some(SnapshotLocation::After(self.location().block).into()),
+                    self.ctxt,
+                )
+            })
             .collect::<Vec<_>>();
 
         for (rp, post_rp) in arg_region_projections.iter().zip(post_rps.iter()) {
@@ -87,7 +89,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         for (rp, pre_rp) in arg_region_projections.iter().zip(pre_rps.iter()) {
             self.record_and_apply_action(
                 BorrowPcgAction::label_region_projection(
-                    LabelRegionProjectionPredicate::Equals(*rp),
+                    LabelLifetimeProjectionPredicate::Equals(*rp),
                     pre_rp.label(),
                     format!(
                         "Function call:Label Pre version of {}",

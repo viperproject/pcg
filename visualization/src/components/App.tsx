@@ -43,7 +43,6 @@ import {
   reloadIterations,
 } from "../effects";
 import BorrowCheckerGraphs from "./BorrowCheckerGraphs";
-import { LatestDisplay } from "./LatestDisplay";
 
 const getActionGraphFilename = (
   selectedFunction: string,
@@ -426,9 +425,6 @@ export const App: React.FC<AppProps> = ({
                 }
               }}
             />
-            {"latest" in pcgProgramPointData && (
-              <LatestDisplay latest={pcgProgramPointData.latest} />
-            )}
           </>
         )}
         {pathData && (

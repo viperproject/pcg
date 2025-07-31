@@ -4,16 +4,15 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeRef, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
     graph::BorrowsGraph,
-    latest::Latest,
     path_condition::{PathCondition, ValidityConditions},
     visitor::extract_regions,
 };
 use crate::{
     action::BorrowPcgAction,
     borrow_pcg::{
-        action::{BorrowPcgActionKind, MakePlaceOldReason},
-        has_pcs_elem::LabelRegionProjectionPredicate,
-        region_projection::RegionProjectionLabel,
+        action::{BorrowPcgActionKind, LabelPlaceReason},
+        has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller, SetLabel},
+        region_projection::LifetimeProjectionLabel,
     },
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
@@ -43,21 +42,18 @@ use crate::{
 };
 use crate::{
     free_pcs::CapabilityKind,
-    utils::{CompilerCtxt, Place, SnapshotLocation},
+    utils::{CompilerCtxt, Place},
 };
 
-/// The state of the Borrow PCG, including the Borrow PCG graph, the latest
-/// locations of places, and the validity conditions associated with the current
-/// basic block.
+/// The state of the Borrow PCG, including the Borrow PCG graph and the validity
+/// conditions associated with the current basic block.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BorrowsState<'tcx> {
-    pub latest: Latest<'tcx>,
     pub(crate) graph: BorrowsGraph<'tcx>,
     pub(crate) path_conditions: ValidityConditions,
 }
 
 pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
-    pub(crate) latest: &'pcg mut Latest<'tcx>,
     pub(crate) graph: &'pcg mut BorrowsGraph<'tcx>,
     pub(crate) path_conditions: &'pcg ValidityConditions,
 }
@@ -65,7 +61,6 @@ pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
 #[allow(unused)]
 #[derive(Clone, Copy)]
 pub(crate) struct BorrowStateRef<'pcg, 'tcx> {
-    pub(crate) latest: &'pcg Latest<'tcx>,
     pub(crate) graph: &'pcg BorrowsGraph<'tcx>,
     pub(crate) path_conditions: &'pcg ValidityConditions,
 }
@@ -74,9 +69,6 @@ pub(crate) trait BorrowsStateLike<'tcx> {
     fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx>;
     fn as_ref(&self) -> BorrowStateRef<'_, 'tcx>;
 
-    fn latest(&mut self) -> &mut Latest<'tcx> {
-        self.as_mut_ref().latest
-    }
     fn graph_mut(&mut self) -> &mut BorrowsGraph<'tcx> {
         self.as_mut_ref().graph
     }
@@ -90,31 +82,21 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         self.graph().frozen_graph().leaf_nodes(ctxt)
     }
 
-    fn set_latest(
-        &mut self,
-        place: Place<'tcx>,
-        location: SnapshotLocation,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.latest().insert(place, location, ctxt)
-    }
-
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        reason: MakePlaceOldReason,
+        reason: LabelPlaceReason,
+        labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let state = self.as_mut_ref();
-        state
-            .graph
-            .make_place_old(place, reason, state.latest, ctxt)
+        state.graph.make_place_old(place, reason, labeller, ctxt)
     }
 
     fn label_region_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph_mut()
@@ -163,7 +145,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 if restore.capability() == CapabilityKind::Exclusive {
                     self.label_region_projection(
-                        &LabelRegionProjectionPredicate::AllPlaceholderPostfixes(restore_place),
+                        &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(restore_place),
                         None,
                         ctxt,
                     );
@@ -183,15 +165,15 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 true
             }
-            BorrowPcgActionKind::MakePlaceOld(place, reason) => {
-                self.make_place_old(place, reason, ctxt)
-            }
-            BorrowPcgActionKind::SetLatest(place, location) => {
-                self.set_latest(place, location, ctxt)
-            }
+            BorrowPcgActionKind::MakePlaceOld(action) => self.make_place_old(
+                action.place,
+                action.reason,
+                &SetLabel(action.location),
+                ctxt,
+            ),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt),
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+            BorrowPcgActionKind::LabelLifetimeProjection(rp, label) => {
                 self.label_region_projection(&rp, label, ctxt)
             }
         };
@@ -202,7 +184,6 @@ pub(crate) trait BorrowsStateLike<'tcx> {
 impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> {
     fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         BorrowStateMutRef {
-            latest: self.latest,
             graph: self.graph,
             path_conditions: self.path_conditions,
         }
@@ -214,7 +195,6 @@ impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> 
 
     fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
         BorrowStateRef {
-            latest: self.latest,
             graph: self.graph,
             path_conditions: self.path_conditions,
         }
@@ -224,7 +204,6 @@ impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> 
 impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
     fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         BorrowStateMutRef {
-            latest: &mut self.latest,
             graph: &mut self.graph,
             path_conditions: &self.path_conditions,
         }
@@ -236,7 +215,6 @@ impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
 
     fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
         BorrowStateRef {
-            latest: &self.latest,
             graph: &self.graph,
             path_conditions: &self.path_conditions,
         }
@@ -246,7 +224,6 @@ impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
 impl<'pcg, 'tcx> From<&'pcg mut BorrowsState<'tcx>> for BorrowStateMutRef<'pcg, 'tcx> {
     fn from(borrows_state: &'pcg mut BorrowsState<'tcx>) -> Self {
         Self {
-            latest: &mut borrows_state.latest,
             graph: &mut borrows_state.graph,
             path_conditions: &borrows_state.path_conditions,
         }
@@ -366,11 +343,9 @@ impl<'tcx> BorrowsState<'tcx> {
             body_analysis,
             capabilities,
             owned,
-            &mut self.latest,
             self.path_conditions.clone(),
             ctxt,
         )?;
-        changed |= self.latest.join(&other.latest, self_block, ctxt);
         changed |= self
             .path_conditions
             .join(&other.path_conditions, ctxt.body());
@@ -433,14 +408,6 @@ impl<'tcx> BorrowsState<'tcx> {
         repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> Vec<BorrowPcgEdgeRef<'tcx, 'slf>> {
         self.graph.edges_blocking(node, repacker).collect()
-    }
-
-    pub(crate) fn get_latest(
-        &self,
-        place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> SnapshotLocation {
-        self.latest.get(place, ctxt)
     }
 
     #[allow(clippy::too_many_arguments)]

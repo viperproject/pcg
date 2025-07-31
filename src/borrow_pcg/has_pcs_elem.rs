@@ -1,6 +1,6 @@
 use derive_more::From;
 
-use super::region_projection::{RegionProjection, RegionProjectionLabel};
+use super::region_projection::{RegionProjection, LifetimeProjectionLabel};
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::region_projection::RegionIdx;
@@ -13,8 +13,10 @@ pub(crate) trait HasPcgElems<T> {
     fn pcg_elems(&mut self) -> Vec<&mut T>;
 }
 
+
+
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub enum LabelRegionProjectionPredicate<'tcx> {
+pub enum LabelLifetimeProjectionPredicate<'tcx> {
     Postfix(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     Equals(RegionProjection<'tcx, MaybeOldPlace<'tcx>>),
     AllNonPlaceHolder(MaybeOldPlace<'tcx>, RegionIdx),
@@ -22,49 +24,49 @@ pub enum LabelRegionProjectionPredicate<'tcx> {
 }
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for LabelRegionProjectionPredicate<'tcx>
+    for LabelLifetimeProjectionPredicate<'tcx>
 {
     fn to_short_string(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
     ) -> String {
         match self {
-            LabelRegionProjectionPredicate::Postfix(region_projection) => {
+            LabelLifetimeProjectionPredicate::Postfix(region_projection) => {
                 format!("postfixes of {}", region_projection.to_short_string(ctxt))
             }
-            LabelRegionProjectionPredicate::Equals(region_projection) => {
+            LabelLifetimeProjectionPredicate::Equals(region_projection) => {
                 region_projection.to_short_string(ctxt)
             }
-            LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+            LabelLifetimeProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
                 format!(
                     "AllNonPlaceHolder: {}, {:?}",
                     maybe_old_place.to_short_string(ctxt),
                     region_idx
                 )
             }
-            LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place) => {
+            LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place) => {
                 format!("AllPlaceholderPostfixes: {}", place.to_short_string(ctxt))
             }
         }
     }
 }
 
-impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
+impl<'tcx> LabelLifetimeProjectionPredicate<'tcx> {
     pub(crate) fn matches(
         &self,
         to_match: RegionProjection<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            LabelRegionProjectionPredicate::Equals(projection) => {
+            LabelLifetimeProjectionPredicate::Equals(projection) => {
                 (*projection).rebase() == to_match
             }
-            LabelRegionProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+            LabelLifetimeProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
                 to_match.region_idx == *region_idx
                     && to_match.place() == (*maybe_old_place).into()
                     && !to_match.is_placeholder()
             }
-            LabelRegionProjectionPredicate::Postfix(predicate_projection) => {
+            LabelLifetimeProjectionPredicate::Postfix(predicate_projection) => {
                 if let Some(crate::pcg::PCGNode::RegionProjection(to_match)) =
                     to_match.try_to_local_node(ctxt)
                 {
@@ -79,7 +81,7 @@ impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
                     false
                 }
             }
-            LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place) => {
+            LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place) => {
                 if let Some(crate::pcg::PCGNode::RegionProjection(to_match)) =
                     to_match.try_to_local_node(ctxt)
                 {
@@ -94,7 +96,7 @@ impl<'tcx> LabelRegionProjectionPredicate<'tcx> {
     }
 }
 
-impl std::ops::BitOrAssign for LabelRegionProjectionResult {
+impl std::ops::BitOrAssign for LabelLifetimeProjectionResult {
     fn bitor_assign(&mut self, rhs: Self) {
         if rhs > *self {
             *self = rhs;
@@ -103,29 +105,29 @@ impl std::ops::BitOrAssign for LabelRegionProjectionResult {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
-pub(crate) enum LabelRegionProjectionResult {
+pub(crate) enum LabelLifetimeProjectionResult {
     Unchanged = 0,
     Changed = 1,
     ShouldCollapse = 2,
 }
 
-impl LabelRegionProjectionResult {
+impl LabelLifetimeProjectionResult {
     pub(crate) fn to_filter_mut_result(self) -> FilterMutResult {
         match self {
-            LabelRegionProjectionResult::Changed => FilterMutResult::Changed,
-            LabelRegionProjectionResult::Unchanged => FilterMutResult::Unchanged,
-            LabelRegionProjectionResult::ShouldCollapse => FilterMutResult::Remove,
+            LabelLifetimeProjectionResult::Changed => FilterMutResult::Changed,
+            LabelLifetimeProjectionResult::Unchanged => FilterMutResult::Unchanged,
+            LabelLifetimeProjectionResult::ShouldCollapse => FilterMutResult::Remove,
         }
     }
 }
 
-pub(crate) trait LabelRegionProjection<'tcx> {
-    fn label_region_projection(
+pub(crate) trait LabelLifetimeProjection<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult;
+    ) -> LabelLifetimeProjectionResult;
 }
 
 pub(crate) trait LabelPlace<'tcx> {

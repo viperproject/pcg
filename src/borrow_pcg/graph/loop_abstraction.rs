@@ -12,17 +12,16 @@ use crate::{
         },
         edge_data::EdgeData,
         graph::BorrowsGraph,
-        has_pcs_elem::LabelRegionProjectionPredicate,
-        latest::Latest,
+        has_pcs_elem::LabelLifetimeProjectionPredicate,
         path_condition::ValidityConditions,
         region_projection::{
-            RegionIdx, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
+            RegionIdx, RegionProjection, RegionProjectionBaseLike, LifetimeProjectionLabel,
         },
         state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
-        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
+        LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
     },
@@ -39,14 +38,14 @@ use crate::{
 
 pub(crate) struct ConstructAbstractionGraphResult<'tcx> {
     pub(crate) graph: BorrowsGraph<'tcx>,
-    pub(crate) to_label: HashSet<LabelRegionProjectionPredicate<'tcx>>,
+    pub(crate) to_label: HashSet<LabelLifetimeProjectionPredicate<'tcx>>,
     pub(crate) capability_updates: HashMap<Place<'tcx>, Option<CapabilityKind>>,
 }
 
 impl<'tcx> ConstructAbstractionGraphResult<'tcx> {
     pub(crate) fn new(
         graph: BorrowsGraph<'tcx>,
-        to_label: HashSet<LabelRegionProjectionPredicate<'tcx>>,
+        to_label: HashSet<LabelLifetimeProjectionPredicate<'tcx>>,
         capability_updates: HashMap<Place<'tcx>, Option<CapabilityKind>>,
     ) -> Self {
         Self {
@@ -159,7 +158,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     add_block_edges(&mut expander, *root, blocker, ctxt);
                     if let MaybeRemoteCurrentPlace::Local(root) = root {
                         for rp in root.region_projections(ctxt) {
-                            to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
+                            to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
                                 (*root).into(),
                                 rp.region_idx,
                             ));
@@ -195,7 +194,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     capability_updates.insert(blocked_place, Some(CapabilityKind::Read));
                 }
                 for rp in blocked_place.region_projections(ctxt) {
-                    to_label.insert(LabelRegionProjectionPredicate::AllNonPlaceHolder(
+                    to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
                         blocked_place.into(),
                         rp.region_idx,
                     ));
@@ -257,7 +256,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         expander
             .graph
             .render_debug_graph(ctxt, "Abstraction graph after root reconnect");
-        let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
+        let loop_head_label = LifetimeProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
         let frozen_graph = graph.frozen_graph();
         tracing::debug!(
             "leaf edges: {}",
@@ -296,7 +295,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 vec![
                     rp.to_local_node(ctxt),
                     rp.with_label(
-                        Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
+                        Some(LifetimeProjectionLabel::Location(SnapshotLocation::Loop(
                             loop_head_block,
                         ))),
                         ctxt,
@@ -365,12 +364,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         blocked_loop_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
-        latest: &mut Latest<'tcx>,
         path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         let borrow = BorrowStateMutRef {
-            latest,
             graph: self,
             path_conditions: &path_conditions,
         };
@@ -378,10 +375,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let snapshot_location = SnapshotLocation::Loop(loop_head_block);
         let mut obtainer = PlaceObtainer::new(
             pcg,
-            EvalStmtPhase::PreOperands,
             None,
             ctxt,
-            snapshot_location.location(),
+            mir::Location {
+                block: loop_head_block,
+                statement_index: 0,
+            },
             snapshot_location,
             None,
         );
@@ -498,7 +497,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge } => Ok(self.graph.insert(edge, self.ctxt)),
-                BorrowPcgActionKind::LabelRegionProjection(predicate, region_projection_label) => {
+                BorrowPcgActionKind::LabelLifetimeProjection(predicate, region_projection_label) => {
                     Ok(self.graph.label_region_projection(
                         &predicate,
                         region_projection_label,
@@ -507,8 +506,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 }
                 BorrowPcgActionKind::Weaken(_) => todo!(),
                 BorrowPcgActionKind::Restore(_) => todo!(),
-                BorrowPcgActionKind::MakePlaceOld(_, _) => todo!(),
-                BorrowPcgActionKind::SetLatest(_, _) => todo!(),
+                BorrowPcgActionKind::MakePlaceOld(_) => todo!(),
                 BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => {
                     self.graph.remove(borrow_pcg_edge.kind());
                     Ok(true)
@@ -535,10 +533,6 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 RepackOp::RegainLoanedCapability(_, _) => todo!(),
             },
         }
-    }
-
-    fn current_snapshot_location(&self) -> SnapshotLocation {
-        SnapshotLocation::Loop(self.loop_head_block)
     }
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
@@ -571,6 +565,14 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         } else {
             Ok(true)
         }
+    }
+
+    fn location(&self) -> mir::Location {
+        self.loop_head_location()
+    }
+
+    fn prev_snapshot_location(&self) -> SnapshotLocation {
+        SnapshotLocation::Loop(self.loop_head_block)
     }
 }
 
