@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, PcgAction};
-use crate::borrow_pcg::action::MakePlaceOldReason;
+use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
@@ -147,7 +147,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                         BorrowPcgAction::make_place_old(
                             (*place).into(),
                             snapshot_location,
-                            MakePlaceOldReason::MoveOut,
+                            LabelPlaceReason::MoveOut,
                         )
                         .into(),
                     )?;

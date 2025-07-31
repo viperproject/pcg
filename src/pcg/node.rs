@@ -2,9 +2,9 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult,
+    LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult,
 };
-use crate::borrow_pcg::region_projection::RegionProjectionLabel;
+use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeOldPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
@@ -71,20 +71,20 @@ impl<'tcx> From<LoopAbstractionInput<'tcx>> for PCGNode<'tcx> {
     }
 }
 
-impl<'tcx, T, U: Copy> LabelRegionProjection<'tcx> for PCGNode<'tcx, T, U>
+impl<'tcx, T, U: Copy> LabelLifetimeProjection<'tcx> for PCGNode<'tcx, T, U>
 where
     MaybeRemoteRegionProjectionBase<'tcx>: From<U>,
 {
-    fn label_region_projection(
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         if let PCGNode::RegionProjection(this_projection) = self {
-            this_projection.label_region_projection(predicate, label, repacker)
+            this_projection.label_lifetime_projection(predicate, label, repacker)
         } else {
-            LabelRegionProjectionResult::Unchanged
+            LabelLifetimeProjectionResult::Unchanged
         }
     }
 }

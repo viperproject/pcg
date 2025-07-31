@@ -10,9 +10,9 @@ use super::{
 use crate::{
     action::BorrowPcgAction,
     borrow_pcg::{
-        action::{BorrowPcgActionKind, MakePlaceOldReason},
-        has_pcs_elem::{LabelRegionProjectionPredicate, PlaceLabeller, SetLabel},
-        region_projection::RegionProjectionLabel,
+        action::{BorrowPcgActionKind, LabelPlaceReason},
+        has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller, SetLabel},
+        region_projection::LifetimeProjectionLabel,
     },
     free_pcs::FreePlaceCapabilitySummary,
     pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
@@ -85,7 +85,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
     fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        reason: MakePlaceOldReason,
+        reason: LabelPlaceReason,
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
@@ -95,8 +95,8 @@ pub(crate) trait BorrowsStateLike<'tcx> {
 
     fn label_region_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.graph_mut()
@@ -145,7 +145,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 if restore.capability() == CapabilityKind::Exclusive {
                     self.label_region_projection(
-                        &LabelRegionProjectionPredicate::AllPlaceholderPostfixes(restore_place),
+                        &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(restore_place),
                         None,
                         ctxt,
                     );
@@ -173,7 +173,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
             ),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt),
-            BorrowPcgActionKind::LabelRegionProjection(rp, label) => {
+            BorrowPcgActionKind::LabelLifetimeProjection(rp, label) => {
                 self.label_region_projection(&rp, label, ctxt)
             }
         };

@@ -1,6 +1,6 @@
 use crate::{
     borrow_pcg::{
-        action::MakePlaceOldReason, borrow_pcg_edge::BorrowPcgEdge, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, ValidityConditions}
+        action::LabelPlaceReason, borrow_pcg_edge::BorrowPcgEdge, has_pcs_elem::PlaceLabeller, path_condition::{PathCondition, ValidityConditions}
     },
     rustc_interface::middle::mir::BasicBlock,
     utils::{CompilerCtxt, FilterMutResult, Place},
@@ -12,7 +12,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn make_place_old(
         &mut self,
         place: Place<'tcx>,
-        reason: MakePlaceOldReason,
+        reason: LabelPlaceReason,
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {

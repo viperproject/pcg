@@ -7,8 +7,8 @@ use crate::{
         },
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelRegionProjection, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller},
-        region_projection::RegionProjectionLabel,
+        has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller},
+        region_projection::LifetimeProjectionLabel,
     },
     pcg::PCGNode,
     rustc_interface::{
@@ -42,15 +42,15 @@ pub struct FunctionCallAbstraction<'tcx> {
     >,
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for FunctionCallAbstraction<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for FunctionCallAbstraction<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         self.edge
-            .label_region_projection(predicate, label, repacker)
+            .label_lifetime_projection(predicate, label, repacker)
     }
 }
 

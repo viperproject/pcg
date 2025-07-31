@@ -5,10 +5,10 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            HasPcgElems, LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult, PlaceLabeller,
+            HasPcgElems, LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, PlaceLabeller,
         },
-        region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
+        region_projection::{LocalRegionProjection, RegionProjection, LifetimeProjectionLabel},
     },
     pcg::{PCGNode, PCGNodeLike},
     pcg_validity_assert,
@@ -56,13 +56,13 @@ impl<'tcx> LabelPlace<'tcx> for LocalRegionProjection<'tcx> {
     }
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowFlowEdge<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         tracing::debug!(
             "Labeling region projection: {} (predicate: {:?}, label: {:?})",
             self.to_short_string(ctxt),
@@ -70,10 +70,10 @@ impl<'tcx> LabelRegionProjection<'tcx> for BorrowFlowEdge<'tcx> {
             label
         );
         if predicate.matches(self.long, ctxt) && predicate.matches(self.short.rebase(), ctxt) {
-            return LabelRegionProjectionResult::ShouldCollapse;
+            return LabelLifetimeProjectionResult::ShouldCollapse;
         }
-        let mut changed = self.long.label_region_projection(predicate, label, ctxt);
-        changed |= self.short.label_region_projection(predicate, label, ctxt);
+        let mut changed = self.long.label_lifetime_projection(predicate, label, ctxt);
+        changed |= self.short.label_lifetime_projection(predicate, label, ctxt);
         self.assert_validity(ctxt);
         changed
     }

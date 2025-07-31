@@ -4,13 +4,13 @@ use std::collections::HashSet;
 use itertools::Itertools;
 
 use crate::action::{BorrowPcgAction, OwnedPcgAction, PcgAction};
-use crate::borrow_pcg::action::MakePlaceOldReason;
+use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelRegionProjectionPredicate, SetLabel};
+use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelLifetimeProjectionPredicate, SetLabel};
 use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
 use crate::free_pcs::{CapabilityKind, RepackOp};
@@ -243,7 +243,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                 );
                                 self.record_and_apply_action(
                                     BorrowPcgAction::label_region_projection(
-                                        LabelRegionProjectionPredicate::Equals(rp),
+                                        LabelLifetimeProjectionPredicate::Equals(rp),
                                         Some(self.prev_snapshot_location().into()),
                                         format!(
                                             "{}: {}",
@@ -321,7 +321,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 let labeller = SetLabel(self.prev_snapshot_location());
                 self.pcg.borrow.graph.make_place_old(
                     (*place).into(),
-                    MakePlaceOldReason::Collapse,
+                    LabelPlaceReason::Collapse,
                     &labeller,
                     self.ctxt,
                 );
@@ -443,7 +443,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .collect::<HashSet<_>>();
                     self.record_and_apply_action(
                         BorrowPcgAction::label_region_projection(
-                            LabelRegionProjectionPredicate::Equals(current_rp.into()),
+                            LabelLifetimeProjectionPredicate::Equals(current_rp.into()),
                             Some(self.prev_snapshot_location().into()),
                             "remove_read_permission_upwards_and_label_rps",
                         )
@@ -618,7 +618,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .insert((*place).into(), capability_kind, self.ctxt);
                     if capability_kind == CapabilityKind::Exclusive {
                         self.pcg.borrow.label_region_projection(
-                            &LabelRegionProjectionPredicate::AllPlaceholderPostfixes(place),
+                            &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
                             None,
                             self.ctxt,
                         );
@@ -749,7 +749,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             BorrowPcgAction::make_place_old(
                 place,
                 self.prev_snapshot_location(),
-                MakePlaceOldReason::LabelSharedDerefProjections,
+                LabelPlaceReason::LabelSharedDerefProjections,
             )
             .into(),
         )
@@ -829,7 +829,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 BorrowPcgAction::make_place_old(
                     place,
                     self.prev_snapshot_location(),
-                    MakePlaceOldReason::ReAssign,
+                    LabelPlaceReason::ReAssign,
                 )
                 .into(),
             );

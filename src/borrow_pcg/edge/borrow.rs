@@ -4,10 +4,10 @@ use crate::{
     borrow_pcg::{
         edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            LabelPlace, LabelRegionProjection, LabelRegionProjectionPredicate,
-            LabelRegionProjectionResult, PlaceLabeller,
+            LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, PlaceLabeller,
         },
-        region_projection::RegionProjectionLabel,
+        region_projection::LifetimeProjectionLabel,
     },
     pcg::PCGNode,
     rustc_interface::{
@@ -48,20 +48,20 @@ pub struct LocalBorrow<'tcx> {
     // For some reason this may not be defined for certain shared borrows
     borrow_index: Option<BorrowIndex>,
 
-    assigned_rp_snapshot: Option<RegionProjectionLabel>,
+    assigned_rp_snapshot: Option<LifetimeProjectionLabel>,
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for LocalBorrow<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for LocalBorrow<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
-        let mut changed = LabelRegionProjectionResult::Unchanged;
+    ) -> LabelLifetimeProjectionResult {
+        let mut changed = LabelLifetimeProjectionResult::Unchanged;
         if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
             self.assigned_rp_snapshot = label;
-            changed = LabelRegionProjectionResult::Changed;
+            changed = LabelLifetimeProjectionResult::Changed;
         }
         changed
     }
@@ -101,21 +101,21 @@ pub struct RemoteBorrow<'tcx> {
     // because that local could be moved and the assigned ref should be renamed accordingly.
     assigned_ref: MaybeOldPlace<'tcx>,
 
-    rp_snapshot_location: Option<RegionProjectionLabel>,
+    rp_snapshot_location: Option<LifetimeProjectionLabel>,
 }
 
-impl<'tcx> LabelRegionProjection<'tcx> for RemoteBorrow<'tcx> {
-    fn label_region_projection(
+impl<'tcx> LabelLifetimeProjection<'tcx> for RemoteBorrow<'tcx> {
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
             self.rp_snapshot_location = label;
-            LabelRegionProjectionResult::Changed
+            LabelLifetimeProjectionResult::Changed
         } else {
-            LabelRegionProjectionResult::Unchanged
+            LabelLifetimeProjectionResult::Unchanged
         }
     }
 }

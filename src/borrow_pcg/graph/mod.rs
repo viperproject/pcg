@@ -9,8 +9,8 @@ mod mutate;
 use crate::{
     borrow_pcg::{
         borrow_pcg_expansion::PlaceExpansion,
-        has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate},
-        region_projection::RegionProjectionLabel,
+        has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
+        region_projection::LifetimeProjectionLabel,
     },
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
@@ -110,12 +110,12 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn label_region_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.filter_mut_edges(|edge| {
-            edge.label_region_projection(predicate, label, ctxt)
+            edge.label_lifetime_projection(predicate, label, ctxt)
                 .to_filter_mut_result()
         })
     }

@@ -84,14 +84,14 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: zgrannan/symbolic-execution
-        ref: zgrannan/next4
+        ref: zgrannan/next5
         path: symbolic-execution
 
     - name: Checkout prusti repository
       uses: actions/checkout@v4
       with:
         repository: zgrannan/prusti-dev
-        ref: zgrannan/next4
+        ref: zgrannan/next5
         path: prusti-dev
 
     - name: Install Rust

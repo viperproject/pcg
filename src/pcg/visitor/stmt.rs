@@ -1,7 +1,7 @@
 use super::PcgVisitor;
 
 use crate::action::BorrowPcgAction;
-use crate::borrow_pcg::action::MakePlaceOldReason;
+use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
@@ -43,7 +43,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     BorrowPcgAction::make_place_old(
                         place,
                         snapshot_location,
-                        MakePlaceOldReason::StorageDead,
+                        LabelPlaceReason::StorageDead,
                     )
                     .into(),
                 )?;

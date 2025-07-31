@@ -2,7 +2,7 @@ use super::PcgVisitor;
 use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::has_pcs_elem::LabelRegionProjectionPredicate;
+use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::EvalStmtPhase;
@@ -17,6 +17,8 @@ use crate::utils::{self, AnalysisLocation, SnapshotLocation};
 use super::{PcgError, PcgUnsupportedError};
 
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+    // The label that should be used when referencing (after PostOperands), the
+    // value at the place before the move.
     pub(crate) fn pre_operand_move_label(&self) -> SnapshotLocation {
         SnapshotLocation::Before(AnalysisLocation::new(
             self.location(),
@@ -24,6 +26,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         ))
     }
 
+    // Returns the maybe-labelled place to use to reference the value of an
+    // operand after the PostOperands phase. If the operand was copied, the
+    // place is returned as-is. If the operand was moved, the place is returned
+    // with the label of the value before the move.
+    // Returns `None` if the operand is a constant.
     pub(crate) fn maybe_labelled_operand_place(
         &self,
         operand: &Operand<'tcx>,
@@ -194,7 +201,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let label = obtainer.prev_snapshot_location();
                 obtainer.apply_action(
                     BorrowPcgAction::label_region_projection(
-                        LabelRegionProjectionPredicate::Postfix(source_proj.into()),
+                        LabelLifetimeProjectionPredicate::Postfix(source_proj.into()),
                         Some(label.into()),
                         "Label region projections of newly borrowed place",
                     )

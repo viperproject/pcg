@@ -5,7 +5,7 @@ use std::{fmt, marker::PhantomData};
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
-use super::has_pcs_elem::{HasPcgElems, LabelRegionProjection};
+use super::has_pcs_elem::{HasPcgElems, LabelLifetimeProjection};
 use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
@@ -13,7 +13,7 @@ use crate::borrow_checker::{BorrowCheckerInterface};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelPlace, LabelRegionProjectionPredicate, LabelRegionProjectionResult, PlaceLabeller,
+    LabelPlace, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller,
 };
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -250,6 +250,9 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
     }
 }
 
+#[deprecated(note = "Use LifetimeProjectionLabel instead")]
+pub type RegionProjectionLabel = LifetimeProjectionLabel;
+
 /// A lifetime projection label. A label can be either a [`SnapshotLocation`] or
 /// a special "Placeholder" label.
 ///
@@ -260,16 +263,16 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjec
 /// the projection will refer to once it becomes accessible.
 ///
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
-pub enum RegionProjectionLabel {
+pub enum LifetimeProjectionLabel {
     Location(SnapshotLocation),
     Placeholder,
 }
 
-impl std::fmt::Display for RegionProjectionLabel {
+impl std::fmt::Display for LifetimeProjectionLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RegionProjectionLabel::Location(location) => write!(f, "{}", location),
-            RegionProjectionLabel::Placeholder => write!(f, "FUTURE"),
+            LifetimeProjectionLabel::Location(location) => write!(f, "{}", location),
+            LifetimeProjectionLabel::Placeholder => write!(f, "FUTURE"),
         }
     }
 }
@@ -279,7 +282,7 @@ impl std::fmt::Display for RegionProjectionLabel {
 pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
-    label: Option<RegionProjectionLabel>,
+    label: Option<LifetimeProjectionLabel>,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -300,9 +303,9 @@ impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
 
 impl<P> RegionProjection<'_, P> {
     pub(crate) fn is_placeholder(&self) -> bool {
-        self.label == Some(RegionProjectionLabel::Placeholder)
+        self.label == Some(LifetimeProjectionLabel::Placeholder)
     }
-    pub(crate) fn label(&self) -> Option<RegionProjectionLabel> {
+    pub(crate) fn label(&self) -> Option<LifetimeProjectionLabel> {
         self.label
     }
 }
@@ -328,21 +331,21 @@ impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
     }
 }
 
-impl<'tcx, P: Copy> LabelRegionProjection<'tcx> for RegionProjection<'tcx, P>
+impl<'tcx, P: Copy> LabelLifetimeProjection<'tcx> for RegionProjection<'tcx, P>
 where
     MaybeRemoteRegionProjectionBase<'tcx>: From<P>,
 {
-    fn label_region_projection(
+    fn label_lifetime_projection(
         &mut self,
-        predicate: &LabelRegionProjectionPredicate<'tcx>,
-        label: Option<RegionProjectionLabel>,
+        predicate: &LabelLifetimeProjectionPredicate<'tcx>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelRegionProjectionResult {
+    ) -> LabelLifetimeProjectionResult {
         if predicate.matches(self.rebase(), ctxt) {
             self.label = label;
-            LabelRegionProjectionResult::Changed
+            LabelLifetimeProjectionResult::Changed
         } else {
-            LabelRegionProjectionResult::Unchanged
+            LabelLifetimeProjectionResult::Unchanged
         }
     }
 }
@@ -421,13 +424,13 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         self,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> RegionProjection<'tcx, T> {
-        self.with_label(Some(RegionProjectionLabel::Placeholder), ctxt)
+        self.with_label(Some(LifetimeProjectionLabel::Placeholder), ctxt)
     }
 
     #[must_use]
     pub(crate) fn with_label<BC: Copy>(
         self,
-        label: Option<RegionProjectionLabel>,
+        label: Option<LifetimeProjectionLabel>,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> RegionProjection<'tcx, T> {
         RegionProjection {
@@ -534,8 +537,8 @@ impl<
         ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
     ) -> String {
         let label_part = match self.label {
-            Some(RegionProjectionLabel::Location(location)) => format!(" {location}"),
-            Some(RegionProjectionLabel::Placeholder) => " FUTURE".to_string(),
+            Some(LifetimeProjectionLabel::Location(location)) => format!(" {location}"),
+            Some(LifetimeProjectionLabel::Placeholder) => " FUTURE".to_string(),
             _ => "".to_string(),
         };
         format!(
@@ -720,7 +723,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     pub(crate) fn new<C: Copy>(
         region: PcgRegion,
         base: T,
-        label: Option<RegionProjectionLabel>,
+        label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> Result<Self, PcgInternalError> {
         let region_idx = base
