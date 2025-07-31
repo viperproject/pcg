@@ -12,7 +12,6 @@ use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgActions},
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeRef},
-        latest::Latest,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
     pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
@@ -357,10 +356,6 @@ impl<'tcx> PcgLocation<'tcx> {
             })
             .map(|p| p.to_rust_place(ctxt))
             .collect()
-    }
-
-    pub fn latest(&self) -> &Latest<'tcx> {
-        &self.states[EvalStmtPhase::PostMain].borrow.latest
     }
 
     pub(crate) fn debug_lines(

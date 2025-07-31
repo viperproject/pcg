@@ -7,7 +7,7 @@ fn test(b: bool) {
     let test_y = y; // test_y -> x -> t
     // text_y should be dead, x should become accessible
     // x -> t
-    // PCG: bb0[20] post_main: x↓'?6 mid bb0[12] -> x↓'?6
+    // PCG: bb0[20] post_main: x↓'?6 before bb0[12]:PostMain -> x↓'?6
     let test_x = x; // test_x -> t
     // test_x should be dead,
     let test_t = t;

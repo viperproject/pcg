@@ -39,17 +39,6 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn set_latest(
-        place: Place<'tcx>,
-        location: SnapshotLocation,
-        context: impl Into<String>,
-    ) -> Self {
-        BorrowPcgAction {
-            kind: BorrowPcgActionKind::SetLatest(place, location),
-            debug_context: Some(context.into()),
-        }
-    }
-
     pub(crate) fn remove_edge(edge: BorrowPcgEdge<'tcx>, context: impl Into<String>) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::RemoveEdge(edge),
@@ -92,9 +81,17 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn make_place_old(place: Place<'tcx>, reason: MakePlaceOldReason) -> Self {
+    pub(crate) fn make_place_old(
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+        reason: MakePlaceOldReason,
+    ) -> Self {
         BorrowPcgAction {
-            kind: BorrowPcgActionKind::MakePlaceOld(place, reason),
+            kind: BorrowPcgActionKind::MakePlaceOld(MakePlaceOldAction {
+                place,
+                location,
+                reason,
+            }),
             debug_context: None,
         }
     }
@@ -136,6 +133,28 @@ impl MakePlaceOldReason {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MakePlaceOldAction<'tcx> {
+    pub(crate) place: Place<'tcx>,
+    pub(crate) location: SnapshotLocation,
+    pub(crate) reason: MakePlaceOldReason,
+}
+
+impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for MakePlaceOldAction<'tcx>
+{
+    fn to_short_string(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> String {
+        format!(
+            "Make {} an old place ({:?})",
+            self.place.to_short_string(ctxt),
+            self.reason
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BorrowPcgActionKind<'tcx> {
     LabelRegionProjection(
         LabelRegionProjectionPredicate<'tcx>,
@@ -143,8 +162,7 @@ pub enum BorrowPcgActionKind<'tcx> {
     ),
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
-    MakePlaceOld(Place<'tcx>, MakePlaceOldReason),
-    SetLatest(Place<'tcx>, SnapshotLocation),
+    MakePlaceOld(MakePlaceOldAction<'tcx>),
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,
@@ -168,18 +186,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             }
             BorrowPcgActionKind::Weaken(weaken) => weaken.debug_line(ctxt),
             BorrowPcgActionKind::Restore(restore_capability) => restore_capability.debug_line(ctxt),
-            BorrowPcgActionKind::MakePlaceOld(predicate, reason) => {
-                format!(
-                    "Make {} an old place ({:?})",
-                    predicate.to_short_string(ctxt),
-                    reason
-                )
-            }
-            BorrowPcgActionKind::SetLatest(place, location) => format!(
-                "Set Latest of {} to {:?}",
-                place.to_short_string(ctxt),
-                location
-            ),
+            BorrowPcgActionKind::MakePlaceOld(action) => action.to_short_string(ctxt),
             BorrowPcgActionKind::RemoveEdge(borrow_pcgedge) => {
                 format!("Remove Edge {}", borrow_pcgedge.to_short_string(ctxt))
             }

@@ -15,30 +15,26 @@ use bit_set::BitSet;
 use derive_more::From;
 
 use super::{
-    domain::PcgDomain, visitor::PcgVisitor, DataflowStmtPhase, ErrorState, EvalStmtPhase,
-    PcgDebugData, PcgError,
+    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgDebugData, PcgError, domain::PcgDomain,
+    visitor::PcgVisitor,
 };
 use crate::{
-    pcg::{dot_graphs::PcgDotGraphsForBlock, BodyAnalysis},
-    utils::{arena::ArenaRef, CompilerCtxt},
-};
-use crate::{
-    pcg::{triple::TripleWalker, PcgUnsupportedError},
-    rustc_interface::{
+    pcg::{triple::TripleWalker, PcgUnsupportedError}, rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
         index::{Idx, IndexVec},
         middle::{
             mir::{
-                self, BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges,
-                START_BLOCK,
+                self, BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges, START_BLOCK
             },
             ty::{self, GenericArgsRef},
         },
         mir_dataflow::{move_paths::MoveData, Forward},
-    },
-    utils::{domain_data::DomainDataIndex, visitor::FallableVisitor, MAX_NODES},
-    BodyAndBorrows,
+    }, utils::{domain_data::DomainDataIndex, visitor::FallableVisitor, AnalysisLocation, MAX_NODES}, BodyAndBorrows
+};
+use crate::{
+    pcg::{BodyAnalysis, dot_graphs::PcgDotGraphsForBlock},
+    utils::{CompilerCtxt, arena::ArenaRef},
 };
 
 #[derive(Clone)]
@@ -242,13 +238,16 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
 
         for phase in EvalStmtPhase::phases() {
             let curr = ArenaRef::make_mut(&mut pcg.states.0[phase]);
+            let analysis_location = AnalysisLocation {
+                location,
+                eval_stmt_phase: phase,
+            };
             pcg_data.actions[phase] = PcgVisitor::visit(
                 curr,
                 self.ctxt,
                 &tw,
-                phase,
+                analysis_location,
                 object,
-                location,
                 state.debug_data.clone(),
             )?;
             if let Some(next_phase) = phase.next() {

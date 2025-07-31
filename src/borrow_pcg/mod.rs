@@ -10,7 +10,6 @@ pub(crate) mod visitor;
 pub mod edge;
 pub mod edge_data;
 pub(crate) mod has_pcs_elem;
-pub mod latest;
 pub mod path_condition;
 pub mod region_projection;
 pub mod unblock_graph;

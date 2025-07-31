@@ -14,10 +14,7 @@ use crate::{
         region_projection::{LocalRegionProjection, RegionProjection, RegionProjectionLabel},
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{
-        EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
-        place_capabilities::BlockType,
-    },
+    pcg::{PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, place_capabilities::BlockType},
     rustc_interface::middle::mir,
     utils::{
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
@@ -27,11 +24,10 @@ use crate::{
 
 pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) pcg: PcgMutRef<'state, 'tcx>,
-    pub(crate) phase: EvalStmtPhase,
     pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
     pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
     pub(crate) location: mir::Location,
-    pub(crate) snapshot_location: SnapshotLocation,
+    pub(crate) prev_snapshot_location: SnapshotLocation,
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
 }
 
@@ -155,7 +151,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
     ) -> LabelForRegionProjection {
         use LabelForRegionProjection::*;
         if obtain_type.should_label_rp(rp.rebase(), ctxt) {
-            NewLabelAtCurrentLocation(self.current_snapshot_location().into())
+            NewLabelAtCurrentLocation(self.prev_snapshot_location().into())
         } else {
             match self.label_for_shared_expansion_of_rp(rp, ctxt) {
                 Some(label) => ExistingLabelOfTwoPhaseReservation(label),
@@ -170,9 +166,14 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Option<RegionProjectionLabel> {
         ctxt.bc
-            .borrows_blocking(rp.base, self.current_snapshot_location().location(), ctxt)
+            .borrows_blocking(rp.base, self.location(), ctxt)
             .first()
-            .map(|borrow| SnapshotLocation::Mid(get_reserve_location(borrow)).into())
+            .map(|borrow| {
+                let borrow_reserve_location = get_reserve_location(borrow);
+                let snapshot_location =
+                    SnapshotLocation::after_statement_at(borrow_reserve_location, ctxt);
+                snapshot_location.into()
+            })
     }
 
     fn expand_owned_place_one_level(
@@ -237,7 +238,9 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         }
     }
 
-    fn current_snapshot_location(&self) -> SnapshotLocation;
+    fn prev_snapshot_location(&self) -> SnapshotLocation;
+
+    fn location(&self) -> mir::Location;
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx>;
 

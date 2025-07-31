@@ -10,7 +10,7 @@ fn main() {
     // Note: `a` should be accessible here, but the borrow checker is imprecise
     // (both polonius and NLL)
 
-    // PCG: bb0[19] post_main: y↓'inner -> x↓'inner mid bb0[19]
+    // PCG: bb0[19] post_main: y↓'inner -> x↓'inner before bb0[19]:PreMain
 
     // At this point `**y` should be an alias of b
     // *x is also an alias of b

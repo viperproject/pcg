@@ -13,7 +13,6 @@ use crate::{
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelRegionProjectionPredicate,
-        latest::Latest,
         path_condition::ValidityConditions,
         region_projection::{
             RegionIdx, RegionProjection, RegionProjectionBaseLike, RegionProjectionLabel,
@@ -22,7 +21,7 @@ use crate::{
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
     pcg::{
-        EvalStmtPhase, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
+        LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
         obtain::{ObtainType, PlaceExpander, PlaceObtainer},
         place_capabilities::PlaceCapabilities,
     },
@@ -257,7 +256,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         expander
             .graph
             .render_debug_graph(ctxt, "Abstraction graph after root reconnect");
-        let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
+        let loop_head_label = RegionProjectionLabel::Location(SnapshotLocation::BeforeLoopHead(loop_head));
         let frozen_graph = graph.frozen_graph();
         tracing::debug!(
             "leaf edges: {}",
@@ -296,7 +295,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 vec![
                     rp.to_local_node(ctxt),
                     rp.with_label(
-                        Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
+                        Some(RegionProjectionLabel::Location(SnapshotLocation::BeforeLoopHead(
                             loop_head_block,
                         ))),
                         ctxt,
@@ -365,23 +364,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
         blocked_loop_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
-        latest: &mut Latest<'tcx>,
         path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         let borrow = BorrowStateMutRef {
-            latest,
             graph: self,
             path_conditions: &path_conditions,
         };
         let pcg = PcgMutRef::new(owned, borrow, capabilities);
-        let snapshot_location = SnapshotLocation::Loop(loop_head_block);
+        let snapshot_location = SnapshotLocation::BeforeLoopHead(loop_head_block);
         let mut obtainer = PlaceObtainer::new(
             pcg,
-            EvalStmtPhase::PreOperands,
             None,
             ctxt,
-            snapshot_location.location(),
+            mir::Location {
+                block: loop_head_block,
+                statement_index: 0,
+            },
             snapshot_location,
             None,
         );
@@ -507,8 +506,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 }
                 BorrowPcgActionKind::Weaken(_) => todo!(),
                 BorrowPcgActionKind::Restore(_) => todo!(),
-                BorrowPcgActionKind::MakePlaceOld(_, _) => todo!(),
-                BorrowPcgActionKind::SetLatest(_, _) => todo!(),
+                BorrowPcgActionKind::MakePlaceOld(_) => todo!(),
                 BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => {
                     self.graph.remove(borrow_pcg_edge.kind());
                     Ok(true)
@@ -535,10 +533,6 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 RepackOp::RegainLoanedCapability(_, _) => todo!(),
             },
         }
-    }
-
-    fn current_snapshot_location(&self) -> SnapshotLocation {
-        SnapshotLocation::Loop(self.loop_head_block)
     }
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
@@ -571,6 +565,14 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         } else {
             Ok(true)
         }
+    }
+
+    fn location(&self) -> mir::Location {
+        self.loop_head_location()
+    }
+
+    fn prev_snapshot_location(&self) -> SnapshotLocation {
+        SnapshotLocation::before_block(self.loop_head_block)
     }
 }
 

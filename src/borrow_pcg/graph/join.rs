@@ -2,7 +2,6 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelRegionProjection, LabelRegionProjectionPredicate};
-use crate::borrow_pcg::latest::Latest;
 use crate::borrow_pcg::region_projection::RegionProjectionLabel;
 use crate::free_pcs::FreePlaceCapabilitySummary;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -72,7 +71,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
-        latest: &mut Latest<'tcx>,
         path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
@@ -95,7 +93,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 capabilities,
                 owned,
                 path_conditions,
-                latest,
                 body_analysis,
                 ctxt,
             )?;
@@ -188,7 +185,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         owned: &mut FreePlaceCapabilitySummary<'tcx>,
         path_conditions: ValidityConditions,
-        latest: &mut Latest<'tcx>,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
@@ -261,7 +257,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
             &expand_places,
             capabilities,
             owned,
-            latest,
             path_conditions.clone(),
             ctxt,
         );
@@ -304,7 +299,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.filter_mut_edges(|edge| {
                 edge.label_region_projection(
                     rp,
-                    Some(RegionProjectionLabel::Location(SnapshotLocation::Loop(
+                    Some(RegionProjectionLabel::Location(SnapshotLocation::BeforeLoopHead(
                         loop_head,
                     ))),
                     ctxt,

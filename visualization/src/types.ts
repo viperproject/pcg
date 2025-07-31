@@ -142,7 +142,6 @@ export type PathData = {
 };
 
 export type PCGStmtVisualizationData = {
-  latest: Record<string, string>;
   actions: EvalStmtData<PcgActions>;
 };
 

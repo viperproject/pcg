@@ -4,6 +4,8 @@ import {
   PcgAction,
   PcgActions,
   PcgProgramPointData,
+  PCGStmtVisualizationData,
+  PcgSuccessorVisualizationData,
   SelectedAction,
 } from "../types";
 
@@ -85,7 +87,10 @@ export default function PCGOps({
       phase: EvalStmtPhase;
     }> = [];
 
-    if ("latest" in data) {
+    // Check if data.actions is an object (PCGStmtVisualizationData) or array (PcgSuccessorVisualizationData)
+    if (!Array.isArray(data.actions)) {
+      // data is PCGStmtVisualizationData
+      const stmtData = data as PCGStmtVisualizationData;
       const phases = [
         "pre_operands",
         "post_operands",
@@ -93,7 +98,7 @@ export default function PCGOps({
         "post_main",
       ] as const;
       phases.forEach((phase) => {
-        data.actions[phase].forEach((action, index) => {
+        stmtData.actions[phase].forEach((action, index) => {
           allActions.push({ action, index, phase });
         });
       });
@@ -190,7 +195,10 @@ export default function PCGOps({
   }, [selectedAction, allActions, selectedFunction]);
 
   let content;
-  if ("latest" in data) {
+  // Check if data.actions is an object (PCGStmtVisualizationData) or array (PcgSuccessorVisualizationData)
+  if (!Array.isArray(data.actions)) {
+    // data is PCGStmtVisualizationData
+    const stmtData = data as PCGStmtVisualizationData;
     content = (
       <>
         {[
@@ -202,7 +210,7 @@ export default function PCGOps({
           <div key={key}>
             <h5>{key}</h5>
             <PcgActionsDisplay
-              actions={data.actions[key]}
+              actions={stmtData.actions[key]}
               selectedFunction={selectedFunction}
               phase={key}
               selectedAction={selectedAction}
@@ -215,11 +223,13 @@ export default function PCGOps({
       </>
     );
   } else {
+    // data is PcgSuccessorVisualizationData
+    const successorData = data as PcgSuccessorVisualizationData;
     content = (
       <>
         <h4>Actions</h4>
         <PcgActionsDisplay
-          actions={data.actions}
+          actions={successorData.actions}
           selectedFunction={selectedFunction}
           phase={null}
           selectedAction={selectedAction}

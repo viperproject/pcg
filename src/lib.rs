@@ -31,9 +31,9 @@ pub mod visualization;
 
 use action::PcgActions;
 use borrow_checker::BorrowCheckerInterface;
-use borrow_pcg::{graph::borrows_imgcat_debug, latest::Latest};
+use borrow_pcg::graph::borrows_imgcat_debug;
 use free_pcs::{CapabilityKind, PcgLocation};
-use pcg::{EvalStmtPhase, PcgEngine, PcgSuccessor};
+use pcg::{PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{compute_fixpoint, AnalysisEngine},
@@ -186,8 +186,6 @@ lazy_static::lazy_static! {
 }
 
 struct PCGStmtVisualizationData<'a, 'tcx> {
-    /// The value of the "latest" map at the end of the statement.
-    latest: &'a Latest<'tcx>,
     actions: &'a EvalStmtData<PcgActions<'tcx>>,
 }
 
@@ -221,7 +219,6 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
         repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
     ) -> serde_json::Value {
         json!({
-            "latest": self.latest.to_json(repacker),
             "actions": self.actions.to_json(repacker),
         })
     }
@@ -233,7 +230,6 @@ impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
         'tcx: 'mir,
     {
         Self {
-            latest: &location.states[EvalStmtPhase::PostMain].borrow.latest,
             actions: &location.actions,
         }
     }
