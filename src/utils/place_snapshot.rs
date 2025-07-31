@@ -76,7 +76,7 @@ impl AnalysisLocation {
 pub enum SnapshotLocation {
     Before(AnalysisLocation),
     After(BasicBlock),
-    BeforeLoopHead(BasicBlock),
+    Loop(BasicBlock),
     BeforeRefReassignment(Location),
 }
 
@@ -125,7 +125,7 @@ impl std::fmt::Display for SnapshotLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SnapshotLocation::After(loc) => write!(f, "after {loc:?}"),
-            SnapshotLocation::BeforeLoopHead(bb) => write!(f, "loop {bb:?}"),
+            SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
             SnapshotLocation::BeforeRefReassignment(location) => {
                 write!(f, "before ref reassignment {location:?}")
             }

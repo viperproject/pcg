@@ -256,7 +256,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         expander
             .graph
             .render_debug_graph(ctxt, "Abstraction graph after root reconnect");
-        let loop_head_label = LifetimeProjectionLabel::Location(SnapshotLocation::BeforeLoopHead(loop_head));
+        let loop_head_label = LifetimeProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
         let frozen_graph = graph.frozen_graph();
         tracing::debug!(
             "leaf edges: {}",
@@ -295,7 +295,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 vec![
                     rp.to_local_node(ctxt),
                     rp.with_label(
-                        Some(LifetimeProjectionLabel::Location(SnapshotLocation::BeforeLoopHead(
+                        Some(LifetimeProjectionLabel::Location(SnapshotLocation::Loop(
                             loop_head_block,
                         ))),
                         ctxt,
@@ -372,7 +372,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             path_conditions: &path_conditions,
         };
         let pcg = PcgMutRef::new(owned, borrow, capabilities);
-        let snapshot_location = SnapshotLocation::BeforeLoopHead(loop_head_block);
+        let snapshot_location = SnapshotLocation::Loop(loop_head_block);
         let mut obtainer = PlaceObtainer::new(
             pcg,
             None,
@@ -572,7 +572,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     }
 
     fn prev_snapshot_location(&self) -> SnapshotLocation {
-        SnapshotLocation::before_block(self.loop_head_block)
+        SnapshotLocation::Loop(self.loop_head_block)
     }
 }
 

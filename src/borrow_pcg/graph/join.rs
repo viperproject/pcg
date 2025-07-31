@@ -299,7 +299,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             self.filter_mut_edges(|edge| {
                 edge.label_lifetime_projection(
                     rp,
-                    Some(LifetimeProjectionLabel::Location(SnapshotLocation::BeforeLoopHead(
+                    Some(LifetimeProjectionLabel::Location(SnapshotLocation::Loop(
                         loop_head,
                     ))),
                     ctxt,
