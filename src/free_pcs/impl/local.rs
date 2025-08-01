@@ -7,7 +7,12 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, free_pcs::RepackGuide, pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface}, pcg_validity_assert, rustc_interface::middle::mir::Local, utils::data_structures::HashSet
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    free_pcs::RepackGuide,
+    pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+    pcg_validity_assert,
+    rustc_interface::middle::mir::Local,
+    utils::data_structures::HashSet,
 };
 use itertools::Itertools;
 
@@ -93,6 +98,21 @@ impl<'tcx> LocalExpansions<'tcx> {
 
     pub(crate) fn expansions(&self) -> &HashSet<ExpandedPlace<'tcx>> {
         &self.expansions
+    }
+
+    pub(crate) fn leaf_expansions(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> HashSet<ExpandedPlace<'tcx>> {
+        self.expansions
+            .iter()
+            .filter(|e| {
+                e.expansion_places(ctxt)
+                    .iter()
+                    .all(|p| !self.contains_expansion_from(*p))
+            })
+            .cloned()
+            .collect()
     }
 
     pub fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {

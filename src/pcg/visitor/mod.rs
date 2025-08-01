@@ -223,37 +223,39 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
     pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
         for caps in self.pcg.owned.data.clone().unwrap().expansions() {
-            let mut expansions = caps
-                .expansions()
-                .clone()
-                .into_iter()
-                .sorted_by_key(|pe| pe.place.projection().len())
-                .collect::<Vec<_>>();
-            while let Some(pe) = expansions.pop() {
-                let expansion_places = pe.expansion_places(ctxt);
-                let base = pe.place;
-                if expansion_places
-                    .iter()
-                    .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
-                    && let Some(candidate_cap) = self
-                        .pcg
-                        .capabilities
-                        .get(pe.arbitrary_expansion_place(ctxt))
-                    && expansion_places
+            let mut should_continue = true;
+            while should_continue {
+                should_continue = false;
+                let leaf_expansions = caps.leaf_expansions(ctxt);
+                for pe in leaf_expansions {
+                    let expansion_places = pe.expansion_places(ctxt);
+                    let base = pe.place;
+                    if expansion_places
                         .iter()
-                        .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
-                {
-                    self.collapse(
-                        pe.place,
-                        candidate_cap,
-                        format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
-                    )?;
-                    if pe.place.projection.is_empty()
-                        && self.pcg.capabilities.get(pe.place) == Some(CapabilityKind::Read)
-                    {
-                        self.pcg
+                        .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
+                        && let Some(candidate_cap) = self
+                            .pcg
                             .capabilities
-                            .insert(base, CapabilityKind::Exclusive, self.ctxt);
+                            .get(pe.arbitrary_expansion_place(ctxt))
+                        && expansion_places
+                            .iter()
+                            .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
+                    {
+                        should_continue = true;
+                        self.collapse(
+                            pe.place,
+                            candidate_cap,
+                            format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
+                        )?;
+                        if pe.place.projection.is_empty()
+                            && self.pcg.capabilities.get(pe.place) == Some(CapabilityKind::Read)
+                        {
+                            self.pcg.capabilities.insert(
+                                base,
+                                CapabilityKind::Exclusive,
+                                self.ctxt,
+                            );
+                        }
                     }
                 }
             }

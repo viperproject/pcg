@@ -35,11 +35,9 @@ fn test_selected_crates() {
             function: Some(
                 "<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields",
             ),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // <= 15 basic blocks, <= 15 nodes
     common::ensure_successful_run_on_crate(

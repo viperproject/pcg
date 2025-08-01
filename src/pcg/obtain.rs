@@ -11,14 +11,16 @@ use crate::{
         graph::BorrowsGraph,
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         path_condition::ValidityConditions,
-        region_projection::{LifetimeProjectionLabel, LocalLifetimeProjection, LifetimeProjection},
+        region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
     },
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{place_capabilities::BlockType, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef},
+    pcg::{PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, place_capabilities::BlockType},
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation
-    }, validity_checks_enabled,
+        CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
+        display::DisplayWithCompilerCtxt,
+    },
+    validity_checks_enabled,
 };
 
 pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
@@ -209,7 +211,10 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                         obtain_type.capability_for_expand(expansion.base_place(), ctxt),
                         ctxt,
                     ),
-                    None,
+                    Some(format!(
+                        "Expand owned place one level ({:?})",
+                        obtain_type
+                    )),
                 )
                 .into(),
             )?;
