@@ -226,25 +226,29 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
                 .expansions()
                 .clone()
                 .into_iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
+                .sorted_by_key(|pe| pe.place.projection().len())
                 .collect::<Vec<_>>();
-            while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, ctxt);
+            while let Some(pe) = expansions.pop() {
+                let expansion_places = pe.expansion_places(ctxt);
+                let base = pe.place;
                 if expansion_places
                     .iter()
                     .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
-                    && let Some(candidate_cap) = self.pcg.capabilities.get(expansion_places[0])
+                    && let Some(candidate_cap) = self
+                        .pcg
+                        .capabilities
+                        .get(pe.arbitrary_expansion_place(ctxt))
                     && expansion_places
                         .iter()
                         .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
                 {
                     self.collapse(
-                        base,
+                        pe.place,
                         candidate_cap,
                         format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
                     )?;
-                    if base.projection.is_empty()
-                        && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
+                    if pe.place.projection.is_empty()
+                        && self.pcg.capabilities.get(pe.place) == Some(CapabilityKind::Read)
                     {
                         self.pcg
                             .capabilities

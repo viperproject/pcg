@@ -9,7 +9,7 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::{
-        CapabilityLocal, CapabilityLocals, CapabilityProjections, FreePlaceCapabilitySummary,
+        CapabilityLocal, CapabilityLocals, LocalExpansions, FreePlaceCapabilitySummary,
     },
     utils::CompilerCtxt,
 };
@@ -81,7 +81,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
     }
 }
 
-impl<'tcx> CapabilityProjections<'tcx> {
+impl<'tcx> LocalExpansions<'tcx> {
     pub(crate) fn join(
         &mut self,
         other: &Self,
@@ -89,46 +89,8 @@ impl<'tcx> CapabilityProjections<'tcx> {
         other_place_capabilities: &PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
-        let mut changed = false;
-        'outer: loop {
-            let expansions = self.expansions().clone();
-            for (place, other_expansion) in other
-                .expansions()
-                .iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
-            {
-                if let Some(self_expansion) = expansions.get(place) {
-                    if other_expansion != self_expansion {
-                        tracing::debug!("collapse to {:?}", place);
-                        self.collapse(*place, None, self_place_capabilities, repacker)?;
-                        tracing::debug!("self: {:?}", self);
-                        changed = true;
-                        continue 'outer;
-                    }
-                } else if self.contains_expansion_to(*place, repacker) {
-                    tracing::debug!("insert expansion {:?} -> {:?}", place, other_expansion);
-                    tracing::debug!("other: {:?}", other);
-                    self.insert_expansion(*place, other_expansion.clone());
-                    if let Some(cap) = other_place_capabilities.get(*place) {
-                        self_place_capabilities.insert(*place, cap, repacker);
-                    } else {
-                        self_place_capabilities.remove(*place, repacker);
-                    }
-                    for place in place.expansion_places(other_expansion, repacker) {
-                        if let Some(cap) = other_place_capabilities.get(place) {
-                            self_place_capabilities.insert(place, cap, repacker);
-                        } else {
-                            self_place_capabilities.remove(place, repacker);
-                        }
-                    }
-                    changed = true;
-                    continue 'outer;
-                }
-                // Otherwise, this is an expansion from a place that won't survive the join
-            }
-            break;
-        }
-        tracing::debug!("self: {:?}", self);
-        Ok(changed)
+        let num_expansions = self.expansions.len();
+        self.expansions.extend(other.expansions.iter().cloned());
+        Ok(self.expansions.len() > num_expansions)
     }
 }

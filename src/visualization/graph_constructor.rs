@@ -314,7 +314,7 @@ pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
-    repacker: CompilerCtxt<'a, 'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
@@ -337,7 +337,7 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
 
 impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg, 'a, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
-        self.repacker
+        self.ctxt
     }
 
     fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
@@ -378,7 +378,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
             borrows_domain: pcg.borrow,
             capabilities: pcg.capabilities,
             constructor: GraphConstructor::new(repacker, Some(location)),
-            repacker,
+            ctxt: repacker,
         }
     }
 
@@ -424,9 +424,9 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
                         None,
                         capability_getter,
                     );
-                    for (place, expansion) in projections.expansions() {
-                        self.insert_place_and_previous_projections(*place, None, capability_getter);
-                        for child_place in place.expansion_places(expansion, self.repacker) {
+                    for pe in projections.expansions() {
+                        self.insert_place_and_previous_projections(pe.place, None, capability_getter);
+                        for child_place in pe.expansion_places(self.ctxt) {
                             self.insert_place_and_previous_projections(
                                 child_place,
                                 None,
@@ -440,7 +440,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         for (edge_idx, edge) in self
             .borrows_domain
             .graph
-            .materialized_edges(self.repacker)
+            .materialized_edges(self.ctxt)
             .into_iter()
             .enumerate()
         {

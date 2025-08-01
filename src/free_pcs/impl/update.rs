@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
+    free_pcs::{CapabilityKind, CapabilityLocal, LocalExpansions},
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         triple::{PlaceCondition, Triple},
@@ -93,7 +93,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                 self[local] = CapabilityLocal::Unallocated;
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
-                self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
+                self[local] = CapabilityLocal::Allocated(LocalExpansions::new(local));
                 place_capabilities.insert(local.into(), CapabilityKind::Write, ctxt);
             }
             PlaceCondition::Capability(place, cap) => {

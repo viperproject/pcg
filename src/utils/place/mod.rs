@@ -323,11 +323,11 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn expansion_places(
         self,
         expansion: &PlaceExpansion<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<Place<'tcx>> {
         let mut places = Vec::new();
         for elem in expansion.elems() {
-            places.push(self.project_deeper(elem, repacker).unwrap());
+            places.push(self.project_deeper(elem, ctxt).unwrap());
         }
         places
     }

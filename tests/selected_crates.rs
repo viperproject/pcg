@@ -610,6 +610,7 @@ fn test_selected_crates() {
         },
     );
 
+    // 30 basic blocks
     common::ensure_successful_run_on_crate(
         "cookie",
         "0.18.1",

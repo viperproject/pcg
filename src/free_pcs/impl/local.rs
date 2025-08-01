@@ -10,14 +10,15 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     pcg_validity_assert,
-    rustc_interface::{data_structures::fx::FxHashMap, middle::mir::Local},
+    rustc_interface::middle::mir::Local,
+    utils::data_structures::HashSet,
 };
 use itertools::Itertools;
 
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
     pcg::{PcgError, PcgInternalError},
-    utils::{corrected::CorrectedPlace, display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
+    utils::{CompilerCtxt, Place, corrected::CorrectedPlace, display::DisplayWithCompilerCtxt},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -25,7 +26,7 @@ use crate::{
 /// Examples of root projections are: `_1`, `*_1.f`, `*(*_.f).g` (i.e. either a local or a deref)
 pub enum CapabilityLocal<'tcx> {
     Unallocated,
-    Allocated(CapabilityProjections<'tcx>),
+    Allocated(LocalExpansions<'tcx>),
 }
 
 impl Debug for CapabilityLocal<'_> {
@@ -38,78 +39,93 @@ impl Debug for CapabilityLocal<'_> {
 }
 
 impl<'tcx> CapabilityLocal<'tcx> {
-    pub fn get_allocated(&self) -> &CapabilityProjections<'tcx> {
+    pub fn get_allocated(&self) -> &LocalExpansions<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
             Self::Unallocated => panic!("Expected allocated local"),
         }
     }
-    pub fn get_allocated_mut(&mut self) -> &mut CapabilityProjections<'tcx> {
+    pub fn get_allocated_mut(&mut self) -> &mut LocalExpansions<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
             Self::Unallocated => panic!("Expected allocated local"),
         }
     }
     pub fn new(local: Local) -> Self {
-        Self::Allocated(CapabilityProjections::new(local))
+        Self::Allocated(LocalExpansions::new(local))
     }
     pub fn is_unallocated(&self) -> bool {
         matches!(self, Self::Unallocated)
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct CapabilityProjections<'tcx> {
-    local: Local,
-    pub(crate) expansions: FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>>,
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub(crate) struct ExpandedPlace<'tcx> {
+    pub(crate) place: Place<'tcx>,
+    pub(crate) expansion: PlaceExpansion<'tcx>,
 }
 
-impl<'tcx> CapabilityProjections<'tcx> {
-    pub(crate) fn insert_expansion(&mut self, place: Place<'tcx>, expansion: PlaceExpansion<'tcx>) {
-        self.expansions.insert(place, expansion);
+impl<'tcx> ExpandedPlace<'tcx> {
+    pub(crate) fn arbitrary_expansion_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Place<'tcx> {
+        self.expansion_places(ctxt).into_iter().next().unwrap()
+    }
+    pub(crate) fn expansion_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.place
+            .expansion_places(&self.expansion, ctxt)
+            .into_iter()
+            .collect()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct LocalExpansions<'tcx> {
+    local: Local,
+    pub(crate) expansions: HashSet<ExpandedPlace<'tcx>>,
+}
+
+impl<'tcx> LocalExpansions<'tcx> {
+    pub(crate) fn remove_all_expansions_from(&mut self, place: Place<'tcx>) {
+        self.expansions.retain(|pe| pe.place != place);
     }
 
-    pub(crate) fn expansions(&self) -> &FxHashMap<Place<'tcx>, PlaceExpansion<'tcx>> {
+    pub(crate) fn insert_expansion(&mut self, place: Place<'tcx>, expansion: PlaceExpansion<'tcx>) {
+        self.expansions.insert(ExpandedPlace { place, expansion });
+    }
+
+    pub(crate) fn expansions(&self) -> &HashSet<ExpandedPlace<'tcx>> {
         &self.expansions
     }
 
-    pub fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
+    pub fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         if self.expansions.is_empty() {
-            return vec![self.local.into()];
+            return vec![self.local.into()].into_iter().collect();
         }
         self.expansions
             .iter()
-            .flat_map(|(p, e)| p.expansion_places(e, repacker))
+            .flat_map(|e| e.expansion_places(repacker))
             .filter(|p| !self.contains_expansion_from(*p))
-            .collect::<Vec<_>>()
+            .collect::<HashSet<_>>()
     }
 
     pub fn new(local: Local) -> Self {
         Self {
             local,
-            expansions: FxHashMap::default(),
+            expansions: HashSet::default(),
         }
     }
 
     pub(crate) fn contains_expansion_from(&self, place: Place<'tcx>) -> bool {
-        self.expansions.contains_key(&place)
+        self.expansions.iter().any(|e| e.place == place)
     }
 
     pub(crate) fn contains_expansion_to(
         &self,
         place: Place<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        match place.last_projection() {
-            Some((p, _)) => {
-                if let Some(expansion) = self.expansions.get(&p) {
-                    p.expansion_places(expansion, repacker).contains(&place)
-                } else {
-                    false
-                }
-            }
-            None => place.local == self.local,
-        }
+        self.expansions
+            .iter()
+            .any(|e| e.expansion_places(ctxt).contains(&place))
     }
 
     pub(crate) fn get_local(&self) -> Local {
@@ -195,32 +211,32 @@ impl<'tcx> CapabilityProjections<'tcx> {
         to: Place<'tcx>,
         _for_cap: Option<CapabilityKind>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError> {
         let expansions = self
             .expansions
             .iter()
-            .filter(|(p, _)| to.is_prefix_of(**p))
-            .map(|(p, e)| (*p, e.clone()))
-            .sorted_by_key(|(p, _)| p.projection.len())
+            .filter(|pe| to.is_prefix_of(pe.place))
+            .sorted_by_key(|pe| pe.place.projection().len())
             .rev()
+            .cloned()
             .collect::<Vec<_>>();
         let ops = expansions
             .into_iter()
-            .map(|(p, expansion)| {
-                let expansion_places = p.expansion_places(&expansion, repacker);
+            .map(|pe| {
+                let expansion_places = pe.expansion_places(ctxt);
                 let retained_cap =
                     expansion_places
                         .iter()
                         .fold(CapabilityKind::Exclusive, |acc, place| {
-                            match capabilities.remove(*place, repacker) {
+                            match capabilities.remove(*place, ctxt) {
                                 Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
                                 None => acc,
                             }
                         });
-                capabilities.insert(p, retained_cap, repacker);
-                self.expansions.remove(&p);
-                RepackOp::collapse(p, expansion.guide(), retained_cap)
+                capabilities.insert(pe.place, retained_cap, ctxt);
+                self.expansions.remove(&pe);
+                RepackOp::collapse(pe.place, pe.expansion.guide(), retained_cap)
             })
             .collect();
         Ok(ops)

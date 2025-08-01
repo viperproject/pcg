@@ -62,22 +62,23 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         let expansions = capability_projs
             .expansions
             .iter()
-            .filter(|(p, _)| place.is_prefix_of(**p))
-            .map(|(p, e)| (*p, e.clone()))
-            .sorted_by_key(|(p, _)| p.projection.len())
+            .filter(|pe| place.is_prefix_of(pe.place))
+            .sorted_by_key(|pe| pe.place.projection().len())
             .rev()
+            .cloned()
             .collect::<Vec<_>>();
-        for (p, expansion) in expansions {
+        for pe in expansions {
             self.record_and_apply_action(
                 OwnedPcgAction::new(
-                    RepackOp::collapse(p, expansion.guide(), capability),
+                    RepackOp::collapse(pe.place, pe.expansion.guide(), capability),
                     Some(context.clone()),
                 )
                 .into(),
             )?;
+            let p = pe.place;
             for rp in p.region_projections(self.ctxt) {
                 let rp_expansion: Vec<LocalRegionProjection<'tcx>> = p
-                    .expansion_places(&expansion, self.ctxt)
+                    .expansion_places(&pe.expansion, self.ctxt)
                     .into_iter()
                     .flat_map(|ep| {
                         ep.region_projections(self.ctxt)
@@ -666,7 +667,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     self.pcg
                         .capabilities
                         .insert(collapse.to, retained_cap, self.ctxt);
-                    capability_projections.expansions.remove(&collapse.to);
+                    capability_projections.remove_all_expansions_from(collapse.to);
                     true
                 }
                 _ => unreachable!(),
