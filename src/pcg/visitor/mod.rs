@@ -4,8 +4,9 @@ use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{PcgRegion, LifetimeProjection};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
 use crate::pcg::obtain::{PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -398,21 +399,28 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             })
             .collect::<HashSet<_>>();
-        // for place in leaf_future_node_places {
-        //     if !self
-        //         .ctxt
-        //         .bc
-        //         .is_directly_blocked(place, self.location(), self.ctxt)
-        //     {
-        //         let action = PcgAction::restore_capability(
-        //             place,
-        //             CapabilityKind::Exclusive,
-        //             "Leaf future node restore cap",
-        //             self.ctxt,
-        //         );
-        //         self.record_and_apply_action(action)?;
-        //     }
-        // }
+        for place in leaf_future_node_places {
+            // If the place has become a leaf, and its not borrowed, then we remove the future label
+            if self
+                .pcg
+                .borrow
+                .graph()
+                .edges_blocking(place.into(), self.ctxt)
+                .all(|e| !matches!(e.kind, BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+                && !self
+                    .ctxt
+                    .bc
+                    .is_directly_blocked(place, self.location(), self.ctxt)
+            {
+                let action = PcgAction::restore_capability(
+                    place,
+                    CapabilityKind::Exclusive,
+                    "Leaf future node restore cap",
+                    self.ctxt,
+                );
+                self.record_and_apply_action(action)?;
+            }
+        }
         Ok(())
     }
 }
