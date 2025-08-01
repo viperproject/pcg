@@ -424,30 +424,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let target_places = expand.target_places(ctxt);
-        let capability_projections = self.locals_mut()[expand.local()].get_allocated_mut();
-        capability_projections.insert_expansion(
-            expand.from,
-            PlaceExpansion::from_places(target_places.clone(), ctxt),
-        );
-        let source_cap = if expand.capability.is_read() {
-            expand.capability
-        } else {
-            capabilities.get(expand.from).unwrap_or_else(|| {
-                pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
-                panic!("no cap for {}", expand.from.to_short_string(ctxt));
-                // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                // CapabilityKind::Exclusive
-            })
-        };
-        for target_place in target_places {
-            capabilities.insert(target_place, source_cap, ctxt);
-        }
-        if expand.capability.is_read() {
-            capabilities.insert(expand.from, CapabilityKind::Read, ctxt);
-        } else {
-            capabilities.remove(expand.from, ctxt);
-        }
-        Ok(())
+        let expansions = self.locals_mut()[expand.local()].get_allocated_mut();
+        expansions.perform_expand_action(expand, capabilities, ctxt)
     }
 }

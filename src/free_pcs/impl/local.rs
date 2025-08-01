@@ -7,11 +7,7 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
-    pcg_validity_assert,
-    rustc_interface::middle::mir::Local,
-    utils::data_structures::HashSet,
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, free_pcs::RepackGuide, pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface}, pcg_validity_assert, rustc_interface::middle::mir::Local, utils::data_structures::HashSet
 };
 use itertools::Itertools;
 
@@ -66,6 +62,9 @@ pub(crate) struct ExpandedPlace<'tcx> {
 }
 
 impl<'tcx> ExpandedPlace<'tcx> {
+    pub(crate) fn guide(&self) -> Option<RepackGuide> {
+        self.expansion.guide()
+    }
     pub(crate) fn arbitrary_expansion_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Place<'tcx> {
         self.expansion_places(ctxt).into_iter().next().unwrap()
     }

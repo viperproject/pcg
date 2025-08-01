@@ -24,6 +24,34 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 14 basic blocks, <= 15 nodes
+    common::ensure_successful_run_on_crate(
+        "rayon",
+        "1.10.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<iter::chunks::ChunkProducer<P, F> as iter::plumbing::Producer>::into_iter",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 30 basic blocks
+    common::ensure_successful_run_on_crate(
+        "cookie",
+        "0.18.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("prefix::Prefix::clip"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 12 basic blocks <= 15 nodes
     common::ensure_successful_run_on_crate(
         "regex-automata",
@@ -58,8 +86,10 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields"),
-            extra_env_vars: vec![]
+            function: Some(
+                "<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields",
+            ),
+            extra_env_vars: vec![],
         },
     );
 
@@ -101,7 +131,6 @@ fn test_selected_crates() {
         },
     );
 
-
     // 20 basic blocks
     common::ensure_successful_run_on_crate(
         "http",
@@ -110,8 +139,10 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
-            extra_env_vars: vec![]
+            function: Some(
+                "<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back",
+            ),
+            extra_env_vars: vec![],
         },
     );
 
@@ -143,16 +174,18 @@ fn test_selected_crates() {
 
     // cycles, <= 20 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
-            "object",
-            "0.36.7",
-            Some("2025-03-13"),
-            common::RunOnCrateOptions::RunPCG {
-                target: common::Target::Debug,
-                validity_checks: true,
-                function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
-                extra_env_vars: vec![],
-            },
-        );
+        "object",
+        "0.36.7",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
 
     // cycles, 12 basic blocks, cycles, <= 30 nodes
     common::ensure_successful_run_on_crate(
@@ -214,7 +247,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<select::Selector<'a, T>::send::SendSelection<'a, T, F, U> as select::Selection<'a, T>>::init"),
+            function: Some(
+                "<select::Selector<'a, T>::send::SendSelection<'a, T, F, U> as select::Selection<'a, T>>::init",
+            ),
             extra_env_vars: vec![],
         },
     );
@@ -231,7 +266,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // cycles, <= 10 basic blocks, <= 10 nodes
     common::ensure_successful_run_on_crate(
@@ -396,7 +430,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<fmt::format::DefaultFields as field::MakeVisitor<fmt::format::Writer<'a>>>::make_visitor"),
+            function: Some(
+                "<fmt::format::DefaultFields as field::MakeVisitor<fmt::format::Writer<'a>>>::make_visitor",
+            ),
             extra_env_vars: vec![],
         },
     );
@@ -435,7 +471,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
+            function: Some(
+                "<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed",
+            ),
             extra_env_vars: vec![],
         },
     );
@@ -448,8 +486,10 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<de::SeqAccess<'de, 'document, 'seq> as serde::de::SeqAccess<'de>>::next_element_seed"),
-            extra_env_vars: vec![]
+            function: Some(
+                "<de::SeqAccess<'de, 'document, 'seq> as serde::de::SeqAccess<'de>>::next_element_seed",
+            ),
+            extra_env_vars: vec![],
         },
     );
 
@@ -569,7 +609,6 @@ fn test_selected_crates() {
         },
     );
 
-
     // 198 basic blocks
     common::ensure_successful_run_on_crate(
         "brotli",
@@ -582,7 +621,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     common::ensure_successful_run_on_crate(
         "winnow",
@@ -606,19 +644,6 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("registry::SpanRef::<'a, R>::with_filter"),
-            extra_env_vars: vec![],
-        },
-    );
-
-    // 30 basic blocks
-    common::ensure_successful_run_on_crate(
-        "cookie",
-        "0.18.1",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("prefix::Prefix::clip"),
             extra_env_vars: vec![],
         },
     );
@@ -886,9 +911,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: None,
-            extra_env_vars: vec![]
+            extra_env_vars: vec![],
         },
     );
-
-
 }

@@ -72,6 +72,13 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
                 ));
             }
         }
+        for (local, _) in ctxt.body().local_decls.iter_enumerated() {
+            let caps_from_local = self
+                .iter()
+                .filter(|(place, _)| place.local == local)
+                .sorted_by_key(|(place, cap)| place.projection.len())
+                .collect_vec();
+        }
         Ok(())
     }
 }
@@ -197,6 +204,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
 
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
+        self.0.retain(|place, _| other.0.contains_key(place));
         for (place, other_capability) in other.iter() {
             if let Some(self_capability) = self.0.get(&place) {
                 if let Some(c) = self_capability.minimum(other_capability) {
