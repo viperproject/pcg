@@ -19,7 +19,7 @@ use crate::{
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
-use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeOldPlace};
+use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeLabelledPlace};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -37,7 +37,7 @@ use crate::{
     utils::{display::DebugLines, validity::HasValidityCheck},
 };
 use crate::{
-    borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::RegionProjection},
+    borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::LifetimeProjection},
     utils::remote::RemotePlace,
 };
 use crate::{
@@ -114,7 +114,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !state.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+                    && let PCGNode::Place(MaybeLabelledPlace::Current(place)) = node
                 {
                     let _ = capabilities.remove(place, repacker);
                 }
@@ -273,13 +273,13 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         for region in extract_regions(local_decl.ty, repacker) {
             let region_projection =
-                RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
+                LifetimeProjection::new(region, arg_place.into(), None, repacker).unwrap();
             assert!(
                 self.apply_action(
                     BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
-                                RegionProjection::new(
+                                LifetimeProjection::new(
                                     region,
                                     RemotePlace::new(local).into(),
                                     None,
@@ -386,7 +386,7 @@ impl<'tcx> BorrowsState<'tcx> {
         &self,
         place: MaybeRemotePlace<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
+    ) -> Option<MaybeLabelledPlace<'tcx>> {
         let edges = self.edges_blocking(place.into(), repacker);
         if edges.len() != 1 {
             return None;
@@ -398,7 +398,7 @@ impl<'tcx> BorrowsState<'tcx> {
         let node = nodes.into_iter().next().unwrap();
         match node {
             PCGNode::Place(_) => todo!(),
-            PCGNode::RegionProjection(region_projection) => region_projection.deref(repacker),
+            PCGNode::LifetimeProjection(region_projection) => region_projection.deref(repacker),
         }
     }
 

@@ -54,6 +54,6 @@ impl<'tcx> AbstractionType<'tcx> {
 
 impl<'tcx> From<FunctionCallAbstractionOutput<'tcx>> for AbstractionOutputTarget<'tcx> {
     fn from(value: FunctionCallAbstractionOutput<'tcx>) -> Self {
-        AbstractionOutputTarget(PCGNode::RegionProjection(*value))
+        AbstractionOutputTarget(PCGNode::LifetimeProjection(*value))
     }
 }

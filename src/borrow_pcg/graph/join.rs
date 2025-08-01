@@ -39,11 +39,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) {
         let nodes = self.nodes(ctxt);
         for node in nodes {
-            if let PCGNode::RegionProjection(rp) = node
+            if let PCGNode::LifetimeProjection(rp) = node
                 && rp.is_placeholder()
-                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
+                && let Some(PCGNode::LifetimeProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
-                // if let MaybeOldPlace::Current { place } = local_rp.base
+                // if let MaybeOldPlace::Current(place) = local_rp.base
                 //     && capabilities.get(place).is_some()
                 // {
                 //     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));

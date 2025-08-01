@@ -132,7 +132,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         let ancestor_predicate_allows_killing = |p: LocalNode<'tcx>| {
             let place = match p {
                 PCGNode::Place(p) => p,
-                PCGNode::RegionProjection(rp) => rp.place(),
+                PCGNode::LifetimeProjection(rp) => rp.place(),
             };
             if let Some(ancestor_place) = ancestor_place {
                 if !place.is_current() || !ancestor_place.place().is_prefix_of(place.place()) {
@@ -145,7 +145,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
             let place = match p {
                 PCGNode::Place(p) => p,
-                PCGNode::RegionProjection(rp) => rp.place(),
+                PCGNode::LifetimeProjection(rp) => rp.place(),
             };
             if !ancestor_predicate_allows_killing(p) {
                 return ShouldKillNode::No;

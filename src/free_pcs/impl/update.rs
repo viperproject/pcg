@@ -91,6 +91,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::Unalloc(local) => {
                 self[local] = CapabilityLocal::Unallocated;
+                place_capabilities.remove_all_for_local(local, ctxt);
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self[local] = CapabilityLocal::Allocated(LocalExpansions::new(local));

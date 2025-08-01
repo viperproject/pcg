@@ -96,7 +96,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     && let Some(rp) = p.deref_to_rp(ctxt)
                 {
                     for node in self.nodes(ctxt) {
-                        if let Some(PCGNode::RegionProjection(p)) = node.try_to_local_node(ctxt)
+                        if let Some(PCGNode::LifetimeProjection(p)) = node.try_to_local_node(ctxt)
                             && p.base() == rp.base()
                             && p.region_idx == rp.region_idx
                         {
@@ -151,7 +151,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
                 BorrowPcgEdgeKind::BorrowPcgExpansion(e) => {
                     for node in e.blocked_nodes(repacker) {
-                        if let PCGNode::RegionProjection(p) = node {
+                        if let PCGNode::LifetimeProjection(p) = node {
                             extend(
                                 p.to_pcg_node(repacker),
                                 seen,

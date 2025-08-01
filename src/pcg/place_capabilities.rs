@@ -78,6 +78,41 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
                 .filter(|(place, _)| place.local == local)
                 .sorted_by_key(|(place, cap)| place.projection.len())
                 .collect_vec();
+            if caps_from_local.is_empty() {
+                continue;
+            }
+            fn allowed_child_cap<'tcx>(
+                parent_place: Place<'tcx>,
+                parent_cap: CapabilityKind,
+                child_cap: CapabilityKind,
+                ctxt: CompilerCtxt<'_, 'tcx>,
+            ) -> bool {
+                match (parent_cap, child_cap) {
+                    (CapabilityKind::Write, _) if parent_place.ref_mutability(ctxt).is_some() => {
+                        true
+                    }
+                    (CapabilityKind::Read, CapabilityKind::Read) => true,
+                    _ => false,
+                }
+            }
+            for i in 0..caps_from_local.len() - 1 {
+                let (place, parent_cap) = caps_from_local[i];
+                for j in i + 1..caps_from_local.len() {
+                    let (other_place, other_cap) = caps_from_local[j];
+                    if place.is_prefix_of(other_place)
+                        && !allowed_child_cap(place, parent_cap, other_cap, ctxt)
+                    {
+                        return Err(format!(
+                            "Place ({}: {}) with capability {:?} has a child {} with capability {:?} which is not allowed",
+                            place.to_short_string(ctxt),
+                            place.ty(ctxt).ty,
+                            parent_cap,
+                            other_place.to_short_string(ctxt),
+                            other_cap
+                        ));
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -96,7 +131,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BlockType {
-    DerefExclusive,
+    DerefRefExclusive,
     Read,
     Other,
 }
@@ -104,7 +139,7 @@ pub(crate) enum BlockType {
 impl BlockType {
     pub(crate) fn blocked_place_retained_capability(self) -> Option<CapabilityKind> {
         match self {
-            BlockType::DerefExclusive => Some(CapabilityKind::Write),
+            BlockType::DerefRefExclusive => Some(CapabilityKind::Write),
             BlockType::Read => Some(CapabilityKind::Read),
             BlockType::Other => None,
         }
@@ -116,7 +151,7 @@ impl BlockType {
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
-            BlockType::DerefExclusive => CapabilityKind::Exclusive,
+            BlockType::DerefRefExclusive => CapabilityKind::Exclusive,
             BlockType::Read => CapabilityKind::Read,
             BlockType::Other => blocked_capability,
         }
@@ -124,6 +159,22 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn remove_all_postfixes(
+        &mut self,
+        place: Place<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|p, _| !place.is_prefix_of(*p));
+    }
+
+    pub(crate) fn remove_all_for_local(
+        &mut self,
+        local: mir::Local,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|place, _| place.local != local);
+    }
+
     #[tracing::instrument(skip(self, expansion, ctxt))]
     pub(crate) fn update_for_expansion(
         &mut self,
@@ -149,7 +200,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
                 // panic!("Base capability should be set");
             };
 
-            if validity_checks_enabled() && matches!(block_type, BlockType::DerefExclusive) {
+            if validity_checks_enabled() && matches!(block_type, BlockType::DerefRefExclusive) {
                 pcg_validity_assert!(
                     !base.place().projects_shared_ref(ctxt),
                     "Updating for DerefExclusive block, but place {} projects a shared ref",

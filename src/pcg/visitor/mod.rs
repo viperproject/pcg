@@ -5,7 +5,7 @@ use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
+use crate::borrow_pcg::region_projection::{PcgRegion, LifetimeProjection};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
 use crate::pcg::obtain::{PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -17,7 +17,7 @@ use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use crate::action::PcgActions;
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place};
 
@@ -56,7 +56,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
 
     fn connect_outliving_projections(
         &mut self,
-        source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        source_proj: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>,
         target: Place<'tcx>,
         kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) -> Result<(), PcgError> {
@@ -389,7 +389,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .iter()
             .filter_map(|node| match node {
                 PCGNode::Place(_) => None,
-                PCGNode::RegionProjection(region_projection) => {
+                PCGNode::LifetimeProjection(region_projection) => {
                     if region_projection.is_placeholder() {
                         region_projection.base.as_current_place()
                     } else {
@@ -398,21 +398,21 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             })
             .collect::<HashSet<_>>();
-        for place in leaf_future_node_places {
-            if !self
-                .ctxt
-                .bc
-                .is_directly_blocked(place, self.location(), self.ctxt)
-            {
-                let action = PcgAction::restore_capability(
-                    place,
-                    CapabilityKind::Exclusive,
-                    "Leaf future node restore cap",
-                    self.ctxt,
-                );
-                self.record_and_apply_action(action)?;
-            }
-        }
+        // for place in leaf_future_node_places {
+        //     if !self
+        //         .ctxt
+        //         .bc
+        //         .is_directly_blocked(place, self.location(), self.ctxt)
+        //     {
+        //         let action = PcgAction::restore_capability(
+        //             place,
+        //             CapabilityKind::Exclusive,
+        //             "Leaf future node restore cap",
+        //             self.ctxt,
+        //         );
+        //         self.record_and_apply_action(action)?;
+        //     }
+        // }
         Ok(())
     }
 }

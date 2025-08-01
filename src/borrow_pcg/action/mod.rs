@@ -5,10 +5,10 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller};
-use crate::borrow_pcg::region_projection::{RegionProjection, LifetimeProjectionLabel};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, LifetimeProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
@@ -58,7 +58,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
     }
 
     pub(crate) fn remove_region_projection_label(
-        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        projection: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>,
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
@@ -118,15 +118,21 @@ impl LabelPlaceReason {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let predicate = match self {
-            LabelPlaceReason::ReAssign => {
-                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
-            }
             LabelPlaceReason::StorageDead | LabelPlaceReason::MoveOut => {
-                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
+                LabelPlacePredicate::Postfix {
+                    place,
+                    label_place_in_expansion: true,
+                }
+            }
+            LabelPlaceReason::ReAssign => {
+                LabelPlacePredicate::Postfix {
+                    place,
+                    label_place_in_expansion: false,
+                }
             }
             LabelPlaceReason::Collapse => LabelPlacePredicate::Exact(place),
             LabelPlaceReason::LabelSharedDerefProjections => {
-                LabelPlacePredicate::StrictPostfix(place)
+                LabelPlacePredicate::DerefPostfixOf(place)
             }
         };
         let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);

@@ -8,7 +8,9 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
+    pcg_validity_assert,
     rustc_interface::{
+        FieldIdx, PlaceTy, RustBitSet,
         data_structures::fx::FxHashSet,
         index::Idx,
         middle::{
@@ -18,15 +20,15 @@ use crate::{
             },
             ty::{TyCtxt, TyKind},
         },
-        FieldIdx, PlaceTy, RustBitSet,
     },
+    validity_checks_enabled,
 };
 
 use crate::rustc_interface::mir_dataflow;
 
 use crate::{
     borrow_pcg::region_projection::PcgRegion,
-    pcg::{PcgUnsupportedError, PcgError},
+    pcg::{PcgError, PcgUnsupportedError},
 };
 
 use super::Place;
@@ -57,7 +59,13 @@ impl<'tcx> ShallowExpansion<'tcx> {
         target_place: Place<'tcx>,
         other_places: Vec<Place<'tcx>>,
         kind: ProjectionKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
+        if validity_checks_enabled() {
+            if matches!(kind, ProjectionKind::DerefRef(_)) {
+                pcg_validity_assert!(!target_place.is_owned(ctxt));
+            }
+        }
         Self {
             target_place,
             other_places,
@@ -286,14 +294,14 @@ impl<'tcx> Place<'tcx> {
     pub fn expand_one_level(
         self,
         guide_place: Self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<ShallowExpansion<'tcx>, PcgError> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
             "self place {self:?} is not a prefix of guide place {guide_place:?}"
         );
-        let new_projection = repacker.tcx.mk_place_elems_from_iter(
+        let new_projection = ctxt.tcx.mk_place_elems_from_iter(
             self.projection
                 .iter()
                 .copied()
@@ -302,7 +310,7 @@ impl<'tcx> Place<'tcx> {
         let new_current_place = Place::new(self.local, new_projection);
         let (other_places, kind) = match guide_place.projection[index] {
             ProjectionElem::Field(projected_field, _field_ty) => {
-                let other_places = self.expand_field(Some(projected_field.index()), repacker)?;
+                let other_places = self.expand_field(Some(projected_field.index()), ctxt)?;
                 (other_places, ProjectionKind::Field(projected_field))
             }
             ProjectionElem::ConstantIndex {
@@ -319,10 +327,9 @@ impl<'tcx> Place<'tcx> {
                 let other_places = range
                     .filter(|&i| i != offset)
                     .map(|i| {
-                        repacker
-                            .tcx
+                        ctxt.tcx
                             .mk_place_elem(
-                                self.to_rust_place(repacker),
+                                self.to_rust_place(ctxt),
                                 ProjectionElem::ConstantIndex {
                                     offset: i,
                                     min_length,
@@ -342,7 +349,7 @@ impl<'tcx> Place<'tcx> {
                 )
             }
             ProjectionElem::Deref => {
-                let typ = self.ty(repacker);
+                let typ = self.ty(ctxt);
                 let kind = match typ.ty.kind() {
                     TyKind::Ref(_, _, mutbl) => ProjectionKind::DerefRef(*mutbl),
                     TyKind::RawPtr(_, mutbl) => ProjectionKind::DerefRawPtr(*mutbl),
@@ -363,7 +370,12 @@ impl<'tcx> Place<'tcx> {
                 "expanded place {p:?} is not a direct child of {self:?}",
             );
         }
-        Ok(ShallowExpansion::new(new_current_place, other_places, kind))
+        Ok(ShallowExpansion::new(
+            new_current_place,
+            other_places,
+            kind,
+            ctxt,
+        ))
     }
 
     /// Expands a place `x.f.g` of type struct into a vector of places for

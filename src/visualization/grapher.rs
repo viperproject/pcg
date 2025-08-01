@@ -9,7 +9,7 @@ use crate::{
     pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
+        display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
         CompilerCtxt, HasPlace, Place,
     },
 };
@@ -22,7 +22,7 @@ pub(super) trait CapabilityGetter<'tcx> {
 
 pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'state;
-    fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
+    fn insert_maybe_old_place(&mut self, place: MaybeLabelledPlace<'tcx>) -> NodeId {
         let capability_getter = self.capability_getter();
         let constructor = self.constructor();
         constructor.insert_place_node(place.place(), place.location(), &capability_getter)
@@ -37,7 +37,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
         match node {
             PCGNode::Place(place) => self.insert_maybe_remote_place(place),
-            PCGNode::RegionProjection(rp) => self.constructor().insert_region_projection_node(rp),
+            PCGNode::LifetimeProjection(rp) => self.constructor().insert_region_projection_node(rp),
         }
     }
 

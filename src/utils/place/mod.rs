@@ -39,7 +39,7 @@ use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         region_projection::{
-            MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
+            MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, LifetimeProjection,
             RegionProjectionBaseLike,
         },
         visitor::extract_regions,
@@ -335,9 +335,9 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn base_region_projection<C: Copy>(
         self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
+    ) -> Option<LifetimeProjection<'tcx, Self>> {
         self.ty_region(repacker)
-            .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
+            .map(|region| LifetimeProjection::new(region, self, None, repacker).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -464,7 +464,7 @@ impl<'tcx> Place<'tcx> {
         &self,
         idx: RegionIdx,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Self> {
+    ) -> LifetimeProjection<'tcx, Self> {
         self.region_projections(repacker)[idx]
     }
 
@@ -482,11 +482,11 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn region_projections<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+    ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>> {
         let place = self.with_inherent_region(ctxt);
         extract_regions(place.ty(ctxt).ty, ctxt)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, None, ctxt).unwrap())
+            .map(|region| LifetimeProjection::new(*region, place, None, ctxt).unwrap())
             .collect()
     }
 

@@ -15,7 +15,7 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         path_condition::ValidityConditions,
         region_projection::{
-            RegionIdx, RegionProjection, RegionProjectionBaseLike, LifetimeProjectionLabel,
+            RegionIdx, LifetimeProjection, RegionProjectionBaseLike, LifetimeProjectionLabel,
         },
         state::BorrowStateMutRef,
     },
@@ -31,7 +31,7 @@ use crate::{
         CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
         data_structures::{HashMap, HashSet},
         display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeOldPlace,
+        maybe_old::MaybeLabelledPlace,
         remote::RemotePlace,
     },
 };
@@ -98,7 +98,7 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
         matches!(self, MaybeRemoteCurrentPlace::Remote(_))
     }
 
-    fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<RegionProjection<'tcx>> {
+    fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LifetimeProjection<'tcx>> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place
                 .region_projections(ctxt)
@@ -221,8 +221,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .roots(ctxt)
             .into_iter()
             .flat_map(|graph_root| {
-                if let Some(PCGNode::RegionProjection(rp)) = graph_root.try_to_local_node(ctxt)
-                    && let MaybeOldPlace::Current { place } = rp.base
+                if let Some(PCGNode::LifetimeProjection(rp)) = graph_root.try_to_local_node(ctxt)
+                    && let MaybeLabelledPlace::Current(place) = rp.base
                     && !loop_blocked_places.contains(&place)
                 {
                     Some(rp)
@@ -235,7 +235,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for graph_root in abs_graph_roots {
             let mut candidate_root_nodes = self.nodes(ctxt);
             candidate_root_nodes.retain(|node| match node {
-                PCGNode::RegionProjection(region_projection)
+                PCGNode::LifetimeProjection(region_projection)
                     if let Some(related_place) =
                         region_projection.base.maybe_remote_current_place() =>
                 {

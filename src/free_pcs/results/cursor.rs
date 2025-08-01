@@ -342,7 +342,7 @@ impl<'tcx> PcgLocation<'tcx> {
             .into_iter()
             .flat_map(|p| match p {
                 PCGNode::Place(p) => p.as_current_place(),
-                PCGNode::RegionProjection(p) => match p.base() {
+                PCGNode::LifetimeProjection(p) => match p.base() {
                     MaybeRemoteRegionProjectionBase::Place(p) => {
                         let assoc_place = p.related_local_place();
                         if assoc_place.is_ref(ctxt) {

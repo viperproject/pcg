@@ -136,7 +136,7 @@ impl<'mir, 'tcx: 'mir> RustBorrowCheckerInterface<'tcx> for PoloniusBorrowChecke
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         let regions: Vec<_> = match node {
             PCGNode::Place(place) => place.regions(self.ctxt()).into_iter().collect(),
-            PCGNode::RegionProjection(region_projection) => {
+            PCGNode::LifetimeProjection(region_projection) => {
                 vec![region_projection.region(self.ctxt())]
             }
         };
@@ -323,7 +323,7 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
 
     fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool {
         #[cfg(feature = "custom-rust-toolchain")]
-        if let PCGNode::RegionProjection(region_projection) = node {
+        if let PCGNode::LifetimeProjection(region_projection) = node {
             let region = region_projection.region(self.ctxt());
             if !self
                 .ctxt()
@@ -335,7 +335,7 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
             }
         }
         let local = match node {
-            PCGNode::RegionProjection(rp) => {
+            PCGNode::LifetimeProjection(rp) => {
                 if let Some(local) = rp.local() {
                     local
                 } else {

@@ -3,7 +3,7 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
-use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
+use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, LifetimeProjection};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::EvalStmtPhase;
 use crate::pcg::obtain::PlaceExpander;
@@ -11,7 +11,7 @@ use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{self, AnalysisLocation, SnapshotLocation};
 
 use super::{PcgError, PcgUnsupportedError};
@@ -34,10 +34,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn maybe_labelled_operand_place(
         &self,
         operand: &Operand<'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
+    ) -> Option<MaybeLabelledPlace<'tcx>> {
         match operand {
             Operand::Copy(place) => Some((*place).into()),
-            Operand::Move(place) => Some(MaybeOldPlace::new(
+            Operand::Move(place) => Some(MaybeLabelledPlace::new(
                 (*place).into(),
                 Some(self.pre_operand_move_label()),
             )),
@@ -51,6 +51,18 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         rvalue: &Rvalue<'tcx>,
     ) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
+
+        // If `target` is a reference, then the dereferenced place technically
+        // still retains its capabilities. However, because we currently only
+        // keep capabilities for non-labelled places, we remove all the capabilities
+        // to everything postfix of `target`.
+        //
+        // We should change this logic once we start keeping capabilities for
+        // labelled places.
+        if target.is_ref(ctxt) {
+            self.pcg.capabilities.remove_all_postfixes(target, ctxt);
+        }
+
         self.pcg
             .capabilities
             .insert(target, CapabilityKind::Exclusive, self.ctxt);
@@ -92,14 +104,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         BorrowPcgAction::add_edge(
                             BorrowPcgEdge::new(
                                 BorrowFlowEdge::new(
-                                    RegionProjection::new(
+                                    LifetimeProjection::new(
                                         (*const_region).into(),
                                         MaybeRemoteRegionProjectionBase::Const(c.const_),
                                         None,
                                         self.ctxt,
                                     )
                                     .unwrap(),
-                                    RegionProjection::new(
+                                    LifetimeProjection::new(
                                         (*target_region).into(),
                                         target,
                                         None,
@@ -125,7 +137,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let from: utils::Place<'tcx> = (*from).into();
                 let (from, kind) = if matches!(operand, Operand::Move(_)) {
                     (
-                        MaybeOldPlace::new(from, Some(self.pre_operand_move_label())),
+                        MaybeLabelledPlace::new(from, Some(self.pre_operand_move_label())),
                         BorrowFlowEdgeKind::Move,
                     )
                 } else {

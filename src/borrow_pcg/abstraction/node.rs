@@ -24,9 +24,9 @@ impl<'tcx> From<LocalNode<'tcx>> for AbstractionGraphNode<'tcx> {
     fn from(node: LocalNode<'tcx>) -> Self {
         match node {
             LocalNode::Place(p) => Self(PCGNode::Place(p.into())),
-            LocalNode::RegionProjection(rp) => {
+            LocalNode::LifetimeProjection(rp) => {
                 let rp = rp.with_base(rp.base().into());
-                Self(PCGNode::RegionProjection(rp))
+                Self(PCGNode::LifetimeProjection(rp))
             }
         }
     }
@@ -38,9 +38,9 @@ impl<'tcx> TryFrom<PCGNode<'tcx>> for AbstractionGraphNode<'tcx> {
     fn try_from(value: PCGNode<'tcx>) -> Result<Self, Self::Error> {
         match value {
             PCGNode::Place(p) => Ok(Self(PCGNode::Place(p))),
-            PCGNode::RegionProjection(rp) => {
+            PCGNode::LifetimeProjection(rp) => {
                 if let MaybeRemoteRegionProjectionBase::Place(p) = rp.base() {
-                    Ok(Self(PCGNode::RegionProjection(rp.with_base(p))))
+                    Ok(Self(PCGNode::LifetimeProjection(rp.with_base(p))))
                 } else {
                     Err(())
                 }

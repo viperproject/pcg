@@ -10,8 +10,10 @@ use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{LabelPlace, LabelLifetimeProjectionPredicate, SetLabel};
-use crate::borrow_pcg::region_projection::{LocalRegionProjection, RegionProjection};
+use crate::borrow_pcg::has_pcs_elem::{
+    LabelLifetimeProjectionPredicate, LabelNodeContext, LabelPlace, LabelPlaceWithContext, SetLabel,
+};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, LocalLifetimeProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
@@ -20,7 +22,7 @@ use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
 
 use crate::utils::{Place, SnapshotLocation};
@@ -77,7 +79,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             )?;
             let p = pe.place;
             for rp in p.region_projections(self.ctxt) {
-                let rp_expansion: Vec<LocalRegionProjection<'tcx>> = p
+                let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = p
                     .expansion_places(&pe.expansion, self.ctxt)
                     .into_iter()
                     .flat_map(|ep| {
@@ -264,7 +266,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .assigned_region_projection(self.ctxt)
                         .to_pcg_node(self.ctxt),
                     self.location(),
-                ) && let MaybeOldPlace::Current { place } = borrow.assigned_ref()
+                ) && let MaybeLabelledPlace::Current(place) = borrow.assigned_ref()
                     && let Some(existing_cap) = self.pcg.capabilities.get(place)
                 {
                     self.record_and_apply_action(
@@ -298,7 +300,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         context: &str,
     ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
-            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(self.ctxt) {
+            if let Some(PCGNode::LifetimeProjection(rp)) = node.try_to_local_node(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::remove_region_projection_label(
                         rp,
@@ -314,8 +316,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// Note: Only for owned places.
     fn redirect_rp_expansion_to_base(
         &mut self,
-        base: LocalRegionProjection<'tcx>,
-        expansion: &[LocalRegionProjection<'tcx>],
+        base: LocalLifetimeProjection<'tcx>,
+        expansion: &[LocalLifetimeProjection<'tcx>],
     ) -> Result<(), PcgError> {
         for (idx, node) in expansion.iter().enumerate() {
             if let Some(place) = node.base.as_current_place() {
@@ -327,9 +329,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     self.ctxt,
                 );
                 let mut node = *node;
-                node.label_place(
+                node.label_place_with_context(
                     &LabelPlacePredicate::Exact((*place).into()),
                     &labeller,
+                    LabelNodeContext::Other,
                     self.ctxt,
                 );
                 let edge = BorrowPcgEdge::new(
@@ -373,7 +376,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     BorrowPcgAction::weaken(
                         current,
                         CapabilityKind::Read,
-                        BlockType::DerefExclusive.blocked_place_retained_capability(),
+                        BlockType::DerefRefExclusive.blocked_place_retained_capability(),
                         format!(
                             "Remove read permission upwards from base place {} (downgrade R to e for mut ref): {}",
                             place.to_short_string(self.ctxt),
@@ -400,7 +403,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 )?;
             }
             for r in place_regions.iter() {
-                let current_rp = RegionProjection::new(*r, current, None, self.ctxt)?;
+                let current_rp = LifetimeProjection::new(*r, current, None, self.ctxt)?;
                 if current.is_ref(self.ctxt)
                     && !current
                         .project_deref(self.ctxt)
@@ -426,7 +429,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .iter()
                         .flat_map(|e| {
                             if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = e.kind()
-                                && let PCGNode::RegionProjection(rp) = e.base
+                                && let PCGNode::LifetimeProjection(rp) = e.base
                                 && rp == current_rp.into()
                             {
                                 Some(
@@ -725,15 +728,17 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             tracing::debug!("Disconnecting deref projection {:?}", rp);
             let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
             let label = SnapshotLocation::BeforeRefReassignment(self.location());
-            rp.base.label_place(
+            rp.base.label_place_with_context(
                 &LabelPlacePredicate::Exact(rp.base.place()),
                 &SetLabel(label),
+                LabelNodeContext::Other,
                 self.ctxt,
             );
             rp.expansion.iter_mut().for_each(|e| {
-                e.label_place(
+                e.label_place_with_context(
                     &LabelPlacePredicate::Exact(e.place()),
                     &SetLabel(self.prev_snapshot_location()),
+                    LabelNodeContext::TargetOfExpansion,
                     self.ctxt,
                 );
             });

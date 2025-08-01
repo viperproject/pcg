@@ -20,7 +20,7 @@ use crate::{
     utils::{
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeOldPlace,
+        maybe_old::MaybeLabelledPlace,
         validity::HasValidityCheck,
         Place, BORROWS_DEBUG_IMGCAT,
     },
@@ -61,7 +61,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         let nodes = self.nodes(ctxt);
         // TODO
         for node in nodes.iter() {
-            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(ctxt)
+            if let Some(PCGNode::LifetimeProjection(rp)) = node.try_to_local_node(ctxt)
                 && rp.is_placeholder()
                 && rp.base.as_current_place().is_some()
             {
@@ -142,7 +142,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) => {
-                    if let MaybeOldPlace::Current { place } = borrow.blocked_place
+                    if let MaybeLabelledPlace::Current(place) = borrow.blocked_place
                         && place.is_owned(ctxt)
                     {
                         result.insert(place);
