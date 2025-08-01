@@ -391,17 +391,18 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
+        let mut other_capabilities = other.capabilities.clone();
         let mut res = self.owned.join(
             &other.owned,
             &mut self.capabilities,
-            &other.capabilities,
+            &mut other_capabilities,
             ctxt,
         )?;
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
         other.borrow.add_cfg_edge(other_block, self_block, ctxt);
-        res |= self.capabilities.join(&other.capabilities);
+        res |= self.capabilities.join(&other_capabilities);
         res |= self.borrow.join(
             &other.borrow,
             self_block,

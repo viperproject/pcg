@@ -32,7 +32,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: None,
+            function: Some(
+                "bssl::<impl core::convert::From<bssl::Result> for core::result::Result<(), error::unspecified::Unspecified>>::from",
+            ),
             extra_env_vars: vec![],
         },
     );

@@ -27,7 +27,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         &mut self,
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
-        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        other_place_capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         self.data.as_mut().unwrap().join(
@@ -44,7 +44,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
         &mut self,
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
-        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        other_place_capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
@@ -66,7 +66,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
         &mut self,
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
-        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        other_place_capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         match (&mut *self, other) {
@@ -141,11 +141,11 @@ impl<'tcx> LocalExpansions<'tcx> {
         &mut self,
         other: &Self,
         self_place_capabilities: &mut PlaceCapabilities<'tcx>,
-        other_place_capabilities: &PlaceCapabilities<'tcx>,
+        other_place_capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
+        let mut other = other.clone();
         let mut actions = Vec::new();
-        let num_expansions = self.expansions.len();
         for other_expansion in other.expansions_shortest_first() {
             if !self.contains_expansion(other_expansion) {
                 let other_expansion_guide = other_expansion.guide();
@@ -159,6 +159,24 @@ impl<'tcx> LocalExpansions<'tcx> {
                         self.perform_expand_action(expand_action, self_place_capabilities, ctxt)?;
                         actions.push(RepackOp::Expand(expand_action).into());
                     }
+                }
+            }
+        }
+        for self_expansion in self.expansions_shortest_first() {
+            if !other.contains_expansion(self_expansion) {
+                if let Some(CapabilityKind::Read) = self_place_capabilities.get(self_expansion.place)
+                    && let Some(other_cap) = other_place_capabilities.get(self_expansion.place)
+                    && other_cap >= CapabilityKind::Read
+                {
+                    other.perform_expand_action(
+                        RepackExpand::new(
+                            self_expansion.place,
+                            self_expansion.guide(),
+                            CapabilityKind::Read,
+                        ),
+                        other_place_capabilities,
+                        ctxt
+                    )?;
                 }
             }
         }
