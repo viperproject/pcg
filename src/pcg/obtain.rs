@@ -211,10 +211,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                         obtain_type.capability_for_expand(expansion.base_place(), ctxt),
                         ctxt,
                     ),
-                    Some(format!(
-                        "Expand owned place one level ({:?})",
-                        obtain_type
-                    )),
+                    Some(format!("Expand owned place one level ({:?})", obtain_type)),
                 )
                 .into(),
             )?;

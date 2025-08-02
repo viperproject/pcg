@@ -121,7 +121,6 @@ fn test_selected_crates() {
         },
     );
 
-
     // 140 basic blocks
     common::ensure_successful_run_on_crate(
         "clap_builder",
@@ -664,7 +663,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     common::ensure_successful_run_on_crate(
         "matchit",

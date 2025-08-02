@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
-use crate::borrow_checker::{
-    BorrowCheckerInterface, RustBorrowCheckerInterface,
-};
+use crate::borrow_checker::{BorrowCheckerInterface, RustBorrowCheckerInterface};
 use crate::borrow_pcg::visitor::extract_regions;
 use crate::rustc_interface::middle::mir::{Body, Location};
 use crate::rustc_interface::middle::ty::{self, RegionVid};

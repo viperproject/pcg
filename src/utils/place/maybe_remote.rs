@@ -2,7 +2,9 @@ use derive_more::From;
 
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{
+    HasPcgElems, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
+};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
@@ -13,7 +15,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::remote::RemotePlace;
-use crate::utils::{CompilerCtxt, HasPlace, Place, LabelledPlace};
+use crate::utils::{CompilerCtxt, HasPlace, LabelledPlace, Place};
 
 #[derive(From, PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {
@@ -33,7 +35,9 @@ impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for MaybeRemotePlace<'t
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            MaybeRemotePlace::Local(p) => p.label_place_with_context(predicate, labeller, label_context, ctxt),
+            MaybeRemotePlace::Local(p) => {
+                p.label_place_with_context(predicate, labeller, label_context, ctxt)
+            }
             MaybeRemotePlace::Remote(_) => false,
         }
     }
@@ -212,7 +216,7 @@ impl RemotePlace {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
             ty::TyKind::Ref(_, ty, _) => Some(*ty),
-            _ => None
+            _ => None,
         }
     }
 }

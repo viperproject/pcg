@@ -9,12 +9,12 @@ use crate::{
     pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
-        CompilerCtxt, HasPlace, Place,
+        CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
     },
 };
 
-use super::{graph_constructor::GraphConstructor, GraphEdge, NodeId};
+use super::{GraphEdge, NodeId, graph_constructor::GraphConstructor};
 
 pub(super) trait CapabilityGetter<'tcx> {
     fn get(&self, node: Place<'tcx>) -> Option<CapabilityKind>;

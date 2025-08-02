@@ -15,7 +15,7 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         path_condition::ValidityConditions,
         region_projection::{
-            RegionIdx, LifetimeProjection, RegionProjectionBaseLike, LifetimeProjectionLabel,
+            LifetimeProjection, LifetimeProjectionLabel, RegionIdx, RegionProjectionBaseLike,
         },
         state::BorrowStateMutRef,
     },
@@ -497,13 +497,14 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge } => Ok(self.graph.insert(edge, self.ctxt)),
-                BorrowPcgActionKind::LabelLifetimeProjection(predicate, region_projection_label) => {
-                    Ok(self.graph.label_region_projection(
-                        &predicate,
-                        region_projection_label,
-                        self.ctxt,
-                    ))
-                }
+                BorrowPcgActionKind::LabelLifetimeProjection(
+                    predicate,
+                    region_projection_label,
+                ) => Ok(self.graph.label_region_projection(
+                    &predicate,
+                    region_projection_label,
+                    self.ctxt,
+                )),
                 BorrowPcgActionKind::Weaken(_) => todo!(),
                 BorrowPcgActionKind::Restore(_) => todo!(),
                 BorrowPcgActionKind::MakePlaceOld(_) => todo!(),

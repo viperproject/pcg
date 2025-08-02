@@ -18,18 +18,17 @@ use crate::{
         index::{Idx, IndexVec},
         middle::{
             mir::{
-                self,
+                self, BasicBlock, Body, START_BLOCK,
                 visit::{MutatingUseContext, PlaceContext},
-                BasicBlock, Body, START_BLOCK,
             },
             ty,
         },
-        mir_dataflow::{fmt::DebugWithContext, Forward, JoinSemiLattice},
+        mir_dataflow::{Forward, JoinSemiLattice, fmt::DebugWithContext},
     },
     utils::{
+        Place,
         data_structures::{HashMap, HashSet},
         visitor::FallableVisitor,
-        Place,
     },
     validity_checks_enabled,
 };
@@ -194,7 +193,8 @@ impl<'tcx> FallableVisitor<'tcx> for UsageVisitor<'_, 'tcx> {
         _location: mir::Location,
     ) -> Result<(), crate::pcg::PcgError> {
         if let PlaceContext::MutatingUse(MutatingUseContext::Store) = context {
-            self.used_places.retain(|p| !p.is_prefix_or_postfix_of(place));
+            self.used_places
+                .retain(|p| !p.is_prefix_or_postfix_of(place));
         }
         self.used_places.insert(place);
         Ok(())
@@ -250,10 +250,7 @@ impl<'tcx> Analysis<'tcx> for SingleLoopAnalysis<'_> {
     }
 }
 
-impl DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'_>>> for LoopPlaceUsageDomain<'_> {
-
-}
-
+impl DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'_>>> for LoopPlaceUsageDomain<'_> {}
 
 impl<'tcx> LoopPlaceUsageAnalysis<'tcx> {
     pub(crate) fn is_loop_head(&self, block: BasicBlock) -> bool {

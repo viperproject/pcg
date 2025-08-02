@@ -46,7 +46,13 @@ impl<'tcx> AbstractionType<'tcx> {
                     .iter()
                     .map(|i| i.to_abstraction_input())
                     .collect(),
-                outputs: c.edge.outputs.iter().copied().map(|o| (*o).into()).collect(),
+                outputs: c
+                    .edge
+                    .outputs
+                    .iter()
+                    .copied()
+                    .map(|o| (*o).into())
+                    .collect(),
             },
         }
     }

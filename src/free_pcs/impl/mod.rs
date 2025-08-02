@@ -4,13 +4,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+mod bridge;
 mod fpcs;
+pub(crate) mod join_semi_lattice;
 mod local;
 mod place;
-pub(crate) mod join_semi_lattice;
 mod update;
-mod bridge;
 
 pub use fpcs::*;
-pub (crate) use local::*;
+pub(crate) use local::*;
 pub use place::*;

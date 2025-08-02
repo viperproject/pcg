@@ -18,6 +18,7 @@ use crate::{
     free_pcs::RepackGuide,
     pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
+        VariantIdx,
         ast::Mutability,
         data_structures::fx::FxHasher,
         index::IndexVec,
@@ -25,7 +26,6 @@ use crate::{
             mir::{Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
             ty::{self, Ty, TyKind},
         },
-        VariantIdx,
     },
     utils::data_structures::HashSet,
 };
@@ -33,13 +33,13 @@ use crate::{
 #[cfg(feature = "debug_info")]
 use super::debug_info::DebugInfo;
 
-use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
+use super::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         region_projection::{
-            MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, LifetimeProjection,
+            LifetimeProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx,
             RegionProjectionBaseLike,
         },
         visitor::extract_regions,

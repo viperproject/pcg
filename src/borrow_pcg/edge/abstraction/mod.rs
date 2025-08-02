@@ -84,7 +84,8 @@ impl<
     ) -> bool {
         let mut changed = false;
         for output in &mut self.outputs {
-            changed |= output.label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt);
+            changed |=
+                output.label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt);
         }
         changed
     }

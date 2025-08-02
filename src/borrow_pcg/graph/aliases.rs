@@ -6,7 +6,7 @@ use crate::{
     },
     pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
-    utils::{data_structures::HashSet, CompilerCtxt, HasPlace},
+    utils::{CompilerCtxt, HasPlace, data_structures::HashSet},
 };
 
 use super::BorrowsGraph;
@@ -207,8 +207,8 @@ fn test_aliases() {
         .with_writer(std::io::stderr)
         .init();
 
-    use crate::utils::test::run_pcg_on_str;
     use crate::PcgOutput;
+    use crate::utils::test::run_pcg_on_str;
 
     fn check_all_statements<'mir, 'tcx, A: Allocator + Copy>(
         body: &'mir mir::Body<'tcx>,
@@ -311,11 +311,13 @@ fn test_aliases() {
         let local3_deref = local3.project_deeper(&[mir::ProjectionElem::Deref], ctxt.tcx());
         let aliases = stmt.aliases(y_deref, ctxt.body(), ctxt.tcx());
         assert!(aliases.contains(&local3_deref));
-        assert!(analysis
-            .results_for_all_blocks()
-            .unwrap()
-            .all_place_aliases(y_deref, ctxt.body(), ctxt.tcx())
-            .contains(&local3_deref));
+        assert!(
+            analysis
+                .results_for_all_blocks()
+                .unwrap()
+                .all_place_aliases(y_deref, ctxt.body(), ctxt.tcx())
+                .contains(&local3_deref)
+        );
     });
 
     // recurse_parent_privacy
@@ -379,11 +381,13 @@ fn main() {
         eprintln!("aliases: {:?}", aliases);
         eprintln!("deref_target: {:?}", deref_target);
         assert!(aliases.contains(&deref_target));
-        assert!(analysis
-            .results_for_all_blocks()
-            .unwrap()
-            .all_place_aliases(z_deref, &ctxt.body(), ctxt.tcx())
-            .contains(&deref_target));
+        assert!(
+            analysis
+                .results_for_all_blocks()
+                .unwrap()
+                .all_place_aliases(z_deref, &ctxt.body(), ctxt.tcx())
+                .contains(&deref_target)
+        );
         assert!(!aliases.contains(&deref3));
     });
 
@@ -529,9 +533,11 @@ fn main() {
             .project_deref(ctxt)
             .to_rust_place(ctxt);
         let a = ctxt.local_place("a").unwrap().to_rust_place(ctxt);
-        assert!(last_bg
-            .aliases(e_deref, ctxt.body(), ctxt.tcx())
-            .contains(&a));
+        assert!(
+            last_bg
+                .aliases(e_deref, ctxt.body(), ctxt.tcx())
+                .contains(&a)
+        );
     });
 
     // deep2
@@ -555,9 +561,11 @@ fn main() {
             .project_deref(ctxt)
             .to_rust_place(ctxt);
         let a = ctxt.local_place("a").unwrap().to_rust_place(ctxt);
-        assert!(last_bg
-            .aliases(starstarc, ctxt.body(), ctxt.tcx())
-            .contains(&a));
+        assert!(
+            last_bg
+                .aliases(starstarc, ctxt.body(), ctxt.tcx())
+                .contains(&a)
+        );
     });
 
     // flowistry_pointer_deep
@@ -579,20 +587,27 @@ fn main() {
             .project_deref(ctxt)
             .to_rust_place(ctxt);
         let x = ctxt.local_place("x").unwrap().to_rust_place(ctxt);
-        assert!(stmt
-            .aliases(y_deref_3, &ctxt.body(), ctxt.tcx())
-            .contains(&x));
-        assert!(!stmt
-            .aliases(y_deref_3, &ctxt.body(), ctxt.tcx())
-            .contains(&mir::Local::from(3usize).into()));
-        assert!(!stmt
-            .aliases(y_deref_3, &ctxt.body(), ctxt.tcx())
-            .contains(&mir::Local::from(4usize).into()));
-        assert!(!analysis
-            .results_for_all_blocks()
-            .unwrap()
-            .all_place_aliases(y_deref.to_rust_place(ctxt), &ctxt.body(), ctxt.tcx())
-            .contains(&mir::Local::from(4usize).into()));
+        assert!(
+            stmt.aliases(y_deref_3, &ctxt.body(), ctxt.tcx())
+                .contains(&x)
+        );
+        assert!(
+            !stmt
+                .aliases(y_deref_3, &ctxt.body(), ctxt.tcx())
+                .contains(&mir::Local::from(3usize).into())
+        );
+        assert!(
+            !stmt
+                .aliases(y_deref_3, &ctxt.body(), ctxt.tcx())
+                .contains(&mir::Local::from(4usize).into())
+        );
+        assert!(
+            !analysis
+                .results_for_all_blocks()
+                .unwrap()
+                .all_place_aliases(y_deref.to_rust_place(ctxt), &ctxt.body(), ctxt.tcx())
+                .contains(&mir::Local::from(4usize).into())
+        );
     });
 
     let input = r#"
@@ -613,8 +628,10 @@ fn main() {
         let temp: mir::Place<'_> = mir::Local::from(5_usize).into();
         let star_5 = temp.project_deeper(&[mir::ProjectionElem::Deref], ctxt.tcx());
         let x = ctxt.local_place("x").unwrap().to_rust_place(ctxt);
-        assert!(last_bg
-            .aliases(star_5, &ctxt.body(), ctxt.tcx())
-            .contains(&x));
+        assert!(
+            last_bg
+                .aliases(star_5, &ctxt.body(), ctxt.tcx())
+                .contains(&x)
+        );
     });
 }

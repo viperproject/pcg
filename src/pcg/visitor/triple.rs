@@ -1,7 +1,10 @@
 use crate::{
     free_pcs::{CapabilityKind, CapabilityLocal, LocalExpansions},
     pcg::{
-        obtain::ObtainType, place_capabilities::PlaceCapabilitiesInterface, triple::{PlaceCondition, Triple}, PcgError, PcgUnsupportedError
+        PcgError, PcgUnsupportedError,
+        obtain::ObtainType,
+        place_capabilities::PlaceCapabilitiesInterface,
+        triple::{PlaceCondition, Triple},
     },
 };
 
@@ -15,13 +18,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
-                self.place_obtainer().obtain(place, ObtainType::TwoPhaseExpand)?;
+                self.place_obtainer()
+                    .obtain(place, ObtainType::TwoPhaseExpand)?;
             }
             PlaceCondition::Capability(place, capability) => {
                 if place.contains_unsafe_deref(self.ctxt) {
                     return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
                 }
-                self.place_obtainer().obtain(place, ObtainType::Capability(capability))?;
+                self.place_obtainer()
+                    .obtain(place, ObtainType::Capability(capability))?;
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self.pcg.owned.locals_mut()[local] =

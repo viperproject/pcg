@@ -3,16 +3,11 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode,
-        has_pcs_elem::HasPcgElems,
-        region_projection::
-            MaybeRemoteRegionProjectionBase
-        ,
+        borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems,
+        region_projection::MaybeRemoteRegionProjectionBase,
     },
     pcg::PCGNode,
-    utils::{
-        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt,
-    },
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace},
 };
 
 #[derive(Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]

@@ -151,11 +151,8 @@ impl<'tcx> LocalExpansions<'tcx> {
                 let other_expansion_guide = other_expansion.guide();
                 if self.is_leaf(other_expansion.place, ctxt) {
                     if let Some(cap) = self_place_capabilities.get(other_expansion.place) {
-                        let expand_action = RepackExpand::new(
-                            other_expansion.place,
-                            other_expansion_guide,
-                            cap,
-                        );
+                        let expand_action =
+                            RepackExpand::new(other_expansion.place, other_expansion_guide, cap);
                         self.perform_expand_action(expand_action, self_place_capabilities, ctxt)?;
                         actions.push(RepackOp::Expand(expand_action).into());
                     }
@@ -164,7 +161,8 @@ impl<'tcx> LocalExpansions<'tcx> {
         }
         for self_expansion in self.expansions_shortest_first() {
             if !other.contains_expansion(self_expansion) {
-                if let Some(CapabilityKind::Read) = self_place_capabilities.get(self_expansion.place)
+                if let Some(CapabilityKind::Read) =
+                    self_place_capabilities.get(self_expansion.place)
                     && let Some(other_cap) = other_place_capabilities.get(self_expansion.place)
                     && other_cap >= CapabilityKind::Read
                 {
@@ -175,7 +173,7 @@ impl<'tcx> LocalExpansions<'tcx> {
                             CapabilityKind::Read,
                         ),
                         other_place_capabilities,
-                        ctxt
+                        ctxt,
                     )?;
                 }
             }

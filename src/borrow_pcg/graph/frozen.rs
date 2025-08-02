@@ -1,6 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-};
+use std::cell::{Ref, RefCell};
 
 use derive_more::{Deref, IntoIterator};
 use itertools::Itertools;

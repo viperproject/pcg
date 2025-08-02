@@ -5,18 +5,22 @@ use crate::borrow_pcg::domain::LoopAbstractionOutput;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{
+    HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+    LabelLifetimeProjectionResult, PlaceLabeller,
+};
 use crate::borrow_pcg::path_condition::ValidityConditions;
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::pcg::PCGNode;
 use crate::rustc_interface::middle::mir::{BasicBlock, Location};
+use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::CompilerCtxt;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    pub(crate) edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>,
+    pub(crate) edge:
+        AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>,
     pub(crate) block: BasicBlock,
 }
 
@@ -98,7 +102,8 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 
 impl<'tcx, T> HasPcgElems<T> for LoopAbstraction<'tcx>
 where
-    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>: HasPcgElems<T>,
+    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>:
+        HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut T> {
         self.edge.pcg_elems()

@@ -31,12 +31,12 @@ pub enum PCGNode<'tcx, T = MaybeRemotePlace<'tcx>, U = MaybeRemoteRegionProjecti
 
 impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for PCGNode<'tcx> {
     fn label_place_with_context(
-            &mut self,
-            predicate: &LabelPlacePredicate<'tcx>,
-            labeller: &impl PlaceLabeller<'tcx>,
-            label_context: LabelNodeContext,
-            ctxt: CompilerCtxt<'_, 'tcx>,
-        ) -> bool {
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
+        label_context: LabelNodeContext,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
             PCGNode::Place(p) => {
                 p.label_place_with_context(predicate, labeller, label_context, ctxt)

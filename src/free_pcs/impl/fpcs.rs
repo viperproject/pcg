@@ -8,11 +8,15 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     free_pcs::RepackOp,
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError},
+    pcg::{
+        PcgError,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
-    }, utils::{data_structures::HashSet, Place},
+    },
+    utils::{Place, data_structures::HashSet},
 };
 use derive_more::{Deref, DerefMut};
 

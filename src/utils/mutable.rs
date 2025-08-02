@@ -14,7 +14,7 @@ use rustc_interface::{
 
 use crate::rustc_interface::{self, FieldIdx};
 
-use super::{root_place::RootPlace, CompilerCtxt, Place};
+use super::{CompilerCtxt, Place, root_place::RootPlace};
 
 struct Upvar<'tcx> {
     pub(crate) place: CapturedPlace<'tcx>,
@@ -52,7 +52,6 @@ impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-
     pub fn is_mutable(
         self,
         is_local_mutation_allowed: LocalMutationIsAllowed,

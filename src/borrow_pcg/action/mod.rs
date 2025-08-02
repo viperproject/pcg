@@ -124,12 +124,10 @@ impl LabelPlaceReason {
                     label_place_in_expansion: true,
                 }
             }
-            LabelPlaceReason::ReAssign => {
-                LabelPlacePredicate::Postfix {
-                    place,
-                    label_place_in_expansion: false,
-                }
-            }
+            LabelPlaceReason::ReAssign => LabelPlacePredicate::Postfix {
+                place,
+                label_place_in_expansion: false,
+            },
             LabelPlaceReason::Collapse => LabelPlacePredicate::Exact(place),
             LabelPlaceReason::LabelSharedDerefProjections => {
                 LabelPlacePredicate::DerefPostfixOf(place)

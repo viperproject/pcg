@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         graph::{BorrowsGraph, materialize::MaterializedEdge},
-        region_projection::{MaybeRemoteRegionProjectionBase, LifetimeProjection},
+        region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
@@ -128,9 +128,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 let location_table = self.ctxt.bc.rust_borrow_checker().unwrap().location_table();
                 let loans_before = render_loans(
                     output
-                        .origin_contains_loan_at(
-                            location_table.start_index(location),
-                        )
+                        .origin_contains_loan_at(location_table.start_index(location))
                         .get(&region_vid),
                 );
                 let loans_after = render_loans(
@@ -410,7 +408,11 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
                         capability_getter,
                     );
                     for pe in projections.expansions() {
-                        self.insert_place_and_previous_projections(pe.place, None, capability_getter);
+                        self.insert_place_and_previous_projections(
+                            pe.place,
+                            None,
+                            capability_getter,
+                        );
                         for child_place in pe.expansion_places(self.ctxt) {
                             self.insert_place_and_previous_projections(
                                 child_place,

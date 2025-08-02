@@ -1,8 +1,10 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelNodeContext, LabelPlace, LabelPlaceWithContext, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{
+    HasPcgElems, LabelNodeContext, LabelPlace, LabelPlaceWithContext, PlaceLabeller,
+};
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, LifetimeProjection,
+    LifetimeProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx,
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;

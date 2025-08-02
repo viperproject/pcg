@@ -19,7 +19,7 @@ use crate::{
     validity_checks_enabled,
 };
 
-use super::{borrows_imgcat_debug, BorrowsGraph};
+use super::{BorrowsGraph, borrows_imgcat_debug};
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
@@ -283,7 +283,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
             to_label,
-            capability_updates
+            capability_updates,
         } = self.get_loop_abstraction_graph(
             loop_blocked_places,
             root_places,

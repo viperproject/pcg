@@ -18,11 +18,11 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
+        BORROWS_DEBUG_IMGCAT, Place,
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeLabelledPlace,
         validity::HasValidityCheck,
-        Place, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -38,8 +38,8 @@ use super::{
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 /// The Borrow PCG Graph.
 #[derive(Clone, Debug, Default)]

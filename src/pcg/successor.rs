@@ -2,14 +2,14 @@ use std::rc::Rc;
 
 use serde_json::json;
 
+use crate::DebugLines;
 use crate::action::PcgActions;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::graph::BorrowsGraph;
 use crate::borrow_pcg::state::BorrowsState;
 use crate::rustc_interface::middle::mir::BasicBlock;
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
-use crate::DebugLines;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 #[derive(Debug)]
 pub struct PcgSuccessor<'tcx> {
@@ -44,7 +44,10 @@ impl<'tcx> PcgSuccessor<'tcx> {
 impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for PcgSuccessor<'tcx>
 {
-    fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>) -> serde_json::Value {
+    fn to_json(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    ) -> serde_json::Value {
         json!({
             "block": self.block().index(),
             "actions": self.actions.to_json(repacker),

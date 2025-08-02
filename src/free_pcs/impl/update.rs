@@ -65,7 +65,11 @@ impl<'tcx> CapabilityLocals<'tcx> {
                         //     "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
                         // )
                     } else {
-                        pcg_validity_assert!(false, "No capability for {}", place.to_short_string(ctxt));
+                        pcg_validity_assert!(
+                            false,
+                            "No capability for {}",
+                            place.to_short_string(ctxt)
+                        );
                     }
                 }
             }
