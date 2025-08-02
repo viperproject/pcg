@@ -70,6 +70,18 @@ pub struct RepackExpand<'tcx> {
 }
 
 impl<'tcx> RepackExpand<'tcx> {
+    pub(crate) fn new(
+        from: Place<'tcx>,
+        guide: Option<RepackGuide>,
+        capability: CapabilityKind,
+    ) -> Self {
+        Self {
+            from,
+            guide,
+            capability,
+        }
+    }
+
     pub fn capability(&self) -> CapabilityKind {
         self.capability
     }

@@ -5,9 +5,9 @@ use crate::{
     rustc_interface::{
         middle::{mir, ty},
         mir_dataflow::{
+            ResultsCursor,
             impls::MaybeUninitializedPlaces,
             move_paths::{LookupResult, MoveData},
-            ResultsCursor,
         },
     },
     utils::Place,

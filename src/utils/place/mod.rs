@@ -18,6 +18,7 @@ use crate::{
     free_pcs::RepackGuide,
     pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
+        VariantIdx,
         ast::Mutability,
         data_structures::fx::FxHasher,
         index::IndexVec,
@@ -25,7 +26,6 @@ use crate::{
             mir::{Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
             ty::{self, Ty, TyKind},
         },
-        VariantIdx,
     },
     utils::data_structures::HashSet,
 };
@@ -33,13 +33,13 @@ use crate::{
 #[cfg(feature = "debug_info")]
 use super::debug_info::DebugInfo;
 
-use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
+use super::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         region_projection::{
-            MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
+            LifetimeProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx,
             RegionProjectionBaseLike,
         },
         visitor::extract_regions,
@@ -323,11 +323,11 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn expansion_places(
         self,
         expansion: &PlaceExpansion<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<Place<'tcx>> {
         let mut places = Vec::new();
         for elem in expansion.elems() {
-            places.push(self.project_deeper(elem, repacker).unwrap());
+            places.push(self.project_deeper(elem, ctxt).unwrap());
         }
         places
     }
@@ -335,9 +335,9 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn base_region_projection<C: Copy>(
         self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
+    ) -> Option<LifetimeProjection<'tcx, Self>> {
         self.ty_region(repacker)
-            .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
+            .map(|region| LifetimeProjection::new(region, self, None, repacker).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -464,7 +464,7 @@ impl<'tcx> Place<'tcx> {
         &self,
         idx: RegionIdx,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Self> {
+    ) -> LifetimeProjection<'tcx, Self> {
         self.region_projections(repacker)[idx]
     }
 
@@ -482,11 +482,11 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn region_projections<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+    ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>> {
         let place = self.with_inherent_region(ctxt);
         extract_regions(place.ty(ctxt).ty, ctxt)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, None, ctxt).unwrap())
+            .map(|region| LifetimeProjection::new(*region, place, None, ctxt).unwrap())
             .collect()
     }
 

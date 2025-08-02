@@ -8,17 +8,21 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     free_pcs::RepackOp,
-    pcg::{place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError},
+    pcg::{
+        PcgError,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
-    }, utils::{data_structures::HashSet, Place},
+    },
+    utils::{Place, data_structures::HashSet},
 };
 use derive_more::{Deref, DerefMut};
 
 use super::CapabilityKind;
 use crate::{
-    free_pcs::{CapabilityLocal, CapabilityProjections},
+    free_pcs::{CapabilityLocal, LocalExpansions},
     utils::CompilerCtxt,
 };
 
@@ -115,7 +119,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
             .flat_map(|c| c.get_allocated().leaves(ctxt))
             .collect()
     }
-    pub(crate) fn expansions(&self) -> Vec<&CapabilityProjections<'tcx>> {
+    pub(crate) fn expansions(&self) -> Vec<&LocalExpansions<'tcx>> {
         self.0
             .iter()
             .filter(|c| !c.is_unallocated())

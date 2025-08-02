@@ -7,7 +7,7 @@ use crate::free_pcs::PcgAnalysis;
 use crate::rustc_interface::driver::run_compiler;
 use crate::rustc_interface::driver::{self, Compilation};
 use crate::rustc_interface::hir::def::DefKind;
-use crate::rustc_interface::interface::{interface::Compiler, Config};
+use crate::rustc_interface::interface::{Config, interface::Compiler};
 use crate::rustc_interface::middle::ty::TyCtxt;
 use crate::rustc_interface::span::source_map::FileLoader;
 use crate::utils::callbacks::set_mir_borrowck;
@@ -49,9 +49,9 @@ impl FileLoader for StringLoader {
 unsafe fn run_pcg_on_first_fn<'tcx>(
     tcx: TyCtxt<'tcx>,
     callback: impl for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)
-        + Send
-        + Sync
-        + 'static,
+    + Send
+    + Sync
+    + 'static,
 ) {
     let def_id = tcx
         .hir_body_owners()
@@ -90,9 +90,9 @@ impl driver::Callbacks for TestCallbacks {
 pub(crate) fn run_pcg_on_str(
     input: &str,
     callback: impl for<'mir, 'tcx, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>)
-        + Send
-        + Sync
-        + 'static,
+    + Send
+    + Sync
+    + 'static,
 ) {
     run_compiler(
         &vec![

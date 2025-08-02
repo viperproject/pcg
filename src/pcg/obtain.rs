@@ -11,15 +11,16 @@ use crate::{
         graph::BorrowsGraph,
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         path_condition::ValidityConditions,
-        region_projection::{LocalRegionProjection, RegionProjection, LifetimeProjectionLabel},
+        region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
     },
-    free_pcs::{CapabilityKind, RepackOp},
+    free_pcs::{CapabilityKind, ExpandedPlace, RepackGuide, RepackOp},
     pcg::{PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, place_capabilities::BlockType},
     rustc_interface::middle::mir,
     utils::{
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
         display::DisplayWithCompilerCtxt,
     },
+    validity_checks_enabled,
 };
 
 pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
@@ -80,7 +81,7 @@ impl ObtainType {
 
     pub(crate) fn should_label_rp<'tcx>(
         &self,
-        rp: RegionProjection<'tcx>,
+        rp: LifetimeProjection<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
@@ -113,7 +114,7 @@ impl LabelForRegionProjection {
 pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool;
+    fn contains_owned_expansion_from(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool;
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
@@ -145,7 +146,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
 
     fn label_for_rp(
         &self,
-        rp: RegionProjection<'tcx, Place<'tcx>>,
+        rp: LifetimeProjection<'tcx, Place<'tcx>>,
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> LabelForRegionProjection {
@@ -162,7 +163,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
 
     fn label_for_shared_expansion_of_rp(
         &self,
-        rp: RegionProjection<'tcx, Place<'tcx>>,
+        rp: LifetimeProjection<'tcx, Place<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Option<LifetimeProjectionLabel> {
         ctxt.bc
@@ -183,7 +184,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        if self.contains_owned_expansion_from(base) {
+        if self.contains_owned_expansion_from(base, expansion.guide()) {
             tracing::debug!(
                 "Already contains owned expansion from {}",
                 base.to_short_string(ctxt)
@@ -210,7 +211,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
                         obtain_type.capability_for_expand(expansion.base_place(), ctxt),
                         ctxt,
                     ),
-                    None,
+                    Some(format!("Expand owned place one level ({:?})", obtain_type)),
                 )
                 .into(),
             )?;
@@ -258,9 +259,13 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
+        let expanded_place = ExpandedPlace {
+            place: base,
+            expansion: place_expansion,
+        };
         if self
             .borrows_graph()
-            .contains_borrow_pcg_expansion_of(base, &place_expansion, ctxt)
+            .contains_borrow_pcg_expansion(&expanded_place, ctxt)
         {
             return Ok(false);
         }
@@ -274,7 +279,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         } else {
             None
         };
-        let block_type = place_expansion.block_type(base, obtain_type, ctxt);
+        let block_type = expanded_place.expansion.block_type(base, obtain_type, ctxt);
         tracing::debug!(
             "Block type for {} is {:?}",
             base.to_short_string(ctxt),
@@ -282,7 +287,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         );
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
             base.into(),
-            place_expansion,
+            expanded_place.expansion,
             expansion_label.and_then(|lbl| lbl.label()),
             ctxt,
         )?;
@@ -400,8 +405,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
     ///
     fn add_and_update_placeholder_edges(
         &mut self,
-        origin_rp: LocalRegionProjection<'tcx>,
-        expansion_rps: &[RegionProjection<'tcx>],
+        origin_rp: LocalLifetimeProjection<'tcx>,
+        expansion_rps: &[LifetimeProjection<'tcx>],
         context: &str,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
@@ -455,8 +460,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
 
     fn redirect_source_of_future_edges(
         &mut self,
-        old_source: LocalRegionProjection<'tcx>,
-        new_source: LocalRegionProjection<'tcx>,
+        old_source: LocalLifetimeProjection<'tcx>,
+        new_source: LocalLifetimeProjection<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
         let to_replace = self

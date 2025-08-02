@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 /* Depending on the client's rust version, some of the features below
-   may already be stabilized */
+may already be stabilized */
 
 #![allow(stable_features)]
 #![feature(associated_type_defaults)]
@@ -36,7 +36,7 @@ use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
-    dataflow::{compute_fixpoint, AnalysisEngine},
+    dataflow::{AnalysisEngine, compute_fixpoint},
     middle::{
         mir::Body,
         ty::{self, TyCtxt},
@@ -45,9 +45,9 @@ use rustc_interface::{
 };
 use serde_json::json;
 use utils::{
+    CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
     display::{DebugLines, DisplayWithCompilerCtxt},
     validity::HasValidityCheck,
-    CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
 };
 use visualization::mir_graph::generate_json_from_mir;
 

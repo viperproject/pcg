@@ -6,8 +6,8 @@
 
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{
-    self, BorrowKind, Local, Location, MutBorrowKind, Operand, Rvalue, Statement, StatementKind,
-    Terminator, TerminatorKind, RETURN_PLACE,
+    self, BorrowKind, Local, Location, MutBorrowKind, Operand, RETURN_PLACE, Rvalue, Statement,
+    StatementKind, Terminator, TerminatorKind,
 };
 
 #[rustversion::before(2025-03-02)]
@@ -20,7 +20,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::{
     free_pcs::CapabilityKind,
     pcg::{PcgError, PcgUnsupportedError},
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, Place},
+    utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 
 #[derive(Debug, Clone, Copy)]

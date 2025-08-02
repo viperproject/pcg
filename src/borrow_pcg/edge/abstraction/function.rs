@@ -2,12 +2,13 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::{BlockedNode, LocalNode},
-        domain::{
-            FunctionCallAbstractionInput, FunctionCallAbstractionOutput,
-        },
+        domain::{FunctionCallAbstractionInput, FunctionCallAbstractionOutput},
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller},
+        has_pcs_elem::{
+            HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, PlaceLabeller,
+        },
         region_projection::LifetimeProjectionLabel,
     },
     pcg::PCGNode,
@@ -15,7 +16,7 @@ use crate::{
         hir::def_id::DefId,
         middle::{mir::Location, ty::GenericArgsRef},
     },
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]

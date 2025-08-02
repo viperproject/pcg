@@ -3,14 +3,14 @@ use std::{cell::RefCell, rc::Rc};
 use crate::{
     compute_fixpoint,
     rustc_interface::{
-        dataflow::{with_cursor_state, Analysis, AnalysisEngine},
+        dataflow::{Analysis, AnalysisEngine, with_cursor_state},
         middle::mir::{
             self,
             visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor},
         },
-        mir_dataflow::{fmt::DebugWithContext, Backward, GenKill, JoinSemiLattice, ResultsCursor},
+        mir_dataflow::{Backward, GenKill, JoinSemiLattice, ResultsCursor, fmt::DebugWithContext},
     },
-    utils::{data_structures::HashSet, CompilerCtxt, Place},
+    utils::{CompilerCtxt, Place, data_structures::HashSet},
 };
 
 #[derive(Clone, Eq, PartialEq, Debug)]

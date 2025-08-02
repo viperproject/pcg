@@ -35,9 +35,7 @@ impl DotGraph {
         let dot_output = dot_process.wait_with_output()?;
 
         if !dot_output.status.success() {
-            return Err(std::io::Error::other(
-                "dot command failed",
-            ));
+            return Err(std::io::Error::other("dot command failed"));
         }
 
         let mut imgcat_process = Command::new("imgcat")
@@ -54,9 +52,7 @@ impl DotGraph {
         let imgcat_status = imgcat_process.wait()?;
 
         if !imgcat_status.success() {
-            return Err(std::io::Error::other(
-                "imgcat command failed",
-            ));
+            return Err(std::io::Error::other("imgcat command failed"));
         }
 
         Ok(())

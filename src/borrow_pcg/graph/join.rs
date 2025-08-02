@@ -19,7 +19,7 @@ use crate::{
     validity_checks_enabled,
 };
 
-use super::{borrows_imgcat_debug, BorrowsGraph};
+use super::{BorrowsGraph, borrows_imgcat_debug};
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(&self, ctxt: CompilerCtxt<'_, 'tcx>, comment: &str) {
@@ -39,11 +39,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) {
         let nodes = self.nodes(ctxt);
         for node in nodes {
-            if let PCGNode::RegionProjection(rp) = node
+            if let PCGNode::LifetimeProjection(rp) = node
                 && rp.is_placeholder()
-                && let Some(PCGNode::RegionProjection(local_rp)) = rp.try_to_local_node(ctxt)
+                && let Some(PCGNode::LifetimeProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
-                // if let MaybeOldPlace::Current { place } = local_rp.base
+                // if let MaybeOldPlace::Current(place) = local_rp.base
                 //     && capabilities.get(place).is_some()
                 // {
                 //     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
@@ -283,7 +283,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
             to_label,
-            capability_updates
+            capability_updates,
         } = self.get_loop_abstraction_graph(
             loop_blocked_places,
             root_places,

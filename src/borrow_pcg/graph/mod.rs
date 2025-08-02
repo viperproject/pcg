@@ -12,17 +12,18 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         region_projection::LifetimeProjectionLabel,
     },
+    free_pcs::ExpandedPlace,
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
     },
     utils::{
+        BORROWS_DEBUG_IMGCAT, Place,
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeOldPlace,
+        maybe_old::MaybeLabelledPlace,
         validity::HasValidityCheck,
-        Place, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -38,8 +39,8 @@ use super::{
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 /// The Borrow PCG Graph.
 #[derive(Clone, Debug, Default)]
@@ -61,7 +62,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         let nodes = self.nodes(ctxt);
         // TODO
         for node in nodes.iter() {
-            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(ctxt)
+            if let Some(PCGNode::LifetimeProjection(rp)) = node.try_to_local_node(ctxt)
                 && rp.is_placeholder()
                 && rp.base.as_current_place().is_some()
             {
@@ -120,14 +121,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_borrow_pcg_expansion_of(
+    pub(crate) fn contains_borrow_pcg_expansion(
         &self,
-        base: Place<'tcx>,
-        _place_expansion: &PlaceExpansion<'tcx>,
+        expanded_place: &ExpandedPlace<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edges_blocking(base.into(), ctxt)
-            .any(|edge| matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+        let expanded_places = expanded_place.expansion_places(ctxt);
+        let nodes = self.nodes(ctxt);
+        expanded_places
+            .into_iter()
+            .all(|place| nodes.contains(&place.into()))
     }
 
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
@@ -142,7 +145,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     }
                 }
                 BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) => {
-                    if let MaybeOldPlace::Current { place } = borrow.blocked_place
+                    if let MaybeLabelledPlace::Current(place) = borrow.blocked_place
                         && place.is_owned(ctxt)
                     {
                         result.insert(place);

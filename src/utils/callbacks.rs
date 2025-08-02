@@ -23,7 +23,7 @@ use crate::{
             self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
             RegionInferenceContext, RichLocation,
         },
-        data_structures::fx::{FxHashMap, FxHashSet},
+        data_structures::{graph::is_cyclic, fx::{FxHashMap, FxHashSet}},
         driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{Config, interface::Compiler},
@@ -36,7 +36,7 @@ use crate::{
         session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
     },
-    utils::MAX_BASIC_BLOCKS,
+    utils::{MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS},
 };
 
 #[cfg(feature = "visualization")]
@@ -180,6 +180,9 @@ pub(crate) unsafe fn take_stored_body(
 }
 
 fn should_check_body(body: &Body<'_>) -> bool {
+    if *SKIP_BODIES_WITH_LOOPS && is_cyclic(&body.basic_blocks) {
+        return false;
+    }
     if let Some(len) = *MAX_BASIC_BLOCKS {
         body.basic_blocks.len() <= len
     } else {

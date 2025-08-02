@@ -115,8 +115,11 @@ impl SnapshotLocation {
     }
 }
 
+#[deprecated(note = "Use LabelledPlace instead")]
+pub type PlaceSnapshot<'tcx> = LabelledPlace<'tcx>;
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
-pub struct PlaceSnapshot<'tcx> {
+pub struct LabelledPlace<'tcx> {
     pub(crate) place: Place<'tcx>,
     pub(crate) at: SnapshotLocation,
 }
@@ -134,7 +137,7 @@ impl std::fmt::Display for SnapshotLocation {
     }
 }
 
-impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
+impl<'tcx> RegionProjectionBaseLike<'tcx> for LabelledPlace<'tcx> {
     fn regions<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
@@ -147,37 +150,37 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for PlaceSnapshot<'tcx> {
     }
 }
 
-impl<'tcx> PCGNodeLike<'tcx> for PlaceSnapshot<'tcx> {
+impl<'tcx> PCGNodeLike<'tcx> for LabelledPlace<'tcx> {
     fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
         self.to_local_node(repacker).into()
     }
 }
 
-impl<'tcx> LocalNodeLike<'tcx> for PlaceSnapshot<'tcx> {
+impl<'tcx> LocalNodeLike<'tcx> for LabelledPlace<'tcx> {
     fn to_local_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
         LocalNode::Place(self.into())
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for PlaceSnapshot<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for LabelledPlace<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.place.check_validity(ctxt)
     }
 }
 
-impl std::fmt::Display for PlaceSnapshot<'_> {
+impl std::fmt::Display for LabelledPlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} at {:?}", self.place, self.at)
     }
 }
 
-impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for LabelledPlace<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         format!("{} at {:?}", self.place.to_short_string(repacker), self.at)
     }
 }
 
-impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for LabelledPlace<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "place": self.place.to_json(repacker),
@@ -186,9 +189,9 @@ impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for PlaceSnapshot<'tcx> {
     }
 }
 
-impl<'tcx> PlaceSnapshot<'tcx> {
+impl<'tcx> LabelledPlace<'tcx> {
     pub fn new<T: Into<SnapshotLocation>>(place: Place<'tcx>, at: T) -> Self {
-        PlaceSnapshot {
+        LabelledPlace {
             place,
             at: at.into(),
         }
@@ -205,15 +208,15 @@ impl<'tcx> PlaceSnapshot<'tcx> {
     pub(crate) fn with_inherent_region(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> PlaceSnapshot<'tcx> {
-        PlaceSnapshot {
+    ) -> LabelledPlace<'tcx> {
+        LabelledPlace {
             place: self.place.with_inherent_region(repacker),
             at: self.at,
         }
     }
 }
 
-impl<'tcx> HasPcgElems<Place<'tcx>> for PlaceSnapshot<'tcx> {
+impl<'tcx> HasPcgElems<Place<'tcx>> for LabelledPlace<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut Place<'tcx>> {
         vec![&mut self.place]
     }

@@ -3,16 +3,11 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode,
-        has_pcs_elem::HasPcgElems,
-        region_projection::
-            MaybeRemoteRegionProjectionBase
-        ,
+        borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems,
+        region_projection::MaybeRemoteRegionProjectionBase,
     },
     pcg::PCGNode,
-    utils::{
-        display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace, CompilerCtxt,
-    },
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace},
 };
 
 #[derive(Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -24,9 +19,9 @@ impl<'tcx> From<LocalNode<'tcx>> for AbstractionGraphNode<'tcx> {
     fn from(node: LocalNode<'tcx>) -> Self {
         match node {
             LocalNode::Place(p) => Self(PCGNode::Place(p.into())),
-            LocalNode::RegionProjection(rp) => {
+            LocalNode::LifetimeProjection(rp) => {
                 let rp = rp.with_base(rp.base().into());
-                Self(PCGNode::RegionProjection(rp))
+                Self(PCGNode::LifetimeProjection(rp))
             }
         }
     }
@@ -38,9 +33,9 @@ impl<'tcx> TryFrom<PCGNode<'tcx>> for AbstractionGraphNode<'tcx> {
     fn try_from(value: PCGNode<'tcx>) -> Result<Self, Self::Error> {
         match value {
             PCGNode::Place(p) => Ok(Self(PCGNode::Place(p))),
-            PCGNode::RegionProjection(rp) => {
+            PCGNode::LifetimeProjection(rp) => {
                 if let MaybeRemoteRegionProjectionBase::Place(p) = rp.base() {
-                    Ok(Self(PCGNode::RegionProjection(rp.with_base(p))))
+                    Ok(Self(PCGNode::LifetimeProjection(rp.with_base(p))))
                 } else {
                     Err(())
                 }

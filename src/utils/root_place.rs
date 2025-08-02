@@ -6,7 +6,7 @@
 
 use derive_more::{Deref, DerefMut};
 
-use super::{mutable::LocalMutationIsAllowed, Place};
+use super::{Place, mutable::LocalMutationIsAllowed};
 
 #[derive(Debug, Clone, Copy, Deref, DerefMut)]
 pub struct RootPlace<'tcx> {

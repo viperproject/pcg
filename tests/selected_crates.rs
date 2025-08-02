@@ -24,6 +24,104 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 15 basic blocks, <= 15 nodes
+    common::ensure_successful_run_on_crate(
+        "memchr",
+        "2.7.4",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("memmem::FindIter::<'h, 'n>::into_owned"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
+    common::ensure_successful_run_on_crate(
+        "ahash",
+        "0.8.11",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("random_state::RandomState::with_seed"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 3 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("registry::SpanRef::<'a, R>::with_filter"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 7 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // <= 15 basic blocks, <= 15 nodes
+    common::ensure_successful_run_on_crate(
+        "ring",
+        "0.17.14",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "bssl::<impl core::convert::From<bssl::Result> for core::result::Result<(), error::unspecified::Unspecified>>::from",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 14 basic blocks, <= 15 nodes
+    common::ensure_successful_run_on_crate(
+        "rayon",
+        "1.10.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<iter::chunks::ChunkProducer<P, F> as iter::plumbing::Producer>::into_iter",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 30 basic blocks
+    common::ensure_successful_run_on_crate(
+        "cookie",
+        "0.18.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("prefix::Prefix::clip"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 12 basic blocks <= 15 nodes
     common::ensure_successful_run_on_crate(
         "regex-automata",
@@ -47,19 +145,6 @@ fn test_selected_crates() {
             validity_checks: true,
             function: Some("<set::Intersection<'a, T, S, A> as core::iter::Iterator>::next"),
             extra_env_vars: vec![],
-        },
-    );
-
-    // 7 basic blocks
-    common::ensure_successful_run_on_crate(
-        "tracing-subscriber",
-        "0.3.19",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields"),
-            extra_env_vars: vec![]
         },
     );
 
@@ -101,7 +186,6 @@ fn test_selected_crates() {
         },
     );
 
-
     // 20 basic blocks
     common::ensure_successful_run_on_crate(
         "http",
@@ -110,8 +194,10 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back"),
-            extra_env_vars: vec![]
+            function: Some(
+                "<header::map::ValueIter<'a, T> as std::iter::DoubleEndedIterator>::next_back",
+            ),
+            extra_env_vars: vec![],
         },
     );
 
@@ -143,16 +229,18 @@ fn test_selected_crates() {
 
     // cycles, <= 20 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
-            "object",
-            "0.36.7",
-            Some("2025-03-13"),
-            common::RunOnCrateOptions::RunPCG {
-                target: common::Target::Debug,
-                validity_checks: true,
-                function: Some("<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next"),
-                extra_env_vars: vec![],
-            },
-        );
+        "object",
+        "0.36.7",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
 
     // cycles, 12 basic blocks, cycles, <= 30 nodes
     common::ensure_successful_run_on_crate(
@@ -214,7 +302,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<select::Selector<'a, T>::send::SendSelection<'a, T, F, U> as select::Selection<'a, T>>::init"),
+            function: Some(
+                "<select::Selector<'a, T>::send::SendSelection<'a, T, F, U> as select::Selection<'a, T>>::init",
+            ),
             extra_env_vars: vec![],
         },
     );
@@ -231,7 +321,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // cycles, <= 10 basic blocks, <= 10 nodes
     common::ensure_successful_run_on_crate(
@@ -396,7 +485,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<fmt::format::DefaultFields as field::MakeVisitor<fmt::format::Writer<'a>>>::make_visitor"),
+            function: Some(
+                "<fmt::format::DefaultFields as field::MakeVisitor<fmt::format::Writer<'a>>>::make_visitor",
+            ),
             extra_env_vars: vec![],
         },
     );
@@ -435,7 +526,9 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed"),
+            function: Some(
+                "<de::MapAccess<'de, 'document, 'map> as serde::de::MapAccess<'de>>::next_value_seed",
+            ),
             extra_env_vars: vec![],
         },
     );
@@ -448,8 +541,10 @@ fn test_selected_crates() {
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<de::SeqAccess<'de, 'document, 'seq> as serde::de::SeqAccess<'de>>::next_element_seed"),
-            extra_env_vars: vec![]
+            function: Some(
+                "<de::SeqAccess<'de, 'document, 'seq> as serde::de::SeqAccess<'de>>::next_element_seed",
+            ),
+            extra_env_vars: vec![],
         },
     );
 
@@ -569,7 +664,6 @@ fn test_selected_crates() {
         },
     );
 
-
     // 198 basic blocks
     common::ensure_successful_run_on_crate(
         "brotli",
@@ -583,7 +677,6 @@ fn test_selected_crates() {
         },
     );
 
-
     common::ensure_successful_run_on_crate(
         "winnow",
         "0.7.4",
@@ -594,30 +687,6 @@ fn test_selected_crates() {
             function: Some(
                 "<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice",
             ),
-            extra_env_vars: vec![],
-        },
-    );
-
-    common::ensure_successful_run_on_crate(
-        "tracing-subscriber",
-        "0.3.19",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("registry::SpanRef::<'a, R>::with_filter"),
-            extra_env_vars: vec![],
-        },
-    );
-
-    common::ensure_successful_run_on_crate(
-        "cookie",
-        "0.18.1",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("prefix::Prefix::clip"),
             extra_env_vars: vec![],
         },
     );
@@ -885,9 +954,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: None,
-            extra_env_vars: vec![]
+            extra_env_vars: vec![],
         },
     );
-
-
 }

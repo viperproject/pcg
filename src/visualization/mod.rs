@@ -81,7 +81,7 @@ impl GraphNode {
                     None => "".to_string(),
                 };
                 let location_text = match location {
-                    Some(l) => escape_html(&format!(" at {l:?}")),
+                    Some(l) => escape_html(&format!(" at {l}")),
                     None => "".to_string(),
                 };
                 let color = if location.is_some()

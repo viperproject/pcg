@@ -4,8 +4,9 @@ use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
 use crate::pcg::obtain::{PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -17,7 +18,7 @@ use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use crate::action::PcgActions;
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place};
 
@@ -56,7 +57,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
 
     fn connect_outliving_projections(
         &mut self,
-        source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        source_proj: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>,
         target: Place<'tcx>,
         kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) -> Result<(), PcgError> {
@@ -222,33 +223,39 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
     pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
         for caps in self.pcg.owned.data.clone().unwrap().expansions() {
-            let mut expansions = caps
-                .expansions()
-                .clone()
-                .into_iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
-                .collect::<Vec<_>>();
-            while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, ctxt);
-                if expansion_places
-                    .iter()
-                    .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
-                    && let Some(candidate_cap) = self.pcg.capabilities.get(expansion_places[0])
-                    && expansion_places
+            let mut should_continue = true;
+            while should_continue {
+                should_continue = false;
+                let leaf_expansions = caps.leaf_expansions(ctxt);
+                for pe in leaf_expansions {
+                    let expansion_places = pe.expansion_places(ctxt);
+                    let base = pe.place;
+                    if expansion_places
                         .iter()
-                        .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
-                {
-                    self.collapse(
-                        base,
-                        candidate_cap,
-                        format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
-                    )?;
-                    if base.projection.is_empty()
-                        && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
-                    {
-                        self.pcg
+                        .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
+                        && let Some(candidate_cap) = self
+                            .pcg
                             .capabilities
-                            .insert(base, CapabilityKind::Exclusive, self.ctxt);
+                            .get(pe.arbitrary_expansion_place(ctxt))
+                        && expansion_places
+                            .iter()
+                            .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
+                    {
+                        should_continue = true;
+                        self.collapse(
+                            pe.place,
+                            candidate_cap,
+                            format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
+                        )?;
+                        if pe.place.projection.is_empty()
+                            && self.pcg.capabilities.get(pe.place) == Some(CapabilityKind::Read)
+                        {
+                            self.pcg.capabilities.insert(
+                                base,
+                                CapabilityKind::Exclusive,
+                                self.ctxt,
+                            );
+                        }
                     }
                 }
             }
@@ -385,7 +392,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .iter()
             .filter_map(|node| match node {
                 PCGNode::Place(_) => None,
-                PCGNode::RegionProjection(region_projection) => {
+                PCGNode::LifetimeProjection(region_projection) => {
                     if region_projection.is_placeholder() {
                         region_projection.base.as_current_place()
                     } else {
@@ -395,10 +402,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<HashSet<_>>();
         for place in leaf_future_node_places {
-            if !self
-                .ctxt
-                .bc
-                .is_directly_blocked(place, self.location(), self.ctxt)
+            // If the place is a leaf, and its not borrowed, then we remove the future label
+            if self.pcg.is_expansion_leaf(place, self.ctxt)
+                && !self
+                    .ctxt
+                    .bc
+                    .is_directly_blocked(place, self.location(), self.ctxt)
             {
                 let action = PcgAction::restore_capability(
                     place,
@@ -420,30 +429,7 @@ impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let target_places = expand.target_places(ctxt);
-        let capability_projections = self.locals_mut()[expand.local()].get_allocated_mut();
-        capability_projections.insert_expansion(
-            expand.from,
-            PlaceExpansion::from_places(target_places.clone(), ctxt),
-        );
-        let source_cap = if expand.capability.is_read() {
-            expand.capability
-        } else {
-            capabilities.get(expand.from).unwrap_or_else(|| {
-                pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
-                panic!("no cap for {}", expand.from.to_short_string(ctxt));
-                // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                // CapabilityKind::Exclusive
-            })
-        };
-        for target_place in target_places {
-            capabilities.insert(target_place, source_cap, ctxt);
-        }
-        if expand.capability.is_read() {
-            capabilities.insert(expand.from, CapabilityKind::Read, ctxt);
-        } else {
-            capabilities.remove(expand.from, ctxt);
-        }
-        Ok(())
+        let expansions = self.locals_mut()[expand.local()].get_allocated_mut();
+        expansions.perform_expand_action(expand, capabilities, ctxt)
     }
 }

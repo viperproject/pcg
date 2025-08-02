@@ -1,7 +1,7 @@
 use crate::{
     borrow_pcg::{
         graph::{BorrowsGraph, materialize::MaterializedEdge},
-        region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection},
+        region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
     free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
@@ -19,7 +19,7 @@ use super::{
     node::IdLookup,
 };
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::place::remote::RemotePlace;
 use std::collections::{BTreeSet, HashSet};
@@ -27,7 +27,7 @@ use std::collections::{BTreeSet, HashSet};
 pub(super) struct GraphConstructor<'mir, 'tcx> {
     remote_nodes: IdLookup<RemotePlace>,
     place_nodes: IdLookup<(Place<'tcx>, Option<SnapshotLocation>)>,
-    region_projection_nodes: IdLookup<RegionProjection<'tcx>>,
+    region_projection_nodes: IdLookup<LifetimeProjection<'tcx>>,
     nodes: Vec<GraphNode>,
     pub(super) edges: HashSet<GraphEdge>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
@@ -49,7 +49,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
     fn insert_maybe_old_place(
         &mut self,
-        place: MaybeOldPlace<'tcx>,
+        place: MaybeLabelledPlace<'tcx>,
         capability_getter: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
         self.insert_place_node(place.place(), place.location(), capability_getter)
@@ -72,7 +72,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     ) -> NodeId {
         match node {
             PCGNode::Place(place) => self.insert_maybe_remote_place(place, capability_getter),
-            PCGNode::RegionProjection(rp) => self.insert_region_projection_node(rp),
+            PCGNode::LifetimeProjection(rp) => self.insert_region_projection_node(rp),
         }
     }
 
@@ -92,7 +92,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
     pub(super) fn insert_region_projection_node(
         &mut self,
-        projection: RegionProjection<'tcx>,
+        projection: LifetimeProjection<'tcx>,
     ) -> NodeId {
         if let Some(id) = self.region_projection_nodes.existing_id(&projection) {
             return id;
@@ -128,9 +128,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                 let location_table = self.ctxt.bc.rust_borrow_checker().unwrap().location_table();
                 let loans_before = render_loans(
                     output
-                        .origin_contains_loan_at(
-                            location_table.start_index(location),
-                        )
+                        .origin_contains_loan_at(location_table.start_index(location))
                         .get(&region_vid),
                 );
                 let loans_after = render_loans(
@@ -200,21 +198,6 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
         let mut first = true;
 
-        // for i in 0..input_nodes.len() - 1{
-        //     self.edges.insert(GraphEdge::HyperedgeSameEndpoint {
-        //         source: input_nodes[i],
-        //         target: input_nodes[i + 1],
-        //         label: hyperedge_id.clone(),
-        //     });
-        // }
-        // for i in 0..output_nodes.len() - 1 {
-        //     self.edges.insert(GraphEdge::HyperedgeSameEndpoint {
-        //         source: output_nodes[i],
-        //         target: output_nodes[i + 1],
-        //         label: hyperedge_id.clone(),
-        //     });
-        // }
-
         for input in &input_nodes {
             for output in &output_nodes {
                 self.edges.insert(GraphEdge::Abstract {
@@ -261,7 +244,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         }
         let capability = capability_getter.get(place);
         let id = self.place_node_id(place, location);
-        let label = format!("{:?}", place.to_string(self.ctxt));
+        let label = place.to_short_string(self.ctxt);
         let place_ty = place.ty(self.ctxt);
         let node_type = NodeType::PlaceNode {
             owned: place.is_owned(self.ctxt),
@@ -314,7 +297,7 @@ pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
-    repacker: CompilerCtxt<'a, 'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
 struct PCGCapabilityGetter<'a, 'tcx> {
@@ -337,7 +320,7 @@ impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
 
 impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg, 'a, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
-        self.repacker
+        self.ctxt
     }
 
     fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
@@ -378,7 +361,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
             borrows_domain: pcg.borrow,
             capabilities: pcg.capabilities,
             constructor: GraphConstructor::new(repacker, Some(location)),
-            repacker,
+            ctxt: repacker,
         }
     }
 
@@ -424,9 +407,13 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
                         None,
                         capability_getter,
                     );
-                    for (place, expansion) in projections.expansions() {
-                        self.insert_place_and_previous_projections(*place, None, capability_getter);
-                        for child_place in place.expansion_places(expansion, self.repacker) {
+                    for pe in projections.expansions() {
+                        self.insert_place_and_previous_projections(
+                            pe.place,
+                            None,
+                            capability_getter,
+                        );
+                        for child_place in pe.expansion_places(self.ctxt) {
                             self.insert_place_and_previous_projections(
                                 child_place,
                                 None,
@@ -440,7 +427,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         for (edge_idx, edge) in self
             .borrows_domain
             .graph
-            .materialized_edges(self.repacker)
+            .materialized_edges(self.ctxt)
             .into_iter()
             .enumerate()
         {
