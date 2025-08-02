@@ -702,7 +702,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    fn label_shared_deref_projections_of_postfix_places(
+    fn label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(
         &mut self,
         place: Place<'tcx>,
     ) -> Result<bool, PcgError> {
@@ -735,6 +735,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 self.ctxt,
             );
             rp.expansion.iter_mut().for_each(|e| {
+                self.pcg.capabilities.remove_all_postfixes(e.as_current_place().unwrap(), self.ctxt);
                 e.label_place_with_context(
                     &LabelPlacePredicate::Exact(e.place()),
                     &SetLabel(self.prev_snapshot_location()),
@@ -783,7 +784,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // PCG edges blocking `place`, since this may enable some borrow
         // expansions to be removed (s.f was previously blocked and no longer is)
         if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
-            self.label_shared_deref_projections_of_postfix_places(place)?;
+            self.label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(
+                place,
+            )?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }
 
