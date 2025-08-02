@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 3 basic blocks
+    common::ensure_successful_run_on_crate(
+        "tracing-subscriber",
+        "0.3.19",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("registry::SpanRef::<'a, R>::with_filter"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 7 basic blocks
     common::ensure_successful_run_on_crate(
         "tracing-subscriber",
@@ -652,17 +665,6 @@ fn test_selected_crates() {
         },
     );
 
-    common::ensure_successful_run_on_crate(
-        "tracing-subscriber",
-        "0.3.19",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("registry::SpanRef::<'a, R>::with_filter"),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::ensure_successful_run_on_crate(
         "matchit",

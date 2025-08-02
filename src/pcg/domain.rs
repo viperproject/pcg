@@ -15,22 +15,25 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
+    AnalysisEngine, DebugLines,
     action::PcgActions,
     borrow_pcg::{
+        edge::kind::BorrowPcgEdgeKind,
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     pcg::{
-        dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
+        dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
         triple::Triple,
     },
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
+        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
+        CHECK_CYCLES, CompilerCtxt, PANIC_ON_ERROR, Place,
         arena::ArenaRef,
         data_structures::HashSet,
         domain_data::{DomainData, DomainDataIndex},
@@ -39,14 +42,12 @@ use crate::{
         initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
         validity::HasValidityCheck,
-        CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR,
     },
     validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
-    AnalysisEngine, DebugLines,
 };
 
-use super::{place_capabilities::PlaceCapabilities, PcgEngine};
+use super::{PcgEngine, place_capabilities::PlaceCapabilities};
 use crate::free_pcs::FreePlaceCapabilitySummary;
 
 #[derive(Copy, Clone)]
@@ -291,9 +292,11 @@ impl<'tcx> PcgMutRef<'_, 'tcx> {
 
 pub(crate) trait PcgRefLike<'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx>;
+
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
         self.as_ref().borrow.graph
     }
+
     fn is_acyclic(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.borrows_graph().frozen_graph().is_acyclic(ctxt)
     }
@@ -362,6 +365,23 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
                 eprintln!("Error rendering self graph: {e}");
             });
         }
+    }
+
+    pub(crate) fn is_expansion_leaf(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        if self
+            .borrow
+            .graph()
+            .edges_blocking(place.into(), ctxt)
+            .any(|e| matches!(e.kind, BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+        {
+            return false;
+        }
+
+        return !place.is_owned(ctxt) || self.owned.leaf_places(ctxt).contains(&place);
     }
 
     pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {

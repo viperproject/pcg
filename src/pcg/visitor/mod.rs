@@ -402,13 +402,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<HashSet<_>>();
         for place in leaf_future_node_places {
-            // If the place has become a leaf, and its not borrowed, then we remove the future label
-            if self
-                .pcg
-                .borrow
-                .graph()
-                .edges_blocking(place.into(), self.ctxt)
-                .all(|e| !matches!(e.kind, BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+            // If the place is a leaf, and its not borrowed, then we remove the future label
+            if self.pcg.is_expansion_leaf(place, self.ctxt)
                 && !self
                     .ctxt
                     .bc

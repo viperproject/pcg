@@ -45,7 +45,7 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
             MaybeRemotePlace::Local(MaybeLabelledPlace::Current(place)) => {
                 Some(MaybeRemoteCurrentPlace::Local(*place))
             }
-            MaybeRemotePlace::Local(MaybeLabelledPlace::LabelledPlace(_)) => None,
+            MaybeRemotePlace::Local(MaybeLabelledPlace::Labelled(_)) => None,
             MaybeRemotePlace::Remote(rp) => Some(MaybeRemoteCurrentPlace::Remote(*rp)),
         }
     }

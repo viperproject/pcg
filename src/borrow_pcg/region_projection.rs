@@ -275,6 +275,10 @@ impl std::fmt::Display for LifetimeProjectionLabel {
     }
 }
 
+#[deprecated(note = "Use LifetimeProjection instead")]
+pub type RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> =
+    LifetimeProjection<'tcx, P>;
+
 /// A lifetime projection b↓r, where `b` is a base and `r` is a region.
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
 pub struct LifetimeProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
