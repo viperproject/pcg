@@ -137,6 +137,16 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions.iter().any(|e| e.place == place)
     }
 
+    pub(crate) fn contains_expansion_from_with_guide(
+        &self,
+        place: Place<'tcx>,
+        guide: Option<RepackGuide>,
+    ) -> bool {
+        self.expansions
+            .iter()
+            .any(|e| e.place == place && e.guide() == guide)
+    }
+
     pub(crate) fn contains_expansion_to(
         &self,
         place: Place<'tcx>,

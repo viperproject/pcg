@@ -24,6 +24,18 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    common::ensure_successful_run_on_crate(
+        "ahash",
+        "0.8.11",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("random_state::RandomState::with_seed"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 3 basic blocks
     common::ensure_successful_run_on_crate(
         "tracing-subscriber",

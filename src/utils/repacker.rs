@@ -42,7 +42,7 @@ pub enum ProjectionKind {
     ConstantIndex(ConstantIndex),
     Other,
 }
-
+// TODO: Merge with PlaceExpansion?
 #[derive(Clone)]
 pub struct ShallowExpansion<'tcx> {
     pub(crate) target_place: Place<'tcx>,

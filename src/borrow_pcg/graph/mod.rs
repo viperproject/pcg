@@ -12,6 +12,7 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         region_projection::LifetimeProjectionLabel,
     },
+    free_pcs::ExpandedPlace,
     pcg::{PCGNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
@@ -120,14 +121,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_borrow_pcg_expansion_of(
+    pub(crate) fn contains_borrow_pcg_expansion(
         &self,
-        base: Place<'tcx>,
-        _place_expansion: &PlaceExpansion<'tcx>,
+        expanded_place: &ExpandedPlace<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.edges_blocking(base.into(), ctxt)
-            .any(|edge| matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+        let expanded_places = expanded_place.expansion_places(ctxt);
+        let nodes = self.nodes(ctxt);
+        expanded_places
+            .into_iter()
+            .all(|place| nodes.contains(&place.into()))
     }
 
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {

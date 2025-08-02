@@ -15,7 +15,7 @@ use crate::borrow_pcg::has_pcs_elem::{
 };
 use crate::borrow_pcg::region_projection::{LifetimeProjection, LocalLifetimeProjection};
 use crate::borrow_pcg::state::BorrowsStateLike;
-use crate::free_pcs::{CapabilityKind, RepackOp};
+use crate::free_pcs::{CapabilityKind, RepackGuide, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
@@ -863,10 +863,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, 'mir, 'tcx> {
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
+    fn contains_owned_expansion_from(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
         self.pcg.owned.locals()[base.local]
             .get_allocated()
-            .contains_expansion_from(base)
+            .contains_expansion_from_with_guide(base, guide)
     }
 
     fn borrows_graph(&self) -> &crate::borrow_pcg::graph::BorrowsGraph<'tcx> {

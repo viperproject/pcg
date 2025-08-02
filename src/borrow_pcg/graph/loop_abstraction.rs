@@ -7,7 +7,7 @@ use crate::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
-            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
+            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
             kind::BorrowPcgEdgeKind,
         },
         edge_data::EdgeData,
@@ -19,20 +19,14 @@ use crate::{
         },
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
+    free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackGuide, RepackOp},
     pcg::{
-        LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
-        obtain::{ObtainType, PlaceExpander, PlaceObtainer},
-        place_capabilities::PlaceCapabilities,
+        obtain::{ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
-        data_structures::{HashMap, HashSet},
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeLabelledPlace,
-        remote::RemotePlace,
+        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation
     },
 };
 
@@ -544,11 +538,11 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         self.path_conditions.clone()
     }
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
+    fn contains_owned_expansion_from(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
         if let Some(owned) = &self.owned {
             owned.locals()[base.local]
                 .get_allocated()
-                .contains_expansion_from(base)
+                .contains_expansion_from_with_guide(base, guide)
         } else {
             // Pretend we're always fully expanded in the local PCG
             true

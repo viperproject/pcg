@@ -100,11 +100,11 @@ impl<'tcx> PlaceExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn from_places(places: Vec<Place<'tcx>>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
+    pub(crate) fn from_places(places: Vec<Place<'tcx>>, ctxt: CompilerCtxt<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
 
         for place in places {
-            let corrected_place = CorrectedPlace::new(place, repacker);
+            let corrected_place = CorrectedPlace::new(place, ctxt);
             let last_projection = corrected_place.last_projection();
             if let Some(elem) = last_projection {
                 match *elem {

@@ -35,6 +35,7 @@ pub(crate) mod test;
 use lazy_static::lazy_static;
 
 lazy_static! {
+    pub static ref SKIP_BODIES_WITH_LOOPS: bool = env_feature_enabled("PCG_SKIP_BODIES_WITH_LOOPS").unwrap_or(false);
     pub static ref MAX_BASIC_BLOCKS: Option<usize> = match std::env::var("PCG_MAX_BASIC_BLOCKS") {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,
