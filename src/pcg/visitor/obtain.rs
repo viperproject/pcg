@@ -735,7 +735,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 self.ctxt,
             );
             rp.expansion.iter_mut().for_each(|e| {
-                self.pcg.capabilities.remove_all_postfixes(e.as_current_place().unwrap(), self.ctxt);
+                self.pcg
+                    .capabilities
+                    .remove_all_postfixes(e.as_current_place().unwrap(), self.ctxt);
                 e.label_place_with_context(
                     &LabelPlacePredicate::Exact(e.place()),
                     &SetLabel(self.prev_snapshot_location()),

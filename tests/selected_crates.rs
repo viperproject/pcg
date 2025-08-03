@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 22 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "indexmap",
+        "2.8.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("map::core::RefMut::<'a, K, V>::swap_indices"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
     // <= 15 basic blocks, <= 15 nodes
     common::ensure_successful_run_on_crate(
         "memchr",

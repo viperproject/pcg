@@ -233,6 +233,36 @@ pub struct ConstantIndex {
     pub(crate) from_end: bool,
 }
 
+impl ConstantIndex {
+    pub(crate) fn other_places<'tcx>(
+        self,
+        from: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<Place<'tcx>> {
+        self.other_elems(ctxt)
+            .into_iter()
+            .map(|e| from.project_deeper(e, ctxt).unwrap().into())
+            .collect()
+    }
+
+    pub(crate) fn other_elems<'tcx>(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<PlaceElem<'tcx>> {
+        let range = if self.from_end {
+            1..self.min_length + 1
+        } else {
+            0..self.min_length
+        };
+        assert!(range.contains(&self.offset));
+        range
+            .filter(|&i| i != self.offset)
+            .map(|i| ProjectionElem::ConstantIndex {
+                offset: i,
+                min_length: self.min_length,
+                from_end: self.from_end,
+            })
+            .collect()
+    }
+}
+
 pub(crate) struct DeepExpansion<'tcx>(Vec<ShallowExpansion<'tcx>>);
 
 impl<'tcx> DeepExpansion<'tcx> {
@@ -324,21 +354,12 @@ impl<'tcx> Place<'tcx> {
                     0..min_length
                 };
                 assert!(range.contains(&offset));
-                let other_places = range
-                    .filter(|&i| i != offset)
-                    .map(|i| {
-                        ctxt.tcx
-                            .mk_place_elem(
-                                self.to_rust_place(ctxt),
-                                ProjectionElem::ConstantIndex {
-                                    offset: i,
-                                    min_length,
-                                    from_end,
-                                },
-                            )
-                            .into()
-                    })
-                    .collect();
+                let other_places = ConstantIndex {
+                    offset,
+                    min_length,
+                    from_end,
+                }
+                .other_places(self, ctxt);
                 (
                     other_places,
                     ProjectionKind::ConstantIndex(ConstantIndex {

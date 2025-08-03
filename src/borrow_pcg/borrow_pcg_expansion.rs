@@ -137,6 +137,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
                 .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
                 .collect(),
             PlaceExpansion::Deref => vec![PlaceElem::Deref],
+            PlaceExpansion::Guided(Constant) => vec![(*guided).into()],
             PlaceExpansion::Guided(guided) => vec![(*guided).into()],
         }
     }
