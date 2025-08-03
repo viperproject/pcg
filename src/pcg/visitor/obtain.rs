@@ -868,10 +868,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, 'mir, 'tcx> {
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
-        self.pcg.owned.locals()[base.local]
+    fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
+        self.pcg.owned.locals()[target.local]
             .get_allocated()
-            .contains_expansion_from_with_guide(base, guide)
+            .contains_expansion_to(target, self.ctxt)
     }
 
     fn borrows_graph(&self) -> &crate::borrow_pcg::graph::BorrowsGraph<'tcx> {

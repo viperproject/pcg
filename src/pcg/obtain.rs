@@ -114,7 +114,7 @@ impl LabelForRegionProjection {
 pub(crate) trait PlaceExpander<'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool;
+    fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool;
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
@@ -184,7 +184,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         obtain_type: ObtainType,
         ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
-        if self.contains_owned_expansion_from(base, expansion.guide()) {
+        if self.contains_owned_expansion_to(expansion.target_place) {
             tracing::debug!(
                 "Already contains owned expansion from {}",
                 base.to_short_string(ctxt)

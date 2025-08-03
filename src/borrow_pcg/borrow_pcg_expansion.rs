@@ -23,11 +23,9 @@ use crate::{
     },
     free_pcs::{CapabilityKind, RepackGuide},
     pcg::{
-        MaybeHasLocation, PcgUnsupportedError,
-        obtain::ObtainType,
-        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+        obtain::ObtainType, place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PcgUnsupportedError
     },
-    utils::{SnapshotLocation, json::ToJsonWithCompilerCtxt},
+    utils::{json::ToJsonWithCompilerCtxt, ConstantIndex, SnapshotLocation},
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -137,7 +135,11 @@ impl<'tcx> PlaceExpansion<'tcx> {
                 .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
                 .collect(),
             PlaceExpansion::Deref => vec![PlaceElem::Deref],
-            PlaceExpansion::Guided(Constant) => vec![(*guided).into()],
+            PlaceExpansion::Guided(RepackGuide::ConstantIndex(c)) => {
+                let mut elems = vec![(*c).into()];
+                elems.extend(c.other_elems());
+                elems
+            }
             PlaceExpansion::Guided(guided) => vec![(*guided).into()],
         }
     }

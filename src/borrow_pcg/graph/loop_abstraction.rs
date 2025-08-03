@@ -7,7 +7,7 @@ use crate::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
-            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
+            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
             kind::BorrowPcgEdgeKind,
         },
         edge_data::EdgeData,
@@ -21,12 +21,18 @@ use crate::{
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackGuide, RepackOp},
     pcg::{
-        obtain::{ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike
+        LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
+        obtain::{ObtainType, PlaceExpander, PlaceObtainer},
+        place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation
+        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
+        data_structures::{HashMap, HashSet},
+        display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeLabelledPlace,
+        remote::RemotePlace,
     },
 };
 
@@ -538,11 +544,11 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         self.path_conditions.clone()
     }
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>, guide: Option<RepackGuide>) -> bool {
+    fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
         if let Some(owned) = &self.owned {
-            owned.locals()[base.local]
+            owned.locals()[target.local]
                 .get_allocated()
-                .contains_expansion_from_with_guide(base, guide)
+                .contains_expansion_to(target, self.ctxt)
         } else {
             // Pretend we're always fully expanded in the local PCG
             true

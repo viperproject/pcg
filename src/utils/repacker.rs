@@ -42,7 +42,7 @@ pub enum ProjectionKind {
     ConstantIndex(ConstantIndex),
     Other,
 }
-// TODO: Merge with PlaceExpansion?
+// TODO: Merge with ExpandedPlace?
 #[derive(Clone)]
 pub struct ShallowExpansion<'tcx> {
     pub(crate) target_place: Place<'tcx>,
@@ -233,19 +233,29 @@ pub struct ConstantIndex {
     pub(crate) from_end: bool,
 }
 
+impl<'tcx> Into<PlaceElem<'tcx>> for ConstantIndex {
+    fn into(self) -> PlaceElem<'tcx> {
+        PlaceElem::ConstantIndex {
+            offset: self.offset,
+            min_length: self.min_length,
+            from_end: self.from_end,
+        }
+    }
+}
+
 impl ConstantIndex {
     pub(crate) fn other_places<'tcx>(
         self,
         from: Place<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<Place<'tcx>> {
-        self.other_elems(ctxt)
+        self.other_elems()
             .into_iter()
             .map(|e| from.project_deeper(e, ctxt).unwrap().into())
             .collect()
     }
 
-    pub(crate) fn other_elems<'tcx>(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<PlaceElem<'tcx>> {
+    pub(crate) fn other_elems<'tcx>(self) -> Vec<PlaceElem<'tcx>> {
         let range = if self.from_end {
             1..self.min_length + 1
         } else {
