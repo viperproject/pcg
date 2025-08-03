@@ -14,7 +14,7 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller, SetLabel},
         region_projection::LifetimeProjectionLabel,
     },
-    free_pcs::FreePlaceCapabilitySummary,
+    free_pcs::OwnedPcg,
     pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
@@ -332,7 +332,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;

@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    free_pcs::{CapabilityKind, CapabilityLocal, LocalExpansions},
+    free_pcs::{CapabilityKind, OwnedPcgLocal, LocalExpansions},
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         triple::{PlaceCondition, Triple},
@@ -16,9 +16,9 @@ use crate::{
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
 
-use super::CapabilityLocals;
+use super::OwnedPcgData;
 
-impl<'tcx> CapabilityLocals<'tcx> {
+impl<'tcx> OwnedPcgData<'tcx> {
     fn check_pre_satisfied(
         &self,
         pre: PlaceCondition<'tcx>,
@@ -94,11 +94,11 @@ impl<'tcx> CapabilityLocals<'tcx> {
         match post {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::Unalloc(local) => {
-                self[local] = CapabilityLocal::Unallocated;
+                self[local] = OwnedPcgLocal::Unallocated;
                 place_capabilities.remove_all_for_local(local, ctxt);
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
-                self[local] = CapabilityLocal::Allocated(LocalExpansions::new(local));
+                self[local] = OwnedPcgLocal::Allocated(LocalExpansions::new(local));
                 place_capabilities.insert(local.into(), CapabilityKind::Write, ctxt);
             }
             PlaceCondition::Capability(place, cap) => {

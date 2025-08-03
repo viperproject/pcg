@@ -601,7 +601,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 RepackOp::Collapse(collapse) => {
                     let capability_projections =
                         self.pcg.owned.locals_mut()[collapse.local()].get_allocated_mut();
-                   capability_projections.perform_collapse_action(
+                    capability_projections.perform_collapse_action(
                         collapse,
                         self.pcg.capabilities,
                         self.ctxt,

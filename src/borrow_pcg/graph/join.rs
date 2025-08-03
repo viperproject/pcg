@@ -3,7 +3,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate};
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
-use crate::free_pcs::FreePlaceCapabilitySummary;
+use crate::free_pcs::OwnedPcg;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
@@ -70,7 +70,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
@@ -183,7 +183,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         loop_head: BasicBlock,
         used_places: &HashSet<Place<'tcx>>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         path_conditions: ValidityConditions,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,

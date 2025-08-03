@@ -25,12 +25,12 @@ use crate::{
 #[derive(Clone, PartialEq, Eq)]
 /// The permissions of a local, each key in the hashmap is a "root" projection of the local
 /// Examples of root projections are: `_1`, `*_1.f`, `*(*_.f).g` (i.e. either a local or a deref)
-pub enum CapabilityLocal<'tcx> {
+pub enum OwnedPcgLocal<'tcx> {
     Unallocated,
     Allocated(LocalExpansions<'tcx>),
 }
 
-impl Debug for CapabilityLocal<'_> {
+impl Debug for OwnedPcgLocal<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Unallocated => write!(f, "U"),
@@ -39,7 +39,7 @@ impl Debug for CapabilityLocal<'_> {
     }
 }
 
-impl<'tcx> CapabilityLocal<'tcx> {
+impl<'tcx> OwnedPcgLocal<'tcx> {
     pub fn get_allocated(&self) -> &LocalExpansions<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
@@ -88,7 +88,11 @@ pub struct LocalExpansions<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
-    pub(crate) fn remove_all_expansions_from(&mut self, place: Place<'tcx>) {
+    pub(crate) fn remove_all_expansions_from(&mut self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+        tracing::info!(
+            "Removing all expansions from {}",
+            place.to_short_string(ctxt)
+        );
         self.expansions.retain(|pe| pe.place != place);
     }
 
@@ -137,7 +141,10 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions.iter().any(|e| e.place == place)
     }
 
-    pub(crate) fn expansions_from(&self, place: Place<'tcx>) -> impl Iterator<Item = &ExpandedPlace<'tcx>> {
+    pub(crate) fn expansions_from(
+        &self,
+        place: Place<'tcx>,
+    ) -> impl Iterator<Item = &ExpandedPlace<'tcx>> {
         self.expansions.iter().filter(move |e| e.place == place)
     }
 

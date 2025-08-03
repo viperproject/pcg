@@ -23,6 +23,7 @@ use crate::{
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
+    free_pcs::join_semi_lattice::JoinOwnedData,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     pcg::{
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
@@ -48,7 +49,7 @@ use crate::{
 };
 
 use super::{PcgEngine, place_capabilities::PlaceCapabilities};
-use crate::free_pcs::FreePlaceCapabilitySummary;
+use crate::free_pcs::OwnedPcg;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -165,7 +166,7 @@ pub(crate) struct PcgDebugData {
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Pcg<'tcx> {
-    pub(crate) owned: FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
     pub(crate) capabilities: PlaceCapabilities<'tcx>,
 }
@@ -178,7 +179,7 @@ impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PcgRef<'pcg, 'tcx> {
-    pub(crate) owned: &'pcg FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: &'pcg OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
 }
@@ -205,14 +206,14 @@ impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
 }
 
 pub(crate) struct PcgMutRef<'pcg, 'tcx> {
-    pub(crate) owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateMutRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
 }
 
 impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
     pub(crate) fn new(
-        owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &'pcg mut OwnedPcg<'tcx>,
         borrow: BorrowStateMutRef<'pcg, 'tcx>,
         capabilities: &'pcg mut PlaceCapabilities<'tcx>,
     ) -> Self {
@@ -388,7 +389,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.capabilities
     }
 
-    pub fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'tcx> {
+    pub fn owned_pcg(&self) -> &OwnedPcg<'tcx> {
         &self.owned
     }
 
@@ -412,12 +413,21 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut other_capabilities = other.capabilities.clone();
-        let mut res = self.owned.join(
-            &other.owned,
-            self_block,
-            &mut self.capabilities,
-            &mut other_capabilities,
-            &mut self.borrow,
+        let mut other_borrows = other.borrow.clone();
+        let mut self_owned_data = JoinOwnedData {
+            owned: &mut self.owned,
+            borrows: &mut self.borrow,
+            capabilities: &mut self.capabilities,
+            block: self_block,
+        };
+        let other_owned_data = JoinOwnedData {
+            owned: &other.owned,
+            borrows: &mut other_borrows,
+            capabilities: &mut other_capabilities,
+            block: other_block,
+        };
+        let mut res = self_owned_data.join(
+            other_owned_data,
             ctxt,
         )?;
         // For edges in the other graph that actually belong to it,

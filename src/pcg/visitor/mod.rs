@@ -7,7 +7,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
-use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
+use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
 use crate::pcg::obtain::{PlaceCollapser, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
@@ -427,7 +427,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn perform_expand_action(
         &mut self,
         expand: RepackExpand<'tcx>,

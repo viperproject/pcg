@@ -4,7 +4,7 @@ use crate::{
         region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals},
+    free_pcs::{CapabilityKind, OwnedPcgLocal, OwnedPcgData},
     pcg::{
         MaybeHasLocation, PCGNode, PcgRef,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -293,7 +293,7 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 }
 
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
-    summary: &'pcg CapabilityLocals<'tcx>,
+    summary: &'pcg OwnedPcgData<'tcx>,
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'a, 'tcx>,
@@ -400,8 +400,8 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         };
         for (local, capability) in self.summary.iter_enumerated() {
             match capability {
-                CapabilityLocal::Unallocated => {}
-                CapabilityLocal::Allocated(projections) => {
+                OwnedPcgLocal::Unallocated => {}
+                OwnedPcgLocal::Allocated(projections) => {
                     self.insert_place_and_previous_projections(
                         local.into(),
                         None,

@@ -7,7 +7,7 @@
 use itertools::Itertools;
 
 use crate::{
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityLocals, LocalExpansions, RepackOp},
+    free_pcs::{CapabilityKind, OwnedPcgLocal, OwnedPcgData, LocalExpansions, RepackOp},
     pcg::{
         PcgError,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -16,7 +16,7 @@ use crate::{
     utils::{CompilerCtxt, corrected::CorrectedPlace, display::DisplayWithCompilerCtxt},
 };
 
-impl<'tcx> CapabilityLocals<'tcx> {
+impl<'tcx> OwnedPcgData<'tcx> {
     pub(crate) fn bridge(
         &self,
         other: &Self,
@@ -39,7 +39,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
     }
 }
 
-impl<'tcx> CapabilityLocal<'tcx> {
+impl<'tcx> OwnedPcgLocal<'tcx> {
     pub(crate) fn bridge(
         &self,
         other: &Self,
@@ -48,11 +48,11 @@ impl<'tcx> CapabilityLocal<'tcx> {
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut place_capabilities = place_capabilities.clone();
         match (self, other) {
-            (CapabilityLocal::Unallocated, CapabilityLocal::Unallocated) => Ok(Vec::new()),
-            (CapabilityLocal::Allocated(from_places), CapabilityLocal::Allocated(to_places)) => {
+            (OwnedPcgLocal::Unallocated, OwnedPcgLocal::Unallocated) => Ok(Vec::new()),
+            (OwnedPcgLocal::Allocated(from_places), OwnedPcgLocal::Allocated(to_places)) => {
                 from_places.bridge(to_places, &place_capabilities, repacker)
             }
-            (CapabilityLocal::Allocated(cps), CapabilityLocal::Unallocated) => {
+            (OwnedPcgLocal::Allocated(cps), OwnedPcgLocal::Unallocated) => {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
@@ -71,7 +71,7 @@ impl<'tcx> CapabilityLocal<'tcx> {
                 repacks.push(RepackOp::StorageDead(local));
                 Ok(repacks)
             }
-            (CapabilityLocal::Unallocated, CapabilityLocal::Allocated(cps)) => {
+            (OwnedPcgLocal::Unallocated, OwnedPcgLocal::Allocated(cps)) => {
                 // A bit of an unusual case, should happen only when we
                 // "allocated" a local to allow it to immediately be
                 // StorageDead-ed. In this case we should ignore the SD.
