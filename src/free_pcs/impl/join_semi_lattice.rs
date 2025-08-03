@@ -239,7 +239,7 @@ impl<'tcx> LocalExpansions<'tcx> {
                 }
 
                 impl<'pcg, 'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'pcg, 'mir, 'tcx> {
-                    fn get_local_expansions(&self, local: mir::Local) -> &LocalExpansions<'tcx> {
+                    fn get_local_expansions(&self, _local: mir::Local) -> &LocalExpansions<'tcx> {
                         self.expansions
                     }
 
@@ -334,6 +334,10 @@ impl<'tcx> LocalExpansions<'tcx> {
                         }
                     }
                 } else {
+                    tracing::info!(
+                        "Join: join expansions from place {}",
+                        other_expansion.place.to_short_string(ctxt)
+                    );
                     actions.extend(self.join_expansions_from_place(
                         &mut other,
                         self_block,
