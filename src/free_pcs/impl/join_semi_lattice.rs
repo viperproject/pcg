@@ -165,7 +165,7 @@ impl<'tcx> LocalExpansions<'tcx> {
             .any(|p| place.is_prefix_of(p) && place_capabilities.get(p).is_none())
     }
 
-    fn perform_collapse_action(
+    pub(crate) fn perform_collapse_action(
         &mut self,
         collapse: RepackCollapse<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
@@ -269,7 +269,26 @@ impl<'tcx> LocalExpansions<'tcx> {
                     }
                 }
 
-                return Ok(vec![]);
+                let mut obtainer = JoinObtainer {
+                    ctxt,
+                    self_block,
+                    expansions: self,
+                    borrows,
+                    self_place_capabilities,
+                    actions: vec![],
+                };
+
+                obtainer.collapse_owned_places_to(
+                    other_expansion.place,
+                    CapabilityKind::Exclusive,
+                    format!(
+                        "Join: collapse owned places {}",
+                        other_expansion.place.to_short_string(ctxt)
+                    ),
+                    ctxt,
+                )?;
+
+                return Ok(obtainer.actions);
             }
         }
     }

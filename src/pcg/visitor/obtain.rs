@@ -17,7 +17,9 @@ use crate::borrow_pcg::region_projection::{LifetimeProjection, LocalLifetimeProj
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::free_pcs::{CapabilityKind, RepackGuide, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
-use crate::pcg::obtain::{HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer};
+use crate::pcg::obtain::{
+    HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
+};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
@@ -83,7 +85,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         self.pcg.borrow.as_mut_ref()
     }
-
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
@@ -600,31 +601,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 RepackOp::Collapse(collapse) => {
                     let capability_projections =
                         self.pcg.owned.locals_mut()[collapse.local()].get_allocated_mut();
-                    let expansion_places = collapse.expansion_places(self.ctxt);
-                    let retained_cap =
-                        expansion_places
-                            .iter()
-                            .fold(CapabilityKind::Exclusive, |acc, place| {
-                                let removed_cap = self.pcg.capabilities.remove(*place, self.ctxt);
-                                let removed_cap = pcg_validity_expect_some!(
-                                    removed_cap,
-                                    CapabilityKind::Exclusive,
-                                    "Expected capability for {}",
-                                    place.to_short_string(self.ctxt)
-                                );
-                                let joined_cap = removed_cap.minimum(acc);
-                                pcg_validity_expect_some!(
-                                    joined_cap,
-                                    CapabilityKind::Exclusive,
-                                    "Cannot join capability {:?} and {:?}",
-                                    removed_cap,
-                                    acc,
-                                )
-                            });
-                    self.pcg
-                        .capabilities
-                        .insert(collapse.to, retained_cap, self.ctxt);
-                    capability_projections.remove_all_expansions_from(collapse.to);
+                   capability_projections.perform_collapse_action(
+                        collapse,
+                        self.pcg.capabilities,
+                        self.ctxt,
+                    )?;
                     true
                 }
                 _ => unreachable!(),
