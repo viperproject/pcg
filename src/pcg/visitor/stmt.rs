@@ -38,7 +38,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         match &statement.kind {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
-                let snapshot_location = self.place_obtainer().prev_snapshot_location();
+                let snapshot_location = self.prev_snapshot_location();
                 self.record_and_apply_action(
                     BorrowPcgAction::make_place_old(
                         place,

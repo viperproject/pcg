@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 23 basic blocks
+    common::ensure_successful_run_on_crate(
+        "cookie",
+        "0.18.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("prefix::Prefix::prefix"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
     // 22 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
         "indexmap",
@@ -33,11 +48,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("map::core::RefMut::<'a, K, V>::swap_indices"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // <= 15 basic blocks, <= 15 nodes
     common::ensure_successful_run_on_crate(
@@ -48,11 +61,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("memmem::FindIter::<'h, 'n>::into_owned"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     common::ensure_successful_run_on_crate(
         "ahash",

@@ -3,8 +3,8 @@ use std::collections::HashSet;
 
 use itertools::Itertools;
 
-use crate::action::{BorrowPcgAction, OwnedPcgAction, PcgAction};
-use crate::borrow_pcg::action::LabelPlaceReason;
+use crate::action::{ActionKindWithDebugCtxt, BorrowPcgAction, OwnedPcgAction, PcgAction};
+use crate::borrow_pcg::action::{BorrowPcgActionKind, LabelPlaceReason};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
@@ -14,29 +14,31 @@ use crate::borrow_pcg::has_pcs_elem::{
     LabelLifetimeProjectionPredicate, LabelNodeContext, LabelPlace, LabelPlaceWithContext, SetLabel,
 };
 use crate::borrow_pcg::region_projection::{LifetimeProjection, LocalLifetimeProjection};
-use crate::borrow_pcg::state::BorrowsStateLike;
+use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::free_pcs::{CapabilityKind, RepackGuide, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
-use crate::pcg::obtain::{ObtainType, PlaceExpander, PlaceObtainer};
+use crate::pcg::obtain::{HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
+use crate::{pcg_validity_assert, pcg_validity_expect_some};
 
 use crate::utils::{Place, SnapshotLocation};
 
 use super::{PcgError, PcgVisitor};
 impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn place_obtainer(&mut self) -> PlaceObtainer<'_, '_, 'tcx> {
+        let prev_snapshot_location = self.prev_snapshot_location();
         let pcg_ref = self.pcg.into();
         PlaceObtainer::new(
             pcg_ref,
             Some(&mut self.actions),
             self.ctxt,
             self.analysis_location.location,
-            SnapshotLocation::before(self.analysis_location),
+            prev_snapshot_location,
             if let Some(debug_data) = &mut self.debug_data {
                 Some(debug_data)
             } else {
@@ -52,53 +54,39 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    /// Collapses owned places and performs appropriate updates to region projections.
-    pub(crate) fn collapse(
-        &mut self,
-        place: Place<'tcx>,
-        capability: CapabilityKind,
-        context: String,
-    ) -> Result<(), PcgError> {
-        let capability_projs = self.pcg.owned.locals_mut()[place.local].get_allocated_mut();
-        let expansions = capability_projs
-            .expansions
-            .iter()
-            .filter(|pe| place.is_prefix_of(pe.place))
-            .sorted_by_key(|pe| pe.place.projection().len())
-            .rev()
-            .cloned()
-            .collect::<Vec<_>>();
-        for pe in expansions {
-            self.record_and_apply_action(
-                OwnedPcgAction::new(
-                    RepackOp::collapse(pe.place, pe.expansion.guide(), capability),
-                    Some(context.clone()),
-                )
-                .into(),
-            )?;
-            let p = pe.place;
-            for rp in p.region_projections(self.ctxt) {
-                let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = p
-                    .expansion_places(&pe.expansion, self.ctxt)
-                    .into_iter()
-                    .flat_map(|ep| {
-                        ep.region_projections(self.ctxt)
-                            .into_iter()
-                            .filter(|erp| erp.region(self.ctxt) == rp.region(self.ctxt))
-                            .map(|erp| erp.into())
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                if rp_expansion.len() > 1 && capability.is_exclusive() {
-                    self.redirect_rp_expansion_to_base(rp.into(), &rp_expansion)?;
-                }
-            }
-        }
+impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'state, 'mir, 'tcx> {
+    fn get_local_expansions(&self, local: mir::Local) -> &crate::free_pcs::LocalExpansions<'tcx> {
+        self.pcg.owned.locals()[local].get_allocated()
+    }
 
+    fn perform_collapse_action(
+        &mut self,
+        collapse: crate::free_pcs::RepackCollapse<'tcx>,
+    ) -> Result<(), PcgError> {
+        self.record_and_apply_action(
+            PcgAction::Owned(OwnedPcgAction::new(RepackOp::Collapse(collapse), None)).into(),
+        )?;
         Ok(())
     }
 
+    fn perform_add_edge_action(&mut self, edge: BorrowPcgEdge<'tcx>) -> Result<(), PcgError> {
+        self.record_and_apply_action(
+            PcgAction::Borrow(BorrowPcgAction::new(
+                BorrowPcgActionKind::AddEdge { edge },
+                None,
+            ))
+            .into(),
+        )?;
+        Ok(())
+    }
+
+    fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
+        self.pcg.borrow.as_mut_ref()
+    }
+
+}
+
+impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     fn update_unblocked_node_capabilities_and_remove_placeholder_projections(
         &mut self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
@@ -307,49 +295,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         format!("{}: unlabel blocked_region_projections", context),
                     )
                     .into(),
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Note: Only for owned places.
-    fn redirect_rp_expansion_to_base(
-        &mut self,
-        base: LocalLifetimeProjection<'tcx>,
-        expansion: &[LocalLifetimeProjection<'tcx>],
-    ) -> Result<(), PcgError> {
-        for (idx, node) in expansion.iter().enumerate() {
-            if let Some(place) = node.base.as_current_place() {
-                let labeller = SetLabel(self.prev_snapshot_location());
-                self.pcg.borrow.graph.make_place_old(
-                    (*place).into(),
-                    LabelPlaceReason::Collapse,
-                    &labeller,
-                    self.ctxt,
-                );
-                let mut node = *node;
-                node.label_place_with_context(
-                    &LabelPlacePredicate::Exact((*place).into()),
-                    &labeller,
-                    LabelNodeContext::Other,
-                    self.ctxt,
-                );
-                let edge = BorrowPcgEdge::new(
-                    BorrowFlowEdge::new(
-                        node.into(),
-                        base,
-                        BorrowFlowEdgeKind::Aggregate {
-                            field_idx: idx,
-                            target_rp_index: 0, // TODO
-                        },
-                        self.ctxt,
-                    )
-                    .into(),
-                    self.pcg.borrow.path_conditions.clone(),
-                );
-                self.record_and_apply_action(
-                    BorrowPcgAction::add_edge(edge, "redirect blocked", self.ctxt).into(),
                 )?;
             }
         }
@@ -660,12 +605,21 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         expansion_places
                             .iter()
                             .fold(CapabilityKind::Exclusive, |acc, place| {
-                                match self.pcg.capabilities.remove(*place, self.ctxt) {
-                                    // TODO: unwrap_or is probably no longer
-                                    // necessary with new deref rules
-                                    Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
-                                    None => acc,
-                                }
+                                let removed_cap = self.pcg.capabilities.remove(*place, self.ctxt);
+                                let removed_cap = pcg_validity_expect_some!(
+                                    removed_cap,
+                                    CapabilityKind::Exclusive,
+                                    "Expected capability for {}",
+                                    place.to_short_string(self.ctxt)
+                                );
+                                let joined_cap = removed_cap.minimum(acc);
+                                pcg_validity_expect_some!(
+                                    joined_cap,
+                                    CapabilityKind::Exclusive,
+                                    "Cannot join capability {:?} and {:?}",
+                                    removed_cap,
+                                    acc,
+                                )
                             });
                     self.pcg
                         .capabilities
@@ -828,10 +782,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 Some(Ordering::Less) | None
             )
         {
-            self.collapse(
+            self.collapse_owned_places_to(
                 place,
                 obtain_cap,
                 format!("Obtain {}", place.to_short_string(self.ctxt)),
+                self.ctxt,
             )?;
         }
 
@@ -895,10 +850,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
 
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         self.record_and_apply_action(action)
-    }
-
-    fn prev_snapshot_location(&self) -> SnapshotLocation {
-        self.prev_snapshot_location
     }
 
     fn location(&self) -> mir::Location {

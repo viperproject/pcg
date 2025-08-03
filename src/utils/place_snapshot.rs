@@ -77,6 +77,7 @@ pub enum SnapshotLocation {
     Before(AnalysisLocation),
     After(BasicBlock),
     Loop(BasicBlock),
+    BeforeJoin(BasicBlock),
     BeforeRefReassignment(Location),
 }
 
@@ -129,6 +130,7 @@ impl std::fmt::Display for SnapshotLocation {
         match self {
             SnapshotLocation::After(loc) => write!(f, "after {loc:?}"),
             SnapshotLocation::Loop(bb) => write!(f, "loop {bb:?}"),
+            SnapshotLocation::BeforeJoin(bb) => write!(f, "before join {bb:?}"),
             SnapshotLocation::BeforeRefReassignment(location) => {
                 write!(f, "before ref reassignment {location:?}")
             }

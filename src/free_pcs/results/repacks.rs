@@ -112,6 +112,14 @@ pub struct RepackCollapse<'tcx> {
 }
 
 impl<'tcx> RepackCollapse<'tcx> {
+    pub(crate) fn new(
+        to: Place<'tcx>,
+        guide: Option<RepackGuide>,
+        capability: CapabilityKind,
+    ) -> Self {
+        Self { to, guide, capability }
+    }
+
     pub fn downcast_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
         if let Some(guide @ RepackGuide::Downcast(_, _)) = self.guide {
             self.to.project_deeper(guide.into(), ctxt).ok()

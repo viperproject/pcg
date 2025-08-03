@@ -137,6 +137,10 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions.iter().any(|e| e.place == place)
     }
 
+    pub(crate) fn expansions_from(&self, place: Place<'tcx>) -> impl Iterator<Item = &ExpandedPlace<'tcx>> {
+        self.expansions.iter().filter(move |e| e.place == place)
+    }
+
     pub(crate) fn contains_expansion_from_with_guide(
         &self,
         place: Place<'tcx>,

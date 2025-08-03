@@ -2,23 +2,30 @@ use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_checker::r#impl::get_reserve_location,
     borrow_pcg::{
+        action::LabelPlaceReason,
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
         borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
         edge::{
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
+        edge_data::LabelPlacePredicate,
         graph::BorrowsGraph,
-        has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
+        has_pcs_elem::{
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelNodeContext,
+            LabelPlaceWithContext, SetLabel,
+        },
         path_condition::ValidityConditions,
         region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
+        state::{BorrowStateMutRef, BorrowsState},
     },
-    free_pcs::{CapabilityKind, ExpandedPlace, RepackGuide, RepackOp},
-    pcg::{PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, place_capabilities::BlockType},
+    free_pcs::{
+        CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackGuide, RepackOp,
+    },
+    pcg::{place_capabilities::BlockType, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef},
     rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
-        display::DisplayWithCompilerCtxt,
+        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation
     },
     validity_checks_enabled,
 };
@@ -30,6 +37,12 @@ pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) location: mir::Location,
     pub(crate) prev_snapshot_location: SnapshotLocation,
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
+}
+
+impl<'state, 'mir, 'tcx> HasSnapshotLocation for PlaceObtainer<'state, 'mir, 'tcx> {
+    fn prev_snapshot_location(&self) -> SnapshotLocation {
+        self.prev_snapshot_location
+    }
 }
 
 impl PlaceObtainer<'_, '_, '_> {
@@ -93,14 +106,15 @@ impl ObtainType {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LabelForRegionProjection {
+pub(crate) enum LabelForLifetimeProjection {
     NewLabelAtCurrentLocation(LifetimeProjectionLabel),
     ExistingLabelOfTwoPhaseReservation(LifetimeProjectionLabel),
     NoLabel,
 }
 
-use LabelForRegionProjection::*;
-impl LabelForRegionProjection {
+use LabelForLifetimeProjection::*;
+use itertools::Itertools;
+impl LabelForLifetimeProjection {
     fn label(self) -> Option<LifetimeProjectionLabel> {
         match self {
             NewLabelAtCurrentLocation(label) | ExistingLabelOfTwoPhaseReservation(label) => {
@@ -111,7 +125,114 @@ impl LabelForRegionProjection {
     }
 }
 
-pub(crate) trait PlaceExpander<'mir, 'tcx> {
+// TODO: The edges that are added here could just be part of the collapse "action" probably
+pub(crate) trait PlaceCollapser<'mir, 'tcx> : HasSnapshotLocation {
+    fn get_local_expansions(&self, local: mir::Local) -> &LocalExpansions<'tcx>;
+
+    fn perform_collapse_action(&mut self, collapse: RepackCollapse<'tcx>) -> Result<(), PcgError>;
+
+    fn perform_add_edge_action(&mut self, edge: BorrowPcgEdge<'tcx>) -> Result<(), PcgError>;
+
+    fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx>;
+
+    /// Collapses owned places and performs appropriate updates to region projections.
+    fn collapse_owned_places_to(
+        &mut self,
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+        context: String,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Result<(), PcgError> {
+        let local_expansions = self.get_local_expansions(place.local);
+        let expansions = local_expansions
+            .expansions
+            .iter()
+            .filter(|pe| place.is_prefix_of(pe.place))
+            .sorted_by_key(|pe| pe.place.projection().len())
+            .rev()
+            .cloned()
+            .collect::<Vec<_>>();
+        for pe in expansions {
+            self.perform_collapse_action(RepackCollapse::new(
+                pe.place,
+                pe.expansion.guide(),
+                capability,
+            ))?;
+            let p = pe.place;
+            for rp in p.region_projections(ctxt) {
+                let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = p
+                    .expansion_places(&pe.expansion, ctxt)
+                    .into_iter()
+                    .flat_map(|ep| {
+                        ep.region_projections(ctxt)
+                            .into_iter()
+                            .filter(|erp| erp.region(ctxt) == rp.region(ctxt))
+                            .map(|erp| erp.into())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                if rp_expansion.len() > 1 && capability.is_exclusive() {
+                    self.create_aggregate_lifetime_projections(rp.into(), &rp_expansion, ctxt)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Only for owned places.
+    fn create_aggregate_lifetime_projections(
+        &mut self,
+        base: LocalLifetimeProjection<'tcx>,
+        expansion: &[LocalLifetimeProjection<'tcx>],
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Result<(), PcgError> {
+        for (idx, node) in expansion.iter().enumerate() {
+            if let Some(place) = node.base.as_current_place() {
+                let labeller = SetLabel(self.prev_snapshot_location());
+                self.borrows_state().graph.make_place_old(
+                    (*place).into(),
+                    LabelPlaceReason::Collapse,
+                    &labeller,
+                    ctxt,
+                );
+                let mut node = *node;
+                node.label_place_with_context(
+                    &LabelPlacePredicate::Exact((*place).into()),
+                    &labeller,
+                    LabelNodeContext::Other,
+                    ctxt,
+                );
+                let edge = BorrowPcgEdge::new(
+                    BorrowFlowEdge::new(
+                        node.into(),
+                        base,
+                        BorrowFlowEdgeKind::Aggregate {
+                            field_idx: idx,
+                            target_rp_index: 0, // TODO
+                        },
+                        ctxt,
+                    )
+                    .into(),
+                    self.borrows_state().path_conditions.clone(),
+                );
+                self.perform_add_edge_action(edge)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) trait HasSnapshotLocation {
+    /// The snapshot location to use when e.g. moving out a place. Before
+    /// performing such an action on a place, we would first update references
+    /// to the place to use the version that is *labelled* with the location
+    /// returned by this function (indicating that it refers to the value in the
+    /// place before the action).
+    fn prev_snapshot_location(&self) -> SnapshotLocation;
+}
+
+pub(crate) trait PlaceExpander<'mir, 'tcx> : HasSnapshotLocation {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool;
@@ -149,8 +270,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         rp: LifetimeProjection<'tcx, Place<'tcx>>,
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> LabelForRegionProjection {
-        use LabelForRegionProjection::*;
+    ) -> LabelForLifetimeProjection {
+        use LabelForLifetimeProjection::*;
         if obtain_type.should_label_rp(rp.rebase(), ctxt) {
             NewLabelAtCurrentLocation(self.prev_snapshot_location().into())
         } else {
@@ -239,12 +360,6 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> {
         }
     }
 
-    /// The snapshot location to use when e.g. moving out a place. Before
-    /// performing such an action on a place, we would first update references
-    /// to the place to use the version that is *labelled* with the location
-    /// returned by this function (indicating that it refers to the value in the
-    /// place before the action).
-    fn prev_snapshot_location(&self) -> SnapshotLocation;
 
     fn location(&self) -> mir::Location;
 

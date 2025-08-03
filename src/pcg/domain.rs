@@ -414,8 +414,10 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         let mut other_capabilities = other.capabilities.clone();
         let mut res = self.owned.join(
             &other.owned,
+            self_block,
             &mut self.capabilities,
             &mut other_capabilities,
+            &mut self.borrow,
             ctxt,
         )?;
         // For edges in the other graph that actually belong to it,

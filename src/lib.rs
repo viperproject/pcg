@@ -394,6 +394,17 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
     fpcs_analysis
 }
 
+macro_rules! pcg_validity_expect_some {
+    ($cond:expr, $fallback:expr, $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), $($arg)*);
+            }
+            $cond.unwrap_or($fallback)
+        }
+    };
+}
+
 macro_rules! pcg_validity_assert {
     ($cond:expr) => {
         if $crate::validity_checks_enabled() {
@@ -431,6 +442,7 @@ macro_rules! pcg_validity_assert {
 }
 
 pub(crate) use pcg_validity_assert;
+pub(crate) use pcg_validity_expect_some;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

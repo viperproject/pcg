@@ -7,7 +7,7 @@ use crate::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
-            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
+            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
             kind::BorrowPcgEdgeKind,
         },
         edge_data::EdgeData,
@@ -21,18 +21,12 @@ use crate::{
     },
     free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackGuide, RepackOp},
     pcg::{
-        LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
-        obtain::{ObtainType, PlaceExpander, PlaceObtainer},
-        place_capabilities::PlaceCapabilities,
+        obtain::{HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
-        data_structures::{HashMap, HashSet},
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeLabelledPlace,
-        remote::RemotePlace,
+        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation
     },
 };
 
@@ -571,7 +565,9 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn location(&self) -> mir::Location {
         self.loop_head_location()
     }
+}
 
+impl<'pcg, 'mir, 'tcx> HasSnapshotLocation for AbsExpander<'pcg, 'mir, 'tcx> {
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         SnapshotLocation::Loop(self.loop_head_block)
     }

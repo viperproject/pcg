@@ -8,7 +8,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
-use crate::pcg::obtain::{PlaceExpander, PlaceObtainer};
+use crate::pcg::obtain::{PlaceCollapser, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::{PcgDebugData, PcgMutRefLike};
@@ -20,7 +20,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place};
+use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
     AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
@@ -43,6 +43,10 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+    fn prev_snapshot_location(&self) -> SnapshotLocation {
+        SnapshotLocation::before(self.analysis_location)
+    }
+
     fn phase(&self) -> EvalStmtPhase {
         self.analysis_location.eval_stmt_phase
     }
@@ -143,7 +147,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
             }
             Operand::Move(place) => {
                 if self.phase() == EvalStmtPhase::PostOperands {
-                    let snapshot_location = self.place_obtainer().prev_snapshot_location();
+                    let snapshot_location = self.prev_snapshot_location();
                     self.record_and_apply_action(
                         BorrowPcgAction::make_place_old(
                             (*place).into(),
@@ -242,10 +246,11 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
                             .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
                     {
                         should_continue = true;
-                        self.collapse(
+                        self.collapse_owned_places_to(
                             pe.place,
                             candidate_cap,
                             format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
+                            self.ctxt,
                         )?;
                         if pe.place.projection.is_empty()
                             && self.pcg.capabilities.get(pe.place) == Some(CapabilityKind::Read)
