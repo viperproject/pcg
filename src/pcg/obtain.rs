@@ -22,10 +22,11 @@ use crate::{
     free_pcs::{
         CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackGuide, RepackOp,
     },
-    pcg::{place_capabilities::BlockType, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef},
+    pcg::{PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, place_capabilities::BlockType},
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation
+        CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
+        display::DisplayWithCompilerCtxt,
     },
     validity_checks_enabled,
 };
@@ -126,10 +127,14 @@ impl LabelForLifetimeProjection {
 }
 
 // TODO: The edges that are added here could just be part of the collapse "action" probably
-pub(crate) trait PlaceCollapser<'mir, 'tcx> : HasSnapshotLocation {
+pub(crate) trait PlaceCollapser<'mir, 'tcx>: HasSnapshotLocation {
     fn get_local_expansions(&self, local: mir::Local) -> &LocalExpansions<'tcx>;
 
-    fn perform_collapse_action(&mut self, collapse: RepackCollapse<'tcx>) -> Result<(), PcgError>;
+    fn perform_collapse_action(
+        &mut self,
+        collapse: RepackCollapse<'tcx>,
+        context: &str,
+    ) -> Result<(), PcgError>;
 
     fn perform_add_edge_action(&mut self, edge: BorrowPcgEdge<'tcx>) -> Result<(), PcgError>;
 
@@ -143,36 +148,38 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx> : HasSnapshotLocation {
         context: String,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        let local_expansions = self.get_local_expansions(place.local);
-        let expansions = local_expansions
-            .expansions
-            .iter()
-            .filter(|pe| place.is_prefix_of(pe.place))
-            .sorted_by_key(|pe| pe.place.projection().len())
-            .rev()
-            .cloned()
-            .collect::<Vec<_>>();
-        for pe in expansions {
-            self.perform_collapse_action(RepackCollapse::new(
-                pe.place,
-                pe.expansion.guide(),
-                capability,
-            ))?;
-            let p = pe.place;
-            for rp in p.region_projections(ctxt) {
-                let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = p
-                    .expansion_places(&pe.expansion, ctxt)
-                    .into_iter()
-                    .flat_map(|ep| {
-                        ep.region_projections(ctxt)
-                            .into_iter()
-                            .filter(|erp| erp.region(ctxt) == rp.region(ctxt))
-                            .map(|erp| erp.into())
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                if rp_expansion.len() > 1 && capability.is_exclusive() {
-                    self.create_aggregate_lifetime_projections(rp.into(), &rp_expansion, ctxt)?;
+        let to_collapse = self
+            .get_local_expansions(place.local)
+            .places_to_collapse_for_obtain_of(place, ctxt);
+        tracing::info!(
+            "To obtain {}, will collapse {}",
+            place.to_short_string(ctxt),
+            to_collapse
+            .to_short_string(ctxt)
+        );
+        for place in to_collapse {
+            let expansions = self
+                .get_local_expansions(place.local)
+                .expansions_from(place)
+                .cloned()
+                .collect::<Vec<_>>();
+            self.perform_collapse_action(RepackCollapse::new(place, capability), &context)?;
+            for pe in expansions {
+                for rp in place.region_projections(ctxt) {
+                    let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = place
+                        .expansion_places(&pe.expansion, ctxt)
+                        .into_iter()
+                        .flat_map(|ep| {
+                            ep.region_projections(ctxt)
+                                .into_iter()
+                                .filter(|erp| erp.region(ctxt) == rp.region(ctxt))
+                                .map(|erp| erp.into())
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>();
+                    if rp_expansion.len() > 1 && capability.is_exclusive() {
+                        self.create_aggregate_lifetime_projections(rp.into(), &rp_expansion, ctxt)?;
+                    }
                 }
             }
         }
@@ -232,7 +239,7 @@ pub(crate) trait HasSnapshotLocation {
     fn prev_snapshot_location(&self) -> SnapshotLocation;
 }
 
-pub(crate) trait PlaceExpander<'mir, 'tcx> : HasSnapshotLocation {
+pub(crate) trait PlaceExpander<'mir, 'tcx>: HasSnapshotLocation {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError>;
 
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool;
@@ -359,7 +366,6 @@ pub(crate) trait PlaceExpander<'mir, 'tcx> : HasSnapshotLocation {
             self.add_borrow_pcg_expansion(base, place_expansion, obtain_type, ctxt)
         }
     }
-
 
     fn location(&self) -> mir::Location;
 

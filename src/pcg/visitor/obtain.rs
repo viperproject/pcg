@@ -64,9 +64,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
     fn perform_collapse_action(
         &mut self,
         collapse: crate::free_pcs::RepackCollapse<'tcx>,
+        context: &str,
     ) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            PcgAction::Owned(OwnedPcgAction::new(RepackOp::Collapse(collapse), None)).into(),
+            PcgAction::Owned(OwnedPcgAction::new(
+                RepackOp::Collapse(collapse),
+                Some(context.to_string()),
+            ))
+            .into(),
         )?;
         Ok(())
     }

@@ -159,6 +159,19 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn uniform_capability(
+        &self,
+        mut places: impl Iterator<Item = Place<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<CapabilityKind> {
+        let cap = self.get(places.next()?)?;
+        for p in places {
+            if self.get(p) != Some(cap) {
+                return None;
+            }
+        }
+        Some(cap)
+    }
     pub(crate) fn remove_all_postfixes(
         &mut self,
         place: Place<'tcx>,

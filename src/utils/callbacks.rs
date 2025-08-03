@@ -23,7 +23,10 @@ use crate::{
             self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
             RegionInferenceContext, RichLocation,
         },
-        data_structures::{graph::is_cyclic, fx::{FxHashMap, FxHashSet}},
+        data_structures::{
+            fx::{FxHashMap, FxHashSet},
+            graph::is_cyclic,
+        },
         driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{Config, interface::Compiler},

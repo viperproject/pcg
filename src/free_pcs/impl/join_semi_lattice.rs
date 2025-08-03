@@ -110,7 +110,10 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         other_expansion: ExpandedPlace<'tcx>,
         self_expansions: HashSet<ExpandedPlace<'tcx>>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> where 'pcg: 'other {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
+    where
+        'pcg: 'other,
+    {
         let base_place = other_expansion.place;
         let self_cap = self.capabilities.get(base_place);
         let other_cap = other.capabilities.get(base_place);
@@ -159,6 +162,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                     fn perform_collapse_action(
                         &mut self,
                         collapse: crate::free_pcs::RepackCollapse<'tcx>,
+                        context: &str,
                     ) -> Result<(), PcgError> {
                         self.data.owned.perform_collapse_action(
                             collapse,
@@ -378,14 +382,52 @@ impl<'tcx> LocalExpansions<'tcx> {
         })
     }
 
+    pub(crate) fn all_descendants_of(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> HashSet<Place<'tcx>> {
+        self.expansions
+            .iter()
+            .filter(|ep| place.is_prefix_of(ep.place))
+            .flat_map(|ep| ep.expansion_places(ctxt))
+            .collect()
+    }
+
+    pub(crate) fn all_children_of(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> HashSet<Place<'tcx>> {
+        self.expansions
+            .iter()
+            .filter(|ep| ep.place == place)
+            .flat_map(|ep| ep.expansion_places(ctxt))
+            .collect()
+    }
+
+    pub(crate) fn get_retained_capability_of_children(
+        &self,
+        place: Place<'tcx>,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<CapabilityKind> {
+        let children = self.all_children_of(place, ctxt);
+        let mut current_cap = CapabilityKind::Exclusive;
+        for child in children {
+            let child_cap = capabilities.get(child)?;
+            current_cap = current_cap.minimum(child_cap)?;
+        }
+        Some(current_cap)
+    }
+
     pub(crate) fn perform_collapse_action(
         &mut self,
         collapse: RepackCollapse<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        // TODO: This removes other expansions besides the one to be collapsed
-        let expansion_places = collapse.expansion_places(ctxt);
+        let expansion_places = self.all_children_of(collapse.to, ctxt);
         let retained_cap = expansion_places
             .iter()
             .fold(CapabilityKind::Exclusive, |acc, place| {

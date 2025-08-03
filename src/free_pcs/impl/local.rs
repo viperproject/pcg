@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    free_pcs::RepackGuide,
+    free_pcs::{RepackCollapse, RepackGuide},
     pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     pcg_validity_assert,
     rustc_interface::middle::mir::Local,
@@ -88,7 +88,11 @@ pub struct LocalExpansions<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
-    pub(crate) fn remove_all_expansions_from(&mut self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn remove_all_expansions_from(
+        &mut self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
         tracing::info!(
             "Removing all expansions from {}",
             place.to_short_string(ctxt)
@@ -246,6 +250,26 @@ impl<'tcx> LocalExpansions<'tcx> {
         Ok(ops)
     }
 
+    pub(crate) fn places_to_collapse_for_obtain_of(
+        &self,
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<Place<'tcx>> {
+        if !self.contains_expansion_from(place) {
+            return vec![];
+        }
+        let mut places = self
+            .all_descendants_of(place, ctxt)
+            .difference(&self.leaves(ctxt))
+            .into_iter()
+            .sorted_by_key(|place| place.projection().len())
+            .rev()
+            .cloned()
+            .collect::<Vec<_>>();
+        places.push(place);
+        places
+    }
+
     pub(crate) fn collapse(
         &mut self,
         to: Place<'tcx>,
@@ -253,30 +277,20 @@ impl<'tcx> LocalExpansions<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError> {
-        let expansions = self
-            .expansions
-            .iter()
-            .filter(|pe| to.is_prefix_of(pe.place))
-            .sorted_by_key(|pe| pe.place.projection().len())
-            .rev()
-            .cloned()
-            .collect::<Vec<_>>();
-        let ops = expansions
+        if !self.contains_expansion_from(to) {
+            return Ok(vec![]);
+        }
+        let places_to_collapse = self.places_to_collapse_for_obtain_of(to, ctxt);
+        let ops: Vec<RepackOp<'tcx>> = places_to_collapse
             .into_iter()
-            .map(|pe| {
-                let expansion_places = pe.expansion_places(ctxt);
-                let retained_cap =
-                    expansion_places
-                        .iter()
-                        .fold(CapabilityKind::Exclusive, |acc, place| {
-                            match capabilities.remove(*place, ctxt) {
-                                Some(cap) => acc.minimum(cap).unwrap_or(CapabilityKind::Write),
-                                None => acc,
-                            }
-                        });
-                capabilities.insert(pe.place, retained_cap, ctxt);
-                self.expansions.remove(&pe);
-                RepackOp::collapse(pe.place, pe.expansion.guide(), retained_cap)
+            .map(|place| {
+                let retained_cap = self
+                    .get_retained_capability_of_children(place, capabilities, ctxt)
+                    .unwrap();
+                let action = RepackCollapse::new(place, retained_cap);
+                self.perform_collapse_action(action, capabilities, ctxt)
+                    .unwrap();
+                RepackOp::Collapse(action)
             })
             .collect();
         Ok(ops)
