@@ -286,9 +286,8 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             break;
         }
         for self_expansion in self.owned.expansions_shortest_first() {
-            if !other.owned.contains_expansion(self_expansion) {
+            if !other.owned.contains_expansion(self_expansion) && let Some(other_cap) = other.capabilities.get(self_expansion.place) {
                 if let Some(CapabilityKind::Read) = self.capabilities.get(self_expansion.place)
-                    && let Some(other_cap) = other.capabilities.get(self_expansion.place)
                     && other_cap >= CapabilityKind::Read
                 {
                     other.owned.perform_expand_action(
@@ -300,12 +299,19 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                         other.capabilities,
                         ctxt,
                     )?;
+                } else if self.capabilities.get(self_expansion.place) == None && other_cap.is_exclusive() {
+                    let expand_action = RepackExpand::new(
+                        self_expansion.place,
+                        self_expansion.guide(),
+                        other_cap,
+                    );
+                    other.owned.perform_expand_action(expand_action, other.capabilities, ctxt)?;
                 }
             }
         }
         tracing::info!(
-            "Join {:?} actions:\n\t{}",
-            self.owned.get_local(),
+            "Join {} actions:\n\t{}",
+            Place::from(self.owned.get_local()).to_short_string(ctxt),
             actions.debug_lines(ctxt).join("\n\t")
         );
         tracing::info!(
