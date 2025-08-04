@@ -243,9 +243,11 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             block: other.block,
         };
         'outer: loop {
+            // We get by longest expansions first but then use `pop`, so in
+            // practice we observe the shortest expansions first
             let mut other_expansions = other
                 .owned
-                .expansions_shortest_first()
+                .expansions_longest_first()
                 .cloned()
                 .collect::<Vec<_>>();
             while let Some(other_expansion) = other_expansions.pop() {
@@ -255,8 +257,13 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                     .cloned()
                     .collect::<HashSet<_>>();
                 if self_expansions.contains(&other_expansion) {
+                    tracing::info!(
+                        "Skipping expansion {:?} because it is already in the local expansions",
+                        other_expansion
+                    );
                     continue;
                 } else if self_expansions.is_empty() {
+                    tracing::info!("Expansion {:?} is not in self", other_expansion);
                     let other_expansion_guide = other_expansion.guide();
                     if self.owned.is_leaf(other_expansion.place, ctxt) {
                         if let Some(cap) = self.capabilities.get(other_expansion.place) {
@@ -286,7 +293,9 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             break;
         }
         for self_expansion in self.owned.expansions_shortest_first() {
-            if !other.owned.contains_expansion(self_expansion) && let Some(other_cap) = other.capabilities.get(self_expansion.place) {
+            if !other.owned.contains_expansion(self_expansion)
+                && let Some(other_cap) = other.capabilities.get(self_expansion.place)
+            {
                 if let Some(CapabilityKind::Read) = self.capabilities.get(self_expansion.place)
                     && other_cap >= CapabilityKind::Read
                 {
@@ -299,13 +308,14 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                         other.capabilities,
                         ctxt,
                     )?;
-                } else if self.capabilities.get(self_expansion.place) == None && other_cap.is_exclusive() {
-                    let expand_action = RepackExpand::new(
-                        self_expansion.place,
-                        self_expansion.guide(),
-                        other_cap,
-                    );
-                    other.owned.perform_expand_action(expand_action, other.capabilities, ctxt)?;
+                } else if self.capabilities.get(self_expansion.place) == None
+                    && other_cap.is_exclusive()
+                {
+                    let expand_action =
+                        RepackExpand::new(self_expansion.place, self_expansion.guide(), other_cap);
+                    other
+                        .owned
+                        .perform_expand_action(expand_action, other.capabilities, ctxt)?;
                 }
             }
         }
@@ -331,6 +341,13 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions
             .iter()
             .sorted_by_key(|ep| ep.place.projection().len())
+    }
+
+    pub(crate) fn expansions_longest_first(&self) -> impl Iterator<Item = &ExpandedPlace<'tcx>> {
+        self.expansions
+            .iter()
+            .sorted_by_key(|ep| ep.place.projection().len())
+            .rev()
     }
 
     pub(crate) fn is_leaf(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
