@@ -8,7 +8,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::PcgNode;
-use crate::pcg::obtain::PlaceObtainer;
+use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::utils::HasPlace;
 use crate::utils::Place;
@@ -44,7 +44,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         let debug_iteration_limit = 10000;
         let mut iteration = 0;
-        self.restore_capability_to_leaf_places(for_place)?;
+        self.restore_capability_to_leaf_places(for_place, self.ctxt)?;
         loop {
             iteration += 1;
             let edges_to_trim = self.identify_edges_to_trim(for_place)?;
@@ -72,36 +72,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                 );
             }
         }
-    }
-
-    fn restore_capability_to_leaf_places(
-        &mut self,
-        parent_place: Option<Place<'tcx>>,
-    ) -> Result<(), PcgError> {
-        let leaf_places = self.pcg.leaf_places_where(
-            |p| {
-                self.pcg.capabilities.get(p) == Some(CapabilityKind::Read)
-                    && !p.projects_shared_ref(self.ctxt)
-                    && p.parent_place()
-                        .is_none_or(|parent| self.pcg.capabilities.get(parent).is_none())
-            },
-            self.ctxt,
-        );
-        for place in leaf_places {
-            if let Some(parent_place) = parent_place {
-                if !parent_place.is_prefix_of(place) {
-                    continue;
-                }
-            }
-            let action = PcgAction::restore_capability(
-                place,
-                CapabilityKind::Exclusive,
-                "restore capability to leaf place",
-                self.ctxt,
-            );
-            self.record_and_apply_action(action)?;
-        }
-        Ok(())
     }
 
     /// Identifies the set of edges that should be removed from the graph

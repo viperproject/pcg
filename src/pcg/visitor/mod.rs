@@ -7,6 +7,7 @@ use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
+use crate::borrow_pcg::state::BorrowStateMutRef;
 use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
 use crate::pcg::obtain::{PlaceCollapser, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
@@ -23,7 +24,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
-    AnalysisObject, EvalStmtPhase, PcgNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
+    AnalysisObject, EvalStmtPhase, PCGNodeLike, Pcg, PcgError, PcgNode, PcgUnsupportedError,
 };
 
 mod assign;

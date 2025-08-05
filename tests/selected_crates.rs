@@ -33,11 +33,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("raw_entry::RawOccupiedEntryMut::<'a, K, V, S, A>::replace_entry_with"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // <= 20 basic blocks, cycles, <= 20 nodes
     common::ensure_successful_run_on_crate(
@@ -196,7 +194,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<util::search::PatternSetIter<'a> as core::iter::Iterator>::next"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 

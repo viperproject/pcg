@@ -18,10 +18,10 @@ use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::free_pcs::{CapabilityKind, RepackGuide, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{
-    HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
+    ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
 };
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
-use crate::pcg::{EvalStmtPhase, PcgNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
+use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgMutRef, PcgNode, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
@@ -61,34 +61,21 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
         self.pcg.owned.locals()[local].get_allocated()
     }
 
-    fn perform_collapse_action(
-        &mut self,
-        collapse: crate::free_pcs::RepackCollapse<'tcx>,
-        context: &str,
-    ) -> Result<(), PcgError> {
-        self.record_and_apply_action(
-            PcgAction::Owned(OwnedPcgAction::new(
-                RepackOp::Collapse(collapse),
-                Some(context.to_string()),
-            ))
-            .into(),
-        )?;
-        Ok(())
-    }
-
-    fn perform_add_edge_action(&mut self, edge: BorrowPcgEdge<'tcx>) -> Result<(), PcgError> {
-        self.record_and_apply_action(
-            PcgAction::Borrow(BorrowPcgAction::new(
-                BorrowPcgActionKind::AddEdge { edge },
-                None,
-            ))
-            .into(),
-        )?;
-        Ok(())
-    }
-
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         self.pcg.borrow.as_mut_ref()
+    }
+
+    fn capabilities(&mut self) -> &mut crate::pcg::place_capabilities::PlaceCapabilities<'tcx> {
+        &mut self.pcg.capabilities
+    }
+
+    fn leaf_places(
+        &self,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> crate::utils::data_structures::HashSet<Place<'tcx>> {
+        let mut leaf_places = self.pcg.owned.leaf_places(ctxt);
+        leaf_places.retain(|p| !self.pcg.borrow.graph().owned_places(ctxt).contains(p));
+        leaf_places
     }
 }
 
@@ -570,14 +557,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 RepackOp::RegainLoanedCapability(place, capability_kind) => {
                     self.pcg
                         .capabilities
-                        .insert((*place).into(), capability_kind, self.ctxt);
-                    if capability_kind == CapabilityKind::Exclusive {
-                        self.pcg.borrow.label_region_projection(
-                            &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
-                            None,
+                        .regain_loaned_capability(
+                            place,
+                            capability_kind,
+                            self.pcg.borrow.as_mut_ref(),
                             self.ctxt,
-                        );
-                    }
+                        )?;
                     true
                 }
                 RepackOp::Expand(expand) => {
@@ -641,69 +626,13 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    fn label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(
-        &mut self,
-        place: Place<'tcx>,
-    ) -> Result<bool, PcgError> {
-        let derefs_to_disconnect = self
-            .pcg
-            .borrow
-            .graph
-            .edges()
-            .flat_map(|e| match e.kind() {
-                BorrowPcgEdgeKind::BorrowPcgExpansion(e)
-                    if let Some(p) = e.base.as_current_place()
-                        && place != p
-                        && p.is_shared_ref(self.ctxt)
-                        && place.is_prefix_of(p) =>
-                {
-                    Some(e.clone())
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        for mut rp in derefs_to_disconnect {
-            tracing::debug!("Disconnecting deref projection {:?}", rp);
-            let conditions = self.pcg.borrow.graph.remove(&rp.clone().into()).unwrap();
-            let label = SnapshotLocation::BeforeRefReassignment(self.location());
-            rp.base.label_place_with_context(
-                &LabelPlacePredicate::Exact(rp.base.place()),
-                &SetLabel(label),
-                LabelNodeContext::Other,
-                self.ctxt,
-            );
-            rp.expansion.iter_mut().for_each(|e| {
-                self.pcg
-                    .capabilities
-                    .remove_all_postfixes(e.as_current_place().unwrap(), self.ctxt);
-                e.label_place_with_context(
-                    &LabelPlacePredicate::Exact(e.place()),
-                    &SetLabel(self.prev_snapshot_location()),
-                    LabelNodeContext::TargetOfExpansion,
-                    self.ctxt,
-                );
-            });
-            self.record_and_apply_action(
-                BorrowPcgAction::add_edge(
-                    BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
-                    "label_shared_deref_projections_of_postfix_places",
-                    self.ctxt,
-                )
-                .into(),
-            )?;
-        }
-        self.record_and_apply_action(
-            BorrowPcgAction::make_place_old(
-                place,
-                self.prev_snapshot_location(),
-                LabelPlaceReason::LabelSharedDerefProjections,
-            )
-            .into(),
-        )
+impl<'state, 'mir: 'state, 'tcx> ActionApplier<'tcx> for PlaceObtainer<'state, 'mir, 'tcx> {
+    fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
+        self.record_and_apply_action(action)
     }
+}
 
+impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// Ensures that the place is expanded to the given place, with a certain
     /// capability.
     ///
@@ -727,7 +656,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // expansions to be removed (s.f was previously blocked and no longer is)
         if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
             self.label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(
-                place,
+                place, self.ctxt,
             )?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }
@@ -832,10 +761,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         self.pcg
             .capabilities
             .update_for_expansion(expansion, block_type, ctxt)
-    }
-
-    fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
-        self.record_and_apply_action(action)
     }
 
     fn location(&self) -> mir::Location {

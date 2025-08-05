@@ -7,7 +7,7 @@ use crate::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
-            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
+            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
             kind::BorrowPcgEdgeKind,
         },
         edge_data::EdgeData,
@@ -21,12 +21,18 @@ use crate::{
     },
     free_pcs::{CapabilityKind, OwnedPcg, RepackGuide, RepackOp},
     pcg::{
-        obtain::{HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PcgNode, PCGNodeLike, PcgMutRef, PcgRefLike
+        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
+        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer},
+        place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation
+        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
+        data_structures::{HashMap, HashSet},
+        display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeLabelledPlace,
+        remote::RemotePlace,
     },
 };
 
@@ -485,7 +491,7 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
+impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
         tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
@@ -529,7 +535,9 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
             },
         }
     }
+}
 
+impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
         self.graph
     }

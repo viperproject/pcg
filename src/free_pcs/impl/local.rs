@@ -134,7 +134,7 @@ impl<'tcx> LocalExpansions<'tcx> {
             .collect()
     }
 
-    pub fn leaves(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub fn leaf_places(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         if self.expansions.is_empty() {
             return vec![self.local.into()].into_iter().collect();
         }
@@ -271,7 +271,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         }
         let mut places = self
             .all_descendants_of(place, ctxt)
-            .difference(&self.leaves(ctxt))
+            .difference(&self.leaf_places(ctxt))
             .into_iter()
             .sorted_by_key(|place| place.projection().len())
             .rev()

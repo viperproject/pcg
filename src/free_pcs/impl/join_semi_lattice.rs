@@ -6,15 +6,16 @@
 
 use crate::{
     DebugLines,
-    action::OwnedPcgAction,
+    action::{OwnedPcgAction, PcgAction},
     borrow_pcg::{
+        action::BorrowPcgActionKind,
         borrow_pcg_expansion::PlaceExpansion,
         state::{BorrowStateMutRef, BorrowsState, BorrowsStateLike},
     },
     free_pcs::{CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand, RepackOp},
     pcg::{
         PcgError, PcgMutRef, PcgUnsupportedError,
-        obtain::{HasSnapshotLocation, PlaceCollapser},
+        obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     pcg_validity_assert, pcg_validity_expect_some,
@@ -115,33 +116,61 @@ impl HasSnapshotLocation for JoinObtainer<'_, '_, '_, '_, '_> {
     }
 }
 
+impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
+    fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
+        match action {
+            PcgAction::Borrow(action) => {
+                self.data
+                    .borrows
+                    .apply_action(action.clone(), self.data.capabilities, self.ctxt)
+            }
+            PcgAction::Owned(action) => match action.kind {
+                RepackOp::StorageDead(local) => todo!(),
+                RepackOp::IgnoreStorageDead(local) => todo!(),
+                RepackOp::Weaken(place, capability_kind, capability_kind1) => todo!(),
+                RepackOp::Expand(repack_expand) => todo!(),
+                RepackOp::Collapse(collapse) => {
+                    self.data.owned.perform_collapse_action(
+                        collapse,
+                        self.data.capabilities,
+                        self.ctxt,
+                    )?;
+                    self.actions.push(action.kind);
+                    Ok(true)
+                }
+                RepackOp::DerefShallowInit(place, place1) => todo!(),
+                RepackOp::RegainLoanedCapability(place, capability_kind) => {
+                    self.data.capabilities.regain_loaned_capability(
+                        place,
+                        capability_kind,
+                        self.data.borrows.as_mut_ref(),
+                        self.ctxt
+                    )?;
+                    self.actions.push(action.kind);
+                    Ok(true)
+                }
+            },
+        }
+    }
+}
+
 impl<'pcg, 'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
     fn get_local_expansions(&self, _local: mir::Local) -> &LocalExpansions<'tcx> {
         &self.data.owned
     }
 
-    fn perform_collapse_action(
-        &mut self,
-        collapse: crate::free_pcs::RepackCollapse<'tcx>,
-        context: &str,
-    ) -> Result<(), PcgError> {
-        self.data
-            .owned
-            .perform_collapse_action(collapse, self.data.capabilities, self.ctxt)?;
-        self.actions.push(RepackOp::Collapse(collapse).into());
-        Ok(())
-    }
-
-    fn perform_add_edge_action(
-        &mut self,
-        edge: crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge<'tcx>,
-    ) -> Result<(), PcgError> {
-        self.data.borrows.graph_mut().insert(edge, self.ctxt);
-        Ok(())
-    }
-
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         self.data.borrows.into()
+    }
+
+    fn capabilities(&mut self) -> &mut PlaceCapabilities<'tcx> {
+        self.data.capabilities
+    }
+
+    fn leaf_places(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> HashSet<Place<'tcx>> {
+        let mut leaf_places = self.data.owned.leaf_places(ctxt);
+        leaf_places.retain(|p| !self.data.borrows.graph().owned_places(ctxt).contains(p));
+        leaf_places
     }
 }
 
@@ -228,6 +257,78 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             }
         }
     }
+
+    fn join_self_expansions(
+        &mut self,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &mut LocalExpansions<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
+        let mut actions = vec![];
+        'outer: loop {
+            let expansions_shortest_first = self
+                .owned
+                .expansions_shortest_first()
+                .cloned()
+                .collect::<Vec<_>>();
+            for self_expansion in expansions_shortest_first {
+                if !other.owned.contains_expansion(&self_expansion)
+                    && let Some(other_cap) = other.capabilities.get(self_expansion.place)
+                {
+                    if let Some(CapabilityKind::Read) = self.capabilities.get(self_expansion.place)
+                        && other_cap >= CapabilityKind::Read
+                    {
+                        other.owned.perform_expand_action(
+                            RepackExpand::new(
+                                self_expansion.place,
+                                self_expansion.guide(),
+                                CapabilityKind::Read,
+                            ),
+                            other.capabilities,
+                            ctxt,
+                        )?;
+                    } else if self.capabilities.get(self_expansion.place) == None {
+                        match other_cap {
+                            CapabilityKind::Exclusive => {
+                                let expand_action = RepackExpand::new(
+                                    self_expansion.place,
+                                    self_expansion.guide(),
+                                    other_cap,
+                                );
+                                other.owned.perform_expand_action(
+                                    expand_action,
+                                    other.capabilities,
+                                    ctxt,
+                                )?;
+                            }
+                            CapabilityKind::Write => {
+                                let mut join_obtainer = JoinObtainer {
+                                    ctxt,
+                                    data: self,
+                                    actions: vec![],
+                                };
+                                join_obtainer.label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(self_expansion.place, ctxt)?;
+                                join_obtainer.restore_capability_to_leaf_places(
+                                    Some(self_expansion.place),
+                                    ctxt,
+                                )?;
+                                join_obtainer.collapse_owned_places_to(
+                                    self_expansion.place,
+                                    CapabilityKind::Write,
+                                    "join".to_string(),
+                                    ctxt,
+                                )?;
+                                actions.extend(join_obtainer.actions);
+                                continue 'outer;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            return Ok(actions);
+        }
+    }
+
     pub(crate) fn join(
         &mut self,
         mut other: JoinOwnedData<'pcg, 'tcx, LocalExpansions<'tcx>>,
@@ -290,64 +391,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             }
             break;
         }
-        'outer: loop {
-            let expansions_shortest_first = self
-                .owned
-                .expansions_shortest_first()
-                .cloned()
-                .collect::<Vec<_>>();
-            for self_expansion in expansions_shortest_first {
-                if !other.owned.contains_expansion(&self_expansion)
-                    && let Some(other_cap) = other.capabilities.get(self_expansion.place)
-                {
-                    if let Some(CapabilityKind::Read) = self.capabilities.get(self_expansion.place)
-                        && other_cap >= CapabilityKind::Read
-                    {
-                        other.owned.perform_expand_action(
-                            RepackExpand::new(
-                                self_expansion.place,
-                                self_expansion.guide(),
-                                CapabilityKind::Read,
-                            ),
-                            other.capabilities,
-                            ctxt,
-                        )?;
-                    } else if self.capabilities.get(self_expansion.place) == None {
-                        match other_cap {
-                            CapabilityKind::Exclusive => {
-                                let expand_action = RepackExpand::new(
-                                    self_expansion.place,
-                                    self_expansion.guide(),
-                                    other_cap,
-                                );
-                                other.owned.perform_expand_action(
-                                    expand_action,
-                                    other.capabilities,
-                                    ctxt,
-                                )?;
-                            }
-                            CapabilityKind::Write => {
-                                let mut join_obtainer = JoinObtainer {
-                                    ctxt,
-                                    data: self,
-                                    actions: vec![],
-                                };
-                                join_obtainer.collapse_owned_places_to(
-                                    self_expansion.place,
-                                    CapabilityKind::Write,
-                                    "join".to_string(),
-                                    ctxt,
-                                )?;
-                                actions.extend(join_obtainer.actions);
-                                continue 'outer;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            break;
-        }
+        actions.extend(self.join_self_expansions(&mut other, ctxt)?);
         tracing::debug!(
             "Join {} actions:\n\t{}",
             Place::from(self.owned.get_local()).to_short_string(ctxt),
@@ -380,7 +424,7 @@ impl<'tcx> LocalExpansions<'tcx> {
     }
 
     pub(crate) fn is_leaf(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.leaves(ctxt).contains(&place)
+        self.leaf_places(ctxt).contains(&place)
     }
 
     pub(crate) fn perform_expand_action(
@@ -421,7 +465,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         place_capabilities: &PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.leaves(ctxt).into_iter().any(|p| {
+        self.leaf_places(ctxt).into_iter().any(|p| {
             if place.is_prefix_of(p) && place_capabilities.get(p).is_none() {
                 tracing::debug!(
                     "Place {} is a leaf node without capability",

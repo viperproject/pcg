@@ -119,7 +119,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
         self.0
             .iter()
             .filter(|c| !c.is_unallocated())
-            .flat_map(|c| c.get_allocated().leaves(ctxt))
+            .flat_map(|c| c.get_allocated().leaf_places(ctxt))
             .collect()
     }
     pub(crate) fn expansions(&self) -> Vec<&LocalExpansions<'tcx>> {

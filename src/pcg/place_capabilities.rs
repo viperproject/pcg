@@ -1,7 +1,11 @@
 use itertools::Itertools;
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion,
+    borrow_pcg::{
+        borrow_pcg_expansion::BorrowPcgExpansion,
+        has_pcs_elem::LabelLifetimeProjectionPredicate,
+        state::{BorrowStateMutRef, BorrowsStateLike},
+    },
     free_pcs::CapabilityKind,
     pcg::PcgError,
     pcg_validity_assert,
@@ -159,6 +163,23 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn regain_loaned_capability(
+        &mut self,
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+        mut borrows: BorrowStateMutRef<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<(), PcgError> {
+        self.insert((*place).into(), capability, ctxt);
+        if capability == CapabilityKind::Exclusive {
+            borrows.label_region_projection(
+                &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
+                None,
+                ctxt,
+            );
+        }
+        Ok(())
+    }
     pub(crate) fn uniform_capability(
         &self,
         mut places: impl Iterator<Item = Place<'tcx>>,
