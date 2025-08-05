@@ -32,6 +32,7 @@ mod function_call;
 mod obtain;
 mod pack;
 mod stmt;
+mod upgrade;
 mod triple;
 
 pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
@@ -379,19 +380,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             borrow.to_short_string(self.ctxt)
         );
         let blocked_place = borrow.blocked_place.place();
-        if self
-            .pcg
-            .borrow
-            .graph()
-            .contains(borrow.deref_place(self.ctxt), self.ctxt)
-        {
-            let upgrade_action = BorrowPcgAction::restore_capability(
-                borrow.deref_place(self.ctxt).place(),
-                CapabilityKind::Exclusive,
-                "perform_borrow_initial_pre_operand_actions",
-            );
-            self.record_and_apply_action(upgrade_action.into())?;
-        }
+    //     if self
+    //         .pcg
+    //         .borrow
+    //         .graph()
+    //         .contains(borrow.deref_place(self.ctxt), self.ctxt)
+    //     {
+    //         let upgrade_action = BorrowPcgAction::restore_capability(
+    //             borrow.deref_place(self.ctxt).place(),
+    //             CapabilityKind::Exclusive,
+    //             "perform_borrow_initial_pre_operand_actions",
+    //         );
+    //         self.record_and_apply_action(upgrade_action.into())?;
+    //     }
         if !blocked_place.is_owned(self.ctxt) {
             self.place_obtainer()
                 .remove_read_permission_upwards_and_label_rps(

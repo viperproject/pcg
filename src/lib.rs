@@ -395,25 +395,6 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
 }
 
 macro_rules! pcg_validity_expect_some {
-    // Old syntax for backward compatibility - must come first to match before generic pattern
-    ($cond:expr, $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
-        {
-            if $crate::validity_checks_enabled() {
-                pcg_validity_assert!($cond.is_some(), [$($ctxt_and_loc)*], $($arg)*);
-            }
-            $cond.unwrap_or($fallback)
-        }
-    };
-    ($cond:expr, $fallback:expr, $($arg:tt)*) => {
-        {
-            if $crate::validity_checks_enabled() {
-                pcg_validity_assert!($cond.is_some(), $($arg)*);
-            }
-            $cond.unwrap_or($fallback)
-        }
-    };
-
-    // New syntax patterns - these come after old syntax to avoid conflicts
     ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
         {
             if $crate::validity_checks_enabled() {
@@ -431,7 +412,6 @@ macro_rules! pcg_validity_expect_some {
         }
     };
 
-    // New syntax without fallback
     ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
         {
             if $crate::validity_checks_enabled() {
@@ -522,7 +502,7 @@ macro_rules! pcg_validity_assert {
 
     // Without brackets
     ($cond:expr) => {
-        pcg_validity_assert!($cond, "{}", stringify!($cond));
+        pcg_validity_assert!($cond, "PCG Assertion Failed: {}", stringify!($cond));
     };
     ($cond:expr, $($arg:tt)*) => {
         if $crate::validity_checks_enabled() {
@@ -538,8 +518,8 @@ macro_rules! pcg_validity_assert {
 }
 
 pub(crate) use pcg_validity_assert;
-pub(crate) use pcg_validity_expect_some;
 pub(crate) use pcg_validity_expect_ok;
+pub(crate) use pcg_validity_expect_some;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

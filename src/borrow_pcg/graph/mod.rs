@@ -19,7 +19,11 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        data_structures::HashSet, display::{DebugLines, DisplayWithCompilerCtxt}, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, Place, BORROWS_DEBUG_IMGCAT
+        BORROWS_DEBUG_IMGCAT, Place,
+        data_structures::HashSet,
+        display::{DebugLines, DisplayWithCompilerCtxt},
+        maybe_old::MaybeLabelledPlace,
+        validity::HasValidityCheck,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -105,6 +109,16 @@ pub(crate) fn borrows_imgcat_debug() -> bool {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.nodes(ctxt)
+            .into_iter()
+            .filter_map(|node| match node {
+                PcgNode::Place(place) => place.as_current_place(),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn label_region_projection(
         &mut self,
         predicate: &LabelLifetimeProjectionPredicate<'tcx>,

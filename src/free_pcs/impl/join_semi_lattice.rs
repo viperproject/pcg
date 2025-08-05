@@ -530,7 +530,7 @@ impl<'tcx> LocalExpansions<'tcx> {
                 let removed_cap = place_capabilities.remove(*place, ctxt);
                 let removed_cap = pcg_validity_expect_some!(
                     removed_cap,
-                    CapabilityKind::Exclusive,
+                    fallback: CapabilityKind::Exclusive,
                     [ctxt],
                     "Expected capability for {}",
                     place.to_short_string(ctxt)
@@ -546,7 +546,7 @@ impl<'tcx> LocalExpansions<'tcx> {
                 let joined_cap = removed_cap.minimum(acc);
                 pcg_validity_expect_some!(
                     joined_cap,
-                    CapabilityKind::Exclusive,
+                    fallback: CapabilityKind::Exclusive,
                     [ctxt],
                     "Cannot join capability {:?} and {:?}",
                     removed_cap,
