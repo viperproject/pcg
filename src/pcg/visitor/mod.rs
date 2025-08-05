@@ -8,7 +8,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::borrow_pcg::state::BorrowStateMutRef;
-use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
+use crate::free_pcs::{CapabilityKind, LocalExpansions, OwnedPcg, RepackExpand};
 use crate::pcg::obtain::{PlaceCollapser, PlaceExpander, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
@@ -32,8 +32,8 @@ mod function_call;
 mod obtain;
 mod pack;
 mod stmt;
-mod upgrade;
 mod triple;
+mod upgrade;
 
 pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
     pcg: &'pcg mut Pcg<'tcx>,
@@ -225,58 +225,66 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
-    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
-        let ctxt = self.ctxt;
-        for caps in self.pcg.owned.data.clone().unwrap().expansions() {
-            let mut iteration = 0;
-            loop {
-                iteration += 1;
-                let leaf_expansions = caps.leaf_expansions(ctxt);
-                let parent_places = leaf_expansions
+impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+    fn collapse_iteration(
+        &mut self,
+        local: mir::Local,
+        iteration: usize,
+    ) -> Result<bool, PcgError> {
+        let local_expansions = self.pcg.owned.data.as_ref().unwrap()[local].get_allocated();
+        let leaf_expansions = local_expansions.leaf_expansions(self.ctxt);
+        let parent_places = leaf_expansions
+            .iter()
+            .map(|pe| pe.place)
+            .collect::<HashSet<_>>();
+        let places_to_collapse = parent_places
+            .into_iter()
+            .filter_map(|place| {
+                let expansion_places = local_expansions.all_children_of(place, self.ctxt);
+                if expansion_places
                     .iter()
-                    .map(|pe| pe.place)
-                    .collect::<HashSet<_>>();
-                let places_to_collapse = parent_places
-                    .into_iter()
-                    .filter_map(|place| {
-                        let expansion_places = caps.all_children_of(place, ctxt);
-                        if expansion_places
-                            .iter()
-                            .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
-                            && let Some(candidate_cap) = self
-                                .pcg
-                                .capabilities
-                                .uniform_capability(expansion_places.into_iter(), ctxt)
-                        {
-                            Some((place, candidate_cap))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<HashSet<_>>();
-                if places_to_collapse.is_empty() {
-                    break;
+                    .all(|p| !self.pcg.borrow.graph.contains(*p, self.ctxt))
+                    && let Some(candidate_cap) = self
+                        .pcg
+                        .capabilities
+                        .uniform_capability(expansion_places.into_iter(), self.ctxt)
+                {
+                    Some((place, candidate_cap))
+                } else {
+                    None
                 }
-                for (place, candidate_cap) in places_to_collapse {
-                    self.collapse_owned_places_to(
-                        place,
-                        candidate_cap,
-                        format!(
-                            "Collapse owned place {} (iteration {})",
-                            place.to_short_string(self.ctxt),
-                            iteration
-                        ),
-                        self.ctxt,
-                    )?;
-                    if place.projection.is_empty()
-                        && self.pcg.capabilities.get(place) == Some(CapabilityKind::Read)
-                    {
-                        self.pcg
-                            .capabilities
-                            .insert(place, CapabilityKind::Exclusive, self.ctxt);
-                    }
-                }
+            })
+            .collect::<HashSet<_>>();
+        if places_to_collapse.is_empty() {
+            return Ok(false);
+        }
+        for (place, candidate_cap) in places_to_collapse {
+            self.collapse_owned_places_to(
+                place,
+                candidate_cap,
+                format!(
+                    "Collapse owned place {} (iteration {})",
+                    place.to_short_string(self.ctxt),
+                    iteration
+                ),
+                self.ctxt,
+            )?;
+            if place.projection.is_empty()
+                && self.pcg.capabilities.get(place) == Some(CapabilityKind::Read)
+            {
+                self.pcg
+                    .capabilities
+                    .insert(place, CapabilityKind::Exclusive, self.ctxt);
+            }
+        }
+        Ok(true)
+    }
+    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
+        let allocated_locals = self.pcg.owned.data.as_ref().unwrap().allocated_locals();
+        for local in allocated_locals {
+            let mut iteration = 1;
+            while self.collapse_iteration(local, iteration)? {
+                iteration += 1;
             }
         }
         Ok(())
@@ -380,19 +388,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             borrow.to_short_string(self.ctxt)
         );
         let blocked_place = borrow.blocked_place.place();
-    //     if self
-    //         .pcg
-    //         .borrow
-    //         .graph()
-    //         .contains(borrow.deref_place(self.ctxt), self.ctxt)
-    //     {
-    //         let upgrade_action = BorrowPcgAction::restore_capability(
-    //             borrow.deref_place(self.ctxt).place(),
-    //             CapabilityKind::Exclusive,
-    //             "perform_borrow_initial_pre_operand_actions",
-    //         );
-    //         self.record_and_apply_action(upgrade_action.into())?;
-    //     }
+        //     if self
+        //         .pcg
+        //         .borrow
+        //         .graph()
+        //         .contains(borrow.deref_place(self.ctxt), self.ctxt)
+        //     {
+        //         let upgrade_action = BorrowPcgAction::restore_capability(
+        //             borrow.deref_place(self.ctxt).place(),
+        //             CapabilityKind::Exclusive,
+        //             "perform_borrow_initial_pre_operand_actions",
+        //         );
+        //         self.record_and_apply_action(upgrade_action.into())?;
+        //     }
         if !blocked_place.is_owned(self.ctxt) {
             self.place_obtainer()
                 .remove_read_permission_upwards_and_label_rps(

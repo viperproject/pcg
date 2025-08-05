@@ -22,7 +22,7 @@ use derive_more::{Deref, DerefMut};
 
 use super::CapabilityKind;
 use crate::{
-    free_pcs::{OwnedPcgLocal, LocalExpansions},
+    free_pcs::{LocalExpansions, OwnedPcgLocal},
     utils::CompilerCtxt,
 };
 
@@ -127,6 +127,13 @@ impl<'tcx> OwnedPcgData<'tcx> {
             .iter()
             .filter(|c| !c.is_unallocated())
             .map(|c| c.get_allocated())
+            .collect()
+    }
+
+    pub(crate) fn allocated_locals(&self) -> Vec<mir::Local> {
+        self.0
+            .iter_enumerated()
+            .filter_map(|(i, c)| if !c.is_unallocated() { Some(i) } else { None })
             .collect()
     }
 }

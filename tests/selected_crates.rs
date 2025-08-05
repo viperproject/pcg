@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 22 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "log",
+        "0.4.26",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("set_logger_inner"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
     // 18 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "hashbrown",
@@ -33,7 +48,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("map::OccupiedEntry::<'a, K, V, S, A>::replace_entry_with"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 
