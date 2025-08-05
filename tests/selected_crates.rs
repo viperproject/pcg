@@ -37,8 +37,6 @@ fn test_selected_crates() {
         },
     );
 
-    return;
-
     // <= 10 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "hashbrown",
