@@ -100,7 +100,7 @@ impl<'tcx> RepackExpand<'tcx> {
 
     pub fn target_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
         let expansion = self.from.expansion(self.guide, ctxt);
-        self.from.expansion_places(&expansion, ctxt)
+        self.from.expansion_places(&expansion, ctxt).unwrap()
     }
 }
 

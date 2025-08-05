@@ -13,7 +13,7 @@ use crate::{
     },
     free_pcs::{CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand, RepackOp},
     pcg::{
-        PcgError, PcgMutRef,
+        PcgError, PcgMutRef, PcgUnsupportedError,
         obtain::{HasSnapshotLocation, PlaceCollapser},
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
@@ -442,7 +442,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions
             .iter()
             .filter(|ep| place.is_prefix_of(ep.place))
-            .flat_map(|ep| ep.expansion_places(ctxt))
+            .flat_map(|ep| ep.expansion_places(ctxt).unwrap())
             .collect()
     }
 
@@ -454,7 +454,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions
             .iter()
             .filter(|ep| ep.place == place)
-            .flat_map(|ep| ep.expansion_places(ctxt))
+            .flat_map(|ep| ep.expansion_places(ctxt).unwrap())
             .collect()
     }
 

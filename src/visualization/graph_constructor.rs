@@ -417,7 +417,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
                             None,
                             capability_getter,
                         );
-                        for child_place in pe.expansion_places(self.ctxt) {
+                        for child_place in pe.expansion_places(self.ctxt).unwrap() {
                             self.insert_place_and_previous_projections(
                                 child_place,
                                 None,

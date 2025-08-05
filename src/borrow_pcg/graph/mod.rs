@@ -13,17 +13,13 @@ use crate::{
         region_projection::LifetimeProjectionLabel,
     },
     free_pcs::ExpandedPlace,
-    pcg::{PcgNode, PCGNodeLike},
+    pcg::{PCGNodeLike, PcgNode, PcgUnsupportedError},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
     },
     utils::{
-        BORROWS_DEBUG_IMGCAT, Place,
-        data_structures::HashSet,
-        display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeLabelledPlace,
-        validity::HasValidityCheck,
+        data_structures::HashSet, display::{DebugLines, DisplayWithCompilerCtxt}, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, Place, BORROWS_DEBUG_IMGCAT
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -125,12 +121,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         expanded_place: &ExpandedPlace<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        let expanded_places = expanded_place.expansion_places(ctxt);
+    ) -> Result<bool, PcgUnsupportedError> {
+        let expanded_places = expanded_place.expansion_places(ctxt)?;
         let nodes = self.nodes(ctxt);
-        expanded_places
+        Ok(expanded_places
             .into_iter()
-            .all(|place| nodes.contains(&place.into()))
+            .all(|place| nodes.contains(&place.into())))
     }
 
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {

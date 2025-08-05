@@ -9,7 +9,10 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::{RepackCollapse, RepackGuide},
-    pcg::place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+    pcg::{
+        PcgUnsupportedError,
+        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+    },
     pcg_validity_assert,
     rustc_interface::middle::mir::Local,
     utils::data_structures::HashSet,
@@ -70,14 +73,21 @@ impl<'tcx> ExpandedPlace<'tcx> {
     pub(crate) fn guide(&self) -> Option<RepackGuide> {
         self.expansion.guide()
     }
-    pub(crate) fn arbitrary_expansion_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Place<'tcx> {
-        self.expansion_places(ctxt).into_iter().next().unwrap()
+    pub(crate) fn arbitrary_expansion_place(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<Place<'tcx>, PcgUnsupportedError> {
+        Ok(self.expansion_places(ctxt)?.into_iter().next().unwrap())
     }
-    pub(crate) fn expansion_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
-        self.place
-            .expansion_places(&self.expansion, ctxt)
+    pub(crate) fn expansion_places(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<HashSet<Place<'tcx>>, PcgUnsupportedError> {
+        Ok(self
+            .place
+            .expansion_places(&self.expansion, ctxt)?
             .into_iter()
-            .collect()
+            .collect())
     }
 }
 
@@ -116,6 +126,7 @@ impl<'tcx> LocalExpansions<'tcx> {
             .iter()
             .filter(|e| {
                 e.expansion_places(ctxt)
+                    .unwrap()
                     .iter()
                     .all(|p| !self.contains_expansion_from(*p))
             })
@@ -129,7 +140,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         }
         self.expansions
             .iter()
-            .flat_map(|e| e.expansion_places(repacker))
+            .flat_map(|e| e.expansion_places(repacker).unwrap())
             .filter(|p| !self.contains_expansion_from(*p))
             .collect::<HashSet<_>>()
     }
@@ -169,7 +180,7 @@ impl<'tcx> LocalExpansions<'tcx> {
     ) -> bool {
         self.expansions
             .iter()
-            .any(|e| e.expansion_places(ctxt).contains(&place))
+            .any(|e| e.expansion_places(ctxt).unwrap().contains(&place))
     }
 
     pub(crate) fn get_local(&self) -> Local {

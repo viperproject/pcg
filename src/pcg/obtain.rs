@@ -168,6 +168,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>: HasSnapshotLocation {
                 for rp in place.region_projections(ctxt) {
                     let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = place
                         .expansion_places(&pe.expansion, ctxt)
+                        .unwrap()
                         .into_iter()
                         .flat_map(|ep| {
                             ep.region_projections(ctxt)
@@ -386,7 +387,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>: HasSnapshotLocation {
         };
         if self
             .borrows_graph()
-            .contains_borrow_pcg_expansion(&expanded_place, ctxt)
+            .contains_borrow_pcg_expansion(&expanded_place, ctxt)?
         {
             return Ok(false);
         }

@@ -324,12 +324,12 @@ impl<'tcx> Place<'tcx> {
         self,
         expansion: &PlaceExpansion<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<Place<'tcx>> {
+    ) -> std::result::Result<Vec<Place<'tcx>>, PcgUnsupportedError> {
         let mut places = Vec::new();
         for elem in expansion.elems() {
-            places.push(self.project_deeper(elem, ctxt).unwrap());
+            places.push(self.project_deeper(elem, ctxt)?);
         }
-        places
+        Ok(places)
     }
 
     pub(crate) fn base_region_projection<C: Copy>(
