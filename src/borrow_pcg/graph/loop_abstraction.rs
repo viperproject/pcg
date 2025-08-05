@@ -21,7 +21,7 @@ use crate::{
     },
     free_pcs::{CapabilityKind, OwnedPcg, RepackGuide, RepackOp},
     pcg::{
-        obtain::{HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike
+        obtain::{HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PcgNode, PCGNodeLike, PcgMutRef, PcgRefLike
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
@@ -70,7 +70,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
     }
 }
 impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
-    fn to_pcg_node(self, ctxt: CompilerCtxt<'_, 'tcx>) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, ctxt: CompilerCtxt<'_, 'tcx>) -> PcgNode<'tcx> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place.to_pcg_node(ctxt),
             MaybeRemoteCurrentPlace::Remote(place) => place.to_pcg_node(ctxt),
@@ -215,7 +215,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .roots(ctxt)
             .into_iter()
             .flat_map(|graph_root| {
-                if let Some(PCGNode::LifetimeProjection(rp)) = graph_root.try_to_local_node(ctxt)
+                if let Some(PcgNode::LifetimeProjection(rp)) = graph_root.try_to_local_node(ctxt)
                     && let MaybeLabelledPlace::Current(place) = rp.base
                     && !loop_blocked_places.contains(&place)
                 {
@@ -229,7 +229,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for graph_root in abs_graph_roots {
             let mut candidate_root_nodes = self.nodes(ctxt);
             candidate_root_nodes.retain(|node| match node {
-                PCGNode::LifetimeProjection(region_projection)
+                PcgNode::LifetimeProjection(region_projection)
                     if let Some(related_place) =
                         region_projection.base.maybe_remote_current_place() =>
                 {
@@ -280,7 +280,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: Place<'tcx>,
         loop_head_block: mir::BasicBlock,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<PCGNode<'tcx>> {
+    ) -> HashSet<PcgNode<'tcx>> {
         let mut result = HashSet::default();
         let mut queue: Vec<LocalNode<'tcx>> = node
             .region_projections(ctxt)
@@ -412,7 +412,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     pub(crate) fn identify_subgraph_to_cut<'mir: 'graph, 'graph>(
         &'graph self,
-        abstraction_graph_nodes: HashSet<PCGNode<'tcx>>,
+        abstraction_graph_nodes: HashSet<PcgNode<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> BorrowsGraph<'tcx> {
         type Path<'tcx, 'graph> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
@@ -575,7 +575,7 @@ impl<'pcg, 'mir, 'tcx> HasSnapshotLocation for AbsExpander<'pcg, 'mir, 'tcx> {
 
 fn add_block_edge<'tcx, 'mir>(
     expander: &mut AbsExpander<'_, 'mir, 'tcx>,
-    long: PCGNode<'tcx>,
+    long: PcgNode<'tcx>,
     short: LocalNode<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) {

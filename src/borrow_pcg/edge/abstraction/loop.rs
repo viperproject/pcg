@@ -11,7 +11,7 @@ use crate::borrow_pcg::has_pcs_elem::{
 };
 use crate::borrow_pcg::path_condition::ValidityConditions;
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::rustc_interface::middle::mir::{BasicBlock, Location};
 use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -42,7 +42,7 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {

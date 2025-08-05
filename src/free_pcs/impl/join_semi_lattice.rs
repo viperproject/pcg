@@ -493,6 +493,7 @@ impl<'tcx> LocalExpansions<'tcx> {
                 );
                 pcg_validity_assert!(
                     removed_cap >= collapse.capability,
+                    [ctxt],
                     "Expected removed cap {:?} for {} to be at least {:?}",
                     removed_cap,
                     place.to_short_string(ctxt),

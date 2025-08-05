@@ -6,36 +6,36 @@ use crate::{
         borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace},
 };
 
 #[derive(Debug, DerefMut, Deref, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub(crate) struct AbstractionGraphNode<'tcx>(
-    pub(crate) PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
+    pub(crate) PcgNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>,
 );
 
 impl<'tcx> From<LocalNode<'tcx>> for AbstractionGraphNode<'tcx> {
     fn from(node: LocalNode<'tcx>) -> Self {
         match node {
-            LocalNode::Place(p) => Self(PCGNode::Place(p.into())),
+            LocalNode::Place(p) => Self(PcgNode::Place(p.into())),
             LocalNode::LifetimeProjection(rp) => {
                 let rp = rp.with_base(rp.base().into());
-                Self(PCGNode::LifetimeProjection(rp))
+                Self(PcgNode::LifetimeProjection(rp))
             }
         }
     }
 }
 
-impl<'tcx> TryFrom<PCGNode<'tcx>> for AbstractionGraphNode<'tcx> {
+impl<'tcx> TryFrom<PcgNode<'tcx>> for AbstractionGraphNode<'tcx> {
     type Error = ();
 
-    fn try_from(value: PCGNode<'tcx>) -> Result<Self, Self::Error> {
+    fn try_from(value: PcgNode<'tcx>) -> Result<Self, Self::Error> {
         match value {
-            PCGNode::Place(p) => Ok(Self(PCGNode::Place(p))),
-            PCGNode::LifetimeProjection(rp) => {
+            PcgNode::Place(p) => Ok(Self(PcgNode::Place(p))),
+            PcgNode::LifetimeProjection(rp) => {
                 if let MaybeRemoteRegionProjectionBase::Place(p) = rp.base() {
-                    Ok(Self(PCGNode::LifetimeProjection(rp.with_base(p))))
+                    Ok(Self(PcgNode::LifetimeProjection(rp.with_base(p))))
                 } else {
                     Err(())
                 }
@@ -46,7 +46,7 @@ impl<'tcx> TryFrom<PCGNode<'tcx>> for AbstractionGraphNode<'tcx> {
 
 impl<'tcx, T> HasPcgElems<T> for AbstractionGraphNode<'tcx>
 where
-    PCGNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
+    PcgNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut T> {
         self.0.pcg_elems()

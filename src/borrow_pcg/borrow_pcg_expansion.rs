@@ -29,7 +29,7 @@ use crate::{
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PcgNode, PCGNodeLike},
     rustc_interface::middle::{mir::PlaceElem, ty},
     utils::{
         CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
@@ -277,7 +277,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -407,10 +407,10 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     /// labels.
     pub(crate) fn is_packable(&self, capabilities: &PlaceCapabilities<'tcx>) -> bool {
         match self.base {
-            PCGNode::Place(base_place) => {
+            PcgNode::Place(base_place) => {
                 let mut fst_cap = None;
                 self.expansion.iter().all(|p| {
-                    if let PCGNode::Place(MaybeLabelledPlace::Current(place)) = p {
+                    if let PcgNode::Place(MaybeLabelledPlace::Current(place)) = p {
                         if let Some(cap) = fst_cap {
                             if cap != capabilities.get(*place) {
                                 return false;
@@ -423,8 +423,8 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
                         && p.location() == base_place.location()
                 })
             }
-            PCGNode::LifetimeProjection(base_rp) => self.expansion.iter().all(|p| {
-                if let PCGNode::LifetimeProjection(p_rp) = p {
+            PcgNode::LifetimeProjection(base_rp) => self.expansion.iter().all(|p| {
+                if let PcgNode::LifetimeProjection(p_rp) = p {
                     p_rp.place().location() == base_rp.place().location()
                         && base_rp
                             .place()

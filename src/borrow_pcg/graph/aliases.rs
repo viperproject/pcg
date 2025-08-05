@@ -4,7 +4,7 @@ use crate::{
         edge::{kind::BorrowPcgEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
     },
-    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PcgNode, PCGNodeLike},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{CompilerCtxt, HasPlace, data_structures::HashSet},
 };
@@ -13,7 +13,7 @@ use super::BorrowsGraph;
 
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct Alias<'tcx> {
-    node: PCGNode<'tcx>,
+    node: PcgNode<'tcx>,
     exact_alias: bool,
 }
 
@@ -25,7 +25,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> FxHashSet<BorrowPcgEdgeRef<'tcx, 'graph>> {
         let mut result: FxHashSet<BorrowPcgEdgeRef<'tcx, 'graph>> = FxHashSet::default();
         let mut stack = vec![node];
-        let mut seen: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
+        let mut seen: FxHashSet<PcgNode<'tcx>> = FxHashSet::default();
         while let Some(node) = stack.pop() {
             if seen.insert(node.into()) {
                 for edge in self.edges_blocked_by(node, repacker) {
@@ -44,8 +44,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
-        let mut result: FxHashSet<PCGNode<'tcx>> = FxHashSet::default();
+    ) -> FxHashSet<PcgNode<'tcx>> {
+        let mut result: FxHashSet<PcgNode<'tcx>> = FxHashSet::default();
         result.insert(node.into());
         let mut stack = vec![node];
         while let Some(node) = stack.pop() {
@@ -64,7 +64,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    ) -> FxHashSet<PcgNode<'tcx>> {
         let mut results: FxHashSet<Alias<'tcx>> = FxHashSet::default();
         for (place, proj) in node.iter_projections(ctxt) {
             results.insert(Alias {
@@ -92,11 +92,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     &mut FxHashSet::default(),
                     true,
                 ));
-                if let PCGNode::Place(p) = local_node
+                if let PcgNode::Place(p) = local_node
                     && let Some(rp) = p.deref_to_rp(ctxt)
                 {
                     for node in self.nodes(ctxt) {
-                        if let Some(PCGNode::LifetimeProjection(p)) = node.try_to_local_node(ctxt)
+                        if let Some(PcgNode::LifetimeProjection(p)) = node.try_to_local_node(ctxt)
                             && p.base() == rp.base()
                             && p.region_idx == rp.region_idx
                         {
@@ -119,7 +119,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         node: LocalNode<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx, BC>,
-        seen: &mut FxHashSet<PCGNode<'tcx>>,
+        seen: &mut FxHashSet<PcgNode<'tcx>>,
         direct: bool,
     ) -> FxHashSet<Alias<'tcx>> {
         let mut result = HashSet::default();
@@ -128,8 +128,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             exact_alias: direct,
         });
 
-        let extend = |blocked: PCGNode<'tcx>,
-                      seen: &mut FxHashSet<PCGNode<'tcx>>,
+        let extend = |blocked: PcgNode<'tcx>,
+                      seen: &mut FxHashSet<PcgNode<'tcx>>,
                       result: &mut FxHashSet<Alias<'tcx>>,
                       exact_alias: bool| {
             if seen.insert(blocked) {
@@ -151,7 +151,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
                 BorrowPcgEdgeKind::BorrowPcgExpansion(e) => {
                     for node in e.blocked_nodes(repacker) {
-                        if let PCGNode::LifetimeProjection(p) = node {
+                        if let PcgNode::LifetimeProjection(p) = node {
                             extend(
                                 p.to_pcg_node(repacker),
                                 seen,

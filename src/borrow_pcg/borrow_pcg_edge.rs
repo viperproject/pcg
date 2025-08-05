@@ -35,7 +35,7 @@ use crate::{
     utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface,
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
@@ -170,14 +170,14 @@ impl<'tcx, 'a, T: BorrowPcgEdgeLike<'tcx>>
 impl<'tcx> LocalNode<'tcx> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::LifetimeProjection(region_projection) => region_projection.place().is_old(),
+            PcgNode::Place(p) => p.is_old(),
+            PcgNode::LifetimeProjection(region_projection) => region_projection.place().is_old(),
         }
     }
     pub(crate) fn related_current_place(self) -> Option<Place<'tcx>> {
         match self {
-            PCGNode::Place(p) => p.as_current_place(),
-            PCGNode::LifetimeProjection(rp) => rp.base().as_current_place(),
+            PcgNode::Place(p) => p.as_current_place(),
+            PcgNode::LifetimeProjection(rp) => rp.base().as_current_place(),
         }
     }
 }
@@ -186,7 +186,7 @@ impl<'tcx> LocalNode<'tcx> {
 /// referring to a (potentially labelled) place, i.e. any node with an associated
 /// place.
 /// This excludes nodes that refer to remote places or constants.
-pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeLabelledPlace<'tcx>, MaybeLabelledPlace<'tcx>>;
+pub type LocalNode<'tcx> = PcgNode<'tcx, MaybeLabelledPlace<'tcx>, MaybeLabelledPlace<'tcx>>;
 
 impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for LocalNode<'tcx> {
     fn label_place_with_context(
@@ -312,42 +312,42 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<T: std::fmt::Display> std::fmt::Display for PCGNode<'_, T> {
+impl<T: std::fmt::Display> std::fmt::Display for PcgNode<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PCGNode::Place(p) => write!(f, "{p}"),
-            PCGNode::LifetimeProjection(rp) => write!(f, "{rp}"),
+            PcgNode::Place(p) => write!(f, "{p}"),
+            PcgNode::LifetimeProjection(rp) => write!(f, "{rp}"),
         }
     }
 }
 
 impl<'tcx, T> HasPcgElems<LifetimeProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>>
-    for PCGNode<'tcx, T>
+    for PcgNode<'tcx, T>
 {
     fn pcg_elems(
         &mut self,
     ) -> Vec<&mut LifetimeProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> {
         match self {
-            PCGNode::Place(_) => vec![],
-            PCGNode::LifetimeProjection(rp) => vec![rp],
+            PcgNode::Place(_) => vec![],
+            PcgNode::LifetimeProjection(rp) => vec![rp],
         }
     }
 }
 
-impl<'tcx, T> HasPcgElems<T> for PCGNode<'tcx>
+impl<'tcx, T> HasPcgElems<T> for PcgNode<'tcx>
 where
     MaybeRemotePlace<'tcx>: HasPcgElems<T>,
     LifetimeProjection<'tcx>: HasPcgElems<T>,
 {
     fn pcg_elems(&mut self) -> Vec<&mut T> {
         match self {
-            PCGNode::Place(p) => p.pcg_elems(),
-            PCGNode::LifetimeProjection(rp) => rp.pcg_elems(),
+            PcgNode::Place(p) => p.pcg_elems(),
+            PcgNode::LifetimeProjection(rp) => rp.pcg_elems(),
         }
     }
 }
 
-impl<'tcx> HasPcgElems<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> for PCGNode<'tcx> {
+impl<'tcx> HasPcgElems<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> for PcgNode<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> {
         vec![]
     }
@@ -368,9 +368,9 @@ impl<'tcx> LocalNode<'tcx> {
 /// A node that could potentially be blocked in the PCG. In principle any kind
 /// of PCG node could be blocked; however this type alias should be preferred to
 /// [`PCGNode`] in contexts where the blocking is relevant.
-pub type BlockedNode<'tcx> = PCGNode<'tcx>;
+pub type BlockedNode<'tcx> = PcgNode<'tcx>;
 
-impl<'tcx> PCGNode<'tcx> {
+impl<'tcx> PcgNode<'tcx> {
     pub(crate) fn as_blocking_node(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -380,11 +380,11 @@ impl<'tcx> PCGNode<'tcx> {
 
     pub(crate) fn as_local_node(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
         match self {
-            PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
+            PcgNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
             }
-            PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
-            PCGNode::LifetimeProjection(rp) => {
+            PcgNode::Place(MaybeRemotePlace::Remote(_)) => None,
+            PcgNode::LifetimeProjection(rp) => {
                 let place = rp.place().as_local_place()?;
                 Some(LocalNode::LifetimeProjection(rp.with_base(place)))
             }
@@ -473,7 +473,7 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {

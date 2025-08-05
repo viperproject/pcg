@@ -65,7 +65,7 @@ impl<'tcx> LabelLifetimeProjectionPredicate<'tcx> {
                     && !to_match.is_placeholder()
             }
             LabelLifetimeProjectionPredicate::Postfix(predicate_projection) => {
-                if let Some(crate::pcg::PCGNode::LifetimeProjection(to_match)) =
+                if let Some(crate::pcg::PcgNode::LifetimeProjection(to_match)) =
                     to_match.try_to_local_node(ctxt)
                 {
                     predicate_projection
@@ -80,7 +80,7 @@ impl<'tcx> LabelLifetimeProjectionPredicate<'tcx> {
                 }
             }
             LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place) => {
-                if let Some(crate::pcg::PCGNode::LifetimeProjection(to_match)) =
+                if let Some(crate::pcg::PcgNode::LifetimeProjection(to_match)) =
                     to_match.try_to_local_node(ctxt)
                 {
                     to_match.is_placeholder()

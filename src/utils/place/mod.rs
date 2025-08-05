@@ -44,7 +44,7 @@ use crate::{
         },
         visitor::extract_regions,
     },
-    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PcgNode, PCGNodeLike},
 };
 
 pub mod corrected;
@@ -104,7 +104,7 @@ impl<'tcx> LocalNodeLike<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for Place<'tcx> {
-    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.into()
     }
 }

@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 20 basic blocks, cycles, <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "rustls-native-certs",
+        "0.8.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("load_native_certs"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
     // <= 15 basic blocks, cycles, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "rustix",

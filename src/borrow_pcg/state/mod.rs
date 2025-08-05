@@ -29,7 +29,7 @@ use crate::{
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface::middle::{
         mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
         ty::{self},
@@ -114,7 +114,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !state.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeLabelledPlace::Current(place)) = node
+                    && let PcgNode::Place(MaybeLabelledPlace::Current(place)) = node
                 {
                     let _ = capabilities.remove(place, repacker);
                 }
@@ -397,8 +397,8 @@ impl<'tcx> BorrowsState<'tcx> {
         }
         let node = nodes.into_iter().next().unwrap();
         match node {
-            PCGNode::Place(_) => todo!(),
-            PCGNode::LifetimeProjection(region_projection) => region_projection.deref(repacker),
+            PcgNode::Place(_) => todo!(),
+            PcgNode::LifetimeProjection(region_projection) => region_projection.deref(repacker),
         }
     }
 

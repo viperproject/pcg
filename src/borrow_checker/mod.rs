@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 
 use crate::borrow_checker::r#impl::get_reserve_location;
 use crate::borrow_pcg::region_projection::PcgRegion;
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::rustc_interface::borrowck::BorrowData;
 use crate::rustc_interface::borrowck::PoloniusInput;
 use crate::rustc_interface::borrowck::PoloniusOutput;
@@ -15,6 +15,7 @@ use crate::rustc_interface::borrowck::RegionInferenceContext;
 use crate::rustc_interface::borrowck::{
     BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, places_conflict,
 };
+use crate::rustc_interface::index::bit_set::BitSet;
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty::RegionVid;
@@ -45,7 +46,7 @@ impl HasPcgRegion for BorrowData<'_> {
 }
 
 impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx> for T {
-    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool {
+    fn is_dead(&self, node: PcgNode<'tcx>, location: Location) -> bool {
         !self.is_live(node, location)
     }
 
@@ -187,16 +188,8 @@ impl<'tcx, T: RustBorrowCheckerInterface<'tcx>> BorrowCheckerInterface<'tcx> for
         self.polonius_output()
     }
 
-    fn borrow_set(&self) -> &BorrowSet<'tcx> {
-        self.borrow_set()
-    }
-
     fn input_facts(&self) -> &PoloniusInput {
         self.input_facts()
-    }
-
-    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid {
-        self.borrow_index_to_region(borrow_index)
     }
 
     fn rust_borrow_checker(&self) -> Option<&dyn RustBorrowCheckerInterface<'tcx>> {
@@ -209,7 +202,7 @@ pub trait BorrowCheckerInterface<'tcx> {
 
     /// Answers the question: Does `node` contain borrow extents that are not
     /// in scope at `location`?
-    fn is_dead(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+    fn is_dead(&self, node: PcgNode<'tcx>, location: Location) -> bool;
 
     fn is_directly_blocked(
         &self,
@@ -275,14 +268,8 @@ pub trait BorrowCheckerInterface<'tcx> {
     /// TODO: Remove
     fn region_to_borrow_index(&self, region: PcgRegion) -> Option<BorrowIndex>;
 
-    /// TODO: Remove
-    fn borrow_set(&self) -> &BorrowSet<'tcx>;
-
     // TODO: Remove, only for visualization
     fn input_facts(&self) -> &PoloniusInput;
-
-    // TODO: Remove, only for visualization
-    fn borrow_index_to_region(&self, borrow_index: BorrowIndex) -> RegionVid;
 }
 
 /// An interface to the results of the borrow-checker analysis. The PCG queries
@@ -302,11 +289,15 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     ///
     /// However, as referenced in the above link, there are some subtleties
     /// related to places that will be dropped. Follow the link for more details.
-    fn is_live(&self, node: PCGNode<'tcx>, location: Location) -> bool;
+    fn is_live(&self, node: PcgNode<'tcx>, location: Location) -> bool;
 
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
 
-    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool;
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex>;
+
+    fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
+        self.borrows_in_scope_at(location, true).contains(borrow_index)
+    }
 
     fn origin_contains_loan_at(
         &self,
@@ -342,6 +333,8 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
     fn override_region_debug_string(&self, region: RegionVid) -> Option<&str>;
+
+
 
     fn borrows_blocking(
         &self,

@@ -23,7 +23,7 @@ use crate::utils::visitor::FallableVisitor;
 use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
-    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
+    AnalysisObject, EvalStmtPhase, PcgNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
 };
 
 mod assign;
@@ -337,8 +337,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     #[allow(unused)]
     fn any_reachable_reverse(
         &self,
-        node: PCGNode<'tcx>,
-        predicate: impl Fn(&PCGNode<'tcx>) -> bool,
+        node: PcgNode<'tcx>,
+        predicate: impl Fn(&PcgNode<'tcx>) -> bool,
     ) -> bool {
         let mut stack = vec![node];
         let mut seen = HashSet::default();
@@ -413,8 +413,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let leaf_future_node_places = leaf_nodes
             .iter()
             .filter_map(|node| match node {
-                PCGNode::Place(_) => None,
-                PCGNode::LifetimeProjection(region_projection) => {
+                PcgNode::Place(_) => None,
+                PcgNode::LifetimeProjection(region_projection) => {
                     if region_projection.is_placeholder() {
                         region_projection.base.as_current_place()
                     } else {

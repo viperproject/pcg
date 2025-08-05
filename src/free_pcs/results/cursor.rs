@@ -14,7 +14,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeRef},
         region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::{EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor, successor_blocks},
+    pcg::{EvalStmtPhase, PcgNode, Pcg, PcgEngine, PcgError, PcgSuccessor, successor_blocks},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,
@@ -341,8 +341,8 @@ impl<'tcx> PcgLocation<'tcx> {
             .aliases(place.into(), ctxt)
             .into_iter()
             .flat_map(|p| match p {
-                PCGNode::Place(p) => p.as_current_place(),
-                PCGNode::LifetimeProjection(p) => match p.base() {
+                PcgNode::Place(p) => p.as_current_place(),
+                PcgNode::LifetimeProjection(p) => match p.base() {
                     MaybeRemoteRegionProjectionBase::Place(p) => {
                         let assoc_place = p.related_local_place();
                         if assoc_place.is_ref(ctxt) {

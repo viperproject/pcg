@@ -4,7 +4,7 @@ use crate::borrow_pcg::{
     domain::{AbstractionInputTarget, AbstractionOutputTarget, FunctionCallAbstractionOutput},
     edge::abstraction::{AbstractionBlockEdge, AbstractionInputLike, AbstractionType},
 };
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::rustc_interface::middle::mir::Location;
 
 impl<'tcx> AbstractionType<'tcx> {
@@ -60,6 +60,6 @@ impl<'tcx> AbstractionType<'tcx> {
 
 impl<'tcx> From<FunctionCallAbstractionOutput<'tcx>> for AbstractionOutputTarget<'tcx> {
     fn from(value: FunctionCallAbstractionOutput<'tcx>) -> Self {
-        AbstractionOutputTarget(PCGNode::LifetimeProjection(*value))
+        AbstractionOutputTarget(PcgNode::LifetimeProjection(*value))
     }
 }

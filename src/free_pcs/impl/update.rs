@@ -75,7 +75,8 @@ impl<'tcx> OwnedPcgData<'tcx> {
             }
             PlaceCondition::Return => {
                 pcg_validity_assert!(
-                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive
+                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
+                    [ctxt]
                 );
             }
             PlaceCondition::RemoveCapability(_) => unreachable!(),

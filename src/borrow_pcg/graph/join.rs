@@ -5,7 +5,7 @@ use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProj
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::free_pcs::OwnedPcg;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{BodyAnalysis, PCGNode, PCGNodeLike, PcgError, PcgUnsupportedError};
+use crate::pcg::{BodyAnalysis, PcgNode, PCGNodeLike, PcgError, PcgUnsupportedError};
 use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -39,9 +39,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) {
         let nodes = self.nodes(ctxt);
         for node in nodes {
-            if let PCGNode::LifetimeProjection(rp) = node
+            if let PcgNode::LifetimeProjection(rp) = node
                 && rp.is_placeholder()
-                && let Some(PCGNode::LifetimeProjection(local_rp)) = rp.try_to_local_node(ctxt)
+                && let Some(PcgNode::LifetimeProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
                 // if let MaybeOldPlace::Current(place) = local_rp.base
                 //     && capabilities.get(place).is_some()

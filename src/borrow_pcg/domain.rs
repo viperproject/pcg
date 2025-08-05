@@ -13,7 +13,7 @@ use crate::{
         },
         region_projection::{LifetimeProjectionLabel, LocalLifetimeProjection},
     },
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PcgNode, PCGNodeLike},
     utils::{
         CompilerCtxt, Place, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace,
         place::maybe_old::MaybeLabelledPlace, validity::HasValidityCheck,
@@ -35,7 +35,7 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for FunctionCallAbstractionInput<'tcx> 
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
-    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.0.into()
     }
 }
@@ -68,7 +68,7 @@ impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for FunctionCallAbstrac
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
-pub(crate) struct LoopAbstractionInput<'tcx>(pub(crate) PCGNode<'tcx>);
+pub(crate) struct LoopAbstractionInput<'tcx>(pub(crate) PcgNode<'tcx>);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub(crate) struct LoopAbstractionOutput<'tcx>(pub(crate) LocalNode<'tcx>);
@@ -99,7 +99,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for LoopAbstractionInput<'tcx> {
-    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.0
     }
 }
@@ -125,7 +125,7 @@ impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for LoopAbstractionInpu
 
 impl<'tcx> From<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> for LoopAbstractionInput<'tcx> {
     fn from(value: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>) -> Self {
-        LoopAbstractionInput(PCGNode::LifetimeProjection(value.into()))
+        LoopAbstractionInput(PcgNode::LifetimeProjection(value.into()))
     }
 }
 
@@ -134,7 +134,7 @@ impl<'tcx> TryFrom<LoopAbstractionInput<'tcx>> for LifetimeProjection<'tcx> {
 
     fn try_from(value: LoopAbstractionInput<'tcx>) -> Result<Self, Self::Error> {
         match value.0 {
-            PCGNode::LifetimeProjection(rp) => Ok(rp),
+            PcgNode::LifetimeProjection(rp) => Ok(rp),
             _ => Err(()),
         }
     }
@@ -160,7 +160,7 @@ impl<'tcx> DisplayWithCompilerCtxt<'tcx, &dyn BorrowCheckerInterface<'tcx>>
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for LoopAbstractionOutput<'tcx> {
-    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.0.into()
     }
 }
@@ -188,7 +188,7 @@ impl<'tcx> From<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>>
     for LoopAbstractionOutput<'tcx>
 {
     fn from(value: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>) -> Self {
-        LoopAbstractionOutput(PCGNode::LifetimeProjection(value))
+        LoopAbstractionOutput(PcgNode::LifetimeProjection(value))
     }
 }
 
@@ -197,14 +197,14 @@ impl<'tcx> TryFrom<LoopAbstractionOutput<'tcx>> for LifetimeProjection<'tcx> {
 
     fn try_from(value: LoopAbstractionOutput<'tcx>) -> Result<Self, Self::Error> {
         match value.0 {
-            PCGNode::LifetimeProjection(rp) => Ok(rp.into()),
+            PcgNode::LifetimeProjection(rp) => Ok(rp.into()),
             _ => Err(()),
         }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
-pub struct AbstractionInputTarget<'tcx>(pub(crate) PCGNode<'tcx>);
+pub struct AbstractionInputTarget<'tcx>(pub(crate) PcgNode<'tcx>);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, From, Deref)]
 pub struct AbstractionOutputTarget<'tcx>(pub(crate) LocalNode<'tcx>);

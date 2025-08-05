@@ -30,6 +30,7 @@ use crate::{
         driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{Config, interface::Compiler},
+        index::bit_set::BitSet,
         middle::{
             mir::{Body, Local, Location},
             query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
@@ -396,7 +397,14 @@ pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> {
-    fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex> {
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrows_in_scope_at(location, before),
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrows_in_scope_at(location, before),
+        }
+    }
+
+    fn is_live(&self, node: pcg::PcgNode<'tcx>, location: Location) -> bool {
         match self {
             RustBorrowCheckerImpl::Polonius(bc) => bc.is_live(node, location),
             RustBorrowCheckerImpl::Nll(bc) => bc.is_live(node, location),
@@ -471,15 +479,15 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> 
 impl<'mir, 'tcx> RustBorrowCheckerImpl<'mir, 'tcx> {
     fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
         match self {
-            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.pretty_printer,
-            RustBorrowCheckerImpl::Nll(bc) => &mut bc.pretty_printer,
+            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.borrow_checker_data.pretty_printer,
+            RustBorrowCheckerImpl::Nll(bc) => &mut bc.borrow_checker_data.pretty_printer,
         }
     }
 
     pub fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         match self {
-            RustBorrowCheckerImpl::Polonius(bc) => bc.region_cx,
-            RustBorrowCheckerImpl::Nll(bc) => bc.region_cx,
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrow_checker_data.region_cx,
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrow_checker_data.region_cx,
         }
     }
 }
@@ -586,7 +594,12 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {region:?}").unwrap();
                         for index in indices {
-                            writeln!(loans_file, "  {:?}", bc.borrows[index].region()).unwrap();
+                            writeln!(
+                                loans_file,
+                                "  {:?}",
+                                bc.borrow_checker_data.borrows[index].region()
+                            )
+                            .unwrap();
                         }
                     }
                 }

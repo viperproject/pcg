@@ -6,7 +6,7 @@ use crate::{
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
     free_pcs::CapabilityKind,
-    pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
+    pcg::{MaybeHasLocation, PcgNode, PCGNodeLike},
     rustc_interface::middle::mir,
     utils::{
         CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt,
@@ -34,10 +34,10 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
             MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local),
         }
     }
-    fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
+    fn insert_pcg_node(&mut self, node: PcgNode<'tcx>) -> NodeId {
         match node {
-            PCGNode::Place(place) => self.insert_maybe_remote_place(place),
-            PCGNode::LifetimeProjection(rp) => self.constructor().insert_region_projection_node(rp),
+            PcgNode::Place(place) => self.insert_maybe_remote_place(place),
+            PcgNode::LifetimeProjection(rp) => self.constructor().insert_region_projection_node(rp),
         }
     }
 

@@ -10,7 +10,7 @@ use crate::{
         },
         region_projection::LifetimeProjectionLabel,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface::{
         ast::Mutability,
         borrowck::BorrowIndex,
@@ -229,7 +229,7 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -380,15 +380,15 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match node {
-            PCGNode::Place(MaybeRemotePlace::Local(p)) => self.blocked_place == p,
+            PcgNode::Place(MaybeRemotePlace::Local(p)) => self.blocked_place == p,
             _ => false,
         }
     }
 
     fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match node {
-            PCGNode::Place(_) => false,
-            PCGNode::LifetimeProjection(region_projection) => {
+            PcgNode::Place(_) => false,
+            PcgNode::LifetimeProjection(region_projection) => {
                 region_projection == self.assigned_region_projection(repacker)
             }
         }

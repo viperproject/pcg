@@ -1,6 +1,6 @@
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, PlaceLabeller};
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::rustc_interface::middle::mir::ProjectionElem;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};
@@ -14,7 +14,7 @@ pub trait EdgeData<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf;
 
@@ -38,7 +38,7 @@ pub trait EdgeData<'tcx> {
     fn nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
         &'slf self,
         ctxt: CompilerCtxt<'mir, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -50,8 +50,8 @@ pub trait EdgeData<'tcx> {
 
     fn references_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.nodes(ctxt).any(|n| match n {
-            PCGNode::Place(p) => p.as_current_place() == Some(place),
-            PCGNode::LifetimeProjection(rp) => rp.base.as_current_place() == Some(place),
+            PcgNode::Place(p) => p.as_current_place() == Some(place),
+            PcgNode::LifetimeProjection(rp) => rp.base.as_current_place() == Some(place),
         })
     }
 }
@@ -153,7 +153,7 @@ macro_rules! edgedata_enum {
             fn blocked_nodes<'slf, BC: Copy>(
                 &'slf self,
                 repacker: CompilerCtxt<'_, $tcx, BC>,
-            ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+            ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
             where
                 'tcx: 'slf,
             {

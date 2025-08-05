@@ -5,7 +5,7 @@ A web server for visualizing PCG (Program Control Graph) outputs. This server al
 ## Prerequisites
 
 - Rust and Cargo installed
-- Access to the parent PCS project with `pcs_bin` and visualization files
+- Access to the parent PCS project with `pcg_bin` and visualization files
 
 ## Setup
 

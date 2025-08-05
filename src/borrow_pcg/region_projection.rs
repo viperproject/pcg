@@ -23,7 +23,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{CompilerCtxt, SnapshotLocation};
 use crate::{
-    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PcgNode, PCGNodeLike},
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::{
@@ -242,7 +242,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for LifetimeProjection<'tcx, T> {
-    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.with_base(self.base.to_maybe_remote_region_projection_base())
             .into()
     }
@@ -324,11 +324,11 @@ impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>> for LifetimeProjection<'t
     }
 }
 
-impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for LifetimeProjection<'tcx, P> {
+impl<'tcx, T, P> TryFrom<PcgNode<'tcx, T, P>> for LifetimeProjection<'tcx, P> {
     type Error = ();
-    fn try_from(node: PCGNode<'tcx, T, P>) -> Result<Self, Self::Error> {
+    fn try_from(node: PcgNode<'tcx, T, P>) -> Result<Self, Self::Error> {
         match node {
-            PCGNode::LifetimeProjection(rp) => Ok(rp),
+            PcgNode::LifetimeProjection(rp) => Ok(rp),
             _ => Err(()),
         }
     }
@@ -607,8 +607,8 @@ impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>>
     type Error = String;
     fn try_from(node: AbstractionGraphNode<'tcx>) -> Result<Self, Self::Error> {
         match *node {
-            PCGNode::LifetimeProjection(rp) => rp.try_into(),
-            PCGNode::Place(p) => Err(format!(
+            PcgNode::LifetimeProjection(rp) => rp.try_into(),
+            PcgNode::Place(p) => Err(format!(
                 "Place {:?} cannot be converted to a region projection",
                 p
             )),

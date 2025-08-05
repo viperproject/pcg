@@ -28,7 +28,7 @@ use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::LifetimeProjection;
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeLabelledPlace;
@@ -165,8 +165,8 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
         _ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node {
-            PCGNode::Place(p) => inputs.contains(&p.into()),
-            PCGNode::LifetimeProjection(region_projection) => match region_projection.base {
+            PcgNode::Place(p) => inputs.contains(&p.into()),
+            PcgNode::LifetimeProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     inputs.contains(&(region_projection.with_base(maybe_remote_place).into()))
                 }
@@ -182,7 +182,7 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
 
 impl<'tcx> From<LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>> for LoopAbstractionInput<'tcx> {
     fn from(value: LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
-        LoopAbstractionInput(PCGNode::LifetimeProjection(value.into()))
+        LoopAbstractionInput(PcgNode::LifetimeProjection(value.into()))
     }
 }
 
@@ -193,8 +193,8 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
         _ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node {
-            PCGNode::Place(_) => false,
-            PCGNode::LifetimeProjection(region_projection) => match region_projection.base {
+            PcgNode::Place(_) => false,
+            PcgNode::LifetimeProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(MaybeRemotePlace::Local(rp)) => {
                     inputs.contains(&region_projection.with_base(rp).into())
                 }
@@ -218,7 +218,7 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>, Output: Copy + PCGNodeLike<'tcx>> 
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -336,8 +336,8 @@ impl<Input: Clone, Output: Copy> AbstractionBlockEdge<'_, Input, Output> {
 impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for LoopAbstractionInput<'tcx> {
     fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
         match &mut self.0 {
-            PCGNode::Place(p) => p.pcg_elems(),
-            PCGNode::LifetimeProjection(rp) => rp.base.pcg_elems(),
+            PcgNode::Place(p) => p.pcg_elems(),
+            PcgNode::LifetimeProjection(rp) => rp.base.pcg_elems(),
         }
     }
 }

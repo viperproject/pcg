@@ -8,7 +8,7 @@ use crate::borrow_pcg::region_projection::{
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
+use crate::pcg::{LocalNodeLike, MaybeHasLocation, PcgNode, PCGNodeLike, PcgError};
 use crate::rustc_interface::PlaceTy;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -76,7 +76,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeLabelledPlace<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeLabelledPlace<'tcx> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         match self {
             MaybeLabelledPlace::Current(place) => place.to_pcg_node(repacker),
             MaybeLabelledPlace::Labelled(snapshot) => snapshot.to_pcg_node(repacker),
@@ -117,12 +117,12 @@ impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeLabelledPlace<'tc
     }
 }
 
-impl<'tcx> TryFrom<PCGNode<'tcx>> for MaybeLabelledPlace<'tcx> {
+impl<'tcx> TryFrom<PcgNode<'tcx>> for MaybeLabelledPlace<'tcx> {
     type Error = String;
-    fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
+    fn try_from(node: PcgNode<'tcx>) -> Result<Self, Self::Error> {
         match node {
-            PCGNode::Place(p) => Ok(p.try_into()?),
-            PCGNode::LifetimeProjection(_) => {
+            PcgNode::Place(p) => Ok(p.try_into()?),
+            PcgNode::LifetimeProjection(_) => {
                 Err("Region projection cannot be converted to a maybe old place".to_string())
             }
         }

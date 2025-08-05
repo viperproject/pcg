@@ -8,7 +8,7 @@ use crate::borrow_pcg::has_pcs_elem::{
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::pcg::{PcgNode, PCGNodeLike};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -73,7 +73,7 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeRemotePlace<'
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.to_pcg_node(repacker),
             MaybeRemotePlace::Remote(rp) => rp.to_pcg_node(repacker),

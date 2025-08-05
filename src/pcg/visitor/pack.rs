@@ -7,7 +7,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::pcg::obtain::PlaceObtainer;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::utils::HasPlace;
@@ -131,8 +131,8 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
 
         let ancestor_predicate_allows_killing = |p: LocalNode<'tcx>| {
             let place = match p {
-                PCGNode::Place(p) => p,
-                PCGNode::LifetimeProjection(rp) => rp.place(),
+                PcgNode::Place(p) => p,
+                PcgNode::LifetimeProjection(rp) => rp.place(),
             };
             if let Some(ancestor_place) = ancestor_place {
                 if !place.is_current() || !ancestor_place.place().is_prefix_of(place.place()) {
@@ -144,8 +144,8 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
 
         let should_kill_node = |p: LocalNode<'tcx>, fg: &FrozenGraphRef<'slf, 'tcx>| {
             let place = match p {
-                PCGNode::Place(p) => p,
-                PCGNode::LifetimeProjection(rp) => rp.place(),
+                PcgNode::Place(p) => p,
+                PcgNode::LifetimeProjection(rp) => rp.place(),
             };
             if !ancestor_predicate_allows_killing(p) {
                 return ShouldKillNode::No;

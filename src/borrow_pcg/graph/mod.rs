@@ -13,7 +13,7 @@ use crate::{
         region_projection::LifetimeProjectionLabel,
     },
     free_pcs::ExpandedPlace,
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PcgNode, PCGNodeLike},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
@@ -62,7 +62,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         let nodes = self.nodes(ctxt);
         // TODO
         for node in nodes.iter() {
-            if let Some(PCGNode::LifetimeProjection(rp)) = node.try_to_local_node(ctxt)
+            if let Some(PcgNode::LifetimeProjection(rp)) = node.try_to_local_node(ctxt)
                 && rp.is_placeholder()
                 && rp.base.as_current_place().is_some()
             {
@@ -168,7 +168,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         None
     }
 
-    pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
+    pub(crate) fn contains<T: Into<PcgNode<'tcx>>>(
         &self,
         node: T,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -252,7 +252,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn nodes<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    ) -> FxHashSet<PcgNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
                 edge.blocked_nodes(ctxt)
@@ -262,8 +262,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn roots(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        let roots: FxHashSet<PCGNode<'tcx>> = self
+    pub(crate) fn roots(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PcgNode<'tcx>> {
+        let roots: FxHashSet<PcgNode<'tcx>> = self
             .nodes(repacker)
             .into_iter()
             .filter(|node| self.is_root(*node, repacker))
@@ -271,7 +271,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         roots
     }
 
-    pub(crate) fn is_root<T: Copy + Into<PCGNode<'tcx>>>(
+    pub(crate) fn is_root<T: Copy + Into<PcgNode<'tcx>>>(
         &self,
         node: T,
         ctxt: CompilerCtxt<'_, 'tcx>,
@@ -279,7 +279,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.contains(node.into(), ctxt)
             && match node.into().as_local_node(ctxt) {
                 Some(node) => match node {
-                    PCGNode::Place(place) if place.is_owned(ctxt) => true,
+                    PcgNode::Place(place) if place.is_owned(ctxt) => true,
                     _ => !self.has_edge_blocked_by(node, ctxt),
                 },
                 None => true,
@@ -308,7 +308,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Vec<PCGNode<'tcx>> {
+    ) -> Vec<PcgNode<'tcx>> {
         self.edges_blocked_by(node, ctxt)
             .flat_map(|edge| edge.blocked_nodes(ctxt).collect::<Vec<_>>())
             .collect()

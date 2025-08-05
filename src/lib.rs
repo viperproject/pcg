@@ -418,7 +418,6 @@ macro_rules! pcg_validity_assert {
     ($cond:expr, [$ctxt:expr]) => {
         {
             let ctxt = $ctxt;
-            let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
             pcg_validity_assert!($cond, [ctxt], "{}", stringify!($cond));
         }
     };

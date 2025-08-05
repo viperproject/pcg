@@ -11,7 +11,7 @@ use crate::{
         },
         region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
     },
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PcgNode, PCGNodeLike},
     pcg_validity_assert,
     utils::{
         CompilerCtxt, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace,
@@ -95,14 +95,14 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
-    fn blocks_node<'slf>(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    fn blocks_node<'slf>(&self, node: PcgNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
 
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {

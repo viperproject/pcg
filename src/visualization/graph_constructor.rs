@@ -4,9 +4,9 @@ use crate::{
         region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcgLocal, OwnedPcgData},
+    free_pcs::{CapabilityKind, OwnedPcgData, OwnedPcgLocal},
     pcg::{
-        MaybeHasLocation, PCGNode, PcgRef,
+        MaybeHasLocation, PcgNode, PcgRef,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
@@ -67,12 +67,12 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
     fn insert_pcg_node(
         &mut self,
-        node: PCGNode<'tcx>,
+        node: PcgNode<'tcx>,
         capability_getter: &impl CapabilityGetter<'tcx>,
     ) -> NodeId {
         match node {
-            PCGNode::Place(place) => self.insert_maybe_remote_place(place, capability_getter),
-            PCGNode::LifetimeProjection(rp) => self.insert_region_projection_node(rp),
+            PcgNode::Place(place) => self.insert_maybe_remote_place(place, capability_getter),
+            PcgNode::LifetimeProjection(rp) => self.insert_region_projection_node(rp),
         }
     }
 
@@ -116,7 +116,11 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
                         "{{{}}}",
                         loans
                             .iter()
-                            .map(|l| format!("{:?}", self.ctxt.bc.borrow_set()[*l].region()))
+                            .map(|l| format!(
+                                "{:?}",
+                                self.ctxt.bc.rust_borrow_checker().unwrap().borrow_set()[*l]
+                                    .region()
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     )

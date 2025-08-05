@@ -5,7 +5,7 @@ use super::{CompilerCtxt, Place, validity::HasValidityCheck};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike};
+use crate::pcg::{EvalStmtPhase, PcgNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
@@ -153,7 +153,7 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for LabelledPlace<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for LabelledPlace<'tcx> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.to_local_node(repacker).into()
     }
 }

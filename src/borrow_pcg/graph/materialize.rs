@@ -5,7 +5,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef},
         edge::kind::BorrowPcgEdgeKind,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     utils::CompilerCtxt,
 };
 
@@ -13,8 +13,8 @@ use super::BorrowsGraph;
 
 #[derive(Clone, Copy)]
 pub(crate) struct AliasEdge<'tcx> {
-    pub(crate) blocked_place: PCGNode<'tcx>,
-    pub(crate) blocking_place: PCGNode<'tcx>,
+    pub(crate) blocked_place: PcgNode<'tcx>,
+    pub(crate) blocking_place: PcgNode<'tcx>,
 }
 
 #[derive(Clone, Copy)]

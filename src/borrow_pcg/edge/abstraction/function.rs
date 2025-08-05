@@ -11,7 +11,7 @@ use crate::{
         },
         region_projection::LifetimeProjectionLabel,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface::{
         hir::def_id::DefId,
         middle::{mir::Location, ty::GenericArgsRef},
@@ -83,7 +83,7 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {

@@ -21,7 +21,7 @@ use crate::pcg::obtain::{
     HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
 };
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
-use crate::pcg::{EvalStmtPhase, PCGNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
+use crate::pcg::{EvalStmtPhase, PcgNode, PCGNodeLike, PcgDebugData, PcgMutRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
@@ -232,7 +232,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     // because we will remove the label from *s|'s at l'
                     // to become *s|'s. Otherwise we'd have both *s|'s and *s.i|'s
                     for exp_node in expansion.expansion() {
-                        if let PCGNode::Place(place) = exp_node {
+                        if let PcgNode::Place(place) = exp_node {
                             for rp in place.region_projections(self.ctxt) {
                                 tracing::debug!(
                                     "labeling region projection: {}",
@@ -294,7 +294,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         context: &str,
     ) -> Result<(), PcgError> {
         if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
-            if let Some(PCGNode::LifetimeProjection(rp)) = node.try_to_local_node(self.ctxt) {
+            if let Some(PcgNode::LifetimeProjection(rp)) = node.try_to_local_node(self.ctxt) {
                 self.record_and_apply_action(
                     BorrowPcgAction::remove_region_projection_label(
                         rp,
@@ -380,7 +380,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .iter()
                         .flat_map(|e| {
                             if let BorrowPcgEdgeKind::BorrowPcgExpansion(e) = e.kind()
-                                && let PCGNode::LifetimeProjection(rp) = e.base
+                                && let PcgNode::LifetimeProjection(rp) = e.base
                                 && rp == current_rp.into()
                             {
                                 Some(
