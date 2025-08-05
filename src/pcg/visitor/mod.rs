@@ -260,7 +260,11 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
                     self.collapse_owned_places_to(
                         place,
                         candidate_cap,
-                        format!("Collapse owned place {} (iteration {})", place.to_short_string(self.ctxt), iteration),
+                        format!(
+                            "Collapse owned place {} (iteration {})",
+                            place.to_short_string(self.ctxt),
+                            iteration
+                        ),
                         self.ctxt,
                     )?;
                     if place.projection.is_empty()
@@ -314,7 +318,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.visit_statement_fallable(statement, location)?
             }
             AnalysisObject::Terminator(terminator) => {
-                self.visit_terminator_fallable(terminator, location)?
+                self.visit_terminator_fallable(terminator, location)?;
+                if self.phase() == EvalStmtPhase::PostMain {
+                    // when the analysis object is a terminator, this step ensures
+                    // the owned PCG is in the most-packed state for the join.
+                    self.place_obtainer().collapse_owned_places()?;
+                }
             }
         }
         if self.phase() == EvalStmtPhase::PostMain {

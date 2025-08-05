@@ -395,6 +395,14 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
 }
 
 macro_rules! pcg_validity_expect_some {
+    ($cond:expr, $fallback:expr, [$ctxt:expr], $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), [$ctxt], $($arg)*);
+            }
+            $cond.unwrap_or($fallback)
+        }
+    };
     ($cond:expr, $fallback:expr, $($arg:tt)*) => {
         {
             if $crate::validity_checks_enabled() {
@@ -406,36 +414,34 @@ macro_rules! pcg_validity_expect_some {
 }
 
 macro_rules! pcg_validity_assert {
-    ($cond:expr) => {
-        if $crate::validity_checks_enabled() {
-            if $crate::validity_checks_warn_only() {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if !$cond {
-                    tracing::error!("assertion failed: {}", stringify!($cond));
-                }
-            } else {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if !$cond {
-                    tracing::error!("assertion failed: {}", stringify!($cond));
-                }
-                assert!($cond);
-            }
+    // With [ctxt] and no error message
+    ($cond:expr, [$ctxt:expr]) => {
+        {
+            let ctxt = $ctxt;
+            let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
+            pcg_validity_assert!($cond, [ctxt], "{}", stringify!($cond));
         }
+    };
+    // With [ctxt] and error message
+    ($cond:expr, [$ctxt:expr], $($arg:tt)*) => {
+        {
+            let ctxt = $ctxt;
+            let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
+            let crate_part = std::env::var("CARGO_CRATE_NAME").map(|s| format!(" (Crate: {})", s)).unwrap_or_default();
+            pcg_validity_assert!($cond, "PCG Assertion Failed {crate_part}: [{func_name}] {}", format!($($arg)*));
+        }
+    };
+    ($cond:expr) => {
+        pcg_validity_assert!($cond, "{}", stringify!($cond));
     };
     ($cond:expr, $($arg:tt)*) => {
         if $crate::validity_checks_enabled() {
-            if $crate::validity_checks_warn_only() {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if !$cond {
-                    tracing::error!($($arg)*);
+            #[allow(clippy::neg_cmp_op_on_partial_ord)]
+            if !$cond {
+                tracing::error!($($arg)*);
+                if !$crate::validity_checks_warn_only() {
+                    assert!($cond, $($arg)*);
                 }
-            } else {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-
-                if !$cond {
-                    tracing::error!($($arg)*);
-                }
-                assert!($cond, $($arg)*);
             }
         }
     };

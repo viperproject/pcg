@@ -151,7 +151,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>: HasSnapshotLocation {
         let to_collapse = self
             .get_local_expansions(place.local)
             .places_to_collapse_for_obtain_of(place, ctxt);
-        tracing::info!(
+        tracing::debug!(
             "To obtain {}, will collapse {}",
             place.to_short_string(ctxt),
             to_collapse
