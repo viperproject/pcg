@@ -395,10 +395,11 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
 }
 
 macro_rules! pcg_validity_expect_some {
-    ($cond:expr, $fallback:expr, [$ctxt:expr], $($arg:tt)*) => {
+    // Old syntax for backward compatibility - must come first to match before generic pattern
+    ($cond:expr, $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
         {
             if $crate::validity_checks_enabled() {
-                pcg_validity_assert!($cond.is_some(), [$ctxt], $($arg)*);
+                pcg_validity_assert!($cond.is_some(), [$($ctxt_and_loc)*], $($arg)*);
             }
             $cond.unwrap_or($fallback)
         }
@@ -411,18 +412,106 @@ macro_rules! pcg_validity_expect_some {
             $cond.unwrap_or($fallback)
         }
     };
+
+    // New syntax patterns - these come after old syntax to avoid conflicts
+    ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), [$($ctxt_and_loc)*], $($arg)*);
+            }
+            $cond.unwrap_or($fallback)
+        }
+    };
+    ($cond:expr, fallback: $fallback:expr, $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), $($arg)*);
+            }
+            $cond.unwrap_or($fallback)
+        }
+    };
+
+    // New syntax without fallback
+    ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), [$($ctxt_and_loc)*], $($arg)*);
+            }
+            $cond.expect("pcg_validity_expect_some failed")
+        }
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), $($arg)*);
+            }
+            $cond.expect("pcg_validity_expect_some failed")
+        }
+    };
+}
+
+macro_rules! pcg_validity_expect_ok {
+    // With fallback: keyword
+    ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.unwrap_or($fallback)
+        }
+    };
+    ($cond:expr, fallback: $fallback:expr, $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.unwrap_or($fallback)
+        }
+    };
+
+    // Without fallback (panic on Err)
+    ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.expect("pcg_validity_expect_ok failed")
+        }
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.expect("pcg_validity_expect_ok failed")
+        }
+    };
 }
 
 macro_rules! pcg_validity_assert {
-    // With [ctxt] and no error message
-    ($cond:expr, [$ctxt:expr]) => {
+    // Entry point with brackets - parse using token trees
+    ($cond:expr, [$($ctxt_and_loc:tt)*]) => {
+        pcg_validity_assert!(@parse_context $cond, [$($ctxt_and_loc)*], "{}", stringify!($cond))
+    };
+    ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        pcg_validity_assert!(@parse_context $cond, [$($ctxt_and_loc)*], $($arg)*)
+    };
+
+    // Parse context patterns - match the entire token sequence
+    (@parse_context $cond:expr, [$ctxt:tt at $loc:tt], $($arg:tt)*) => {
         {
             let ctxt = $ctxt;
-            pcg_validity_assert!($cond, [ctxt], "{}", stringify!($cond));
+            let loc = $loc;
+            let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
+            let crate_part = std::env::var("CARGO_CRATE_NAME").map(|s| format!(" (Crate: {})", s)).unwrap_or_default();
+            pcg_validity_assert!($cond, "PCG Assertion Failed {crate_part}: [{func_name} at {loc:?}] {}", format!($($arg)*));
         }
     };
-    // With [ctxt] and error message
-    ($cond:expr, [$ctxt:expr], $($arg:tt)*) => {
+    (@parse_context $cond:expr, [$ctxt:tt], $($arg:tt)*) => {
         {
             let ctxt = $ctxt;
             let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
@@ -430,6 +519,8 @@ macro_rules! pcg_validity_assert {
             pcg_validity_assert!($cond, "PCG Assertion Failed {crate_part}: [{func_name}] {}", format!($($arg)*));
         }
     };
+
+    // Without brackets
     ($cond:expr) => {
         pcg_validity_assert!($cond, "{}", stringify!($cond));
     };
@@ -448,6 +539,7 @@ macro_rules! pcg_validity_assert {
 
 pub(crate) use pcg_validity_assert;
 pub(crate) use pcg_validity_expect_some;
+pub(crate) use pcg_validity_expect_ok;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

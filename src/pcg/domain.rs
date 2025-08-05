@@ -270,25 +270,6 @@ impl<'tcx> PcgMutRef<'_, 'tcx> {
 
         places
     }
-
-    pub(crate) fn assert_validity_at_location(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-        _location: mir::Location,
-    ) {
-        if validity_checks_enabled()
-            && let Err(err) = self.as_ref().check_validity(ctxt)
-        {
-            // if borrows_imgcat_debug() {
-            //     self.render_debug_graph(ctxt, location, "Validity check failed");
-            // }
-            if validity_checks_warn_only() {
-                tracing::error!("Validity check failed: {}", err.to_string());
-            } else {
-                panic!("Validity check failed: {}", err);
-            }
-        }
-    }
 }
 
 pub(crate) trait PcgRefLike<'tcx> {

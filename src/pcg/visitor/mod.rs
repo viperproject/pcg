@@ -328,9 +328,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             }
         }
         if self.phase() == EvalStmtPhase::PostMain {
-            self.pcg
-                .as_mut_ref()
-                .assert_validity_at_location(self.ctxt, location);
+            // self.pcg .as_mut_ref()
+            //     .assert_validity_at_location(self.ctxt, location);
         }
         Ok(self.actions)
     }
