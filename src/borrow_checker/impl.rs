@@ -290,20 +290,11 @@ impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl<'tcx> NllBorrowCheckerImpl<'_, 'tcx> {
-    fn local_is_live_before(&self, local: mir::Local, mut location: Location) -> bool {
-        // The liveness in `MaybeLiveLocals` returns the liveness *after* the end of
-        // the statement at `location`. Therefore we need to decrement the statement
-        // index by 1 to get the liveness at the end of the previous statement.
-        // If this is the first statement of the block, we conservatively assume it's live,
-        // perhaps this could be addressed in some way?
-        if location.statement_index > 0 {
-            location.statement_index -= 1;
-        } else {
-            return true;
-        }
-
+    fn local_is_live_before(&self, local: mir::Local, location: Location) -> bool {
         let mut cursor = self.live_locals.as_ref().borrow_mut();
-        cursor.seek_before_primary_effect(location);
+        // Because the analysis is backwards, seeking "after" the primary effect means
+        // that liveness in considered at the point before the statement occurs.
+        cursor.seek_after_primary_effect(location);
         cursor_contains_local(cursor, local)
     }
 
