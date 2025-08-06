@@ -6,7 +6,7 @@ use crate::{
         dataflow::{Analysis, AnalysisEngine, with_cursor_state},
         middle::mir::{
             self,
-            visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor},
+            visit::{MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext, Visitor},
         },
         mir_dataflow::{Backward, GenKill, JoinSemiLattice, ResultsCursor, fmt::DebugWithContext},
     },
@@ -176,6 +176,7 @@ impl DefUse {
 
     fn for_place(place: mir::Place<'_>, context: PlaceContext) -> Option<DefUse> {
         match context {
+            PlaceContext::NonUse(NonUseContext::StorageDead) => Some(DefUse::Def),
             PlaceContext::NonUse(_) => None,
 
             PlaceContext::MutatingUse(

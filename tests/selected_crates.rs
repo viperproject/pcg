@@ -24,15 +24,15 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // 56 basic blocks, <= 60 nodes
+    // 51 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
-        "rustls",
-        "0.23.23",
+        "brotli-decompressor",
+        "4.0.2",
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("msgs::handshake::ServerNamePayload::read_hostname"),
+            function: Some("copy_from_to"),
             extra_env_vars: visualization_env_vars,
         },
     );
@@ -46,7 +46,20 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("nfa::contiguous::Builder::build_from_noncontiguous"),
-            extra_env_vars: vec![]
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 56 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "rustls",
+        "0.23.23",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("msgs::handshake::ServerNamePayload::read_hostname"),
+            extra_env_vars: vec![],
         },
     );
 
