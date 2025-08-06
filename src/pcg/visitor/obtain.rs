@@ -1,22 +1,15 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
-
-use itertools::Itertools;
-
-use crate::action::{ActionKindWithDebugCtxt, BorrowPcgAction, OwnedPcgAction, PcgAction};
-use crate::borrow_pcg::action::{BorrowPcgActionKind, LabelPlaceReason};
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
+use crate::action::{BorrowPcgAction, PcgAction};
+use crate::borrow_pcg::action::LabelPlaceReason;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{
-    LabelLifetimeProjectionPredicate, LabelNodeContext, LabelPlace, LabelPlaceWithContext, SetLabel,
-};
-use crate::borrow_pcg::region_projection::{LifetimeProjection, LocalLifetimeProjection};
+use crate::borrow_pcg::has_pcs_elem::
+    LabelLifetimeProjectionPredicate
+;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
-use crate::free_pcs::{CapabilityKind, RepackGuide, RepackOp};
+use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{
     ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
@@ -27,7 +20,6 @@ use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
-use crate::{pcg_validity_assert, pcg_validity_expect_some};
 
 use crate::utils::{Place, SnapshotLocation};
 

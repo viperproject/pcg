@@ -32,10 +32,10 @@ impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 't
                     .apply_action(action.clone(), self.data.capabilities, self.ctxt)
             }
             PcgAction::Owned(action) => match action.kind {
-                RepackOp::StorageDead(local) => todo!(),
-                RepackOp::IgnoreStorageDead(local) => todo!(),
-                RepackOp::Weaken(place, capability_kind, capability_kind1) => todo!(),
-                RepackOp::Expand(repack_expand) => todo!(),
+                RepackOp::StorageDead(_) => todo!(),
+                RepackOp::IgnoreStorageDead(_) => todo!(),
+                RepackOp::Weaken(..) => todo!(),
+                RepackOp::Expand(_) => todo!(),
                 RepackOp::Collapse(collapse) => {
                     self.data.owned.perform_collapse_action(
                         collapse,
@@ -45,7 +45,7 @@ impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 't
                     self.actions.push(action.kind);
                     Ok(true)
                 }
-                RepackOp::DerefShallowInit(place, place1) => todo!(),
+                RepackOp::DerefShallowInit(..) => todo!(),
                 RepackOp::RegainLoanedCapability(place, capability_kind) => {
                     self.data.capabilities.regain_loaned_capability(
                         place,

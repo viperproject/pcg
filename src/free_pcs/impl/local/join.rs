@@ -20,7 +20,6 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
         other_expansion: ExpandedPlace<'tcx>,
-        self_expansions: HashSet<ExpandedPlace<'tcx>>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
     where
@@ -246,7 +245,6 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                     actions.extend(self.join_expansions_from_place(
                         &mut other,
                         other_expansion.clone(),
-                        self_expansions,
                         ctxt,
                     )?);
                     continue 'outer;

@@ -263,16 +263,6 @@ impl<'tcx> Place<'tcx> {
         left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
     }
 
-    pub(crate) fn iter_places<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Vec<Self> {
-        let mut places = self
-            .iter_projections(repacker)
-            .into_iter()
-            .map(|(place, _)| place)
-            .collect::<Vec<_>>();
-        places.push(self);
-        places
-    }
-
     pub(crate) fn parent_place(self) -> Option<Self> {
         let (prefix, _) = self.last_projection()?;
         Some(Place::new(prefix.local, prefix.projection))

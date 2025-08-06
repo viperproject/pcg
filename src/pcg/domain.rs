@@ -44,7 +44,6 @@ use crate::{
         liveness::PlaceLiveness,
         validity::HasValidityCheck,
     },
-    validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
 };
 
@@ -235,43 +234,6 @@ impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
     }
 }
 
-impl<'tcx> PcgMutRef<'_, 'tcx> {
-    pub(crate) fn leaf_places_where(
-        &self,
-        predicate: impl Fn(Place<'tcx>) -> bool,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<Place<'tcx>> {
-        let mut places: HashSet<Place<'tcx>> = self
-            .borrow
-            .leaf_nodes(ctxt)
-            .into_iter()
-            .flat_map(|node| node.as_current_place())
-            .filter(|p| predicate(*p))
-            .collect();
-
-        let mut owned_leaf_places = self
-            .owned
-            .leaf_places(ctxt)
-            .into_iter()
-            .filter(|p| predicate(*p))
-            .peekable();
-
-        if owned_leaf_places.peek().is_none() {
-            return places;
-        }
-
-        let owned_places_in_borrow_pcg = self.borrow.graph().owned_places(ctxt);
-
-        for place in owned_leaf_places {
-            if !owned_places_in_borrow_pcg.contains(&place) {
-                places.insert(place);
-            }
-        }
-
-        places
-    }
-}
-
 pub(crate) trait PcgRefLike<'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx>;
 
@@ -299,26 +261,6 @@ impl<'tcx> PcgRefLike<'tcx> for Pcg<'tcx> {
 impl<'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         *self
-    }
-}
-
-pub(crate) trait PcgMutRefLike<'pcg, 'tcx: 'pcg> {
-    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx>;
-}
-
-impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for PcgMutRef<'pcg, 'tcx> {
-    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
-        PcgMutRef {
-            owned: self.owned,
-            borrow: self.borrow.as_mut_ref(),
-            capabilities: self.capabilities,
-        }
-    }
-}
-
-impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for Pcg<'tcx> {
-    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
-        self.into()
     }
 }
 
@@ -407,10 +349,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             capabilities: &mut other_capabilities,
             block: other_block,
         };
-        let mut res = self_owned_data.join(
-            other_owned_data,
-            ctxt,
-        )?;
+        let mut res = self_owned_data.join(other_owned_data, ctxt)?;
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();

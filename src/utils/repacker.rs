@@ -194,10 +194,6 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
 }
 
 impl CompilerCtxt<'_, '_> {
-    pub(crate) fn is_arg(self, local: Local) -> bool {
-        local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
-    }
-
     /// Returns `true` iff the edge from `from` to `to` is a back edge (i.e.
     /// `to` dominates `from`).
     pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
@@ -273,59 +269,12 @@ impl ConstantIndex {
     }
 }
 
-pub(crate) struct DeepExpansion<'tcx>(Vec<ShallowExpansion<'tcx>>);
-
-impl<'tcx> DeepExpansion<'tcx> {
-    pub(crate) fn new(expansions: Vec<ShallowExpansion<'tcx>>) -> Self {
-        Self(expansions)
-    }
-
-    pub(crate) fn other_expansions(&self) -> FxHashSet<Place<'tcx>> {
-        self.0
-            .iter()
-            .flat_map(|e| e.other_places.iter())
-            .cloned()
-            .collect()
-    }
-
-    pub(crate) fn expansions(&self) -> &[ShallowExpansion<'tcx>] {
-        &self.0
-    }
-}
-
 impl<'tcx> Place<'tcx> {
     pub fn to_rust_place<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> MirPlace<'tcx> {
         MirPlace {
             local: self.local,
             projection: ctxt.tcx.mk_place_elems(self.projection),
         }
-    }
-
-    /// Subtract the `to` place from the `self` place. The
-    /// subtraction is defined as set minus between `self` place replaced
-    /// with a set of places that are unrolled up to the same level as
-    /// `to` and the singleton `to` set. For example,
-    /// `expand(x.f, x.f.g.h)` is performed by unrolling `x.f` into
-    /// `{x.g, x.h, x.f.f, x.f.h, x.f.g.f, x.f.g.g, x.f.g.h}` and
-    /// subtracting `{x.f.g.h}` from it, which results into (`{x.f, x.f.g}`, `{x.g, x.h,
-    /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The result contains the chain of
-    /// places that were expanded along with the target to of each expansion.
-    pub(crate) fn expand(
-        mut self,
-        to: Self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<DeepExpansion<'tcx>, PcgError> {
-        assert!(
-            self.is_prefix_of(to),
-            "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
-        );
-        let mut expanded = Vec::new();
-        while self.projection.len() < to.projection.len() {
-            let expansion = self.expand_one_level(to, repacker)?;
-            self = expansion.target_place;
-            expanded.push(expansion);
-        }
-        Ok(DeepExpansion::new(expanded))
     }
 
     /// Expand `self` one level down by following the `guide_place`.

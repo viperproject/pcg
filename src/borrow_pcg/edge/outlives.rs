@@ -14,8 +14,7 @@ use crate::{
     pcg::{PcgNode, PCGNodeLike},
     pcg_validity_assert,
     utils::{
-        CompilerCtxt, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace,
-        validity::HasValidityCheck,
+        CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
     },
 };
 

@@ -1,6 +1,6 @@
 use crate::rustc_interface::middle::mir;
 use crate::{
-    pcg_validity_assert, pcg_validity_expect_ok, validity_checks_enabled, validity_checks_warn_only,
+    pcg_validity_assert, pcg_validity_expect_ok
 };
 
 use super::CompilerCtxt;

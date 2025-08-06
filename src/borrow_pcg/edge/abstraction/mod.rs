@@ -30,7 +30,6 @@ use crate::borrow_pcg::region_projection::LifetimeProjection;
 use crate::pcg::PcgNode;
 use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::validity::HasValidityCheck;
 use itertools::Itertools;
 

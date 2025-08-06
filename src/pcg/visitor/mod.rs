@@ -1,19 +1,13 @@
-use itertools::Itertools;
-
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
-use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
-use crate::borrow_pcg::state::BorrowStateMutRef;
-use crate::free_pcs::{CapabilityKind, LocalExpansions, OwnedPcg, RepackExpand};
-use crate::pcg::obtain::{PlaceCollapser, PlaceExpander, PlaceObtainer};
+use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
+use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
-use crate::pcg::{PcgDebugData, PcgMutRefLike};
-use crate::pcg_validity_assert;
+use crate::pcg::PcgDebugData;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;

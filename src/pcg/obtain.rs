@@ -18,10 +18,10 @@ use crate::{
         },
         path_condition::ValidityConditions,
         region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
-        state::{BorrowStateMutRef, BorrowsState},
+        state::BorrowStateMutRef,
     },
     free_pcs::{
-        CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackGuide, RepackOp,
+        CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp,
     },
     pcg::{
         PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
@@ -32,7 +32,6 @@ use crate::{
         CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
         data_structures::HashSet, display::DisplayWithCompilerCtxt,
     },
-    validity_checks_enabled,
 };
 
 pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
@@ -118,7 +117,6 @@ pub(crate) enum LabelForLifetimeProjection {
 }
 
 use LabelForLifetimeProjection::*;
-use itertools::Itertools;
 impl LabelForLifetimeProjection {
     fn label(self) -> Option<LifetimeProjectionLabel> {
         match self {

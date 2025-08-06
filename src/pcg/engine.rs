@@ -174,12 +174,6 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
     Terminator(&'mir Terminator<'tcx>),
 }
 
-impl AnalysisObject<'_, '_> {
-    pub(crate) fn is_terminator(&self) -> bool {
-        matches!(self, AnalysisObject::Terminator(..))
-    }
-}
-
 impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
     fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
         self.debug_data

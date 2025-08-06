@@ -201,10 +201,6 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RepackOp<'tcx> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
-    pub(crate) fn collapse(to: Place<'tcx>, capability: CapabilityKind) -> Self {
-        Self::Collapse(RepackCollapse { to, capability })
-    }
-
     pub(crate) fn expand(
         from: Place<'tcx>,
         guide: Option<RepackGuide>,

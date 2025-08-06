@@ -3,7 +3,6 @@ use itertools::Itertools;
 use crate::{
     borrow_pcg::{
         borrow_pcg_expansion::BorrowPcgExpansion,
-        edge::deref::DerefEdge,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
@@ -16,7 +15,6 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         validity::HasValidityCheck,
     },
-    validity_checks_enabled,
 };
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
@@ -81,7 +79,7 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
             let caps_from_local = self
                 .iter()
                 .filter(|(place, _)| place.local == local)
-                .sorted_by_key(|(place, cap)| place.projection.len())
+                .sorted_by_key(|(place, _)| place.projection.len())
                 .collect_vec();
             if caps_from_local.is_empty() {
                 continue;
@@ -187,7 +185,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn uniform_capability(
         &self,
         mut places: impl Iterator<Item = Place<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<CapabilityKind> {
         let cap = self.get(places.next()?)?;
         for p in places {

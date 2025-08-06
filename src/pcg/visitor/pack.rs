@@ -1,15 +1,12 @@
 use std::borrow::Cow;
 
 use super::PcgError;
-use crate::action::PcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
-use crate::free_pcs::CapabilityKind;
 use crate::pcg::PcgNode;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::utils::HasPlace;
 use crate::utils::Place;
 use crate::utils::display::DisplayWithCompilerCtxt;

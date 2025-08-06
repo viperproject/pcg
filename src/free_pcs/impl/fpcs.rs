@@ -22,7 +22,7 @@ use derive_more::{Deref, DerefMut};
 
 use super::CapabilityKind;
 use crate::{
-    free_pcs::{LocalExpansions, OwnedPcgLocal},
+    free_pcs::OwnedPcgLocal,
     utils::CompilerCtxt,
 };
 
@@ -120,13 +120,6 @@ impl<'tcx> OwnedPcgData<'tcx> {
             .iter()
             .filter(|c| !c.is_unallocated())
             .flat_map(|c| c.get_allocated().leaf_places(ctxt))
-            .collect()
-    }
-    pub(crate) fn expansions(&self) -> Vec<&LocalExpansions<'tcx>> {
-        self.0
-            .iter()
-            .filter(|c| !c.is_unallocated())
-            .map(|c| c.get_allocated())
             .collect()
     }
 

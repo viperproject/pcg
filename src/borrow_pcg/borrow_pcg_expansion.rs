@@ -9,7 +9,7 @@ use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
     has_pcs_elem::{LabelLifetimeProjection},
-    region_projection::{LifetimeProjection, LifetimeProjectionLabel},
+    region_projection::LifetimeProjectionLabel,
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,

@@ -19,7 +19,7 @@ use crate::{
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
-use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeLabelledPlace};
+use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -73,14 +73,6 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         self.as_mut_ref().graph
     }
     fn graph(&self) -> &BorrowsGraph<'tcx>;
-
-    // fn path_conditions(&self) -> &PathConditions {
-    //     self.as_ref().path_conditions
-    // }
-
-    fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
-        self.graph().frozen_graph().leaf_nodes(ctxt)
-    }
 
     fn make_place_old(
         &mut self,

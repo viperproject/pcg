@@ -11,11 +11,7 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::{RepackCollapse, RepackGuide},
-    pcg::{
-        PcgUnsupportedError,
-        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
-    },
-    pcg_validity_assert,
+    pcg::{PcgUnsupportedError, place_capabilities::PlaceCapabilities},
     rustc_interface::middle::mir::Local,
     utils::data_structures::HashSet,
 };
@@ -23,8 +19,8 @@ use itertools::Itertools;
 
 use crate::{
     free_pcs::{CapabilityKind, RepackOp},
-    pcg::{PcgError, PcgInternalError},
-    utils::{CompilerCtxt, Place, corrected::CorrectedPlace, display::DisplayWithCompilerCtxt},
+    pcg::PcgInternalError,
+    utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -75,12 +71,7 @@ impl<'tcx> ExpandedPlace<'tcx> {
     pub(crate) fn guide(&self) -> Option<RepackGuide> {
         self.expansion.guide()
     }
-    pub(crate) fn arbitrary_expansion_place(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Place<'tcx>, PcgUnsupportedError> {
-        Ok(self.expansion_places(ctxt)?.into_iter().next().unwrap())
-    }
+
     pub(crate) fn expansion_places(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx>,
@@ -169,16 +160,6 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions.iter().filter(move |e| e.place == place)
     }
 
-    pub(crate) fn contains_expansion_from_with_guide(
-        &self,
-        place: Place<'tcx>,
-        guide: Option<RepackGuide>,
-    ) -> bool {
-        self.expansions
-            .iter()
-            .any(|e| e.place == place && e.guide() == guide)
-    }
-
     pub(crate) fn contains_expansion_to(
         &self,
         place: Place<'tcx>,
@@ -191,80 +172,6 @@ impl<'tcx> LocalExpansions<'tcx> {
 
     pub(crate) fn get_local(&self) -> Local {
         self.local
-    }
-
-    pub(crate) fn expand(
-        &mut self,
-        from: Place<'tcx>,
-        to: CorrectedPlace<'tcx>,
-        for_cap: CapabilityKind,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
-        assert!(
-            to.is_owned(repacker),
-            "Expanding to borrowed place {:?}",
-            *to
-        );
-
-        let from_cap = if let Some(cap) = capabilities.get(from) {
-            cap
-        } else {
-            pcg_validity_assert!(
-                false,
-                "No capability for {}",
-                from.to_short_string(repacker)
-            );
-            panic!("No capability for {}", from.to_short_string(repacker));
-            // For debugging, assume exclusive, we can visualize the graph to see what's going on
-            // CapabilityKind::Exclusive
-        };
-        let expansion = from.expand(*to, repacker)?;
-
-        for place in expansion.other_expansions() {
-            capabilities.insert(
-                place,
-                if for_cap.is_read() { for_cap } else { from_cap },
-                repacker,
-            );
-        }
-
-        let mut ops = Vec::new();
-
-        for expansion in expansion.expansions() {
-            self.insert_expansion(
-                expansion.base_place(),
-                PlaceExpansion::from_places(expansion.expansion(), repacker),
-            );
-
-            let block_type = if for_cap.is_read() {
-                BlockType::Read
-            } else {
-                BlockType::Other
-            };
-            capabilities.update_capabilities_for_block_of_place(
-                expansion.base_place(),
-                block_type,
-                repacker,
-            );
-            if expansion.kind.is_deref_box() && from_cap.is_shallow_exclusive() {
-                ops.push(RepackOp::DerefShallowInit(
-                    expansion.base_place(),
-                    expansion.target_place,
-                ));
-            } else {
-                ops.push(RepackOp::expand(
-                    expansion.base_place(),
-                    expansion.guide(),
-                    for_cap,
-                    repacker,
-                ));
-            }
-        }
-
-        capabilities.insert(*to, for_cap, repacker);
-
-        Ok(ops)
     }
 
     pub(crate) fn places_to_collapse_for_obtain_of(

@@ -5,7 +5,6 @@ use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::obtain::PlaceExpander;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};

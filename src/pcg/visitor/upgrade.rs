@@ -14,7 +14,7 @@ use crate::{
     free_pcs::CapabilityKind,
     pcg::{
         PcgError, PcgNode,
-        obtain::{HasSnapshotLocation, PlaceCollapser, PlaceObtainer},
+        obtain::{HasSnapshotLocation, PlaceObtainer},
         place_capabilities::{BlockType, PlaceCapabilitiesInterface},
     },
     utils::{Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
