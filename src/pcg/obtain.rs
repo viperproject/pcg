@@ -480,15 +480,15 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             );
             self.apply_action(action.into())?;
             self.update_capabilities_for_deref(base, obtain_type.capability(base, ctxt), ctxt)?;
-            if deref.blocked_lifetime_projection_label.is_some() {
+            if deref.blocked_lifetime_projection.label().is_some() {
                 self.apply_action(
                     BorrowPcgAction::label_lifetime_projection(
                         LabelLifetimeProjectionPredicate::Equals(
                             deref
-                                .blocked_lifetime_projection(ctxt)
+                                .blocked_lifetime_projection
                                 .with_label(None, ctxt),
                         ),
-                        deref.blocked_lifetime_projection_label,
+                        deref.blocked_lifetime_projection.label(),
                         "block deref",
                     )
                     .into(),

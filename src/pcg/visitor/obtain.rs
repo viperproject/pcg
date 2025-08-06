@@ -119,7 +119,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 }
                 for rp in place.lifetime_projections(self.ctxt) {
                     self.record_and_apply_action(
-                            BorrowPcgAction::remove_region_projection_label(
+                            BorrowPcgAction::remove_lifetime_projection_label(
                                 rp.with_placeholder_label(self.ctxt).into(),
                                 format!(
                                     "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
@@ -286,8 +286,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         context: &str,
     ) -> Result<(), PcgError> {
         self.record_and_apply_action(
-            BorrowPcgAction::remove_region_projection_label(
-                deref.blocked_lifetime_projection(self.ctxt),
+            BorrowPcgAction::remove_lifetime_projection_label(
+                deref.blocked_lifetime_projection,
                 format!("{}: unlabel blocked_region_projections", context),
             )
             .into(),

@@ -261,7 +261,7 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<LifetimeProjection<'tcx, Self>> {
         self.place()
-            .base_region_projection(repacker)
+            .base_lifetime_projection(repacker)
             .map(|rp| rp.with_base(*self))
     }
 

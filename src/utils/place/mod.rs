@@ -338,12 +338,12 @@ impl<'tcx> Place<'tcx> {
         Ok(places)
     }
 
-    pub(crate) fn base_region_projection<C: Copy>(
+    pub(crate) fn base_lifetime_projection<C: Copy>(
         self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<LifetimeProjection<'tcx, Self>> {
-        self.ty_region(repacker)
-            .map(|region| LifetimeProjection::new(region, self, None, repacker).unwrap())
+        self.ty_region(ctxt)
+            .map(|region| LifetimeProjection::new(region, self, None, ctxt).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {

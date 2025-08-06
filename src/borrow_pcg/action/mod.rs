@@ -57,7 +57,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn remove_region_projection_label(
+    pub(crate) fn remove_lifetime_projection_label(
         projection: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>,
         context: impl Into<String>,
     ) -> Self {
