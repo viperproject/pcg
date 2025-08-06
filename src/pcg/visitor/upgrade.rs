@@ -81,7 +81,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             let leaf_nodes = self.pcg.borrow.graph.frozen_graph().leaf_nodes(self.ctxt);
             for place in self.pcg.borrow.graph.places(self.ctxt) {
                 if prev != Some(place)
-                    && current.is_strict_prefix_of(place)
+                    && current.is_prefix_exact(place)
                     && leaf_nodes.contains(&place.into())
                     && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
                     && !place.projects_shared_ref(self.ctxt)

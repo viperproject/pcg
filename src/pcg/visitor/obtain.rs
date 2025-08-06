@@ -1,6 +1,5 @@
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
-use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
@@ -15,11 +14,11 @@ use crate::pcg::obtain::{
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgMutRef, PcgNode, PcgRefLike};
 use crate::rustc_interface::middle::mir;
+use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
 use std::cmp::Ordering;
-use crate::utils::data_structures::HashSet;
 
 use crate::utils::{Place, SnapshotLocation};
 
@@ -73,7 +72,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    fn restore_place(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
+    fn restore_place(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
         let blocked_cap = self.pcg.capabilities.get(place, self.ctxt);
 
         // TODO: If the place projects a shared ref, do we even need to restore a capability?
@@ -124,10 +123,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         for node in to_restore {
             if let Some(place) = node.as_current_place() {
-                self.restore_place(
-                    place,
-                    "update_unblocked_node_capabilities_and_remove_placeholder_projections",
-                )?;
+                self.restore_place(place)?;
             }
         }
         Ok(())
@@ -182,7 +178,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.unlabel_blocked_region_projections_if_applicable(&edge, context)?;
         }
         if let Some(deref_place) = deref_place.as_current_place() {
-            self.restore_place(deref_place.parent_place().unwrap(), context)?;
+            self.restore_place(deref_place.parent_place().unwrap())?;
             self.apply_action(
                 BorrowPcgAction::label_place(
                     deref_place,

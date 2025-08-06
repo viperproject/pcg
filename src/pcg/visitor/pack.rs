@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use super::PcgError;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;

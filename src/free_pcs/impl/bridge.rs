@@ -84,7 +84,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         &self,
         other: &Self,
         self_place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         Ok(Vec::new())
     }
