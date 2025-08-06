@@ -5,7 +5,7 @@ use std::{fmt, marker::PhantomData};
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
-use super::has_pcs_elem::{HasPcgElems, LabelLifetimeProjection};
+use super::has_pcs_elem::{LabelLifetimeProjection};
 use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
@@ -593,14 +593,6 @@ impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>>
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>>
-    for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
-{
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        vec![&mut self.base]
-    }
-}
-
 impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>>
     for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
 {
@@ -864,21 +856,6 @@ impl<'tcx> LifetimeProjection<'tcx> {
     pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeLabelledPlace<'tcx>> {
         self.as_local_region_projection()
             .and_then(|rp| rp.deref(ctxt))
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for LifetimeProjection<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        self.base.pcg_elems()
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.pcg_elems(),
-            MaybeRemoteRegionProjectionBase::Const(_) => vec![],
-        }
     }
 }
 

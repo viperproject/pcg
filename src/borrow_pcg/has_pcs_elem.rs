@@ -9,10 +9,6 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, FilterMutResult, HasPlace, Place, SnapshotLocation};
 
-pub(crate) trait HasPcgElems<T> {
-    fn pcg_elems(&mut self) -> Vec<&mut T>;
-}
-
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum LabelLifetimeProjectionPredicate<'tcx> {
     Postfix(LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>),

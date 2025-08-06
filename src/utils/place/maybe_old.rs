@@ -1,14 +1,12 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{
-    HasPcgElems, LabelNodeContext, LabelPlace, LabelPlaceWithContext, PlaceLabeller,
-};
+use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{
     LifetimeProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx,
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::pcg::{LocalNodeLike, MaybeHasLocation, PcgNode, PCGNodeLike, PcgError};
+use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNodeLike, PcgError, PcgNode};
 use crate::rustc_interface::PlaceTy;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -364,15 +362,6 @@ impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for MaybeLabelledPlace<
                 }
             }
             _ => false,
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<Place<'tcx>> for MaybeLabelledPlace<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut Place<'tcx>> {
-        match self {
-            MaybeLabelledPlace::Current(place) => vec![place],
-            MaybeLabelledPlace::Labelled(snapshot) => snapshot.pcg_elems(),
         }
     }
 }

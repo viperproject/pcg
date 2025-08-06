@@ -24,7 +24,6 @@ use crate::{
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::LifetimeProjection;
 use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -153,12 +152,6 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
             LabelNodeContext::Other,
             ctxt,
         )
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for RemoteBorrow<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        vec![&mut self.assigned_ref]
     }
 }
 
@@ -367,12 +360,6 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for LocalBorrow<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcgElems<LifetimeProjection<'tcx, T>> for BorrowEdge<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut LifetimeProjection<'tcx, T>> {
-        vec![]
-    }
-}
-
 impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
     fn blocks_node<'slf>(
         &self,
@@ -479,11 +466,5 @@ impl std::fmt::Display for BorrowEdge<'_> {
             self.blocked_place(),
             self.assigned_ref()
         )
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for LocalBorrow<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        vec![&mut self.assigned_ref, &mut self.blocked_place]
     }
 }

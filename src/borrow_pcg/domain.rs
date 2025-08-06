@@ -7,7 +7,7 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::LabelPlacePredicate,
         has_pcs_elem::{
-            HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
             LabelLifetimeProjectionResult, LabelNodeContext, LabelPlace, LabelPlaceWithContext,
             PlaceLabeller,
         },
@@ -235,12 +235,6 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for AbstractionOutputTarget<'tcx> {
 impl<'tcx> HasValidityCheck<'tcx> for AbstractionOutputTarget<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         self.0.check_validity(ctxt)
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for AbstractionOutputTarget<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        self.0.pcg_elems()
     }
 }
 

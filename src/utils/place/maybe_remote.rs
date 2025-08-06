@@ -3,7 +3,7 @@ use derive_more::From;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    HasPcgElems, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
+    LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
 };
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
@@ -111,15 +111,6 @@ impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeRemotePlace<'tcx>
         match self {
             MaybeRemotePlace::Local(p) => p.to_json(repacker),
             MaybeRemotePlace::Remote(rp) => format!("{rp}").into(),
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for MaybeRemotePlace<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        match self {
-            MaybeRemotePlace::Local(p) => vec![p],
-            MaybeRemotePlace::Remote(_) => vec![],
         }
     }
 }

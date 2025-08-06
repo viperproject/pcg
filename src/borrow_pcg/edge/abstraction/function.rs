@@ -6,7 +6,7 @@ use crate::{
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
             LabelLifetimeProjectionResult, PlaceLabeller,
         },
         region_projection::LifetimeProjectionLabel,
@@ -124,19 +124,6 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             self.location,
             self.edge.to_short_string(ctxt)
         )
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for FunctionCallAbstraction<'tcx>
-where
-    AbstractionBlockEdge<
-        'tcx,
-        FunctionCallAbstractionInput<'tcx>,
-        FunctionCallAbstractionOutput<'tcx>,
-    >: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcg_elems()
     }
 }
 

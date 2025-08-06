@@ -6,7 +6,7 @@ use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{
-    HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+    LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
     LabelLifetimeProjectionResult, PlaceLabeller,
 };
 use crate::borrow_pcg::path_condition::ValidityConditions;
@@ -97,16 +97,6 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             self.block,
             self.edge.to_short_string(ctxt)
         )
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for LoopAbstraction<'tcx>
-where
-    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>:
-        HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcg_elems()
     }
 }
 

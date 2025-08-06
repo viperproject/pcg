@@ -281,21 +281,6 @@ macro_rules! edgedata_enum {
                 }
             }
         }
-
-        impl<'tcx, T> HasPcgElems<T> for $enum_name<$tcx>
-            where
-                $(
-                    $inner_type: HasPcgElems<T>,
-                )+
-            {
-                fn pcg_elems(&mut self) -> Vec<&mut T> {
-                    match self {
-                        $(
-                            $enum_name::$variant_name(inner) => inner.pcg_elems(),
-                        )+
-                    }
-                }
-            }
     }
 }
 pub(crate) use edgedata_enum;

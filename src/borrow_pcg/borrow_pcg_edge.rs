@@ -7,12 +7,9 @@ use super::{
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{HasPcgElems, LabelLifetimeProjection},
+    has_pcs_elem::LabelLifetimeProjection,
     path_condition::ValidityConditions,
-    region_projection::{
-        LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection,
-        MaybeRemoteRegionProjectionBase,
-    },
+    region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
 };
 use crate::borrow_pcg::{
     edge::{deref::DerefEdge, kind::BorrowPcgEdgeKind},
@@ -224,24 +221,6 @@ impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeLabelledPlace<'tcx> {
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for LocalNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        match self {
-            LocalNode::Place(p) => vec![p],
-            LocalNode::LifetimeProjection(rp) => vec![rp.place_mut()],
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> for LocalNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> {
-        match self {
-            LocalNode::Place(_) => vec![],
-            LocalNode::LifetimeProjection(rp) => vec![rp],
-        }
-    }
-}
-
 impl<'tcx> From<Place<'tcx>> for LocalNode<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
         LocalNode::Place(place.into())
@@ -325,38 +304,6 @@ impl<T: std::fmt::Display> std::fmt::Display for PcgNode<'_, T> {
             PcgNode::Place(p) => write!(f, "{p}"),
             PcgNode::LifetimeProjection(rp) => write!(f, "{rp}"),
         }
-    }
-}
-
-impl<'tcx, T> HasPcgElems<LifetimeProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>>
-    for PcgNode<'tcx, T>
-{
-    fn pcg_elems(
-        &mut self,
-    ) -> Vec<&mut LifetimeProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> {
-        match self {
-            PcgNode::Place(_) => vec![],
-            PcgNode::LifetimeProjection(rp) => vec![rp],
-        }
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for PcgNode<'tcx>
-where
-    MaybeRemotePlace<'tcx>: HasPcgElems<T>,
-    LifetimeProjection<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        match self {
-            PcgNode::Place(p) => p.pcg_elems(),
-            PcgNode::LifetimeProjection(rp) => rp.pcg_elems(),
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> for PcgNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> {
-        vec![]
     }
 }
 
@@ -490,15 +437,6 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
 
     fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.kind().is_blocked_by(node, repacker)
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for BorrowPcgEdge<'tcx>
-where
-    BorrowPcgEdgeKind<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.kind.pcg_elems()
     }
 }
 

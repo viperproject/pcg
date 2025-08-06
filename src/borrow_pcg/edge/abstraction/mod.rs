@@ -26,7 +26,6 @@ use crate::{
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
 use crate::borrow_pcg::region_projection::LifetimeProjection;
 use crate::pcg::PcgNode;
 use crate::utils::CompilerCtxt;
@@ -330,31 +329,5 @@ impl<Input: Clone, Output: Copy> AbstractionBlockEdge<'_, Input, Output> {
 
     pub fn inputs(&self) -> Vec<Input> {
         self.inputs.clone()
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for LoopAbstractionInput<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        match &mut self.0 {
-            PcgNode::Place(p) => p.pcg_elems(),
-            PcgNode::LifetimeProjection(rp) => rp.base.pcg_elems(),
-        }
-    }
-}
-impl<
-    'tcx,
-    Input: HasPcgElems<MaybeLabelledPlace<'tcx>>,
-    Output: HasPcgElems<MaybeLabelledPlace<'tcx>>,
-> HasPcgElems<MaybeLabelledPlace<'tcx>> for AbstractionBlockEdge<'tcx, Input, Output>
-{
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        let mut result = vec![];
-        for input in self.inputs.iter_mut() {
-            result.extend(input.pcg_elems());
-        }
-        for output in self.outputs.iter_mut() {
-            result.extend(output.pcg_elems());
-        }
-        result
     }
 }

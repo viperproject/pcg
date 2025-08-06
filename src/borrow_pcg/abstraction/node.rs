@@ -3,7 +3,7 @@ use derive_more::{Deref, DerefMut};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems,
+        borrow_pcg_edge::LocalNode,
         region_projection::MaybeRemoteRegionProjectionBase,
     },
     pcg::PcgNode,
@@ -41,15 +41,6 @@ impl<'tcx> TryFrom<PcgNode<'tcx>> for AbstractionGraphNode<'tcx> {
                 }
             }
         }
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for AbstractionGraphNode<'tcx>
-where
-    PcgNode<'tcx, MaybeRemotePlace<'tcx>, MaybeRemotePlace<'tcx>>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.0.pcg_elems()
     }
 }
 

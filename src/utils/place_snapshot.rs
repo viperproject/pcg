@@ -8,7 +8,7 @@ use crate::borrow_pcg::region_projection::{
 use crate::pcg::{EvalStmtPhase, PcgNode, PCGNodeLike};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
-    borrow_pcg::{borrow_pcg_edge::LocalNode, has_pcs_elem::HasPcgElems},
+    borrow_pcg::{borrow_pcg_edge::LocalNode},
     pcg::LocalNodeLike,
     rustc_interface::{
         index::IndexVec,
@@ -215,11 +215,5 @@ impl<'tcx> LabelledPlace<'tcx> {
             place: self.place.with_inherent_region(repacker),
             at: self.at,
         }
-    }
-}
-
-impl<'tcx> HasPcgElems<Place<'tcx>> for LabelledPlace<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut Place<'tcx>> {
-        vec![&mut self.place]
     }
 }

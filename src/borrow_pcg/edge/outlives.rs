@@ -5,7 +5,7 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
             LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext,
             PlaceLabeller,
         },
@@ -68,14 +68,6 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowFlowEdge<'tcx> {
         changed |= self.short.label_lifetime_projection(predicate, label, ctxt);
         self.assert_validity(ctxt);
         changed
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for BorrowFlowEdge<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        let mut elems = self.long.pcg_elems();
-        elems.extend(self.short.pcg_elems());
-        elems
     }
 }
 

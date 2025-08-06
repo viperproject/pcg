@@ -8,7 +8,7 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcgElems, LabelLifetimeProjection},
+    has_pcs_elem::{LabelLifetimeProjection},
     region_projection::{LifetimeProjection, LifetimeProjectionLabel},
 };
 use crate::{
@@ -291,23 +291,6 @@ impl<'tcx> TryFrom<BorrowPcgExpansion<'tcx, LocalNode<'tcx>>>
                 .collect::<Result<Vec<_>, _>>()?,
             _marker: PhantomData,
         })
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeLabelledPlace<'tcx>> for BorrowPcgExpansion<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeLabelledPlace<'tcx>> {
-        let mut elems = self.base.pcg_elems();
-        elems.extend(self.expansion.iter_mut().flat_map(|p| p.pcg_elems()));
-        elems
-    }
-}
-
-impl<'tcx, T> HasPcgElems<LifetimeProjection<'tcx, T>> for BorrowPcgExpansion<'tcx>
-where
-    BorrowPcgExpansion<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut LifetimeProjection<'tcx, T>> {
-        vec![]
     }
 }
 
