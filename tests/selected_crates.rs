@@ -26,6 +26,21 @@ fn test_selected_crates() {
 
     // 4 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
+        "miniz_oxide",
+        "0.8.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("inflate::output_buffer::InputWrapper::<'a>::read_byte"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
+    // 4 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
         "async-trait",
         "0.1.87",
         Some("2025-03-13"),

@@ -228,20 +228,23 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             self.apply_action(
                 BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
-                    "label_deref_projections_of_postfix_places",
+                    format!(
+                        "label_deref_projections_of_postfix_places. Shared refs only: {}",
+                        shared_refs_only
+                    ),
                     ctxt,
                 )
                 .into(),
             )?;
         }
-        // self.apply_action(
-        //     BorrowPcgAction::label_place(
-        //         place,
-        //         self.prev_snapshot_location(),
-        //         LabelPlaceReason::LabelDerefProjections,
-        //     )
-        //     .into(),
-        // )
+        self.apply_action(
+            BorrowPcgAction::label_place(
+                place,
+                self.prev_snapshot_location(),
+                LabelPlaceReason::LabelDerefProjections,
+            )
+            .into(),
+        )?;
         Ok(true)
     }
 
