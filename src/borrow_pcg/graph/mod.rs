@@ -147,8 +147,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut result = HashSet::default();
         for edge in self.edges() {
             match edge.kind {
-                BorrowPcgEdgeKind::BorrowPcgExpansion(e) => {
-                    if let Some(base) = e.base.as_current_place()
+                BorrowPcgEdgeKind::Deref(e) => {
+                    if let Some(base) = e.blocked_place.as_current_place()
                         && base.is_owned(ctxt)
                     {
                         result.insert(base);

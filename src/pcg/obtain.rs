@@ -475,7 +475,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             let deref = DerefEdge::new(base, self.prev_snapshot_location(), ctxt);
             let action = BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
-                "add_borrow_pcg_expansion",
+                "expand_place_one_level: add deref edge",
                 ctxt,
             );
             self.apply_action(action.into())?;
