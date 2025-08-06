@@ -37,8 +37,6 @@ fn test_selected_crates() {
         },
     );
 
-    return;
-
     // 92 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
         "aho-corasick",

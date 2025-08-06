@@ -133,7 +133,7 @@ pub(crate) struct PlaceLiveness<'mir, 'tcx> {
 impl DebugWithContext<AnalysisEngine<PlaceLivenessAnalysis>> for PlaceLivenessDomain<'_> {}
 
 impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
-    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
+    pub(crate) fn new<BC: Copy>(ctxt: CompilerCtxt<'mir, 'tcx, BC>) -> Self {
         Self {
             cursor: Rc::new(RefCell::new(
                 compute_fixpoint(
@@ -148,7 +148,9 @@ impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
 
     pub(crate) fn is_live(&self, place: Place<'tcx>, location: mir::Location) -> bool {
         let mut cursor = self.cursor.as_ref().borrow_mut();
-        cursor.seek_before_primary_effect(location);
+        // Because this is a backwards analysis, seeking *after* the primary effect considers
+        // the state *before* the statment at the location
+        cursor.seek_after_primary_effect(location);
         with_cursor_state(cursor, |state| state.is_live(place))
     }
 }
@@ -200,11 +202,12 @@ impl DefUse {
                 place.is_indirect().then_some(DefUse::Use)
             }
 
+            PlaceContext::MutatingUse(MutatingUseContext::Drop) => None,
+
             // All other contexts are uses...
             PlaceContext::MutatingUse(
                 MutatingUseContext::RawBorrow
                 | MutatingUseContext::Borrow
-                | MutatingUseContext::Drop
                 | MutatingUseContext::Retag,
             )
             | PlaceContext::NonMutatingUse(

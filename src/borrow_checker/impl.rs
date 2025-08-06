@@ -15,6 +15,7 @@ use crate::rustc_interface::middle::mir::{self, Location, RETURN_PLACE};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{ResultsCursor, impls::MaybeLiveLocals};
 use crate::utils::CompilerCtxt;
+use crate::utils::liveness::PlaceLiveness;
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use std::cell::{RefCell, RefMut};
@@ -265,6 +266,7 @@ pub type BorrowCheckerImpl<'mir, 'tcx> = NllBorrowCheckerImpl<'mir, 'tcx>;
 #[derive(Clone)]
 pub struct NllBorrowCheckerImpl<'mir, 'tcx: 'mir> {
     live_locals: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
+    place_liveness: PlaceLiveness<'mir, 'tcx>,
     pub(crate) borrow_checker_data: RustBorrowCheckerData<'mir, 'tcx>,
 }
 fn cursor_contains_local(
@@ -277,8 +279,10 @@ fn cursor_contains_local(
 impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
     pub fn new<T: BodyAndBorrows<'tcx>>(tcx: ty::TyCtxt<'tcx>, body: &'mir T) -> Self {
         let borrow_checker_data = RustBorrowCheckerData::new(tcx, body);
+        let place_liveness = PlaceLiveness::new(CompilerCtxt::new(body.body(), tcx, ()));
         Self {
             borrow_checker_data,
+            place_liveness,
             live_locals: Rc::new(RefCell::new(
                 compute_fixpoint(MaybeLiveLocals, tcx, body.body())
                     .into_results_cursor(body.body()),
@@ -295,7 +299,6 @@ impl<'tcx> NllBorrowCheckerImpl<'_, 'tcx> {
         cursor.seek_after_primary_effect(location);
         cursor_contains_local(cursor, local)
     }
-
 }
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
@@ -356,7 +359,8 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
         //         return false;
         //     }
         // }
-        self.local_is_live_before(local, location)
+        // self.local_is_live_before(local, location)
+        self.place_liveness.is_live(local.into(), location)
     }
 
     fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
