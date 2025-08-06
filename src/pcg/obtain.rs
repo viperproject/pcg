@@ -227,7 +227,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             self.apply_action(
                 BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
-                    "label_shared_deref_projections_of_postfix_places",
+                    "label_deref_projections_of_postfix_places",
                     ctxt,
                 )
                 .into(),
@@ -479,6 +479,13 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
     ) -> Result<bool, PcgError> {
         let place_expansion = PlaceExpansion::from_places(expansion.expansion(), ctxt);
         if matches!(expansion.kind, ProjectionKind::DerefRef(_)) {
+            if self
+                .borrows_graph()
+                .places(ctxt)
+                .contains(&base.project_deref(ctxt))
+            {
+                return Ok(false);
+            }
             let deref = DerefEdge::new(base, self.prev_snapshot_location(), ctxt);
             let action = BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),

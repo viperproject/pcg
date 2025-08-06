@@ -115,9 +115,17 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
             }
             LabelPlacePredicate::DerefPostfixOf(place) => {
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
-                    for (place, proj) in iter {
-                        if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {
-                            return true;
+                    let mut seen_deref_target = false;
+                    for (p, proj) in iter {
+                        if matches!(proj, ProjectionElem::Deref) && p.is_ref(ctxt) {
+                            if label_context == LabelNodeContext::TargetOfExpansion {
+                                if seen_deref_target {
+                                    return true;
+                                }
+                                seen_deref_target = true;
+                            } else {
+                                return true;
+                            }
                         }
                     }
                 }

@@ -88,7 +88,8 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for DerefEdge<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
         if predicate.matches(self.blocked_lifetime_projection.into(), ctxt) {
-            self.blocked_lifetime_projection.with_label(location, ctxt);
+            self.blocked_lifetime_projection =
+                self.blocked_lifetime_projection.with_label(location, ctxt);
             LabelLifetimeProjectionResult::Changed
         } else {
             LabelLifetimeProjectionResult::Unchanged
@@ -111,10 +112,8 @@ impl<'tcx> LabelEdgePlaces<'tcx> for DerefEdge<'tcx> {
         for blocked_place in blocked_places {
             if let MaybeLabelledPlace::Current(place) = blocked_place {
                 if predicate.applies_to(*place, LabelNodeContext::Other, ctxt) {
-                    *blocked_place = MaybeLabelledPlace::new(
-                        *place,
-                        Some(labeller.place_label(*place, ctxt)),
-                    );
+                    *blocked_place =
+                        MaybeLabelledPlace::new(*place, Some(labeller.place_label(*place, ctxt)));
                     changed = true;
                 }
             }

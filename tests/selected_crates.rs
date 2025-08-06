@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 15 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "hashbrown",
+        "0.15.2",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("map::VacantEntry::<'a, K, V, S, A>::insert"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // <= 10 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "hashbrown",
@@ -75,8 +88,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
-
 
     // <= 20 basic blocks, cycles, <= 20 nodes
     common::ensure_successful_run_on_crate(
@@ -248,19 +259,6 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<set::Intersection<'a, T, S, A> as core::iter::Iterator>::next"),
-            extra_env_vars: vec![],
-        },
-    );
-
-    // 140 basic blocks
-    common::ensure_successful_run_on_crate(
-        "clap_builder",
-        "4.5.32",
-        None,
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: false,
-            function: Some("output::help_template::HelpTemplate::<'_, '_>::write_all_args"),
             extra_env_vars: vec![],
         },
     );
@@ -512,6 +510,19 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("glob_with"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 140 basic blocks
+    common::ensure_successful_run_on_crate(
+        "clap_builder",
+        "4.5.32",
+        None,
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: false,
+            function: Some("output::help_template::HelpTemplate::<'_, '_>::write_all_args"),
             extra_env_vars: vec![],
         },
     );

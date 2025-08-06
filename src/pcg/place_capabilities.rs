@@ -164,6 +164,9 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn retain(&mut self, predicate: impl Fn(&Place<'tcx>, &CapabilityKind) -> bool) {
+        self.0.retain(|place, cap| predicate(place, cap));
+    }
     pub(crate) fn regain_loaned_capability(
         &mut self,
         place: Place<'tcx>,
@@ -221,7 +224,11 @@ impl<'tcx> PlaceCapabilities<'tcx> {
             self.insert(ref_place.project_deref(ctxt), CapabilityKind::Read, ctxt);
         } else {
             self.insert(ref_place, CapabilityKind::Write, ctxt);
-            self.insert(ref_place.project_deref(ctxt), CapabilityKind::Exclusive, ctxt);
+            self.insert(
+                ref_place.project_deref(ctxt),
+                CapabilityKind::Exclusive,
+                ctxt,
+            );
         }
         Ok(true)
     }

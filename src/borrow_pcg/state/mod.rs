@@ -87,10 +87,13 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         place: Place<'tcx>,
         reason: LabelPlaceReason,
         labeller: &impl PlaceLabeller<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let state = self.as_mut_ref();
-        state.graph.make_place_old(place, reason, labeller, ctxt)
+        state.graph.make_place_old(place, reason, labeller, ctxt);
+        capabilities.retain(|p, _| !p.projects_indirection_from(place, ctxt));
+        true
     }
 
     fn label_region_projection(
@@ -169,6 +172,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 action.place,
                 action.reason,
                 &SetLabel(action.location),
+                capabilities,
                 ctxt,
             ),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),

@@ -44,7 +44,7 @@ use crate::{
         },
         visitor::extract_regions,
     },
-    pcg::{LocalNodeLike, PcgNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNodeLike, PcgNode},
 };
 
 pub mod corrected;
@@ -692,6 +692,17 @@ impl<'tcx> Place<'tcx> {
         } else {
             None
         }
+    }
+
+    pub(crate) fn projects_indirection_from(
+        self,
+        other: Self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let Some(mut projections_after) = self.iter_projections_after(other, ctxt) else {
+            return false;
+        };
+        projections_after.any(|(p, elem)| matches!(elem, ProjectionElem::Deref) && p.is_ref(ctxt))
     }
 
     pub(crate) fn iter_projections_after(
