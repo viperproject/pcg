@@ -23,7 +23,7 @@ use crate::{
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
-    free_pcs::join_semi_lattice::JoinOwnedData,
+    free_pcs::join::data::JoinOwnedData,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     pcg::{
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},

@@ -5,26 +5,16 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    DebugLines,
-    action::{OwnedPcgAction, PcgAction},
-    borrow_pcg::{
-        action::BorrowPcgActionKind,
-        borrow_pcg_expansion::PlaceExpansion,
-        state::{BorrowStateMutRef, BorrowsState, BorrowsStateLike},
-    },
-    free_pcs::{CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand, RepackOp},
-    pcg::{
-        PcgError, PcgMutRef, PcgUnsupportedError,
-        obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
-    },
-    pcg_validity_assert, pcg_validity_expect_some,
-    utils::{Place, SnapshotLocation, data_structures::HashSet, display::DisplayWithCompilerCtxt},
+    borrow_pcg::{borrow_pcg_expansion::PlaceExpansion, state::BorrowsState}, free_pcs::{
+        join::{data::JoinOwnedData, obtain::JoinObtainer}, CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand, RepackOp
+    }, pcg::{
+        obtain::PlaceCollapser, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError
+    }, pcg_validity_assert, pcg_validity_expect_some, utils::{data_structures::HashSet, display::DisplayWithCompilerCtxt, Place}, DebugLines
 };
 use itertools::Itertools;
 
 use crate::{
-    free_pcs::{LocalExpansions, OwnedPcg, OwnedPcgData, OwnedPcgLocal},
+    free_pcs::{LocalExpansions, OwnedPcg, OwnedPcgLocal},
     rustc_interface::middle::mir,
     utils::CompilerCtxt,
 };
@@ -58,29 +48,6 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
     }
 }
 
-pub(crate) struct JoinOwnedData<'pcg, 'tcx, T> {
-    pub(crate) owned: T,
-    pub(crate) borrows: &'pcg mut BorrowsState<'tcx>,
-    pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
-    pub(crate) block: mir::BasicBlock,
-}
-
-impl<'pcg: 'owned, 'tcx, 'owned, T: 'owned> JoinOwnedData<'pcg, 'tcx, T> {
-    pub(crate) fn map_owned<'slf: 'res, 'res, U: 'res>(
-        &'slf mut self,
-        f: impl Fn(&'slf mut T) -> U,
-    ) -> JoinOwnedData<'res, 'tcx, U>
-    where
-        'pcg: 'res,
-    {
-        JoinOwnedData {
-            owned: f(&mut self.owned),
-            borrows: &mut self.borrows,
-            capabilities: &mut self.capabilities,
-            block: self.block,
-        }
-    }
-}
 
 impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
     pub(crate) fn join(
@@ -101,76 +68,6 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
             changed = changed || local_changed;
         }
         Ok(changed)
-    }
-}
-
-struct JoinObtainer<'pcg: 'exp, 'exp, 'slf, 'mir, 'tcx> {
-    ctxt: CompilerCtxt<'mir, 'tcx>,
-    data: &'slf mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
-    actions: Vec<RepackOp<'tcx>>,
-}
-
-impl HasSnapshotLocation for JoinObtainer<'_, '_, '_, '_, '_> {
-    fn prev_snapshot_location(&self) -> SnapshotLocation {
-        SnapshotLocation::BeforeJoin(self.data.block)
-    }
-}
-
-impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
-    fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
-        match action {
-            PcgAction::Borrow(action) => {
-                self.data
-                    .borrows
-                    .apply_action(action.clone(), self.data.capabilities, self.ctxt)
-            }
-            PcgAction::Owned(action) => match action.kind {
-                RepackOp::StorageDead(local) => todo!(),
-                RepackOp::IgnoreStorageDead(local) => todo!(),
-                RepackOp::Weaken(place, capability_kind, capability_kind1) => todo!(),
-                RepackOp::Expand(repack_expand) => todo!(),
-                RepackOp::Collapse(collapse) => {
-                    self.data.owned.perform_collapse_action(
-                        collapse,
-                        self.data.capabilities,
-                        self.ctxt,
-                    )?;
-                    self.actions.push(action.kind);
-                    Ok(true)
-                }
-                RepackOp::DerefShallowInit(place, place1) => todo!(),
-                RepackOp::RegainLoanedCapability(place, capability_kind) => {
-                    self.data.capabilities.regain_loaned_capability(
-                        place,
-                        capability_kind,
-                        self.data.borrows.as_mut_ref(),
-                        self.ctxt,
-                    )?;
-                    self.actions.push(action.kind);
-                    Ok(true)
-                }
-            },
-        }
-    }
-}
-
-impl<'pcg, 'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
-    fn get_local_expansions(&self, _local: mir::Local) -> &LocalExpansions<'tcx> {
-        &self.data.owned
-    }
-
-    fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
-        self.data.borrows.into()
-    }
-
-    fn capabilities(&mut self) -> &mut PlaceCapabilities<'tcx> {
-        self.data.capabilities
-    }
-
-    fn leaf_places(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> HashSet<Place<'tcx>> {
-        let mut leaf_places = self.data.owned.leaf_places(ctxt);
-        leaf_places.retain(|p| !self.data.borrows.graph().owned_places(ctxt).contains(p));
-        leaf_places
     }
 }
 
