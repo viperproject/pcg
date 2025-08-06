@@ -70,7 +70,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn label_region_projection(
+    pub(crate) fn label_lifetime_projection(
         predicate: LabelLifetimeProjectionPredicate<'tcx>,
         label: Option<LifetimeProjectionLabel>,
         context: impl Into<String>,
@@ -81,7 +81,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn make_place_old(
+    pub(crate) fn label_place(
         place: Place<'tcx>,
         location: SnapshotLocation,
         reason: LabelPlaceReason,

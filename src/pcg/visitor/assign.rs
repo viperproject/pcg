@@ -81,7 +81,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         continue;
                     };
                     for (source_rp_idx, source_proj) in operand_place
-                        .region_projections(self.ctxt)
+                        .lifetime_projections(self.ctxt)
                         .iter()
                         .enumerate()
                     {
@@ -146,7 +146,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 for (source_proj, target_proj) in from
                     .region_projections(self.ctxt)
                     .into_iter()
-                    .zip(target.region_projections(self.ctxt).into_iter())
+                    .zip(target.lifetime_projections(self.ctxt).into_iter())
                 {
                     self.record_and_apply_action(
                         BorrowPcgAction::add_edge(
@@ -207,12 +207,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         kind: mir::BorrowKind,
     ) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
-        for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
+        for source_proj in blocked_place.lifetime_projections(self.ctxt).into_iter() {
             let mut obtainer = self.place_obtainer();
             let source_proj = if kind.mutability().is_mut() {
                 let label = obtainer.prev_snapshot_location();
                 obtainer.apply_action(
-                    BorrowPcgAction::label_region_projection(
+                    BorrowPcgAction::label_lifetime_projection(
                         LabelLifetimeProjectionPredicate::Postfix(source_proj.into()),
                         Some(label.into()),
                         "Label region projections of newly borrowed place",
@@ -228,7 +228,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             };
             let source_region = source_proj.region(self.ctxt);
             let mut nested_ref_mut_targets = vec![];
-            for target_proj in target.region_projections(self.ctxt).into_iter() {
+            for target_proj in target.lifetime_projections(self.ctxt).into_iter() {
                 let target_region = target_proj.region(self.ctxt);
                 if self
                     .ctxt

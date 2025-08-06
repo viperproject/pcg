@@ -67,7 +67,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
         target: Place<'tcx>,
         kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) -> Result<(), PcgError> {
-        for target_proj in target.region_projections(self.ctxt).into_iter() {
+        for target_proj in target.lifetime_projections(self.ctxt).into_iter() {
             if self.outlives(source_proj.region(self.ctxt), target_proj.region(self.ctxt)) {
                 self.record_and_apply_action(
                     BorrowPcgAction::add_edge(
@@ -151,7 +151,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                 if self.phase() == EvalStmtPhase::PostOperands {
                     let snapshot_location = self.prev_snapshot_location();
                     self.record_and_apply_action(
-                        BorrowPcgAction::make_place_old(
+                        BorrowPcgAction::label_place(
                             (*place).into(),
                             snapshot_location,
                             LabelPlaceReason::MoveOut,

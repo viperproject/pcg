@@ -711,6 +711,10 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
             })
             .collect()
     }
+
+    fn is_place(&self) -> bool {
+        false
+    }
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx>

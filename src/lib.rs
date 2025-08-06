@@ -38,7 +38,7 @@ use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
     dataflow::{AnalysisEngine, compute_fixpoint},
     middle::{
-        mir::Body,
+        mir::{self, Body},
         ty::{self, TyCtxt},
     },
     mir_dataflow::move_paths::MoveData,
@@ -363,7 +363,13 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
             let pcs_block = pcs_block_option.unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
                 if validity_checks_enabled() {
-                    statement.assert_validity(pcg_ctxt.compiler_ctxt);
+                    statement.assert_validity_at_location(
+                        mir::Location {
+                            block,
+                            statement_index,
+                        },
+                        pcg_ctxt.compiler_ctxt,
+                    );
                 }
                 let data = PCGStmtVisualizationData::new(statement);
                 let pcg_data_file_path = format!(
@@ -431,12 +437,20 @@ macro_rules! pcg_validity_expect_some {
 }
 
 macro_rules! pcg_validity_expect_ok {
-    // With fallback: keyword
     ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
         {
             let result = $cond;
             if $crate::validity_checks_enabled() {
                 pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.unwrap_or($fallback)
+        }
+    };
+    ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*]) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}", result.as_ref().err().unwrap() );
             }
             result.unwrap_or($fallback)
         }
@@ -451,7 +465,6 @@ macro_rules! pcg_validity_expect_ok {
         }
     };
 
-    // Without fallback (panic on Err)
     ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
         {
             let result = $cond;

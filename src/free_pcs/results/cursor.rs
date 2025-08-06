@@ -320,7 +320,7 @@ impl<'tcx> PcgLocation<'tcx> {
     ) -> FxHashSet<BorrowPcgEdgeRef<'tcx, 'slf>> {
         let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
         let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);
-        for rp in place.region_projections(repacker) {
+        for rp in place.lifetime_projections(repacker) {
             ancestors.extend(borrows_graph.ancestor_edges(rp.into(), repacker));
         }
         ancestors

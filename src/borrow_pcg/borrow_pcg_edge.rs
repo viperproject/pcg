@@ -15,7 +15,7 @@ use super::{
     },
 };
 use crate::borrow_pcg::{
-    edge::kind::BorrowPcgEdgeKind,
+    edge::{deref::DerefEdge, kind::BorrowPcgEdgeKind},
     edge_data::{LabelEdgePlaces, LabelPlacePredicate},
 };
 use crate::{
@@ -260,6 +260,13 @@ impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
+    fn is_place(&self) -> bool {
+        match self {
+            LocalNode::Place(_) => true,
+            LocalNode::LifetimeProjection(_) => false,
+        }
+    }
+
     fn place(&self) -> Place<'tcx> {
         match self {
             LocalNode::Place(p) => p.place(),
@@ -504,6 +511,7 @@ edgedata_enum!(
     BorrowPcgExpansion(BorrowPcgExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
     BorrowFlow(BorrowFlowEdge<'tcx>),
+    Deref(DerefEdge<'tcx>),
 );
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>

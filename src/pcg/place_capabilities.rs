@@ -3,6 +3,7 @@ use itertools::Itertools;
 use crate::{
     borrow_pcg::{
         borrow_pcg_expansion::BorrowPcgExpansion,
+        edge::deref::DerefEdge,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
@@ -209,6 +210,22 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         self.0.retain(|place, _| place.local != local);
     }
 
+    pub(crate) fn update_for_deref(
+        &mut self,
+        ref_place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        if capability.is_read() || ref_place.is_shared_ref(ctxt) {
+            self.insert(ref_place, CapabilityKind::Read, ctxt);
+            self.insert(ref_place.project_deref(ctxt), CapabilityKind::Read, ctxt);
+        } else {
+            self.insert(ref_place, CapabilityKind::Write, ctxt);
+            self.insert(ref_place.project_deref(ctxt), CapabilityKind::Exclusive, ctxt);
+        }
+        Ok(true)
+    }
+
     #[tracing::instrument(skip(self, expansion, ctxt))]
     pub(crate) fn update_for_expansion(
         &mut self,
@@ -234,13 +251,6 @@ impl<'tcx> PlaceCapabilities<'tcx> {
                 // panic!("Base capability should be set");
             };
 
-            if validity_checks_enabled() && matches!(block_type, BlockType::DerefRefExclusive) {
-                pcg_validity_assert!(
-                    !base.place().projects_shared_ref(ctxt),
-                    "Updating for DerefExclusive block, but place {} projects a shared ref",
-                    base.place().to_short_string(ctxt)
-                );
-            }
             changed |= self.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
 
             for p in expansion.expansion.iter() {

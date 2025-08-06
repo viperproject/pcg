@@ -101,7 +101,7 @@ impl<'tcx> ShallowExpansion<'tcx> {
         self.expansion()
             .iter()
             .filter(|e| {
-                e.region_projections(ctxt)
+                e.lifetime_projections(ctxt)
                     .into_iter()
                     .any(|child_rp| region == child_rp.region(ctxt))
             })

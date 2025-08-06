@@ -145,6 +145,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         for edge in self.edges_blocked_by(node, repacker) {
             match edge.kind {
+                BorrowPcgEdgeKind::Deref(deref_edge) => {
+                    let blocked = deref_edge.deref_place;
+                    extend(blocked.into(), seen, &mut result, direct);
+                }
                 BorrowPcgEdgeKind::Borrow(borrow_edge) => {
                     let blocked = borrow_edge.blocked_place();
                     extend(blocked.into(), seen, &mut result, direct);

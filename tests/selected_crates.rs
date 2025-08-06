@@ -24,6 +24,21 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 8 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "gimli",
+        "0.31.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("read::cfi::UnwindTable::<'a, 'ctx, R, S>::into_current_row"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
+    return;
+
     // 22 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
         "log",
@@ -33,11 +48,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("set_logger_inner"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // 18 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(

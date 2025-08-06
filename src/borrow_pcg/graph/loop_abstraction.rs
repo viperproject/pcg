@@ -7,8 +7,7 @@ use crate::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::{
-            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
-            kind::BorrowPcgEdgeKind,
+            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge}, deref::DerefEdge, kind::BorrowPcgEdgeKind
         },
         edge_data::EdgeData,
         graph::BorrowsGraph,
@@ -21,18 +20,12 @@ use crate::{
     },
     free_pcs::{CapabilityKind, OwnedPcg, RepackGuide, RepackOp},
     pcg::{
-        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
-        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer},
-        place_capabilities::PlaceCapabilities,
+        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
-        data_structures::{HashMap, HashSet},
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeLabelledPlace,
-        remote::RemotePlace,
+        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation
     },
 };
 
@@ -101,7 +94,7 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
     fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LifetimeProjection<'tcx>> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place
-                .region_projections(ctxt)
+                .lifetime_projections(ctxt)
                 .into_iter()
                 .map(|rp| rp.to_pcg_node(ctxt).try_into_region_projection().unwrap())
                 .collect(),
@@ -157,7 +150,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     );
                     add_block_edges(&mut expander, *root, blocker, ctxt);
                     if let MaybeRemoteCurrentPlace::Local(root) = root {
-                        for rp in root.region_projections(ctxt) {
+                        for rp in root.lifetime_projections(ctxt) {
                             to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
                                 (*root).into(),
                                 rp.region_idx,
@@ -193,7 +186,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 } else {
                     capability_updates.insert(blocked_place, Some(CapabilityKind::Read));
                 }
-                for rp in blocked_place.region_projections(ctxt) {
+                for rp in blocked_place.lifetime_projections(ctxt) {
                     to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
                         blocked_place.into(),
                         rp.region_idx,
@@ -289,7 +282,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     ) -> HashSet<PcgNode<'tcx>> {
         let mut result = HashSet::default();
         let mut queue: Vec<LocalNode<'tcx>> = node
-            .region_projections(ctxt)
+            .lifetime_projections(ctxt)
             .into_iter()
             .flat_map(|rp| {
                 vec![
@@ -316,23 +309,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             for edge in blocked_edges {
-                if let BorrowPcgEdgeKind::BorrowPcgExpansion(borrow_edge) = edge.kind() {
-                    if borrow_edge.is_owned_expansion(ctxt) {
-                        let deref_blocked_region_projection = borrow_edge
-                            .deref_blocked_region_projection(ctxt)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "No deref blocked region projection for {}: {:?}",
-                                    borrow_edge.base.to_short_string(ctxt),
-                                    borrow_edge.base.related_current_place().unwrap().ty(ctxt)
-                                );
-                            });
-                        queue.push(deref_blocked_region_projection.into());
-                    } else {
-                        queue.push(borrow_edge.base);
-                    }
-                    continue;
-                }
                 for blocked_by in edge.blocked_nodes(ctxt) {
                     match blocked_by.try_to_local_node(ctxt) {
                         Some(local_node) => {
@@ -569,10 +545,23 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
             Ok(true)
         }
     }
+    fn update_capabilities_for_deref(
+        &mut self,
+        ref_place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, crate::pcg::PcgError> {
+        if let Some(caps) = &mut self.capabilities {
+            caps.update_for_deref(ref_place, capability, ctxt)
+        } else {
+            Ok(true)
+        }
+    }
 
     fn location(&self) -> mir::Location {
         self.loop_head_location()
     }
+
 }
 
 impl<'pcg, 'mir, 'tcx> HasSnapshotLocation for AbsExpander<'pcg, 'mir, 'tcx> {
@@ -601,7 +590,7 @@ fn add_rp_block_edges<'mir, 'tcx>(
     blocker: Place<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) {
-    let blocker_rps = blocker.region_projections(ctxt);
+    let blocker_rps = blocker.lifetime_projections(ctxt);
     for blocked_rp in blocked_place.region_projections(ctxt) {
         let flow_rps = blocker_rps
             .iter()
@@ -670,7 +659,7 @@ fn add_block_edges<'mir, 'tcx>(
         blocker.to_short_string(ctxt),
         blocked_place.to_short_string(ctxt)
     );
-    let blocker_rps = blocker.region_projections(ctxt);
+    let blocker_rps = blocker.lifetime_projections(ctxt);
     // Add top-level borrow
     add_block_edge(
         expander,

@@ -6,7 +6,7 @@ use crate::{
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
     free_pcs::CapabilityKind,
-    pcg::{MaybeHasLocation, PcgNode, PCGNodeLike},
+    pcg::{MaybeHasLocation, PCGNodeLike, PcgNode},
     rustc_interface::middle::mir,
     utils::{
         CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt,
@@ -77,6 +77,17 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     ) {
         let path_conditions = edge.conditions().to_short_string(self.ctxt());
         match edge.kind() {
+            BorrowPcgEdgeKind::Deref(deref_edge) => {
+                let deref_place = self.insert_pcg_node(deref_edge.deref_place.into());
+                for blocked in deref_edge.blocked_nodes(self.ctxt()) {
+                    let blocked = self.insert_pcg_node(blocked);
+                    self.constructor().edges.insert(GraphEdge::DerefExpansion {
+                        source: blocked,
+                        target: deref_place,
+                        path_conditions: path_conditions.clone(),
+                    });
+                }
+            }
             BorrowPcgEdgeKind::BorrowPcgExpansion(deref_expansion) => {
                 for blocked in deref_expansion.blocked_nodes(self.ctxt()) {
                     let blocked_graph_node = self.insert_pcg_node(blocked);
@@ -93,7 +104,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
             BorrowPcgEdgeKind::Borrow(borrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(borrow.blocked_place());
                 let assigned_region_projection = borrow
-                    .assigned_region_projection(self.ctxt())
+                    .assigned_lifetime_projection(self.ctxt())
                     .to_region_projection();
                 let assigned_rp_node = self
                     .constructor()

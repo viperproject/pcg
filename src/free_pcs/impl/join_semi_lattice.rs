@@ -144,7 +144,7 @@ impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 't
                         place,
                         capability_kind,
                         self.data.borrows.as_mut_ref(),
-                        self.ctxt
+                        self.ctxt,
                     )?;
                     self.actions.push(action.kind);
                     Ok(true)

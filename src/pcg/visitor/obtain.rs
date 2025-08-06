@@ -7,6 +7,7 @@ use crate::action::{ActionKindWithDebugCtxt, BorrowPcgAction, OwnedPcgAction, Pc
 use crate::borrow_pcg::action::{BorrowPcgActionKind, LabelPlaceReason};
 use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike};
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
+use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
@@ -116,7 +117,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         self.ctxt,
                     ))?;
                 }
-                for rp in place.region_projections(self.ctxt) {
+                for rp in place.lifetime_projections(self.ctxt) {
                     self.record_and_apply_action(
                             BorrowPcgAction::remove_region_projection_label(
                                 rp.with_placeholder_label(self.ctxt).into(),
@@ -157,20 +158,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// TODO: In the above test case, should the parent place also be labelled?
     fn unlabel_blocked_region_projections_if_applicable(
         &mut self,
-        expansion: &BorrowPcgExpansion<'tcx>,
+        deref: &DerefEdge<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        let Some(place) = expansion.deref_of_blocked_place(self.ctxt) else {
-            return Ok(());
-        };
-
-        if place.has_region_projections(self.ctxt) {
-            return Ok(());
-        }
-
         // Check if the target is labelled e.g. *p @ l instead of *p
-        if expansion.expansion().iter().all(|p| p.is_current_place()) {
-            self.unlabel_blocked_region_projections(expansion, context)
+        if deref.deref_place.is_current() {
+            self.unlabel_blocked_region_projections(deref, context)
         } else {
             Ok(())
         }
@@ -206,8 +199,20 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
         match edge.kind() {
+            BorrowPcgEdgeKind::Deref(deref) => {
+                self.unlabel_blocked_region_projections_if_applicable(deref, context)?;
+                if deref.deref_place.is_current() {
+                    self.apply_action(
+                        BorrowPcgAction::label_place(
+                            deref.deref_place.place(),
+                            self.prev_snapshot_location().into(),
+                            LabelPlaceReason::Collapse,
+                        )
+                        .into(),
+                    )?;
+                }
+            }
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                self.unlabel_blocked_region_projections_if_applicable(expansion, context)?;
                 if is_mutable_place_expansion {
                     // If the expansion contained region projections, we need to
                     // label them, they will flow into the now unblocked
@@ -226,7 +231,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                     rp.to_short_string(self.ctxt)
                                 );
                                 self.record_and_apply_action(
-                                    BorrowPcgAction::label_region_projection(
+                                    BorrowPcgAction::label_lifetime_projection(
                                         LabelLifetimeProjectionPredicate::Equals(rp),
                                         Some(self.prev_snapshot_location().into()),
                                         format!(
@@ -244,7 +249,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             BorrowPcgEdgeKind::Borrow(borrow) => {
                 if self.ctxt.bc.is_dead(
                     borrow
-                        .assigned_region_projection(self.ctxt)
+                        .assigned_lifetime_projection(self.ctxt)
                         .to_pcg_node(self.ctxt),
                     self.location(),
                 ) && let MaybeLabelledPlace::Current(place) = borrow.assigned_ref()
@@ -277,20 +282,16 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// projection to the current one).
     fn unlabel_blocked_region_projections(
         &mut self,
-        expansion: &BorrowPcgExpansion<'tcx>,
+        deref: &DerefEdge<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        if let Some(node) = expansion.deref_blocked_region_projection(self.ctxt) {
-            if let Some(PcgNode::LifetimeProjection(rp)) = node.try_to_local_node(self.ctxt) {
-                self.record_and_apply_action(
-                    BorrowPcgAction::remove_region_projection_label(
-                        rp,
-                        format!("{}: unlabel blocked_region_projections", context),
-                    )
-                    .into(),
-                )?;
-            }
-        }
+        self.record_and_apply_action(
+            BorrowPcgAction::remove_region_projection_label(
+                deref.blocked_lifetime_projection(self.ctxt),
+                format!("{}: unlabel blocked_region_projections", context),
+            )
+            .into(),
+        )?;
         Ok(())
     }
 
@@ -553,7 +554,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         if obtain_cap.is_write() {
             let _ = self.record_and_apply_action(
-                BorrowPcgAction::make_place_old(
+                BorrowPcgAction::label_place(
                     place,
                     self.prev_snapshot_location(),
                     LabelPlaceReason::ReAssign,
@@ -611,5 +612,16 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
 
     fn location(&self) -> mir::Location {
         self.location
+    }
+
+    fn update_capabilities_for_deref(
+        &mut self,
+        ref_place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        self.pcg
+            .capabilities
+            .update_for_deref(ref_place, capability, ctxt)
     }
 }

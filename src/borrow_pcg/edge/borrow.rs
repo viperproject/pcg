@@ -49,7 +49,7 @@ pub struct LocalBorrow<'tcx> {
     // For some reason this may not be defined for certain shared borrows
     borrow_index: Option<BorrowIndex>,
 
-    assigned_rp_snapshot: Option<LifetimeProjectionLabel>,
+    assigned_lifetime_projection_label: Option<LifetimeProjectionLabel>,
 }
 
 impl<'tcx> LabelLifetimeProjection<'tcx> for LocalBorrow<'tcx> {
@@ -60,8 +60,8 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
         let mut changed = LabelLifetimeProjectionResult::Unchanged;
-        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
-            self.assigned_rp_snapshot = label;
+        if predicate.matches(self.assigned_lifetime_projection(repacker).rebase(), repacker) {
+            self.assigned_lifetime_projection_label = label;
             changed = LabelLifetimeProjectionResult::Changed;
         }
         changed
@@ -122,7 +122,7 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for RemoteBorrow<'tcx> {
         label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
-        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
+        if predicate.matches(self.assigned_lifetime_projection(repacker).rebase(), repacker) {
             self.rp_snapshot_location = label;
             LabelLifetimeProjectionResult::Changed
         } else {
@@ -175,11 +175,11 @@ impl<'tcx> RemoteBorrow<'tcx> {
         self.assigned_ref
     }
 
-    pub(crate) fn assigned_region_projection<BC: Copy>(
+    pub(crate) fn assigned_lifetime_projection<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
-        let rp = self.assigned_ref.base_region_projection(ctxt).unwrap();
+        let rp = self.assigned_ref.base_lifetime_projection(ctxt).unwrap();
         if let Some(location) = self.rp_snapshot_location {
             rp.with_label(Some(location), ctxt)
         } else {
@@ -202,7 +202,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
         format!(
             "{} -> {}",
             self.blocked_place().to_short_string(ctxt),
-            self.assigned_region_projection(ctxt).to_short_string(ctxt)
+            self.assigned_lifetime_projection(ctxt).to_short_string(ctxt)
         )
     }
 }
@@ -244,7 +244,7 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         'tcx: 'mir,
     {
         Box::new(std::iter::once(
-            self.assigned_region_projection(repacker).into(),
+            self.assigned_lifetime_projection(repacker).into(),
         ))
     }
 }
@@ -307,13 +307,13 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub(crate) fn assigned_region_projection(
+    pub(crate) fn assigned_lifetime_projection(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
         match self {
-            BorrowEdge::Local(borrow) => borrow.assigned_region_projection(repacker),
-            BorrowEdge::Remote(borrow) => borrow.assigned_region_projection(repacker),
+            BorrowEdge::Local(borrow) => borrow.assigned_lifetime_projection(ctxt),
+            BorrowEdge::Remote(borrow) => borrow.assigned_lifetime_projection(ctxt),
         }
     }
 
@@ -348,7 +348,7 @@ impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
 
 impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for LocalBorrow<'tcx> {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
-        let rp_part = if let Some(rp) = self.assigned_rp_snapshot {
+        let rp_part = if let Some(rp) = self.assigned_lifetime_projection_label {
             format!(" <{}>", rp)
         } else {
             "".to_string()
@@ -389,7 +389,7 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         match node {
             PcgNode::Place(_) => false,
             PcgNode::LifetimeProjection(region_projection) => {
-                region_projection == self.assigned_region_projection(repacker)
+                region_projection == self.assigned_lifetime_projection(repacker)
             }
         }
     }
@@ -411,7 +411,7 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
     where
         'tcx: 'mir,
     {
-        let rp = self.assigned_region_projection(repacker);
+        let rp = self.assigned_lifetime_projection(repacker);
         Box::new(std::iter::once(LocalNode::LifetimeProjection(rp)))
     }
 }
@@ -432,7 +432,7 @@ impl<'tcx> LocalBorrow<'tcx> {
             kind,
             reserve_location: reservation_location,
             region,
-            assigned_rp_snapshot: None,
+            assigned_lifetime_projection_label: None,
             borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
         }
     }
@@ -454,7 +454,7 @@ impl<'tcx> LocalBorrow<'tcx> {
     /// The region projection associated with the *type* of the assigned place
     /// of the borrow. For example in `let x: &'x mut i32 = ???`, the assigned
     /// region projection is `x↓'x`.
-    pub(crate) fn assigned_region_projection<C: Copy>(
+    pub(crate) fn assigned_lifetime_projection<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
@@ -462,7 +462,7 @@ impl<'tcx> LocalBorrow<'tcx> {
             ty::TyKind::Ref(region, _, _) => LifetimeProjection::new(
                 (*region).into(),
                 self.assigned_ref,
-                self.assigned_rp_snapshot,
+                self.assigned_lifetime_projection_label,
                 repacker,
             )
             .unwrap(),

@@ -139,7 +139,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .flatten()
                         .collect::<HashSet<_>>();
                     self.record_and_apply_action(
-                        BorrowPcgAction::label_region_projection(
+                        BorrowPcgAction::label_lifetime_projection(
                             LabelLifetimeProjectionPredicate::Equals(current_rp.into()),
                             Some(self.prev_snapshot_location().into()),
                             "remove_read_permission_upwards_and_label_rps",

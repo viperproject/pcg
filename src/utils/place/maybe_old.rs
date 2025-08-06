@@ -207,6 +207,10 @@ impl<'tcx> HasPlace<'tcx> for MaybeLabelledPlace<'tcx> {
                 .collect(),
         }
     }
+
+    fn is_place(&self) -> bool {
+        true
+    }
 }
 
 impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeLabelledPlace<'tcx> {
@@ -246,13 +250,13 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<LifetimeProjection<'tcx, Self>> {
         if let Some((place, PlaceElem::Deref)) = self.last_projection() {
-            place.base_region_projection(repacker)
+            place.base_lifetime_projection(repacker)
         } else {
             None
         }
     }
 
-    pub(crate) fn base_region_projection<C: Copy>(
+    pub(crate) fn base_lifetime_projection<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Option<LifetimeProjection<'tcx, Self>> {
@@ -320,9 +324,9 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         self.place().ty(repacker)
     }
 
-    pub(crate) fn project_deref(
+    pub(crate) fn project_deref<BC: Copy>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
     ) -> MaybeLabelledPlace<'tcx> {
         MaybeLabelledPlace::new(self.place().project_deref(repacker), self.location())
     }
@@ -352,7 +356,7 @@ impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for MaybeLabelledPlace<
                 if predicate.applies_to(*place, label_context, ctxt) {
                     *self = MaybeLabelledPlace::Labelled(LabelledPlace::new(
                         *place,
-                        labeller.label_place(*place, ctxt),
+                        labeller.place_label(*place, ctxt),
                     ));
                     true
                 } else {

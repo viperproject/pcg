@@ -139,6 +139,8 @@ impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
 
 /// A trait for PCG nodes that contain a single place.
 pub trait HasPlace<'tcx>: Sized {
+    fn is_place(&self) -> bool;
+
     fn place(&self) -> Place<'tcx>;
 
     fn place_mut(&mut self) -> &mut Place<'tcx>;
@@ -179,6 +181,10 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
             .iter_projections()
             .map(|(place, elem)| (place.into(), elem))
             .collect()
+    }
+
+    fn is_place(&self) -> bool {
+        true
     }
 }
 
@@ -465,11 +471,11 @@ impl<'tcx> Place<'tcx> {
         idx: RegionIdx,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LifetimeProjection<'tcx, Self> {
-        self.region_projections(repacker)[idx]
+        self.lifetime_projections(repacker)[idx]
     }
 
-    pub(crate) fn has_region_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        !self.region_projections(ctxt).is_empty()
+    pub(crate) fn has_lifetime_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        !self.lifetime_projections(ctxt).is_empty()
     }
 
     pub fn regions<C: Copy>(
@@ -479,7 +485,7 @@ impl<'tcx> Place<'tcx> {
         extract_regions(self.ty(ctxt).ty, ctxt)
     }
 
-    pub(crate) fn region_projections<C: Copy>(
+    pub(crate) fn lifetime_projections<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>> {

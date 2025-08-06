@@ -40,7 +40,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let place: utils::Place<'tcx> = (*local).into();
                 let snapshot_location = self.prev_snapshot_location();
                 self.record_and_apply_action(
-                    BorrowPcgAction::make_place_old(
+                    BorrowPcgAction::label_place(
                         place,
                         snapshot_location,
                         LabelPlaceReason::StorageDead,
@@ -87,7 +87,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         )?;
                     }
                 }
-                for rp in target.region_projections(self.ctxt).into_iter() {
+                for rp in target.lifetime_projections(self.ctxt).into_iter() {
                     let blocked_edges = self
                         .pcg
                         .borrow

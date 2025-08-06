@@ -166,14 +166,14 @@ pub(crate) trait LabelPlace<'tcx> {
 }
 
 pub(crate) trait PlaceLabeller<'tcx> {
-    fn label_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation;
+    fn place_label(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation;
 }
 
 #[derive(From)]
 pub(crate) struct SetLabel(pub(crate) SnapshotLocation);
 
 impl<'tcx> PlaceLabeller<'tcx> for SetLabel {
-    fn label_place(&self, _place: Place<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation {
+    fn place_label(&self, _place: Place<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> SnapshotLocation {
         self.0
     }
 }

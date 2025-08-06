@@ -1,3 +1,4 @@
+use crate::rustc_interface::middle::mir;
 use crate::{
     pcg_validity_assert, pcg_validity_expect_ok, validity_checks_enabled, validity_checks_warn_only,
 };
@@ -9,6 +10,10 @@ pub trait HasValidityCheck<'tcx> {
 
     fn assert_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) {
         pcg_validity_expect_ok!(self.check_validity(ctxt), fallback: (), [ctxt], "Validity check failed");
+    }
+
+    fn assert_validity_at_location(&self, location: mir::Location, ctxt: CompilerCtxt<'_, 'tcx>) {
+        pcg_validity_expect_ok!(self.check_validity(ctxt), fallback: (), [ctxt at location]);
     }
 
     fn is_valid(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {

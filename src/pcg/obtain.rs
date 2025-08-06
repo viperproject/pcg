@@ -6,6 +6,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode},
         borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion},
         edge::{
+            deref::DerefEdge,
             kind::BorrowPcgEdgeKind,
             outlives::{BorrowFlowEdge, BorrowFlowEdgeKind},
         },
@@ -226,7 +227,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             )?;
         }
         self.apply_action(
-            BorrowPcgAction::make_place_old(
+            BorrowPcgAction::label_place(
                 place,
                 self.prev_snapshot_location(),
                 LabelPlaceReason::LabelSharedDerefProjections,
@@ -265,13 +266,13 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 .into(),
             ))?;
             for pe in expansions {
-                for rp in place.region_projections(ctxt) {
+                for rp in place.lifetime_projections(ctxt) {
                     let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = place
                         .expansion_places(&pe.expansion, ctxt)
                         .unwrap()
                         .into_iter()
                         .flat_map(|ep| {
-                            ep.region_projections(ctxt)
+                            ep.lifetime_projections(ctxt)
                                 .into_iter()
                                 .filter(|erp| erp.region(ctxt) == rp.region(ctxt))
                                 .map(|erp| erp.into())
@@ -359,6 +360,13 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError>;
 
+    fn update_capabilities_for_deref(
+        &mut self,
+        ref_place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError>;
+
     #[tracing::instrument(skip(self, obtain_type, ctxt))]
     fn expand_to(
         &mut self,
@@ -374,7 +382,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                     "expand region projections for {} one level",
                     base.to_short_string(ctxt)
                 );
-                self.expand_region_projections_one_level(base, &expansion, obtain_type, ctxt)?;
+                self.expand_lifetime_projections_one_level(base, &expansion, obtain_type, ctxt)?;
             }
         }
         Ok(())
@@ -463,12 +471,31 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         let place_expansion = PlaceExpansion::from_places(expansion.expansion(), ctxt);
-        let expansion_is_owned = base.is_owned(ctxt)
-            && !matches!(
-                expansion.kind,
-                ProjectionKind::DerefRef(_) | ProjectionKind::DerefRawPtr(_)
+        if matches!(expansion.kind, ProjectionKind::DerefRef(_)) {
+            let deref = DerefEdge::new(base, self.prev_snapshot_location(), ctxt);
+            let action = BorrowPcgAction::add_edge(
+                BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
+                "add_borrow_pcg_expansion",
+                ctxt,
             );
-        if expansion_is_owned {
+            self.apply_action(action.into())?;
+            self.update_capabilities_for_deref(base, obtain_type.capability(base, ctxt), ctxt)?;
+            if deref.blocked_lifetime_projection_label.is_some() {
+                self.apply_action(
+                    BorrowPcgAction::label_lifetime_projection(
+                        LabelLifetimeProjectionPredicate::Equals(
+                            deref
+                                .blocked_lifetime_projection(ctxt)
+                                .with_label(None, ctxt),
+                        ),
+                        deref.blocked_lifetime_projection_label,
+                        "block deref",
+                    )
+                    .into(),
+                )?;
+            }
+            Ok(true)
+        } else if base.is_owned(ctxt) {
             self.expand_owned_place_one_level(base, expansion, obtain_type, ctxt)
         } else {
             self.add_borrow_pcg_expansion(base, place_expansion, obtain_type, ctxt)
@@ -499,39 +526,14 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             return Ok(false);
         }
         tracing::debug!("Create expansion from {}", base.to_short_string(ctxt));
-        let expansion_label = if base.is_ref(ctxt) {
-            Some(self.label_for_rp(
-                base.base_region_projection(ctxt).unwrap(),
-                obtain_type,
-                ctxt,
-            ))
-        } else {
-            None
-        };
         let block_type = expanded_place.expansion.block_type(base, obtain_type, ctxt);
         tracing::debug!(
             "Block type for {} is {:?}",
             base.to_short_string(ctxt),
             block_type
         );
-        let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> = BorrowPcgExpansion::new(
-            base.into(),
-            expanded_place.expansion,
-            expansion_label.and_then(|lbl| lbl.label()),
-            ctxt,
-        )?;
-
-        if let Some(NewLabelAtCurrentLocation(location)) = expansion_label {
-            let rp = base.base_region_projection(ctxt).unwrap();
-            self.apply_action(
-                BorrowPcgAction::label_region_projection(
-                    LabelLifetimeProjectionPredicate::Equals(rp.into()),
-                    Some(location),
-                    "add_borrow_pcg_expansion: fresh RP label",
-                )
-                .into(),
-            )?;
-        }
+        let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> =
+            BorrowPcgExpansion::new(base.into(), expanded_place.expansion, ctxt)?;
 
         self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
         let action = BorrowPcgAction::add_edge(
@@ -547,20 +549,19 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
     }
 
     #[tracing::instrument(skip(self, base, expansion, ctxt))]
-    fn expand_region_projections_one_level(
+    fn expand_lifetime_projections_one_level(
         &mut self,
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         obtain_type: ObtainType,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        for base_rp in base.region_projections(ctxt) {
+        for base_rp in base.lifetime_projections(ctxt) {
             if let Some(place_expansion) =
                 expansion.place_expansion_for_region(base_rp.region(ctxt), ctxt)
             {
                 tracing::debug!("Expand {}", base_rp.to_short_string(ctxt));
-                let mut expansion =
-                    BorrowPcgExpansion::new(base_rp.into(), place_expansion, None, ctxt)?;
+                let mut expansion = BorrowPcgExpansion::new(base_rp.into(), place_expansion, ctxt)?;
                 let expansion_label = self.label_for_rp(base_rp, obtain_type, ctxt);
                 if let Some(label) = expansion_label.label() {
                     expansion.label_lifetime_projection(
@@ -582,7 +583,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 )?;
                 if let NewLabelAtCurrentLocation(label) = expansion_label {
                     self.apply_action(
-                        BorrowPcgAction::label_region_projection(
+                        BorrowPcgAction::label_lifetime_projection(
                             LabelLifetimeProjectionPredicate::Equals(base_rp.into()),
                             Some(label),
                             "expand_region_projections_one_level: create new RP label",

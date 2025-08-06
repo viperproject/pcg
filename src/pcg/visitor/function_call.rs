@@ -88,7 +88,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         for (rp, pre_rp) in arg_region_projections.iter().zip(pre_rps.iter()) {
             self.record_and_apply_action(
-                BorrowPcgAction::label_region_projection(
+                BorrowPcgAction::label_lifetime_projection(
                     LabelLifetimeProjectionPredicate::Equals(*rp),
                     pre_rp.label(),
                     format!(
@@ -114,7 +114,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
             let result_projections: Vec<FunctionCallAbstractionOutput<'tcx>> = destination
-                .region_projections(self.ctxt)
+                .lifetime_projections(self.ctxt)
                 .iter()
                 .filter(|rp| {
                     self.ctxt
