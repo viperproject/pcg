@@ -480,10 +480,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
     ) -> Result<bool, PcgError> {
         let place_expansion = PlaceExpansion::from_places(expansion.expansion(), ctxt);
         if matches!(expansion.kind, ProjectionKind::DerefRef(_)) {
-            if self
-                .borrows_graph()
-               .contains_deref_edge_to(base)
-            {
+            if self.borrows_graph().contains_deref_edge_to(base.project_deref(ctxt)) {
                 return Ok(false);
             }
             let deref = DerefEdge::new(base, self.prev_snapshot_location(), ctxt);
