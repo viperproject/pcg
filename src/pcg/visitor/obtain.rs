@@ -490,6 +490,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         place: Place<'tcx>,
         obtain_type: ObtainType,
     ) -> Result<(), PcgError> {
+        let obtain_cap = obtain_type.capability(place, self.ctxt);
+
         // This is to support the following kind of scenario:
         //
         //  - `s` is to be re-assigned or borrowed mutably at location `l`
@@ -502,14 +504,20 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // After performing this operation, we should try again to remove borrow
         // PCG edges blocking `place`, since this may enable some borrow
         // expansions to be removed (s.f was previously blocked and no longer is)
-        if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
+        if !obtain_cap.is_read() {
             self.label_and_remove_capabilities_for_deref_projections_of_postfix_places(
                 place, true, self.ctxt,
             )?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }
 
-        let obtain_cap = obtain_type.capability(place, self.ctxt);
+        // self.pcg.borrows_graph().render_debug_graph(
+        //     self.ctxt,
+        //     &format!(
+        //         "After label and remove for {}",
+        //         place.to_short_string(self.ctxt)
+        //     ),
+        // );
 
         if !obtain_cap.is_read() {
             tracing::debug!(

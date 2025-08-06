@@ -372,17 +372,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for place in to_obtain {
             let obtain_cap = obtain_type.capability(place, ctxt);
 
-            if !obtain_cap.is_read() {
-                tracing::debug!(
-                    "Obtain {:?} to place {} in phase {:?}",
-                    obtain_type,
-                    place.to_short_string(ctxt),
-                    obtain_type
-                );
-                obtainer
-                    .upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)
-                    .unwrap();
-            }
+            // if !obtain_cap.is_read() {
+            //     tracing::debug!(
+            //         "Obtain {:?} to place {} in phase {:?}",
+            //         obtain_type,
+            //         place.to_short_string(ctxt),
+            //         obtain_type
+            //     );
+            //     obtainer
+            //         .upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)
+            //         .unwrap();
+            //     obtainer.pcg.borrows_graph().render_debug_graph(
+            //         ctxt,
+            //         &format!("After upgrade for {}", place.to_short_string(ctxt)),
+            //     );
+            // }
 
             obtainer.obtain(place, ObtainType::LoopInvariant).unwrap();
             obtainer.pcg.borrows_graph().render_debug_graph(
@@ -460,7 +464,7 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
 
     fn expand_to_places(&mut self, places: HashSet<Place<'tcx>>) {
         for place in places {
-            tracing::debug!("expanding to {}", place.to_short_string(self.ctxt));
+            tracing::info!("expanding to {}", place.to_short_string(self.ctxt));
             self.expand_to(place, ObtainType::LoopInvariant, self.ctxt)
                 .unwrap();
         }

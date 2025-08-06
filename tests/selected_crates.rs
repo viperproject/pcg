@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 12 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "regex-automata",
+        "0.4.9",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("hybrid::dfa::Lazy::<'i, 'c>::set_all_transitions"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // <= 15 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
         "hashbrown",
@@ -340,19 +353,6 @@ fn test_selected_crates() {
             function: Some(
                 "<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next",
             ),
-            extra_env_vars: vec![],
-        },
-    );
-
-    // cycles, 12 basic blocks, cycles, <= 30 nodes
-    common::ensure_successful_run_on_crate(
-        "regex-automata",
-        "0.4.9",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("hybrid::dfa::Lazy::<'i, 'c>::set_all_transitions"),
             extra_env_vars: vec![],
         },
     );

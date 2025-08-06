@@ -233,14 +233,15 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 .into(),
             )?;
         }
-        self.apply_action(
-            BorrowPcgAction::label_place(
-                place,
-                self.prev_snapshot_location(),
-                LabelPlaceReason::LabelDerefProjections,
-            )
-            .into(),
-        )
+        // self.apply_action(
+        //     BorrowPcgAction::label_place(
+        //         place,
+        //         self.prev_snapshot_location(),
+        //         LabelPlaceReason::LabelDerefProjections,
+        //     )
+        //     .into(),
+        // )
+        Ok(true)
     }
 
     /// Collapses owned places and performs appropriate updates to region projections.
@@ -481,8 +482,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         if matches!(expansion.kind, ProjectionKind::DerefRef(_)) {
             if self
                 .borrows_graph()
-                .places(ctxt)
-                .contains(&base.project_deref(ctxt))
+               .contains_deref_edge_to(base)
             {
                 return Ok(false);
             }

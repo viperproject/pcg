@@ -343,18 +343,19 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
                         && p.location() == base_place.location()
                 })
             }
-            PcgNode::LifetimeProjection(base_rp) => self.expansion.iter().all(|p| {
-                if let PcgNode::LifetimeProjection(p_rp) = p {
-                    p_rp.place().location() == base_rp.place().location()
-                        && base_rp
-                            .place()
-                            .place()
-                            .is_prefix_exact(p_rp.place().place())
-                        && p_rp.label() == base_rp.label()
-                } else {
-                    false
-                }
-            }),
+            PcgNode::LifetimeProjection(base_rp) => false,
+            // self.expansion.iter().all(|p| {
+            //     if let PcgNode::LifetimeProjection(p_rp) = p {
+            //         p_rp.place().location() == base_rp.place().location()
+            //             && base_rp
+            //                 .place()
+            //                 .place()
+            //                 .is_prefix_exact(p_rp.place().place())
+            //             && p_rp.label() == base_rp.label()
+            //     } else {
+            //         false
+            //     }
+            // }),
         }
     }
 }

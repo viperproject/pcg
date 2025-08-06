@@ -131,6 +131,19 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
+    pub(crate) fn contains_deref_edge_to(
+        &self,
+        place: Place<'tcx>,
+    ) -> bool {
+        self.edges().any(|edge| {
+            if let BorrowPcgEdgeKind::Deref(e) = edge.kind {
+                e.deref_place == place.into()
+            } else {
+                false
+            }
+        })
+    }
+
     pub(crate) fn contains_borrow_pcg_expansion(
         &self,
         expanded_place: &ExpandedPlace<'tcx>,
