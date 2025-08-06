@@ -9,16 +9,16 @@ use crate::rustc_interface::borrowck::{
     BorrowData, BorrowIndex, BorrowSet, Borrows, LocationTable, PoloniusInput, PoloniusOutput,
     RegionInferenceContext, RichLocation,
 };
-use crate::rustc_interface::dataflow::{compute_fixpoint, with_cursor_state};
+use crate::rustc_interface::dataflow::compute_fixpoint;
 use crate::rustc_interface::index::bit_set::BitSet;
 use crate::rustc_interface::middle::mir::{self, Location, RETURN_PLACE};
 use crate::rustc_interface::middle::ty;
-use crate::rustc_interface::mir_dataflow::{ResultsCursor, impls::MaybeLiveLocals};
+use crate::rustc_interface::mir_dataflow::ResultsCursor;
 use crate::utils::CompilerCtxt;
 use crate::utils::liveness::PlaceLiveness;
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -265,15 +265,8 @@ pub type BorrowCheckerImpl<'mir, 'tcx> = NllBorrowCheckerImpl<'mir, 'tcx>;
 /// An interface to the results of the NLL borrow-checker analysis.
 #[derive(Clone)]
 pub struct NllBorrowCheckerImpl<'mir, 'tcx: 'mir> {
-    live_locals: Rc<RefCell<ResultsCursor<'mir, 'tcx, MaybeLiveLocals>>>,
     place_liveness: PlaceLiveness<'mir, 'tcx>,
     pub(crate) borrow_checker_data: RustBorrowCheckerData<'mir, 'tcx>,
-}
-fn cursor_contains_local(
-    cursor: RefMut<'_, ResultsCursor<'_, '_, MaybeLiveLocals>>,
-    local: mir::Local,
-) -> bool {
-    with_cursor_state(cursor, |state| state.contains(local))
 }
 
 impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
@@ -283,21 +276,7 @@ impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
         Self {
             borrow_checker_data,
             place_liveness,
-            live_locals: Rc::new(RefCell::new(
-                compute_fixpoint(MaybeLiveLocals, tcx, body.body())
-                    .into_results_cursor(body.body()),
-            )),
         }
-    }
-}
-
-impl<'tcx> NllBorrowCheckerImpl<'_, 'tcx> {
-    fn local_is_live_before(&self, local: mir::Local, location: Location) -> bool {
-        let mut cursor = self.live_locals.as_ref().borrow_mut();
-        // Because the analysis is backwards, seeking "after" the primary effect means
-        // that liveness in considered at the point before the statement occurs.
-        cursor.seek_after_primary_effect(location);
-        cursor_contains_local(cursor, local)
     }
 }
 
