@@ -127,10 +127,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                 };
             }
 
-            if ctxt.is_arg(place.local()) {
-                return ShouldKillNode::No;
-            }
-
             if p.is_place()
                 && !place.place().projection.is_empty()
                 && !fg.has_edge_blocking(place.into(), ctxt)

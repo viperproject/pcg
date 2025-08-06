@@ -58,7 +58,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let arg_region_projections = args
             .iter()
             .filter_map(|arg| self.maybe_labelled_operand_place(arg))
-            .flat_map(|input_place| input_place.region_projections(self.ctxt))
+            .flat_map(|input_place| input_place.lifetime_projections(self.ctxt))
             .collect::<Vec<_>>();
 
         let pre_rps = arg_region_projections

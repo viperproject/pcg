@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 18 basic blocks, <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "hashbrown",
+        "0.15.2",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("map::OccupiedEntry::<'a, K, V, S, A>::replace_entry_with"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // <= 8 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
         "gimli",
@@ -33,11 +46,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("read::cfi::UnwindTable::<'a, 'ctx, R, S>::into_current_row"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // 22 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
@@ -52,18 +63,6 @@ fn test_selected_crates() {
         },
     );
 
-    // 18 basic blocks, <= 20 nodes
-    common::ensure_successful_run_on_crate(
-        "hashbrown",
-        "0.15.2",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("map::OccupiedEntry::<'a, K, V, S, A>::replace_entry_with"),
-            extra_env_vars: vec![],
-        },
-    );
 
     // <= 10 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(

@@ -23,7 +23,7 @@ use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{CompilerCtxt, SnapshotLocation};
 use crate::{
-    pcg::{LocalNodeLike, PcgNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNodeLike, PcgNode},
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::{

@@ -301,7 +301,7 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         }
     }
 
-    pub(crate) fn region_projections(
+    pub(crate) fn lifetime_projections(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> Vec<LifetimeProjection<'tcx, Self>> {

@@ -366,10 +366,22 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                     let other_expansion_guide = other_expansion.guide();
                     if self.owned.is_leaf(other_expansion.place, ctxt) {
                         if let Some(cap) = self.capabilities.get(other_expansion.place) {
+                            let expand_cap = if let Some(other_cap) =
+                                other.capabilities.get(other_expansion.place)
+                            {
+                                cap.minimum(other_cap).unwrap()
+                            } else {
+                                cap
+                            };
                             let expand_action = RepackExpand::new(
                                 other_expansion.place,
                                 other_expansion_guide,
-                                cap,
+                                expand_cap,
+                            );
+                            tracing::info!(
+                                "Expanding {:?} with cap {:?}",
+                                other_expansion.place,
+                                cap
                             );
                             self.owned.perform_expand_action(
                                 expand_action,

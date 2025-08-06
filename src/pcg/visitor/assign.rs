@@ -144,7 +144,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     (from.into(), BorrowFlowEdgeKind::CopyRef)
                 };
                 for (source_proj, target_proj) in from
-                    .region_projections(self.ctxt)
+                    .lifetime_projections(self.ctxt)
                     .into_iter()
                     .zip(target.lifetime_projections(self.ctxt).into_iter())
                 {

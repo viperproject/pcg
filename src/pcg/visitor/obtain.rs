@@ -161,9 +161,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         deref: &DerefEdge<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        // Check if the target is labelled e.g. *p @ l instead of *p
-        if deref.deref_place.is_current() {
-            self.unlabel_blocked_region_projections(deref, context)
+        if deref.deref_place.is_current() && deref.deref_place.lifetime_projections(self.ctxt).is_empty() {
+            self.unlabel_blocked_lifetime_projections(deref, context)
         } else {
             Ok(())
         }
@@ -225,7 +224,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     // to become *s|'s. Otherwise we'd have both *s|'s and *s.i|'s
                     for exp_node in expansion.expansion() {
                         if let PcgNode::Place(place) = exp_node {
-                            for rp in place.region_projections(self.ctxt) {
+                            for rp in place.lifetime_projections(self.ctxt) {
                                 tracing::debug!(
                                     "labeling region projection: {}",
                                     rp.to_short_string(self.ctxt)
@@ -280,7 +279,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// Accordingly, when we want to remove *y in such cases, we just remove the
     /// label rather than use the normal logic (of renaming the placeholder
     /// projection to the current one).
-    fn unlabel_blocked_region_projections(
+    fn unlabel_blocked_lifetime_projections(
         &mut self,
         deref: &DerefEdge<'tcx>,
         context: &str,
