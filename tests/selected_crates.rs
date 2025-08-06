@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // <= 10 basic blocks, <= 20 nodes
+    common::ensure_successful_run_on_crate(
+        "hashbrown",
+        "0.15.2",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("raw_entry::RawOccupiedEntryMut::<'a, K, V, S, A>::replace_entry_with"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // 18 basic blocks, <= 20 nodes
     common::ensure_successful_run_on_crate(
         "hashbrown",
@@ -64,18 +77,6 @@ fn test_selected_crates() {
     );
 
 
-    // <= 10 basic blocks, <= 20 nodes
-    common::ensure_successful_run_on_crate(
-        "hashbrown",
-        "0.15.2",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some("raw_entry::RawOccupiedEntryMut::<'a, K, V, S, A>::replace_entry_with"),
-            extra_env_vars: vec![],
-        },
-    );
 
     // <= 20 basic blocks, cycles, <= 20 nodes
     common::ensure_successful_run_on_crate(

@@ -171,21 +171,30 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         Ok(())
     }
 
-    fn label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(
+    fn label_and_remove_capabilities_for_deref_projections_of_postfix_places(
         &mut self,
         place: Place<'tcx>,
+        shared_refs_only: bool,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
+        let place_predicate = |p| {
+            if !place.is_strict_prefix_of(p) {
+                return false;
+            }
+            if shared_refs_only {
+                p.is_shared_ref(ctxt)
+            } else {
+                p.is_ref(ctxt)
+            }
+        };
         let derefs_to_disconnect = self
             .borrows_state()
             .graph
             .edges()
             .flat_map(|e| match e.kind() {
-                BorrowPcgEdgeKind::BorrowPcgExpansion(e)
-                    if let Some(p) = e.base.as_current_place()
-                        && place != p
-                        && p.is_shared_ref(ctxt)
-                        && place.is_prefix_of(p) =>
+                BorrowPcgEdgeKind::Deref(e)
+                    if let Some(p) = e.blocked_place.as_current_place()
+                        && place_predicate(p) =>
                 {
                     Some(e.clone())
                 }
@@ -201,22 +210,20 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 .remove(&rp.clone().into())
                 .unwrap();
             let label = self.prev_snapshot_location();
-            rp.base.label_place_with_context(
-                &LabelPlacePredicate::Exact(rp.base.place()),
+            rp.blocked_place.label_place_with_context(
+                &LabelPlacePredicate::Exact(rp.blocked_place.place()),
                 &SetLabel(label),
                 LabelNodeContext::Other,
                 ctxt,
             );
-            rp.expansion.iter_mut().for_each(|e| {
-                self.capabilities()
-                    .remove_all_postfixes(e.as_current_place().unwrap(), ctxt);
-                e.label_place_with_context(
-                    &LabelPlacePredicate::Exact(e.place()),
-                    &SetLabel(self.prev_snapshot_location()),
-                    LabelNodeContext::TargetOfExpansion,
-                    ctxt,
-                );
-            });
+            self.capabilities()
+                .remove_all_postfixes(rp.deref_place.as_current_place().unwrap(), ctxt);
+            rp.deref_place.label_place_with_context(
+                &LabelPlacePredicate::Exact(rp.deref_place.place()),
+                &SetLabel(self.prev_snapshot_location()),
+                LabelNodeContext::TargetOfExpansion,
+                ctxt,
+            );
             self.apply_action(
                 BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
@@ -230,7 +237,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             BorrowPcgAction::label_place(
                 place,
                 self.prev_snapshot_location(),
-                LabelPlaceReason::LabelSharedDerefProjections,
+                LabelPlaceReason::LabelDerefProjections,
             )
             .into(),
         )
@@ -484,9 +491,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 self.apply_action(
                     BorrowPcgAction::label_lifetime_projection(
                         LabelLifetimeProjectionPredicate::Equals(
-                            deref
-                                .blocked_lifetime_projection
-                                .with_label(None, ctxt),
+                            deref.blocked_lifetime_projection.with_label(None, ctxt),
                         ),
                         deref.blocked_lifetime_projection.label(),
                         "block deref",

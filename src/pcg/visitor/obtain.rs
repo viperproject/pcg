@@ -161,7 +161,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         deref: &DerefEdge<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        if deref.deref_place.is_current() && deref.deref_place.lifetime_projections(self.ctxt).is_empty() {
+        if deref.deref_place.is_current()
+            && deref.deref_place.lifetime_projections(self.ctxt).is_empty()
+        {
             self.unlabel_blocked_lifetime_projections(deref, context)
         } else {
             Ok(())
@@ -501,8 +503,8 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // PCG edges blocking `place`, since this may enable some borrow
         // expansions to be removed (s.f was previously blocked and no longer is)
         if !matches!(obtain_type, ObtainType::Capability(CapabilityKind::Read)) {
-            self.label_and_remove_capabilities_for_shared_deref_projections_of_postfix_places(
-                place, self.ctxt,
+            self.label_and_remove_capabilities_for_deref_projections_of_postfix_places(
+                place, true, self.ctxt,
             )?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }
