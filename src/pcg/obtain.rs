@@ -20,9 +20,7 @@ use crate::{
         region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
         state::BorrowStateMutRef,
     },
-    free_pcs::{
-        CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp,
-    },
+    free_pcs::{CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     pcg::{
         PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -146,12 +144,17 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
         let mut leaf_places = self.leaf_places(ctxt);
+        tracing::debug!("Leaf places: {}", leaf_places.to_short_string(ctxt));
         leaf_places.retain(|p| {
             self.capabilities().get(*p, ctxt) == Some(CapabilityKind::Read)
                 && !p.projects_shared_ref(ctxt)
                 && p.parent_place()
                     .is_none_or(|parent| self.capabilities().get(parent, ctxt).is_none())
         });
+        tracing::debug!(
+            "Restoring capability to leaf places: {}",
+            leaf_places.to_short_string(ctxt)
+        );
         for place in leaf_places {
             if let Some(parent_place) = parent_place {
                 if !parent_place.is_prefix_of(place) {

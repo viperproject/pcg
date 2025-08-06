@@ -26,6 +26,32 @@ fn test_selected_crates() {
 
     // 4 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
+        "async-trait",
+        "0.1.87",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<lifetime::CollectLifetimes as syn::visit_mut::VisitMut>::visit_type_reference_mut"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 36 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "tempfile",
+        "3.18.0",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<spooled::SpooledTempFile as std::io::Write>::write"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 4 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
         "hashbrown",
         "0.15.2",
         Some("2025-03-13"),
@@ -36,7 +62,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // 18 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
@@ -50,7 +75,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // 58 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
@@ -87,7 +111,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("helpers::case_style::snakify"),
-            extra_env_vars: vec![]
+            extra_env_vars: vec![],
         },
     );
 

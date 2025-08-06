@@ -67,6 +67,15 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
     ) -> crate::utils::data_structures::HashSet<Place<'tcx>> {
         let mut leaf_places = self.pcg.owned.leaf_places(ctxt);
         leaf_places.retain(|p| !self.pcg.borrow.graph().owned_places(ctxt).contains(p));
+        leaf_places.extend(
+            self.pcg
+                .borrow
+                .graph
+                .frozen_graph()
+                .leaf_nodes(ctxt)
+                .iter()
+                .filter_map(|node| node.as_current_place()),
+        );
         leaf_places
     }
 }
