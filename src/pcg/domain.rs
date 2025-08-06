@@ -268,6 +268,7 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.capabilities.check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
+        self.owned.check_validity(self.capabilities, ctxt)?;
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
         }

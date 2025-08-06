@@ -171,9 +171,20 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> S
 }
 fn format_terminator<'tcx>(
     terminator: &TerminatorKind<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
 ) -> String {
     match terminator {
+        TerminatorKind::Drop {
+            place,
+            target,
+            unwind,
+            ..
+        } => {
+            format!(
+                "drop({}) -> [return: {target:?}, unwind: {unwind:?}]",
+                format_place(place, ctxt)
+            )
+        }
         TerminatorKind::Call {
             func,
             args,
@@ -185,10 +196,10 @@ fn format_terminator<'tcx>(
         } => {
             format!(
                 "{} = {}({})",
-                format_place(destination, repacker),
-                format_operand(func, repacker),
+                format_place(destination, ctxt),
+                format_operand(func, ctxt),
                 args.iter()
-                    .map(|arg| format_operand(&arg.node, repacker))
+                    .map(|arg| format_operand(&arg.node, ctxt))
                     .collect::<Vec<_>>()
                     .join(", ")
             )

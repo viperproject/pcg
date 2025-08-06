@@ -464,10 +464,6 @@ impl<'tcx> Place<'tcx> {
         self.lifetime_projections(repacker)[idx]
     }
 
-    pub(crate) fn has_lifetime_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        !self.lifetime_projections(ctxt).is_empty()
-    }
-
     pub fn regions<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,

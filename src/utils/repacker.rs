@@ -11,7 +11,6 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::{
         FieldIdx, PlaceTy, RustBitSet,
-        data_structures::fx::FxHashSet,
         index::Idx,
         middle::{
             mir::{

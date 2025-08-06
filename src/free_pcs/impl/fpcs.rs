@@ -21,10 +21,7 @@ use crate::{
 use derive_more::{Deref, DerefMut};
 
 use super::CapabilityKind;
-use crate::{
-    free_pcs::OwnedPcgLocal,
-    utils::CompilerCtxt,
-};
+use crate::{free_pcs::OwnedPcgLocal, utils::CompilerCtxt};
 
 /// The state of the Owned PCG.
 #[derive(Clone, Default)]
@@ -33,6 +30,17 @@ pub struct OwnedPcg<'tcx> {
 }
 
 impl<'tcx> OwnedPcg<'tcx> {
+    pub(crate) fn check_validity(
+        &self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<(), String> {
+        self.data
+            .as_ref()
+            .unwrap()
+            .check_validity(capabilities, ctxt)
+    }
+
     pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
@@ -112,6 +120,17 @@ impl Debug for OwnedPcgData<'_> {
 }
 
 impl<'tcx> OwnedPcgData<'tcx> {
+    pub(crate) fn check_validity(
+        &self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<(), String> {
+        self.0
+            .iter()
+            .map(|c| c.check_validity(capabilities, ctxt))
+            .collect()
+    }
+
     pub(crate) fn num_locals(&self) -> usize {
         self.0.len()
     }

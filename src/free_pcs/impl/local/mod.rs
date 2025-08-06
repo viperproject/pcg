@@ -11,7 +11,10 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::{RepackCollapse, RepackGuide},
-    pcg::{PcgUnsupportedError, place_capabilities::PlaceCapabilities},
+    pcg::{
+        PcgUnsupportedError,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    },
     rustc_interface::middle::mir::Local,
     utils::data_structures::HashSet,
 };
@@ -41,6 +44,16 @@ impl Debug for OwnedPcgLocal<'_> {
 }
 
 impl<'tcx> OwnedPcgLocal<'tcx> {
+    pub(crate) fn check_validity(
+        &self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<(), String> {
+        match self {
+            Self::Unallocated => Ok(()),
+            Self::Allocated(cps) => cps.check_validity(capabilities, ctxt),
+        }
+    }
     pub fn get_allocated(&self) -> &LocalExpansions<'tcx> {
         match self {
             Self::Allocated(cps) => cps,
@@ -91,6 +104,22 @@ pub struct LocalExpansions<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
+    pub(crate) fn check_validity(
+        &self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<(), String> {
+        for expansion in self.expansions.iter() {
+            if let Some(CapabilityKind::Write) = capabilities.get(expansion.place, ctxt) {
+                return Err(format!(
+                    "Base {} of expansion {:?} has write capability",
+                    expansion.place.to_short_string(ctxt),
+                    expansion
+                ));
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn has_expansions(&self) -> bool {
         !self.expansions.is_empty()
     }
