@@ -41,6 +41,10 @@ impl<'tcx> OwnedPcg<'tcx> {
             .check_validity(capabilities, ctxt)
     }
 
+    pub(crate) fn contains_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.data.as_ref().unwrap().contains_place(place, ctxt)
+    }
+
     pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
@@ -140,6 +144,14 @@ impl<'tcx> OwnedPcgData<'tcx> {
             .filter(|c| !c.is_unallocated())
             .flat_map(|c| c.get_allocated().leaf_places(ctxt))
             .collect()
+    }
+
+    pub(crate) fn contains_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        let expansion = &self.0[place.local];
+        if expansion.is_unallocated() {
+            return false;
+        }
+        expansion.get_allocated().contains_place(place, ctxt)
     }
 
     pub(crate) fn allocated_locals(&self) -> Vec<mir::Local> {

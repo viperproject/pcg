@@ -4,6 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use core::borrow;
 use std::{
     alloc::Allocator,
     cell::RefCell,
@@ -18,7 +19,7 @@ use crate::{
     AnalysisEngine, DebugLines,
     action::PcgActions,
     borrow_pcg::{
-        edge::kind::BorrowPcgEdgeKind,
+        edge::{borrow::BorrowEdge, kind::BorrowPcgEdgeKind},
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
@@ -37,11 +38,13 @@ use crate::{
         CHECK_CYCLES, CompilerCtxt, PANIC_ON_ERROR, Place,
         arena::ArenaRef,
         data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
         initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
+        maybe_old::MaybeLabelledPlace,
         validity::HasValidityCheck,
     },
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
@@ -271,6 +274,26 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
         self.owned.check_validity(self.capabilities, ctxt)?;
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
+        }
+
+        for borrow_edge in self.borrow.graph.edges().filter_map(|e| {
+            if let BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) = e.kind {
+                Some(borrow)
+            } else {
+                None
+            }
+        }) {
+            if let MaybeLabelledPlace::Current(blocked_place) = borrow_edge.blocked_place
+                && blocked_place.is_owned(ctxt)
+            {
+                if !self.owned.contains_place(blocked_place, ctxt) {
+                    return Err(format!(
+                        "Borrow edge {} blocks owned place {}, which is not in the owned PCG",
+                        borrow_edge.to_short_string(ctxt),
+                        blocked_place.to_short_string(ctxt)
+                    ));
+                }
+            }
         }
         Ok(())
     }

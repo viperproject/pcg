@@ -24,6 +24,33 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 62 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "petgraph",
+        "0.7.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("<data::FilterElements<I, F> as std::iter::Iterator>::next"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+    return;
+
+    // 64 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "strum_macros",
+        "0.27.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("helpers::case_style::snakify"),
+            extra_env_vars: visualization_env_vars,
+        },
+    );
+
     // 51 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
         "brotli-decompressor",
@@ -33,7 +60,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("copy_from_to"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 

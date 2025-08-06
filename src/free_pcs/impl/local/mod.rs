@@ -104,6 +104,10 @@ pub struct LocalExpansions<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
+    pub(crate) fn contains_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        place == self.local.into() || self.contains_expansion_to(place, ctxt)
+    }
+
     pub(crate) fn check_validity(
         &self,
         capabilities: &PlaceCapabilities<'tcx>,
