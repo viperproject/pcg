@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
-    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind>;
+    fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind>;
     fn insert(
         &mut self,
         place: Place<'tcx>,
@@ -33,7 +33,7 @@ pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
-    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+    fn get(&self, place: Place<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind> {
         self.0.get(&place).copied()
     }
 
@@ -162,6 +162,18 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn capabilities_for_strict_postfixes_of(
+        &self,
+        place: Place<'tcx>,
+    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
+        self.0.iter().filter_map(move |(p, c)| {
+            if place.is_strict_prefix_of(*p) {
+                Some((*p, *c))
+            } else {
+                None
+            }
+        })
+    }
     pub(crate) fn retain(&mut self, predicate: impl Fn(&Place<'tcx>, &CapabilityKind) -> bool) {
         self.0.retain(|place, cap| predicate(place, cap));
     }
@@ -185,11 +197,11 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     pub(crate) fn uniform_capability(
         &self,
         mut places: impl Iterator<Item = Place<'tcx>>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<CapabilityKind> {
-        let cap = self.get(places.next()?)?;
+        let cap = self.get(places.next()?, ctxt)?;
         for p in places {
-            if self.get(p) != Some(cap) {
+            if self.get(p, ctxt) != Some(cap) {
                 return None;
             }
         }
@@ -242,7 +254,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         // We dont change if only expanding region projections
         if expansion.base.is_place() {
             let base = expansion.base;
-            let base_capability = self.get(base.place());
+            let base_capability = self.get(base.place(), ctxt);
             let expanded_capability = if let Some(capability) = base_capability {
                 block_type.expansion_capability(base.place(), capability, ctxt)
             } else {
@@ -278,8 +290,8 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         }
     }
 
-    pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
-        self.get(place)
+    pub fn is_exclusive(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.get(place, ctxt)
             .map(|c| c == CapabilityKind::Exclusive)
             .unwrap_or(false)
     }

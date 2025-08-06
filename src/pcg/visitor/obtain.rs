@@ -1,13 +1,10 @@
-use std::cmp::Ordering;
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::borrow_pcg::has_pcs_elem::
-    LabelLifetimeProjectionPredicate
-;
+use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
@@ -20,6 +17,7 @@ use crate::rustc_interface::middle::mir;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
+use std::cmp::Ordering;
 
 use crate::utils::{Place, SnapshotLocation};
 
@@ -88,7 +86,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         for node in to_restore {
             if let Some(place) = node.as_current_place() {
-                let blocked_cap = self.pcg.capabilities.get(place);
+                let blocked_cap = self.pcg.capabilities.get(place, self.ctxt);
 
                 // TODO: If the place projects a shared ref, do we even need to restore a capability?
                 let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
@@ -182,7 +180,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             && let Some(place) = expansion.base.as_current_place()
         {
             matches!(
-                self.pcg.capabilities.get(place),
+                self.pcg.capabilities.get(place, self.ctxt),
                 Some(CapabilityKind::Write) | None
             )
         } else {
@@ -246,7 +244,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         .to_pcg_node(self.ctxt),
                     self.location(),
                 ) && let MaybeLabelledPlace::Current(place) = borrow.assigned_ref()
-                    && let Some(existing_cap) = self.pcg.capabilities.get(place)
+                    && let Some(existing_cap) = self.pcg.capabilities.get(place, self.ctxt)
                 {
                     self.record_and_apply_action(
                         BorrowPcgAction::weaken(
@@ -370,7 +368,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         let mut expand_root = place;
         loop {
-            if let Some(cap) = self.pcg.capabilities.get(expand_root) {
+            if let Some(cap) = self.pcg.capabilities.get(expand_root, self.ctxt) {
                 if cap.is_read() {
                     self.upgrade_read_to_exclusive(expand_root)?;
                 }
@@ -537,7 +535,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)?;
         }
 
-        let current_cap = self.pcg.capabilities.get(place);
+        let current_cap = self.pcg.capabilities.get(place, self.ctxt);
 
         if current_cap.is_none()
             || matches!(

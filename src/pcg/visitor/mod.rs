@@ -4,10 +4,10 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
+use crate::pcg::PcgDebugData;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
-use crate::pcg::PcgDebugData;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -264,7 +264,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 self.ctxt,
             )?;
             if place.projection.is_empty()
-                && self.pcg.capabilities.get(place) == Some(CapabilityKind::Read)
+                && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
             {
                 self.pcg
                     .capabilities
@@ -433,7 +433,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .ctxt
                     .bc
                     .is_directly_blocked(place, self.location(), self.ctxt)
-                && self.pcg.capabilities.get(place) != Some(CapabilityKind::Read)
+                && self.pcg.capabilities.get(place, self.ctxt) != Some(CapabilityKind::Read)
             {
                 let action = PcgAction::restore_capability(
                     place,

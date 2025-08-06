@@ -8,7 +8,7 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{LabelLifetimeProjection},
+    has_pcs_elem::LabelLifetimeProjection,
     region_projection::LifetimeProjectionLabel,
 };
 use crate::{
@@ -307,18 +307,22 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     /// information. This is the case when the expansion node labels (for
     /// places, and for region projections) are the same as the base node
     /// labels.
-    pub(crate) fn is_packable(&self, capabilities: &PlaceCapabilities<'tcx>) -> bool {
+    pub(crate) fn is_packable(
+        &self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self.base {
             PcgNode::Place(base_place) => {
                 let mut fst_cap = None;
                 self.expansion.iter().all(|p| {
                     if let PcgNode::Place(MaybeLabelledPlace::Current(place)) = p {
                         if let Some(cap) = fst_cap {
-                            if cap != capabilities.get(*place) {
+                            if cap != capabilities.get(*place, ctxt) {
                                 return false;
                             }
                         } else {
-                            fst_cap = Some(capabilities.get(*place));
+                            fst_cap = Some(capabilities.get(*place, ctxt));
                         }
                     }
                     base_place.place().is_prefix_exact(p.place())

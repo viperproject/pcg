@@ -26,8 +26,8 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         'pcg: 'other,
     {
         let base_place = other_expansion.place;
-        let self_cap = self.capabilities.get(base_place);
-        let other_cap = other.capabilities.get(base_place);
+        let self_cap = self.capabilities.get(base_place, ctxt);
+        let other_cap = other.capabilities.get(base_place, ctxt);
         if self_cap == Some(CapabilityKind::Read) && other_cap == Some(CapabilityKind::Read) {
             let action =
                 RepackExpand::new(base_place, other_expansion.guide(), CapabilityKind::Read);
@@ -72,7 +72,8 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                 )?;
 
                 pcg_validity_assert!(
-                    self_obtainer.data.capabilities.get(base_place) == Some(CapabilityKind::Write),
+                    self_obtainer.data.capabilities.get(base_place, ctxt)
+                        == Some(CapabilityKind::Write),
                     "Expected capability for {} to be Write",
                     base_place.to_short_string(ctxt)
                 );
@@ -110,9 +111,10 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             .collect::<Vec<_>>();
         for self_expansion in expansions_shortest_first {
             if !other.owned.contains_expansion(&self_expansion)
-                && let Some(other_cap) = other.capabilities.get(self_expansion.place)
+                && let Some(other_cap) = other.capabilities.get(self_expansion.place, ctxt)
             {
-                if let Some(CapabilityKind::Read) = self.capabilities.get(self_expansion.place)
+                if let Some(CapabilityKind::Read) =
+                    self.capabilities.get(self_expansion.place, ctxt)
                     && other_cap >= CapabilityKind::Read
                 {
                     other.owned.perform_expand_action(
@@ -124,7 +126,17 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                         other.capabilities,
                         ctxt,
                     )?;
-                } else if self.capabilities.get(self_expansion.place) == None {
+                    for child_place in self_expansion.expansion_places(ctxt)? {
+                        if self.owned.leaf_places(ctxt).contains(&child_place) {
+                            for (p, c) in self
+                                .capabilities
+                                .capabilities_for_strict_postfixes_of(child_place)
+                            {
+                                other.capabilities.insert(p, c, ctxt);
+                            }
+                        }
+                    }
+                } else if self.capabilities.get(self_expansion.place, ctxt) == None {
                     match other_cap {
                         CapabilityKind::Exclusive => {
                             let expand_action = RepackExpand::new(
@@ -215,9 +227,9 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                     tracing::debug!("Expansion {:?} is not in self", other_expansion);
                     let other_expansion_guide = other_expansion.guide();
                     if self.owned.is_leaf(other_expansion.place, ctxt) {
-                        if let Some(cap) = self.capabilities.get(other_expansion.place) {
+                        if let Some(cap) = self.capabilities.get(other_expansion.place, ctxt) {
                             let expand_cap = if let Some(other_cap) =
-                                other.capabilities.get(other_expansion.place)
+                                other.capabilities.get(other_expansion.place, ctxt)
                             {
                                 cap.minimum(other_cap).unwrap()
                             } else {
@@ -266,8 +278,8 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             actions.extend(self.join_self_expansions(&mut other, ctxt)?);
         } else {
             let local_place = Place::from(self.owned.get_local());
-            if let Some(self_cap) = self.capabilities.get(local_place)
-                && let Some(other_cap) = other.capabilities.get(local_place)
+            if let Some(self_cap) = self.capabilities.get(local_place, ctxt)
+                && let Some(other_cap) = other.capabilities.get(local_place, ctxt)
                 && self_cap.minimum(other_cap).is_none()
             {
                 // One of these has read cap and the other has write cap
@@ -319,7 +331,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         self.leaf_places(ctxt).into_iter().any(|p| {
-            if place.is_prefix_of(p) && place_capabilities.get(p).is_none() {
+            if place.is_prefix_of(p) && place_capabilities.get(p, ctxt).is_none() {
                 tracing::debug!(
                     "Place {} is a leaf node without capability",
                     p.to_short_string(ctxt)

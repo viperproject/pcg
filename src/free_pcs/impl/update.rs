@@ -56,7 +56,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(ctxt) {
-                    if capabilities.get(place).is_some() {
+                    if capabilities.get(place, ctxt).is_some() {
                         // pcg_validity_assert!(
                         //     matches!(
                         //         current_cap.partial_cmp(&required_cap),
@@ -76,7 +76,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
             }
             PlaceCondition::Return => {
                 pcg_validity_assert!(
-                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive,
+                    capabilities.get(RETURN_PLACE.into(), ctxt).unwrap() == CapabilityKind::Exclusive,
                     [ctxt]
                 );
             }

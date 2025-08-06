@@ -306,11 +306,12 @@ pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
 
 struct PCGCapabilityGetter<'a, 'tcx> {
     capabilities: &'a PlaceCapabilities<'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
 impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
     fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
-        self.capabilities.get(place)
+        self.capabilities.get(place, self.ctxt)
     }
 }
 
@@ -334,6 +335,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg,
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'pcg {
         PCGCapabilityGetter {
             capabilities: self.capabilities,
+            ctxt: self.ctxt,
         }
     }
 }
@@ -401,6 +403,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     pub fn construct_graph(mut self) -> Graph {
         let capability_getter = &PCGCapabilityGetter {
             capabilities: self.capabilities,
+            ctxt: self.ctxt,
         };
         for (local, capability) in self.summary.iter_enumerated() {
             match capability {

@@ -76,13 +76,13 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         let place_regions = place.regions(self.ctxt);
         let mut prev = None;
         let mut current = place;
-        while self.pcg.capabilities.get(current) == Some(CapabilityKind::Read) {
+        while self.pcg.capabilities.get(current, self.ctxt) == Some(CapabilityKind::Read) {
             self.weaken_place_from_read(current, debug_ctxt)?;
             let leaf_nodes = self.pcg.borrow.graph.frozen_graph().leaf_nodes(self.ctxt);
             for place in self.pcg.borrow.graph.places(self.ctxt) {
                 if prev != Some(place)
                     && leaf_nodes.contains(&place.into())
-                    && self.pcg.capabilities.get(place) == Some(CapabilityKind::Read)
+                    && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
                     && !place.projects_shared_ref(self.ctxt)
                 {
                     self.record_and_apply_action(

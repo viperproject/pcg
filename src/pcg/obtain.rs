@@ -147,10 +147,10 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
     ) -> Result<(), PcgError> {
         let mut leaf_places = self.leaf_places(ctxt);
         leaf_places.retain(|p| {
-            self.capabilities().get(*p) == Some(CapabilityKind::Read)
+            self.capabilities().get(*p, ctxt) == Some(CapabilityKind::Read)
                 && !p.projects_shared_ref(ctxt)
                 && p.parent_place()
-                    .is_none_or(|parent| self.capabilities().get(parent).is_none())
+                    .is_none_or(|parent| self.capabilities().get(parent, ctxt).is_none())
         });
         for place in leaf_places {
             if let Some(parent_place) = parent_place {

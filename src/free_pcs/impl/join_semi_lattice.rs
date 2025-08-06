@@ -5,11 +5,16 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::PlaceExpansion, free_pcs::{
-        join::data::JoinOwnedData, CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand
-    }, pcg::{
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError
-    }, pcg_validity_assert, pcg_validity_expect_some, utils::{data_structures::HashSet, display::DisplayWithCompilerCtxt, Place}
+    borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    free_pcs::{
+        CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand, join::data::JoinOwnedData,
+    },
+    pcg::{
+        PcgError,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    },
+    pcg_validity_assert, pcg_validity_expect_some,
+    utils::{Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
 };
 use itertools::Itertools;
 
@@ -54,7 +59,6 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
     }
 }
 
-
 impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
     pub(crate) fn join(
         &mut self,
@@ -76,7 +80,6 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
         Ok(changed)
     }
 }
-
 
 impl<'tcx> LocalExpansions<'tcx> {
     pub(crate) fn contains_expansion(&self, expansion: &ExpandedPlace<'tcx>) -> bool {
@@ -114,7 +117,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         let source_cap = if expand.capability.is_read() {
             expand.capability
         } else {
-            capabilities.get(expand.from).unwrap_or_else(|| {
+            capabilities.get(expand.from, ctxt).unwrap_or_else(|| {
                 pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
                 // panic!("no cap for {}", expand.from.to_short_string(ctxt));
                 // For debugging, assume exclusive, we can visualize the graph to see what's going on
@@ -131,7 +134,6 @@ impl<'tcx> LocalExpansions<'tcx> {
         }
         Ok(())
     }
-
 
     pub(crate) fn all_descendants_of(
         &self,
@@ -166,7 +168,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         let children = self.all_children_of(place, ctxt);
         let mut current_cap = CapabilityKind::Exclusive;
         for child in children {
-            let child_cap = capabilities.get(child)?;
+            let child_cap = capabilities.get(child, ctxt)?;
             current_cap = current_cap.minimum(child_cap)?;
         }
         Some(current_cap)

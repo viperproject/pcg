@@ -7,6 +7,7 @@ use super::{
     path_condition::{PathCondition, ValidityConditions},
     visitor::extract_regions,
 };
+use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::{
     action::BorrowPcgAction,
     borrow_pcg::{
@@ -19,7 +20,6 @@ use crate::{
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
 };
-use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -127,7 +127,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         let result = match action.kind {
             BorrowPcgActionKind::Restore(restore) => {
                 let restore_place = restore.place();
-                if let Some(cap) = capabilities.get(restore_place) {
+                if let Some(cap) = capabilities.get(restore_place, ctxt) {
                     pcg_validity_assert!(
                         cap < restore.capability(),
                         "Current capability {:?} is not less than the capability to restore to {:?}",
@@ -149,7 +149,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
             }
             BorrowPcgActionKind::Weaken(weaken) => {
                 let weaken_place = weaken.place();
-                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
+                assert_eq!(capabilities.get(weaken_place, ctxt), Some(weaken.from));
                 match weaken.to {
                     Some(to) => {
                         capabilities.insert(weaken_place, to, ctxt);
@@ -445,7 +445,7 @@ impl<'tcx> BorrowsState<'tcx> {
                 let _ = capabilities.remove(blocked_place, ctxt);
             }
             _ => {
-                match capabilities.get(blocked_place) {
+                match capabilities.get(blocked_place, ctxt) {
                     Some(CapabilityKind::Exclusive) => {
                         assert!(capabilities.insert(blocked_place, CapabilityKind::Read, ctxt));
                     }
