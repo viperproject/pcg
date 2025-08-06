@@ -67,6 +67,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
                     } else {
                         pcg_validity_assert!(
                             false,
+                            [ctxt],
                             "No capability for {}",
                             place.to_short_string(ctxt)
                         );

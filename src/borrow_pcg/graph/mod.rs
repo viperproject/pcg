@@ -130,10 +130,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_deref_edge_to(
-        &self,
-        place: Place<'tcx>,
-    ) -> bool {
+    pub(crate) fn contains_deref_edge_to(&self, place: Place<'tcx>) -> bool {
         self.edges().any(|edge| {
             if let BorrowPcgEdgeKind::Deref(e) = edge.kind {
                 e.deref_place == place.into()

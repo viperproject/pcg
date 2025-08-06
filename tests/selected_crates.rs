@@ -24,6 +24,19 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
+    // 21 basic blocks, <= 30 nodes
+    common::ensure_successful_run_on_crate(
+        "form_urlencoded",
+        "1.2.1",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("decode"),
+            extra_env_vars: vec![],
+        },
+    );
+
     // <= 15 basic blocks, <= 30 nodes
     common::ensure_successful_run_on_crate(
         "hashbrown",

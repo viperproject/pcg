@@ -1,19 +1,21 @@
 use crate::{
     DebugLines,
+    action::{BorrowPcgAction, PcgAction},
+    borrow_pcg::action::LabelPlaceReason,
     free_pcs::{
         CapabilityKind, ExpandedPlace, LocalExpansions, RepackExpand, RepackOp,
         join::{data::JoinOwnedData, obtain::JoinObtainer},
     },
     pcg::{
         PcgError,
-        obtain::PlaceCollapser,
+        obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     pcg_validity_assert,
     utils::{CompilerCtxt, Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
 };
 
-impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
+impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>> {
     fn join_expansions_from_place<'other>(
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
@@ -255,20 +257,49 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         Ok(actions)
     }
 
-    pub(crate) fn join(
+    pub(crate) fn join<'mir>(
         &mut self,
-        mut other: JoinOwnedData<'pcg, 'tcx, LocalExpansions<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        mut other: JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions: Vec<RepackOp<'tcx>> = Vec::new();
-        let mut other = JoinOwnedData {
-            owned: &mut other.owned,
-            borrows: other.borrows,
-            capabilities: other.capabilities,
-            block: other.block,
-        };
-        actions.extend(self.join_other_expansions(&mut other, ctxt)?);
-        actions.extend(self.join_self_expansions(&mut other, ctxt)?);
+        if self.owned.has_expansions() || other.owned.has_expansions() {
+            actions.extend(self.join_other_expansions(&mut other, ctxt)?);
+            actions.extend(self.join_self_expansions(&mut other, ctxt)?);
+        } else {
+            let local_place = Place::from(self.owned.get_local());
+            if let Some(self_cap) = self.capabilities.get(local_place)
+                && let Some(other_cap) = other.capabilities.get(local_place)
+                && self_cap.minimum(other_cap).is_none()
+            {
+                // One of these has read cap and the other has write cap
+                // We want to mark the read place as "old" and then set it to write
+                let mut join_obtainer: JoinObtainer<'pcg, '_, '_, 'mir, 'tcx> =
+                    if self_cap.is_read() {
+                        JoinObtainer {
+                            ctxt,
+                            data: self,
+                            actions: vec![],
+                        }
+                    } else {
+                        JoinObtainer {
+                            ctxt,
+                            data: &mut other,
+                            actions: vec![],
+                        }
+                    };
+                let action = BorrowPcgAction::label_place(
+                    local_place,
+                    join_obtainer.prev_snapshot_location(),
+                    LabelPlaceReason::MoveOut,
+                );
+                join_obtainer.apply_action(PcgAction::Borrow(action))?;
+                join_obtainer
+                    .data
+                    .capabilities
+                    .insert(local_place, CapabilityKind::Write, ctxt);
+            }
+        }
         tracing::debug!(
             "Join {} actions:\n\t{}",
             Place::from(self.owned.get_local()).to_short_string(ctxt),

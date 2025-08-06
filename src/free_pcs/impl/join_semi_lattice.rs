@@ -34,7 +34,13 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
                     capabilities: self.capabilities,
                     block: self.block,
                 };
-                let other_allocated = other.map_owned(|_| from_places.clone());
+                let mut from_places = from_places.clone();
+                let other_allocated = JoinOwnedData {
+                    owned: &mut from_places,
+                    borrows: other.borrows,
+                    capabilities: other.capabilities,
+                    block: other.block,
+                };
                 self_allocated.join(other_allocated, ctxt)?;
                 Ok(true)
             }

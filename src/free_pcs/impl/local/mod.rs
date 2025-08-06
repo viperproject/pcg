@@ -100,6 +100,10 @@ pub struct LocalExpansions<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
+    pub(crate) fn has_expansions(&self) -> bool {
+        !self.expansions.is_empty()
+    }
+
     pub(crate) fn remove_all_expansions_from(
         &mut self,
         place: Place<'tcx>,
