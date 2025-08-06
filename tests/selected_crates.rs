@@ -33,11 +33,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("IntoIter::check_loop"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // 62 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
@@ -48,7 +46,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<data::FilterElements<I, F> as std::iter::Iterator>::next"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
 
@@ -61,7 +59,7 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("helpers::case_style::snakify"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![]
         },
     );
 
